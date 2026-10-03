@@ -20195,7 +20195,7 @@
     "ceilingDefault": "默认智能体上限",
     "changeCeiling": "更改",
     "humanOnly": "仅限人员",
-    "humanOnlyHelp": "管理成员、删除项目和签发凭据始终由人员执行。",
+    "humanOnlyHelp": "签发项目凭据仅限人员操作。",
     "humanOnlyValue": "从不授予",
     "effective": "有效权限",
     "effectiveHelp": "上限角色内的 Kortix 权限，减去仅限人员的权限。始终授予 project.read。",

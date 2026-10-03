@@ -20195,7 +20195,7 @@
     "ceilingDefault": "Standard-Obergrenze für Agents",
     "changeCeiling": "Ändern",
     "humanOnly": "Nur für Menschen",
-    "humanOnlyHelp": "Mitglieder verwalten, das Projekt löschen und Zugangsdaten ausstellen bleibt bei Menschen.",
+    "humanOnlyHelp": "Das Ausstellen von Projekt-Zugangsdaten bleibt bei Menschen.",
     "humanOnlyValue": "Nie gewährt",
     "effective": "Wirksame Berechtigungen",
     "effectiveHelp": "Kortix-Berechtigungen innerhalb der Obergrenzen-Rolle, ohne die Berechtigungen nur für Menschen. project.read ist immer gewährt.",

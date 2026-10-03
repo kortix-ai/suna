@@ -20208,7 +20208,7 @@
     "ceilingDefault": "Default agent ceiling",
     "changeCeiling": "Change",
     "humanOnly": "Human only",
-    "humanOnlyHelp": "Managing members, deleting the project, and issuing credentials stay with people.",
+    "humanOnlyHelp": "Issuing project credentials stays with people.",
     "humanOnlyValue": "Never granted",
     "effective": "Effective permissions",
     "effectiveHelp": "Kortix permissions within the ceiling role, minus human-only permissions. project.read is always granted.",
