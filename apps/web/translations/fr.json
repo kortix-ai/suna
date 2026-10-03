@@ -642,7 +642,13 @@
       "verified": "Vérifié",
       "unverified": "Non vérifié",
       "signedOutOtherDevices": "Déconnecté de vos autres appareils",
-      "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils"
+      "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils",
+      "currentDevice": "Ce navigateur",
+      "deviceSignedInAt": "Connecté le {date}",
+      "deviceActive": "Actif",
+      "noDevices": "Aucun appareil connecté",
+      "noDevicesDescription": "Vous n’êtes connecté sur aucun appareil pour le moment.",
+      "devicesLoadFailed": "Impossible de charger vos appareils connectés"
     },
     "appearance": {
       "theme": "Thème",

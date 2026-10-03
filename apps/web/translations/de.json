@@ -642,7 +642,13 @@
       "verified": "Verifiziert",
       "unverified": "Nicht bestätigt",
       "signedOutOtherDevices": "Von Ihren anderen Geräten abgemeldet",
-      "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden"
+      "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden",
+      "currentDevice": "Dieser Browser",
+      "deviceSignedInAt": "Angemeldet am {date}",
+      "deviceActive": "Aktiv",
+      "noDevices": "Keine angemeldeten Geräte",
+      "noDevicesDescription": "Du bist derzeit auf keinem Gerät angemeldet.",
+      "devicesLoadFailed": "Deine angemeldeten Geräte konnten nicht geladen werden"
     },
     "appearance": {
       "theme": "Design",

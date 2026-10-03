@@ -642,7 +642,13 @@
       "verified": "已验证",
       "unverified": "未验证",
       "signedOutOtherDevices": "已退出您的其他设备",
-      "signOutOtherDevicesFailed": "无法注销其他设备"
+      "signOutOtherDevicesFailed": "无法注销其他设备",
+      "currentDevice": "此浏览器",
+      "deviceSignedInAt": "登录于 {date}",
+      "deviceActive": "活跃",
+      "noDevices": "暂无已登录设备",
+      "noDevicesDescription": "你目前未在任何设备上登录。",
+      "devicesLoadFailed": "无法加载你的已登录设备"
     },
     "appearance": {
       "theme": "主题",
