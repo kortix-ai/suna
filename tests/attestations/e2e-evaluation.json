@@ -1,5 +1,5 @@
 {
-  "source_hash": "7cb1e10883f0d1678b4494ddbd75b18b3a7a6e134411ce45333e5fcf0803a444",
+  "source_hash": "e25055b17d5c66abb443003d4e3fd37f55da8abcaa6195a17d6fd3d7ef39578a",
   "diff_files": [
     ".agents/skills/e2e/SKILL.md",
     ".agents/skills/e2e/references/agent.md",
@@ -38,13 +38,13 @@
     "tests/src/core/local-runner.ts",
     "tests/unit/local-runner.test.ts"
   ],
-  "diff_hash": "aa3c421f2df800ba9de0c37c83103f178964a3e4e15a8a5c0b47d8aecc032e13",
-  "head": "8262cab586f28466e80da5884221eac211ecc9e1",
+  "diff_hash": "5559fb0adbcd0d9b3733cfa30458b4bc20e6dbd9aaba9cd0037658555ae53653",
+  "head": "66f2317fe644a8ec156269b51fd2d921b7382145",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-03T23:28:44.267Z"
+  "at": "2026-10-03T23:50:39.444Z"
 }

@@ -307,7 +307,19 @@ These are incomplete full gates. They do not establish that all existing browser
 The next default run completed in 703.0 seconds with six passing lanes and one failing package lane.
 The diagnostics guard measured 129.9 milliseconds; the web i18n audit found two hardcoded texts inherited from base `b043e634e6`.
 Main `b34c235d39` translates those texts. That main revision is now merged into the canonical branch.
-The latest live journey passes on the merged source. Its default gate requires a new completed run.
+The latest live journey passes on the merged source.
+
+The latest `caffeinate -i pnpm test` completed on source `66f2317fe6` in 642.8 seconds with exit one.
+All six core lanes passed: 513 REST/CLI flows, 187 database suites containing 1,717 tests with one quarantine,
+743 runner units, SDK tests, route coverage, and worktree tests.
+Package quality failed one API assertion in `apps/api/src/projects/sandbox-reaper.test.ts`.
+The provider-neutral observation returned `unknown` with `daemonAnswered: false`; the test expected `active` with `daemonAnswered: true`.
+The implicated test and observer have no changes relative to merged main `b34c235d39`.
+A focused rerun passed all 162 tests in that file in 3.53 seconds; this does not replace the failed package gate.
+The failure cause remains unknown. No assertion or timing threshold was relaxed.
+
+The branch remains local and unmerged. No PR, deployment, or dev verification completed.
+The recorded repository attestation is red. The required full browser gate remains incomplete.
 
 The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.
 The final delivery status must include the most recent completed repository gate; the evidence above does not claim a green broad gate.
