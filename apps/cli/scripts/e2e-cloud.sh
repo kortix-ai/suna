@@ -34,6 +34,7 @@ E2E_DATABASE_URL=${E2E_DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432
 AUTH_FILE=/tmp/kortix-e2e-auth-$$.json
 WORK_DIR=/tmp/kortix-e2e-work-$$
 PUSH_FILE=/tmp/kortix-e2e-push-$$.env
+PAT_PUBLIC_KEY=
 
 unset KORTIX_TOKEN KORTIX_PROJECT_ID
 export KORTIX_API_URL
@@ -86,7 +87,11 @@ cleanup() {
   local rc=$?
   set +e
   rm -rf "$WORK_DIR" "$AUTH_FILE" "$PUSH_FILE"
-  psql "$E2E_DATABASE_URL" -c "delete from kortix.account_tokens where name like 'cli-e2e-%' or name = 'cli-smoke'" >/dev/null 2>&1
+  if [ -n "$PAT_PUBLIC_KEY" ]; then
+    psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -v public_key="$PAT_PUBLIC_KEY" >/dev/null 2>&1 <<'SQL'
+delete from kortix.account_tokens where public_key = :'public_key';
+SQL
+  fi
   if [ ${rc} -ne 0 ] && [ ${FAIL} -eq 0 ]; then
     printf "\n${RED}aborted with exit $rc (no assertions failed yet)${RESET}\n"
   fi
@@ -102,7 +107,8 @@ curl -fsS -o /dev/null "$KORTIX_API_URL/" 2>/dev/null
 if [ $? -ne 0 ]; then
   # The root may 404 but the server is up — try a known route to confirm.
   curl -fsS -o /dev/null "$KORTIX_API_URL/v1/accounts" 2>/dev/null
-  if [ $? -ne 22 ] && [ $? -ne 0 ]; then
+  rc=$?
+  if [ "$rc" -ne 22 ] && [ "$rc" -ne 0 ]; then
     bad "API not reachable at $KORTIX_API_URL"
     exit 1
   fi
@@ -119,14 +125,29 @@ ok "Workdir prepared: $WORK_DIR"
 
 section "Mint PAT"
 
-PAT=$(cd "$SUNA_ROOT/apps/api" && bun run src/__tests__/e2e-mint-cli-token.ts 2>/dev/null | tail -1)
-if [ -z "$PAT" ] || [[ "$PAT" != kortix_pat_* ]]; then
-  bad "Could not mint a PAT — got: $PAT"
+MINTED=$(cd "$SUNA_ROOT/apps/api" && DATABASE_URL="$E2E_DATABASE_URL" bun run src/__tests__/e2e-mint-cli-token.ts 2>/dev/null)
+if [ $? -ne 0 ]; then
+  bad "Could not mint a PAT"
   exit 1
 fi
-# Rename the row so cleanup targets us specifically.
-psql "$E2E_DATABASE_URL" -c \
-  "update kortix.account_tokens set name = 'cli-e2e-suite' where name = 'cli-smoke'" >/dev/null
+# Config diagnostics precede the helper's final JSON record.
+PAIR=$(printf '%s\n' "$MINTED" | tail -1 | python3 -c '
+import json, sys
+row = json.load(sys.stdin)
+public, secret = row["publicKey"], row["secretKey"]
+if not public.startswith("pk_") or not secret.startswith("kortix_pat_"):
+    sys.exit(1)
+print(public, secret)
+') || { bad "Invalid minted PAT record"; exit 1; }
+read -r PAT_PUBLIC_KEY PAT <<< "$PAIR"
+# Rename and cleanup use only this mint's public row identity, never its name.
+psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -v public_key="$PAT_PUBLIC_KEY" >/dev/null <<'SQL'
+update kortix.account_tokens set name = 'cli-e2e-suite' where public_key = :'public_key';
+SQL
+if [ $? -ne 0 ]; then
+  bad "Could not rename minted PAT"
+  exit 1
+fi
 ok "Minted PAT ${PAT:0:18}…"
 
 # ─── auth ──────────────────────────────────────────────────────────────────

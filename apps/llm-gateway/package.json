@@ -8,7 +8,7 @@
     "dev": "bun run --hot src/main.ts",
     "start": "bun run src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
   },
   "dependencies": {
     "@kortix/llm-gateway": "workspace:*",

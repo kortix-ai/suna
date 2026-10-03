@@ -1914,7 +1914,6 @@
     "messageInput": "Champ de message",
     "attachFiles": "Joindre des fichiers",
     "selectAgent": "Sélectionner un agent",
-    "agentLockedHint": "Impossible de changer d'agent dans une session déjà démarrée.",
     "noModel": "Aucun modèle",
     "thinkingEffort": "Effort de raisonnement",
     "sessionOverrides": "Remplacements de session",
@@ -17197,7 +17196,6 @@
       "textdf80c0ee2f08": "Agents et compétences",
       "textdf8e32d18dbd": "Tout ce qui est accessible",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Veuillez saisir le code à 6 chiffres reçu par email",
       "textdfa16aeaca13": "Le référentiel de cet espace de travail est hébergé sur {value0}, qui ne prend pas en charge les invitations de collaborateurs de Kortix. Gérez l’accès là où se trouve le référentiel.",
       "textdfa2cff42f0c": "Pas d’expérience approfondie des systèmes",
       "textdfad83e7eb69": "{value0} sont des gestionnaires implicites sur chaque projet actif dans le compte.",
@@ -19204,7 +19202,9 @@
       "textd4586396b9ba": "Les agents peuvent-ils utiliser la CLI eux-mêmes ?",
       "text9e52157faaab": "Oui. La même CLI Kortix tourne dans chaque bac à sable, pré-authentifiée, pour que les agents utilisent exactement les mêmes commandes que vous.",
       "text48b78a9ab65b": "Comment les exécutions restent-elles isolées ?",
-      "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions."
+      "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
+      "text39207bf34111": "Compétences associées",
+      "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
