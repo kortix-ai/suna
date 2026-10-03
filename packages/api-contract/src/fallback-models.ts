@@ -1,10 +1,17 @@
 /**
- * The model fallback table OpenCode's `kortix` provider falls back to, and its
- * managed subset. Data only, with no imports: apps/api imports this file to
- * keep the managed lineup and the fallback in sync
- * (llm-gateway/models/managed-fallback-sync.test.ts), and a leaf keeps the
- * rest of the daemon out of apps/api's typecheck.
+ * The model fallback table OpenCode's `kortix` provider falls back to inside
+ * the sandbox, and its managed subset. Data only, with no imports: kortixd
+ * bundles it, and apps/api keeps the managed lineup and this fallback in sync
+ * (llm-gateway/models/managed-fallback-sync.test.ts).
  */
+
+/**
+ * The `max_tokens` ceiling kortixd gives OpenCode
+ * (`OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`). OpenCode clamps to 32,000 by
+ * default; a clamp below a managed model's `limit.output` cuts a large file
+ * write at finish_reason "length" and the tool never runs.
+ */
+export const MANAGED_OPENCODE_OUTPUT_TOKEN_MAX = 65_536
 // One `reasoning_options` entry (models.dev's shape, mirrored — see
 // @kortix/llm-catalog's CatalogReasoningOption). Present iff the model
 // exposes a tunable reasoning-effort knob; this is the PRIORITY field the
