@@ -83,7 +83,6 @@ function picker(overrides: Record<string, boolean>) {
 function startServer(seed: Record<string, boolean> = {}): string {
   let overrides = { ...seed };
   let projectDefault: string | null = 'glm-5.3-flash';
-  let accountDefault: string | null = null;
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -112,10 +111,9 @@ function startServer(seed: Record<string, boolean> = {}): string {
         if (req.method === 'GET') {
           return Response.json({
             platformDefault: 'openai/gpt-5.5',
-            accountDefault,
             agentDefaults: { reviewer: 'anthropic/claude-opus-4-8' },
             projectDefault,
-            resolvedForCaller: projectDefault ?? accountDefault ?? 'openai/gpt-5.5',
+            resolvedForCaller: projectDefault ?? 'openai/gpt-5.5',
             resolvedSource: projectDefault ? 'project' : 'platform',
             freeTier: false,
           });
@@ -123,13 +121,11 @@ function startServer(seed: Record<string, boolean> = {}): string {
         if (req.method === 'PUT') {
           const b = body as { scope: string; model: string };
           if (b.scope === 'project') projectDefault = b.model;
-          if (b.scope === 'account') accountDefault = b.model;
           return Response.json({ ok: true, scope: b.scope, model: b.model });
         }
         if (req.method === 'DELETE') {
           const scope = url.searchParams.get('scope');
           if (scope === 'project') projectDefault = null;
-          if (scope === 'account') accountDefault = null;
           return Response.json({ ok: true, scope });
         }
       }
@@ -294,7 +290,6 @@ describe('kortix models', () => {
     const r = await runCli(['models', 'default', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/project\s+glm-5\.3-flash/);
-    expect(r.stdout).toMatch(/account\s+unset/);
     expect(r.stdout).toMatch(/platform\s+openai\/gpt-5\.5/);
     expect(r.stdout).toContain('resolves to glm-5.3-flash (project)');
     expect(r.stdout).toContain('1 per-agent pin');
@@ -303,7 +298,7 @@ describe('kortix models', () => {
     expect(JSON.parse(j.stdout).projectDefault).toBe('glm-5.3-flash');
   });
 
-  test('default <id> PUTs scope=project; --account switches scope', async () => {
+  test('default <id> PUTs scope=project', async () => {
     const config = writeConfig(startServer({}));
     const p = await runCli(['models', 'default', 'openai/gpt-5.5', '--project', PROJECT], config);
     expect(p.code).toBe(0);
@@ -313,16 +308,9 @@ describe('kortix models', () => {
       body: { scope: 'project', model: 'openai/gpt-5.5' },
     });
     expect(p.stdout).toContain('project default → openai/gpt-5.5');
-
-    const a = await runCli(
-      ['models', 'default', 'glm-5.3-flash', '--account', '--project', PROJECT],
-      config,
-    );
-    expect(a.code).toBe(0);
-    expect(calls.at(-1)).toMatchObject({ body: { scope: 'account', model: 'glm-5.3-flash' } });
   });
 
-  test('default --clear DELETEs with the right scope', async () => {
+  test('default --clear DELETEs scope=project', async () => {
     const config = writeConfig(startServer({}));
     const r = await runCli(['models', 'default', '--clear', '--project', PROJECT], config);
     expect(r.code).toBe(0);
@@ -332,13 +320,6 @@ describe('kortix models', () => {
       query: '?scope=project',
     });
     expect(r.stdout).toContain('Cleared the project default model');
-
-    const acct = await runCli(
-      ['models', 'default', '--clear', '--account', '--project', PROJECT],
-      config,
-    );
-    expect(acct.code).toBe(0);
-    expect(calls.at(-1)).toMatchObject({ query: '?scope=account' });
   });
 
   test('an unknown subcommand exits 2 with help', async () => {
