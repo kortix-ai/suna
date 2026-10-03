@@ -173,7 +173,6 @@ export function ComposerCard({
   rewind,
   selectedAgent = null,
   onAgentChange,
-  agentSelectorLocked = false,
   noAccessibleAgents = false,
   onContextClick,
   messages,
@@ -344,7 +343,6 @@ export function ComposerCard({
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
                   onAgentChange={onAgentChange}
-                  agentSelectorLocked={agentSelectorLocked}
                   noAccessibleAgents={noAccessibleAgents}
                   messages={messages}
                   models={models}
@@ -426,7 +424,6 @@ export function ComposerCard({
         agents={primaryAgents}
         selectedAgent={selectedAgent}
         onAgentChange={onAgentChange}
-        agentSelectorLocked={agentSelectorLocked}
         noAccessibleAgents={noAccessibleAgents}
         messages={messages}
         models={models}
