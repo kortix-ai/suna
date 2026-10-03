@@ -1027,11 +1027,12 @@ async function applyDriveToRunningSandbox(input: {
   const same =
     want.length === have.length &&
     want.every((w) => have.some((h) => h.readOnly === w.readOnly && (h.subdir ?? '') === (w.subdir ?? '') && !!h.fromAgents === !!w.fromAgents));
+  // The plan wants the drive but has no slot for it: refuse, never a silent no-op.
+  if (!have.length && plan.skipped.some((d) => d.driveId === input.driveId)) throw new DriveMountLimitError(slots);
   if (same) return { live: true };
 
   let kept = current.filter((m) => m.driveId !== input.driveId);
-  const wanted = want.length > 0 || plan.skipped.some((d) => d.driveId === input.driveId);
-  if (wanted && kept.length + Math.max(want.length, 1) > slots) throw new DriveMountLimitError(slots);
+  if (want.length && kept.length + want.length > slots) throw new DriveMountLimitError(slots);
   for (const m of have) {
     await detachSandboxVolume(box.externalId, m.mountPath);
   }
