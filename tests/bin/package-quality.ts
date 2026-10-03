@@ -44,6 +44,13 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   // Same rule for the image's baked managed-skills dir: suites assert the
   // exact skill lists their fixtures create, and CI has no baked dir.
   env.KORTIX_MANAGED_SKILLS_DIR = '/nonexistent/kortix-test-managed-skills';
+  // bash re-reads BASH_ENV (sh: ENV) on every startup and re-exports the
+  // sandbox session identity behind this scrub — a Kortix sandbox image sets
+  // it to the daemon's agent-env file, which carries KORTIX_PROJECT_ID and
+  // breaks identity-checked child processes (compiled runtimes). CI exports
+  // neither variable.
+  delete env.BASH_ENV;
+  delete env.ENV;
   return env;
 }
 
