@@ -24,11 +24,6 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 
-// The marketing enterprise page. CTAs no longer navigate here — they open the
-// in-app demo-request modal — but keep the constant exported for any surface
-// that still wants to link out.
-export const ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise';
-
 type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding';
 
 const FEATURE_COPY: Record<
