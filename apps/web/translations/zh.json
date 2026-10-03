@@ -260,10 +260,6 @@
       "fallbackName": "此工作区",
       "confetti": "撒些彩纸"
     },
-    "runtime": {
-      "metaLabel": "Meta 运行环境",
-      "metaDescription": "Meta 使用固定的最小沙盒，并为项目工作启动专门会话。"
-    },
     "sandbox": {
       "label": "沙盒模板",
       "agentEnvironment": "智能体环境",

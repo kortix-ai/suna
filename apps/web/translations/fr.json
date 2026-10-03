@@ -260,10 +260,6 @@
       "fallbackName": "cet espace",
       "confetti": "Lancer des confettis"
     },
-    "runtime": {
-      "metaLabel": "Environnement Meta",
-      "metaDescription": "Meta utilise un bac à sable minimal fixe et lance des sessions spécialisées pour le projet."
-    },
     "sandbox": {
       "label": "Modèle de bac à sable",
       "agentEnvironment": "Environnement de l’agent",
