@@ -1914,7 +1914,6 @@
     "messageInput": "消息输入框",
     "attachFiles": "附加文件",
     "selectAgent": "选择智能体",
-    "agentLockedHint": "会话开始后无法切换智能体。",
     "noModel": "未选择模型",
     "thinkingEffort": "思考强度",
     "sessionOverrides": "会话覆盖",
@@ -17197,7 +17196,6 @@
       "textdf80c0ee2f08": "智能体与技能",
       "textdf8e32d18dbd": "任何您能访问的服务",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "请输入 email 中的 6 位代码",
       "textdfa16aeaca13": "该工作区的存储库托管在 {value0} 上，它不支持来自 Kortix 的协作者邀请。管理存储库所在位置的访问。",
       "textdfa2cff42f0c": "缺乏系统经验",
       "textdfad83e7eb69": "{value0} 是帐户中每个活动项目的隐式管理者。",
@@ -19204,7 +19202,9 @@
       "textd4586396b9ba": "Agent 能自己使用 CLI 吗？",
       "text9e52157faaab": "可以。同一个 Kortix CLI 在每个沙盒中都已预先认证，Agent 使用的命令与你完全相同。",
       "text48b78a9ab65b": "运行之间如何保持隔离？",
-      "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。"
+      "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。",
+      "text39207bf34111": "相关技能",
+      "text73112526c03a": "智能体这一轮运行失败，未报告原因。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

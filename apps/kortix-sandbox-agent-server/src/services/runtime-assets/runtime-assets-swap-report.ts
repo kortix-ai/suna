@@ -1,4 +1,4 @@
-import { stat, readFile } from 'node:fs/promises'
+import { open, readFile, stat, type FileHandle } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Config } from '@/lib/config/config'
@@ -443,26 +443,30 @@ async function verifiedDigest(
   // claims to describe one specific file version. Without that key there is
   // nothing to check the file against — answer exactly what was persisted.
   if (!path || typeof cachedSize !== 'number' || typeof cachedMtimeMs !== 'number') return cachedSha
-  let size: number
-  let mtimeMs: number
+  // One open file: the stat and the read describe the same inode, so a swap
+  // between "check" and "use" cannot make them disagree.
+  let fh: FileHandle
   try {
-    const st = await stat(path)
-    if (!st.isFile()) return null
-    size = st.size
-    mtimeMs = Math.trunc(st.mtimeMs)
+    fh = await open(path, 'r')
   } catch {
     return null
   }
-  if (cachedSha && cachedSize === size && cachedMtimeMs === mtimeMs) return cachedSha
-  const key = `${path}\0${size}\0${mtimeMs}`
-  const memo = verifiedDigests.get(key)
-  if (memo) return memo
   try {
-    const sha = createHash('sha256').update(await readFile(path)).digest('hex')
+    const st = await fh.stat()
+    if (!st.isFile()) return null
+    const size = st.size
+    const mtimeMs = Math.trunc(st.mtimeMs)
+    if (cachedSha && cachedSize === size && cachedMtimeMs === mtimeMs) return cachedSha
+    const key = `${path}\0${size}\0${mtimeMs}`
+    const memo = verifiedDigests.get(key)
+    if (memo) return memo
+    const sha = createHash('sha256').update(await fh.readFile()).digest('hex')
     verifiedDigests.set(key, sha)
     return sha
   } catch {
     return null
+  } finally {
+    await fh.close().catch(() => {})
   }
 }
 
