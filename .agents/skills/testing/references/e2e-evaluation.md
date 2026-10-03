@@ -256,6 +256,14 @@ A keep-awake process attached after the core failures does not change their resu
 The cause of exit 137 remains unknown. Both owned app listeners were absent after termination.
 These runs provide no passing broad gate and no valid performance comparison.
 
+The next default run used `caffeinate -i pnpm test` from startup and completed in 663.9 seconds.
+It passed all 513 REST/CLI flows, all 186 database suites containing 1,713 tests with one quarantine, all 743 runner units, SDK tests, route coverage, and worktree tests.
+Package quality failed two shared-package tests: a diagnostics timing guard and an obsolete Meta guide text assertion.
+The implicated renderer and tests matched `origin/main` byte for byte.
+A focused rerun passed the diagnostics guard without relaxing its threshold and reproduced the Meta text failure.
+Two Meta assertions now check the current orchestrator policy and prohibition on project work.
+All eight focused tests then passed. The broad gate still requires a completed rerun.
+
 The user confirmed ChatGPT sign-in. `e2e models openai` lists `gpt-6-luna`.
 The first subscription-backed journey passed every UI, request, transcript, and reload assertion, then failed repository cleanup after an upstream timeout.
 Its agent step took 15.69 seconds, four model calls, and approximately 19,300 tokens.
