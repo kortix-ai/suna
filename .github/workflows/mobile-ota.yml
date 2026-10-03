@@ -4,21 +4,17 @@ name: Mobile OTA
 # store build; apps/mobile/scripts/ota-publish.mjs skips a platform whose native
 # fingerprint differs from the newest build on the channel and says so.
 #
-#   push to main (mobile/SDK paths)  -> channel `dev`        (dev backend builds)
-#   Deploy Prod succeeded            -> channel `production` (store builds), so
-#                                       the JS ships with the API it was released with
-#   workflow_dispatch                -> the chosen channel, e.g. a hotfix or a re-run
+#   Deploy Prod succeeded  -> channel `production` (store builds), so the JS
+#                             ships with the API it was released with
+#   workflow_dispatch      -> the chosen channel: `dev` for dev-backend builds,
+#                             or a production hotfix or re-run
+#
+# No push trigger: since 2026-10-03 a push to main starts only cheap guards and
+# path-gated infra (tests/unit/sandbox-workflow.test.ts, Actions minutes).
 #
 # Rollback and the full runbook: apps/mobile/BUILD_GUIDE.md.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/mobile/**'
-      - 'packages/sdk/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/mobile-ota.yml'
   # workflow_run loads THIS file from main, then checks out the deployed commit.
   workflow_run:
     workflows: [Deploy Prod]

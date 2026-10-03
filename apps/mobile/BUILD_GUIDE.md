@@ -64,9 +64,12 @@ needs a new version and a store build: OTA cannot ship it.
 
 | Event | Channel | Reaches |
 |---|---|---|
-| push to `main` touching `apps/mobile`, `packages/sdk` or `pnpm-lock.yaml` | `dev` | `dev-store`, `dev-apk` builds |
 | `Deploy Prod` succeeded (each production release) | `production` | `prod-store`, `prod-apk` builds |
-| Actions → Mobile OTA → Run workflow | the one you pick | as above (`dry_run` publishes nothing) |
+| Actions → Mobile OTA → Run workflow, channel `dev` | `dev` | `dev-store`, `dev-apk` builds |
+| Actions → Mobile OTA → Run workflow, channel `production` | `production` | a hotfix or a re-run (`dry_run` publishes nothing) |
+
+A push to `main` publishes nothing: since 2026-10-03 only cheap guards and
+path-gated infra run on `main` (Actions minutes).
 
 Per platform the script **skips** (warning on the run) when:
 1. no finished build on the channel has the current `runtimeVersion`;
