@@ -52,6 +52,26 @@ function etag(value: string | null): string | null {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
+/** The env vars the generated runtime compares against its baked manifest
+ *  before it boots (the `compiledEnv` loop in `runtimeSource`). A foreign
+ *  ambient value — a Kortix sandbox image exports the session's own
+ *  `KORTIX_PROJECT_ID` and `KORTIX_COMPILED_AGENT_CONFIG` — fails the child
+ *  closed with exit 78. A laptop or CI runner exports none. Tests that spawn
+ *  the runtime delete these from the child env so the check sees the CI/laptop
+ *  state, not this box's identity. Keep in sync with `compiledEnv` in
+ *  `runtimeSource` (the agent-config pair is only baked when the manifest has
+ *  an agent config, but deleting it unconditionally is harmless). */
+export const COMPILED_RUNTIME_IDENTITY_ENV_VARS = [
+  'KORTIX_COMPILED_RUNTIME_FORMAT',
+  'KORTIX_COMPILED_RUNTIME_SOURCE_SHA',
+  'KORTIX_PROJECT_ID',
+  'KORTIX_DEFAULT_BRANCH',
+  'KORTIX_BASE_REF',
+  'KORTIX_BASE_SHA',
+  'KORTIX_COMPILED_AGENT_CONFIG',
+  'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
+] as const;
+
 function runtimeSource(
   manifest: CompiledRuntimeManifest,
   agentBundle: string,

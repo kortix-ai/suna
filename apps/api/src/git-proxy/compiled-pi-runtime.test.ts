@@ -5,9 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   COMPILED_PI_RUNTIME_FORMAT,
+  COMPILED_PI_RUNTIME_IDENTITY_ENV_VARS,
   compilePiRuntime,
   type CompilePiRuntimeInput,
 } from './compiled-pi-runtime';
+
+/** Child env without the compiled-identity vars the generated runtime compares
+ *  against its baked manifest. A Kortix sandbox image exports the session's
+ *  own KORTIX_PROJECT_ID; a laptop or CI runner exports none. The spawn must
+ *  see the CI/laptop state, so the runtime's fail-closed identity check stays
+ *  a property of the runtime, not of the machine running the test. */
+function childEnv(extra: Record<string, string> = {}): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  for (const name of COMPILED_PI_RUNTIME_IDENTITY_ENV_VARS) delete env[name];
+  return { ...env, ...extra };
+}
 
 const roots: string[] = [];
 const INPUT: CompilePiRuntimeInput = {
@@ -84,7 +96,10 @@ describe('compilePiRuntime', () => {
 
   test('the worker runtime receives the baked config via __KORTIX_COMPILED__', async () => {
     const { runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
+    const stdout = execFileSync(process.execPath, [runtimePath], {
+      encoding: 'utf8',
+      env: childEnv(),
+    });
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
     const baked = JSON.parse(lines[1]).baked;
@@ -115,7 +130,10 @@ describe('compilePiRuntime', () => {
     });
     expect(artifact.manifest.agent_config).toBeNull();
     expect(artifact.manifest.agent_config_etag).toBeNull();
-    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
+    const stdout = execFileSync(process.execPath, [runtimePath], {
+      encoding: 'utf8',
+      env: childEnv(),
+    });
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
 
