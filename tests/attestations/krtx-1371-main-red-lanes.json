@@ -1,5 +1,5 @@
 {
-  "source_hash": "17bf2cdf56caab455a489178d4fb060e9357f203091c4d3d7d7684e538b949ac",
+  "source_hash": "714a1733be833aaa1dd1c4eca1b5b4a6e91aa8f4cc644d8f3ffe357b3c0f6f72",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-03T164055Z-unit-suites-that-spawn-or-import-kortix-clis-and-harnesses-m.md",
@@ -10,9 +10,7 @@
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
     "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-asset-chunks.ts",
-    "apps/mobile/lib/highlight/shiki.ts",
     "apps/web/package.json",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/test-runner-contract.test.ts",
     "apps/whitelabel-demo/tests/e2e/harness.ts",
     "packages/agent-tunnel/src/client/cli.test.ts",
@@ -20,13 +18,13 @@
     "packages/llm-gateway/src/upstream-fetch.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "cb862e2f48070a09fee2ede330f3b04cd57a477c7be2b7a0092c91cd1adb145b",
-  "head": "b06ed95e652c6dfa6393a339e5f2fcc47971df82",
+  "diff_hash": "212eca7409d39c94645484fa8afc4871d21295424262a09e9b1396072dc24dc6",
+  "head": "3cfb4dab160fbb56ee2f9c41f0915d92a79d8031",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T19:40:46.741Z"
+  "at": "2026-10-03T20:02:27.733Z"
 }
