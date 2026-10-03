@@ -1591,7 +1591,8 @@
       "failed": "Could not save the labels",
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19248,7 +19249,9 @@
       "text4d2eb8231235": "Viewed the capture data of a project",
       "textafa16172b21b": "An agent read the capture timeline of the person it acts for",
       "textec9dc2164abe": "Synced a capture device",
-      "textba3a78850415": "Viewed the days of a capture timeline"
+      "textba3a78850415": "Viewed the days of a capture timeline",
+      "text1900b478a586": "Capture",
+      "text536272f04b07": "capture timeline screen recording ranges devices kortix capture"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20545,6 +20548,316 @@
       "codeLabel": "Code",
       "continue": "Continue",
       "codePlaceholder": "ABCD-1234"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} h {minutes} m",
+      "minutes": "{minutes} m"
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "Timeline",
+        "ask": "Ask",
+        "ranges": "Ranges",
+        "devices": "Devices",
+        "people": "People",
+        "settings": "Settings"
+      }
+    },
+    "timeline": {
+      "person": "Person",
+      "you": "You",
+      "device": "Device",
+      "allDevices": "All devices",
+      "unnamedDevice": "Unnamed device",
+      "dayPicker": "Choose a day",
+      "recordedDays": "Recorded days",
+      "noDay": "No recorded days",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "aMember": "a member",
+      "viewingMember": "You are viewing the timeline of {member}",
+      "viewingMemberAudit": "Every view of another member's capture data is recorded in the project's audit log.",
+      "auditNotice": "People who manage this project can open your timeline. Every such view is recorded in the project's audit log.",
+      "loadFailed": "Could not load the timeline.",
+      "tryAgain": "Try again",
+      "empty": "Your recorded days will show up here",
+      "emptyHint": "Connect a computer with the Kortix Capture app to start a timeline.",
+      "emptyMember": "This person has no recorded days yet",
+      "connectDevice": "Connect a device",
+      "layers": "Layers",
+      "layer": {
+        "screen": "Screen",
+        "actions": "Actions",
+        "audio": "Audio",
+        "ranges": "Ranges"
+      },
+      "previousFrame": "Previous frame",
+      "nextFrame": "Next frame",
+      "saveRange": "Save range",
+      "trackLabel": "Moment on the timeline",
+      "openRange": "Open range {range}",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "Unknown app",
+      "search": {
+        "label": "Search the timeline",
+        "placeholder": "Search what you saw, did or heard",
+        "results": "Search results",
+        "none": "Nothing on this timeline matches the search.",
+        "kind": {
+          "screen": "Screen",
+          "actions": "Action",
+          "audio": "Audio"
+        }
+      },
+      "frame": {
+        "label": "Screen recording of {app}",
+        "none": "No screen frame near this moment.",
+        "encrypted": "The device encrypted this recording. Kortix cannot show it.",
+        "noVideo": "The video of this moment is not in the capture store."
+      },
+      "details": {
+        "label": "Details of the moment",
+        "noScreen": "No screen activity",
+        "onScreen": "On screen",
+        "actions": "Actions around this moment",
+        "noActions": "No actions within two minutes.",
+        "audio": "Audio around this moment",
+        "noAudio": "No audio within two minutes.",
+        "partOf": "Part of"
+      }
+    },
+    "saveRange": {
+      "title": "Save range",
+      "description": "A saved range gets its steps, transcript and summary. Processing starts when you save.",
+      "name": "Name",
+      "namePlaceholder": "Release checklist run",
+      "from": "From",
+      "to": "To",
+      "endBeforeStart": "The end must be after the start.",
+      "cancel": "Cancel",
+      "submit": "Save range",
+      "saved": "Range saved",
+      "failed": "Could not save the range."
+    },
+    "ranges": {
+      "title": "Ranges",
+      "description": "Stretches of a timeline with steps, a transcript and a summary. Kortix detects one for every activity session; you save your own.",
+      "sourceLabel": "Source",
+      "source": {
+        "all": "All",
+        "saved": "Saved",
+        "detected": "Detected"
+      },
+      "periodLabel": "Period",
+      "period": {
+        "week": "7 days",
+        "month": "30 days"
+      },
+      "status": {
+        "open": "Recording",
+        "closed": "Queued",
+        "processing": "Processing",
+        "processed": "Processed",
+        "failed": "Failed"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "All devices",
+      "loadFailed": "Could not load the ranges.",
+      "tryAgain": "Try again",
+      "empty": "Ranges will show up here",
+      "emptyHint": "Kortix detects a range for every activity session. Save your own from the timeline."
+    },
+    "range": {
+      "backToRanges": "Ranges",
+      "openInTimeline": "Open in timeline",
+      "processAgain": "Process again",
+      "queuedToast": "Range queued",
+      "reprocessFailed": "Could not queue the range.",
+      "tab": {
+        "steps": "Steps",
+        "transcript": "Transcript",
+        "summary": "Summary"
+      },
+      "processing": "Processing. The steps, transcript and summary appear here when the pipelines finish.",
+      "queued": "Queued. Processing starts within a minute.",
+      "failed": "Could not process this range.",
+      "noSteps": "No steps in this range.",
+      "noTranscript": "No transcript for this range.",
+      "noSummary": "No summary for this range.",
+      "timeByApp": "Time by app",
+      "noScreen": "No screen activity in this range.",
+      "unknownApp": "Unknown app",
+      "notFound": "This range is gone.",
+      "notFoundHint": "The link may be wrong, or the range belongs to another person."
+    },
+    "devices": {
+      "title": "Devices",
+      "description": "Every computer that records into this project, with its live status. A device counts as offline after 120 seconds without a status.",
+      "connect": "Connect a device",
+      "scopeLabel": "Whose devices",
+      "scopeMine": "My devices",
+      "scopeProject": "Whole project",
+      "column": {
+        "device": "Device",
+        "owner": "Owner",
+        "status": "Status",
+        "layers": "Layers",
+        "sync": "Sync",
+        "lastFrame": "Last frame",
+        "version": "Version",
+        "actions": "Actions"
+      },
+      "status": {
+        "recording": "Recording",
+        "paused": "Paused",
+        "permission": "Needs permission",
+        "notRecording": "Not recording",
+        "offline": "Offline",
+        "unknown": "Unknown"
+      },
+      "detail": {
+        "permission": "Missing: {permissions}",
+        "pausedUntil": "Until {time}",
+        "lastSeen": "Last status {time}"
+      },
+      "permission": {
+        "screen_recording": "Screen Recording",
+        "accessibility": "Accessibility",
+        "microphone": "Microphone"
+      },
+      "layer": {
+        "screen": "Screen",
+        "actions": "Actions",
+        "audio": "Audio"
+      },
+      "sync": {
+        "upToDate": "Up to date",
+        "pending": "{count, plural, one {# item queued} other {# items queued}}",
+        "failed": "Upload failing",
+        "unknown": "Unknown"
+      },
+      "never": "None yet",
+      "unknownVersion": "Unknown",
+      "unnamed": "Unnamed device",
+      "you": "You",
+      "member": "A member",
+      "actionsFor": "Actions for {name}",
+      "syncNow": "Sync now",
+      "synced": "{count, plural, =0 {Device synced, nothing new} one {Device synced, # item queued} other {Device synced, # items queued}}",
+      "syncFailed": "Could not sync the device",
+      "revoke": "Revoke device",
+      "revokeTitle": "Revoke this device?",
+      "revokeDescription": "{name} stops uploading at once. To record again, sign it in from the app again.",
+      "revoked": "Device revoked",
+      "revokeFailed": "Could not revoke the device",
+      "loadFailed": "Could not load the devices.",
+      "tryAgain": "Try again",
+      "empty": "Devices you connect will show up here",
+      "footnote": "One row per computer. Reinstalling or updating the app keeps the same row."
+    },
+    "connect": {
+      "title": "Connect a device",
+      "description": "Install an app that records, then sign it in to this project.",
+      "desktopTitle": "Kortix desktop app",
+      "desktopHint": "The desktop app includes Kortix Capture.",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Kortix Capture engine",
+      "engineHint": "The recorder on its own, for a computer without the desktop app.",
+      "engineLink": "Open the releases",
+      "stepsTitle": "Sign in",
+      "step1": "Open the app and choose Sign in with Kortix. Your browser opens.",
+      "step2": "Check that the code in the browser matches the code in the app.",
+      "step3": "Choose {project}. The device shows up here under your name within a minute.",
+      "close": "Close"
+    },
+    "people": {
+      "title": "People",
+      "description": "Per member: active time, the apps they used, their ranges and devices.",
+      "periodLabel": "Period",
+      "period": {
+        "today": "Today",
+        "week": "7 days",
+        "month": "30 days"
+      },
+      "auditTitle": "Only people who manage this project see this page",
+      "auditBody": "Opening this page or a member's timeline writes an entry to the project's audit log. Members see on their own timeline that managers can view it.",
+      "column": {
+        "member": "Member",
+        "active": "Active time",
+        "apps": "Top apps",
+        "ranges": "Ranges",
+        "devices": "Devices",
+        "open": "Open"
+      },
+      "role": {
+        "manager": "Manager",
+        "member": "Member",
+        "viewer": "Viewer",
+        "none": "No longer a member"
+      },
+      "you": "{email} (you)",
+      "formerMember": "Former member",
+      "noActivity": "No activity",
+      "unknownApp": "Unknown app",
+      "openTimeline": "Open timeline",
+      "openTimelineOf": "Open the timeline of {member}",
+      "loadFailed": "Could not load the people summary.",
+      "tryAgain": "Try again",
+      "empty": "Members will show up here"
+    },
+    "settings": {
+      "title": "Settings",
+      "description": "The capture policy that every device in this project reads from the capture store.",
+      "layersTitle": "Layers",
+      "layer": {
+        "screen": "Screen",
+        "screenHint": "The screen, the app and window in front, and the text on screen.",
+        "actions": "Actions",
+        "actionsHint": "Clicks, typing and shortcuts, with a screenshot per click.",
+        "audio": "Audio",
+        "audioHint": "Microphone and system audio, with a transcript."
+      },
+      "privacyTitle": "Privacy",
+      "masking": "Mask personal data",
+      "maskingHint": "Devices mask personal data in what they record, before it leaves the computer.",
+      "pause": "Pause recording",
+      "pauseHint": "Every device in this project stops every layer until you turn this off.",
+      "retentionTitle": "Retention",
+      "localHours": "On the device (hours)",
+      "localHoursHint": "How long a device keeps media after its upload. 0 keeps it without a limit.",
+      "remoteDays": "In Kortix (days)",
+      "remoteDaysHint": "How long Kortix keeps indexed items. 0 keeps them without a limit.",
+      "noticeTitle": "Notice",
+      "noticePlaceholder": "Recording is on for this project.",
+      "noticeHint": "Devices show this text in the app's menu and settings window.",
+      "lastChanged": "Last changed {time}",
+      "defaultPolicy": "The default policy applies.",
+      "discard": "Discard changes",
+      "save": "Save policy",
+      "saved": "Capture policy saved",
+      "saveFailed": "Could not save the capture policy",
+      "loadFailed": "Could not load the capture policy.",
+      "tryAgain": "Try again"
+    },
+    "ask": {
+      "title": "Ask",
+      "description": "Ask about what you saw, did and heard. An agent answers in a new private session and links every moment it uses.",
+      "label": "Question",
+      "placeholder": "What did I work on yesterday afternoon?",
+      "submit": "Ask",
+      "scope": "The agent reads only your timeline, through the session it runs for you.",
+      "suggestion": {
+        "yesterday": "What did I work on yesterday?",
+        "lastOpened": "When did I last open the release checklist?",
+        "byApp": "Summarize today by app.",
+        "said": "What was said in today's standup?"
+      },
+      "instructions": "Answer from my Kortix Capture timeline. Search it with `kortix capture search`, read a day with `kortix capture timeline`, and open a screen with `kortix capture frame`. Cite every moment you use as a Markdown link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cite a range as [its title]({timelineUrl}/ranges/RANGE_ID). My time zone is {tz}. Answer in the language of my question."
     }
   }
 }
