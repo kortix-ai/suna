@@ -222,8 +222,7 @@ export async function runChannels(argv: string[]): Promise<number> {
   const helpCode = argv.length > 0 ? splitHelp(argv, HELP) : null;
   if (helpCode !== null) return helpCode;
 
-  const sub = argv[0] && !argv[0].startsWith('-') ? argv[0] : 'status';
-  const rest = argv[0] && !argv[0].startsWith('-') ? argv.slice(1) : argv.slice(0);
+  const rest = argv.slice();
 
   const json = takeFlagBool(rest, ['--json']);
   const manual = takeFlagBool(rest, ['--manual']);
@@ -264,6 +263,8 @@ export async function runChannels(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
+  const subIndex = rest.findIndex((arg) => !arg.startsWith('-'));
+  const sub = subIndex < 0 ? 'status' : rest.splice(subIndex, 1)[0];
   const platform: Platform = platformFlag === 'teams' ? 'teams' : 'slack';
   if (platformFlag && platformFlag !== 'slack' && platformFlag !== 'teams') {
     return fail(`--platform must be 'slack' or 'teams', got '${platformFlag}'`);
