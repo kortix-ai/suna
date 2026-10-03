@@ -212,11 +212,20 @@ describe('/web-proxy stays off the box control plane', () => {
   test("browsing the agent's own dev server still works", async () => {
     // The whole point of this proxy. Blocking all of loopback would have been a
     // cheaper fix and would have broken the internal browser.
-    const res = await guarded().request(
-      `/web-proxy/http/localhost:${upstreamPort}/index.html`,
-      { method: 'GET' },
-    )
-    expect(res.status).toBe(200)
+    //
+    // The substitution below is sandbox plumbing, not the contract: a factory
+    // worker sandbox ships no readable /etc/hosts (the same condition
+    // tests/unit/vitest.config.ts pins a literal IP for), so the proxy's real
+    // fetch to the `localhost` spelling cannot resolve there. Only the address
+    // is substituted — the URL spelling, and therefore the Host header the
+    // upstream sees, stays `localhost`.
+    await withLoopbackResolution(async () => {
+      const res = await guarded().request(
+        `/web-proxy/http/localhost:${upstreamPort}/index.html`,
+        { method: 'GET' },
+      )
+      expect(res.status).toBe(200)
+    })
   })
 
   test('an external host on a blocked port number is unaffected', async () => {
@@ -241,11 +250,43 @@ describe('a vetted destination is the one we connect to', () => {
   test('the upstream sees the original Host header', async () => {
     // Virtual hosting on the agent's own dev server depends on it.
     received = null
-    const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
-    const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {
-      method: 'GET',
+    // Same sandbox plumbing as above: only the resolved address is
+    // substituted; the Host header the upstream sees is still spelled
+    // `localhost:<port>` — that is the behavior under test.
+    await withLoopbackResolution(async () => {
+      const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
+      const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {
+        method: 'GET',
+      })
+      expect(res.status).toBe(200)
+      expect(lastHeaders()?.get('host')).toBe(`localhost:${upstreamPort}`)
     })
-    expect(res.status).toBe(200)
-    expect(lastHeaders()?.get('host')).toBe(`localhost:${upstreamPort}`)
   })
 })
+
+/**
+ * Substitute the loopback resolution only.
+ *
+ * A factory worker sandbox ships no readable /etc/hosts (the same condition
+ * tests/unit/vitest.config.ts pins a literal IP for), so the proxy's real
+ * fetch to a `localhost` spelling cannot resolve there. The tests that need a
+ * real connect wrap themselves in this: fetches to `http://localhost:<port>`
+ * are re-dialed against 127.0.0.1 with every header untouched, so the Host
+ * header the upstream sees is still the one spelled by the URL. Outside such
+ * sandboxes this is a no-op passthrough.
+ */
+async function withLoopbackResolution(run: () => Promise<void>): Promise<void> {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (url.startsWith('http://localhost:')) {
+      return realFetch(`http://127.0.0.1:${url.slice('http://localhost:'.length)}`, init)
+    }
+    return realFetch(input, init)
+  }) as typeof fetch
+  try {
+    await run()
+  } finally {
+    globalThis.fetch = realFetch
+  }
+}

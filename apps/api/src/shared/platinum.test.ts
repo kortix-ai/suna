@@ -40,11 +40,16 @@ afterEach(() => {
 test('platinumJson gives up on a stalled connection instead of hanging forever', async () => {
   // Accepts the connection but never resolves the handler — simulates a
   // Daytona/Platinum-style network stall, not a fast error response.
+  // 127.0.0.1, never `localhost`: a factory worker sandbox ships no readable
+  // /etc/hosts (the same condition tests/unit/vitest.config.ts pins a literal
+  // IP for), so the fetch would not resolve and the test would read as a
+  // connect failure, not a stall.
   server = Bun.serve({
     port: 0,
+    hostname: '127.0.0.1',
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://${server.hostname}:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -57,11 +62,16 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
 });
 
 test('platinumJson respects an explicit caller-provided signal instead of the default', async () => {
+  // 127.0.0.1, never `localhost`: a factory worker sandbox ships no readable
+  // /etc/hosts (the same condition tests/unit/vitest.config.ts pins a literal
+  // IP for), so the fetch would not resolve and the test would read as a
+  // connect failure, not a stall.
   server = Bun.serve({
     port: 0,
+    hostname: '127.0.0.1',
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://${server.hostname}:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 

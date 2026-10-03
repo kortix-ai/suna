@@ -24,7 +24,15 @@ describe('marketplace HTTP contract', () => {
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-    server = Bun.serve({ port: 0, fetch: app.fetch });
+    // 127.0.0.1, never `localhost`: a factory worker sandbox ships no readable
+    // /etc/hosts (the same condition tests/unit/vitest.config.ts pins a literal
+    // IP for), so the fetch would not resolve and the test would read as a
+    // connect failure, not a stall.
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: app.fetch,
+    });
     baseUrl = `http://${server.hostname}:${server.port}/v1`;
   });
 
