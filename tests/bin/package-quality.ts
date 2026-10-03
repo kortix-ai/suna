@@ -198,17 +198,21 @@ await runAll([
       '!@kortix/cli',
       '!kortixd',
       '!@kortix/db',
-      // Mobile runs serially below (after this wave): its highlighter parity
-      // test drives the TextMate JS engine over the cpp/php grammars, and
-      // under the memory pressure of a concurrent web suite JSC's regex JIT
-      // falls back to the interpreter — the cpp open-tag tokenization
-      // collapses into one span and the parity check fails (reproduced
-      // 2026-10-03 with the web suite as the concurrent partner, and with a
-      // plain memory hog on an idle box). The suite is ~30 s.
+      // Mobile runs serially AFTER this wave (not in a parallel slot of it):
+      // its highlighter parity test drives the TextMate JS engine over the
+      // cpp/php grammars, and under the memory pressure of a concurrent web
+      // suite JSC's regex JIT falls back to the interpreter — the cpp
+      // open-tag tokenization collapses into one span and the parity check
+      // fails (reproduced 2026-10-03 with the web suite as the concurrent
+      // partner, and with a plain memory hog on an idle box). The suite is
+      // ~30 s.
       '!./apps/mobile',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],
     2,
   ),
-  runWorkspaceTests(['./apps/mobile'], 1),
 ]);
+// Strictly after the wave: a parallel slot of it still shares the box with
+// the web suite's workers (measured 2026-10-03 — the cpp parity check failed
+// beside packages/llm-gateway).
+await runWorkspaceTests(['./apps/mobile'], 1);
