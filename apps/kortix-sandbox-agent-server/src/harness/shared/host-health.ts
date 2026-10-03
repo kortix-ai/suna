@@ -13,11 +13,15 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
-const PT_ENV_PATH = process.env.KORTIX_PT_ENV_PATH || '/etc/pt-env'
+// Read per call, not at module load: a test masks the host env file inside its
+// own body, after this module's imports have already evaluated.
+function ptEnvPath(): string {
+  return (process.env.KORTIX_PT_ENV_PATH ?? '').trim() || '/etc/pt-env'
+}
 
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync(PT_ENV_PATH, 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(ptEnvPath(), 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -35,7 +39,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(PT_ENV_PATH, 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(ptEnvPath(), 'utf8'))
   } catch {
     return false
   }

@@ -246,7 +246,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
-const realPtEnvFile = process.env.KORTIX_PT_ENV_FILE
+const realPtEnvFile = process.env.KORTIX_PT_ENV_PATH
 const realManagedSkillsDir = process.env.KORTIX_MANAGED_SKILLS_DIR
 const managedSkillsMask = mkdtempSync(join(tmpdir(), 'pi-managed-skills-'))
 beforeEach(() => {
@@ -261,7 +261,7 @@ beforeEach(() => {
   // KORTIX_PROJECT_AUTO_CLONE=1; host-health's sessionWantsRepo would then
   // require a repo the rig workspace does not have. Mask it the way a CI
   // runner — where the file does not exist — reads it.
-  process.env.KORTIX_PT_ENV_FILE = join(tmpdir(), 'pi-pt-env-absent')
+  process.env.KORTIX_PT_ENV_PATH = join(tmpdir(), 'pi-pt-env-absent')
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -271,8 +271,8 @@ afterEach(async () => {
   resetKortixEventBusForTests()
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
-  if (realPtEnvFile === undefined) delete process.env.KORTIX_PT_ENV_FILE
-  else process.env.KORTIX_PT_ENV_FILE = realPtEnvFile
+  if (realPtEnvFile === undefined) delete process.env.KORTIX_PT_ENV_PATH
+  else process.env.KORTIX_PT_ENV_PATH = realPtEnvFile
   if (realManagedSkillsDir === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
   else process.env.KORTIX_MANAGED_SKILLS_DIR = realManagedSkillsDir
   rmSync(homeDir, { recursive: true, force: true })

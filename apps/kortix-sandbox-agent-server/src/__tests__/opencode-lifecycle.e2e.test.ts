@@ -884,7 +884,7 @@ describe('a model a turn names', () => {
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
     // Mask the image-baked catalog: a platform sandbox has one, and the tests
     // prove the picker's behavior for the listing alone.
-    process.env.KORTIX_BAKED_LLM_CATALOG_FILE = join(root, 'no-baked-catalog.json')
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
     process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
     resetManagedModelsStateForTests()
     return gateway
