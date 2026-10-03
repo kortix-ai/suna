@@ -78,8 +78,6 @@ An explicit <id> on info/open/rm resolves on its own: tries the active host
 first, then — unless you pass --host — scans every other logged-in host for
 it. A directory link (.kortix/link.json) always wins over the default; the
 default is what commands use anywhere else on your machine.
-
-Run \`kortix projects <subcommand> --help\` for options.
 `;
 
 export async function runProjects(argv: string[]): Promise<number> {
