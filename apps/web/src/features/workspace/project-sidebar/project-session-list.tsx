@@ -93,7 +93,7 @@ import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@
 import {
   CaretRightIcon,
   DotsThreeIcon,
-  FolderSimpleIcon as MetaFolder,
+  SparkleIcon,
   PencilSimpleIcon,
   TagIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -1166,7 +1166,7 @@ function ProjectSessionRow({
       {isMeta && (
         <Hint side="top" label={t('metaCoordinator')}>
           <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
-            <MetaFolder className="size-3.5" weight="fill" />
+            <SparkleIcon className="size-3.5" weight="fill" />
           </span>
         </Hint>
       )}

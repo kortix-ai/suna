@@ -111,10 +111,10 @@ const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
  *  grantable-action enum. */
 function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): JsonSchemaFragment {
   return {
-    description: 'An allowlist of names, or the "all" / "none" sentinel.',
+    description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      { type: 'string', enum: ['all', 'none'] },
+      { type: 'string', enum: ['all', '*', 'none'] },
     ],
   };
 }

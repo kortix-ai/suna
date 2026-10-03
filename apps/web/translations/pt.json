@@ -260,10 +260,6 @@
       "fallbackName": "este espaço",
       "confetti": "Jogar confete"
     },
-    "runtime": {
-      "metaLabel": "Ambiente Meta",
-      "metaDescription": "O Meta usa uma sandbox mínima fixa e inicia sessões especializadas para o trabalho do projeto."
-    },
     "sandbox": {
       "label": "Modelo de sandbox",
       "agentEnvironment": "Ambiente do agente",
@@ -1145,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "Sessões aquecidas",
-          "description": "Mantenha um sandbox pronto para iniciar sessões imediatamente. O sandbox ocioso usa computação e uma vaga de sessão simultânea."
+          "description": "Mantenha um sandbox pronto para iniciar sessões imediatamente. O sandbox ocioso usa computação."
         },
         "secrets_egress": {
           "name": "Segredos protegidos pela rede",
@@ -9460,7 +9456,6 @@
       "text0154297a0f48": "Qualquer fase",
       "text01676385135f": "É um rascunho — e deixa isso claro",
       "text016cec7c484d": "Conector revogado",
-      "text016e549e6831": "Substituição do máximo de sessões simultâneas",
       "text017245d54fdb": "no Slack.",
       "text018069eabbfd": "A definição",
       "text018912e44371": "Checkout compilado do projeto baixado",
@@ -10255,7 +10250,6 @@
       "text197300839f83": "Copiar \"{value0}\"",
       "text19766ed6ccb2": "Cancelar",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Limite do plano",
       "text19890c7ac88a": "Falha ao carregar o acesso ao projeto",
       "text1994b6869b97": "ID da entidade SP",
       "text19962f19ebb6": "# Clientes",
@@ -11729,7 +11723,6 @@
       "text445d71b74731": "Confronta o razão com o extrato, agrupa as divergências por causa provável e sinaliza as realmente ambíguas em vez de forçar uma correspondência. A lista de não conciliados é o entregável; uma execução limpa que escondeu três problemas não serve.",
       "text446f4eabf99f": "Para que serve este agente",
       "text4471a7e4e487": "# Resposta a incidentes",
-      "text44912abd87c3": "Sessões simultâneas",
       "text449992e55737": "Mais de 3.000 apps com um clique",
       "text449a509f5f87": "RBAC avançado",
       "text44a57b22e03d": "Alerta",
@@ -12894,7 +12887,6 @@
       "text654f8c9688a8": "Leituras executam, gravações aguardam",
       "text65511e543224": "Adicione mais um parâmetro com Field name \"groups\". No menu Value, selecione \"User Roles\" (é essa opção que envia os nomes das funções do usuário — o conceito separado de \"Groups\" do OneLogin é outro atributo). Marque \"Include in SAML assertion\" E ative a opção de múltiplos valores para que cada função seja enviada como seu próprio valor.",
       "text65562e698ff8": "Como uma página de lista ou de gestão é montada: cabeçalho, barra de busca, linhas, estado vazio.",
-      "text655a03fa2bea": "Faça upgrade do seu plano para obter um limite maior ou entre em contato com a equipe da Kortix para aumentá-lo na sua conta.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Todos os membros do projeto podem abrir estas sessões.",
       "text6562d4f7e6fb": "A função básica da conta. Sem acesso implícito a projetos — vê apenas os projetos aos quais foi adicionado, diretamente ou por meio de um grupo.",
@@ -16431,7 +16423,6 @@
       "textca3bcc681e99": "O Directory Sync envia usuários e grupos do Entra proativamente — as desativações são aplicadas sem esperar um login. Ele reutiliza o mesmo aplicativo empresarial já registrado para o SAML SSO; não é preciso criar outro.",
       "textca3f00ae4063": "Configurações · Sinalizadores de recursos",
       "textca3ff6018449": "Pesquisar no CSV",
-      "textca41e8913ee7": "Limite de sessões para toda a conta. Em branco, herda o limite do plano.",
       "textca44d7470fff": "3 instruções, 0 erros.",
       "textca519bb35fbb": "Ativar aplicativo",
       "textca566c8968e7": "Login efetuado",
@@ -17015,7 +17006,6 @@
       "textdaaf5ab03267": "Não definido — usando as instruções padrão",
       "textdacd5f120ffe": "Credenciais criptografadas, intermediadas no servidor e nunca entregues ao modelo.",
       "textdad35b178f11": "Entra admin center — lista Enterprise applications com New application destacado",
-      "textdae85d16887b": "Máximo de sessões simultâneas",
       "textdaee28c0c883": "Tudo isso é seu.",
       "textdaee7606b339": "Redefinir",
       "textdaf44c9faf1b": "Não foi possível carregar o histórico de versões",
@@ -20192,7 +20182,7 @@
     "ceilingDefault": "Teto padrão de agentes",
     "changeCeiling": "Alterar",
     "humanOnly": "Só pessoas",
-    "humanOnlyHelp": "Gerir membros, excluir o projeto e emitir credenciais ficam com pessoas.",
+    "humanOnlyHelp": "A emissão de credenciais do projeto fica com as pessoas.",
     "humanOnlyValue": "Nunca concedida",
     "effective": "Permissões efetivas",
     "effectiveHelp": "Permissões Kortix dentro da função teto, menos as permissões só para pessoas. project.read é sempre concedida.",

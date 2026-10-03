@@ -260,10 +260,6 @@
       "fallbackName": "este espacio",
       "confetti": "Lanzar confeti"
     },
-    "runtime": {
-      "metaLabel": "Entorno Meta",
-      "metaDescription": "Meta usa un entorno aislado mínimo fijo e inicia sesiones especializadas para el trabajo del proyecto."
-    },
     "sandbox": {
       "label": "Plantilla del entorno aislado",
       "agentEnvironment": "Entorno del agente",
@@ -1145,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "Sesiones preparadas",
-          "description": "Mantén un sandbox listo para iniciar sesiones al instante. El sandbox inactivo usa cómputo y un espacio de sesión simultánea."
+          "description": "Mantén un sandbox listo para iniciar sesiones al instante. El sandbox inactivo usa cómputo."
         },
         "secrets_egress": {
           "name": "Secretos protegidos por la red",
@@ -9460,7 +9456,6 @@
       "text0154297a0f48": "Cualquier fase",
       "text01676385135f": "Es un borrador, y lo deja claro",
       "text016cec7c484d": "Conector revocado",
-      "text016e549e6831": "Anulación del máximo de sesiones simultáneas",
       "text017245d54fdb": "en Slack.",
       "text018069eabbfd": "La definición",
       "text018912e44371": "Checkout de proyecto compilado descargado",
@@ -10255,7 +10250,6 @@
       "text197300839f83": "Copiar \"{value0}\"",
       "text19766ed6ccb2": "Cancelar",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Límite del plan",
       "text19890c7ac88a": "No se pudo cargar el acceso al proyecto",
       "text1994b6869b97": "Entity ID del SP",
       "text19962f19ebb6": "# Clientes",
@@ -11729,7 +11723,6 @@
       "text445d71b74731": "Compara el libro mayor con el extracto, agrupa lo que no coincide según la causa probable y marca los casos realmente ambiguos en lugar de conciliarlos a la fuerza. La lista de pendientes es el resultado; una ejecución limpia que ocultó tres problemas no lo es.",
       "text446f4eabf99f": "Para qué sirve este agente",
       "text4471a7e4e487": "# Respuesta a incidentes",
-      "text44912abd87c3": "Sesiones simultáneas",
       "text449992e55737": "Más de 3.000 aplicaciones con un clic",
       "text449a509f5f87": "RBAC avanzado",
       "text44a57b22e03d": "Alerta",
@@ -12894,7 +12887,6 @@
       "text654f8c9688a8": "Las lecturas se ejecutan; las escrituras esperan",
       "text65511e543224": "Añade un parámetro más con el nombre de campo «groups». En el menú Value, selecciona «User Roles» (es la opción que emite los nombres de los roles del usuario; el concepto independiente «Groups» de OneLogin es otro atributo). Marca «Include in SAML assertion» Y activa el indicador de varios valores para enviar cada rol como un valor independiente.",
       "text65562e698ff8": "Cómo se arma una página de lista o de gestión: encabezado, barra de búsqueda, filas, estado vacío.",
-      "text655a03fa2bea": "Mejora tu plan para aumentar el límite o contacta con el equipo de Kortix para ampliarlo en tu cuenta.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Todos los miembros del proyecto pueden abrir estas sesiones.",
       "text6562d4f7e6fb": "El rol básico de la cuenta. Sin acceso implícito a proyectos: solo ve los proyectos a los que se le haya añadido directamente o mediante un grupo.",
@@ -16431,7 +16423,6 @@
       "textca3bcc681e99": "Directory Sync envía usuarios y grupos desde Entra de forma proactiva; las desactivaciones se aplican sin esperar a un inicio de sesión. Reutiliza la misma aplicación empresarial que ya registraste para SAML SSO; no hay nada nuevo que crear.",
       "textca3f00ae4063": "Configuración · Indicadores de funciones",
       "textca3ff6018449": "Buscar en CSV",
-      "textca41e8913ee7": "Límite de sesiones para toda la cuenta. En blanco hereda el límite del plan.",
       "textca44d7470fff": "3 sentencias, 0 errores.",
       "textca519bb35fbb": "Activar aplicación",
       "textca566c8968e7": "Sesión iniciada",
@@ -17015,7 +17006,6 @@
       "textdaaf5ab03267": "No configurado — se usan las instrucciones predeterminadas",
       "textdacd5f120ffe": "Credenciales cifradas, intermediadas en el servidor y nunca entregadas al modelo.",
       "textdad35b178f11": "Centro de administración de Entra — lista de Enterprise applications con New application resaltado",
-      "textdae85d16887b": "Máximo de sesiones simultáneas",
       "textdaee28c0c883": "Todo es tuyo.",
       "textdaee7606b339": "Restablecer",
       "textdaf44c9faf1b": "No se pudo cargar el historial de versiones",
@@ -20192,7 +20182,7 @@
     "ceilingDefault": "Techo predeterminado de agentes",
     "changeCeiling": "Cambiar",
     "humanOnly": "Solo personas",
-    "humanOnlyHelp": "Gestionar miembros, eliminar el proyecto y emitir credenciales quedan en manos de personas.",
+    "humanOnlyHelp": "La emisión de credenciales del proyecto queda en manos de personas.",
     "humanOnlyValue": "Nunca concedido",
     "effective": "Permisos efectivos",
     "effectiveHelp": "Permisos de Kortix dentro del rol techo, menos los permisos solo para personas. project.read siempre se concede.",
