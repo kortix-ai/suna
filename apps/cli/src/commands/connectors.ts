@@ -374,9 +374,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
   if (sub === 'show' && rest[0]?.includes('.')) {
     return runConnector(['show', ...rest]);
   }
-  if ((sub === 'ls' || sub === 'list') && rest.includes('--session')) {
+  if ((sub === 'ls' || sub === 'list') && rest.some((arg) => arg === '--session' || arg.startsWith('--session='))) {
     const forwarded = rest.filter(
-      (arg, index) => arg !== '--session' && rest[index - 1] !== '--session',
+      (arg, index) => arg !== '--session' && !arg.startsWith('--session=') && rest[index - 1] !== '--session',
     );
     return runConnector(['ls', ...forwarded]);
   }
