@@ -172,6 +172,11 @@ await runAll([
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);
+    // The whitelabel suite serves its Next BFF and its mock upstream from the
+    // test process itself; beside concurrent suites its SSE transport stalls
+    // (the first event never arrives within any budget), so it joins the
+    // sequential chain like the CLI and the agent server above.
+    await runWorkspaceTests(['@kortix/whitelabel-demo'], 1);
   })(),
 ]);
 // The root `.npmrc` sets `ignore-scripts=true`, so `pnpm install` never runs
@@ -191,6 +196,7 @@ await runAll([
       '!@kortix/cli',
       '!kortixd',
       '!@kortix/db',
+      '!@kortix/whitelabel-demo',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],
     2,

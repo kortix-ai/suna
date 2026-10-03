@@ -115,13 +115,13 @@ describe('BFF SDK transport', () => {
         new Promise<never>((_, reject) =>
           setTimeout(
             // A buffering proxy would deliver nothing until the connection
-            // closes; this budget only ever fires when the upstream push is
-            // delayed by a loaded box (the mock pushes its first event
-            // immediately in the stream's start callback, and a quiet run
-            // delivers in milliseconds). 15s keeps the unbuffered guard while
-            // surviving the packages lane's concurrent heavy suites.
-            () => reject(new Error('SDK stream did not deliver an event within 15 seconds')),
-            15_000,
+            // closes; the budget only ever fires when the pipeline is stalled
+            // by a loaded box (the mock pushes its first event immediately in
+            // the stream's start callback, and a quiet run delivers in
+            // milliseconds). 60s keeps the unbuffered guard while riding out
+            // the packages lane's concurrent heavy suites.
+            () => reject(new Error('SDK stream did not deliver an event within 60 seconds')),
+            60_000,
           ),
         ),
       ]);
