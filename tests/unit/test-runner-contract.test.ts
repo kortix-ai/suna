@@ -129,9 +129,13 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain(
-      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
-    );
+    // The CLI suite runs the same proven flags from its own runner, which
+    // strips the ambient runtime env first (apps/cli/scripts/test.sh sourcing
+    // scripts/test-box-env.sh).
+    expect(cliPackage.scripts.test).toContain('bash scripts/test.sh');
+    expect(
+      readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8'),
+    ).toContain('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4');
     // Same timeout contract as the CLI above: process-heavy git fixtures sit
     // above bun's 5 s default on slower boxes, and the packages lane already
     // sets KORTIX_TEST_TIMEOUT_MS=30000 for every workspace suite.
