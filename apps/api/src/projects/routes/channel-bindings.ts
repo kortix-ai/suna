@@ -31,6 +31,7 @@ import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
+import { platformDefaultModelId } from "../../llm-gateway/models/served-managed-models";
 import { resolveFeatureFlag } from "../../feature-flags/registry";
 import { usableProviderKeys } from "../../secrets/provider-key-selection";
 import { validateNativeOpencodeModelRef } from "../lib/session-model-change";
@@ -172,6 +173,7 @@ async function resolveBindingEffectiveModel(
     projectDefault: ctx.modelDefaults.projects[ctx.projectId] ?? null,
     accountDefault: ctx.modelDefaults.account,
     freeModelsOnly: ctx.freeModelsOnly,
+    platformDefault: platformDefaultModelId(),
   });
 }
 

@@ -1,5 +1,5 @@
 {
-  "source_hash": "77ac99a145436bb577a39358f8236e8facb5ffc44480f8e58669a093ba38d432",
+  "source_hash": "e9c51d732dd4f01d5f420ff07ae703d2d3d8257aeb379cd741c027de2f51ccab",
   "diff_files": [
     "apps/api/src/llm-gateway/internal-routes.test.ts",
     "apps/api/src/llm-gateway/internal-routes.ts",
@@ -18,12 +18,12 @@
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
   "diff_hash": "1abe4adff10de1cdedcf6f1bcf8c6a82ba4443592ad1582ca54207b39f35be3d",
-  "head": "9cc2d838ad216a65336709b5840f5f318653ff3c",
+  "head": "2b661983bfd8273acf8315e10b43c62871fa3da1",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T16:05:55.951Z"
+  "at": "2026-10-03T17:14:10.742Z"
 }

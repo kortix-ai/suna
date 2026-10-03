@@ -58,6 +58,28 @@ describe('chooseEffectiveModel', () => {
       chooseEffectiveModel({ projectDefault: 'anthropic/claude-sonnet-4.6', freeModelsOnly: true }),
     ).toEqual({ model: 'anthropic/claude-sonnet-4.6', source: 'project' });
   });
+
+  // KRTX-1067: the platform default is the one managed model the free tier may
+  // run — it is kept (with its real source), never dropped.
+  test('free tier: the platform-default candidate is kept, not dropped', () => {
+    expect(
+      chooseEffectiveModel({
+        accountDefault: 'deepseek-v4.1-flash',
+        freeModelsOnly: true,
+        platformDefault: 'deepseek-v4.1-flash',
+      }),
+    ).toEqual({ model: 'deepseek-v4.1-flash', source: 'account' });
+  });
+
+  test('free tier: a kortix/-prefixed platform default is kept too', () => {
+    expect(
+      chooseEffectiveModel({
+        projectDefault: 'kortix/deepseek-v4.1-flash',
+        freeModelsOnly: true,
+        platformDefault: 'deepseek-v4.1-flash',
+      }),
+    ).toEqual({ model: 'kortix/deepseek-v4.1-flash', source: 'project' });
+  });
 });
 
 describe('toWireModel / toOpencodeModelRef', () => {

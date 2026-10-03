@@ -12,6 +12,7 @@ import {
   type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../../billing/services/entitlements';
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { isPaidTier } from '../../billing/services/tiers';
 import { config } from '../../config';
 import {
@@ -27,7 +28,7 @@ import {
   isKnownManagedModelId,
   isRetiredManagedModelId,
 } from '../models/managed-models';
-import { platformDefaultModelId } from '../models/served-managed-models';
+import { isPlatformDefaultModelId } from '../models/served-managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
   bedrockByokBaseUrl,
@@ -361,13 +362,30 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
   // must admit it or a fresh free account could never send a message
   // (KRTX-1067). Every other managed id keeps both gates. Checked before the
   // tier reads so the hot path stays tier-lookup-free.
-  const isPlatformDefault = effectiveModel === toWireModel(platformDefaultModelId());
+  const isPlatformDefault = isPlatformDefaultModelId(effectiveModel);
   if (principal.freeModelsOnly && !isPlatformDefault) throw new GatewayResolutionError('plan_upgrade_required',
     `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
-  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !isPlatformDefault &&
+  if (!isPlatformDefault && config.KORTIX_BILLING_INTERNAL_ENABLED &&
     !(await accountMayUseManagedModels(principal.accountId))) {
     const tier = await getCachedAccountTier(principal.accountId);
     throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
+  }
+  if (isPlatformDefault && config.KORTIX_BILLING_INTERNAL_ENABLED &&
+    !(await accountMayUseManagedModels(principal.accountId))) {
+    // The platform default bills wallet credits on an account the
+    // managed-models entitlement excludes (KRTX-1067). Apply the same
+    // admission the web prompt route already applies, so a channel or trigger
+    // turn on a drained wallet is refused here instead of settling negative
+    // through the gateway — `assertLlmBillingActive` skips exactly these
+    // accounts, and settlement never refuses on a drained wallet.
+    const admission = await checkBillingAdmission(principal.accountId);
+    if (!admission.ok) {
+      throw new GatewayResolutionError(
+        admission.reason,
+        admission.message,
+        'Add credits or subscribe, then retry.',
+      );
+    }
   }
   return managedCandidates(managed).map((candidate) => {
     const headers = opencodeHeaders(candidate.baseUrl, principal);

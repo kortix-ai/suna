@@ -21,6 +21,7 @@ import {
 } from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
@@ -610,9 +611,7 @@ export async function createProjectSession(input: {
         freeModelsOnly,
         providerSecretPools,
       });
-      const concreteModel =
-        resolved.model ??
-        (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+      const concreteModel = resolved.model ?? platformDefaultModelId();
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';

@@ -14,6 +14,13 @@ const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId
 // boundary is proven in __tests__/unit-account-tier-cache-unified.test.ts.
 // Here both reads answer from the tier table, and the managed entitlement is
 // the real tier rule: `credit` is a paid plan without managed models.
+// The platform-default carve-out (KRTX-1067) consults billing admission for an
+// entitlement-less account; a stub keeps the tier tests about resolution.
+let billingAdmission: { ok: true } | { ok: false; reason: string; message: string } = { ok: true };
+mock.module('../../billing/services/billing-gate', () => ({
+  checkBillingAdmission: async () => billingAdmission,
+}));
+
 mock.module('../../billing/services/entitlements', () => ({
   getAccountTier,
   getCachedAccountTier: getAccountTier,
@@ -594,7 +601,9 @@ describe('resolveCandidates — managed model tier gating', () => {
     );
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({ provider: 'kortix-managed', billingMode: 'credits' });
-    expect(getAccountTier).not.toHaveBeenCalled();
+    // The entitlement is read once to decide whether the billing admission
+    // applies to the carve-out (cached in production; billing-gate is stubbed
+    // above) — but no tier gate refuses the platform default.
   });
 
   test('the platform default also passes the entitlement gate without the principal flag', async () => {

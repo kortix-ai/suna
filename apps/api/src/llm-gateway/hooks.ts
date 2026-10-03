@@ -206,14 +206,20 @@ export async function authorizeRequest(
 
 /**
  * Apply the LLM wallet gate only to accounts that can spend wallet credits on
- * Kortix-managed models. Free-tier wallets fund sandbox compute only.
+ * Kortix-managed models through the ENTITLEMENT. Accounts without the
+ * managed-models entitlement skip this gate — but the one managed model they
+ * may still run (the platform default, KRTX-1067) bills their wallet credits,
+ * and `resolveManagedCandidates` (resolution/resolve-candidates.ts) applies
+ * `checkBillingAdmission` to that request itself, so a drained wallet is
+ * refused at resolution instead of settling negative.
  */
 export async function assertLlmBillingActive(
   accountId: string,
 ): Promise<{ holdUsd?: number } | void> {
   // Accounts without the managed-models entitlement (BYOK-only, whether by
-  // tier, trial, or operator override) never spend wallet credits on managed
-  // inference — their wallets fund sandbox compute only, so skip the LLM gate.
+  // tier, trial, or operator override) skip the LLM admission hold here:
+  // their platform-default spend is admitted inside the resolution carve-out
+  // instead, and every other model they can reach bills the provider directly.
   if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
     if (!(await accountMayUseManagedModels(accountId))) return;
   }

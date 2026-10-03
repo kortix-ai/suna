@@ -76,4 +76,17 @@ describe('chooseDefaultModel — free tier', () => {
       }),
     ).toBe(BYOK);
   });
+
+  // KRTX-1067: the platform default is the one managed model the free tier may
+  // run — kept, so the resolved chain names it instead of degrading to null.
+  test('keeps the platform default (the one managed model free tier may run)', () => {
+    expect(
+      chooseDefaultModel({
+        accountDefault: 'deepseek-v4.1-flash',
+        agentDefaults: {},
+        freeModelsOnly: true,
+        platformDefault: 'deepseek-v4.1-flash',
+      }),
+    ).toBe('deepseek-v4.1-flash');
+  });
 });

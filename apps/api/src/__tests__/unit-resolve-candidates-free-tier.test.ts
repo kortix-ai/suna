@@ -52,6 +52,11 @@ mock.module('../config', () => ({
   getToolCost: () => 0,
 }));
 
+let billingAdmission: { ok: true } | { ok: false; reason: string; message: string } = { ok: true };
+mock.module('../billing/services/billing-gate', () => ({
+  checkBillingAdmission: async () => billingAdmission,
+}));
+
 mock.module('../billing/services/entitlements', () => ({
   getAccountTier: async () => {
     accountTierCalls += 1;
