@@ -46,7 +46,8 @@ cd my-app
 ```
 
 `kortix init` creates a project directory with the general-purpose starter. Its
-`kortix.yaml` declares `kortix_version: 2` and runs OpenCode.
+`kortix.yaml` declares `kortix_version: 2` and runs the OpenCode
+[harness](/docs/work/harnesses).
 
 To link an existing cloned repo to a project you already created:
 
@@ -90,6 +91,10 @@ The CLI manages the `opencode` binary for you: on first connect it downloads
 the exact version the session's server runs and caches it under
 `~/.kortix/opencode/<version>/`, so the TUI and server never skew. Set
 `KORTIX_OPENCODE_BIN` to force your own binary.
+
+A session on the pi [harness](/docs/work/harnesses) has no OpenCode server.
+`kortix connect` exits 1 for it with the message `This session's runtime does
+not support attaching a terminal client.`
 
 For a lighter-weight line-based chat instead of the full TUI, run:
 
@@ -233,7 +238,7 @@ keys need `token.create` / `token.revoke` (owner and admin).
 | `kortix tokens apps rm <client-id> [-y\|--yes] [--json]` | Revoke a connected app: its tokens stop working at once, and it must ask you again. |
 | `kortix tokens service-accounts ls [--json]` | List service accounts. |
 | `kortix tokens service-accounts new <name> [--description <t>] [--expires <when>]` | Create one. The bearer prints once. |
-| `kortix tokens service-accounts disable <id>` | Disable a service account. Reversible only by deleting and re-creating. |
+| `kortix tokens service-accounts disable <id>` | Disable a service account: it can no longer authorize; delete and re-create to return. |
 | `kortix tokens service-accounts rm <id> [-y\|--yes]` | Delete a service account permanently. |
 
 A personal API key acts as you and dies with your membership. A service
@@ -507,8 +512,9 @@ Encrypted values stored on the project. By default a secret injects as a plain e
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secrets by identifier and manifest `env` spec. Marks required-but-missing values. |
-| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. |
+| `kortix secrets ls` | List secrets by identifier and manifest `env` spec, with who can use each value. Marks required-but-missing values. |
+| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector] [--only-me]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. `--only-me` makes the new value usable only by you. |
+| `kortix secrets share IDENTIFIER --user <email\|id\|me> --group <id> --agent <name> \| --everyone` | Set who can use the value. People reach it directly or in their own private sessions; an agent in every one of its sessions, triggers included. See [Who can use a secret](/docs/project/secrets#who-can-use-a-secret). |
 | `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value you do not have. |
 | `kortix secrets unset NAME ...` | Remove secrets. |
 | `kortix secrets grant IDENTIFIER --agent <name>` | Let one agent receive this secret: merge the identifier into that agent's `secrets` list in `kortix.yaml`, adding the agent entry when the manifest omits it. |
@@ -542,7 +548,7 @@ Per-agent model settings on the linked project.
 | `kortix agents scope <agent> --show [--json]` | Print the agent's current scope. |
 | `kortix agents config <agent> [--json]` | Print the full agent config block. |
 | `kortix agents config <agent> --file <path>` | Replace the block with a JSON file's contents. `-` reads stdin. |
-| `kortix agents config <agent> --set <key>=<value> ...` | Change single dotted keys, merged in. Repeatable, e.g. `opencode.model=glm-5.3-flash`, `enabled=false`, `connectors=["slack"]`. |
+| `kortix agents config <agent> --set <key>=<value> ...` | Change single dotted keys, merged in. Repeatable, e.g. `behavior.model=glm-5.3-flash`, `enabled=false`, `connectors=["slack"]`. |
 
 Every scope option replaces; none merge. A `--set` value is parsed as JSON when
 it parses, and kept as a string otherwise. Model pins and `scope` apply
@@ -841,8 +847,9 @@ allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bind
 ### Audit
 
 The audit commands read the centralized reconstruction log. Account and project
-lists are newest first. A session timeline is ordered by its monotonic
-`session_sequence`. `--all` follows every continuation cursor. The table shows
+lists are newest first. A session timeline is ordered by creation time
+(`session_sequence` is set only on rows written before 2026-10, which come
+first). `--all` follows every continuation cursor. `ls` lists the last 90 days; `export` reaches back 365 days, and events older than 90 days come from the archive (see [Audit retention](/docs/accounts#retention)). The table shows
 each row's title (`EVENT`, for example "Revoked LLM gateway key") next to its
 `ACTION` (`gateway.key.revoke`); `--action` filters by action prefix. Every
 action and title: [Audit log actions](/docs/audit-actions).

@@ -525,49 +525,19 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     expect(queries[1].where).toContain('col:turn_token in');
   });
 
-  test('falls back to the ledger start when the authority record carries none', async () => {
-    // A legacy `activeTurn` record from a pre-`activeTurns` deploy has no
-    // `startedAtMs`. The ledger row is then the only place the start instant
-    // exists.
+  test('a retired single-record activeTurn is not turn authority', async () => {
+    // KRTX-255 cut the legacy `metadata.activeTurn` arm over. Only the
+    // token-keyed `activeTurns` map reports a live turn.
     sandboxTable = [
       {
         session_id: SESSION_ID,
         status: 'active',
-        metadata: {
-          activeTurn: { token: 't-legacy', state: 'active', opencodeSessionId: 'ses_root' },
-        },
+        metadata: { activeTurn: { token: 't-legacy', state: 'active', opencodeSessionId: 'ses_root' } },
       },
     ];
-    turnTable = [
-      ledgerRow({ turn_token: 't-legacy', started_at: new Date('2026-08-17T00:00:04.000Z') }),
-    ];
+    turnTable = [ledgerRow({ turn_token: 't-legacy' })];
     const body = await (await getTurn()).json();
-    expect(body.turns[0].started_at).toBe('2026-08-17T00:00:04.000Z');
-  });
-
-  test('reports a live turn with a null started_at rather than hiding it', async () => {
-    // Neither source carries a start instant. The turn is still RUNNING, and
-    // dropping it because one field is unknown would reintroduce the phantom
-    // idle this endpoint exists to kill.
-    sandboxTable = [
-      {
-        session_id: SESSION_ID,
-        status: 'active',
-        metadata: { activeTurn: { token: 't-legacy', state: 'active' } },
-      },
-    ];
-    const body = await (await getTurn()).json();
-    expect(body.turns).toEqual([
-      {
-        turn_token: 't-legacy',
-        state: 'active',
-        message_id: null,
-        runtime_session_id: null,
-        opencode_session_id: null,
-        started_at: null,
-        accepted_at: null,
-      },
-    ]);
+    expect(body.turns).toEqual([]);
   });
 
   test('identifies a completed turn alongside an overlapping live turn', async () => {
@@ -583,7 +553,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
   });
 
   test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {
-    // Session ad02e053: four sub-agent tasks read "failed" and the turn said
+    // The 2026-09-18 memory-guard incident: four sub-agent tasks read "failed" and the turn said
     // nothing. A failure the user cannot see is the bug.
     const at = (s: number) => new Date(`2026-08-17T00:00:0${s}.000Z`);
     const ended = (

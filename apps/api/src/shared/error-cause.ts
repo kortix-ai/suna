@@ -31,6 +31,22 @@ export function errorSqlstate(error: unknown): string | null {
 }
 
 /**
+ * Complement to a consistent lock order (never a substitute): a deadlock victim (40P01) rolled back
+ * whole, so re-running the idempotent transaction is safe. Two retries, short
+ * jittered backoff; any other error, or the third deadlock, propagates.
+ */
+export async function retryOnDeadlock<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      if (attempt >= 3 || errorSqlstate(err) !== '40P01') throw err;
+      await Bun.sleep(50 * attempt + Math.random() * 50);
+    }
+  }
+}
+
+/**
  * Deepest `message` on the chain. Drizzle wraps the driver error, and it is the
  * driver's message ("canceling statement due to statement timeout") that names
  * the fault.
@@ -81,11 +97,11 @@ function walk(
  * PostgreSQL SQLSTATEs that mean "another writer holds what this one needs",
  * not "this write is wrong".
  *
- * `audit_prepare_event` serializes every row of a session behind one
- * `audit_session_sequences` row lock held to COMMIT, so a burst on one session
- * turns into a lock queue. On the audit pool that queue surfaces as 57014
- * (statement_timeout, the SampleCo signature: 445 x 500 in 3h, each at ~10s)
- * or — since `lock_timeout` was added — 55P03 at ~2.5s. Callers must report
+ * Until 2026-10 `audit_prepare_event` serialized every row of a session behind
+ * one `audit_session_sequences` row lock held to COMMIT; the lock is gone, but a
+ * slow INSERT on the audit pool still surfaces as 57014 (statement_timeout, the
+ * SampleCo signature: 445 x 500 in 3h, each at ~10s) or 55P03 at the pool's
+ * `lock_timeout`, e.g. behind DDL. Callers must report
  * these as retryable backpressure, never as a 500 or a silent drop: a 500
  * makes the sandbox relay retry a batch that has already been rejected, and a
  * drop just loses the events (prod, 2026-09-24 through 2026-09-27: hundreds of
@@ -132,7 +148,7 @@ const AUDIT_CONTENTION_SQLSTATES = new Set([
  *
  * `postgres.js` raises `CONNECTION_CLOSED` / `CONNECTION_ENDED` and Node raises
  * `ECONNREFUSED` / `ECONNRESET` as `code` values that are not SQLSTATEs at all,
- * and prod carries all of them (`connect ECONNREFUSED 3.11.30.79:5432`, `write
+ * and prod carries all of them (`connect ECONNREFUSED <db_ip>:5432`, `write
  * CONNECTION_CLOSED db.…supabase.co:5432`). They mean the same thing as 08006
  * and must be retryable for the same reason.
  */

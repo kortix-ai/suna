@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -38,6 +38,7 @@ import {
   runtimePath,
   sandboxIdOf,
   sendPrompt,
+  stopSessionAndWait,
   streamedReplies,
   waitForAssistantText,
   waitForSessionReady,
@@ -324,10 +325,12 @@ harnessFlow(
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
-    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
     const marker = `RUN2_PONG_${Date.now()}`;
     let promptId = '';
     await ctx.step('POST .../prompts → 202 with a durable prompt id', async () => {
@@ -353,6 +356,22 @@ harnessFlow(
           retryOnError: isKe2eRetryableError,
         },
       );
+    });
+    // The SDK's `session.messages()` and the CLI read this route, and every
+    // real client negotiates compression: the proxy must hand the daemon's
+    // gzip answer through with its `content-encoding`, or no client can read it.
+    await ctx.step('a client reads the conversation from the runtime: the gzip answer of …/kortix/runtime/messages/<root> decodes', async () => {
+      const detail = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+      const root = detail.status(200).json<any>()?.opencode_session_id;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/kortix/runtime/messages/${root}?limit=200`), { headers: { 'accept-encoding': 'gzip' } });
+      const messages = r.status(200).json<any>()?.messages;
+      if (!Array.isArray(messages) || !messages.some((m: any) => m.info?.role === 'user' && JSON.stringify(m.parts).includes(marker))) {
+        throw new Error(`the runtime transcript did not decode to the prompt: ${r.text().slice(0, 200)}`);
+      }
     });
   },
 );
@@ -808,15 +827,8 @@ harnessFlow(
   },
   async (ctx, harness) => {
     const { projectId, sessionId } = await bootSession(ctx, harness);
-    await ctx.step('stop → 200 status stopped', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
-        {},
-        {
-          params: { projectId, sessionId },
-        },
-      );
-      r.status(200).body().has('$.status', 'stopped');
+    await ctx.step('stop → 200 stopped (or stopping, then stopped)', async () => {
+      await stopSessionAndWait(ctx, projectId, sessionId);
     });
     await ctx.step('stopping an already-stopped session → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
@@ -1225,7 +1237,8 @@ flow(
 
 /**
  * A manifest with one extra agent, `no-edit`, whose `.md` denies every way to
- * write a file: the file tools (`edit`), the shell, and delegation.
+ * write a file: the file tools (`edit`), the shell (`bash`, which also covers
+ * OpenCode's `pty_*` tools, W5 E9), and delegation.
  */
 const NO_EDIT_FILES = {
   'kortix.yaml': [
@@ -1285,11 +1298,19 @@ harnessFlow(
         agentName: 'no-edit',
         prompt:
           `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
+          // OpenCode's pty plugin tools never asked for permission, so `bash: deny` did not stop them.
+          (harness === 'opencode'
+            ? `If you have no file-writing tool but have a pty_spawn tool, call pty_spawn once with command "sh" and args ["-c", "printf OK > ${path}"] instead. `
+            : '') +
           `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
       });
-      await ctx.step('no file tool ran; on pi the write was attempted and refused', async () => {
+      await ctx.step('no file or pty tool ran; on pi the write was attempted and refused', async () => {
         const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
-        const fileTools = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'write' || t.tool === 'edit');
+        // `bash: deny` and `edit: deny` also cover the shell and file-writing
+        // tools that do the same job: pty_* and memory.
+        const fileTools = messages
+          .flatMap((m) => m.tools ?? [])
+          .filter((t) => t.tool === 'write' || t.tool === 'edit' || t.tool === 'memory' || t.tool.startsWith('pty_'));
         const ran = fileTools.filter((t) => t.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
         // OpenCode never offers a tool its policy denies, so its model has no
@@ -1338,5 +1359,52 @@ flow(
     // pi has no model path without the gateway: the session boots OpenCode,
     // and bootSession proves it from the daemon's health.
     await bootSession(ctx, 'opencode', { project });
+  },
+);
+
+harnessFlow(
+  'RUN-12',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 780_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const path = `memory/ke2e-run12-${Date.now()}.md`;
+    const content = `ke2e-run12-${crypto.randomUUID()}`;
+    const done = `RUN12_DONE_${Date.now()}`;
+    // OpenCode has these tools from the starter's `harnesses/opencode/tools/`;
+    // pi has them built into the daemon, under the same names and arguments.
+    await ctx.step('the agent writes project memory with `memory` and presents it with `show`', async () => {
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Call the memory tool with command "create", path "${path}" and file_text "${content}". ` +
+          `Then call the show tool with action "show", type "file" and path "${path}". ` +
+          `Use no other tool. Then reply with exactly: ${done}`,
+      );
+      const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+      const tools = messages.flatMap((m) => m.tools ?? []);
+      for (const tool of ['memory', 'show']) {
+        if (!tools.some((t) => t.tool === tool && t.status === 'completed')) {
+          throw new Error(`no completed ${tool} call on ${harness}: ${JSON.stringify(tools)}`);
+        }
+      }
+    });
+    await ctx.step('the memory file exists in the workspace with the requested content', async () => {
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
+    });
   },
 );

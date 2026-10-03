@@ -45,6 +45,7 @@ export {
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
   type OpenCodeEvent,
@@ -123,6 +124,7 @@ export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
@@ -184,7 +186,9 @@ export { fileContentKeys, binaryBlobKeys, fileListKeys, gitStatusKeys } from './
 export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';
+export * from './use-session-participants';
 export * from './use-project-sessions';
+export * from './use-sessions-needing-input';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
@@ -211,3 +215,22 @@ export {
 } from './use-kortix-app-viewer';
 
 export { useModelAccess } from './use-model-access';
+
+export {
+  GATEWAY_LOGS_PAGE_SIZE,
+  useGatewayOverview,
+  useGatewaySeries,
+  useGatewayBreakdown,
+  useGatewaySessions,
+  useGatewayErrors,
+  useGatewayLogs,
+  useGatewayLog,
+  useGatewayBudgets,
+  useSetGatewayBudget,
+  useDeleteGatewayBudget,
+  useGatewayKeys,
+  useCreateGatewayKey,
+  useRevokeGatewayKey,
+} from './use-project-gateway';
+
+export * from './use-admin-providers';

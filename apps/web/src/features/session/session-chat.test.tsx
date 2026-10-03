@@ -5,12 +5,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
-import type { SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
+import { sessionAuditKey } from './session-audit-shared';
 import { TurnErrorDisplay } from './session-error-banner';
 
 const realSdk = await import('@kortix/sdk/react');
-const fixtureMessages = [
+const baseFixtureMessages = [
   {
     info: { id: 'user-fixture', role: 'user', time: { created: 1 } },
     parts: [{ id: 'text-fixture', type: 'text', text: 'synthetic prompt' }],
@@ -26,10 +27,18 @@ const fixtureMessages = [
     parts: [{ id: 'answer-fixture', type: 'text', text: 'synthetic answer' }],
   },
 ];
+let fixtureMessages: any[] = baseFixtureMessages;
+const userFixture = (id: string, text: string) => ({
+  info: { id, role: 'user', time: { created: 1 } },
+  parts: [{ id: `${id}-text`, type: 'text', text }],
+});
 let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
+let persistedOutcome: SessionTurnOutcome = {};
+let auditPending = false;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
+  useSessionTurnOutcome: () => persistedOutcome,
   useSessionMessages: () => fixtureMessages,
   useSessionSync: () => ({
     messages: fixtureMessages,
@@ -48,14 +57,19 @@ mock.module('@kortix/sdk/react', () => ({
   useRuntimeConfig: () => ({ data: {} }),
   useProjectConfig: () => ({}),
   useSessionPrompts: () => ({ prompts: inboxPrompts }),
+  useSessionMessageAuthors: () => ({ data: undefined }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionWorking: () => ({
     state: busy ? 'working' : 'idle',
     turnId: busy ? 'user-fixture' : null,
     serverOpenTurnToken: null,
   }),
 }));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
+}));
 mock.module('next/navigation', () => ({
-  useParams: () => ({}),
+  useParams: () => ({ id: 'project-fixture', sessionId: 'project-session-fixture' }),
   usePathname: () => '/',
   useRouter: () => ({ push: () => {} }),
   useSearchParams: () => new URLSearchParams(),
@@ -64,14 +78,32 @@ mock.module('@/features/session/header/session-site-header', () => ({
   SessionSiteHeader: () => null,
 }));
 mock.module('@/features/session/session-approval-prompt', () => ({
-  SessionApprovalPrompt: () => null,
+  SessionApprovalPrompt: () =>
+    auditPending ? <button type="button">Approve this call</button> : null,
 }));
 mock.module('@/features/session/session-permission-prompt', () => ({
   SessionPermissionPrompt: () => null,
 }));
 mock.module('@/features/session/composer/composer', () => ({
   COMPOSER_SHELL_CLASS: '',
-  Composer: ({ inputSlot }: { inputSlot?: React.ReactNode }) => inputSlot ?? null,
+  Composer: ({
+    aboveSlot,
+    inputSlot,
+    lockForApproval,
+  }: {
+    aboveSlot?: React.ReactNode;
+    inputSlot?: React.ReactNode;
+    lockForApproval?: boolean;
+  }) => (
+    <div>
+      {aboveSlot}
+      {inputSlot}
+      <textarea aria-label="Message" disabled={lockForApproval} />
+      <button type="button" disabled={lockForApproval}>
+        Send
+      </button>
+    </div>
+  ),
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
@@ -125,9 +157,9 @@ describe('SessionChat turn error presentation', () => {
 });
 
 describe('SessionChat transcript rows', () => {
-  const renderChat = () =>
+  const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
           <SidebarProvider>
             <SessionChat
@@ -139,6 +171,74 @@ describe('SessionChat transcript rows', () => {
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
+  test('persisted failures render without a transcript message and deduplicate last_ended', () => {
+    fixtureMessages = [];
+    persistedOutcome = {
+      recent_failures: [{ message_id: 'install-prompt', ended_at: null, error: { name: 'Error', message: 'synthetic install failure' } }],
+      last_ended: { turn_token: 'install-turn', message_id: 'install-prompt', end_reason: 'failed', ended_at: null, error: { name: 'Error', message: 'synthetic install failure' } },
+    };
+    try {
+      expect(renderChat().split('synthetic install failure').length - 1).toBe(1);
+      persistedOutcome = { last_ended: { turn_token: 'early-turn', end_reason: 'failed', ended_at: null, error: { name: 'Error', message: 'synthetic early failure' } } };
+      expect(renderChat()).toContain('synthetic early failure');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+      persistedOutcome = {};
+    }
+  });
+
+  test('unknown persisted failures render after settling even without a transcript', () => {
+    fixtureMessages = [];
+    persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'install-unknown', ended_at: new Date(0).toISOString(), error: null }] };
+    try {
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { last_ended: { turn_token: 'unknown-early', end_reason: 'failed', ended_at: null } };
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { atMs: 100001, recent_failures: [{ message_id: 'install-provisional', ended_at: new Date(100000).toISOString(), error: null }] };
+      expect(renderChat()).not.toContain('Agent turn failed. No reason was reported.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+      persistedOutcome = {};
+    }
+  });
+
+  test('persisted failures already represented by transcript rows are not repeated', () => {
+    persistedOutcome = { recent_failures: [{ message_id: 'user-fixture', ended_at: null, error: { name: 'Error', message: 'synthetic persisted failure' } }] };
+    try {
+      fixtureMessages = [];
+      expect(renderChat().split('synthetic persisted failure').length - 1).toBe(1);
+      fixtureMessages = baseFixtureMessages;
+      expect(renderChat().split('synthetic persisted failure').length - 1).toBe(1);
+      persistedOutcome = { last_ended: { turn_token: 'done', end_reason: 'completed', ended_at: null, error: { name: 'Error', message: 'stale completed error' } } };
+      expect(renderChat()).not.toContain('stale completed error');
+      persistedOutcome = { last_ended: { turn_token: 'stop', end_reason: 'failed', ended_at: null, error: { name: 'AbortError', message: 'Aborted' } } };
+      expect(renderChat()).not.toContain('Aborted');
+    } finally {
+      persistedOutcome = {};
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('an audit-pending executor call leaves the editor and send enabled beside its approval action', () => {
+    auditPending = true;
+    busy = true;
+    const client = new QueryClient();
+    client.setQueryData(sessionAuditKey('project-fixture', 'project-session-fixture'), {
+      actions: [
+        { execution_id: 'synthetic-execution', status: 'pending_approval', resolved_at: null },
+      ],
+    });
+    try {
+      const markup = renderChat(client);
+      expect(markup).toContain('Approve this call');
+      expect(markup).toContain('<textarea aria-label="Message"></textarea>');
+      expect(markup).toContain('>Send</button>');
+    } finally {
+      auditPending = false;
+      busy = false;
+    }
+  });
+
   test('a mounted session shows the user and assistant text without a busy row when idle', () => {
     busy = false;
     const markup = renderChat();
@@ -153,6 +253,38 @@ describe('SessionChat transcript rows', () => {
     expect(markup).toContain('data-testid="session-busy-indicator"');
     expect(markup).toContain('Thinking');
     busy = false;
+  });
+
+  test('a no_reply prompt shows its bubble with no Queued, Sending or Thinking', () => {
+    const ask = 'Which region?';
+    fixtureMessages = [];
+    inboxPrompts = [
+      {
+        prompt_id: 'ask-1',
+        client_message_id: 'c-ask-1',
+        message_id: 'm-ask-1',
+        text: ask,
+        full_text: ask,
+        state: 'delivering',
+        placement: 'transcript',
+        reason: null,
+        no_reply: true,
+        attempts: 0,
+        last_error: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+        available_at: '2026-01-01T00:00:00.000Z',
+      } as SessionPrompt,
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('Which region?');
+      expect(markup).not.toContain('Thinking');
+      expect(markup).not.toContain('Sending');
+      expect(markup).not.toContain('Queued');
+    } finally {
+      inboxPrompts = [];
+      fixtureMessages = baseFixtureMessages;
+    }
   });
 
   test('inbox hook rows reach the mounted chat in queued and restored order', () => {
@@ -181,6 +313,131 @@ describe('SessionChat transcript rows', () => {
       expect(markup).toContain('data-queued-prompt-id="restored"');
     } finally {
       inboxPrompts = [];
+    }
+  });
+});
+
+// Characterization of the moved turn-rendering sections (KRTX-355). Each case
+// pins one section the transcript move must preserve, through the whole
+// SessionChat render, so the same assertions hold before and after the move.
+describe('SessionChat moved turn sections', () => {
+  const renderChat = () =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <SidebarProvider>
+            <SessionChat
+              sessionId="session-fixture"
+              projectId="project-fixture"
+              projectSessionId="project-session-fixture"
+            />
+          </SidebarProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a failed turn renders the transcript error row', () => {
+    fixtureMessages = [
+      userFixture('user-error', 'do the failing thing'),
+      {
+        info: {
+          id: 'assistant-error',
+          role: 'assistant',
+          parentID: 'user-error',
+          time: { created: 2 },
+          error: { name: 'Error', data: { message: 'synthetic runtime failure' } },
+        },
+        parts: [],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('synthetic runtime failure');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a running compaction turn renders the compaction marker, not a user bubble', () => {
+    fixtureMessages = [
+      {
+        info: { id: 'user-compaction', role: 'user', time: { created: 1 } },
+        parts: [{ id: 'compaction-request', type: 'compaction' }],
+      },
+      {
+        info: {
+          id: 'assistant-compaction',
+          role: 'assistant',
+          parentID: 'user-compaction',
+          summary: true,
+          time: { created: 2 },
+        },
+        parts: [],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('Compacting context…');
+      expect(markup).not.toContain('data-turn-pending');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a tool-call turn renders its burst in the steps section', () => {
+    fixtureMessages = [
+      userFixture('user-tool', 'run the synthetic command'),
+      {
+        info: {
+          id: 'assistant-tool',
+          role: 'assistant',
+          parentID: 'user-tool',
+          agent: 'build',
+          time: { created: 2 },
+        },
+        parts: [
+          {
+            id: 'tool-part-fixture',
+            type: 'tool',
+            callID: 'call-tool-fixture',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: { command: 'echo synthetic-tool-output' },
+              output: 'synthetic-tool-output',
+            },
+          },
+        ],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      // ActivityBurst renders only through the turn's segmented steps section.
+      expect(markup).toContain('group/burst');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a system-notification-only turn renders the inline system indicator', () => {
+    fixtureMessages = [
+      {
+        info: { id: 'user-goal', role: 'user', time: { created: 1 } },
+        parts: [
+          {
+            id: 'goal-text',
+            type: 'text',
+            text: '<kortix_system type="goal-continue" source="runtime">[GOAL - ITERATION 2/5]</kortix_system>',
+          },
+        ],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('iteration 2/5');
+      expect(markup).not.toContain('data-turn-pending');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
     }
   });
 });

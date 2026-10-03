@@ -261,8 +261,9 @@ trivial single-file typo/comment fixes on the current branch.
 
 ## Default delivery: verify in your box, self-merge to `main`, verify on dev
 
-`main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
-It is not a save point.
+`main` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
+dispatch, but **merging to `main` still lands your change in everyone's next
+deploy and next `main` checkout.** It is not a save point.
 
 **The development machine does the work. CI does not.** Every test, preview,
 and demo for a change runs in your own box: the worktree's local stack, the
@@ -275,9 +276,24 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
+| Push to `main` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
+| Dispatch or schedule on `main` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
+
+**Tests are attested, not run by CI.** `pnpm test` writes
+`tests/test-attestation.json` on a green run: `source_hash` (sha256 of every
+file the commit would contain, minus the attestation itself), `head`, `passed`,
+per-lane results, `at`. Commit it. The `.githooks/pre-push` hook recomputes the
+hash from the pushed commit and rejects the push when the attestation is stale,
+red, or missing. Never bypass it with `--no-verify`: the merge gate runs
+`pnpm test:verify` on the PR head: exit `0` green, `1` stale/red/missing
+(`--strict` exits `3` when `db-suites` is skipped). Any
+source edit, including a merge of `main`, makes the attestation stale: re-run
+`pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
+Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
+`skipped-no-db`. It is the only lane that may skip, and it is never a pass:
+the merge gate holds a DB-touching PR (`db-wait`) on it.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
@@ -294,7 +310,7 @@ Never add a label by default or from automation. CI otherwise runs in two places
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
    - the relevant local checks ran with real inputs and outputs (rule 2), and
-     they passed;
+     they passed, and `pnpm test:verify` exits `0` on the branch head;
    - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
    A failing check blocks the merge until you fix it or state why it is
@@ -312,22 +328,20 @@ Never add a label by default or from automation. CI otherwise runs in two places
    the whole objective ran through a real session on your local stack, and runs
    again on dev after the merge (rule 8). Green tests are not the bar. Someone
    used it.
-7. After the merge, wait for the **Live on dev** comment on your pull request.
-   Deploy Dev posts it when `/health` on every surface it changed serves the
-   deployed commit, with the time since merge; "Not live on dev yet" names the
-   surface that failed. A successful `/health` response alone is not
-   deployment proof — the comment checks the commit. Deploys queue, they never
-   cancel: a run in flight finishes, then the newest waiting push deploys, so
-   a merge is live within about two deploy lengths. Force a full redeploy with
-   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
-   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
-   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit. The comment names the failing lanes and
-   every commit since the last green run, because merges land faster than the
-   suite and the red commit is often not the culprit. The author whose commit
-   broke `main` fixes forward. If `main` is still red 1 hour after the comment,
-   anyone may revert the culprit PR. `main` never blocks a merge or a deploy on
-   a red run.
+7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
+   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   rebuild). Deploys queue, they never cancel. Wait for the run to finish.
+   `/health` on every changed surface must serve the merge SHA: a successful
+   `/health` response alone is not deployment proof. The run comments "Live on
+   dev" on the merged pull request, and "Not live on dev yet" names the
+   surface that failed. The surfaces and their checks are in
+   `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
+   attestation (`pnpm test:verify`) was the gate, and the scheduled daily
+   `Tests` run on `main` is the backstop. A red scheduled run comments the
+   failing lanes and every commit since the last green run. The author whose
+   commit broke `main` fixes forward. If `main` is still red 1 hour after the
+   comment, anyone may revert the culprit PR. A red run never blocks a merge or
+   a deploy.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -344,7 +358,7 @@ response.
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
-session runtime, OpenCode REST compatibility, SSE streaming, model state,
+session runtime, the runtime REST client, SSE streaming, model state,
 and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
@@ -376,8 +390,23 @@ these as standing rules whenever you touch the data/runtime layer:
   provider.
 - **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  The sandbox provider is a server-side concern. Every session uses the
-  OpenCode REST runtime. Host code must not implement a second transport.
+  The sandbox provider and the harness are server-side concerns. Host code
+  must not implement a second transport.
+- **Build on the Kortix contract, not on OpenCode.** A session runs one of two
+  harnesses inside kortixd: OpenCode (the default today) or pi (the
+  `pi_harness` project flag or `runtime: pi` in `kortix.yaml`, and only with
+  the LLM gateway on). pi replaces OpenCode; OpenCode support is temporary.
+  Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
+  (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
+  same events. New code reads those, never an OpenCode route, type, file or
+  process. A feature one harness lacks is a capability, not a harness check:
+  `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
+  `packages/api-contract/src/runtime-relay.ts`), and a client gates the
+  control with `runtimeSupports`. OpenCode lists all ten; pi lists
+  `session.subagents`. pi does not serve rewind, compaction, slash commands,
+  MCP servers, the todo list, shell turns, part edits or `session.attach`.
+  The harness rules and the pi gap list are in
+  `apps/kortix-sandbox-agent-server/src/harness/README.md`.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/ui/index.ts`, `apps/web/src/lib/iam-client.ts`, and
   `apps/web/src/hooks/admin/use-*.ts` are thin re-exports
@@ -440,7 +469,8 @@ mocked internals when a real surface exists.
   Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
-  OpenCode REST uses the compatibility proxy.
+  The session runtime answers on the same proxy, under `/kortix/runtime/*`,
+  on both harnesses.
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared
   quick tunnel so cloud sandboxes can call back to the local API (`KORTIX_URL`).
 
@@ -516,11 +546,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The six lanes run on every push to `main`, on a pull request into `staging`,
+- The six lanes run daily on `main` (`schedule`), on a pull request into `staging`,
   once when a person adds the `test` label to a pull request, and on manual
-  dispatch. Nothing else. A push-to-`main` run blocks nothing: a
-  red run comments the failing lanes on the commit, and a cancelled run means a
-  newer commit superseded it. A pull request into `prod` runs
+  dispatch. A push to `main` does not run them (Actions minutes, 2026-10-03). A
+  scheduled run blocks nothing: a red run comments the failing lanes on the
+  `main` HEAD commit. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
@@ -605,6 +635,19 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - `agent-browser doctor` diagnoses launch and recording problems. Recording
   needs ffmpeg with libvpx and libx264.
 
+### API lint gate
+
+- `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
+  are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
+  files, no `(c: any)`, no `process.env` outside `config.ts`, no
+  `console.*`, and a `replica-local:` comment on every empty module-level
+  `Map`/`Set`. Background timers are guarded by
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+- `apps/api/eslint-suppressions.json` holds the violations that existed when
+  each rule was added. A new violation fails. A fixed one fails until you run
+  `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
+  absorb a new violation with `--suppress-all`.
+
 ### Frontend type/lint gate
 
 - `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
@@ -626,7 +669,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
-| Web (`apps/web`) | `.agents/skills/kortix-brand-guidelines/SKILL.md` for values, then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens, `apps/web/src/components/ui/`, the live `/design-system` route |
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `apps/web/src/components/ui/`, the live `/design-system` route |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 
@@ -655,12 +698,16 @@ prevent every future regression.
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.agents/skills/kortix-brand-guidelines/SKILL.md` before writing the first
-  `className`. It is the value law: the complete allowlist of every color,
-  spacing step, type rung, radius, elevation, and duration you may use. Note
-  `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
-  padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
-  before opening the PR; it must be clean on files you touched.
+- Read `.agents/skills/kortix-brand/SKILL.md` before writing the first
+  `className` or the first user-facing string. It routes you to the value law:
+  the complete allowlist of every color, spacing step, type rung, radius,
+  elevation, and duration you may use. Note `--spacing: 0.23rem` — Tailwind's
+  scale is 8% tighter here, so a 16px mockup padding is `p-4`, never
+  `p-[16px]`. Run `.agents/skills/kortix-brand/scripts/audit.sh` over your
+  changed paths before opening the PR; it must be clean on files you touched.
+  `references/visual/visual-system.json` is the only file with values: edit it,
+  then run `scripts/generate-tokens.ts`. Never edit a generated region of
+  `globals.css` by hand.
 - Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,

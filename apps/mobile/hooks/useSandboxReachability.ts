@@ -24,8 +24,8 @@ import {
   type SessionConnection,
   type SettledConnection,
 } from '@kortix/sdk';
-import { useStreamHealthStore } from '@/lib/opencode/stream-health';
-import { recordRuntimeCapabilities } from '@/lib/opencode/runtime-capabilities';
+import { useStreamHealthStore } from '@/lib/session/live-updates';
+import { recordRuntimeCapabilities } from '@/lib/session/runtime-capabilities';
 
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;

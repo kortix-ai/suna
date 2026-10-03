@@ -31,6 +31,8 @@ export type ConnectionOwnerType =
 export interface ConnectionAgentPrincipalReach {
   onBehalfOfUserId: string | null;
   visibility: 'private' | 'project' | 'restricted' | null;
+  /** The agent's service account, when the session's token names one. */
+  agentId?: string | null;
 }
 
 /**
@@ -42,10 +44,14 @@ export interface ConnectionAgentPrincipalReach {
  *          shared with everyone in the project (a `project` principal grant)
  *   `in`   it is narrowed, and a grant names this person or one of their groups
  *   `out`  it is narrowed, and no grant names this person
+ *   `agent` it is narrowed, no grant names this person, and a grant names the
+ *          calling session's AGENT — reachable in every session of that agent,
+ *          shared sessions and triggers included (its run gate is the agent's
+ *          own: `agent` object grants)
  *
  * Every other owner type ignores it. `connection-audience.ts` resolves it.
  */
-export type ConnectionAudienceReach = 'open' | 'in' | 'out';
+export type ConnectionAudienceReach = 'open' | 'in' | 'out' | 'agent';
 
 /**
  * A narrowed shared account runs under the personal-account rules with its
@@ -57,7 +63,7 @@ export function connectionNeedsPrivateSession(
   ownerType: ConnectionOwnerType,
   audience: ConnectionAudienceReach,
 ): boolean {
-  return ownerType === 'member' || (ownerType === 'project' && audience !== 'open');
+  return ownerType === 'member' || (ownerType === 'project' && audience !== 'open' && audience !== 'agent');
 }
 
 /**
@@ -101,6 +107,9 @@ export function connectionIsReachable(input: {
   if (input.trustedManagedSystem === true) return true;
   if (input.ownerType === 'project') {
     if (input.audience === 'open') return true;
+    // Shared with this session's agent: the agent is the principal, so neither
+    // the session's visibility nor its human decides.
+    if (input.audience === 'agent') return Boolean(input.agentPrincipal?.agentId);
     if (input.agentPrincipal) {
       const human = input.agentPrincipal.onBehalfOfUserId;
       return (

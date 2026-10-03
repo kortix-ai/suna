@@ -322,22 +322,7 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
   const token = publicShareToken(shareId);
   const [row] = await db
     .insert(projectSessionPublicShares)
-    .values({
-      shareId,
-      tokenHash: publicShareTokenHash(token),
-      sessionId: built.values.sessionId,
-      projectId: built.values.projectId,
-      accountId: built.values.accountId,
-      createdBy: built.values.userId,
-      resourceType: built.values.resourceType,
-      label: built.values.label,
-      port: built.values.port,
-      path: built.values.path,
-      filePath: built.values.filePath,
-      mode: built.values.mode,
-      allowWebsocket: built.values.allowWebsocket,
-      expiresAt: built.values.expiresAt,
-    })
+    .values(publicShareInsertValues(built.values, shareId))
     .returning();
 
   return {
@@ -348,6 +333,25 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
 }
 
 type BuiltShareValues = Extract<ReturnType<typeof buildPublicShareInsert>, { ok: true }>['values'];
+
+function publicShareInsertValues(values: BuiltShareValues, shareId: string) {
+  return {
+    shareId,
+    tokenHash: publicShareTokenHash(publicShareToken(shareId)),
+    sessionId: values.sessionId,
+    projectId: values.projectId,
+    accountId: values.accountId,
+    createdBy: values.userId,
+    resourceType: values.resourceType,
+    label: values.label,
+    port: values.port,
+    path: values.path,
+    filePath: values.filePath,
+    mode: values.mode,
+    allowWebsocket: values.allowWebsocket,
+    expiresAt: values.expiresAt,
+  };
+}
 
 /**
  * A session has at most one live transcript link. Minting again returns the
@@ -380,22 +384,7 @@ async function createOrReuseTranscriptShare(values: BuiltShareValues) {
     const shareId = randomUUID();
     const [row] = await tx
       .insert(projectSessionPublicShares)
-      .values({
-        shareId,
-        tokenHash: publicShareTokenHash(publicShareToken(shareId)),
-        sessionId: values.sessionId,
-        projectId: values.projectId,
-        accountId: values.accountId,
-        createdBy: values.userId,
-        resourceType: values.resourceType,
-        label: values.label,
-        port: values.port,
-        path: values.path,
-        filePath: values.filePath,
-        mode: values.mode,
-        allowWebsocket: values.allowWebsocket,
-        expiresAt: values.expiresAt,
-      })
+      .values(publicShareInsertValues(values, shareId))
       .returning();
     return { row, created: true };
   });

@@ -261,3 +261,20 @@ describe('a lost runtime is reported once', () => {
     expect(lostReports).toBe(2);
   });
 });
+
+describe('a Kortix-initiated removal is not a lost runtime', () => {
+  const removal = (extra: Record<string, unknown>) =>
+    preserveEstablishedRuntime({ ...ROW, ...extra }, 'provider_webhook_removed', 'provider_removed');
+
+  test('account teardown stamp, archived session and pending removal are not reported', async () => {
+    expect(await removal({ metadata: { kortixRemovalIntentAt: '2026-10-01T00:00:00Z' } })).not.toBeNull();
+    expect(await removal({ status: 'archived', metadata: {} })).not.toBeNull();
+    expect(await removal({ metadata: { providerRemovalPendingAt: '2026-10-01T00:00:00Z' } })).not.toBeNull();
+    expect(lostReports).toBe(0);
+  });
+
+  test('the same webhook for a live session is still reported', async () => {
+    await removal({ status: 'active', metadata: {} });
+    expect(lostReports).toBe(1);
+  });
+});

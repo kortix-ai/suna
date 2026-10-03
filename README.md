@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="apps/web/public/kortix-symbol.svg" alt="Kortix" width="80" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20White.svg">
+  <img src="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20Black.svg" alt="Kortix" width="80" />
+</picture>
 
 # Kortix
 

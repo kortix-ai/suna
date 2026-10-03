@@ -103,6 +103,14 @@ const WATCHDOG_INTERVAL_MS = 5_000;
 /** A tick that arrives this much later than scheduled means the machine slept. */
 const CLOCK_JUMP_MS = 30_000;
 const REJECTED_RETRY_MS = 5 * 60_000;
+/**
+ * The one command that pairs this computer again. An npx user has no
+ * `agent-tunnel` on PATH, so the hint names the package. The relay removes a
+ * computer when its owner disconnects it, and a registration without a
+ * hardware id after 30 days without a sign of life.
+ */
+export const PAIR_AGAIN_COMMAND = 'npx @kortix/agent-tunnel@latest connect --reauth';
+const NO_LONGER_CONNECTED = 'This computer is no longer connected to Kortix (disconnected, or removed after 30 days offline).';
 /** Standby backs off from this, doubling, so two holders of one credential stop trading the socket. */
 const STANDBY_RETRY_MS = 60_000;
 const MAX_STANDBY_RETRY_MS = 30 * 60_000;
@@ -301,7 +309,10 @@ export class TunnelAgent {
           this.setStatus('rejected');
           if (this.now() - this.lastRejectedLogAt >= REJECTED_LOG_EVERY_MS) {
             this.lastRejectedLogAt = this.now();
-            log(`${c.red}✗${c.reset}`, `Credential rejected — waiting for this computer to be paired again (retrying every 5 min)`);
+            log(
+              `${c.red}✗${c.reset}`,
+              `${NO_LONGER_CONNECTED} Connect it again from the Kortix desktop app, or run \`${PAIR_AGAIN_COMMAND}\`. Checking again every 5 min.`,
+            );
           }
           this.retryAfter(this.options.rejectedRetryMs ?? REJECTED_RETRY_MS);
           return;
@@ -315,13 +326,13 @@ export class TunnelAgent {
         }
         if (event.code === 4001 && isCredentialRejection(event.code, event.reason)) {
           this.isShuttingDown = true;
-          log(`${c.red}✗${c.reset}`, `Credential rejected — run \`agent-tunnel connect --reauth\` to pair again`);
+          log(`${c.red}✗${c.reset}`, `${NO_LONGER_CONNECTED} Connect it again: \`${PAIR_AGAIN_COMMAND}\``);
           this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
           return; // Don't reconnect on auth failure
         }
         if (event.code === 4003) {
           this.isShuttingDown = true;
-          log(`${c.red}✗${c.reset}`, `Device credential was revoked — run \`agent-tunnel connect --reauth\` to pair again`);
+          log(`${c.red}✗${c.reset}`, `${NO_LONGER_CONNECTED} Connect it again: \`${PAIR_AGAIN_COMMAND}\``);
           this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
           return;
         }
@@ -374,7 +385,7 @@ export class TunnelAgent {
         // Reporting a bare "Connected ()" hides that this tunnel is inert.
         log(
           `${c.yellow}!${c.reset}`,
-          `Connected, but no capabilities are enabled — this tunnel cannot do anything. Run \`agent-tunnel connect --reauth\` to pair again.`,
+          `Connected, but no capabilities are enabled — this tunnel cannot do anything. Run \`${PAIR_AGAIN_COMMAND}\` to pair again.`,
         );
       } else {
         log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${capabilityNames.join(', ')})${c.reset}`);

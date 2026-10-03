@@ -1,7 +1,7 @@
 /**
  * The chat's root-conversation pin latch.
  *
- * The live pin (`useSession().opencodeSessionId`) can blip back to null
+ * The live pin (`useSession().runtimeSessionId`) can blip back to null
  * mid-session (a runtime reconnect re-resolving), and the chat must keep its
  * identity through that — hence a latch. But the live value can also CORRECT
  * itself: the SDK's pin precedence only climbs (persisted localStorage mirror

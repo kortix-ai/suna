@@ -1,7 +1,7 @@
 /**
  * The thread's live-update state (COR-144): whether updates stopped arriving,
  * the header's "Last update 6 min ago" line, and Reconnect. The decisions are
- * pure in `lib/opencode/stream-health.ts`; this hook only re-reads the clock
+ * pure in `lib/session/live-updates.ts`; this hook only re-reads the clock
  * while the stream is down, so the relative time and the stall threshold move
  * without a stream event.
  */
@@ -11,7 +11,7 @@ import {
   lastUpdateLabel,
   liveUpdatesView,
   useStreamHealthStore,
-} from '@/lib/opencode/stream-health';
+} from '@/lib/session/live-updates';
 
 /** How often the "… min ago" line and the stall check re-read the clock. */
 export const LIVE_UPDATES_TICK_MS = 30_000;

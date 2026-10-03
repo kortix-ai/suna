@@ -457,7 +457,7 @@ agents:
 | `kortix_permissions`  | `none`  | Which Kortix permissions (project actions) this agent may exercise, through the CLI, the API, or git. `all` means every project permission, still capped by the agent's ceiling role and never including the human-only permissions. `kortix_cli` is the deprecated spelling: still accepted, with a validation warning; setting both to different values is an error. |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `apps`                | `none`  | Which Kortix App slugs this agent may open when the App is `restricted` or `private`. `all` means every App in the project. See [Agents and Apps](/docs/feature-flags/apps#agents-and-apps). |
-| `repository_access` | `false` | Whether new sessions receive the project repository. `false` disables repository delivery and repository access through session credentials. Existing sessions keep their saved policy. |
+| `repository_access` | `true` | Whether new sessions receive the project repository. `false` disables repository delivery and repository access through session credentials. Existing sessions keep their saved policy. |
 
 v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_permissions`, `skills`, or `apps` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
 
@@ -504,9 +504,9 @@ Dashboard edits are a read-modify-write on the file that declares the entry: `ko
 
 ### Repository access
 
-Declared v2 agents default to no repository checkout. Set `agents.<name>.repository_access` to `true` for agents that need project source files.
+Set `agents.<name>.repository_access` to `false` for agents that do not need project source files.
 They can still create sandbox files and use their granted tools, secrets, and connectors.
-Git permissions remain separate.
+Set it to `true` for agents that need the repository. Git permissions remain separate.
 Change this setting in the agent editor under **Workspace → Project repository access**.
 The setting applies to new sessions. Existing sessions keep their saved policy, including after runtime replacement.
 

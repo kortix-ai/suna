@@ -1,5 +1,5 @@
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAutomationsContent } from '@/features/marketing/automations/content';
 import { AutomationsHeroVisual } from '@/features/marketing/automations/hero-visual';
@@ -23,19 +23,12 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/automations` — the page for work that starts with nobody in the room.
  *
  * Copy lives in `features/marketing/automations/content.ts` and is governed by
- * the `comms` skill. The accuracy gate that bites hardest here: there are two
+ * the `kortix-brand` skill. The accuracy gate that bites hardest here: there are two
  * trigger types and four session modes, and a trigger has no "deliver the
  * result somewhere" field. See the header of `content.ts`.
  */

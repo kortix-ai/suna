@@ -11,6 +11,13 @@ import {
 } from '../secrets/strategy';
 import { db } from '../shared/db';
 import {
+  filterSecretRowsByAudience,
+  NO_SUBJECT,
+  secretAudienceSubject,
+  type SecretAudienceSubject,
+  type SecretReach,
+} from './lib/secret-audience';
+import {
   type SecretCapabilityCatalog,
   buildSecretCapabilities,
   serializeSecretCapabilities,
@@ -34,13 +41,17 @@ export async function writeSharedProjectSecret(input: {
   value: string;
   scope?: 'runtime' | 'connector';
   createdBy?: string | null;
-}): Promise<void> {
+  /** Id for a NEW row (its audience may already be written under it). An
+   *  existing row keeps its own id. */
+  secretId?: string;
+}): Promise<string> {
   const now = new Date();
   const identifier = input.identifier ?? input.name;
   const serverSide = input.scope === 'connector';
-  await db
+  const [row] = await db
     .insert(projectSecrets)
     .values({
+      ...(input.secretId ? { secretId: input.secretId } : {}),
       projectId: input.projectId,
       identifier,
       name: input.name,
@@ -50,6 +61,8 @@ export async function writeSharedProjectSecret(input: {
       consumer: serverSide ? 'connector' : 'sandbox',
       strategyLocked: serverSide,
       createdBy: input.createdBy ?? null,
+      // A value a person just typed was never exposed: it is a fresh rotation.
+      rotatedAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -66,9 +79,12 @@ export async function writeSharedProjectSecret(input: {
               strategyLocked: true,
             }
           : {}),
+        rotatedAt: now,
         updatedAt: now,
       },
-    });
+    })
+    .returning({ secretId: projectSecrets.secretId });
+  return row!.secretId;
 }
 
 /** Lock a legacy runtime secret to the server-side connector boundary. */
@@ -107,17 +123,23 @@ export async function confineSharedProjectSecretToConnector(
  * (by identifier) is honored.
  */
 export async function listProjectSecrets(projectId: string): Promise<Record<string, string>> {
-  const rows = await db
-    .select({
-      identifier: projectSecrets.identifier,
-      name: projectSecrets.name,
-      valueEnc: projectSecrets.valueEnc,
-      scope: projectSecrets.scope,
-      updatedAt: projectSecrets.updatedAt,
-    })
-    .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)))
-    .orderBy(desc(projectSecrets.updatedAt));
+  // No person here: a value narrowed to an audience is never included.
+  const rows = await filterSecretRowsByAudience({
+    projectId,
+    subject: NO_SUBJECT,
+    rows: await db
+      .select({
+        secretId: projectSecrets.secretId,
+        identifier: projectSecrets.identifier,
+        name: projectSecrets.name,
+        valueEnc: projectSecrets.valueEnc,
+        scope: projectSecrets.scope,
+        updatedAt: projectSecrets.updatedAt,
+      })
+      .from(projectSecrets)
+      .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)))
+      .orderBy(desc(projectSecrets.updatedAt)),
+  });
 
   const env: Record<string, string> = {};
   const winnerIsCanonical = new Set<string>();
@@ -154,6 +176,10 @@ export interface ResolvedProjectSecret {
   consumer?: SecretConsumer | null;
   egressPolicy?: SecretEgressPolicy | null;
   handlePrefix?: string | null;
+  /** How the value reaches this session (`secret-audience.ts`): through its
+   *  `person`, through its `agent`, or `open` to everyone. Ranks in that order
+   *  among values of the same KEY. */
+  audience?: SecretReach;
 }
 
 /**
@@ -162,10 +188,15 @@ export interface ResolvedProjectSecret {
  * agent's `secrets` grant addresses. KORTIX_* (reserved) and connector-scoped
  * rows are never included. `userId` may be null for contexts with no acting
  * human (e.g. a webhook-triggered session) — only shared rows apply then.
+ *
+ * `subject` decides which NARROWED shared values are included: only those
+ * whose audience names its person or its agent (`secret-audience.ts`). The
+ * default, nobody, keeps only values shared with everyone.
  */
 export async function listResolvedProjectSecrets(
   projectId: string,
   userId: string | null,
+  subject: SecretAudienceSubject | (() => Promise<SecretAudienceSubject>) = NO_SUBJECT,
 ): Promise<ResolvedProjectSecret[]> {
   const rows = await db
     .select({
@@ -192,9 +223,14 @@ export async function listResolvedProjectSecrets(
       ),
     );
 
-  type Row = (typeof rows)[number];
+  const reachable = await filterSecretRowsByAudience({
+    projectId,
+    subject,
+    rows,
+  });
+  type Row = (typeof reachable)[number];
   const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
-  for (const row of rows) {
+  for (const row of reachable) {
     if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
     const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
@@ -216,6 +252,7 @@ export async function listResolvedProjectSecrets(
       consumer: policyRow.consumer ?? undefined,
       egressPolicy: policyRow.egressPolicy ?? null,
       handlePrefix: policyRow.handlePrefix ?? null,
+      audience: policyRow.audience,
     });
   }
   return out;
@@ -491,7 +528,13 @@ export async function listProjectSecretsSnapshotForUser(
   const gatewayRead = projectLlmGatewayEnabledById(projectId);
   connectorRead.catch(() => undefined);
   gatewayRead.catch(() => undefined);
-  const rows = await listResolvedProjectSecrets(projectId, userId);
+  // A narrowed value enters the box only for the on-behalf-of human of a
+  // PRIVATE session. No session = values shared with everyone only.
+  const rows = await listResolvedProjectSecrets(
+    projectId,
+    userId,
+    sessionId ? () => secretAudienceSubject({ projectId, sessionId }) : NO_SUBJECT,
+  );
   const boundConnectorIdentifiers = new Set(
     (await connectorRead)
       .map((row) => row.identifier)
@@ -537,20 +580,26 @@ export async function getProjectSecretValue(
   name: string,
 ): Promise<string | null> {
   const normalizedName = name.trim().toUpperCase();
-  const rows = await db
-    .select({
-      identifier: projectSecrets.identifier,
-      valueEnc: projectSecrets.valueEnc,
-      updatedAt: projectSecrets.updatedAt,
-    })
-    .from(projectSecrets)
-    .where(
-      and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, normalizedName),
-        isNull(projectSecrets.ownerUserId),
+  // No person here: a value narrowed to an audience is never returned.
+  const rows = await filterSecretRowsByAudience({
+    projectId,
+    subject: NO_SUBJECT,
+    rows: await db
+      .select({
+        secretId: projectSecrets.secretId,
+        identifier: projectSecrets.identifier,
+        valueEnc: projectSecrets.valueEnc,
+        updatedAt: projectSecrets.updatedAt,
+      })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, normalizedName),
+          isNull(projectSecrets.ownerUserId),
+        ),
       ),
-    );
+  });
   if (rows.length === 0) return null;
   // Deterministic pick when multiple identifiers share this key: the canonical
   // (identifier === key) row wins, else the most-recently-updated one.

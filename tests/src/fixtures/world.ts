@@ -229,6 +229,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       seed?: boolean;
       managedGit?: boolean;
       allowAllSecrets?: boolean;
+      allowAllConnectors?: boolean;
       metadata?: Record<string, unknown>;
     },
     signal?: AbortSignal,
@@ -238,7 +239,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
       const localRepository =
         env.target === 'local' && (opts?.seed || opts?.managedGit)
-          ? await createLocalGitRepository(name, { allowAllSecrets: opts?.allowAllSecrets })
+          ? await createLocalGitRepository(name, {
+              allowAllSecrets: opts?.allowAllSecrets,
+              allowAllConnectors: opts?.allowAllConnectors,
+            })
           : null;
       if (localRepository) {
         stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });

@@ -1,6 +1,6 @@
 /**
  * first-prompt-seed — the project-home send's first prompt, written into the
- * sync store as an optimistic user message before the thread mounts
+ * session store as an optimistic user message before the thread mounts
  * (COR-185).
  *
  * Without it, `SessionPage` mounts on an empty transcript: the loading page's
@@ -10,11 +10,10 @@
  *
  * The server already holds this prompt (`initial_prompt`, `pending_prompt`,
  * or the warm claim), so the seed never gets "Try again": a client re-send
- * through `prompt_async` would send it twice. The echo replaces the seed
- * through the ordinary optimistic swap (`sync-store.ts` `hydrate`,
- * `event-stream.ts` `message.updated`). Pure, so `bun test` runs it.
+ * would send it twice. The echo replaces the seed through the SDK store's
+ * ordinary optimistic swap. Pure, so `bun test` runs it.
  */
-import type { MessageWithParts } from '../opencode/types';
+import type { MessageWithParts } from './types';
 import type { AttachedFile } from './attachments';
 import { optimisticUserParts } from './optimistic-parts';
 import { mintWireMessageId } from './wire-message-id';
@@ -28,8 +27,8 @@ export const SEED_BUSY_WATCHDOG_MS = 30_000;
 export function firstPromptSeed(i: {
   text: string;
   files: AttachedFile[];
-  /** The OpenCode root id the thread and SSE use — never the Kortix `session_id`. */
-  opencodeSessionId: string;
+  /** The runtime's root session id the thread and the live stream use — never the Kortix `session_id`. */
+  runtimeSessionId: string;
   /** Ids the store already holds for this root. Any id means no seed. */
   knownMessageIds: string[];
   nowMs: number;
@@ -41,15 +40,16 @@ export function firstPromptSeed(i: {
 
   const parts = optimisticUserParts(text, i.files, i.nowMs);
 
+  // A stub: the server's echo carries the full message (agent, model).
   return {
     info: {
       id: mintWireMessageId({ nowMs: i.nowMs, knownMessageIds: i.knownMessageIds }),
       role: 'user',
-      sessionID: i.opencodeSessionId,
+      sessionID: i.runtimeSessionId,
       time: { created: i.nowMs },
     },
     parts,
-  };
+  } as unknown as MessageWithParts;
 }
 
 /**

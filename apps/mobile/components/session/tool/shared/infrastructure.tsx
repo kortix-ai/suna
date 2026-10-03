@@ -86,8 +86,7 @@ import {
 } from 'react';
 import { Pressable, View } from 'react-native';
 import type { ToolOutcome } from '@kortix/sdk';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { TextShimmer } from '@/components/kortix/text-shimmer';
+import { RunningLoader, TextShimmer, ToolMotionContext } from '@/components/kortix/text-shimmer';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { CheckIcon, MagnifyingGlassIcon, WarningCircleIcon, WarningIcon } from '@/lib/icons';
@@ -186,6 +185,8 @@ export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 export const StalePendingContext = createContext(false);
 /** The turn that owns this part is still working. */
 export const TurnLiveContext = createContext(false);
+/** Re-exported with the other row contexts: `false` in a finished turn (see `ToolMotionContext`). */
+export { RunningLoader, ToolMotionContext };
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 /** Whether the row a trigger belongs to is expanded. */
 export const ToolOpenContext = createContext(false);
@@ -193,6 +194,11 @@ export const ToolOpenContext = createContext(false);
 export const ToolActivateContext = createContext<((callID: string) => void) | null>(null);
 /** `ToolActivateContext` bound to one call: a row press activates instead of expanding. */
 export const BoundActivateContext = createContext<(() => void) | null>(null);
+
+/** The call is in flight AND its turn is live: the only time a loading state may animate. */
+export function useToolLive(): boolean {
+  return useContext(ToolRunningContext) && useContext(ToolMotionContext);
+}
 
 export function useToolOpen(): boolean {
   return useContext(ToolOpenContext);
@@ -515,7 +521,7 @@ export function StatusIcon({ status }: { status: string }) {
       return <WarningCircleIcon size={TURN_SPACE.statusIcon} color={palette.mutedForeground} />;
     case 'running':
     case 'pending':
-      return <KortixLoader customSize={TURN_SPACE.statusIcon} />;
+      return <RunningLoader size={TURN_SPACE.statusIcon} />;
     default:
       return null;
   }

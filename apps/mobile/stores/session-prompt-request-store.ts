@@ -16,7 +16,7 @@ export interface SessionPromptRequest {
 interface SessionPromptRequestState {
   request: SessionPromptRequest | null;
   /**
-   * Ask the thread of `sessionId` to send `text`: its OpenCode id, or its
+   * Ask the thread of `sessionId` to send `text`: its runtime session id, or its
    * project session id when the thread has not connected yet (Review's
    * Resolve conflicts). `SessionPage` takes a request keyed by either.
    */

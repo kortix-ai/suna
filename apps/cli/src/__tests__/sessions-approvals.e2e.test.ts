@@ -87,6 +87,9 @@ describe('sessions pending/approve/answer', () => {
             opencode_session_id: 'ses_oc',
           });
         }
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/session/status`) {
+          return Response.json({ ses_oc: { type: 'busy' } });
+        }
         if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/permission`) {
           return Response.json(pendingPermissions);
         }

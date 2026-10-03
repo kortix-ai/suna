@@ -22,8 +22,8 @@ import {
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
 } from '@/lib/shutdown-state'
+import { ConvergeBusyError } from '@/services/config-release/release'
 import {
-  ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
   isConvergenceInFlight,
@@ -585,8 +585,8 @@ describe('convergeConfigRelease — failures keep the running config', () => {
 
   // ── DEF-FLAGON-2 — a healed session must not keep claiming a failure ──────
   test('the base branch is fixed: the next convergence clears the fallback, with no new release', async () => {
-    // Measured on a real Platinum box, 2026-09-25 (config-converge e2e, session
-    // `7c18c223`): a broken `opencode.jsonc` was reverted, the release the box
+    // Measured on a real Platinum box, 2026-09-25 (config-converge e2e, one
+    // session): a broken `opencode.jsonc` was reverted, the release the box
     // was ALREADY running became the desired one again (a release is
     // content-addressed, so the fix restored the same ID), the convergence
     // answered `unchanged` — and `fallback_reason` / `failed_release_id` stayed

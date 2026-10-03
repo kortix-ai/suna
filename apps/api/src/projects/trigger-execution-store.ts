@@ -396,12 +396,24 @@ export async function markTriggerRuntimeDelivered(input: {
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: {
-        lastStatus: 'fired',
-        lastError: null,
+        ...keepRunFailure('fired'),
         lastAttemptAt: input.when,
         updatedAt: input.when,
       },
     });
+}
+
+/**
+ * The status a fire or a delivery writes over an existing runtime row. A
+ * failed RUN (`run_failing_since` set by recordTriggerRunEnd) stays `failed`
+ * with its reason until a run finishes: the next fire says nothing about
+ * whether its run works. A failed fire or delivery clears as before.
+ */
+export function keepRunFailure(status: 'fired' | 'queued') {
+  return {
+    lastStatus: sql<string>`case when ${projectTriggerRuntime.runFailingSince} is null then ${status} else 'failed' end`,
+    lastError: sql<string | null>`case when ${projectTriggerRuntime.runFailingSince} is null then null else ${projectTriggerRuntime.lastError} end`,
+  };
 }
 
 /**

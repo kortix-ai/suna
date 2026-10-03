@@ -135,10 +135,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_api_discover',
     name: 'Connectors API Discover',
     description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
-    stability: 'experimental',
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
+    stability: 'beta',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    // Direct discovery is an explicit opt-in, not the reliable managed default.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -150,23 +150,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
-    key: 'teams',
-    name: 'Microsoft Teams',
-    description:
-      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
-    stability: 'experimental',
-    // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
-    // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
-    // offered — `teamsMode().available` reports that separately, and a project
-    // can always bring its own bot app. Gating availability on the credentials
-    // would hide the bring-your-own flow on exactly the deployments that need
-    // it (self-host).
-    available: () => true,
-    // Explicit opt-in: a project turns Teams on in Settings.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -328,7 +311,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'config_releases',
     name: 'Config Releases',
     description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
     stability: 'experimental',
     available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
@@ -381,7 +364,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'us_region',
     name: 'US Region',
     description:
-      "Run this project's new sessions in Platinum's US East region instead of EU West. A running session keeps its region until it restarts. The first session after a new sandbox image waits while the image is copied to the region.",
+      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is

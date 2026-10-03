@@ -120,7 +120,7 @@ adminApp.openapi(
   try {
     const { db } = await import('../shared/db');
     const { accounts, creditAccounts } = await import('@kortix/db');
-    const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
+    const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
     const { accountDisplayName } = await import('../accounts/core/app');
@@ -168,13 +168,10 @@ adminApp.openapi(
     // Exact-id lookup — the sheet's live row, immune to the list's filters.
     if (accountIdFilter) conds.push(eq(accounts.accountId, accountIdFilter));
     if (search) {
-      conds.push(
-        or(
-          ilike(accounts.name, `%${search}%`),
-          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
-        ),
-      );
+      // The search predicate is shared by the list and count queries; see
+      // accounts-search.ts for why the email branch must stay users-first.
+      const { adminAccountsSearchCondition } = await import('./accounts-search');
+      conds.push(adminAccountsSearchCondition(search));
     }
     if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
     // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).

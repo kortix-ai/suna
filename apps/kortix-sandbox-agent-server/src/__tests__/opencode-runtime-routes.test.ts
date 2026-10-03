@@ -252,7 +252,11 @@ describe('GET /state', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, any>
 
+    expect(body.schema).toBe('kortix.runtime.v1')
     expect(body.identity).toMatchObject({
+      harness: 'opencode',
+      runtime_session_id: SESSION,
+      harness_version: '1.18.23',
       opencode_session_id: SESSION,
       opencode_version: '1.18.23',
       daemon_build: 7,

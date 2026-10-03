@@ -1,6 +1,6 @@
 # Authoring an Agent Skill — full guide
 
-Companion to the "create a new OpenCode skill" line in this skill's
+Companion to the "create an agent, a subagent or a reusable skill" line in this skill's
 `<when-to-load>`. A skill is reusable know-how, written down once so every
 future session can load it on demand instead of rediscovering the workflow
 from scratch. This page teaches you to author one to the **agentskills.io
@@ -58,8 +58,10 @@ every session receives the latest copy at boot. Projects created before 2026-09
 keep skills in `.kortix/opencode/skills/`. Both layouts work; put new skills in
 `skills/`.
 
-OpenCode lists every discovered skill in the `skill` tool description and
-loads the body on demand when the agent calls it. Two consequences worth
+Each harness shows the agent the name and description of every discovered
+skill: OpenCode in the `skill` tool description, pi in the system prompt. The
+agent loads the body on demand: with the `skill` tool on OpenCode, with
+`read` on pi. Two consequences worth
 internalizing:
 
 - **The description is the trigger.** The agent decides whether to load a
@@ -186,7 +188,8 @@ Two complementary checks — do both:
 2. **Runtime check.** Start a fresh session. Confirm `SKILL.md` is uppercase,
    the frontmatter has `name` and `description`, the name matches the
    directory, and the name is unique. Ask the agent to list or load the skill.
-   Also check `permission.skill` rules in `opencode.jsonc`.
+   Also check the agent's `skills:` grant in `kortix.yaml` and, on OpenCode,
+   `permission.skill` rules in `opencode.jsonc`.
 
 ## Make it land and shareable
 

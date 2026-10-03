@@ -222,6 +222,19 @@ describe('createSessionNotifier', () => {
     ]);
   });
 
+  test('recipients replace the creator: each present one is skipped', async () => {
+    const h = harness({ isPresent: async (user) => user === 'user-present' });
+    const outcome = await h.notify({ type: 'question', sessionId: SESSION, projectId: PROJECT, question: 'Which region?', recipients: ['user-a', 'user-present'] });
+    expect(outcome.reason).toBe('sent');
+    expect(h.listed).toEqual(['user-a']);
+    expect(h.sent[0]![0]!.body).toBe('Kortix has a question: Which region?');
+  });
+
+  test('every recipient present → no push', async () => {
+    const h = harness({ isPresent: async () => true });
+    expect(await h.notify({ ...event, recipients: ['user-a', 'user-b'] })).toEqual({ sent: 0, reason: 'present' });
+  });
+
   test('kill switch: nothing is loaded or sent', async () => {
     const h = harness({ enabled: false });
     expect(await h.notify(event)).toEqual({ sent: 0, reason: 'disabled' });

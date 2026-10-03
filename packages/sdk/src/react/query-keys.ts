@@ -165,6 +165,9 @@ export const qk = {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
     scope: (id: string) => ['kx', 'project', id] as const,
 
+    /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
+    needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
+
     /**
      * The bare project row — `getProject`, `GET /projects/:id`, a
      * `KortixProject`. NOT `detail(id)` below: `getProjectDetail` hits
@@ -323,6 +326,9 @@ export const qk = {
      */
     sessionSandbox: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'sandbox'] as const,
+    /** `getSessionParticipants` — who can open the session and who sent each prompt. */
+    sessionParticipants: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'participants'] as const,
     /** `listSessionPrompts` — the session's server-side prompt inbox. */
     sessionPrompts: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'prompts'] as const,
@@ -382,6 +388,9 @@ export const qk = {
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,
+    /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
+    sessionMessageAuthors: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

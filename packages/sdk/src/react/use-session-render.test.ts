@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AssistantMessage, TextPart, ToolPart, UserMessage } from '@opencode-ai/sdk/v2/client';
+import type { AssistantMessage, TextPart, ToolPart, UserMessage } from '../core/runtime/runtime-types';
 import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -121,6 +121,38 @@ describe('useSession names the runtime root neutrally', () => {
     }
     mount(createElement(Host));
     expect(ids as unknown).toEqual({ runtime: OC_ID, opencode: OC_ID });
+  });
+
+  test('initialRuntimeSessionId pins the root, and wins over its deprecated alias', () => {
+    seedTranscript();
+    const seen: Array<string | null> = [];
+    function Host({ options }: { options: Parameters<typeof useSession>[2] }) {
+      seen.push(useSession(PROJECT_ID, SESSION_ID, { enabled: false, replayStartStash: false, ...options }).runtimeSessionId);
+      return null;
+    }
+    mount(createElement(Host, { options: { initialRuntimeSessionId: OC_ID } }));
+    act(() => renderer?.unmount());
+    mount(createElement(Host, { options: { initialRuntimeSessionId: OC_ID, initialOpenCodeSessionId: 'ses_stale' } }));
+    expect(new Set(seen)).toEqual(new Set([OC_ID]));
+  });
+});
+
+describe('useSessionMessages names its source neutrally', () => {
+  test('reads the transcript by runtimeSessionId, which wins over the deprecated opencodeSessionId', () => {
+    seedTranscript();
+    const lengths: number[] = [];
+    function Transcript({ session }: { session: Parameters<typeof useSessionMessages>[0] }) {
+      lengths.push(useSessionMessages(session).length);
+      return null;
+    }
+    const source = { projectId: PROJECT_ID, sessionId: SESSION_ID };
+    mount(createElement(Transcript, { session: { ...source, runtimeSessionId: OC_ID } }));
+    act(() => renderer?.unmount());
+    mount(createElement(Transcript, { session: { ...source, runtimeSessionId: OC_ID, opencodeSessionId: 'ses_stale' } }));
+    act(() => renderer?.unmount());
+    mount(createElement(Transcript, { session: { ...source, opencodeSessionId: OC_ID } }));
+    expect(lengths.at(-1)).toBe(TRANSCRIPT_MESSAGES);
+    expect(new Set(lengths)).toEqual(new Set([TRANSCRIPT_MESSAGES]));
   });
 });
 

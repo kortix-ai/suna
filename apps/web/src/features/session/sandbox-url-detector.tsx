@@ -146,7 +146,11 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
             aria-label={tHardcodedUi.raw('i18nComplete.text5b529abadacc')}
             className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
           >
-            <RefreshCw className={cn('size-3', isLoading && 'animate-spinner-spin')} />
+            {isLoading ? (
+              <Loading className="in-[button]:text-muted-foreground size-3" />
+            ) : (
+              <RefreshCw className="size-3" />
+            )}
           </button>
         </Hint>
         <Hint

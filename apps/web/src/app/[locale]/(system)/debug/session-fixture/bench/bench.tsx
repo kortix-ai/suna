@@ -209,7 +209,7 @@ function SessionBackedChat() {
   const session = useSession('bench-project', 'bench-session', {
     enabled: false,
     replayStartStash: false,
-    initialOpenCodeSessionId: SESSION_ID,
+    initialRuntimeSessionId: SESSION_ID,
     subscribeMessages: false,
   });
   return <SessionChat sessionId={SESSION_ID} sessionState={session} hideHeader readOnly />;

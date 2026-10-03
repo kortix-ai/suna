@@ -13,13 +13,20 @@ function normalizeSlashes(value: string): string {
   return value.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
+/** Strip trailing `/` without a backtracking regex (CodeQL js/polynomial-redos). */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
 export function normalizeSearchQuery(query: string): string {
   const normalized = normalizeSlashes(query.trim());
   if (!normalized) return '';
   if (normalized === '/' || normalized === '/workspace/' || normalized === 'workspace/') {
     return '/workspace';
   }
-  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+  return normalized.length > 1 ? trimTrailingSlashes(normalized) : normalized;
 }
 
 export function stripWorkspacePrefix(path: string): string {
@@ -69,7 +76,7 @@ export function parseWorkspacePaths(
   return dedupeWorkspaceSearchEntries(
     paths.map((path) => {
       const isDir = path.endsWith('/') || directorySet.has(normalizeWorkspacePath(path));
-      const cleanPath = isDir ? path.replace(/\/+$/, '') : path;
+      const cleanPath = isDir ? trimTrailingSlashes(path) : path;
       return toWorkspaceSearchEntry(cleanPath, isDir);
     }),
   );
@@ -136,7 +143,22 @@ function getEntryVariants(entry: WorkspaceSearchEntry) {
   return { absolute, relative, basename, depth };
 }
 
-export function workspaceEntryMatchesQuery(entry: WorkspaceSearchEntry, query: string): boolean {
+export function workspaceEntryMatchesQuery(
+  entry: WorkspaceSearchEntry,
+  query: string,
+  policy?: 'runtime-files',
+): boolean {
+  // Compatibility: runtime mentions use raw paths and substring-only queries.
+  if (policy === 'runtime-files') {
+    const path = entry.path;
+    const ql = query.trim().toLowerCase();
+    if (ql.length === 0) return true;
+    const lower = path.toLowerCase();
+    if (lower.includes(ql)) return true;
+    const base = lower.split('/').pop() ?? lower;
+    return base.includes(ql);
+  }
+
   const q = getQueryVariants(query);
   if (!q.normalized) return true;
 
@@ -153,7 +175,27 @@ export function workspaceEntryMatchesQuery(entry: WorkspaceSearchEntry, query: s
   return false;
 }
 
-export function rankWorkspaceSearchEntry(entry: WorkspaceSearchEntry, query: string): number {
+export function rankWorkspaceSearchEntry(
+  entry: WorkspaceSearchEntry,
+  query: string,
+  policy?: 'runtime-files',
+): number {
+  // Compatibility: runtime mentions use raw paths and substring-only queries.
+  if (policy === 'runtime-files') {
+    const path = entry.path;
+    const ql = query.trim().toLowerCase();
+    const lower = path.toLowerCase();
+    const base = lower.split('/').pop() ?? lower;
+    const depth = path.split('/').length - 1;
+    if (ql.length === 0) return depth;
+    if (base === ql) return 0 + depth * 0.01;
+    if (base.startsWith(ql)) return 10 + depth * 0.01;
+    if (base.includes(ql)) return 20 + depth * 0.01;
+    if (lower.startsWith(ql)) return 30 + depth * 0.01;
+    if (lower.includes(ql)) return 40 + depth * 0.01;
+    return 1000 + depth;
+  }
+
   const q = getQueryVariants(query);
   const entryVariants = getEntryVariants(entry);
   const dirPenalty = q.looksFileLike && entry.isDir ? 25 : 0;

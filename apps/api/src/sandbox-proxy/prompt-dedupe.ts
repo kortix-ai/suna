@@ -1,3 +1,4 @@
+import { classifyRuntimeRequest, turnStartBodyFields } from './runtime-request';
 import { createHash } from 'node:crypto';
 
 // Prompt delivery is the one MUTATING call on the sandbox proxy: POSTing the
@@ -39,8 +40,7 @@ export function isNonIdempotentSessionWrite(
   path: string,
 ): boolean {
   if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/.test(path);
+  return classifyRuntimeRequest(method, path).kind === 'turn-start';
 }
 
 /**
@@ -133,33 +133,6 @@ function evict(now: number): void {
 }
 
 /**
- * Pull the wire `messageID` out of a `/prompt_async` or `/message` request
- * body, when present. Both endpoints' bodies carry a top-level `messageID`
- * string — the SDK's `promptOpenCodeMessage` mints one per logical submission
- * and reuses it on every retry of that submission
- * (`packages/sdk/src/react/use-opencode-sessions/messages.ts`,
- * `submissionWireId`). `/command` bodies never carry this field
- * (`{command,arguments,agent,model}`), so parsing them here simply finds
- * nothing and falls through to the content hash below — no per-endpoint
- * special-casing needed. Malformed JSON, a missing field, or a non-string
- * value all resolve to `null`, the same "fall back to the hash" outcome as a
- * body that never had the field at all.
- */
-function extractWireMessageId(body: ArrayBuffer | undefined): string | null {
-  if (!body || body.byteLength === 0) return null;
-  try {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(body));
-    const id =
-      parsed && typeof parsed === 'object'
-        ? (parsed as Record<string, unknown>).messageID
-        : undefined;
-    return typeof id === 'string' && id.trim() ? id.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Stable per-prompt key, in precedence order:
  *
  *  1. The caller's Idempotency-Key, when present (the CLI mints one UUID per
@@ -203,7 +176,7 @@ export function promptDeliveryKey(opts: {
   // to the new box — which genuinely never saw the prompt — as a "duplicate".
   const provided = opts.idempotencyKey?.trim();
   if (provided) return `idem:${opts.sandboxId}\0${opts.sessionId}\0${provided}`;
-  const messageId = extractWireMessageId(opts.body);
+  const { messageId } = turnStartBodyFields(opts.body);
   if (messageId) return `msgid:${opts.sandboxId}\0${opts.sessionId}\0${messageId}`;
   const hash = createHash('sha256')
     .update(opts.sandboxId)

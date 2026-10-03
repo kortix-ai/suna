@@ -1089,12 +1089,6 @@ for (const runtime of runtimes) {
           await expect(input).toBeEmpty();
           expect([200, 202]).toContain((await sent.response())?.status());
         };
-        const send = async (text: string, key: string, placement: string, fill = true) => {
-          const request = promptRequest();
-          if (fill) await input.fill(text);
-          await input.press(key);
-          await verifySend(request, text, placement);
-        };
         const transcriptText = "Enter pending placement";
         const composerText = "Command pending placement";
         const pending = page
@@ -1149,7 +1143,10 @@ for (const runtime of runtimes) {
         await expect.poll(() => postOrder).toEqual(["transcript", "composer"]);
         await page.unroute(promptsUrl);
         await expect(pending).toHaveAttribute("data-queue-tone", "pending");
-        await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
+        // KRTX-494: a prompt waiting in the inbox says "Queued" inline on the
+        // message. The retired Quick Queue / Waiting chrome stays gone.
+        await expect(pending.locator("[data-queued-status]")).toHaveText("Queued");
+        await expect(pending).not.toContainText(/Quick Queue|Waiting/);
         await expectThinkingMatchesStop(page);
         if (!isDeployedTarget()) {
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);
@@ -1186,7 +1183,31 @@ for (const runtime of runtimes) {
         }
         await expect(input).toContainText("console.log(value)");
         const editedText = `${composerText}\n${codeLines.join("\n")}`;
-        await send(editedText, "Control+Enter", "composer", false);
+        // Editing a queued prompt saves it in place (#8753): the row keeps its
+        // place in the queue and any Stop hold, so submit PATCHes that row and
+        // never re-POSTs it. A re-POST would run at once on an idle session.
+        const reposts: string[] = [];
+        const countRepost = (request: import("@playwright/test").Request) => {
+          if (
+            request.method() === "POST" &&
+            new URL(request.url()).pathname.endsWith(`/sessions/${sessionId}/prompts`)
+          ) reposts.push(request.url());
+        };
+        page.on("request", countRepost);
+        const saveRequest = page.waitForRequest(
+          (request) =>
+            request.method() === "PATCH" &&
+            new URL(request.url()).pathname.includes(`/sessions/${sessionId}/prompts/`),
+        );
+        await input.press("Control+Enter");
+        const saved = await saveRequest;
+        expect(saved.postDataJSON()).toEqual({ text: editedText });
+        expect((await saved.response())?.status()).toBe(200);
+        await expect(input).toBeEmpty();
+        await expect(row).toBeVisible();
+        await expect(row).toContainText("console.log(value)");
+        page.off("request", countRepost);
+        expect(reposts).toEqual([]);
         const persisted = await api<{
           prompts: Array<{ placement: string; full_text: string }>;
         }>(

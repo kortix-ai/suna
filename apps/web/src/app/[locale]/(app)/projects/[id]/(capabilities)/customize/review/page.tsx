@@ -1,28 +1,26 @@
-'use client';
-
-import { useParams } from 'next/navigation';
-
-import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
+import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { redirect } from 'next/navigation';
 
 /**
- * /projects/[id]/review — the Review Center inbox as its own capability tab,
- * beside Models / Connectors / Agents / Skills / Triggers (Jay, 2026-09-02:
- * "move the review component to the same line where the agent, skill, model,
- * connector, trigger are listed").
- *
- * It was the `review` section of `/projects/[id]/config` until that page was
- * retired the same day; every other section of it moved into the Settings
- * overlay's Workspace group, and this one — an inbox, not configuration —
- * moved up onto the bar instead. No feature flag gates it: the tab bar shows
- * the tab to anyone holding `project.review.read` (`visibleCapabilityTabs`) and
- * the view itself gates acting on `project.review.act`.
+ * The Review Center's old address, from when it was a Customize tab
+ * (2026-09-02 to 2026-10-02). It redirects to `/projects/[id]/review` and
+ * keeps the query, so a shared `?id=<review item id>` link still opens the
+ * same review.
  */
-export default function ProjectReviewPage() {
-  const { id: projectId } = useParams<{ id: string }>();
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <ReviewView projectId={projectId} />
-    </div>
-  );
+export default async function LegacyCustomizeReviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) {
+      search.append(key, v);
+    }
+  }
+  const suffix = search.toString();
+  redirect(suffix ? `${reviewHref(id)}?${suffix}` : reviewHref(id));
 }

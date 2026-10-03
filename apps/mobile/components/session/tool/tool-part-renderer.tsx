@@ -18,9 +18,9 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { getToolInfo, partOutcome, stripAnsi, type ToolPart as SdkToolPart } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
-import type { PermissionRequest, ToolPart } from '@/lib/opencode/types';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import { getDiffStats } from '@/lib/opencode/diff-utils';
+import type { PermissionRequest } from '@/lib/session/types';
+import { usePendingPermissions } from '@/lib/session/session-store';
+import { getDiffStats } from '@/lib/session/diff-utils';
 import {
   isStalePending,
   isToolRunning,
@@ -35,13 +35,14 @@ import {
   RawOutputBlock,
   StalePendingContext,
   ToolDurationContext,
+  ToolMotionContext,
   ToolOutcomeContext,
   ToolRunningContext,
   TurnLiveContext,
 } from './shared/infrastructure';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './shared/styles';
 import { getToolIconByName } from './shared/tool-icons';
-import { getToolInput } from './shared/tool-part';
+import { partInput } from '@/lib/session/tool-part-accessors';
 import { ToolError } from './tool-error';
 import { ToolRegistry } from './shared/registry';
 export type PermissionReply = 'once' | 'always' | 'reject';
@@ -91,7 +92,48 @@ export interface ToolPartRendererProps {
   defaultOpen?: boolean;
 }
 
-const EMPTY_PERMISSIONS: PermissionRequest[] = [];
+function usePendingPermission(part: SdkToolPart, sessionId?: string, permissionProp?: PermissionRequest) {
+  const sessionPermissions = usePendingPermissions(permissionProp ? undefined : sessionId);
+  return permissionProp ?? sessionPermissions.find((p) => p.tool?.callID === part.callID);
+}
+
+function RowAmbient({ running, stale, turnLive, outcome, durationMs, permission, onPermissionReply, children }: {
+  running: boolean;
+  stale: boolean;
+  /** The owning turn is still working. */
+  turnLive: boolean;
+  outcome: ReturnType<typeof partOutcome>;
+  durationMs: number | undefined;
+  permission?: PermissionRequest;
+  onPermissionReply?: ToolPartRendererProps['onPermissionReply'];
+  children: React.ReactNode;
+}) {
+  // A call still `running` / `pending` after its turn ended (Stop, an interrupt, a
+  // crash) never finishes. `running` stays true for the row's wording; motion goes off.
+  const motion = turnLive || !running;
+  return (
+    <ToolRunningContext.Provider value={running}>
+      <ToolMotionContext.Provider value={motion}>
+        <TurnLiveContext.Provider value={turnLive}>
+          <ToolOutcomeContext.Provider value={outcome}>
+            <ToolDurationContext.Provider value={durationMs}>
+              <StalePendingContext.Provider value={stale}>
+                <View style={{ position: 'relative' }}>
+                  {children}
+                  {permission && onPermissionReply ? (
+                    <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
+                      <PermissionPromptInline permission={permission} />
+                    </View>
+                  ) : null}
+                </View>
+              </StalePendingContext.Provider>
+            </ToolDurationContext.Provider>
+          </ToolOutcomeContext.Provider>
+        </TurnLiveContext.Provider>
+      </ToolMotionContext.Provider>
+    </ToolRunningContext.Provider>
+  );
+}
 
 function ToolPartRendererImpl({
   part,
@@ -104,13 +146,8 @@ function ToolPartRendererImpl({
   const ambientTurnLive = React.useContext(TurnLiveContext);
   const turnLive = turnLiveProp ?? ambientTurnLive;
 
-  const sessionPermissions = useSyncStore((s) =>
-    sessionId && !permissionProp ? s.permissions[sessionId] : undefined,
-  ) ?? EMPTY_PERMISSIONS;
-  const permission =
-    permissionProp ?? sessionPermissions.find((p) => p.tool?.callID === part.callID);
+  const permission = usePendingPermission(part, sessionId, permissionProp);
 
-  const mobilePart = part as unknown as ToolPart;
   const outcome = useMemo(() => partOutcome(part), [part]);
   const durationMs = useMemo(() => toolDurationMs(part), [part]);
   const stale = isStalePending(part, turnLive);
@@ -119,7 +156,7 @@ function ToolPartRendererImpl({
   const rowKey = disclosureKey('tool', part.id);
 
   // `getToolInput` also reads the legacy top-level `input` mobile parts may carry.
-  const input = getToolInput(mobilePart);
+  const input = partInput(part);
   const info = getToolInfo(part.tool, input);
 
   const stat = useMemo(() => {
@@ -150,8 +187,7 @@ function ToolPartRendererImpl({
   if (part.state.status === 'error') {
     const { display, server } = toolDisplayName(part.tool);
     return (
-      <ToolOutcomeContext.Provider value={outcome}>
-        <ToolDurationContext.Provider value={durationMs}>
+      <RowAmbient running={false} stale={false} turnLive={turnLive} outcome={outcome} durationMs={durationMs}>
           <BasicTool
             disclosureId={rowKey}
             trigger={{ title: display, subtitle: 'failed', args: server ? [server] : undefined }}
@@ -161,8 +197,7 @@ function ToolPartRendererImpl({
           >
             <ToolError error={part.state.error} toolName={part.tool} partId={part.id} />
           </BasicTool>
-        </ToolDurationContext.Provider>
-      </ToolOutcomeContext.Provider>
+      </RowAmbient>
     );
   }
 
@@ -170,29 +205,16 @@ function ToolPartRendererImpl({
   const Registered = ToolRegistry.get(part.tool);
   if (Registered) {
     return (
-      <ToolRunningContext.Provider value={running}>
-        <ToolOutcomeContext.Provider value={outcome}>
-          <ToolDurationContext.Provider value={durationMs}>
-            <StalePendingContext.Provider value={stale}>
-              <View style={{ position: 'relative' }}>
-                <Registered
-                  part={part}
-                  sessionId={sessionId}
-                  defaultOpen={defaultOpen}
-                  forceOpen={forceOpen}
-                  locked={forceOpen}
-                  onPermissionReply={onPermissionReply}
-                />
-                {permission && onPermissionReply ? (
-                  <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
-                    <PermissionPromptInline permission={permission} />
-                  </View>
-                ) : null}
-              </View>
-            </StalePendingContext.Provider>
-          </ToolDurationContext.Provider>
-        </ToolOutcomeContext.Provider>
-      </ToolRunningContext.Provider>
+      <RowAmbient running={running} stale={stale} turnLive={turnLive} outcome={outcome} durationMs={durationMs} permission={permission} onPermissionReply={onPermissionReply}>
+        <Registered
+          part={part}
+          sessionId={sessionId}
+          defaultOpen={defaultOpen}
+          forceOpen={forceOpen}
+          locked={forceOpen}
+          onPermissionReply={onPermissionReply}
+        />
+      </RowAmbient>
     );
   }
 
@@ -201,38 +223,22 @@ function ToolPartRendererImpl({
     : null;
 
   return (
-    <ToolRunningContext.Provider value={running}>
-      <ToolOutcomeContext.Provider value={outcome}>
-        <ToolDurationContext.Provider value={durationMs}>
-          <StalePendingContext.Provider value={stale}>
-            <View style={{ position: 'relative' }}>
-              <BasicTool
-                disclosureId={rowKey}
-                icon={getToolIconByName(info.icon)}
-                trigger={{ title: info.title, subtitle: info.subtitle, stat }}
-                defaultOpen={defaultOpen}
-                forceOpen={forceOpen}
-                locked={forceOpen}
-                onPress={projectTarget ? openProject : undefined}
-              >
-                {body}
-              </BasicTool>
-              {permission && onPermissionReply ? (
-                <View style={{ marginTop: TURN_SPACE.gap1_5 }}>
-                  <PermissionPromptInline permission={permission} />
-                </View>
-              ) : null}
-            </View>
-          </StalePendingContext.Provider>
-        </ToolDurationContext.Provider>
-      </ToolOutcomeContext.Provider>
-    </ToolRunningContext.Provider>
+    <RowAmbient running={running} stale={stale} turnLive={turnLive} outcome={outcome} durationMs={durationMs} permission={permission} onPermissionReply={onPermissionReply}>
+      <BasicTool
+        disclosureId={rowKey}
+        icon={getToolIconByName(info.icon)}
+        trigger={{ title: info.title, subtitle: info.subtitle, stat }}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+        locked={forceOpen}
+        onPress={projectTarget ? openProject : undefined}
+      >
+        {body}
+      </BasicTool>
+    </RowAmbient>
   );
 }
 
 /** Default shallow compare: parts are replaced, not mutated, when they change. */
 export const ToolPartRenderer = memo(ToolPartRendererImpl);
 ToolPartRenderer.displayName = 'ToolPartRenderer';
-
-// Registers every tool renderer (web: the same import at the end of tool-part-renderer.tsx).
-import './tools/register';

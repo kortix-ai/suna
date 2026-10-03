@@ -38,6 +38,10 @@ export function convertPendingPromptToInboxRow(input: {
   accountId: string;
   sessionId: string;
   actorUserId: string | null;
+  /** The session whose agent created this one (see `authorSessionId`). */
+  authorSessionId?: string | null;
+  /** Post it without a turn: a conversation with people starts with it. */
+  noReply?: boolean;
   nowMs?: number;
 }): PendingPromptConversion {
   const { pendingPrompt } = input;
@@ -80,6 +84,8 @@ export function convertPendingPromptToInboxRow(input: {
     remintOnDelivery: true,
     parts: sanitized.parts,
     overrides,
+    authorSessionId: input.authorSessionId ?? null,
+    ...(input.noReply ? { noReply: true } : {}),
   });
   return { rowValues, metadataPicks, error: null };
 }

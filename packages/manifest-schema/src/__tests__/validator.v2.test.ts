@@ -1060,9 +1060,9 @@ agents:
 });
 
 describe('validateManifest — version above known max still rejected', () => {
-  test('kortix_version 3 is rejected as unsupported', () => {
+  test('kortix_version 4 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
-kortix_version: 3
+kortix_version: 4
 default_agent: w
 agents:
   w: {}
@@ -1277,9 +1277,24 @@ describe('v2 harnesses.pi.packages', () => {
   });
 });
 
- test('agent tool toggles require boolean values', () => {
+describe('kortix_version 3 YAML-only agent behavior', () => {
+  test('accepts inline behavior and prompt_file, rejects v2 files and malformed behavior', () => {
+    const yaml = `kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    model: anthropic/claude-sonnet-4\n    description: Writes summaries\n    prompt: Be concise.\n    permission:\n      bash: deny\n  reader:\n    prompt_file: agents/reader.md\n`;
+    expect(summarize(yaml).errorPaths).toEqual([]);
+    expect(summarize(yaml.replace('prompt: Be concise.', 'prompt: [invalid]')).errorPaths).toContain('agents.writer.prompt');
+    expect(summarize(yaml.replace('prompt: Be concise.', 'file: agents/writer.md')).errorPaths).toContain('agents.writer.file');
+    expect(summarize(yaml.replace('prompt: Be concise.', 'prompt_file: ../secret.md')).errorPaths).toContain('agents.writer.prompt_file');
+    expect(validateManifest(yaml, 'toml').valid).toBe(false);
+    expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.writer.prompt');
+    expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.reader.prompt_file');
+  });
+});
+
+describe('v2 agent tool toggles', () => {
+  test('agent tool toggles require boolean values', () => {
   expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: false, read: true }\n    connectors: [github, slack]')).errorPaths).not.toContain('agents.support.tools');
   expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: nope }\n    connectors: [github, slack]')).errorPaths).toContain('agents.support.tools');
+  });
 });
 
 describe('v2 harnesses.opencode.plugins', () => {

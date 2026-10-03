@@ -25,6 +25,20 @@ export interface TeamsInstallation {
   publishState?: TeamsPublishState | null;
   /** Set when `publishState === 'failed'`. */
   publishError?: string | null;
+  /**
+   * The Teams app version the org catalog serves. Null when no publish
+   * recorded it (an install published before Kortix recorded versions).
+   */
+  appVersion?: string | null;
+  /** The Teams app version this Kortix deployment publishes. */
+  latestAppVersion?: string;
+  /**
+   * The org catalog serves an older app than `latestAppVersion`, or one
+   * Kortix has no version for. A Teams admin publishes again; then a team
+   * owner accepts the update in each team where Teams offers it. On 1.0.0
+   * every thread read in a team fails. Absent on servers older than this field.
+   */
+  appUpdateAvailable?: boolean;
   installedAt: string;
 }
 

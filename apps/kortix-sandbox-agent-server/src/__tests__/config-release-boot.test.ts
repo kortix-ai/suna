@@ -451,6 +451,23 @@ describe('C8: config releases off is one early return to the pre-release behavio
     expect(run.result).toMatchObject({ dir: defaultDir, source: 'image-default', releasesEnabled: false })
   })
 
+  test('manifestless image default inventories only top-level plugins and tools', async () => {
+    mkdirSync(join(defaultDir, 'plugins'))
+    mkdirSync(join(defaultDir, 'plugins', 'nested.ts'))
+    for (const name of ['z.js', 'a.ts', 'ignored.txt']) writeFileSync(join(defaultDir, 'plugins', name), '')
+    for (const name of ['z.ts', 'a.ts', 'ignored.js']) writeFileSync(join(defaultDir, 'tools', name), '')
+    api.respond({ status: 503, json: { error: 'unavailable' } })
+    const inventories: Array<{ tools: readonly string[]; plugins: readonly string[] | undefined }> = []
+    const run = await boot({
+      prove: async (_url, _deadline, input) => {
+        inventories.push({ tools: input.toolNames, plugins: input.pluginFiles })
+        return { ok: true }
+      },
+    })
+    expect(run.result.source).toBe('image-default')
+    expect(inventories).toEqual([{ tools: ['a', 'z'], plugins: ['plugins/a.ts', 'plugins/z.js'] }])
+  })
+
   test('a box with no API at all takes the same branch', async () => {
     const run = await boot({ api: null })
     expect(run.result).toMatchObject({ dir: join(work, DIR), source: 'workspace', releasesEnabled: false })

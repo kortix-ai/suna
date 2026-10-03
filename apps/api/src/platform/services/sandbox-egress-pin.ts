@@ -25,8 +25,8 @@
  *
  * Measured instead (two Daytona sandboxes, personal account, 2026-08-14):
  *
- *     sandbox c6009f9d → 67.213.121.131 , 67.213.121.131
- *     sandbox 004f74dc → 67.213.113.135 , 67.213.113.135
+ *     sandbox A → <egress_ip_a> , <egress_ip_a>
+ *     sandbox B → <egress_ip_b> , <egress_ip_b>
  *
  * Each sandbox has its OWN egress address, stable across calls. So "is this
  * request coming from the sandbox the token was issued to" is answerable.

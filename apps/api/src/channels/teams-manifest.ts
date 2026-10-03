@@ -43,11 +43,14 @@ export interface TeamsManifest {
 }
 
 /**
- * Bump when the manifest changes shape. The org-catalog publish upgrades an
- * existing app only when this differs from what the catalog holds, and a Teams
- * admin has to re-consent to new resource-specific permissions on the team.
+ * Bump on every manifest change, text included. Graph refuses an app-definition
+ * update that does not raise the version, so an unbumped change never reaches
+ * a tenant that already has the app (1.6.1: the descriptions and accent color
+ * changed under 1.6.0). The Channels page offers the update to every catalog
+ * on an older version; a team owner still accepts a new permission or message
+ * action in each team. `unit-teams-manifest.test.ts` fails until you bump.
  */
-export const TEAMS_MANIFEST_VERSION = '1.6.0';
+export const TEAMS_MANIFEST_VERSION = '1.6.1';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
@@ -92,10 +95,10 @@ export interface BuildTeamsManifestConfig {
 }
 
 const SHORT_DESCRIPTION =
-  'Your AI workforce, in Teams — @-mention an agent and it does the real work.';
+  'Open-source AI Management System — start a session from any Teams chat.';
 
 const LONG_DESCRIPTION =
-  'Kortix brings a workforce of AI agents into Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — working across your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same conversation. Managed by Kortix · https://kortix.com';
+  'Kortix is an open-source AI Management System — your agents, skills, company memory, and connectors in one git repo you own. This app starts Kortix sessions from Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — using your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same session. Managed by Kortix · https://kortix.com';
 
 function hostOf(baseUrl: string): string {
   try {
@@ -125,7 +128,7 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
       full: cfg.longDescription ?? LONG_DESCRIPTION,
     },
     icons: { color: 'color.png', outline: 'outline.png' },
-    accentColor: '#0A0A0A',
+    accentColor: '#0b0b0b',
     bots: [
       {
         botId: cfg.appId,

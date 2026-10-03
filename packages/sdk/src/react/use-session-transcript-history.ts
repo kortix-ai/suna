@@ -2,6 +2,11 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getSessionTranscriptSync } from '../core/rest/projects-client/sessions';
+import {
+  OPEN_BUNDLE_TRANSCRIPT_LIMIT,
+  openBundleHistory,
+  settledOpenBundle,
+} from '../core/session/open-bundle';
 import { savedCopyEmptyRoot } from '../core/session-sync/saved-transcript';
 import { qk } from './query-keys';
 
@@ -12,12 +17,21 @@ export function useSessionTranscriptHistory(
 ) {
   const query = useQuery({
     queryKey: [...qk.project.session(projectId, sessionId), 'transcript-history'],
-    queryFn: ({ signal }) =>
-      getSessionTranscriptSync(projectId, sessionId, {
-        limit: 40,
-        history: true,
-        signal,
-      }),
+    // The session-open snapshot carries this window. One that has already
+    // answered serves it, so the window is not downloaded again. This read
+    // never waits for a snapshot in flight: saved history paints from its own
+    // route when the snapshot is slow.
+    queryFn: ({ signal }) => {
+      const bundle = settledOpenBundle(projectId, sessionId);
+      return (
+        (bundle && openBundleHistory(bundle)) ??
+        getSessionTranscriptSync(projectId, sessionId, {
+          limit: OPEN_BUNDLE_TRANSCRIPT_LIMIT,
+          history: true,
+          signal,
+        })
+      );
+    },
     enabled: enabled && !!projectId && !!sessionId,
     staleTime: 0,
     gcTime: 0,

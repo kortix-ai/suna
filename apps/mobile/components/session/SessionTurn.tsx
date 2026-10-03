@@ -27,6 +27,7 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import type { AvatarPerson } from '@/lib/session/participants';
 import {
   collectTurnParts,
   compactionTurnInfo,
@@ -47,8 +48,8 @@ import type {
   QuestionRequest,
   SessionStatus,
   Turn,
-} from '@/lib/opencode/types';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+} from '@/lib/session/types';
+import type { Command } from '@/lib/session/runtime-data';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import {
   answeredQuestionParts as selectAnsweredQuestionParts,
@@ -130,6 +131,8 @@ interface SessionTurnProps {
   rewindDisabled?: boolean;
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /** Who sent this turn's prompt. Set only in a session with two or more people. */
+  sender?: AvatarPerson | null;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -157,6 +160,7 @@ function SessionTurnImpl({
   rewindDisabled,
   queueState,
   uploadStatus,
+  sender,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -267,6 +271,7 @@ function SessionTurnImpl({
       rewindDisabled={rewindDisabled}
       queueState={queueState}
       uploadStatus={uploadStatus}
+      sender={sender}
     />
   );
 
@@ -373,8 +378,20 @@ function SessionTurnImpl({
   }
 
   // 3. Response / inline content
+  // The streaming reply and the finished reply share the key "response" and
+  // the same element tree, so the reply keeps its views when the turn ends
+  // instead of remounting (a re-parse, re-highlight and image reload). A
+  // slash-command reply streams in its card with the chrome off.
   if (working && !hasSteps && !showInlineContent && response) {
-    body.push(<TextPartBlock key="response-streaming" text={response} isDark={isDark} isStreaming />);
+    body.push(
+      commandForTurn ? (
+        <CommandOutputCard key="response" name={commandForTurn.name} chrome={false}>
+          <TextPartBlock text={response} isDark={isDark} isStreaming />
+        </CommandOutputCard>
+      ) : (
+        <TextPartBlock key="response" text={response} isDark={isDark} isStreaming />
+      ),
+    );
   }
   if (showInlineContent && inlineItems) {
     let lastTextIndex = -1;

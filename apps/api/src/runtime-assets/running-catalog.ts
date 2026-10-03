@@ -64,8 +64,35 @@ export function lastKnownManagedCatalog(sessionId: string): RunningCatalogEntry 
  *  model — the next turn re-measures instead of re-sending. */
 export function forgetRunningCatalog(sessionId: string): void {
   runningCatalog.delete(sessionId);
+  confirmedModels.delete(sessionId);
+}
+
+/**
+ * Per-model answers for ids OUTSIDE the managed lineup (`codex/…`, BYOK), which
+ * no health report lists. `null` = this box's daemon predates per-model
+ * converge, so asking it again is pointless until the TTL lapses.
+ */
+const confirmedModels = new Map<string, { models: Set<string> | null; at: number }>();
+
+export function noteModelConfirmation(sessionId: string, model: string | null): void {
+  const entry = confirmedModels.get(sessionId);
+  const fresh = entry && Date.now() - entry.at <= RUNNING_CATALOG_TTL_MS;
+  if (!fresh && confirmedModels.size >= MAX_TRACKED_SESSIONS) {
+    const oldest = confirmedModels.keys().next();
+    if (!oldest.done) confirmedModels.delete(oldest.value);
+  }
+  const models = model === null ? null : new Set([...(fresh ? (entry.models ?? []) : []), model]);
+  confirmedModels.set(sessionId, { models, at: fresh ? entry.at : Date.now() });
+}
+
+export function modelConfirmation(sessionId: string, model: string): 'present' | 'legacy' | undefined {
+  const entry = confirmedModels.get(sessionId);
+  if (!entry || Date.now() - entry.at > RUNNING_CATALOG_TTL_MS) return undefined;
+  if (entry.models === null) return 'legacy';
+  return entry.models.has(model) ? 'present' : undefined;
 }
 
 export function __clearRunningCatalogForTests(): void {
   runningCatalog.clear();
+  confirmedModels.clear();
 }

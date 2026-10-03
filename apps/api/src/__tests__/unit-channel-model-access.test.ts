@@ -236,7 +236,7 @@ describe('checkChannelModel — checked as the gateway will run it', () => {
 
     const verdict = await access.checkChannelModel(scope({ personalUserId: null }), 'codex/gpt-6-astra');
 
-    expect(verdict).toMatchObject({ ok: true, model: 'kortix/codex/gpt-6-astra' });
+    expect(verdict).toMatchObject({ ok: true, model: 'codex/gpt-6-astra' });
     expect(probes[0]).toMatchObject({
       userId: 'ivan', personalUserId: null, providerSecretPools: { codex: ['k1'] }, model: 'codex/gpt-6-astra',
     });
@@ -424,17 +424,18 @@ describe('planChannelFollowUp — the model a follow-up carries', () => {
   test('a /model choice made after the session started travels with the prompt', async () => {
     await followUp({ chosenModel: 'kortix/deepseek-v4.1-flash' });
     expect(turnCalls[0]).toMatchObject({
-      currentModel: 'kortix/deepseek-v4.1-flash', explicit: true, sessionId: 's1', userId: 'ivan', personalUserId: 'ivan',
+      currentModel: 'kortix/deepseek-v4.1-flash', sessionId: 's1', userId: 'ivan', personalUserId: 'ivan',
     });
   });
 
-  test('the session`s own pin is not re-sent: no choice, or the same one', async () => {
+  // With no model on the prompt the runtime answers on its last prompt's
+  // model, not the pin (2026-10-01: a DeepSeek channel ran `codex/gpt-6-astra`
+  // for a week). So the pin is checked and carried on every follow-up.
+  test('with no choice, or the same one, the follow-up carries the session`s pin', async () => {
     await followUp();
     await followUp({ chosenModel: 'codex/gpt-6-astra' });
-    expect(turnCalls.map((c) => [c.currentModel, c.explicit])).toEqual([
-      ['kortix/codex/gpt-6-astra', false],
-      ['codex/gpt-6-astra', false],
-    ]);
+    expect(turnCalls.map((c) => c.currentModel)).toEqual(['kortix/codex/gpt-6-astra', 'codex/gpt-6-astra']);
+    expect(turnCalls.every((c) => !('explicit' in c))).toBe(true);
   });
 
   test('a ChatGPT pin in a shared session is checked without anyone`s own connection, so it is replaced', async () => {
@@ -454,7 +455,7 @@ describe('planChannelFollowUp — the model a follow-up carries', () => {
 
   test('off the gateway a choice waits for the next session: it cannot travel per prompt', async () => {
     await followUp({ scope: scope({ llmGatewayEnabled: false }), chosenModel: 'anthropic/claude-sonnet-4-6', session: { ...session, pinnedModel: null } });
-    expect(turnCalls[0]).toMatchObject({ currentModel: null, explicit: false });
+    expect(turnCalls[0]).toMatchObject({ currentModel: null });
   });
 
   test('no scope: the pin, checked the legacy way', async () => {

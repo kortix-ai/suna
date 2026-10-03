@@ -830,8 +830,10 @@ export async function reloadSessionConfig(input: {
           ),
         );
     }
-    // Read the etag the box runs now: the release carried the governance.
-    const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
+    // Read the etag the box runs now: the release carried the governance. pi
+    // applies a release in place, so `applied` arrives with no `reload`.
+    const after =
+      converged.outcome === 'applied' ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
     return {
       ...convergeToReloadResult(converged, { previousEtag: before.etag, etagAfter: after?.etag ?? null }),
       repo_refreshed: repoRefreshed,
@@ -944,7 +946,8 @@ export function convergeToReloadResult(
   const reloaded = converged.reload !== null;
   const common = {
     previous_etag: etags.previousEtag,
-    etag: reloaded ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    etag: converged.outcome === 'applied' ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    // Null for a runtime that applies a release in place (pi): nothing restarted.
     opencode_reload: reloaded ? ('restarted' as const) : null,
     turn_ended: converged.reload?.turn_ended ?? null,
   };

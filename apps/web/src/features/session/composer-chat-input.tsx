@@ -50,6 +50,7 @@ export function ComposerChatInput({
   placeholder,
   prefill,
   onPrefillApplied,
+  aboveSlot,
   inputSlot,
   toolbarSlot,
   underbarPlacement,
@@ -102,6 +103,7 @@ export function ComposerChatInput({
     submit?: boolean;
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
+  aboveSlot?: ReactNode;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -133,7 +135,7 @@ export function ComposerChatInput({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
   const restoredOptions = prefill?.options;
   const setAgent = local.agent.set;
@@ -162,7 +164,7 @@ export function ComposerChatInput({
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const selectedAgentName = lockedAgentName ?? agentResolution.selected;
@@ -252,6 +254,7 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       onPrefillApplied={onPrefillApplied}
+      aboveSlot={aboveSlot}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}

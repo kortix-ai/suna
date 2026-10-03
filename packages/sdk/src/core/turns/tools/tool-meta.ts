@@ -7,11 +7,13 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
+import { toolKind } from '../tool-kind';
 import { humanizeSearchQuery } from './search-query';
 import { stripTrailingSlashes } from '../text-scan';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
 
+/** The tool kinds (`toolKind`) that group into a context block. */
 export const CONTEXT_TOOLS = new Set(['read', 'glob', 'grep', 'list']);
 
 /** Normalize `oc-foo_bar` → `foo_bar`, `foo-bar` → `foo_bar`. */
@@ -20,8 +22,7 @@ export function normalizeName(name: string): string {
 }
 
 export function isContextTool(toolName: string): boolean {
-  const n = normalizeName(toolName);
-  return CONTEXT_TOOLS.has(n);
+  return CONTEXT_TOOLS.has(toolKind(toolName));
 }
 
 /**
@@ -37,10 +38,10 @@ export function contextToolSummary(parts: ToolPart[]): {
   let search = 0;
   let list = 0;
   for (const part of parts) {
-    const n = normalizeName(part.tool);
-    if (n === 'read') read++;
-    else if (n === 'glob' || n === 'grep') search++;
-    else if (n === 'list') list++;
+    const kind = toolKind(part.tool);
+    if (kind === 'read') read++;
+    else if (kind === 'glob' || kind === 'grep') search++;
+    else if (kind === 'list') list++;
   }
   return { read, search, list };
 }

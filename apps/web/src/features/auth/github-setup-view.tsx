@@ -103,7 +103,7 @@ export function GitHubSetupView({
             {account}
             <Button size="lg" className="mt-5 w-full" disabled>
               <SessionDotMatrix size={14} className="shrink-0" />
-              {selectingExistingInstallation ? 'Link' : tI18nComplete.raw('text8130db25eca7')}
+              {selectingExistingInstallation ? tI18nComplete.raw('texta6a32dbc5618') : tI18nComplete.raw('text8130db25eca7')}
             </Button>
             <span className="sr-only">{tI18nComplete.raw('text147251df4759')}</span>
           </Rise>
@@ -147,8 +147,7 @@ export function GitHubSetupView({
                       {installation.repository_selection ? (
                         <>
                           <span aria-hidden className="text-muted-foreground/40">
-                            {' '}
-                            &bull;{' '}
+                            {' \u2022 '}
                           </span>
                           {installation.repository_selection === 'all'
                             ? tI18nComplete.raw('text77fe4eba38d8')
@@ -171,7 +170,7 @@ export function GitHubSetupView({
                       says so, and does not offer a dead button. */}
                   {installation.linked ? (
                     <Badge variant="outline" size="sm">
-                      Linked
+                      {tI18nComplete.raw('textbfda026e6c59')}
                     </Badge>
                   ) : (
                     <Button
@@ -180,7 +179,7 @@ export function GitHubSetupView({
                       variant="secondary"
                       onClick={() => onLink(installation)}
                     >
-                      Link
+                      {tI18nComplete.raw('texta6a32dbc5618')}
                     </Button>
                   )}
                 </li>

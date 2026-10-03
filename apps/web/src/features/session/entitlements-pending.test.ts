@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { type GateQuery, resolveEntitlementsPending } from './entitlements-pending';
 
 /**
- * Dev incident, 2026-09-17 — project 441011b6 on dev.kortix.com.
+ * Dev incident, 2026-09-17 — one project on dev.kortix.com.
  *
  * A project MEMBER opened the composer model picker and got a spinner that
  * never resolved. Held it 30s; still spinning. Meanwhile the UI's own two

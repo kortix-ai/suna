@@ -143,7 +143,7 @@ export async function prefetchCustomize(
         ...contract(FRESHNESS.connectors),
         ...gc,
       }),
-      prefetchCatalogLanding(queryClient, projectId, gates.discoverEnabled, api),
+      prefetchCatalogLanding(queryClient, projectId, api),
     );
   }
   if (gates.secretRead) {
@@ -221,17 +221,13 @@ export async function prefetchCustomize(
 async function prefetchCatalogLanding(
   queryClient: QueryClient,
   projectId: string,
-  discoverEnabled: boolean,
   api: CustomizePrefetchApi,
 ): Promise<void> {
   const catalog = await api.loadCatalogQueries().catch(() => null);
   if (!catalog) return;
   const { catalogSectionsQuery, connectStatusQuery } = catalog;
   const gc = { gcTime: CUSTOMIZE_PREFETCH_GC_MS };
-  if (discoverEnabled) {
-    await queryClient.prefetchQuery({ ...catalogSectionsQuery(projectId, 'discover'), ...gc });
-    return;
-  }
+  // The landing source stays managed, including projects opted into direct discovery.
   // Same key and freshness as `useConnectProviderStatus`.
   const status = await queryClient
     .fetchQuery({

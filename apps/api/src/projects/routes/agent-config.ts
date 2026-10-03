@@ -29,6 +29,7 @@
 // assertProjectCapability so the agent-grant fold fires.
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { ignoredAgentSettings } from '@kortix/api-contract/runtime-relay';
 import { projects } from '@kortix/db';
 import {
   type AgentBlockV2,
@@ -37,7 +38,9 @@ import {
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
@@ -62,6 +65,8 @@ import {
   KNOWN_BEHAVIOR_KEYS,
   OpencodeAgentConfigSchema,
   readAgentMarkdownFile,
+  manifestRuntime,
+  selectSessionHarness,
 } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -250,12 +255,22 @@ projectsApp.openapi(
       block = { ...(read.block ?? {}), behavior, opencode: behavior };
     }
 
+    // The harness a new session of this project runs, and the agent settings
+    // it ignores, so the editor marks them instead of letting them look applied.
+    const harness = selectSessionHarness({
+      piHarnessFlag: resolveFeatureFlag(loaded.row.metadata, 'pi_harness'),
+      runtime: manifestRuntime(manifest.raw),
+      llmGateway: projectLlmGatewayEnabled(loaded.row.metadata),
+    });
+
     return c.json({
       agent: agentName,
       schema_version: read.schemaVersion,
       editable: read.schemaVersion === 2,
       default_agent: read.defaultAgent,
       block,
+      harness,
+      ignored_settings: ignoredAgentSettings(harness),
     });
   },
 );

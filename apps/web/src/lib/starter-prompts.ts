@@ -888,7 +888,7 @@ export const GENERAL_STARTER_PROMPTS: StarterPrompt[] = [
   },
   // ── Engineering, on the repo this session cloned ─────────────────────
   // The biggest gap in the first pass, and the least defensible one:
-  // developers are Kortix's primary audience (comms skill, §9) and the sandbox
+  // developers are Kortix's primary audience (kortix-brand `positioning.md`, section 5) and the sandbox
   // is a real Linux machine with the repo already checked out. Every row here
   // is work the agent does in `/workspace`, landing through a change request.
   {

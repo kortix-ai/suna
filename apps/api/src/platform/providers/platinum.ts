@@ -104,11 +104,9 @@ function stopConfirmPollMs(): number {
 // create() does for its 60 s long-poll.
 export const START_CALL_TIMEOUT_MS = 60_000;
 // How long start() carries a box through a restore from cold storage. A 6 GB
-// session box restores in ~100 s alone on dev and past 150 s with a second
-// restore on the same host (2026-09-25); the slowest prod unarchive that day
-// took 546 s. The session wake must still confirm the box inside its
-// RUNTIME_WAKE_HARD_MS (10 min), after this and one last /start.
-export const START_RESTORE_BUDGET_MS = 8 * 60_000;
+// session box restores in ~100 s alone on dev; observed slow restores take
+// 546 s. Allow those restores to finish before the bounded wake expires.
+export const START_RESTORE_BUDGET_MS = 10 * 60_000;
 // How often a caller's lease is renewed (opts.onProgress) while a restore is
 // seen in progress. The wake and restart leases run 240 s.
 export const START_PROGRESS_INTERVAL_MS = 30_000;
@@ -122,8 +120,9 @@ interface PlatinumSandbox {
   autoResume?: boolean;
   /** Public region the box was placed in (e.g. 'eu-west', 'us-east'). */
   region?: string | null;
-  /** The control plane that owns this box. `PLATINUM_API_URL` routes to it
-   *  for every call by id; kept so a later change can call it directly. */
+  /** The control plane that owns this box. shared/platinum.ts learns it from
+   *  this field (and from `x-pt-served-by`) and sends every later call by id
+   *  straight there instead of through `PLATINUM_API_URL`'s forwarding hop. */
   api_url?: string;
   /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
    *  response to an already-committed sandbox rather than a fresh create. */
@@ -475,8 +474,11 @@ export class PlatinumProvider implements SandboxProvider {
       auto_resume: workloadType === 'app',
       // The project's `us_region` flag (platform/services/sandbox-region.ts).
       // Absent ⇒ Platinum places the box in its home region, exactly as
-      // before. The one PLATINUM_API_URL forwards a regional create to that
-      // region's control plane and routes every later call by id there.
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
@@ -593,7 +595,7 @@ export class PlatinumProvider implements SandboxProvider {
     // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
     // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
     // an intermittent guest-boot stall surfaced as a "running" session that was
-    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // actually failed-start (proven 2026-07-07 on one session: Platinum
     // state=failed-start, comp status=active). Throw on a non-running terminal
     // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
     // another host) instead of silently returning an unusable sandbox. The
@@ -986,7 +988,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (!isMissingSandboxError(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:

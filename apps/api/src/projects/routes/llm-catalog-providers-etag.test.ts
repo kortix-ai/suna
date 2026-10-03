@@ -12,10 +12,9 @@
  * can skip the network round trip for an hour, and a revalidation after that
  * ends as a 304 with no body instead of re-sending the full catalog.
  *
- * Hermetic (reads the file as text, no database), same shape as
- * `./warm-sessions.test.ts` — the route always requires a project-scoped
- * auth check, so a full request-level test lives with the other DB-backed
- * route tests, not here.
+ * Hermetic (reads the file as text, no database). The route always requires a
+ * project-scoped auth check, so a full request-level test lives with the
+ * other DB-backed route tests, not here.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';

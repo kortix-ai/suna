@@ -59,13 +59,15 @@ The platform never writes `/workspace` to do this. `/workspace` stays the full c
 
 The unit a session runs is a **config release**: one archive of the OpenCode config directory (`harnesses/opencode` unless the manifest sets `opencode.config_dir`) and the root `skills/` at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. A project created before 2026-09 uses `.kortix/opencode`, which also holds its agents and skills. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
 
+Both session runtimes run config releases. OpenCode reads the whole archive. pi reads the agents, from the compiled agent config, `skills/`, and its own config directory: `pi.config_dir` in the manifest, else `harnesses/pi`, else `.kortix/pi`. The release carries that directory as `pi/`, so pi's skills, extensions, prompts, and `settings.json` also come from the base branch. The OpenCode files in the archive (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session.
+
 Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
 
 Convergence never ends a turn. A turn that is already running blocks it, and the next turn start picks it up.
 
 1. The box asks the API which release it should run. The request carries no inputs: the answer is always the base branch's current release for that session.
-2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there.
-3. The daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
+2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there. pi reads its skills from there.
+3. On OpenCode, the daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. On pi, the runtime runs inside the daemon, so the daemon loads the new config in place. A release that changes pi extensions, prompts, or settings restarts the pi runtime in place, while no turn runs; the conversation continues. A config that pi does not accept leaves the previous config running. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
 
 #### `/workspace` is where you edit, the base branch is what runs
 
@@ -83,7 +85,7 @@ If the owner may not use the default agent, or the project declares no default, 
 
 #### Fallback
 
-A config that fails the proven check never replaces a working one. The daemon keeps the running OpenCode, records the release as failed, and reports the reason. On boot, and after a failed convergence, the daemon serves the first config that works, in this order:
+A config that fails the proven check never replaces a working one. The daemon keeps the running config, records the release as failed, and reports the reason. On boot, and after a failed convergence, the daemon serves the first config that works, in this order:
 
 1. The desired release.
 2. The last proven release.
@@ -155,7 +157,7 @@ The checkout pull is fast-forward only, on the session's own branch, so it disca
 
 #### Turning it off
 
-Config releases are a per-project feature flag, **Config Releases**, on by default in **Settings → Feature flags**. Turn it off and the project returns to the earlier behaviour: OpenCode reads the config directory inside `/workspace`, no release is built, and the session header shows the earlier, etag-based state. The change takes effect at the next boot or start of each session's box; a running session keeps working until then. Turning it back on converges each session again at its next boot or start.
+Config releases are a per-project feature flag, **Config Releases**, in **Settings → Feature flags**. It is off by default. With the flag off, a session reads its config from `/workspace`: OpenCode reads the config directory there, and pi reads `skills/` there. No release is built, and the session header shows the earlier, etag-based state. The change takes effect at the next boot or start of each session's box; a running session keeps working until then. Turning it back on converges each session again at its next boot or start.
 
 ## Layout inside the sandbox
 
@@ -219,7 +221,7 @@ The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves
 
 ## The agent runtime
 
-The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `harnesses/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+A session runs one [harness](/docs/work/harnesses). pi runs inside the daemon process: it has no child process and no port. For an OpenCode session, the daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `harnesses/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
 ## Transcript attachments and memory
 
@@ -231,11 +233,11 @@ OpenCode stores tool screenshots as base64 `data:` URLs inside its SQLite transc
 
 ## The daemon control surface
 
-The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_TOKEN`.
+The `kortix-agent` binary runs as PID 1's child and fronts the session's harness on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_TOKEN`.
 
 | Path | Purpose |
 | --- | --- |
-| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
+| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and harness state (`harness.id` is `opencode` or `pi`), `capabilities`, repo, branch, commit. |
 | `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
 | `POST /kortix/config/converge` | Fetch the desired config release from the API and apply it. The request carries no config content. A second request while one runs returns `409`. |
 | `POST /kortix/abort` | Abort the current run. |
@@ -245,7 +247,7 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | `GET /kortix/part/:sessionID/:messageID/:partID` | Attachment bytes on demand — a top-level file part or a tool result's `state.attachments[]` entry. Bytes the daemon offloaded to a sidecar file are served from there. |
 | `GET /kortix/diag` | One JSON error report: OpenCode state/pid/port/port pair, boot timeline, a fresh resource snapshot (memory, cgroup limit, load, disk, RSS, duplicate opencode processes), the runtime-assets report, and the tail of both logs (`?tail=N`, default 200). Same auth as `/kortix/logs`. |
 | `/proxy/{port}/*` | Reverse-proxy to another port inside the sandbox. The daemon's own port is blocked. |
-| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096`. Returns `503` while OpenCode boots. |
+| `*` | Catch-all to the harness: a reverse-proxy to OpenCode on `127.0.0.1:4096`, or pi's in-process routes. Returns `503` while the harness boots. |
 
 Run `/kortix/refresh` to apply an out-of-band change, such as a manifest edit committed from a parallel session, without re-provisioning the sandbox.
 
