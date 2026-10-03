@@ -52,15 +52,19 @@ export class PlatinumTemplateListingError extends Error {
 const TEMPLATES_PAGE_SIZE = 50;
 /** Hard page cap so an API bug (an ignored/broken cursor) can NEVER spin forever.
  *  Hitting it with full, still-advancing pages is a listing FAILURE (throw), not
- *  an exhausted/absent list. */
-const TEMPLATES_MAX_PAGES = 40; // 40 * 50 = 2000 templates
+ *  an exhausted/absent list. The cap is a safety net, not a size limit: the
+ *  Kortix Dev org held 1,671 templates on 2026-10-02 and grows ~70 a day, so a
+ *  2,000 cap (the old 40) was weeks from making every full walk throw. */
+const TEMPLATES_MAX_PAGES = 200; // 200 * 50 = 10,000 templates
 
 async function fetchTemplatePage(
   offset: number,
   client: PlatinumClient,
+  name?: string,
 ): Promise<PlatinumTemplate[]> {
+  const nameParam = name === undefined ? '' : `&name=${encodeURIComponent(name)}`;
   const rows = await client.json<PlatinumTemplate[]>(
-    `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}`,
+    `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}${nameParam}`,
   );
   if (!Array.isArray(rows)) {
     throw new PlatinumTemplateListingError(`expected an array page, got ${typeof rows}`);
@@ -82,13 +86,18 @@ async function fetchTemplatePage(
 export async function paginateTemplates<R>(
   onPage: (page: PlatinumTemplate[], all: PlatinumTemplate[]) => R | undefined,
   client: PlatinumClient = productionPlatinumClient,
+  /** Page 0, already fetched (an exact-name probe the control plane ignored). */
+  firstPage?: PlatinumTemplate[],
 ): Promise<{ early: R | undefined; all: PlatinumTemplate[] }> {
   const all: PlatinumTemplate[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
     let rows: PlatinumTemplate[];
     try {
-      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client);
+      rows =
+        page === 0 && firstPage
+          ? firstPage
+          : await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client);
     } catch (err) {
       // Preserve the 401/403 signature end to end (getSnapshotState rethrows it;
       // the transition classifier recognizes it as permanent). Everything else is
@@ -108,6 +117,50 @@ export async function paginateTemplates<R>(
   }
   throw new PlatinumTemplateListingError(
     `exceeded ${TEMPLATES_MAX_PAGES} pages (> ${TEMPLATES_MAX_PAGES * TEMPLATES_PAGE_SIZE} templates) without exhausting the list`,
+  );
+}
+
+/**
+ * Every template named exactly `name`, newest first, via the control plane's
+ * `GET /v1/templates?name=` filter: ONE request instead of a walk.
+ *
+ * Why it matters (measured 2026-10-02): the first session after each Kortix
+ * deploy resolved its image through name lookups that walked the whole list.
+ * The Kortix Dev org held 1,671 templates = 34 pages at ~250 ms each from
+ * us-west-2 to the EU control plane, so `image:resolved` took 8.7 s.
+ *
+ * A control plane that predates the filter answers with the unfiltered first
+ * page. That is detected (a row with another name) and returned as
+ * `{ firstPage }`, so callers continue the classic walk from page 1 with the
+ * exact number of requests they made before this helper existed.
+ *
+ * Errors keep `paginateTemplates`' contract: an auth failure propagates
+ * verbatim, anything else is a PlatinumTemplateListingError, never "absent".
+ */
+export async function lookupTemplatesNamed(
+  name: string,
+  client: PlatinumClient = productionPlatinumClient,
+): Promise<{ named: PlatinumTemplate[] } | { firstPage: PlatinumTemplate[] }> {
+  const named: PlatinumTemplate[] = [];
+  for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
+    let rows: PlatinumTemplate[];
+    try {
+      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client, name);
+    } catch (err) {
+      if (isPlatinumAuthFailure(err) || err instanceof PlatinumTemplateListingError) throw err;
+      throw new PlatinumTemplateListingError(err instanceof Error ? err.message : String(err));
+    }
+    if (rows.some((t) => t.name !== name)) {
+      if (page === 0) return { firstPage: rows };
+      throw new PlatinumTemplateListingError(
+        `name filter for ${name} returned other templates past page 0`,
+      );
+    }
+    named.push(...rows);
+    if (rows.length < TEMPLATES_PAGE_SIZE) return { named };
+  }
+  throw new PlatinumTemplateListingError(
+    `exceeded ${TEMPLATES_MAX_PAGES} pages of templates named ${name}`,
   );
 }
 
@@ -136,9 +189,12 @@ export async function findTemplateByName(
   name: string,
   client: PlatinumClient = productionPlatinumClient,
 ): Promise<PlatinumTemplate | null> {
+  const lookup = await lookupTemplatesNamed(name, client);
+  if ('named' in lookup) return lookup.named[0] ?? null;
   const { early } = await paginateTemplates<PlatinumTemplate>(
     (page) => page.find((t) => t.name === name),
     client,
+    lookup.firstPage,
   );
   return early ?? null;
 }

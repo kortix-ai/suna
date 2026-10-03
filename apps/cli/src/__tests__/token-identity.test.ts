@@ -42,8 +42,8 @@ function agentMe(): MeResponse {
     email: 'owner@example.com',
     token_context: {
       auth_type: 'pat',
-      project_id: '508bccdd-1edb-4c61-877b-164aceac20e2',
-      session_id: 'ea985b87-d12c-4ba4-aa12-ee0711dab6f6',
+      project_id: '5a1e0c0a-0000-4000-8000-00000000000a',
+      session_id: '5a1e0c0b-0000-4000-8000-00000000000b',
       agent: 'osp-vision-route-agent',
       connectors: [],
       kortix_permissions: ['project.secret.read', 'project.secret.write'],
@@ -83,7 +83,7 @@ describe('token identity cache', () => {
 
     const identity = cachedTokenIdentity('kortix_pat_session');
     expect(identity?.agent).toBe('osp-vision-route-agent');
-    expect(identity?.sessionId).toBe('ea985b87-d12c-4ba4-aa12-ee0711dab6f6');
+    expect(identity?.sessionId).toBe('5a1e0c0b-0000-4000-8000-00000000000b');
     expect(identity?.permissions).toEqual(['project.secret.read', 'project.secret.write']);
   });
 
