@@ -443,6 +443,10 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         DATABASE_URL: supabase.DB_URL,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
         SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
+        // The capture store (Supabase Storage S3): journeys write a device's day with it.
+        E2E_CAPTURE_S3_ENDPOINT: `${supabase.API_URL.replace(/\/+$/, '')}/storage/v1/s3`,
+        E2E_CAPTURE_S3_ACCESS_KEY_ID: supabase.S3_PROTOCOL_ACCESS_KEY_ID ?? '',
+        E2E_CAPTURE_S3_SECRET_ACCESS_KEY: supabase.S3_PROTOCOL_ACCESS_KEY_SECRET ?? '',
       };
     } else if (lane.name === 'target-browser-full') {
       const required = [

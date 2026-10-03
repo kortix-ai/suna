@@ -17,10 +17,12 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import Ajv2020 from "ajv/dist/2020";
+import { fileURLToPath } from "node:url";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import Ajv2020 from "ajv/dist/2020.js";
 import { readLocalSupabaseEnvironment, resolveLocalTopology } from "../core/local-stack";
 
-export const CONTRACT_DIR = resolve(import.meta.dir, "../../fixtures/capture-format-v2");
+export const CONTRACT_DIR = resolve(fileURLToPath(new URL("../../fixtures/capture-format-v2", import.meta.url)));
 const FIXTURE_PREFIX = "fixture-prefix";
 const FIXTURE_DEVICE = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
@@ -143,18 +145,24 @@ export interface S3Target {
   sessionToken?: string;
 }
 
-/** Upload objects in order with Bun's S3 client (path-style), as a device would. */
-export async function uploadCaptureObjects(target: S3Target, objects: CaptureObject[]): Promise<void> {
-  const client = new Bun.S3Client({
+/** A path-style S3 client for a store. Node and Bun both run it (the browser journeys load this file in Node). */
+function s3(target: S3Target): S3Client {
+  return new S3Client({
     endpoint: target.endpoint,
-    bucket: target.bucket,
     region: target.region,
-    accessKeyId: target.accessKeyId,
-    secretAccessKey: target.secretAccessKey,
-    sessionToken: target.sessionToken,
-    virtualHostedStyle: false,
+    forcePathStyle: true,
+    credentials: { accessKeyId: target.accessKeyId, secretAccessKey: target.secretAccessKey, sessionToken: target.sessionToken },
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
-  for (const object of objects) await client.write(object.key, object.body, { type: object.contentType });
+}
+
+/** Upload objects in order (path-style), as a device would. */
+export async function uploadCaptureObjects(target: S3Target, objects: CaptureObject[]): Promise<void> {
+  const client = s3(target);
+  for (const object of objects) {
+    await client.send(new PutObjectCommand({ Bucket: target.bucket, Key: object.key, Body: object.body, ContentType: object.contentType }));
+  }
 }
 
 /** A fresh synthetic machine key (sha256 hex), as the desktop app sends it. */
@@ -168,44 +176,31 @@ export function syntheticMachineKey(seed: string): string {
  * provider of the format. It has no STS, so a flow writes with these keys.
  */
 export async function localCaptureStore(): Promise<S3Target> {
-  const sb = await readLocalSupabaseEnvironment(resolveLocalTopology(resolve(import.meta.dir, "../../..")));
-  if (!sb.API_URL || !sb.S3_PROTOCOL_ACCESS_KEY_ID || !sb.S3_PROTOCOL_ACCESS_KEY_SECRET) {
-    throw new Error("local Supabase reports no S3 protocol endpoint or keys");
-  }
-  return {
-    endpoint: `${sb.API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
-    bucket: "kortix-capture",
-    region: "local",
-    accessKeyId: sb.S3_PROTOCOL_ACCESS_KEY_ID,
-    secretAccessKey: sb.S3_PROTOCOL_ACCESS_KEY_SECRET,
-  };
+  // Browser journeys run in Node: the runner hands them the store (local-runner.ts).
+  const fromEnv = process.env.E2E_CAPTURE_S3_ENDPOINT
+    ? { endpoint: process.env.E2E_CAPTURE_S3_ENDPOINT, accessKeyId: process.env.E2E_CAPTURE_S3_ACCESS_KEY_ID, secretAccessKey: process.env.E2E_CAPTURE_S3_SECRET_ACCESS_KEY }
+    : null;
+  const sb = fromEnv ? null : await readLocalSupabaseEnvironment(resolveLocalTopology(resolve(fileURLToPath(new URL("../../..", import.meta.url)))));
+  const endpoint = fromEnv?.endpoint ?? (sb?.API_URL ? `${sb.API_URL.replace(/\/+$/, "")}/storage/v1/s3` : "");
+  const accessKeyId = fromEnv?.accessKeyId ?? sb?.S3_PROTOCOL_ACCESS_KEY_ID;
+  const secretAccessKey = fromEnv?.secretAccessKey ?? sb?.S3_PROTOCOL_ACCESS_KEY_SECRET;
+  if (!endpoint || !accessKeyId || !secretAccessKey) throw new Error("local Supabase reports no S3 protocol endpoint or keys");
+  return { endpoint, bucket: "kortix-capture", region: "local", accessKeyId, secretAccessKey };
+}
+
+/** Delete objects as the device does when the person forgets a time range. */
+export async function deleteCaptureObjects(target: S3Target, keys: string[]): Promise<void> {
+  const client = s3(target);
+  for (const key of keys) await client.send(new DeleteObjectCommand({ Bucket: target.bucket, Key: key }));
 }
 
 /** Read one object back from a store (the flows read `policy.json` as a device would). */
-/** Delete objects as the device does when the person forgets a time range. */
-export async function deleteCaptureObjects(target: S3Target, keys: string[]): Promise<void> {
-  const client = new Bun.S3Client({
-    endpoint: target.endpoint,
-    bucket: target.bucket,
-    region: target.region,
-    accessKeyId: target.accessKeyId,
-    secretAccessKey: target.secretAccessKey,
-    sessionToken: target.sessionToken,
-    virtualHostedStyle: false,
-  });
-  for (const key of keys) await client.delete(key);
-}
-
 export async function readCaptureObject(target: S3Target, key: string): Promise<string | null> {
-  const client = new Bun.S3Client({
-    endpoint: target.endpoint,
-    bucket: target.bucket,
-    region: target.region,
-    accessKeyId: target.accessKeyId,
-    secretAccessKey: target.secretAccessKey,
-    sessionToken: target.sessionToken,
-    virtualHostedStyle: false,
-  });
-  const file = client.file(key);
-  return (await file.exists()) ? file.text() : null;
+  try {
+    const out = await s3(target).send(new GetObjectCommand({ Bucket: target.bucket, Key: key }));
+    return (await out.Body?.transformToString()) ?? null;
+  } catch (error) {
+    if ((error as { name?: string }).name === "NoSuchKey" || (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
 }
