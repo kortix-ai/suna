@@ -1,6 +1,6 @@
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
-import { Separator } from '@/components/ui/separator';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAgentsAndSkillsContent } from '@/features/marketing/agents-and-skills/content';
 import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
@@ -26,13 +26,6 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/agents-and-skills` — the part of the product that compounds.
