@@ -28,11 +28,22 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ browser: 'skipped-no-db' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ browser: 'pass' }) }), cur()).code).toBe(0);
   });
-  it('allows only db-suites to be skipped, and --strict never lets it pass', () => {
+  it('allows only the sanctioned skip per lane, and --strict never lets one pass', () => {
     const a = att({ lanes: lanes({ 'db-suites': 'skipped-no-db' }) });
     expect(evaluate(a, cur()).code).toBe(0);
     expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), cur()).code).toBe(1);
+    // The packages lane's sanctioned skip (a Kortix sandbox image, gated on CI
+    // after the merge): green on a PR, refused under --strict, never a wrong value.
+    const img = att({ lanes: lanes({ packages: 'skipped-sandbox-image' }) });
+    expect(evaluate(img, cur()).code).toBe(0);
+    expect(evaluate(img, cur(), REQUIRED_LANES, true).code).toBe(3);
+    expect(
+      evaluate(
+        att({ lanes: lanes({ packages: 'skipped-no-db', 'db-suites': 'skipped-no-db' }) }),
+        cur(),
+      ).code,
+    ).toBe(1);
   });
   it('a diff-keyed attestation ignores source_hash: fresh iff its own files are unchanged', () => {
     const line = '100644 blob1 pr.txt';
