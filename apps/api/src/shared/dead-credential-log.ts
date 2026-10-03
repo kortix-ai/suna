@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the budget is per process by design ("six lines per
+// route/reason per process per hour", file header) — a shared store would add a
+// round-trip per refusal and change the logged volume the anomaly was filed
+// against.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one

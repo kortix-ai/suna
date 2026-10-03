@@ -70,7 +70,6 @@ export const SQL_ONLY: SqlOnlyList = {
     idx_project_sessions_created_at: concurrently('20260807202731277_admin_analytics_time_indexes.concurrent.ts'),
     idx_project_sessions_project_updated: concurrently('20260916150159063_session_list_keyset_index.concurrent.ts'),
     idx_role_assignments_expires_at: concurrently('20260819015724479_rbac_canonical_model.sql'),
-    idx_secret_handles_session: concurrently('20260728132613912_secret_delivery_indexes.concurrent.ts'),
     idx_session_sandboxes_deadline_active: concurrently('20260730000452600_sandbox_deadline_index.concurrent.ts'),
     idx_account_deletion_requests_account_id: BASELINE,
     idx_account_deletion_requests_scheduled: BASELINE,

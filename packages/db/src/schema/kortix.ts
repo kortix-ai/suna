@@ -1207,9 +1207,11 @@ export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_h
  * reach by editing the row it was denied the value of.
  *
  * NOTE: this table's indexes ship in
- * 20260728132613912_secret_delivery_indexes.concurrent.ts. The unique ones are
- * declared below; the non-unique `idx_secret_handles_session` (session_id) is
- * on scripts/schema-contract-sql-only.ts.
+ * 20260728132613912_secret_delivery_indexes.concurrent.ts, and the non-unique
+ * `idx_secret_handles_session` (session_id) it also built was dropped unused
+ * by 20261003060306058_drop_unused_secret_handle_session_index.concurrent.ts
+ * (session-only lookups stay covered by idx_secret_handles_session_secret_rev,
+ * which leads with session_id). The unique ones are declared below.
  */
 export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
   handleId: uuid('handle_id').defaultRandom().primaryKey(),
