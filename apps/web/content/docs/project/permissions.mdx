@@ -7,7 +7,8 @@ An agent acts on your project through the CLI, the API, git, connectors, and
 Apps. This page explains how Kortix decides what an agent may do.
 
 **An agent acts as itself, not as the person who started it.** Its authority is
-its Kortix permissions ∩ its ceiling role − the human-only permissions. Nobody
+its Kortix permissions ∩ its ceiling role. Permissions alone decide, the same
+way they do for a person. Nobody
 lends an agent their own role, so the agent does the same thing whoever runs
 it.
 
@@ -52,7 +53,7 @@ The ceiling is a project role that an admin binds to the agent's service
 account. The agent's Kortix permissions never exceed it.
 
 - **No role bound:** the default agent ceiling applies. It is every project
-  permission except the human-only ones.
+  permission except `project.credentials.issue`.
 - **A role bound:** built-in `member` or `manager`, or a custom role. The agent
   keeps only the Kortix permissions that the role also grants.
 - A ceiling never adds a permission. A `manager` ceiling does not give an
@@ -63,16 +64,20 @@ agent under **Agents** and choose a role. Only admins who manage roles see
 agents in the picker. The project's access list shows each agent ceiling with
 an **Agent** badge.
 
-## Human-only permissions
+## `all` means every permission
 
-Three permissions stay with people. An agent never holds them, whatever its
-manifest or ceiling says:
+`kortix_permissions: all`, `"*"`, and any list that contains `"*"` mean the
+same thing: every project permission. That includes `project.members.manage`
+(add, change, or remove project members and grants) and `project.delete`.
 
-| Permission | What it does |
-|---|---|
-| `project.members.manage` | Add, change, or remove project members and grants |
-| `project.delete` | Delete the project |
-| `project.credentials.issue` | Mint a project token or a project-scoped PAT |
+One permission stays with people: `project.credentials.issue` (mint a project
+token or a project-scoped PAT). A token an agent minted would carry no agent
+permissions, so it would act outside them. The refusal answers `403` with
+`code: "agent_human_only_action"`.
+
+An entry that is not a grantable permission is ignored at runtime and the rest
+of the list still applies. `kortix validate` and a change request merge report
+it as an error.
 
 `project.read` is the reverse: an agent always holds it inside its own project.
 
@@ -130,21 +135,19 @@ The App's **Access** dialog lists the agents with access, read from
 `kortix.yaml`. The Apps page appears only when the project has the
 [Apps](/docs/feature-flags/apps) feature flag on.
 
-## Widening an agent needs a person
+## Changing agents and triggers
 
 `kortix.yaml` shapes what agents may do, so whoever lands a change on the
-default branch shapes agents. Two guards apply:
+default branch shapes agents. The same permissions decide for an agent and for
+a person:
 
-1. The ceiling is admin-only IAM state. The manifest never exceeds it.
-2. An agent session cannot merge a change request whose diff touches
-   `kortix.yaml` `agents.*` or `triggers`. The merge answers `403` with
-   `code: "CR_AGENT_GOVERNANCE_CHANGE"`. A person with `project.gitops.merge`
-   merges it.
-
-The check reads `kortix.yaml` at the merge base and at the change request's
-head. When it cannot read either one, it does not merge. It answers `503`
-with `code: "CR_GOVERNANCE_UNVERIFIED"` and a `Retry-After` header. Retry the
-merge.
+1. `project.gitops.merge` implies `project.agent.write` and
+   `project.trigger.*`. A principal that may merge a change request may merge
+   one that changes `agents.*` or `triggers`.
+2. Without `project.gitops.merge`, the merge answers `403` with
+   `code: "agent_scope_insufficient"` (agent) or `"project_role_insufficient"`
+   (person).
+3. The ceiling is admin-only IAM state. The manifest never exceeds it.
 
 ## Read a denial
 
@@ -170,7 +173,7 @@ agent can do** panel shows:
 
 - the Kortix permissions declared in `kortix.yaml`,
 - the ceiling role, or **Default agent ceiling**,
-- the human-only permissions,
+- the one human-only permission, `project.credentials.issue`,
 - the effective permissions: "People who may run this agent act with these
   permissions."
 

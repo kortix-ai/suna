@@ -89,10 +89,16 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
         `add ${actionText} to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
         `${C.dim} in kortix.yaml, then merge${C.reset}`
       );
+    case 'CR_AGENT_GOVERNANCE_CHANGE':
+      // Servers before the permissions-only model refuse every agent merge of
+      // an agents/triggers change. No grant unlocks it there.
+      return 'this server lets only a person merge a change request that changes agents or triggers — ask a person to merge it';
     default:
+      // An unknown code is not a grant miss: never send the agent to edit
+      // kortix.yaml for a refusal no grant can fix.
       return (
-        `add the action to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
-        `${C.dim} in kortix.yaml, then merge${C.reset}`
+        `${pending.code ? `refused with ${C.cyan}${pending.code}${C.reset} — ` : ''}` +
+        `read the error above; ${C.cyan}kortix whoami --token-only${C.reset} shows this session's permissions`
       );
   }
 }
@@ -103,8 +109,8 @@ export function resetPermissionDenial(): void {
 }
 
 async function resolveIdentity(auth: Auth): Promise<TokenIdentity | null> {
-  const cached = cachedTokenIdentity(auth.token);
-  if (cached) return cached;
+  // Live first: the session grant is re-derived on every prompt, so a cached
+  // identity can print `granted all` while the server already enforces less.
   try {
     // The client records the identity for us (api/client.ts captureIdentity),
     // so this both answers now and warms the host line for the next command.

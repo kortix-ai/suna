@@ -1,4 +1,5 @@
 import type { ParsedManifest } from '../triggers';
+import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
 import type { GitBackedProject, MirrorRefresh } from '../git';
 import {
@@ -363,7 +364,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
   const kortixResolved = Array.isArray(kortixRaw)
     ? kortixRaw.filter((action) => {
         const problem = validateKortixAction(action);
-        if (problem) console.warn('[agents] ignoring an ungrantable kortix_permissions entry', { agent: name, filename, problem });
+        if (problem) logger.warn('[agents] ignoring an ungrantable kortix_permissions entry', { agent: name, filename, problem });
         return !problem;
       })
     : kortixRaw;
@@ -441,7 +442,7 @@ function parseGrantSet(
       // Drop the one bad entry, never the whole grant (see parseAgentEntryV2).
       const problem = validate(value);
       if (problem) {
-        console.warn('[agents] ignoring an ungrantable grant entry', { agent: name, filename, problem });
+        logger.warn('[agents] ignoring an ungrantable grant entry', { agent: name, filename, problem });
         continue;
       }
     }

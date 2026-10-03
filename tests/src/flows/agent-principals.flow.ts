@@ -470,7 +470,7 @@ flow(
   },
 );
 
-// ── AGP-5 — HUMAN_ONLY actions are never an agent's ───────────────────────────
+// ── AGP-5 — permissions decide: members.manage and project.delete are ordinary ──
 flow(
   'AGP-5',
   {
@@ -484,6 +484,7 @@ flow(
       'GET /v1/connectors/projects/:projectId/catalog',
       'PUT /v1/projects/:projectId/access/:userId',
       'GET /v1/projects/:projectId/access',
+      'POST /v1/projects/:projectId/cli-token',
       'DELETE /v1/projects/:projectId',
       'GET /v1/projects/:projectId',
     ],
@@ -492,17 +493,19 @@ flow(
     const { team, project, world } = await governedWorld(ctx);
     const member = await projectMember(team, project.id);
     try {
-      await ctx.step('commit `steward` listing project.members.manage and `root` with kortix_permissions: all', async () => {
+      await ctx.step('commit `viewer` [members.read], `steward` [members.read, members.manage] and `root` (all)', async () => {
         await world.writeManifest(manifest({
+          viewer: { kortix_permissions: ['project.members.read'] },
           steward: { kortix_permissions: ['project.members.read', 'project.members.manage'] },
           root: { kortix_permissions: 'all' },
         }));
       });
       await enableFlag(ctx, world);
+      const viewer = await world.mintAgentSession({ agent: 'viewer', launcher: ctx.P.OWNER });
       const steward = await world.mintAgentSession({ agent: 'steward', launcher: ctx.P.OWNER });
       const root = await world.mintAgentSession({ agent: 'root', launcher: ctx.P.OWNER });
-      const promote = (s: AgentSession) =>
-        s.client.put('/v1/projects/:projectId/access/:userId', { role: 'manager' },
+      const setRole = (s: AgentSession, role: string) =>
+        s.client.put('/v1/projects/:projectId/access/:userId', { role },
           { params: { projectId: project.id, userId: member.userId! } });
       const memberRole = async () => {
         const r = await world.owner.get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
@@ -515,22 +518,36 @@ flow(
         return String(row.role ?? row.project_role ?? '');
       };
 
-      await ctx.step('an explicitly listed project.members.manage is denied (403, code + action); the member stays `member`', async () => {
-        assertDenial(await promote(steward), /^agent_/, 'project.members.manage');
+      await ctx.step('without project.members.manage the agent is refused: 403 agent_scope_insufficient; the member stays `member`', async () => {
+        assertDenial(await setRole(viewer, 'manager'), 'agent_scope_insufficient', 'project.members.manage');
         const role = await memberRole();
         if (role !== 'member' && role !== 'user') throw new Error(`member role changed to ${role}`);
       });
 
-      await ctx.step('`all` excludes HUMAN_ONLY: members.manage 403, while members.read (not human-only) → 200', async () => {
-        assertDenial(await promote(root), /^agent_/, 'project.members.manage');
-        (await root.client.get('/v1/projects/:projectId/access', { params: { projectId: project.id } })).status(200);
+      await ctx.step('an explicitly listed project.members.manage promotes the member (2xx); read-back says `manager`', async () => {
+        const r = await setRole(steward, 'manager');
+        if (r.statusCode < 200 || r.statusCode >= 300) throw new Error(`steward promote: ${r.statusCode} ${r.text().slice(0, 400)}`);
+        const role = await memberRole();
+        if (role !== 'manager') throw new Error(`member role is ${role}, expected manager`);
       });
 
-      await ctx.step('`all` cannot delete the project: 403 project.delete; the owner still reads it', async () => {
+      await ctx.step('`all` includes project.members.manage: root demotes the member back (2xx); read-back says `member`', async () => {
+        const r = await setRole(root, 'member');
+        if (r.statusCode < 200 || r.statusCode >= 300) throw new Error(`root demote: ${r.statusCode} ${r.text().slice(0, 400)}`);
+        const role = await memberRole();
+        if (role !== 'member' && role !== 'user') throw new Error(`member role is ${role}, expected member`);
+      });
+
+      await ctx.step('the one human-only action: `all` cannot mint a project token (403 agent_human_only_action)', async () => {
+        const r = await root.client.post('/v1/projects/:projectId/cli-token', {}, { params: { projectId: project.id } });
+        assertDenial(r, 'agent_human_only_action', 'project.credentials.issue');
+      });
+
+      await ctx.step('`all` includes project.delete: root deletes the project (2xx); the owner no longer reads it as active', async () => {
         const r = await root.client.del('/v1/projects/:projectId', { params: { projectId: project.id } });
-        assertDenial(r, /^agent_/, 'project.delete');
+        if (r.statusCode < 200 || r.statusCode >= 300) throw new Error(`root delete: ${r.statusCode} ${r.text().slice(0, 400)}`);
         const read = await world.owner.get('/v1/projects/:projectId', { params: { projectId: project.id } });
-        read.status(200).body().has('$.status', 'active');
+        if (read.statusCode === 200 && read.json<any>().status === 'active') throw new Error('project still active after delete');
       });
     } finally {
       await world.close();
@@ -1039,7 +1056,7 @@ flow(
   },
 );
 
-// ── AGP-10 — widening an agent needs a human merge ─────────────────────────────
+// ── AGP-10 — merging agents/triggers is project.gitops.merge, agent or human ───
 flow(
   'AGP-10',
   {
@@ -1068,13 +1085,18 @@ flow(
     const work = await mkdtemp(join(tmpdir(), 'ke2e-agp10-'));
     let server: import('node:http').Server | null = null;
     const base = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.merge'] };
+    const pushOnly = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push'] };
     try {
       await ctx.step('commit `builder`, which may push its branch and merge its own change requests', async () => {
         await world.localRepoPath();
-        await world.writeManifest(manifest({ builder: { kortix_permissions: [...base.kortix_permissions] } }));
+        await world.writeManifest(manifest({
+          builder: { kortix_permissions: [...base.kortix_permissions] },
+          drafter: { kortix_permissions: [...pushOnly.kortix_permissions] },
+        }));
       });
       await enableFlag(ctx, world);
       const run = await world.mintAgentSession({ agent: 'builder', launcher: ctx.P.OWNER });
+      const drafter = await world.mintAgentSession({ agent: 'drafter', launcher: ctx.P.OWNER });
       server = await serveFixtureRepoLocally(ctx, world.db, project.id, 'AGP-10');
       const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
       const auth = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${run.secret}` };
@@ -1106,42 +1128,40 @@ flow(
         await agentGit(['pull', '--ff-only', 'origin', 'main']);
       });
 
-      let governanceCr = '';
-      await ctx.step('a CR widening agents.builder.kortix_permissions: agent merge → 403 CR_AGENT_GOVERNANCE_CHANGE; main unchanged', async () => {
+      await ctx.step('a CR widening agents.builder.kortix_permissions: the agent merges it (200); main carries the change', async () => {
         const manifestPath = join(work, 'kortix.yaml');
         const current = await readFile(manifestPath, 'utf8');
         await writeFile(manifestPath, current.replace('"project.gitops.merge"]', '"project.gitops.merge","project.secret.read"]'));
         if ((await readFile(manifestPath, 'utf8')) === current) throw new Error('manifest edit did not apply');
         await commitAndPush('agents: widen builder');
-        governanceCr = await openCr('Widen builder');
-        const before = await mainSha();
-        const r = await mergeAs(run.client, governanceCr);
-        if (r.statusCode !== 403 || r.json<any>().code !== 'CR_AGENT_GOVERNANCE_CHANGE') {
-          throw new Error(`agent merge of a governance CR: ${r.statusCode} ${r.text().slice(0, 400)}`);
-        }
-        if ((await mainSha()) !== before) throw new Error('a refused merge moved main');
-      });
-      await ctx.step('a human (owner JWT) merges the same CR → 200; main now carries the widened grant', async () => {
-        const r = await mergeAs(world.owner, governanceCr);
+        const crId = await openCr('Widen builder');
+        const r = await mergeAs(run.client, crId);
         r.status(200).body().has('$.change_request.status', 'merged');
-        const read = await world.owner.get(`${crPath}/:crId`, { params: { projectId: project.id, crId: governanceCr } });
-        read.status(200).body().has('$.change_request.status', 'merged');
         await agentGit(['pull', '--ff-only', 'origin', 'main']);
-        if (!(await readFile(join(work, 'kortix.yaml'), 'utf8')).includes('project.secret.read')) {
+        if (!(await readFile(manifestPath, 'utf8')).includes('project.secret.read')) {
           throw new Error('main lacks the merged manifest change');
         }
       });
-      await ctx.step('a CR that only adds a trigger: agent merge → 403 CR_AGENT_GOVERNANCE_CHANGE; the CR is closed', async () => {
+      await ctx.step('a CR that only adds a trigger: the agent merges it (200); main carries the trigger', async () => {
         const manifestPath = join(work, 'kortix.yaml');
         const current = await readFile(manifestPath, 'utf8');
         await writeFile(manifestPath, `${current.trimEnd()}\ntriggers:\n  - slug: agp-hourly\n    type: cron\n    cron: "0 * * * *"\n    prompt: tidy up\n    agent: builder\n`);
         await commitAndPush('triggers: add hourly');
         const crId = await openCr('Add hourly trigger');
-        const before = await mainSha();
         const r = await mergeAs(run.client, crId);
-        if (r.statusCode !== 403 || r.json<any>().code !== 'CR_AGENT_GOVERNANCE_CHANGE') {
-          throw new Error(`agent merge of a trigger CR: ${r.statusCode} ${r.text().slice(0, 400)}`);
-        }
+        r.status(200).body().has('$.change_request.status', 'merged');
+        await agentGit(['pull', '--ff-only', 'origin', 'main']);
+        if (!(await readFile(manifestPath, 'utf8')).includes('agp-hourly')) throw new Error('main lacks the merged trigger');
+      });
+      await ctx.step('an agent without project.gitops.merge cannot merge a CR widening itself: 403 agent_scope_insufficient; main unchanged', async () => {
+        const manifestPath = join(work, 'kortix.yaml');
+        const current = await readFile(manifestPath, 'utf8');
+        await writeFile(manifestPath, current.replace('"project.gitops.push"]', '"project.gitops.push","project.gitops.merge"]'));
+        if ((await readFile(manifestPath, 'utf8')) === current) throw new Error('manifest edit did not apply');
+        await commitAndPush('agents: widen drafter');
+        const crId = await openCr('Widen drafter');
+        const before = await mainSha();
+        assertDenial(await mergeAs(drafter.client, crId), 'agent_scope_insufficient', 'project.gitops.merge');
         if ((await mainSha()) !== before) throw new Error('a refused merge moved main');
         (await world.owner.post(`${crPath}/:crId/close`, {}, { params: { projectId: project.id, crId } })).status(200);
       });
@@ -1361,3 +1381,4 @@ flow(
     }
   },
 );
+

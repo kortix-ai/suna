@@ -3,13 +3,8 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayPerform, assertAgentScope, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { refusesSelfMerge } from '../change-request-policy';
-// Imported from its own module, not the `../git` barrel: several route suites
-// replace the barrel wholesale with `mock.module`, and the guard runs only with
-// the agent_principal flag on.
-import { agentGovernanceMergeRefusal } from '../change-request-governance';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
@@ -108,18 +103,11 @@ projectsApp.openapi(
     const customMessage = normalizeString(body.message);
     const projectForGit = await withProjectGitAuth(loaded.row);
 
-    // Governance guard (spec 2026-09-22 §2.4). Under the agent-principal model
-    // kortix.yaml `agents` and `triggers` ARE agent authority, so an agent must
-    // not widen itself (or plant an unattended run) by merging its own edit. A
-    // human with project.gitops.merge merges such a change request. Compared
-    // against the merge base, so only the CR's own changes count.
-    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal') && isProjectSessionPrincipal(c)) {
-      const refusal = await agentGovernanceMergeRefusal(projectForGit, cr);
-      if (refusal) {
-        if (refusal.retryAfter) c.header('Retry-After', String(refusal.retryAfter));
-        return c.json(refusal.body, refusal.status);
-      }
-    }
+    // No agent-only governance guard: project.gitops.merge implies
+    // project.agent.write and project.trigger.* in the RBAC catalog, so a
+    // principal that may merge may change agents and triggers, agent or human.
+    // The guard that refused agents here left the direct writers (agent config
+    // PUT, trigger routes, a push to the default branch) open anyway.
 
     // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't
     // validate against the canonical schema. We read the manifest from the HEAD
