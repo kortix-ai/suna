@@ -14,10 +14,7 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
-// replica-local: best-effort suppression counters, one per API replica by
-// design — the header comment names the exact accounting that stays global
-// (request-completion logs and auth audits), so undercounting one replica's
-// suppressions only affects the next line's "suppressed" figure.
+// replica-local: a log-noise limiter; each replica rate-limits its own lines.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
