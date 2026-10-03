@@ -19217,7 +19217,9 @@
       "text48b78a9ab65b": "How do runs stay isolated?",
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
       "text39207bf34111": "Related skills",
-      "text73112526c03a": "Agent turn failed. No reason was reported."
+      "text73112526c03a": "Agent turn failed. No reason was reported.",
+      "text0e5f7f6732e0": "Fork conversation",
+      "text32ad3abe4479": "Failed to fork conversation"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -19204,7 +19204,9 @@
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
       "text39207bf34111": "Competenze correlate",
-      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo."
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
+      "text0e5f7f6732e0": "Biforca conversazione",
+      "text32ad3abe4479": "Impossibile biforcare la conversazione"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

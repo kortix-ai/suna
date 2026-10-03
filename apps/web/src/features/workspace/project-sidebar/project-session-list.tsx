@@ -89,11 +89,12 @@ import {
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@kortix/sdk/react';
+import { qk, useForkSession, useProjectSession, useProjectSessions, useRuntimeSupports, useSessionChildren } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
   FolderSimpleIcon as MetaFolder,
+  GitForkIcon,
   PencilSimpleIcon,
   TagIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -358,6 +359,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     },
   });
 
+  // Fork the open session's conversation from its row: the runtime's own
+  // `session.fork`, same as the session header's item. Only the row of the
+  // session you are viewing gets it — the runtime client is bound to that
+  // session's box, so a fork fired from any other row would hit the wrong
+  // sandbox and fail (or worse, fork another box's conversation). The fork
+  // opens on the same row's route.
+  const runtimeForks = useRuntimeSupports('session.fork');
+  const forkSession = useForkSession();
+
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
@@ -434,6 +444,25 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
           isStopping={
             stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
+          }
+          canFork={
+            runtimeForks &&
+            session.session_id === activeSessionId &&
+            !!(session.runtime_session_id ?? session.opencode_session_id)
+          }
+          isForking={
+            forkSession.isPending && forkSession.variables?.sessionId === session.session_id
+          }
+          onFork={(id, href) =>
+            forkSession.mutate(
+              { sessionId: id },
+              {
+                onSuccess: (fork) => router.push(childSessionHref(href, fork.id)),
+                onError: (err) => {
+                  errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text32ad3abe4479'));
+                },
+              },
+            )
           }
         />
         {children.length > 0 && isActive && (
@@ -1077,6 +1106,11 @@ interface ProjectSessionRowProps {
   isRestarting: boolean;
   onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
+  /** Fork this row's conversation — offered only on the row of the session
+   *  you are viewing, whose box is the runtime the client is bound to. */
+  canFork?: boolean;
+  isForking?: boolean;
+  onFork: (sessionId: string, href: string) => void;
   childCount?: number;
   /** Sessions this one spawned (`child_count`), and whether they are shown. */
   spawnedCount?: number;
@@ -1105,6 +1139,9 @@ function ProjectSessionRow({
   isRestarting,
   onStop,
   isStopping,
+  canFork = false,
+  isForking = false,
+  onFork,
   childCount = 0,
   spawnedCount = 0,
   spawnedOpen = false,
@@ -1394,6 +1431,16 @@ function ProjectSessionRow({
               >
                 {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
                 {tI18nComplete.raw('textcae7d57bc067')}
+              </DropdownMenuItem>
+            )}
+            {canFork && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isForking}
+                onSelect={() => deferAfterClose(() => onFork(session.session_id, href))}
+              >
+                {isForking ? <Loading className="size-4 shrink-0" /> : <GitForkIcon />}
+                {tI18nComplete.raw('text0e5f7f6732e0')}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem
