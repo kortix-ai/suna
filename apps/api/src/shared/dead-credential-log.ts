@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: these are warning-suppression counters only, never an auth
+// decision; a replica that loses its window logs one extra line and loses
+// nothing else, so a per-process copy is correct (the module doc above).
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
