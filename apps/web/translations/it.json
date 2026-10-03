@@ -260,10 +260,6 @@
       "fallbackName": "questo spazio",
       "confetti": "Lancia coriandoli"
     },
-    "runtime": {
-      "metaLabel": "Runtime Meta",
-      "metaDescription": "Meta usa una sandbox minima fissa e avvia sessioni specializzate per il lavoro sul progetto."
-    },
     "sandbox": {
       "label": "Modello sandbox",
       "agentEnvironment": "Ambiente dell’agente",
