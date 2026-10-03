@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Elige las claves compartidas que puede usar esta sesión.",
     "sessionKeyPool": "Grupo de claves de sesión",
     "sharedSessionKeys": "Esta sesión está compartida con el proyecto, así que aquí solo funcionan las claves compartidas con todo el proyecto. Las claves que te concedieron funcionan en tus sesiones privadas.",
+    "promptedSessionKeys": "Otro miembro ha escrito en esta sesión, así que ya no actúa por su propietario. Aquí solo funcionan las claves compartidas con todo el proyecto.",
+    "noPersonSessionKeys": "Esta sesión no actúa por ninguna persona: empezó antes de que existieran las claves personales o sin supervisión. Aquí solo funcionan las claves compartidas con todo el proyecto. Inicia una sesión nueva para usar tus propias claves.",
     "projectDefaultShort": "Valor predeterminado del proyecto",
     "rateLimitDescription": "La pasarela alterna entre las claves seleccionadas cuando un proveedor indica un límite de solicitudes.",
     "enableGateway": "Activa la pasarela LLM en la configuración del proyecto para usar grupos de claves.",

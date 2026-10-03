@@ -128,6 +128,8 @@
     "chooseSharedKeys": "选择此会话可以使用的共享密钥。",
     "sessionKeyPool": "会话密钥池",
     "sharedSessionKeys": "此会话已与项目共享，因此这里只能使用与整个项目共享的密钥。授予您的密钥可在您的私有会话中使用。",
+    "promptedSessionKeys": "另一位成员已在此会话中发送消息，因此它不再代表其所有者。这里只能使用与整个项目共享的密钥。",
+    "noPersonSessionKeys": "此会话不代表任何人：它在个人密钥出现之前或在无人值守时启动。这里只能使用与整个项目共享的密钥。开始新会话即可使用你自己的密钥。",
     "projectDefaultShort": "项目默认值",
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",

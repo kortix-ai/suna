@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Scegli le chiavi condivise che questa sessione può usare.",
     "sessionKeyPool": "Pool di chiavi della sessione",
     "sharedSessionKeys": "Questa sessione è condivisa con il progetto, quindi qui funzionano solo le chiavi condivise con tutto il progetto. Le chiavi assegnate a te funzionano nelle tue sessioni private.",
+    "promptedSessionKeys": "Un altro membro ha scritto in questa sessione, quindi non agisce più per il suo proprietario. Qui funzionano solo le chiavi condivise con tutto il progetto.",
+    "noPersonSessionKeys": "Questa sessione non agisce per nessuna persona: è iniziata prima delle chiavi personali o senza supervisione. Qui funzionano solo le chiavi condivise con tutto il progetto. Avvia una nuova sessione per usare le tue chiavi.",
     "projectDefaultShort": "Impostazione predefinita del progetto",
     "rateLimitDescription": "Il gateway alterna le chiavi selezionate quando un fornitore segnala un limite di richieste.",
     "enableGateway": "Abilita il gateway LLM nelle impostazioni del progetto per usare i pool di chiavi.",
