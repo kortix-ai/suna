@@ -115,10 +115,12 @@ interface LocalChunk {
  * turn one reconcile into an hour of hashing over the box's ~116 MB binaries
  * (seen live: a test fixture served 8-byte chunks and the running CLI's index
  * never finished). Cap the chunks indexed per source; the real API serves
- * 1 MiB chunks, so a full CLI indexes ~105. A source past the cap contributes
- * nothing and the transfer degrades to the full download.
+ * 1 MiB chunks, so a full CLI indexes ~105. A source far past the cap
+ * contributes almost nothing — the reuse-ratio gate below then degrades the
+ * transfer to the full download; a source just past it fetches its tail from
+ * the API. The whole-file digest still gates every byte.
  */
-const MAX_INDEXED_CHUNKS_PER_SOURCE = 65536
+export const MAX_INDEXED_CHUNKS_PER_SOURCE = 65536
 
 async function indexLocalChunks(
   paths: string[],

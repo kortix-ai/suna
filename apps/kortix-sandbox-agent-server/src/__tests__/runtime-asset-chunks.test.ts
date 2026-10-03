@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fetchArtifactByChunks } from '@/services/runtime-assets/runtime-asset-chunks'
+import { fetchArtifactByChunks, MAX_INDEXED_CHUNKS_PER_SOURCE } from '@/services/runtime-assets/runtime-asset-chunks'
 
 const BASE = 'https://api.test.invalid/v1/runtime-assets'
 const TOKEN = 'kortix_pat_test'
@@ -30,7 +30,7 @@ async function onDisk(name: string, letters: string): Promise<string> {
 
 interface StubOptions {
   /** What the server says the component is. */
-  served: string
+  served: string | Buffer
   /** Override the whole-file digest the chunk manifest advertises. */
   sha256?: string
   /** Serve corrupt bytes for these chunk digests. */
@@ -39,7 +39,7 @@ interface StubOptions {
 }
 
 function stub(opts: StubOptions) {
-  const served = body(opts.served)
+  const served = typeof opts.served === 'string' ? body(opts.served) : opts.served
   const chunks: string[] = []
   for (let o = 0; o < served.length; o += CHUNK) chunks.push(sha(served.subarray(o, o + CHUNK)))
   const calls: string[] = []
@@ -140,5 +140,31 @@ describe('fetchArtifactByChunks', () => {
     const s = stub({ served: 'abcdefghijk' })
     expect(await run(s, [await onDisk('kortix', 'zzzzzzzzzzz')])).toBeNull()
     expect(s.calls.filter((u) => u.includes('/chunk/'))).toEqual([])
+  })
+
+  test('a source past the chunk cap stops indexing at the cap and fetches its tail', async () => {
+    // The live hang this cap exists for: the local index costs
+    // O(source_bytes / chunk_size) and chunk_size comes from the API's
+    // manifest — an 8-byte-chunk manifest over the box's ~116 MB CLI never
+    // finished. (cap + 1) DISTINCT chunks is the smallest witness: the index
+    // is content-addressed, so every chunk needs its own bytes for the tail
+    // to be unavailable locally. The chunk past the cap must NOT come from
+    // the local index — the tail is fetched from the API and the whole-file
+    // digest still gates the result. Without the cap the call list stays
+    // empty (every chunk indexed locally) and the real incident's 14.5M-chunk
+    // index hangs past every timeout.
+    const total = MAX_INDEXED_CHUNKS_PER_SOURCE + 1
+    const served = Buffer.alloc(total * CHUNK)
+    for (let i = 0; i < total; i++) served.writeBigUInt64BE(BigInt(i), i * CHUNK)
+    const s = stub({ served })
+    const dir = await mkdtemp(join(tmpdir(), 'chunk-client-'))
+    dirs.push(dir)
+    const local = join(dir, 'kortix')
+    await Bun.write(local, served)
+
+    const assembled = await run(s, [local])
+    expect(assembled).not.toBeNull()
+    expect(assembled!.equals(s.served)).toBe(true)
+    expect(s.calls.some((url) => url.includes('/chunk/'))).toBe(true)
   })
 })

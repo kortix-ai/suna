@@ -36,8 +36,9 @@ describe('apps/web test runner', () => {
     // Twice on a 12 GiB agent sandbox (2026-10-03) one parallel --test-worker
     // looped at ~100% CPU for 17+ minutes with `--timeout=5000` unable to
     // interrupt it (a synchronous loop; the timer only fires between turns),
-    // wedging the packages lane. Serial measured 345 s across 921 files,
-    // 0 fail — the isolation reason still holds, the parallelism does not.
+    // wedging the packages lane. Serial completes the suite (~348 s across
+    // 922 files on the same box) — the isolation reason still holds, the
+    // parallelism does not.
     expect(pkg.scripts.test).not.toMatch(/--parallel/);
   });
 });

@@ -168,7 +168,7 @@ describe('local test runner contract', () => {
     const isolated: Record<string, string> = {
       '@kortix/cli': '107 test files; serial would cost minutes, not seconds',
       kortix: '221 mobile test files whose mock.module calls leak across files without isolation',
-      'Kortix-Computer-Frontend': '921 test files; parallel workers deadlock the packages lane under load (a --test-worker spun at 100% CPU past every per-test timeout, twice, on a 12 GiB agent sandbox; serial measured 345 s, 0 fail)',
+      'Kortix-Computer-Frontend': '921 test files; parallel workers deadlock the packages lane under load (a --test-worker spun at 100% CPU past every per-test timeout, twice, on a 12 GiB agent sandbox; serial completes it, ~348 s on the same box)',
       '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
     };
 
