@@ -198,6 +198,8 @@ Reports, traces, screenshots, replay recordings, and application logs stay under
 Root lane timings stay under the existing ignored `tests/test-results/local/`.
 Inspect a failure before rerunning it.
 Classify product defects, agent failures, unsupported APIs, environment failures, and provider failures separately.
+For long macOS runs, use `caffeinate -i pnpm test -- --full` to prevent idle sleep for that command.
+Do not use timings from runs interrupted by system sleep as performance evidence.
 
 ## Go/no-go criteria
 
