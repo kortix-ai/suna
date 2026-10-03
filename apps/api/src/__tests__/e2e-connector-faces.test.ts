@@ -390,7 +390,7 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
       // Hermetic: ignore the platform sandbox's injected KORTIX_PROJECT_ID
-      // (see the MCP face env above).
+      // (see the MCP face env below).
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },

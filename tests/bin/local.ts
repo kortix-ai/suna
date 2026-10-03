@@ -23,7 +23,15 @@ process.env.AGENT_TUNNEL_HOME ||= mkdtempSync(join(tmpdir(), 'ke2e-agent-tunnel-
 // Tests that exercise the sandbox behavior set the vars themselves
 // (supervised-binaries.test.ts) or opt back in explicitly.
 for (const name of Object.keys(process.env)) {
-  if (name.startsWith('KORTIX_') && name !== 'KORTIX_PACKAGE_SKIP_SDK_TESTS') {
+  // Suite-owned knobs documented in tests/README.md and the db-suites runner:
+  // a caller may tune them on `pnpm test`; they are not sandbox identity.
+  const suiteKnob =
+    name === 'KORTIX_PACKAGE_SKIP_SDK_TESTS' ||
+    name === 'KORTIX_DB_SUITE_WORKERS' ||
+    name === 'KORTIX_DB_SUITE_TIMEOUT_MS' ||
+    name === 'KORTIX_DB_TEST_TIMEOUT_MS' ||
+    name === 'KORTIX_CFG_RACE_ROUNDS';
+  if (name.startsWith('KORTIX_') && !suiteKnob) {
     delete process.env[name];
   }
 }
