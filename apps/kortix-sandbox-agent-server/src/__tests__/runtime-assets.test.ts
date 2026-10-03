@@ -116,6 +116,13 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Pin the chunk store to this fixture. The option seams default to the
+    // box's real agent binary paths — inside a sandbox image those exist and
+    // are ~100 MB each, so indexing them for chunk reuse alone blows the test
+    // timeout. With both pointed inside the fixture the store is just the CLI
+    // under test, which is also what the per-test chunk expectations assume.
+    agentStateDir: ws.root,
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

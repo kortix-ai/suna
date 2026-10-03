@@ -14,6 +14,11 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: this Map only throttles this replica's own warn-line emission —
+// no response, audit, or refusal accounting reads it. Each replica rate-limits
+// its own log stream; the doc comment above bounds what a restart or eviction
+// loses (pending suppression counts), which is the accepted trade for not
+// sharing a noise limiter across replicas.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one

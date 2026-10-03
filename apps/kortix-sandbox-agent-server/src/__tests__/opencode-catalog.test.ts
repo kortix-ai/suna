@@ -17,6 +17,7 @@ import {
   scheduleCatalogWarmToPathForTests,
   settleManagedModelsPrefetch,
   startManagedModelsPrefetch,
+  __setBakedLlmCatalogPathForTests,
   type Opencode,
 } from '@/harness/open-code/lifecycle'
 import { loadOpenCodeConfig as loadConfig } from '@/harness/open-code/config'
@@ -72,12 +73,17 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 }
 
 beforeEach(() => {
+  // The image-baked catalog at /opt/kortix/llm-catalog.json exists only inside
+  // a sandbox image; these tests pin the absent-everywhere fallback, so point
+  // the seam at an absent path (same isolation as __setScaffoldRepoPathForTests).
+  __setBakedLlmCatalogPathForTests(join(tmpdir(), 'kortix-absent-baked-catalog.json'))
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
+  __setBakedLlmCatalogPathForTests()
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))

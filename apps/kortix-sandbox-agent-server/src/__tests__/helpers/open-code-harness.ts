@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -39,13 +41,19 @@ export const TEST_SANDBOX_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 /** A complete OpenCode daemon config for tests: no clone, fixed ports. */
 export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCodeConfig {
+  // The default workspace must not exist on any machine: the real `/workspace`
+  // of a Kortix sandbox image materializes the platform's own repo, so a test
+  // that expects an unmaterialized workspace sees a live git repo instead. CI
+  // and dev machines have no /workspace, so CI-equivalent behavior here is
+  // "absent". Tests that need a real workspace pass one via `over`.
+  const absentWorkspace = join(tmpdir(), `kortix-test-workspace-${process.pid}`)
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
-    workspace: '/workspace',
-    projectTarget: '/workspace',
+    workspace: absentWorkspace,
+    projectTarget: absentWorkspace,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,

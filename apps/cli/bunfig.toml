@@ -1,0 +1,6 @@
+[test]
+# Every test starts from the env a developer machine or CI runner has: the
+# platform-injected sandbox state (supervised flag, session/project ids,
+# tokens, the /dev/shm agent-env file) is scrubbed before the first test
+# loads. See tests/src/core/hermetic-sandbox-env.ts.
+preload = ["../../tests/src/core/hermetic-sandbox-env.ts"]

@@ -2,3 +2,8 @@
 # Each test file runs in its own process to avoid mock.module() collisions
 # between billing unit tests that mock different sets of modules.
 isolation = true
+# No env-scrub preload here: scripts/test.env IS the hermetic env (it sets
+# KORTIX_MANAGED_PROVIDER_ENABLED and the whole gateway fixture), and a bun
+# preload runs after --env-file, so a scrub would delete those values. The
+# root runner (`pnpm test`) scrubs the ambient sandbox env before the lane
+# spawns; see tests/src/core/hermetic-sandbox-env.ts.

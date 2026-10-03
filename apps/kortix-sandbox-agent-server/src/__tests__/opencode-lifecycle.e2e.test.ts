@@ -30,6 +30,7 @@ import { join } from 'node:path'
 
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
+  __setBakedLlmCatalogPathForTests,
   convergeManagedModelCatalog,
   createOpencodeLifecycle,
   resetManagedModelsStateForTests,
@@ -63,11 +64,16 @@ beforeEach(() => {
   ctl = join(root, 'ctl')
   mkdirSync(ctl)
   lifecycle = null
+  // The image-baked catalog at /opt/kortix/llm-catalog.json exists only inside
+  // a sandbox image; the model-convergence assertions here pin the absent-
+  // everywhere fallback, so point the seam at an absent path.
+  __setBakedLlmCatalogPathForTests(join(tmpdir(), 'kortix-absent-baked-catalog.json'))
   for (const key of ENV_KEYS) savedEnv.set(key, process.env[key])
 })
 
 afterEach(async () => {
   restoreTestConfigRoot()
+  __setBakedLlmCatalogPathForTests()
   await lifecycle?.stop()
   for (const pid of grandchildPids()) {
     try {

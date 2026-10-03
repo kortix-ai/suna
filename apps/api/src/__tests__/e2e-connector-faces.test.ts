@@ -381,6 +381,11 @@ function makeDeps(): ConnectorRouterDeps {
 }
 
 async function runCli(args: string[], extraEnv: Record<string, string | undefined> = {}) {
+  // Env-only invocation (the doc comment above): the child must not silently
+  // adopt the sandbox's platform-injected /dev/shm/kortix/agent-env.sh, whose
+  // real KORTIX_PROJECT_ID/KORTIX_TOKEN reroute these account-level calls to
+  // the project-explicit gateway the fakes here do not model. Same opt-out the
+  // e2e-cli harness and the CLI's own test suites set.
   const proc = Bun.spawn({
     cmd: ['bun', CLI_ENTRY, 'connectors', ...args],
     cwd: REPO_ROOT,
@@ -389,6 +394,7 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },
     stdout: 'pipe',
@@ -677,6 +683,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -771,6 +778,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',
@@ -843,6 +851,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',

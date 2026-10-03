@@ -2,4 +2,10 @@
 # Every test runs with HOME pointing at a fresh temp dir, so no code path
 # (e.g. the runtime-assets CLI fallback `$HOME/.local/bin/kortix`) can write
 # into a developer's real home. See src/__tests__/preload-isolated-home.ts.
-preload = ["./src/__tests__/preload-isolated-home.ts"]
+# The same runner also scrubs the platform-injected sandbox env (supervised
+# flag, harness, session/project ids, compiled-runtime identity) that the
+# daemon adopts at startup. See tests/src/core/hermetic-sandbox-env.ts.
+preload = [
+  "./src/__tests__/preload-isolated-home.ts",
+  "../../tests/src/core/hermetic-sandbox-env.ts",
+]

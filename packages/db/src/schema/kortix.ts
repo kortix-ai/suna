@@ -5616,7 +5616,10 @@ export const accountSessionActivity = kortixSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.accountId, table.userId, table.sessionId] }),
-    index('idx_account_session_activity_account').on(table.accountId),
+    // idx_account_session_activity_user (account_id, user_id) covers every
+    // (account_id)-prefix lookup; the separate account_id index had zero scans
+    // on prod (dropped by
+    // 20261003090543770_drop_unused_session_activity_account_index, KRTX-1178).
     index('idx_account_session_activity_user').on(table.accountId, table.userId),
   ],
 );
