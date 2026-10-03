@@ -1,30 +1,33 @@
 {
-  "source_hash": "0563ac9e50a0c6778df546e333302d7e4a61319ea60a3a99debc16a65c3d5509",
+  "source_hash": "4685cc07c746260c83daf941ed31c08c3d7155c0245be7fae9757682cdb25808",
   "diff_files": [
-    "apps/cli/src/__tests__/no-inline-arg-errors.test.ts",
-    "apps/cli/src/__tests__/validate-argv.blackbox.test.ts",
-    "apps/cli/src/commands/validate.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets-download.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts",
-    "apps/mobile/lib/highlight/shiki.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-02T175952Z-check-the-eas-environment-an-ota-update-bakes-in-eas-update.md",
+    ".github/workflows/mobile-ota.yml",
+    "apps/mobile/.gitignore",
+    "apps/mobile/BUILD_GUIDE.md",
+    "apps/mobile/android/app/build.gradle",
+    "apps/mobile/app.json",
+    "apps/mobile/eas.json",
+    "apps/mobile/ios/Kortix.xcodeproj/project.xcworkspace/contents.xcworkspacedata",
+    "apps/mobile/ios/Kortix.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+    "apps/mobile/package.json",
+    "apps/mobile/scripts/ota-publish.mjs",
+    "apps/mobile/scripts/ota-publish.test.ts",
+    "apps/mobile/scripts/set-version.mjs",
+    "apps/mobile/scripts/set-version.test.ts",
+    "apps/mobile/scripts/start-android.sh",
+    "apps/web/public/.well-known/assetlinks.json",
+    "apps/web/public/manifest.json",
+    "scripts/check-blocked-terms.test.mjs"
   ],
-  "diff_hash": "a306818837089f3e2a69766f50aa4a1c4685da459efbb7e249df7964161a0953",
-  "head": "e8661f93352cfd2a167a31718f173719042645a8",
+  "diff_hash": "aa558908b0dabe583bec282d49113a5f853d5336dc83145784957bbc571d207d",
+  "head": "e6c06549a70677465703b4617dc7a668dcaad8a8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T16:18:07.380Z"
+  "at": "2026-10-03T18:26:21.858Z"
 }
