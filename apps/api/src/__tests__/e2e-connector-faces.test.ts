@@ -389,6 +389,10 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
+      // Hermetic against a Kortix sandbox: /dev/shm/kortix/agent-env.sh would
+      // hand the CLI the host's real KORTIX_PROJECT_ID, which this fake router
+      // must not see. Same pattern as mcp/cli.ts and the e2e-cli harness.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },
     stdout: 'pipe',
@@ -677,6 +681,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -772,6 +777,7 @@ describe('MCP face', () => {
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -844,6 +850,7 @@ describe('MCP face', () => {
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
