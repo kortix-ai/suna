@@ -1548,7 +1548,6 @@ export const projectTriggerSessionAccessGrants = kortixSchema.table(
       foreignColumns: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       name: 'project_trigger_session_access_grants_trigger_fk',
     }).onDelete('cascade'),
-    index('idx_trigger_session_access_grants_trigger').on(table.projectId, table.slug),
     uniqueIndex('idx_trigger_session_access_grants_unique').on(
       table.projectId,
       table.slug,
