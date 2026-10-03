@@ -347,8 +347,8 @@ describe('local test runner', () => {
     expect(sleeps).toEqual([250, 250]);
   });
 
-  it('detects a Kortix sandbox image by the platform agent-env file', () => {
+  it('detects a Kortix sandbox image by its baked model catalog', () => {
     expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
-    expect(onKortixSandboxImage('/nonexistent/kortix-test-agent-env')).toBe(false);
+    expect(onKortixSandboxImage('/nonexistent/kortix-test-llm-catalog.json')).toBe(false);
   });
 });

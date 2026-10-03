@@ -85,14 +85,15 @@ its runner lanes ran in that run or one failed. A filtered or sharded run
 (`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
 lane-only mode updates only the lanes it fully covers, on unchanged source.
 `pnpm test:verify` (`tests/verify-attestation.mjs`) recomputes the diff:
-exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`, and a lane may record a sanctioned
-environment skip instead: `db-suites` `skipped-no-db` (no Docker) or
-`packages` `skipped-sandbox-image` (a Kortix sandbox image, whose baked box
-state the agent-server suites read; the scheduled Tests run on a clean CI
-runner is the backstop). A skip is never a pass. `--strict` exits `3` for any
-skip. No in-sandbox Postgres: the DB lanes depend on Docker in three places,
-so a Docker-less box records the skip and the merge gate holds DB PRs.
+exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`
+or their sanctioned skip, every other lane must be `pass`, and a lane may
+record a sanctioned environment skip instead of a run: `db-suites`
+`skipped-no-db` (no Docker) or `packages` `skipped-sandbox-image` (a Kortix
+sandbox image, whose baked box state the agent-server suites read; the
+scheduled Tests run on a clean CI runner is the backstop). A skip is never a
+pass. `--strict` exits `3` for any skip. No in-sandbox Postgres: the DB lanes
+depend on Docker in three places, so a Docker-less box records the skip and
+the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except
 `scratch/*`. Never push with `--no-verify`.
 

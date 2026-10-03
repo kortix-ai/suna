@@ -65,7 +65,7 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
     } catch {
       inFlight.current = false;
       setReplying(false);
-      setError('Could not submit your answer. Please try again.');
+      setError('Could not send your response. Please try again.');
     }
   }, []);
 

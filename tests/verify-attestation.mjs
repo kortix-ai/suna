@@ -20,7 +20,7 @@
 // neither is a pass. The merge gate holds a DB-touching PR on it.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
-// attestation whose db-suites was skipped exits 3 instead of 0.
+// attestation with any sanctioned skip exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
