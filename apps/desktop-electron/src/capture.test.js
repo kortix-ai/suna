@@ -205,6 +205,14 @@ describe('sign-in', () => {
     expect(result).toEqual({ ok: false, error: 'the sign-in was denied' });
   });
 
+  test('an engine that dies after printing the code reports its exit, never the code line', async () => {
+    const { spawnFn } = fakeSpawn((child) => {
+      child.stderr.emit('data', stderr);
+      child.emit('close', null);
+    });
+    expect(await capture.signIn({ paths: { capture: 'x' }, env: {}, issuer: 'i', spawnFn })).toEqual({ ok: false, error: 'sign-in exited with code null' });
+  });
+
   test('an aborted sign-in resolves cancelled', async () => {
     const controller = new AbortController();
     const { spawnFn } = fakeSpawn((child) => {
