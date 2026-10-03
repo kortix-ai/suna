@@ -29,4 +29,12 @@ describe('evaluate attestation', () => {
     expect(evaluate(a, 'h', REQUIRED_LANES, true).code).toBe(3);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), 'h').code).toBe(1);
   });
+  it('allows the packages lane to record a sandbox-image skip, and --strict never lets it pass', () => {
+    const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image', 'db-suites': 'skipped-no-db' }) });
+    expect(evaluate(a, 'h').code).toBe(0);
+    expect(evaluate(a, 'h', REQUIRED_LANES, true).code).toBe(3);
+    expect(evaluate(att({ lanes: lanes({ packages: 'fail' }) }), 'h').code).toBe(1);
+    expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), 'h').code).toBe(1);
+    expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), 'h').code).toBe(1);
+  });
 });
