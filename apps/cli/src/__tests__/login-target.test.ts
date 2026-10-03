@@ -52,3 +52,51 @@ describe('browser login target', () => {
     });
   }
 });
+
+describe('token login target', () => {
+  // Every config seeds tokenless built-in hosts (`cloud` → api.kortix.com).
+  // A placeholder must not outrank KORTIX_API_URL: that sent a local PAT to
+  // production. A host that holds credentials keeps its stored URL.
+  async function loginHits(stored: { url?: string; token: string } | null) {
+    const hits: Record<string, string[]> = { env: [], stored: [] };
+    const serve = (name: string) => Bun.serve({ port: 0, fetch(req) {
+      hits[name]!.push(`${new URL(req.url).pathname} ${req.headers.get('authorization') ?? ''}`);
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    } });
+    const env = serve('env');
+    const storedServer = serve('stored');
+    const dir = mkdtempSync(join(tmpdir(), 'login-token-'));
+    const config = join(dir, 'config.json');
+    if (stored) {
+      writeFileSync(config, JSON.stringify({ active: 'cloud', hosts: { cloud: {
+        url: stored.url ?? `http://127.0.0.1:${storedServer.port}`, token: stored.token,
+        user_id: '', user_email: '', account_id: '', logged_in_at: '',
+      } } }));
+    }
+    try {
+      const proc = Bun.spawn([process.execPath, entry, 'login', '--token', 'kortix_pat_test', '--no-project'], {
+        env: { ...process.env, CI: '1', KORTIX_CONFIG_FILE: config,
+          KORTIX_API_URL: `http://127.0.0.1:${env.port}`,
+          KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1' },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      expect(await proc.exited).toBe(1);
+      return hits;
+    } finally {
+      env.stop(true);
+      storedServer.stop(true);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('a fresh config verifies the token against KORTIX_API_URL', async () => {
+    const hits = await loginHits(null);
+    expect(hits.env).toEqual(['/v1/accounts/me Bearer kortix_pat_test']);
+  });
+
+  test('a logged-in host keeps its stored URL', async () => {
+    const hits = await loginHits({ token: 'kortix_pat_stored' });
+    expect(hits.stored).toEqual(['/v1/accounts/me Bearer kortix_pat_test']);
+    expect(hits.env).toEqual([]);
+  });
+});
