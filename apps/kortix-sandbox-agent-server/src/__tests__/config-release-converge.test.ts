@@ -257,7 +257,10 @@ beforeEach(() => {
   git(work, 'config', 'user.name', 'T')
   git(work, 'checkout', '-q', '-b', 'ses-1')
   api = startFakeApi('sandbox-token')
-})
+  // bun's 5 s default applies to hooks too; under the packages lane's
+  // concurrent waves (API suite + CLI + kortixd at once) the git + fake-API
+  // setup here crossed it once. The runner's own budget is 30 s.
+}, 30_000)
 
 /**
  * What OpenCode reads right now. A booted box always has its boot link pointed
@@ -270,11 +273,12 @@ async function servingDir(): Promise<string | null> {
 
 beforeEach(async () => {
   await pointBootLink(join(work, DIR), store)
-})
+}, 30_000)
 
 afterEach(() => {
   // One bun process runs every daemon test file and bun's file order is not stable,
   // so a file that leaves `running.release_id` set poisons whichever file runs next.
+  // 30 s: same concurrent-wave budget as the beforeEach hooks above.
   resetConfigReleaseStateForTests()
   resetDaemonShutdownStateForTests()
   resetAgentSwapBlockersForTests()
@@ -282,7 +286,7 @@ afterEach(() => {
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
-})
+}, 30_000)
 
 describe('convergeConfigRelease — follow-base', () => {
   test('applies the release: new dir, governance at spawn, proven pointer, clean workspace', async () => {

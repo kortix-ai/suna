@@ -116,6 +116,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Own the box: the chunk index hashes whatever these resolve to, and the
+    // defaults reach this host's real agent binary (/usr/local/bin/kortix-agent,
+    // ~100 MB hashed 8 bytes at a time by the stub's chunk size). A CI runner
+    // has neither, so pointing both into the fixture restores that shape.
+    agentStateDir: join(ws.root, 'agent-state'),
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
