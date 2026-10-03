@@ -173,8 +173,7 @@ export function createModelVisibility(input: {
           ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
           : (connectedProviderIds?.has(sub) ?? false);
       if (MANAGED_MODEL_IDS.has(model.modelID)) {
-        // The platform default is the ONE managed model every tier may use
-        // (KRTX-1067); every other managed model stays paid.
+        // Same rule as `hasUsableModel` above (KRTX-1067).
         return !freeTier || model.modelID === PLATFORM_DEFAULT_MODEL_ID;
       }
       if (!connected) return false;
