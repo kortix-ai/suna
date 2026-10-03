@@ -1,5 +1,9 @@
 // Migration: drop_teams_pending_uploads_expiry_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
+// Re-dated 2026-10-03 (last: 20261003151312838) to keep sorting after main's
+// newest merged migration each time main moved; the SQL below is unchanged
+// from the originally reviewed 20261002214509036 version.
+//
 // This file exists ONLY because CREATE/DROP INDEX CONCURRENTLY (and a
 // handful of other operations: REINDEX CONCURRENTLY, DETACH PARTITION
 // CONCURRENTLY) cannot run inside a transaction -- and every plain .sql
