@@ -129,10 +129,16 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain(
-      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
-    );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    expect(cliPackage.scripts.test).toContain('bash scripts/test.sh');
+    // The CLI suite runs the same proven flags from its own runner (it strips
+    // the ambient runtime env first — scripts/test-box-env.sh).
+    expect(
+      readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8'),
+    ).toContain('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4');
+    // The default per-test timeout rises above Bun's 5s: the packages lanes run
+    // concurrently on modest boxes, and the latency contracts these suites pin
+    // are asserted by elapsed checks inside the tests, not by this cap.
+    expect(agentPackage.scripts.test).toBe('bun test --timeout 15000');
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

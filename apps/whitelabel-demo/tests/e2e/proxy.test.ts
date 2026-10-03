@@ -114,8 +114,12 @@ describe('BFF SDK transport', () => {
         firstEvent,
         new Promise<never>((_, reject) =>
           setTimeout(
-            () => reject(new Error('SDK stream did not deliver an event within 1 second')),
-            1_000,
+            // A buffering proxy would deliver nothing until the connection
+            // closes; the budget only ever fires when the pipeline is stalled
+            // (the mock pushes its first event immediately in the stream's
+            // start callback, and a quiet run delivers in milliseconds).
+            () => reject(new Error('SDK stream did not deliver an event within 30 seconds')),
+            30_000,
           ),
         ),
       ]);

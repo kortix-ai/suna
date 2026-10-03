@@ -2,4 +2,7 @@
 # Every test runs with HOME pointing at a fresh temp dir, so no code path
 # (e.g. the runtime-assets CLI fallback `$HOME/.local/bin/kortix`) can write
 # into a developer's real home. See src/__tests__/preload-isolated-home.ts.
-preload = ["./src/__tests__/preload-isolated-home.ts"]
+preload = [
+  "./src/__tests__/preload-isolated-home.ts",
+  "../../scripts/isolated-localhost.ts",
+]
