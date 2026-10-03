@@ -42,7 +42,6 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ browser: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
   });
-  });
   it('a diff-keyed attestation ignores source_hash: fresh iff its own files are unchanged', () => {
     const line = '100644 blob1 pr.txt';
     const a = att({ diff_files: ['pr.txt'], diff_hash: diffHash([line]) });
