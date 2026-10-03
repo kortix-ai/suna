@@ -57,7 +57,15 @@ test.describe('18 — Kortix Apps UI', () => {
     const appsCreateRequests: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     page.on('response', (response) => {
+      // The database-only project's repo_url is `ke2e.invalid`, so the App
+      // Access dialog's kortix.yaml read answers its documented 503 and the
+      // dialog shows the reason inline (`app-access.tsx`). Any other 5xx fails.
+      const unreadableManifest =
+        response.status() === 503 &&
+        response.request().method() === 'GET' &&
+        /\/apps\/[0-9a-f-]+\/agents$/.test(new URL(response.url()).pathname);
       if (
+        !unreadableManifest &&
         response.status() >= 500 &&
         response.url().includes('/v1/projects/') &&
         response.url().includes('/apps')
