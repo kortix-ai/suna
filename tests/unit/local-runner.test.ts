@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, onKortixSandboxImage, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('runs the REST flows, SDK, DB suites, runner unit tests, and route coverage concurrently by default', () => {
@@ -345,5 +345,10 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
+  });
+
+  it('detects a Kortix sandbox image by the platform agent-env file', () => {
+    expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
+    expect(onKortixSandboxImage('/nonexistent/kortix-test-agent-env')).toBe(false);
   });
 });

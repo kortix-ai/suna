@@ -15,8 +15,9 @@
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). db-suites alone may be "skipped-no-db";
-// that is never a pass. The merge gate holds a DB-touching PR on it.
+// suites), browser (only when run). db-suites may be "skipped-no-db" (no
+// Docker) and packages "skipped-sandbox-image" (a Kortix sandbox image);
+// neither is a pass. The merge gate holds a DB-touching PR on it.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
 // attestation whose db-suites was skipped exits 3 instead of 0.
@@ -110,6 +111,15 @@ function isFresh(attestation, current) {
   return attestation.source_hash === current.sourceHash; // fallback / legacy attestation
 }
 
+/** Lane results that record a sanctioned environment skip instead of a run.
+ *  `db-suites: skipped-no-db` — no Docker (no local Postgres). `packages:
+ *  skipped-sandbox-image` — a Kortix sandbox image, whose baked box state
+ *  (/opt/kortix catalog, /opt/suna scaffold, /etc/pt-env) the agent-server
+ *  suites depend on; the scheduled Tests run on a clean CI runner is the
+ *  backstop. A skip is never a pass, and `--strict` (a push to main) rejects
+ *  one. */
+export const SANCTIONED_SKIP = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
+
 /** Pure check. `current` = { sourceHash, changed }. Returns { code, reason }. */
 export function evaluate(attestation, current, required = REQUIRED_LANES, strict = false) {
   if (!attestation) return { code: 1, reason: 'missing' };
@@ -118,11 +128,12 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  const ok = (l) => lanes[l] === 'pass' || (SANCTIONED_SKIP[l] !== undefined && lanes[l] === SANCTIONED_SKIP[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  if (lanes['db-suites'] === 'skipped-no-db') {
-    return { code: strict ? 3 : 0, reason: 'green, db-suites skipped-no-db' };
+  const skipped = Object.keys(SANCTIONED_SKIP).filter((l) => lanes[l] !== undefined && lanes[l] !== 'pass');
+  if (skipped.length) {
+    return { code: strict ? 3 : 0, reason: `green, ${skipped.join(' + ')} skipped` };
   }
   return { code: 0, reason: 'green' };
 }
