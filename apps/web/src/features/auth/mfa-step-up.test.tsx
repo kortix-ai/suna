@@ -30,6 +30,7 @@ let aal: {
   error?: { message: string } | null;
 };
 let challengeAndVerifyResponse: { data: unknown; error: { message: string } | null };
+let aalHang: Promise<void> | null = null;
 const challengeAndVerifyCalls: Array<{ factorId: string; code: string }> = [];
 const signOutCalls: string[] = [];
 
@@ -39,7 +40,10 @@ mock.module('@/lib/supabase/client', () => ({
       getSession: async () => ({ data: { session } }),
       getUser: async () => ({ data: { user }, error: null }),
       mfa: {
-        getAuthenticatorAssuranceLevel: async () => aal,
+        getAuthenticatorAssuranceLevel: async () => {
+          if (aalHang) await aalHang;
+          return aal;
+        },
         challengeAndVerify: async (args: { factorId: string; code: string }) => {
           challengeAndVerifyCalls.push(args);
           // The real verify mints the aal2 session BEFORE it resolves, so the
@@ -106,7 +110,9 @@ mock.module('@/components/ui/input', () => ({
   Input: (props: Record<string, unknown>) => createElement('input', props),
 }));
 mock.module('@/components/ui/label', () => ({ Label: host('label') }));
-mock.module('@/components/ui/loading', () => ({ default: host('span') }));
+mock.module('@/components/ui/loading', () => ({
+  default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
+}));
 mock.module('@/components/ui/info-banner', () => ({
   InfoBanner: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) =>
     createElement('aside', null, title, children),
@@ -209,6 +215,7 @@ beforeEach(() => {
   user = null;
   aal = { data: null, error: null };
   challengeAndVerifyResponse = { data: {}, error: null };
+  aalHang = null;
   challengeAndVerifyCalls.length = 0;
   signOutCalls.length = 0;
   toasts.length = 0;
@@ -263,6 +270,26 @@ describe('MfaGate', () => {
     // invalidation refetched the AAL answer, which is what releases the gate.
     await settle();
     expect(serialize(root)).toContain('APP CONTENT');
+  });
+
+  test('holds the app behind the loading frame while the AAL answer has not landed', async () => {
+    verifiedTotpAal();
+    aalHang = new Promise(() => {});
+    const root = await mount(createElement(MfaGate, null, APP));
+
+    expect(serialize(root)).not.toContain('APP CONTENT');
+    expect(serialize(root)).toContain('loading');
+    expect(input(root)).toBeUndefined();
+  });
+
+  test('a failed AAL read fails open: the app renders and no dialog opens', async () => {
+    session = { access_token: 't' };
+    user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
+    aal = { data: null, error: { message: 'upstream down' } };
+    const root = await mount(createElement(MfaGate, null, APP));
+
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
   });
 
   test('an aal2 session renders the app with no dialog', async () => {

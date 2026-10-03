@@ -246,8 +246,8 @@ describe('mfaChallengeRequired', () => {
       undefined,
       false,
     ],
-  ])('%s', (_name, aal, expected) => {
-    expect(mfaChallengeRequired(aal as AALResponse | undefined)).toBe(expected);
+  ])('%s', (_name: string, aal: AALResponse | undefined, expected: boolean) => {
+    expect(mfaChallengeRequired(aal)).toBe(expected);
   });
 
   test('the aal2 answer of a no-session account never enforces', () => {

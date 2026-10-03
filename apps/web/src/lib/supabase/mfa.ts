@@ -77,9 +77,7 @@ export interface AALResponse {
  * enforce here, because its challenge needs an SMS round trip this flow does
  * not drive.
  */
-export function mfaChallengeRequired(
-  aal?: Pick<AALResponse, 'current_level' | 'next_level' | 'factors'> | null,
-): boolean {
+export function mfaChallengeRequired(aal?: AALResponse | null): boolean {
   if (!aal || aal.current_level === 'aal2' || aal.next_level !== 'aal2') return false;
   return (aal.factors ?? []).some((f) => f.status === 'verified' && f.factor_type === 'totp');
 }
