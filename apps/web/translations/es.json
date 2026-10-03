@@ -19204,6 +19204,7 @@
       "text9e52157faaab": "Sí. La misma CLI de Kortix se ejecuta en cada entorno aislado, ya autenticada, así que los agentes usan exactamente los mismos comandos que tú.",
       "text48b78a9ab65b": "¿Cómo se mantienen aisladas las ejecuciones?",
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
+      "text39207bf34111": "Habilidades relacionadas",
       "texte55e1e7d3eeb": "El turno del agente falló. No se indicó ningún motivo."
     },
     "publicShareConfirm": {
