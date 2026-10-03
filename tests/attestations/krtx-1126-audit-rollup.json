@@ -1,0 +1,25 @@
+{
+  "source_hash": "c572707b72dd304d46f38191d4d5eb0a3dacebad524710cc1a84eb9f9b438b17",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-ops-overview.test.ts",
+    "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
+    "apps/api/src/bootstrap.ts",
+    "apps/api/src/ops/index.ts",
+    "apps/api/src/shared/audit-event-count-worker.test.ts",
+    "apps/api/src/shared/audit-event-count-worker.ts",
+    "apps/api/src/shared/audit-event-counts.integration.test.ts",
+    "packages/db/drizzle/meta/20261003163427_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003163427093_audit_event_counts.sql",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "930092fad8f118c1d9a336907f546b1138dfcd5ad0a558312248277059def663",
+  "head": "6c43c017d99f9186d09a3a4de9df7a41afff8c81",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:54:11.667Z"
+}

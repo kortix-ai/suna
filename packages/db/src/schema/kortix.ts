@@ -3479,6 +3479,26 @@ export const auditArchiveChunks = kortixSchema.table('audit_archive_chunks', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Exact per-5-minute counts of `kortix.audit_events` rows, written by the
+ * audit-event-count worker (apps/api/src/shared/audit-event-count-worker.ts).
+ * The ops dashboard's "audit events in the last 24 h" metric sums these slots
+ * instead of counting `audit_events` itself: an exact count over a day of
+ * fresh rows visits every row because rows written since the last vacuum have
+ * no visibility-map bit and the index-only scan fetches their heap pages
+ * (measured on prod 2026-10-02: 65,007 rows / 10 min = 1.03 s, 268,641 rows /
+ * 1 h = 54.5 s — past the API's 25 s statement_timeout). A slot is counted
+ * two slots after it closes so late relay retries still land in their own
+ * slot; slots older than 7 days are pruned by the same tick.
+ */
+export const auditEventCounts = kortixSchema.table('audit_event_counts', {
+  /** Inclusive UTC start of the 5-minute slot; the slot covers [start, start+5m). */
+  slotStart: timestamp('slot_start', { withTimezone: true }).primaryKey(),
+  /** Exact count of audit_events rows with occurred_at in the slot. */
+  events: bigint('events', { mode: 'number' }).notNull(),
+  countedAt: timestamp('counted_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 /** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
  *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */
 export const auditSessionSequences = kortixSchema.table('audit_session_sequences', {
