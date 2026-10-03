@@ -2495,9 +2495,7 @@
     "openWithoutGrant": "No grant needed",
     "grantNote": "The agent also needs project.app.read in its Kortix permissions.",
     "emptyTitle": "No Apps yet",
-    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from.",
-    "flagOffHint": "Agent principal is off for this project, so this grant is stored but does not gate an App yet.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from."
   },
   "errors": {
     "generic": "An error occurred",

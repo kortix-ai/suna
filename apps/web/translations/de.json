@@ -20216,9 +20216,7 @@
     "openWithoutGrant": "Keine Freigabe nötig",
     "grantNote": "Der Agent benötigt außerdem project.app.read in seinen Kortix-Berechtigungen.",
     "emptyTitle": "Noch keine Apps",
-    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten.",
-    "flagOffHint": "Agent-Prinzipal ist für dieses Projekt aus. Die Freigabe wird gespeichert, steuert aber noch keinen App-Zugriff.",
-    "featureFlags": "Feature-Flags"
+    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten."
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"

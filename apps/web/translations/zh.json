@@ -20216,9 +20216,7 @@
     "openWithoutGrant": "无需授权",
     "grantNote": "智能体的 Kortix 权限还需要包含 project.app.read。",
     "emptyTitle": "尚无应用",
-    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。",
-    "flagOffHint": "本项目未开启智能体主体，因此该授权会被保存，但尚未对任何应用生效。",
-    "featureFlags": "功能开关"
+    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。"
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"

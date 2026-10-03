@@ -107,7 +107,7 @@ export function selectSessionRowsForViewer(input: {
    */
   accountSessionOversight?: boolean;
   /**
-   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * The caller is an agent session under the agent-principal model (spec §2).
    * It lists only its own session, its children, and project-visible sessions —
    * never the launcher's other private or restricted ones.
    */

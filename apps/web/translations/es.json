@@ -20216,9 +20216,7 @@
     "openWithoutGrant": "No requiere concesión",
     "grantNote": "El agente también necesita project.app.read en sus permisos de Kortix.",
     "emptyTitle": "Aún no hay Apps",
-    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija.",
-    "flagOffHint": "Agente como principal está desactivado en este proyecto, así que la concesión se guarda pero todavía no controla ninguna App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija."
   },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"

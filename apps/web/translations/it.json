@@ -20216,9 +20216,7 @@
     "openWithoutGrant": "Nessuna concessione necessaria",
     "grantNote": "L'agente ha bisogno anche di project.app.read nei suoi permessi Kortix.",
     "emptyTitle": "Ancora nessuna App",
-    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga.",
-    "flagOffHint": "Agente come principal è disattivato per questo progetto: la concessione viene salvata ma non controlla ancora nessuna App.",
-    "featureFlags": "Feature flag"
+    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga."
   },
   "connectorsAppReturn": {
     "done": "Fatto. Torna all’app Kortix"

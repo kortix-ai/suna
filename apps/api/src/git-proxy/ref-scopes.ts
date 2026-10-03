@@ -77,8 +77,8 @@ export async function principalHoldsRefScope(
       if (!grant) return false; // Default-deny — see the header note.
       if (grant.permissions !== 'all' && !grant.permissions.includes(scope)) return false;
       if (!principal.userId || !principal.tokenId) return false;
-      // actorForToken selects the agent's service account (activated, or the
-      // project flag `agent_principal` on) or the launcher. The manifest can
+      // actorForToken selects the agent's service account (a governed grant)
+      // or the launcher (a null grant). The manifest can
       // narrow that identity's role; it cannot widen it.
       const verdict = await authorize(
         await actorForToken(principal.userId, project.accountId, principal.tokenId, {

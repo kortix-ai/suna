@@ -20216,9 +20216,7 @@
     "openWithoutGrant": "許可は不要",
     "grantNote": "エージェントには Kortix 権限に project.app.read も必要です。",
     "emptyTitle": "アプリはまだありません",
-    "emptyDescription": "このプロジェクトにデプロイしたアプリが、エージェントの選択肢としてここに表示されます。",
-    "flagOffHint": "このプロジェクトではエージェントプリンシパルがオフです。許可は保存されますが、まだアプリを制御しません。",
-    "featureFlags": "機能フラグ"
+    "emptyDescription": "このプロジェクトにデプロイしたアプリが、エージェントの選択肢としてここに表示されます。"
   },
   "connectorsAppReturn": {
     "done": "完了。Kortix アプリに戻る"
