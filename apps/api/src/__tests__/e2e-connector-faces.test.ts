@@ -389,6 +389,9 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
+      // Hermetic: the CLI must not see the host sandbox's injected env file
+      // (KORTIX_PROJECT_ID would take the project-explicit route and 403).
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },
     stdout: 'pipe',
@@ -677,6 +680,9 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        // Hermetic: the CLI must not see the host sandbox's injected env file
+        // (KORTIX_PROJECT_ID would take the project-explicit route and 403).
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -771,6 +777,9 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        // Hermetic: the CLI must not see the host sandbox's injected env file
+        // (KORTIX_PROJECT_ID would take the project-explicit route and 403).
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',
@@ -843,6 +852,9 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        // Hermetic: the CLI must not see the host sandbox's injected env file
+        // (KORTIX_PROJECT_ID would take the project-explicit route and 403).
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',
