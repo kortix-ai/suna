@@ -181,7 +181,7 @@ flow(
         if (after.some((r) => r.id === reminder.id)) throw new Error('rm did not delete the reminder');
       });
 
-      await ctx.step('another human setting a reminder on a shared session clears on_behalf_of, like a prompt', async () => {
+      await ctx.step('another human setting a reminder on a shared session → 201; on_behalf_of stays the launcher until the fire is delivered', async () => {
         const shared = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER, visibility: 'project' });
         const member = await team.addMember('member');
         await team.grantProjectRole(project.id, member.userId!, 'member');
@@ -189,8 +189,11 @@ flow(
         (await ctx.client.as(member).post(REMINDERS, { prompt: 'x', in: '1h' }, {
           params: { projectId: project.id, sessionId: shared.sessionId },
         })).status(201);
-        if (shared.onBehalfOfColumn && (await world.readOnBehalfOf(shared.sessionId)) !== null) {
-          throw new Error('a second human set a reminder and on_behalf_of survived');
+        // The reminder is this member's deferred prompt: its delivery binds the
+        // turn to them (trigger-fire.ts). Creating it must not touch the
+        // launcher's running turn.
+        if (shared.onBehalfOfColumn && (await world.readOnBehalfOf(shared.sessionId)) !== ctx.P.OWNER.userId) {
+          throw new Error('creating a reminder changed on_behalf_of before the reminder fired');
         }
       });
     } finally {
