@@ -132,7 +132,13 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    // Still serial on purpose — the assertion only pins the per-test ceiling,
+    // which lane 3 sets to 30s via KORTIX_TEST_TIMEOUT_MS. Without a ceiling
+    // bun's 5 s default flakes the daemon-spawning tests under the packages
+    // wave's concurrency (2026-10-03: materializeProject, refreshRepo,
+    // reconcileRuntimeAssets over chunks), the same class the CLI and API
+    // packages already consume the knob for.
+    expect(agentPackage.scripts.test).toBe('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}');
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

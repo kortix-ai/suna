@@ -1,4 +1,7 @@
 import { createHmac } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -9,6 +12,14 @@ import type { Opencode } from '@/harness/open-code/lifecycle'
 import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
 import { buildDaemonApp } from '@/app/server'
 import type { PtyRegistry } from '@/routes/kortix/pty'
+
+/** The default workspace/project target for tests that don't override them.
+ *  A real empty directory, never the agent box's own `/workspace`: that path
+ *  is empty on a CI runner (the tests were written against that absence) but
+ *  is a live git checkout on a Kortix box, which turns "no repo here" flows
+ *  into real git work. One dir per process; tests that need isolation pass
+ *  their own via `over`. */
+const DEFAULT_TEST_WORKSPACE = mkdtempSync(join(tmpdir(), 'kortix-opencode-harness-'))
 
 /** The production daemon app over the production service composition; only
  *  the native OpenCode lifecycle is substituted. */
@@ -44,8 +55,8 @@ export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCode
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
-    workspace: '/workspace',
-    projectTarget: '/workspace',
+    workspace: DEFAULT_TEST_WORKSPACE,
+    projectTarget: DEFAULT_TEST_WORKSPACE,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
