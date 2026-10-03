@@ -68,21 +68,6 @@ export function normalizeSandboxId(value: unknown): string | undefined {
   return undefined;
 }
 
-export interface LocalBridgeSandboxResponse {
-  success: boolean;
-  status?: string;
-  data?: SandboxInfo | null;
-}
-
-export const LOCAL_PLATFORM_CANDIDATES = [
-  'http://localhost:8008/v1',
-  'http://127.0.0.1:8008/v1',
-];
-
-export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  return `${stripTrailingSlashes(baseUrl)}/platform/local-bridge/status`;
-}
-
 function normalizeSessionStatus(status: string | undefined): string {
   if (status === 'running' || status === 'active') return 'active';
   if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';

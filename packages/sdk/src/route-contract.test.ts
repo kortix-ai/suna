@@ -10,9 +10,11 @@ import ts from 'typescript';
  * The SDK is published. A function whose route the API deleted still compiles,
  * still typechecks, and returns 404 in a stranger's app. This test reads the
  * SDK source with the TypeScript parser, resolves the path of every
- * `backendApi.*` call (through literals, same-file helpers, local constants,
- * and thin wrappers such as `iamGet(path)`), and fails on any path the API
- * does not serve.
+ * `backendApi.*` call and of every URL built on a backend base
+ * (`getBackendUrl()`, `platformApiBase(...)`, a `backendUrl`/`apiUrl` value —
+ * see `isBackendBase`), through literals, same-file helpers, local constants,
+ * and thin wrappers such as `iamGet(path)`, `call(path, …)` or
+ * `requestJson(path, …)`. It fails on any path the API does not serve.
  *
  * The only allowlisted paths are the ones the manifest cannot list:
  *   - `/p/:externalId/:port/...` and `/p/public-share/:token/:port/...`: the
@@ -47,6 +49,15 @@ const BACKEND_API_METHODS: Record<string, string> = {
 
 /** Templates that start with one of these expressions are backend URLs. */
 const BACKEND_BASE_EXPRESSIONS = new Set(['getBackendUrl()', 'getPlatformUrl()', 'getApiUrl()']);
+/** A value with one of these names is the Kortix API base (`options.backendUrl`, `apiUrl`). */
+const BACKEND_BASE_NAMES = new Set(['backendUrl', 'apiUrl']);
+/** Calls that return their first argument's base, normalised (`platformApiBase(url)` adds `/v1`). */
+const BASE_PRESERVING_CALLS = new Set([
+  'platformApiBase',
+  'stripTrailingSlashes',
+  'trimTrailingSlashes',
+  'normalizeServerBackendBase',
+]);
 
 const ALLOWLIST: Array<{ pattern: RegExp; reason: string }> = [
   {
@@ -230,6 +241,8 @@ function normalize(path: string): string {
     if (at >= 0 && at < cut) cut = at;
   }
   let out = path.slice(0, cut);
+  // A root base (`normalizeServerBackendBase`) joins paths that carry `/v1`.
+  if (out.startsWith('/v1/')) out = out.slice('/v1'.length);
   // A segment with any interpolation in it is a parameter.
   out = out
     .split('/')
@@ -306,25 +319,61 @@ export function collectSdkRoutes(files: Array<{ file: string; text: string }>): 
             }
           }
         }
-        if (ts.isTemplateExpression(node) && node.head.text === '') {
+        if (
+          ts.isTemplateExpression(node) &&
+          node.head.text === '' &&
+          isBackendBase(node.templateSpans[0].expression)
+        ) {
           const [base, ...rest] = node.templateSpans;
-          // `${getApiUrl()}${endpoint}` is the transport joining a caller's
-          // path; the caller's own call site is what gets checked.
-          if (isBackendBase(base.expression) && base.literal.text.startsWith('/')) {
-            const path = rest.reduce(
+          const method = fetchMethod(node);
+          let prefixes: string[] | null = [''];
+          let text = base.literal.text;
+          let spans = rest;
+          if (text === '' && rest.length > 0) {
+            // `${base}${path}…`: the path is an expression — a local constant,
+            // a helper, or a parameter that makes this function a wrapper.
+            const first = rest[0];
+            prefixes = resolver.resolve(first.expression);
+            text = first.literal.text;
+            spans = rest.slice(1);
+            if (!prefixes) {
+              const param = ts.isIdentifier(first.expression) ? first.expression : null;
+              // `backendApi.get(endpoint)` itself: its call sites are checked above.
+              if (param && isBackendApiMethod(node)) {
+                prefixes = null;
+              } else if (!(param && registerWrapper(node, param, method))) {
+                unresolved.push({ file: index.file, line: lineOf(index, node), expression: first.expression.getText() });
+              }
+              prefixes = null;
+            }
+          }
+          if (prefixes) {
+            const tail = spans.reduce(
               (acc, span) => acc + (acc.endsWith('/') ? ':param' : QUERY) + span.literal.text,
-              base.literal.text,
+              text,
             );
-            routes.push({ file: index.file, line: lineOf(index, node), method: 'ANY', path: normalize(path) });
-          } else if (
-            isBackendBase(base.expression) &&
-            base.literal.text === '' &&
-            rest.length === 1 &&
-            rest[0].literal.text === '' &&
-            ts.isIdentifier(rest[0].expression)
-          ) {
-            // `${getPlatformUrl()}${path}` inside a named helper: its callers pass the path.
-            registerWrapper(node, rest[0].expression, 'ANY');
+            for (const prefix of prefixes) {
+              const path = normalize(prefix + tail);
+              // `${base}`, `${base}/`, `${base}/v1` (a base builder) or
+              // `${base}?q` names no route.
+              if (!path.startsWith('/') || path === '/' || path === '/v1') continue;
+              routes.push({ file: index.file, line: lineOf(index, node), method, path });
+            }
+          }
+        }
+        if (
+          ts.isNewExpression(node) &&
+          node.expression.getText() === 'URL' &&
+          node.arguments?.length === 2 &&
+          isBackendUrlArgument(node.arguments[1])
+        ) {
+          // `new URL('templates/x', `${platformApiBase(url)}/`)`: a path relative to the base.
+          const paths = resolver.resolve(node.arguments[0]);
+          if (!paths) {
+            unresolved.push({ file: index.file, line: lineOf(index, node), expression: node.arguments[0].getText() });
+          }
+          for (const p of paths ?? []) {
+            routes.push({ file: index.file, line: lineOf(index, node), method: 'ANY', path: normalize(`/${p.replace(/^\/+/, '')}`) });
           }
         }
         ts.forEachChild(node, visit);
@@ -335,12 +384,84 @@ export function collectSdkRoutes(files: Array<{ file: string; text: string }>): 
   return { routes, unresolved };
 }
 
-/** `getBackendUrl()`, or a constant initialised from one (`const base = getPlatformUrl()`). */
-function isBackendBase(expr: ts.Expression): boolean {
+/**
+ * A Kortix API base URL: `getBackendUrl()`, a `backendUrl`/`apiUrl` value
+ * (`options.backendUrl`, `platformConfig().backendUrl || ''`), a call that
+ * normalises one (`platformApiBase(url)`), or a constant initialised from any
+ * of these. A runtime URL (`baseUrl`, `runtimeUrl`) is not one.
+ */
+function isBackendBase(expr: ts.Expression, depth = 0): boolean {
+  if (depth > 6) return false;
   if (BACKEND_BASE_EXPRESSIONS.has(expr.getText())) return true;
+  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || ts.isNonNullExpression(expr)) {
+    return isBackendBase(expr.expression, depth + 1);
+  }
+  if (
+    ts.isBinaryExpression(expr) &&
+    (expr.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+  ) {
+    return isBackendBase(expr.left, depth + 1);
+  }
+  if (ts.isPropertyAccessExpression(expr)) return BACKEND_BASE_NAMES.has(expr.name.text);
+  if (ts.isCallExpression(expr) && ts.isIdentifier(expr.expression) && BASE_PRESERVING_CALLS.has(expr.expression.text)) {
+    const arg = expr.arguments[0];
+    return !!arg && isBackendBase(arg, depth + 1);
+  }
   if (!ts.isIdentifier(expr)) return false;
+  if (BACKEND_BASE_NAMES.has(expr.text)) return true;
   const init = declarationInScope(expr);
-  return !!init && BACKEND_BASE_EXPRESSIONS.has(init.getText());
+  return !!init && isBackendBase(init, depth + 1);
+}
+
+/** A `new URL(path, base)` base: a backend base, or `${base}/`. */
+function isBackendUrlArgument(expr: ts.Expression): boolean {
+  if (ts.isTemplateExpression(expr) && expr.head.text === '' && expr.templateSpans.length === 1) {
+    return isBackendBase(expr.templateSpans[0].expression) && expr.templateSpans[0].literal.text === '/';
+  }
+  return isBackendBase(expr);
+}
+
+/** `node` sits in a method of the `backendApi` object literal: the transport itself. */
+function isBackendApiMethod(node: ts.Node): boolean {
+  for (let cur = node.parent; cur; cur = cur.parent) {
+    if (!ts.isFunctionLike(cur)) continue;
+    const prop = cur.parent;
+    const object = prop?.parent;
+    return (
+      !!prop &&
+      ts.isPropertyAssignment(prop) &&
+      !!object &&
+      ts.isObjectLiteralExpression(object) &&
+      ts.isVariableDeclaration(object.parent) &&
+      object.parent.name.getText() === 'backendApi'
+    );
+  }
+  return false;
+}
+
+/** The literal `method` of an options object, e.g. `{ method: 'POST' }`; `ANY` when absent. */
+function literalMethod(args: readonly ts.Expression[]): string {
+  for (const arg of args) {
+    if (!ts.isObjectLiteralExpression(arg)) continue;
+    for (const prop of arg.properties) {
+      if (
+        ts.isPropertyAssignment(prop) &&
+        prop.name.getText() === 'method' &&
+        (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer))
+      ) {
+        return prop.initializer.text.toUpperCase();
+      }
+    }
+  }
+  return 'ANY';
+}
+
+/** The method of `fetch(template, { method })` when the template is its URL. */
+function fetchMethod(template: ts.TemplateExpression): string {
+  const call = template.parent;
+  if (!ts.isCallExpression(call) || call.arguments[0] !== template) return 'ANY';
+  return literalMethod(call.arguments.slice(1));
 }
 
 function callTarget(
@@ -358,12 +479,20 @@ function callTarget(
     return method ? { method, arg: 0 } : null;
   }
   if (!ts.isIdentifier(callee)) return null;
-  const local = wrappers.get(`${index.file}::${callee.text}`);
-  if (local) return local;
-  // An imported wrapper (`platformFetch` from `./shared`), when the name is unique.
-  if (!index.imports.has(callee.text)) return null;
-  const imported = [...wrappers].filter(([key]) => key.endsWith(`::${callee.text}`));
-  return imported.length === 1 ? imported[0][1] : null;
+  let target = wrappers.get(`${index.file}::${callee.text}`);
+  if (!target && index.imports.has(callee.text)) {
+    // An imported wrapper (`serverTokenGet` from `./shared`), when the name is unique.
+    const imported = [...wrappers].filter(([key]) => key.endsWith(`::${callee.text}`));
+    if (imported.length === 1) target = imported[0][1];
+  }
+  if (!target) return null;
+  // A method-agnostic wrapper (`call(path, { method: 'PATCH' })`) takes the
+  // method its call site states.
+  if (target.method === 'ANY') {
+    const rest = node.arguments.filter((_, i) => i !== target.arg);
+    return { method: literalMethod(rest), arg: target.arg };
+  }
+  return target;
 }
 
 // ─── Matching ───────────────────────────────────────────────────────────────
@@ -421,8 +550,9 @@ describe('route contract: SDK → routes.generated.json', () => {
   const { routes, unresolved } = collectSdkRoutes(sdkSourceFiles(SRC));
 
   test('the extractor finds the SDK backend calls', () => {
-    // A resolver regression that silently finds nothing must not pass.
-    expect(routes.length).toBeGreaterThan(400);
+    // A resolver regression that silently finds nothing must not pass. 2026-10-03:
+    // 504 calls through `backendApi` alone; 560 with every transport.
+    expect(routes.length).toBeGreaterThan(540);
   });
 
   test('every backend call has a statically resolvable path', () => {
@@ -492,5 +622,36 @@ describe('route contract extractor', () => {
     expect(routes.map((r) => `${r.method} ${r.path}`)).toEqual(['ANY /files/:param/raw']);
     expect(isServed(routes[0], manifest)).toBe(true);
     expect(isServed({ method: 'ANY', path: '/templates/:param' }, manifest)).toBe(false);
+  });
+
+  test('follows every transport: call(), requestJson(), raw fetch on a backend base, new URL()', () => {
+    const { routes, unresolved } = extract(`
+      async function call<T>(path: string, init: { method?: string; body?: unknown }, opts?: { backendUrl?: string }) {
+        const raw = stripTrailingSlashes(opts?.backendUrl ?? platformConfig().backendUrl ?? '');
+        return fetchImpl(\`\${platformApiBase(raw)}\${path}\`, { method: init.method ?? 'GET' });
+      }
+      export const signUp = (input: unknown) => call('/auth/signup', { body: input });
+      export const patchUser = (input: unknown) => call('/auth/user', { method: 'PATCH', body: input });
+      export async function serverTokenGet<T>(opts: { backendUrl: string }, path: string) {
+        const base = normalizeServerBackendBase(opts.backendUrl);
+        return fetch(\`\${base}\${path}\`);
+      }
+      export const accounts = (o: { backendUrl: string }) => serverTokenGet(o, '/v1/accounts');
+      export const token = (backendUrl: string) => fetch(\`\${backendUrl}/oauth/token\`, { method: 'POST' });
+      export const exportUrl = () => \`\${platformConfig().backendUrl || ''}/projects/\${id}/files/archive\${q}\`;
+      export const tpl = (backendUrl: string, id: string) =>
+        new URL(\`templates/public/\${id}\`, \`\${platformApiBase(backendUrl)}/\`);
+      export const runtime = (baseUrl: string) => fetch(\`\${baseUrl}/session/\${id}/message\`);
+      export const base = (backendUrl: string) => \`\${stripTrailingSlashes(backendUrl)}/v1\`;
+    `);
+    expect(unresolved).toEqual([]);
+    expect(routes.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
+      'ANY /accounts',
+      'ANY /auth/signup',
+      'ANY /projects/:param/files/archive',
+      'ANY /templates/public/:param',
+      'PATCH /auth/user',
+      'POST /oauth/token',
+    ]);
   });
 });
