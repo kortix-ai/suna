@@ -118,7 +118,6 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     revenuecatPendingChangeDate: null,
     planType: null,
     seatCount: null,
-    maxConcurrentSessions: null,
     ...overrides,
   };
 }
@@ -176,7 +175,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       amount: expect.any(Number),
     });
     expect(state.instances).toEqual([]);
-    expect(state.limits?.concurrent_sessions.active).toBe(0);
+    expect('limits' in state).toBe(false);
     expect(state.billing_model).toBe('legacy');
     expect(state.member_count).toBe(3);
     expect(state.billing_state).toBe('active');
@@ -297,19 +296,6 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     expect(state.plan?.sublabel).toBe('$200/mo · grandfathered');
   });
 
-  test('the concurrent-session ceiling shown is the trial plan’s, not free’s', async () => {
-    account = trialing();
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.limits?.concurrent_sessions.limit).toBe(
-      getTier(TRIAL_TIER).concurrentSessionLimit,
-    );
-    expect(state.limits?.concurrent_sessions.limit).not.toBe(
-      getTier('free').concurrentSessionLimit,
-    );
-  });
-
   test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
     account = trialing();
 
@@ -325,13 +311,5 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     const state = await buildMinimalAccountState('acct-1');
 
     expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
-  });
-
-  test('a per-account session override still wins over the resolved plan cap', async () => {
-    account = trialing({ maxConcurrentSessions: 7 });
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.limits?.concurrent_sessions.limit).toBe(7);
   });
 });
