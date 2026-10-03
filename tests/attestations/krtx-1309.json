@@ -1,19 +1,20 @@
 {
-  "source_hash": "f46a606413465a8d9a54604ec51ee0521d531e591c85b0b50ec9f9866cfef689",
+  "source_hash": "fc24ed54881eeb09796b557d64ead33e6a8cf326e27d12fcca4578636c9f8578",
   "diff_files": [
+    "apps/api/src/projects/reaping/archived-box-removal-plan.integration.test.ts",
+    "apps/api/src/projects/reaping/archived-box-removal.ts",
     "packages/db/drizzle/meta/20261003181419_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261003181442876_session_sandboxes_provider_removal_pending_index.concurrent.ts",
-    "packages/db/scripts/session-sandboxes-provider-removal-index.integration.test.ts",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "ceab27f2291e9478fe51051f8fb6ed784d62c944361690bc60bfd130a66be0e6",
-  "head": "de527036a55694ddb83e4c1ce29178015a210f63",
+  "diff_hash": "609b02bb324a8786e5945e44a9ac9315d8e6f7d60447402a06093faf3e1749fe",
+  "head": "fdb59f6e9601e0bf7ae5cc1d8cd29d85fd01cd2b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T19:51:57.210Z"
+  "at": "2026-10-03T21:17:26.031Z"
 }
