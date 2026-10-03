@@ -34,6 +34,7 @@ import {
   kortixApiKeys,
   sandboxComputeSessions,
   apps,
+  appAccessGrants,
   appArtifacts,
   appDeployments,
   appRuntimes,
@@ -421,6 +422,18 @@ describe('Kortix Apps schema', () => {
     expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
     expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
     expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('does not re-add the unused app_access_grants app_id index', () => {
+    // Dropped by 20261003055520493_drop_app_access_grants_app_idx. Prod
+    // pg_stat_user_indexes: idx_scan = 0 over the index's whole lifetime
+    // (2026-10-03), and the Supabase advisor reports it as unused_index.
+    // app_access_grants_unique leads with app_id, so it serves every read
+    // the dropped index could — the identity-transfer DELETE and the apps
+    // ON DELETE CASCADE walk. Re-adding it re-imposes an index write per
+    // grant row for no plan.
+    expect(indexNames(appAccessGrants)).not.toContain('app_access_grants_app_idx');
+    expect(indexNames(appAccessGrants)).toContain('app_access_grants_unique');
   });
 
   test('covers the app_deployment_events runtime foreign key with an index', () => {
