@@ -215,39 +215,28 @@ describe('mfaChallengeRequired', () => {
   const totp = (status: string) => ({ id: 'f-totp', factor_type: 'totp', status });
   const phone = (status: string) => ({ id: 'f-phone', factor_type: 'phone', status });
 
-  test.each([
-    [
-      'aal1 → aal2 with a verified TOTP factor: challenge required',
-      { current_level: 'aal1', next_level: 'aal2', factors: [totp('verified')] },
-      true,
-    ],
-    [
-      'aal2 → aal2 (already verified this session): no challenge',
-      { current_level: 'aal2', next_level: 'aal2', factors: [totp('verified')] },
-      false,
-    ],
-    [
-      'aal1 → aal1 (nothing verified enrolled): no challenge',
-      { current_level: 'aal1', next_level: 'aal1', factors: [] },
-      false,
-    ],
-    [
-      'an unverified TOTP factor (enrollment in progress) does not enforce',
-      { current_level: 'aal1', next_level: 'aal1', factors: [totp('unverified')] },
-      false,
-    ],
-    [
-      'a verified phone factor alone does not enforce (its challenge needs an SMS round trip)',
-      { current_level: 'aal1', next_level: 'aal2', factors: [phone('verified')] },
-      false,
-    ],
-    [
-      'no AAL answer yet does not enforce',
-      undefined,
-      false,
-    ],
-  ])('%s', (_name: string, aal: AALResponse | undefined, expected: boolean) => {
-    expect(mfaChallengeRequired(aal)).toBe(expected);
+  test('aal1 → aal2 with a verified TOTP factor: challenge required', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal2', factors: [totp('verified')] })).toBe(true);
+  });
+
+  test('aal2 → aal2 (already verified this session): no challenge', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal2', next_level: 'aal2', factors: [totp('verified')] })).toBe(false);
+  });
+
+  test('aal1 → aal1 (nothing verified enrolled): no challenge', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal1', factors: [] })).toBe(false);
+  });
+
+  test('an unverified TOTP factor (enrollment in progress) does not enforce', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal1', factors: [totp('unverified')] })).toBe(false);
+  });
+
+  test('a verified phone factor alone does not enforce (its challenge needs an SMS round trip)', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal2', factors: [phone('verified')] })).toBe(false);
+  });
+
+  test('no AAL answer yet does not enforce', () => {
+    expect(mfaChallengeRequired(undefined)).toBe(false);
   });
 
   test('the aal2 answer of a no-session account never enforces', () => {
