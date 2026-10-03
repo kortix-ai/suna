@@ -23,8 +23,6 @@ async function materializeRuntime(agentBundle = INPUT.agentBundle) {
   return { artifact, root, runtimePath };
 }
 
-
-
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
