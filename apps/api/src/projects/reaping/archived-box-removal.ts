@@ -149,7 +149,7 @@ export async function attemptArchivedBoxRemoval(
 /**
  * The reaper's batch, built once so the index test EXPLAINs what ships
  * (archived-box-removal-plan.integration.test.ts). The partial index
- * `idx_session_sandboxes_removal_pending` covers exactly this predicate and
+ * `idx_session_sandboxes_provider_removal_pending` covers exactly this predicate and
  * its sort expression; the query and the index must move together.
  */
 export function removeArchivedProviderBoxesQuery() {

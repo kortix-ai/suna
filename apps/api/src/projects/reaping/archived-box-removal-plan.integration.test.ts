@@ -10,7 +10,7 @@
  * seq-scanned every archived row and decoded its jsonb to find nothing.
  *
  * `idx_session_sandboxes_provider_removal_pending`
- * (`20261003200200862_add_session_sandboxes_removal_pending_index.concurrent.ts`)
+ * (`20261003181442876_session_sandboxes_provider_removal_pending_index.concurrent.ts`)
  * carries the exact predicate AND the query's sort expression, so the lane
  * probes a (usually empty) partial index instead of the whole archived set.
  *
