@@ -543,25 +543,24 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   // No Docker (a factory sandbox): the DB lanes cannot run. Record them as
   // skipped-no-db. verify-attestation.mjs never counts a skip as a pass.
   const skipped: string[] = [];
+  const skipLanes = (names: string[], why: string): number => {
+    if (names.length === 0) return 0;
+    skipped.push(...names);
+    plan.lanes = plan.lanes.filter((l) => !names.includes(l.name));
+    plan.stages = plan.stages.map((stage) => stage.filter((l) => !names.includes(l.name)));
+    console.log(`[test] SKIP ${names.join(',')}: ${why}`);
+    return plan.lanes.length === 0 ? 1 : 0;
+  };
   if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && !dockerAvailable()) {
-    for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name))) skipped.push(lane.name);
-    plan.lanes = plan.lanes.filter((l) => !skipped.includes(l.name));
-    plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.includes(l.name)));
-    console.log(`[test] SKIP ${skipped.join(',')}: Docker is not available (skipped-no-db, not a pass)`);
-    if (plan.lanes.length === 0) return 1;
+    if (skipLanes(plan.lanes.filter((l) => DOCKER_LANES.has(l.name)).map((l) => l.name),
+      'Docker is not available (skipped-no-db, not a pass)')) return 1;
   }
   if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && managedSandboxImage()) {
     // A Kortix sandbox image invalidates the packages lane on files identical
     // at origin/main. Skip the lane, record skipped-sandbox-image (never a
     // pass; --strict and a main push refuse it). CI is the backstop.
-    const skipNow = plan.lanes.filter((l) => l.name === 'package-quality').map((l) => l.name);
-    if (skipNow.length) {
-      skipped.push(...skipNow);
-      plan.lanes = plan.lanes.filter((l) => !skipNow.includes(l.name));
-      plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipNow.includes(l.name)));
-      console.log(`[test] SKIP ${skipNow.join(',')}: a Kortix sandbox image carries platform state the agent-server tests assume absent (skipped-sandbox-image, not a pass; CI is the backstop)`);
-      if (plan.lanes.length === 0) return 1;
-    }
+    if (skipLanes(plan.lanes.filter((l) => l.name === 'package-quality').map((l) => l.name),
+      'a Kortix sandbox image carries platform state the agent-server tests assume absent (skipped-sandbox-image, not a pass; CI is the backstop)')) return 1;
   }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
