@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 // Local test attestation: `pnpm test` proves it ran by writing
-// tests/test-attestation.json; the pre-push hook and the merge gate check it.
+// tests/attestations/<branch>.json; the pre-push hook and the merge gate check it.
+// One file per branch, so two PRs never edit the same path and never conflict.
+// A write deletes every other branch's file (and the legacy
+// tests/test-attestation.json): a merged PR's file is never edited again, so
+// two branches that delete it merge clean.
 //
-//   node tests/verify-attestation.mjs verify [--rev <sha>] [--require a,b] [--strict]
+//   node tests/verify-attestation.mjs verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict]
 //   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db> ...
 //
+// verify reads the attestation the PR itself added or edited under
+// tests/attestations/ (`git diff origin/main...rev`). With none, it reads
+// tests/attestations/<branch>.json at rev (--branch, else the checked-out
+// branch), then the legacy tests/test-attestation.json.
+//
 // diff_hash = sha256 of "<mode> <blob> <path>" for the files the PR itself
-// changed — `git diff origin/main...HEAD`, minus the attestation file. Verify
+// changed — `git diff origin/main...HEAD`, minus every attestation file. Verify
 // stays green while those files are unchanged, even after an unrelated
 // origin/main merge lands other files; it goes stale only when a file the PR
 // changed is edited after the run. On main (no diverging merge-base) it falls
@@ -26,13 +35,14 @@
 // attestation whose db-suites was skipped exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const ATTESTATION = 'tests/test-attestation.json';
+export const DIR = 'tests/attestations';
+export const LEGACY = 'tests/test-attestation.json';
 export const REQUIRED_LANES = ['core', 'packages', 'db-suites'];
 
 /** The one environment skip each lane may record instead of a result. */
@@ -40,6 +50,21 @@ export const SANCTIONED_SKIP = { 'db-suites': 'skipped-no-db', packages: 'skippe
 
 const git = (args, env) =>
   execFileSync('git', args, { cwd: root, env: { ...process.env, ...env }, maxBuffer: 1 << 28 });
+
+/** Attestation files are never part of the tested source. */
+const isAttestation = (p) => p === LEGACY || p.startsWith(`${DIR}/`);
+
+/** tests/attestations/<branch>.json, with every char outside [A-Za-z0-9._-] made `-`. */
+export const attestationPath = (branch) => `${DIR}/${branch.replace(/[^A-Za-z0-9._-]/g, '-')}.json`;
+
+/** The checked-out branch, or null on a detached HEAD. */
+function currentBranch() {
+  try {
+    return git(['symbolic-ref', '--short', '-q', 'HEAD']).toString().trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /** Hash the tree of `rev`, or of the working tree (staged + unstaged + untracked, not ignored). */
 export function sourceHash(rev) {
@@ -65,7 +90,7 @@ export function sourceHash(rev) {
       const [mode, , blob] = meta.split(' ');
       return { path, line: `${mode} ${blob} ${path}` };
     })
-    .filter((e) => e.path !== ATTESTATION)
+    .filter((e) => !isAttestation(e.path))
     .sort((a, b) => (a.path < b.path ? -1 : 1));
   return createHash('sha256').update(lines.map((e) => e.line).join('\n')).digest('hex');
 }
@@ -74,7 +99,8 @@ const sha = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex
 
 /**
  * The files the PR itself changed: `git diff <merge-base origin/main>...<rev>`.
- * Returns { files: sorted paths, lines: { path -> "<mode> <blob> <path>" }, hash },
+ * Returns { files: sorted paths, lines: { path -> "<mode> <blob> <path>" }, hash,
+ * attestations: the files the PR added or edited under tests/attestations/ },
  * or null when there is no diverging merge-base (on/behind main, or origin/main
  * unavailable) — the caller then falls back to the full-tree source_hash.
  */
@@ -96,15 +122,25 @@ export function changedFiles(rev) {
     .split('\0')
     .filter(Boolean);
   const entries = [];
+  const attestations = [];
   for (let i = 0; i + 1 < tokens.length; i += 2) {
-    const [, mode, , blob] = tokens[i].replace(/^:/, '').split(' '); // :srcmode dstmode srcsha dstsha status
+    const [, mode, , blob, status] = tokens[i].replace(/^:/, '').split(' '); // :srcmode dstmode srcsha dstsha status
     const path = tokens[i + 1];
-    if (path !== ATTESTATION) entries.push({ path, line: `${mode} ${blob} ${path}` });
+    if (!isAttestation(path)) entries.push({ path, line: `${mode} ${blob} ${path}` });
+    else if (path.startsWith(`${DIR}/`) && status !== 'D') attestations.push(path);
   }
   entries.sort((a, b) => (a.path < b.path ? -1 : 1));
   const lines = Object.fromEntries(entries.map((e) => [e.path, e.line]));
-  return { files: entries.map((e) => e.path), lines, hash: sha(entries.map((e) => e.line)) };
+  return { files: entries.map((e) => e.path), lines, hash: sha(entries.map((e) => e.line)), attestations };
 }
+
+const readdirSafe = (dir) => {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+};
 
 /** True when the attestation's tested source is unchanged at `current`. */
 function isFresh(attestation, current) {
@@ -134,22 +170,38 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   return { code: 0, reason: 'green' };
 }
 
-function read(rev) {
+function read(path, rev) {
   try {
-    const raw = rev
-      ? git(['show', `${rev}:${ATTESTATION}`]).toString()
-      : readFileSync(join(root, ATTESTATION), 'utf8');
+    const raw = rev ? git(['show', `${rev}:${path}`]).toString() : readFileSync(join(root, path), 'utf8');
     return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-/** Record lane results for the current source. Lanes of the same source_hash accumulate. */
+/** The attestation for `rev`: the PR's own file, else <branch>.json at rev, else the legacy file. */
+export function locate(rev, branch, changed) {
+  const mine = branch && attestationPath(branch);
+  const own = changed?.attestations ?? [];
+  if (own.includes(mine)) return read(mine, rev);
+  if (own.length) {
+    const docs = own.map((p) => read(p, rev)).filter(Boolean);
+    return docs.sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] ?? null; // newest
+  }
+  return (mine && read(mine, rev)) ?? read(LEGACY, rev);
+}
+
+/**
+ * Record lane results for the current source in this branch's file, and delete
+ * every other attestation file. Lanes of the same source_hash accumulate.
+ */
 export function write(results) {
   const source_hash = sourceHash();
   const diff = changedFiles();
-  const prior = read();
+  const path = attestationPath(
+    currentBranch() ?? `detached-${git(['rev-parse', '--short', 'HEAD']).toString().trim()}`,
+  );
+  const prior = read(path);
   const lanes = prior?.source_hash === source_hash ? { ...prior.lanes, ...results } : { ...results };
   const attestation = {
     source_hash,
@@ -159,8 +211,15 @@ export function write(results) {
     lanes,
     at: new Date().toISOString(),
   };
-  writeFileSync(join(root, ATTESTATION), `${JSON.stringify(attestation, null, 2)}\n`);
-  return attestation;
+  const others = [LEGACY, ...readdirSafe(join(root, DIR)).map((f) => `${DIR}/${f}`)].filter(
+    (p) => p !== path && (p === LEGACY || p.endsWith('.json')),
+  );
+  // Stage the deletions too (`git rm`), so a commit of only this file still prunes.
+  git(['rm', '-q', '-f', '--cached', '--ignore-unmatch', '--', ...others]);
+  for (const p of others) rmSync(join(root, p), { force: true });
+  mkdirSync(join(root, DIR), { recursive: true });
+  writeFileSync(join(root, path), `${JSON.stringify(attestation, null, 2)}\n`);
+  return { path, attestation };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -171,16 +230,20 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   };
   if (cmd === 'write') {
     const results = Object.fromEntries(args.map((a) => a.split('=')));
-    console.log(`[attest] wrote ${ATTESTATION}: ${JSON.stringify(write(results).lanes)}`);
+    const { path, attestation } = write(results);
+    console.log(`[attest] wrote ${path}: ${JSON.stringify(attestation.lanes)}`);
   } else if (cmd === 'verify') {
     const rev = flag('--rev');
     const required = flag('--require')?.split(',') ?? REQUIRED_LANES;
     const current = { sourceHash: sourceHash(rev), changed: changedFiles(rev) };
-    const { code, reason } = evaluate(read(rev), current, required, args.includes('--strict'));
+    const attestation = locate(rev, flag('--branch') ?? currentBranch(), current.changed);
+    const { code, reason } = evaluate(attestation, current, required, args.includes('--strict'));
     console.log(`[attest] ${code === 0 ? 'OK' : code === 3 ? 'PARTIAL' : 'FAIL'} ${reason}`);
     process.exit(code);
   } else {
-    console.error('usage: verify [--rev <sha>] [--require a,b] [--strict] | write <lane>=<result>...');
+    console.error(
+      'usage: verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict] | write <lane>=<result>...',
+    );
     process.exit(2);
   }
 }

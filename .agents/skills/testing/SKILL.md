@@ -68,14 +68,19 @@ Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
 Browser runs use two Playwright workers, locally and in each CI shard.
 
-A green `pnpm test` writes `tests/test-attestation.json`; commit it. Format:
+A green `pnpm test` writes `tests/attestations/<branch>.json` (`/` and every char
+outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
+`detached-<short-sha>.json`) and deletes every other file in `tests/attestations/`
+plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
+One file per branch keeps PRs from conflicting on it; deleting a merged PR's
+file is conflict-free because no branch edits it again. Format:
 `{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db|skipped-sandbox-image}, at}`.
 `diff_files` is the files the PR itself changed (`git diff origin/main...HEAD`,
-minus the attestation) and `diff_hash` their sha256; both are recomputed from
+minus every attestation file) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
 stays green after a merge of `origin/main` that touches other files, and goes
 stale only when a file the PR changed is edited after the run. `source_hash`
-(the sha256 of every file the commit would contain except the attestation) is
+(the sha256 of every file the commit would contain except attestation files) is
 the full-tree fallback used on a direct main push, where there is no diverging
 merge-base. Lanes: `core` (sdk, runner units, route coverage, worktree units), `packages`
 (package quality), `db-suites` (API/CLI flows + DB suites; both need Docker:
@@ -84,8 +89,11 @@ run. Plain `pnpm test` runs all but `browser`. A lane is written only when all
 its runner lanes ran in that run or one failed. A filtered or sharded run
 (`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
 lane-only mode updates only the lanes it fully covers, on unchanged source.
-`pnpm test:verify` (`tests/verify-attestation.mjs`) recomputes the diff:
-exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
+`pnpm test:verify [--rev <sha>] [--branch <name>]` (`tests/verify-attestation.mjs`)
+reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
+several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
+rev (`--branch`, else the checked-out branch), else the legacy file. It
+recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
 every other lane must be `pass`, and a lane may record its one sanctioned
 environment skip instead of a result: `db-suites` `skipped-no-db` (no Docker)
 and `packages` `skipped-sandbox-image` (a Kortix sandbox image whose baked
