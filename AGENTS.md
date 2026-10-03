@@ -275,7 +275,8 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
+| Push to `main` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
+| Dispatch or schedule on `main` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
@@ -532,11 +533,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The six lanes run on every push to `main`, on a pull request into `staging`,
+- The six lanes run daily on `main` (`schedule`), on a pull request into `staging`,
   once when a person adds the `test` label to a pull request, and on manual
-  dispatch. Nothing else. A push-to-`main` run blocks nothing: a
-  red run comments the failing lanes on the commit, and a cancelled run means a
-  newer commit superseded it. A pull request into `prod` runs
+  dispatch. A push to `main` does not run them (Actions minutes, 2026-10-03). A
+  scheduled run blocks nothing: a red run comments the failing lanes on the
+  `main` HEAD commit. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
@@ -620,6 +621,19 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
 - `agent-browser doctor` diagnoses launch and recording problems. Recording
   needs ffmpeg with libvpx and libx264.
+
+### API lint gate
+
+- `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
+  are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
+  files, no `(c: any)`, no `process.env` outside `config.ts`, no
+  `console.*`, and a `replica-local:` comment on every empty module-level
+  `Map`/`Set`. Background timers are guarded by
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+- `apps/api/eslint-suppressions.json` holds the violations that existed when
+  each rule was added. A new violation fails. A fixed one fails until you run
+  `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
+  absorb a new violation with `--suppress-all`.
 
 ### Frontend type/lint gate
 

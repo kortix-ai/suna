@@ -3,58 +3,10 @@
 exports[`golden SQL: turn authority statements beginSandboxTurn grants and inserts the delivering ledger row 1`] = `
 [
   
-"WITH granted AS ( 
-      UPDATE kortix.session_sandboxes s
-         SET metadata = jsonb_set(
-                CASE
-    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
-    ELSE '{}'::jsonb
-  END  - 'lifecycleStopClaim',
-               '{activeTurns}',
-                CASE
-    WHEN jsonb_typeof( s.metadata->'activeTurns' ) = 'object' THEN  s.metadata->'activeTurns' 
-    ELSE '{}'::jsonb
-  END  || jsonb_build_object(
-                  turn-token ::text,
-                 jsonb_build_object(
-                   'token',  turn-token ::text,
-                   'state', 'delivering',
-                   'runtimeSessionId',  ses_root ::text,
-                   'opencodeSessionId',  ses_root ::text,
-                   'messageId',  msg_turn_1 ::text,
-                   'startedAtMs', floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000))),
-               true),
-             deadline_at = GREATEST(
-               s.deadline_at,
-                 2023-11-14T22:13:20.000Z ::timestamptz  + make_interval(secs =>  60 )),
-             updated_at = now()
-      WHERE  s.external_id =  ext-box  
-        AND s.status IN ('active', 'provisioning')
-        AND (
-          s.metadata->'lifecycleStopClaim' IS NULL
-          OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
-          OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
-            <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
-      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  turn-token , granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                  ses_root ,  msg_turn_1 , 'delivering',
-                   2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted"
+"SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE  s.external_id =  ext-box  )
+      FOR UPDATE OF session"
 ,
-]
-`;
-
-exports[`golden SQL: turn authority statements beginSandboxTurn with no matching box writes one statement 1`] = `
-[
   
 "WITH granted AS ( 
       UPDATE kortix.session_sandboxes s
@@ -89,19 +41,77 @@ exports[`golden SQL: turn authority statements beginSandboxTurn with no matching
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
       RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  turn-token , granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                  ses_root ,  msg_turn_1 , 'delivering',
-                   2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted"
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT  turn-token , granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                    ses_root ,  msg_turn_1 , 'delivering',
+                     2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements beginSandboxTurn with no matching box writes one statement 1`] = `
+[
+  
+"SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE  s.external_id =  ext-box  )
+      FOR UPDATE OF session"
+,
+  
+"WITH granted AS ( 
+      UPDATE kortix.session_sandboxes s
+         SET metadata = jsonb_set(
+                CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  - 'lifecycleStopClaim',
+               '{activeTurns}',
+                CASE
+    WHEN jsonb_typeof( s.metadata->'activeTurns' ) = 'object' THEN  s.metadata->'activeTurns' 
+    ELSE '{}'::jsonb
+  END  || jsonb_build_object(
+                  turn-token ::text,
+                 jsonb_build_object(
+                   'token',  turn-token ::text,
+                   'state', 'delivering',
+                   'runtimeSessionId',  ses_root ::text,
+                   'opencodeSessionId',  ses_root ::text,
+                   'messageId',  msg_turn_1 ::text,
+                   'startedAtMs', floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000))),
+               true),
+             deadline_at = GREATEST(
+               s.deadline_at,
+                 2023-11-14T22:13:20.000Z ::timestamptz  + make_interval(secs =>  60 )),
+             updated_at = now()
+      WHERE  s.external_id =  ext-box  
+        AND s.status IN ('active', 'provisioning')
+        AND (
+          s.metadata->'lifecycleStopClaim' IS NULL
+          OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
+          OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
+            <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT  turn-token , granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                    ses_root ,  msg_turn_1 , 'delivering',
+                     2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted"
 ,
 ]
 `;
@@ -456,6 +466,10 @@ exports[`golden SQL: turn authority statements renewActiveSandboxTurn renews the
 exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched turn and ends its ledger row 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -565,6 +579,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -609,6 +629,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
 exports[`golden SQL: terminal evidence completeSandboxTurn records a named failure 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -718,6 +742,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -762,6 +792,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
 exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-closed row with the cause 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -871,6 +905,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -925,6 +965,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
 exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned row on a late completion 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -1034,6 +1078,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -1205,6 +1255,11 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
            AND t.state <> 'ended') AS open"
 ,
   
+"SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE  s.sandbox_id =  sb-1 ::uuid )
+      FOR UPDATE OF session"
+,
+  
 "WITH granted AS ( 
       UPDATE kortix.session_sandboxes s
          SET metadata = jsonb_set(
@@ -1238,19 +1293,19 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from  now() ) * 1000) -  120000 )
       RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  adopt-token , granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                  ses_root ,  msg_adopt , 'delivering',
-                  now() , now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted"
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT  adopt-token , granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                    ses_root ,  msg_adopt , 'delivering',
+                    now() , now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted"
 ,
   
 "WITH accepted AS ( 

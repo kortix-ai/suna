@@ -62,6 +62,7 @@ import { bindSavedCopies } from '@/lib/session/saved-copy-registry';
 import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
+import Constants from 'expo-constants';
 import { configureKortix } from '@kortix/sdk';
 import EventSource from 'react-native-sse';
 import { createSseTransport } from '@/lib/session/sse-transport';
@@ -94,6 +95,7 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
 configureKortix({
   backendUrl: API_URL,
   getToken: getAuthToken,
+  clientVersion: Constants.expoConfig?.version ? `mobile/${Constants.expoConfig.version}` : undefined,
   // The live session stream arrives over `react-native-sse` (an XHR wire); the
   // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).
   eventStreamTransport: createSseTransport({ EventSource, onUnauthorized: reportUnauthorized }),

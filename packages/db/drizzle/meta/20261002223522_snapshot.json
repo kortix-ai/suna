@@ -1,6 +1,6 @@
 {
-  "id": "5300b7d3-b886-4a18-ba23-7bbbc477c2eb",
-  "prevId": "e80f6c0a-4d81-4413-9a1f-9c2313f15fe1",
+  "id": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
+  "prevId": "f437005a-e96a-4699-9de8-5d61be349e22",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2377,6 +2377,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_account_tokens_service_account": {
+          "name": "idx_account_tokens_service_account",
+          "columns": [
+            {
+              "expression": "service_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"service_account_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_on_behalf_of_user": {
+          "name": "idx_account_tokens_on_behalf_of_user",
+          "columns": [
+            {
+              "expression": "on_behalf_of_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"on_behalf_of_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2910,6 +2942,21 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_deployment_events_runtime_idx": {
+          "name": "app_deployment_events_runtime_idx",
+          "columns": [
+            {
+              "expression": "runtime_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -6380,27 +6427,6 @@
           ],
           "isUnique": true,
           "where": "\"kortix\".\"connection_credentials\".\"connection_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connection_credentials_connector_connection": {
-          "name": "idx_connection_credentials_connector_connection",
-          "columns": [
-            {
-              "expression": "connector_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
