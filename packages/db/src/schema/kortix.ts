@@ -1167,7 +1167,11 @@ export const projectSessionRuntimeContexts = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_session_runtime_contexts_updated').on(table.updatedAt),
+    // NOTE: `idx_project_session_runtime_contexts_updated` (updated_at) USED
+    // to be declared here. No query filters or orders by this table's
+    // updated_at (the only reads are the session_id PK lookup and the insert),
+    // and prod recorded 0 scans over the index's whole life. Dropped by
+    // migrations/20261003055643848_drop_project_session_runtime_contexts_updated.concurrent.ts.
     check(
       'project_session_runtime_contexts_byte_size_check',
       sql`${table.byteSize} >= 2 AND ${table.byteSize} <= 16384`,
