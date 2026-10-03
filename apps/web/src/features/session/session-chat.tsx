@@ -4430,7 +4430,7 @@ export function SessionChat({
                         <TurnErrorDisplay
                           key={messageId}
                           errorText={notice.kind === 'unexplained'
-                            ? tHardcodedUi('featuresSessionSessionChat.turnFailedNoReason')
+                            ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
                             : failure.error?.message ?? undefined}
                           className="mt-2"
                         />
