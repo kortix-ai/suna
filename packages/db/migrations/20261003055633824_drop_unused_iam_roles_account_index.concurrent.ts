@@ -27,6 +27,7 @@ export const shorthands = undefined;
 // idx_iam_roles_account_key's leading column, so parent-row deletes still
 // index-scan. A still-running older API image plans the same queries through
 // the same or an equivalent index after the drop.
+/** @param {import('node-pg-migrate').MigrationBuilder} pgm */
 export const up = (pgm) => {
   pgm.noTransaction();
   // One statement per pgm.sql() call: a multi-statement string is an implicit
