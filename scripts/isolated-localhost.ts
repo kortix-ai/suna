@@ -29,6 +29,13 @@ if (!hostsFileServesLocalhost()) {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
     if (typeof input === 'string') return realFetch(rewrite(input), init)
     if (input instanceof URL) return realFetch(rewrite(input.href), init)
+    // The SDK's event transport dials a `new Request(url, …)`; a Request's url
+    // carries the same loopback name, so rebuild it with the rewritten URL.
+    if (input instanceof Request) {
+      const rewritten = rewrite(input.url)
+      if (rewritten === input.url) return realFetch(input, init)
+      return realFetch(new Request(rewritten, input), init)
+    }
     return realFetch(input, init)
   }) as typeof fetch
 }
