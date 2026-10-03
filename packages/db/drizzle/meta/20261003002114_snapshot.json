@@ -1,5 +1,5 @@
 {
-  "id": "f8d6de43-ab43-411d-b25a-26015767dd92",
+  "id": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "prevId": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "version": "7",
   "dialect": "postgresql",
@@ -1688,6 +1688,21 @@
             },
             {
               "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_secret_resources_project_id": {
+          "name": "idx_account_secret_resources_project_id",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -13834,36 +13849,6 @@
           ],
           "isUnique": true,
           "where": "\"kortix\".\"project_session_secret_handles\".\"status\" = 'active'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_secret_handles_project": {
-          "name": "idx_secret_handles_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_secret_handles_secret": {
-          "name": "idx_secret_handles_secret",
-          "columns": [
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
