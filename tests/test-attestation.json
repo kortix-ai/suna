@@ -1,18 +1,27 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "5bdb7cff3a7d141306324e83b4283251806c95dc3f392a2dc991c6468e4f4739",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/api/src/__tests__/e2e-ops-overview.test.ts",
+    "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
+    "apps/api/src/bootstrap.ts",
+    "apps/api/src/ops/index.ts",
+    "apps/api/src/shared/audit-event-count-worker.test.ts",
+    "apps/api/src/shared/audit-event-count-worker.ts",
+    "apps/api/src/shared/audit-event-counts.integration.test.ts",
+    "packages/db/drizzle/meta/20261003163427_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003163427093_audit_event_counts.sql",
+    "packages/db/src/schema/kortix.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "d8d4f0c27529a6c747ff480a699c8398d386ef8d71f76ff4f1252cc65f028079",
+  "head": "44b7519b662d965241af61342d335da6165a708f",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T18:01:33.877Z"
 }
