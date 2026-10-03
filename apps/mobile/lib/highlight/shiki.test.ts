@@ -130,15 +130,9 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
    * the zero-width begin at once, so a `;` comment AFTER a value on the same
    * line stays base colour. Comments at the start of a line still colour.
    * Both themes.
-   *
-   * php light only: the light theme colours the `php` keyword-class red on
-   * the engine, so `paint` merges it into the `<?` punctuation token; the
-   * wasm reference leaves it uncoloured (base fg), so it paints separately.
-   * In dark both engines agree (red `<?`, purple `php`).
    */
   const KNOWN_ENGINE_DIFFERENCES: Record<string, { light: number[]; dark: number[] }> = {
     ini: { light: [2], dark: [2] },
-    php: { light: [0], dark: [] },
   };
 
   for (const lang of HIGHLIGHT_LANGS) {
