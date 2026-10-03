@@ -169,10 +169,10 @@ describe('session/url', () => {
     expect(
       rewriteLocalhostUrl(3000, '/x', {
         ...opts,
-        sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+        sandboxId: 'sbx_01BBBBBBBBBBBBBBBBBBBBBBBB',
         apiBaseUrl: 'http://localhost:8008/v1',
       }),
-    ).toBe('http://p3000-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.localhost:8008/x');
+    ).toBe('http://p3000-sbx-01bbbbbbbbbbbbbbbbbbbbbbbb.localhost:8008/x');
   });
 
   describe('preview origin (the deployment advertises a template)', () => {
@@ -197,9 +197,9 @@ describe('session/url', () => {
       expect(
         rewriteLocalhostUrl(8081, '/learn', {
           ...withTemplate,
-          sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+          sandboxId: 'sbx_01BBBBBBBBBBBBBBBBBBBBBBBB',
         }),
-      ).toBe('https://dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com/learn');
+      ).toBe('https://dev-p8081-sbx-01bbbbbbbbbbbbbbbbbbbbbbbb.p.kortix.com/learn');
     });
 
     it('keeps the query string and normalizes a missing leading slash', () => {

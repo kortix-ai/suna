@@ -1,5 +1,5 @@
 {
-  "id": "f055ff7b-63ef-4dd3-828c-d2eedf3a988d",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -3909,38 +3909,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.audit_event_counts": {
-      "name": "audit_event_counts",
-      "schema": "kortix",
-      "columns": {
-        "slot_start": {
-          "name": "slot_start",
-          "type": "timestamp with time zone",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "events": {
-          "name": "events",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "counted_at": {
-          "name": "counted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "kortix.audit_events": {
       "name": "audit_events",
       "schema": "kortix",
@@ -5530,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",

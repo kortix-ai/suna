@@ -1914,7 +1914,6 @@
     "messageInput": "Campo de mensaje",
     "attachFiles": "Adjuntar archivos",
     "selectAgent": "Seleccionar agente",
-    "agentLockedHint": "No se puede cambiar de agente en una sesión ya iniciada.",
     "noModel": "Sin modelo",
     "thinkingEffort": "Nivel de razonamiento",
     "sessionOverrides": "Ajustes de la sesión",
@@ -17197,7 +17196,6 @@
       "textdf80c0ee2f08": "Agentes y habilidades",
       "textdf8e32d18dbd": "Cualquier servicio al que puedas acceder",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Introduce el código de 6 dígitos de tu email",
       "textdfa16aeaca13": "El repositorio de este espacio de trabajo está alojado en {value0}, que no admite invitaciones de colaboradores de Kortix. Gestionar el acceso donde reside el repositorio.",
       "textdfa2cff42f0c": "Sin experiencia profunda en sistemas",
       "textdfad83e7eb69": "{value0} son administradores implícitos en cada proyecto activo en la cuenta.",
@@ -19204,7 +19202,9 @@
       "textd4586396b9ba": "¿Pueden los agentes usar la CLI por sí mismos?",
       "text9e52157faaab": "Sí. La misma CLI de Kortix se ejecuta en cada entorno aislado, ya autenticada, así que los agentes usan exactamente los mismos comandos que tú.",
       "text48b78a9ab65b": "¿Cómo se mantienen aisladas las ejecuciones?",
-      "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones."
+      "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
+      "text39207bf34111": "Habilidades relacionadas",
+      "text73112526c03a": "El turno del agente falló. No se informó ningún motivo."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

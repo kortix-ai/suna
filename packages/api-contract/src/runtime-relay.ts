@@ -110,6 +110,9 @@ export function normalizeRuntimeRelayBody<T extends Record<string, unknown>>(
  */
 export const RUNTIME_NOT_READY_CODE = 'runtime_not_ready' as const;
 
+/** The daemon names its boot phase in this header on every not-ready 503. */
+export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
+
 /**
  * What the session runtime supports, as `GET /kortix/health` lists it in
  * `capabilities` beside the host's own entries (`file.import`, ...). A client
