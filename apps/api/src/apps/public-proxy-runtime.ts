@@ -9,6 +9,7 @@ import { agentPrincipalEnabled } from './access';
 import { assertAppComputeAllowed } from './limits';
 import { AppHostingProvider } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
+import { logger } from '../lib/logger';
 const WAKE_LEASE_MS = 2 * 60_000;
 
 export async function loadPublicAppState(routeKey: string) {
@@ -183,7 +184,13 @@ export async function ensureAppRuntimeRunning(
     return await publishWake(app, loaded, leased, owner, hosting);
   } catch (error) {
     const stoppedAt = await stopWakingRuntime(loaded.runtime.runtimeId, owner);
-    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch(() => {});
+    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch((pauseErr) =>
+      // compute-invariant-sweep closes it later; until then the window bills.
+      logger.error('[apps] failed wake left the compute window open', {
+        runtimeId: loaded.runtime.runtimeId,
+        error: pauseErr instanceof Error ? pauseErr.message : String(pauseErr),
+      }),
+    );
     throw error;
   }
 }

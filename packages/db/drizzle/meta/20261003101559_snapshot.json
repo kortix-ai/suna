@@ -1,5 +1,5 @@
 {
-  "id": "d76974b9-5b8c-4a87-8ef9-af12ddac8201",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -5498,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",
@@ -13548,21 +13548,6 @@
           "columns": [
             {
               "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_session_public_shares_account": {
-          "name": "idx_project_session_public_shares_account",
-          "columns": [
-            {
-              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
