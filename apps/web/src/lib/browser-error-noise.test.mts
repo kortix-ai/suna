@@ -5,6 +5,7 @@ import {
   isAndroidWebViewNativeBridgePostEventNoise,
   isAnonymousAuthRefreshRace,
   isAndroidWebViewNativeBridgePostMessageNoise,
+  isAutoplayNotAllowedRejectionNoise,
   isCanvasImageDataOOMNoise,
   isCaptchaInterceptorNoise,
   isClientRequestTimeoutMessage,
@@ -5134,7 +5135,7 @@ test('does NOT suppress a near-worded message that is not a document-state looku
 // loop after its document-state-map race (see the document-state matcher
 // above), tripping React's 50-nested-update guard (#185) WITHOUT an
 // `onTileRendering` frame. All three patterns are from the SAME Safari 26.5
-// session (`be897489-…`), same release, same `0foj1ouh5ijrj.js` chunk, same
+// session, same release, same `0foj1ouh5ijrj.js` chunk, same
 // 2026-08-05 ~04:30–05:28 UTC window, 1 occurrence each, UNCAUGHT
 // (`handled:false`). The existing `isEmbedPdfTilingReactUpdateDepthNoise`
 // matcher anchors on the `onTileRendering` frame and does NOT catch these —
@@ -7273,7 +7274,7 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
 // `IntersectionObserver` threshold callback) calls `const { tile } =
 // queue.pop()` on an `undefined` pop result, and V8 throws
 // `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` Two
-// patterns, SAME root cause, SAME user/session (`7254bee8-…`/`bd1306e9-…`), 1
+// patterns, SAME root cause, SAME user and session, 1
 // occurrence each, 0 identified users, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route
 // `/projects/:id/sessions/:sessionId`, Chrome 150 on Windows 10. Pattern
@@ -12204,4 +12205,133 @@ test('anonymous Supabase refresh race is noise only on the landing page', () => 
     request: { url: input.requestUrl },
     exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
   }), true);
+});
+
+// ---------------------------------------------------------------------------
+// `NotAllowedError: The play method is not allowed by the user agent or the
+// platform in the current context, possibly because the user denied
+// permission.` — the HTML-spec message the `HTMLMediaElement.play()` promise
+// rejects with when the browser's autoplay policy denies playback. Better
+// Stack pattern `3fcd960e…` (Kortix Frontend prod, application_id 2346967):
+// `NotAllowedError`, 1 occurrence, 0 identified users, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT global unhandledrejection, never reached a React error boundary),
+// release `84a0bc48…`, first=last 2026-10-03 03:55:02Z, Firefox 157 on
+// macOS 10.15, request URL `https://kortix.com/` (the marketing/landing
+// page). NO stacktrace, NO `call_site_file`/`call_site_function`, NO
+// `call_stack_hash` — Firefox rejects the play promise without a stack, so
+// the call site is unattributable. Breadcrumbs: only the landing page boot
+// (`[runtime-env]` console log, navigation to `/`, the i18n bundle fetch) —
+// no first-party media action within ~0.4 s of load, and no first-party
+// `.play()` call exists on that route. Same frameless-rejection family as
+// `isNonErrorUndefinedRejectionNoise` (pattern `5cfc90e5…`) and
+// `isOperationErrorPopErrorScopeNoise` (pattern `5e1aca20…`).
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (the HTML spec's
+// canonical play() NotAllowedError message).
+const PLAY_NOT_ALLOWED = 'The play method is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.';
+
+test('suppresses the frameless play() NotAllowedError rejection via the beforeSend gate', () => {
+  // Exact shape of the production event: type `NotAllowedError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection), NO stacktrace at all, request URL
+  // `https://kortix.com/` (the marketing/landing page).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: PLAY_NOT_ALLOWED,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the frameless play() NotAllowedError noise class (matcher level)', () => {
+  assert.equal(
+    isAutoplayNotAllowedRejectionNoise({ message: PLAY_NOT_ALLOWED, frames: [] }),
+    true,
+  );
+  // No stacktrace key at all (Sentry omits it when there is nothing to
+  // serialize) — the production shape again.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: PLAY_NOT_ALLOWED }] },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress the play() NotAllowedError rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code left a play promise
+  // unhandled → actionable; the negative guard must preserve it so the call
+  // site can be found + given its `.catch`.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/file-renderers/video-renderer.tsx', function: 'togglePlay' }],
+    [{ filename: 'app:///_next/static/chunks/main.js', function: 'f' }, { filename: 'app:///apps/web/src/lib/sounds.ts', function: 'playSound' }],
+  ]) {
+    assert.equal(
+      isAutoplayNotAllowedRejectionNoise({ message: PLAY_NOT_ALLOWED, frames }),
+      false,
+      `expected first-party play() NotAllowedError rejection from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: PLAY_NOT_ALLOWED, stacktrace: { frames } }] },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party play() NotAllowedError rejection from ${JSON.stringify(frames)}`,
+    );
+  }
+});
+
+test('does NOT suppress the play() NotAllowedError rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real stack we can trace. Keep reporting;
+  // only the frameless capture (the production noise pattern) is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/player.js', function: 'autoplay' }],
+  ]) {
+    assert.equal(
+      isAutoplayNotAllowedRejectionNoise({ message: PLAY_NOT_ALLOWED, frames }),
+      false,
+      `expected attributable play() NotAllowedError rejection from ${JSON.stringify(frames)} to keep reporting`,
+    );
+  }
+});
+
+test('the play() NotAllowedError matcher anchors on the exact spec message', () => {
+  // A bare `NotAllowedError` type or a different message (a permission
+  // denial of another API) must not match — only the play() denial string.
+  for (const message of [
+    'NotAllowedError',
+    'The operation was aborted',
+    'play() failed because the user didn\'t interact with the document first.',
+    `${PLAY_NOT_ALLOWED} (extra)`,
+  ]) {
+    assert.equal(
+      isAutoplayNotAllowedRejectionNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" not to match the play() NotAllowedError noise class`,
+    );
+  }
+});
+
+test('the runtime gate does not drop the play() NotAllowedError rejection (sentry-only rule)', () => {
+  // The runtime evidence carries no frames, so the rule cannot apply its
+  // negative guards there; the frame-aware beforeSend hook is the safe gate.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: { message: PLAY_NOT_ALLOWED, name: 'NotAllowedError' } }),
+    false,
+  );
 });

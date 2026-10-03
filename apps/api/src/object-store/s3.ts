@@ -13,10 +13,12 @@
  * One store instance = one target (bucket + endpoint + credentials). A caller
  * adds its own key layout on top; this module never invents keys.
  */
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  GetObjectLockConfigurationCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -43,6 +45,8 @@ export interface ObjectStoreTarget {
 }
 
 export type PutOutcome = 'created' | 'exists';
+
+export type ObjectLockMode = 'COMPLIANCE' | 'GOVERNANCE';
 
 /** How `putIfAbsent` keeps the first write on this endpoint. */
 export type PublishOnceMode = 'if-none-match' | 'head-then-put';
@@ -266,6 +270,78 @@ export class ObjectStore {
       return 'created';
     } catch (err) {
       if (conditional && (errorName(err) === 'PreconditionFailed' || httpStatus(err) === 412)) return 'exists';
+      throw err;
+    }
+  }
+
+  /**
+   * Publish once under S3 Object Lock: the object is written only when no object exists at
+   * `key`, with a retention date, SSE-KMS (the audit archive bucket policy denies a put without
+   * it) and a SHA-256 S3 verifies on receipt. Bytes only (see `resolveBody`). Under COMPLIANCE
+   * nobody, root included, can delete or shorten the object before `retainUntil`.
+   */
+  async putLocked(input: {
+    key: string;
+    body: Buffer;
+    contentType: string;
+    retainUntil: Date;
+    mode: ObjectLockMode;
+  }): Promise<PutOutcome> {
+    this.logMode();
+    const conditional = this.publishOnce() === 'if-none-match';
+    if (!conditional && (await this.head(input.key))) return 'exists';
+    try {
+      await this.client().send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: input.key,
+          Body: input.body,
+          ContentType: input.contentType,
+          ObjectLockMode: input.mode,
+          ObjectLockRetainUntilDate: input.retainUntil,
+          // AWS S3 only: the audit archive bucket policy denies a put without SSE-KMS. An
+          // S3-compatible endpoint (MinIO for local runs) usually has no KMS configured.
+          ...((this.target().endpoint ?? '').trim() ? {} : { ServerSideEncryption: 'aws:kms' as const }),
+          ChecksumSHA256: createHash('sha256').update(input.body).digest('base64'),
+          ...(conditional ? { IfNoneMatch: '*' } : {}),
+        }),
+      );
+      return 'created';
+    } catch (err) {
+      if (conditional && (errorName(err) === 'PreconditionFailed' || httpStatus(err) === 412)) return 'exists';
+      throw err;
+    }
+  }
+
+  /** The SHA-256 (base64) S3 stored for the object, or null when it does not exist. */
+  async checksum(key: string): Promise<string | null> {
+    try {
+      const res = await this.client().send(new HeadObjectCommand({ Bucket: this.bucket, Key: key, ChecksumMode: 'ENABLED' }));
+      return res.ChecksumSHA256 ?? null;
+    } catch (err) {
+      if (isMissing(err)) return null;
+      throw err;
+    }
+  }
+
+  async getBytes(key: string): Promise<Uint8Array | null> {
+    try {
+      const res = await this.client().send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      return res.Body ? await res.Body.transformToByteArray() : new Uint8Array();
+    } catch (err) {
+      if (isMissing(err)) return null;
+      throw err;
+    }
+  }
+
+  /** The bucket's default Object Lock mode; null when the bucket has no Object Lock configuration. */
+  async lockMode(): Promise<ObjectLockMode | null> {
+    try {
+      const res = await this.client().send(new GetObjectLockConfigurationCommand({ Bucket: this.bucket }));
+      const mode = res.ObjectLockConfiguration?.Rule?.DefaultRetention?.Mode;
+      return mode === 'COMPLIANCE' || mode === 'GOVERNANCE' ? mode : null;
+    } catch (err) {
+      if (errorName(err) === 'ObjectLockConfigurationNotFoundError' || isMissing(err)) return null;
       throw err;
     }
   }

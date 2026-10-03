@@ -84,13 +84,13 @@ function promptActivityMs(session: ProjectSession): number | null {
   return activityMs(metadata?.last_activity_at);
 }
 
-/** Newest conversation update in OpenCode's scoped session snapshot
- *  (`opencode_sessions[].updated_at`, already epoch ms), or null when the
+/** Newest conversation update in the runtime's scoped session snapshot
+ *  (`runtime_sessions[].updated_at`, already epoch ms), or null when the
  *  session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
+  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+    const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
@@ -101,7 +101,7 @@ function conversationActivityMs(session: ProjectSession): number | null {
  * The latest real activity for a session, in epoch ms. Newest evidence first:
  *
  *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *   2. `runtime_sessions[].updated_at` — the runtime's conversation snapshot.
  *   3. `updated_at` — row bookkeeping, reached only when neither signal
  *      above exists.
  *   4. `created_at` — last resort.
@@ -328,7 +328,7 @@ export function recentSessions(sessions: ProjectSession[], limit: number): Proje
 // `projectSessionForRuntimeId`) is the SDK's, shared with web.
 
 /** One conversation of a project session's runtime tree (`runtime_sessions[]`). */
-export type ProjectRuntimeSession = ProjectSession['opencode_sessions'][number];
+export type ProjectRuntimeSession = NonNullable<ProjectSession['runtime_sessions']>[number];
 
 /** What a sub-session row shows when the runtime has not titled it (web: 'Sub-session'). */
 export const SUB_SESSION_FALLBACK_TITLE = 'Sub-session';

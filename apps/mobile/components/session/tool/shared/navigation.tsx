@@ -25,7 +25,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { create } from 'zustand';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import { safeHttpUrl } from '@kortix/shared';
 import type { SandboxFile } from '@/api/types';
@@ -53,24 +52,10 @@ export const ToolNavigationContext = createContext(true);
 
 // ─── File preview (web `useFilePreviewStore`) ───────────────────────────────
 
-interface ToolFilePreviewState {
-  path: string | null;
-  line: number | undefined;
-  /** The mounted composer's "Add to chat" (mentions the path); null while no composer is mounted. */
-  addToChat: ((path: string) => void) | null;
-  openPreview: (path: string, line?: number) => void;
-  closePreview: () => void;
-  setAddToChat: (addToChat: ((path: string) => void) | null) => void;
-}
-
-export const useToolFilePreviewStore = create<ToolFilePreviewState>()((set) => ({
-  path: null,
-  line: undefined,
-  addToChat: null,
-  openPreview: (path, line) => set({ path, line }),
-  closePreview: () => set({ path: null, line: undefined }),
-  setAddToChat: (addToChat) => set({ addToChat }),
-}));
+// The store lives in `stores/` so markdown can open a preview without importing
+// this file (which imports the sheet, which imports markdown: a require cycle).
+export { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
+import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
 
 /**
  * The one file preview the transcript opens files into — tool rows, message

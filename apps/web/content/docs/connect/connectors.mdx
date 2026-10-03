@@ -12,6 +12,23 @@ You declare most connectors in `kortix.yaml`, or in a file it lists under [`impo
 channel and computer connectors when you connect a chat platform or a
 machine.
 
+## Browse and add a connector
+
+Open **Connectors** to browse the managed catalog. Its default list contains
+managed-provider toolkits connectable with provider-managed authentication or an
+enabled custom authentication configuration. It does not require an existing
+connection in your project. A toolkit that needs an unverified custom OAuth
+configuration stays hidden until that configuration can be verified.
+
+For direct sources, enable **Connectors API Discover** in the project's feature
+flags, then select **API / MCP** on the same page. Enabling the flag does not
+replace the managed default. The direct catalog groups published OpenAPI, MCP,
+GraphQL, Postman, and other API surfaces. Select a card, choose a published
+surface, and complete its connection form. Documentation-only surfaces open the
+provider's documentation; they are not presented as a ready-to-connect template.
+Use **Add → Manual** for a raw API or a schema that the catalog does not contain.
+Direct discovery also works without a configured managed provider.
+
 ## Connectors, connections, and accounts
 
 A connector is the agent-facing reach package: a declared capability (which
@@ -295,8 +312,10 @@ Approve or deny the call once. Add an optional message to the decision. The
 message goes back to the agent with the decision, so a deny can say what to do
 instead.
 
-Every pending call also appears in **Customize → Review → Needs you** for the
-project, with a count on **Review** in the sidebar.
+Every pending call also appears in **Review → Needs you** for the project. Open
+**Review** from the sidebar; its count shows how many items wait for you. A
+call opens in the same approval view as its approval link, so you see the
+connector, the parameters, and the agent's description before you decide.
 
 When the call comes from a Slack or Teams session, Kortix posts an approval
 card in that thread. The card shows the agent's description, the parameters,

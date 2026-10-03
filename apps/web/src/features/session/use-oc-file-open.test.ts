@@ -10,8 +10,14 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  *
  * The collaborators are injected here, not faked in place: apps/web's test
  * script runs `bun test --isolate`, so this file's mock registry stays inside
- * its own process and never leaks into a sibling suite.
+ * its own process and never leaks into a sibling suite. The spread keeps the
+ * real SDK surface whole (runtimeKeys included) so that, even without
+ * `--isolate` (plain `bun test <dir>` shares one process and registry), a
+ * later file importing this mock never loses members this test never meant
+ * to touch.
  */
+
+const realSdkReact = await import('@kortix/sdk/react');
 
 const reads: string[] = [];
 
@@ -27,7 +33,9 @@ mock.module('@/features/files/api/runtime-file-read', () => ({
 }));
 
 mock.module('@kortix/sdk/react', () => ({
+  ...realSdkReact,
   runtimeKeys: {
+    ...realSdkReact.runtimeKeys,
     currentProject: () => ['opencode', 'project', 'current', 'test'] as const,
     pathInfo: () => ['opencode', 'path-info', 'test'] as const,
   },

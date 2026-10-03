@@ -223,8 +223,8 @@ describe('verifyRelease', () => {
   })
 
   /**
-   * Verified on a real Daytona box (2026-09-24, release 7a60e568, session
-   * 1a685caf): the seal left the release ROOT and `skills/` at 0755, so an
+   * Verified on a real Daytona box (2026-09-24, release 7a60e568, one
+   * session): the seal left the release ROOT and `skills/` at 0755, so an
    * agent's `write` tool answered "Wrote file successfully." for
    * `<release>/skills/<name>/SKILL.md` and for a root-level file. The next
    * convergence then failed verification, rebuilt the release and respawned

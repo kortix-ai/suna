@@ -441,7 +441,10 @@ describe('ECS rollout --wait-for serving', () => {
     const workflow = (name: string) => readFileSync(resolve(root, '.github/workflows', name), 'utf8');
     const devRolls = workflow('deploy-dev.yml')
       .split('\n')
-      .filter((line) => line.includes('infra/scripts/ecs-deploy.sh') && !line.trim().startsWith('#') && !line.trim().startsWith('-'));
+      .filter((line) => line.includes('infra/scripts/ecs-deploy.sh') && !line.trim().startsWith('#') && !line.trim().startsWith('-'))
+      // A --dry-run renders the task definition and rolls nothing (the release
+      // gate reads its environment); only real rolls must wait for serving.
+      .filter((line) => !line.includes('--dry-run'));
 
     expect(devRolls).toHaveLength(3);
     expect(workflow('deploy-dev.yml').match(/--wait-for serving/g)).toHaveLength(3);

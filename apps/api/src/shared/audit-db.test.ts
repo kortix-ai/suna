@@ -109,7 +109,7 @@ describe('a database that went away is backpressure, not a broken batch', () => 
   test('driver-level connection codes count too', () => {
     // postgres.js and Node do not use SQLSTATEs for these, and prod carries
     // both: `write CONNECTION_CLOSED db.…supabase.co:5432` and
-    // `connect ECONNREFUSED 3.11.30.79:5432`.
+    // `connect ECONNREFUSED <db_ip>:5432`.
     for (const code of ['CONNECTION_CLOSED', 'CONNECTION_ENDED', 'ECONNREFUSED', 'ECONNRESET']) {
       expect(isAuditContentionError(Object.assign(new Error('gone'), { code }))).toBe(true);
     }

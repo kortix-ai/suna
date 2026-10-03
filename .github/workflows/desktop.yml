@@ -5,19 +5,14 @@ name: Desktop
 # signed macOS/Windows runners, so building it on every main push would be
 # wasteful and would gate the fast API/frontend/CLI path on scarce runners.
 #
-# It builds only when desktop code changes (push to main touching
-# apps/desktop-electron/**) or when manually dispatched. Signed installers are
-# published to the mutable `desktop-dev-latest` prerelease.
+# It builds only when manually dispatched (since 2026-10-03: a push to main
+# touching apps/desktop-electron/** no longer builds; macOS bills at 10x and
+# Windows at 2x GitHub-hosted minutes). Signed installers are published to the mutable `desktop-dev-latest` prerelease.
 #
 # Production desktop installers are built separately by deploy-prod.yml and
 # bundled into the unified vX.Y.Z release.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/desktop-electron/**'
-      - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
 concurrency:

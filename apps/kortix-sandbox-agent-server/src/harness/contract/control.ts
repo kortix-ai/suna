@@ -129,9 +129,8 @@ export interface HarnessCatalogConvergeResult {
    *  answer, including 'declined', which the caller must still read the reason
    *  of rather than treat as a failure. */
   ok: boolean
-  outcome: 'unchanged' | 'file-updated' | 'restarted' | 'declined' | 'no-gateway' | 'not-served'
-  /** Managed ids the live gateway serves that this box's booted config lacked,
-   *  as of the fresh fetch this call made. */
+  outcome: 'unchanged' | 'file-updated' | 'reloaded' | 'restarted' | 'declined' | 'no-gateway'
+  /** The ids this call set out to register. */
   missing: string[]
   managed: number
   reason: string | null
@@ -150,10 +149,10 @@ export interface HarnessControlOperations {
    */
   convergeConfig?(options?: HarnessConfigConvergeOptions): Promise<HarnessConfigConvergeResult>
   /**
-   * Fetch the live managed-model lineup and repair the box's provider map if
-   * it is missing something the lineup serves — one verified OpenCode restart
-   * when idle, never across a running turn. Absent on a runtime that has no
-   * gateway-model concept (pi). See `convergeManagedModelCatalog`.
+   * Register the models the running harness lacks: the one a turn names, or
+   * everything the project's listing serves. One in-place config reload when
+   * idle, never across a running turn. Absent on a runtime that keeps no
+   * model list (pi). See `convergeManagedModelCatalog`.
    */
   convergeCatalog?(options?: { model?: string }): Promise<HarnessCatalogConvergeResult>
   abort(): Promise<HarnessAbortResult>

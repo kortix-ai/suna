@@ -92,7 +92,7 @@ function productSurfaceRoutes(projectId: string, accountId: string): string[] {
     `/projects/${projectId}/customize/skills`,
     `/projects/${projectId}/customize/connectors`,
     `/projects/${projectId}/customize/triggers`,
-    `/projects/${projectId}/customize/review`,
+    `/projects/${projectId}/review`,
     `/projects/${projectId}/customize/models`,
     `/projects/${projectId}/customize/secrets`,
     `/projects/${projectId}/customize/settings`,
@@ -950,4 +950,52 @@ test.describe("26 — Settings localization", () => {
       await deleteAuthUser(user.id, authOptions);
     }
   });
+});
+
+// Unauthenticated capability pages and registered decks share presentation-only
+// helpers. Keep this regression outside the quarantined locale/settings flow.
+test.describe('public capability helpers and presentation decks', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`${theme} preserves marketing sections and deck keyboard navigation`, async ({ page }) => {
+      await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      const routes = [
+        ['/agent-computer', 5], ['/agents-and-skills', 4], ['/automations', 5],
+        ['/channels', 6], ['/company-as-code', 5], ['/security', 7], ['/self-hosted', 6],
+      ] as const;
+      for (const [route, count] of routes) {
+        const response = await page.goto(route);
+        expect(response?.status()).toBeLessThan(400);
+        await expect(page.locator('html')).toHaveClass(new RegExp(theme));
+        const dividers = page.locator('div.mx-auto.max-w-7xl.px-6 > [data-slot="separator"]');
+        await expect(dividers).toHaveCount(count);
+        for (const divider of await dividers.all()) {
+          await expect(divider).toHaveAttribute('data-orientation', 'horizontal');
+        }
+        if (route === '/security' || route === '/self-hosted') {
+          const lists = page.locator('dl');
+          expect(await lists.count()).toBeGreaterThan(0);
+          for (const list of await lists.all()) {
+            expect(await list.locator('dt').count()).toBe(await list.locator('dd').count());
+          }
+        }
+      }
+      for (const slug of ['security', 'platform', 'sales']) {
+        await page.goto(`/presentations/${slug}`);
+        await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
+        await page.keyboard.press('ArrowRight');
+        await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled();
+        await page.keyboard.press('Home');
+        await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
+        await page.keyboard.press('End');
+        await page.keyboard.press('ArrowRight');
+        await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+        await page.keyboard.press('g');
+        expect(await page.locator('h1, h2').count()).toBeGreaterThan(1);
+        await page.keyboard.press('Escape');
+      }
+      expect(errors).toEqual([]);
+    });
+  }
 });

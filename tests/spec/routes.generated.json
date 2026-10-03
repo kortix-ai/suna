@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 699,
+  "count": 702,
   "routes": [
     {
       "method": "GET",
@@ -1539,6 +1539,10 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
     },
@@ -2279,6 +2283,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/open-bundle"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/presence"
     },
@@ -2296,6 +2304,10 @@
     },
     {
       "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
+    },
+    {
+      "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
     },
     {

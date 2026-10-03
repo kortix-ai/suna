@@ -225,6 +225,7 @@ async function stageRunningOpen(
     opencode_session_id: readiness.ensured.pin,
     runtime_url: sessionRuntimeUrlPath(synced.runningExternalId),
     reason: readiness.ensured.reason,
+    ...(readiness.capabilities ? { capabilities: readiness.capabilities } : {}),
   };
 }
 

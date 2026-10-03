@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { Config } from '@/lib/config/config'
 import type { SandboxBootState } from '@/harness/contract/boot-state'
 import type { HarnessProxyService } from '@/harness/contract/proxy'
+import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
 import { withSseKeepalive } from './sse-keepalive'
 
 // Connection-scoped headers are a transport concern, not harness behavior.
@@ -18,7 +19,7 @@ export function createRuntimeProxyRouter(
     const readiness = await runtime.readiness(context)
     if (!readiness.ready) {
       c.header('X-Kortix-Boot-Phase', readiness.phase)
-      return c.json({ ...readiness.details, phase: readiness.phase }, 503)
+      return c.json({ code: RUNTIME_NOT_READY_CODE, ...readiness.details, phase: readiness.phase }, 503)
     }
 
     const url = new URL(c.req.url)

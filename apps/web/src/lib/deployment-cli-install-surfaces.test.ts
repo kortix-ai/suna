@@ -24,9 +24,15 @@ test('all deployment-aware CLI installer surfaces use the hook', () => {
 });
 
 test('the kortix.com marketing page keeps the canonical installer command', () => {
-  const source = readFileSync(
+  // Since the /developers rebuild (#8736) the page composes sections; its hero
+  // renders the install command. It stays the canonical kortix.com command, not
+  // the deployment-aware hook: this page is kortix.com's own marketing.
+  const page = readFileSync(
     join(WEB_SRC, 'app/[locale]/(public)/(marketing)/developers/page.tsx'),
     'utf8',
   );
-  expect(source).toContain('KORTIX_CLI_INSTALL_COMMAND');
+  expect(page).toContain('<DevelopersHero />');
+  const hero = readFileSync(join(WEB_SRC, 'features/marketing/developers/hero.tsx'), 'utf8');
+  expect(hero).toContain('KORTIX_CLI_INSTALL_COMMAND');
+  expect(hero).not.toContain('useDeploymentCliInstallCommand(');
 });

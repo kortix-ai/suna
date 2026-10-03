@@ -9,7 +9,7 @@ import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import { PlanCard } from '@/features/session/turn/plan-card';
 import { UserMessage } from '@/features/session/turn/user-message';
 import type { MessageWithParts, Part } from '@/ui';
-import { beginOptimisticSend } from '@kortix/sdk/react';
+import { beginOptimisticSend, runtimeKeys } from '@kortix/sdk/react';
 
 /**
  * /debug/turn
@@ -630,7 +630,7 @@ export default function DebugTurnPage() {
   const [qc] = useState(() => {
     const c = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     // PlanCard reads this exact key; the todo.updated SSE handler writes it.
-    c.setQueryData(['opencode', 'session-todo', 'ses_dbg'], TODOS);
+    c.setQueryData(runtimeKeys.sessionTodo('ses_dbg'), TODOS);
     return c;
   });
 

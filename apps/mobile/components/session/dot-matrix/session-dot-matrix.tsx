@@ -6,19 +6,31 @@
  * session keeps one glyph for its whole life, the same one web shows. No
  * session id → `dotm-square-14`.
  *
- * The animations are pure functions of elapsed time (`lib/session/dot-matrix`).
- * A `requestAnimationFrame` loop computes each frame on the JS thread and
- * writes it into one shared value; every dot reads its own entry in a
- * `useAnimatedStyle`, so a frame costs no React render. Reduce Motion → web's
- * idle frame, no loop.
+ * The animations are pure functions of elapsed time (`lib/session/dot-matrix`),
+ * which cannot run as worklets (they close over Maps, Sets and helper
+ * functions). So the JS thread samples the glyph once per mount into a track,
+ * and a `useFrameCallback` on the UI thread only advances a sample index;
+ * every dot reads its own cell in a `useAnimatedStyle`. No per-frame JS work,
+ * no React render. Reduce Motion → web's idle frame, no loop.
  */
 
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useFrameCallback,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { useTurnPalette } from '@/components/session/tool/shared/styles';
-import { dotMatrixLayout, sessionDotMatrixVariant, type DotFrame } from '@/lib/session/dot-matrix';
+import {
+  dotMatrixTrack,
+  dotMatrixLayout,
+  sessionDotMatrixVariant,
+  trackSampleIndex,
+  type DotMatrixTrack,
+} from '@/lib/session/dot-matrix';
 
 import { useReduceMotion } from './use-reduce-motion';
 
@@ -32,10 +44,6 @@ export interface SessionDotMatrixProps {
   style?: StyleProp<ViewStyle>;
 }
 
-function toOpacities(frame: DotFrame): number[] {
-  return frame.map((value) => value ?? 0);
-}
-
 function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDotMatrixProps) {
   const palette = useTurnPalette();
   const still = useReduceMotion();
@@ -44,18 +52,31 @@ function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDot
   // Hidden cells are a fixed mask per glyph (pinned by dot-matrix.test.ts),
   // so they are simply not rendered.
   const visible = useMemo(() => entry.frame(0, true).map((value) => value !== null), [entry]);
-  const frame = useSharedValue<number[]>(toOpacities(entry.frame(0, still)));
+  const built = dotMatrixTrack(entry, still);
+  const track = useSharedValue<DotMatrixTrack>(built);
+  const sample = useSharedValue(0);
+  const clock = useSharedValue(0);
 
+  // The initial value covers the first render; hand the UI thread a new table
+  // only when the glyph or Reduce Motion changes.
+  const synced = useRef(built);
   useEffect(() => {
-    frame.value = toOpacities(entry.frame(0, still));
-    if (still) return;
-    const start = performance.now();
-    let handle = requestAnimationFrame(function tick(now) {
-      frame.value = toOpacities(entry.frame(now - start, false));
-      handle = requestAnimationFrame(tick);
-    });
-    return () => cancelAnimationFrame(handle);
-  }, [entry, frame, still]);
+    if (synced.current === built) return;
+    synced.current = built;
+    track.value = built;
+    sample.value = 0;
+    clock.value = 0;
+  }, [built, track, sample, clock]);
+
+  const loop = useFrameCallback((info) => {
+    'worklet';
+    clock.value += info.timeSincePreviousFrame ?? 0;
+    const next = trackSampleIndex(track.value.periodMs, clock.value);
+    if (next !== sample.value) sample.value = next;
+  }, !still);
+  useEffect(() => {
+    loop.setActive(!still);
+  }, [loop, still]);
 
   const dotColor = color ?? palette.mutedForeground;
   const pitch = layout.track + layout.gap;
@@ -71,7 +92,9 @@ function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDot
           <Dot
             key={index}
             index={index}
-            frame={frame}
+            track={track}
+            sample={sample}
+            cells={layout.grid * layout.grid}
             left={(index % layout.grid) * pitch}
             top={Math.floor(index / layout.grid) * pitch}
             size={layout.dotSize}
@@ -85,20 +108,28 @@ function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDot
 
 function Dot({
   index,
-  frame,
+  track,
+  sample,
+  cells: expectedCells,
   left,
   top,
   size,
   color,
 }: {
   index: number;
-  frame: SharedValue<number[]>;
+  track: SharedValue<DotMatrixTrack>;
+  sample: SharedValue<number>;
+  cells: number;
   left: number;
   top: number;
   size: number;
   color: string;
 }) {
-  const animatedStyle = useAnimatedStyle(() => ({ opacity: frame.value[index] ?? 0 }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const { data, cells } = track.value;
+    // The table lags one frame behind a glyph change; hide rather than misindex.
+    return { opacity: cells === expectedCells ? (data[sample.value * cells + index] ?? 0) : 0 };
+  });
   return (
     <Animated.View
       style={[

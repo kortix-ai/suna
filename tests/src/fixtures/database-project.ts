@@ -204,6 +204,8 @@ export async function createDatabaseSession(
     userId: string;
     visibility?: "private" | "project" | "restricted";
     metadata?: Record<string, unknown>;
+    /** Provider-reported placement, with the runtime still unready. */
+    platinumRegion?: string;
     parentSessionId?: string;
     initiator?: { type: "member" | "trigger" | "channel" | "api" | "system"; id: string | null };
   },
@@ -253,6 +255,14 @@ export async function createDatabaseSession(
         input.initiator ? input.initiator.id : input.userId,
       ],
     );
+    if (input.platinumRegion) {
+      await client.query(
+        `INSERT INTO kortix.session_sandboxes (
+           sandbox_id, session_id, account_id, project_id, provider, status, config, metadata
+         ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'platinum', 'provisioning', '{}'::jsonb, $4::jsonb)`,
+        [sessionId, input.accountId, input.projectId, JSON.stringify({ platinumRegion: input.platinumRegion })],
+      );
+    }
   } finally {
     await client.end();
   }
@@ -384,6 +394,15 @@ export async function deleteDatabaseProject(
   const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);
   try {
+    // Apps first: an App delete is soft, so its deployment rows survive it, and
+    // `app_deployments.artifact_id` RESTRICTs the artifact delete the project
+    // cascade would otherwise attempt first. Deleting the apps cascades the
+    // deployments away before the project row goes.
+    await client.query(
+      `DELETE FROM kortix.apps
+       WHERE project_id = $1::uuid`,
+      [projectId],
+    );
     await client.query(
       `DELETE FROM kortix.projects
        WHERE project_id = $1::uuid`,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isAttachment, splitUserParts } from './parts';
+import { isAttachment, isStepPart, splitUserParts } from './parts';
 
 const text = { id: 'part_text', type: 'text', text: 'Inspect this.' } as const;
 const zip = {
@@ -24,5 +24,14 @@ describe('splitUserParts', () => {
     expect(
       isAttachment({ ...zip, mime: 'application/pdf', filename: 'report.pdf' }),
     ).toBe(true);
+  });
+});
+
+describe('isStepPart', () => {
+  test('is true for both step boundary parts and nothing else', () => {
+    expect(isStepPart({ id: 'p1', type: 'step-start' })).toBe(true);
+    expect(isStepPart({ id: 'p2', type: 'step-finish' })).toBe(true);
+    expect(isStepPart(text)).toBe(false);
+    expect(isStepPart({ id: 'p3', type: 'tool' })).toBe(false);
   });
 });

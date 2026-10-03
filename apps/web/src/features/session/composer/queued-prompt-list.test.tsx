@@ -14,6 +14,8 @@ const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   state: 'queued',
   removable: true,
   takeBackEligible: true,
+  rawText: over.text ?? `text ${over.id}`,
+  editText: over.text ?? `text ${over.id}`,
   ...over,
 });
 
@@ -91,6 +93,30 @@ describe('QueuedPromptList', () => {
   test('a row with files shows how many', () => {
     const markup = render({ rows: [row({ id: 'a', attachmentCount: 3 })] });
     expect(markup).toContain('3 files');
+  });
+
+  test('the row being edited stays in its slot, offers Cancel, and blocks a second Edit', () => {
+    const markup = render({
+      rows: [row({ id: 'a' }), row({ id: 'b', text: 'old b' }), row({ id: 'c' })],
+      onEdit: () => {},
+      onCancelEdit: () => {},
+      editing: { promptId: 'b' },
+    });
+    const a = markup.indexOf('data-queued-prompt-id="a"');
+    const b = markup.indexOf('data-queued-editing');
+    const c = markup.indexOf('data-queued-prompt-id="c"');
+    expect(a).toBeLessThan(b);
+    expect(b).toBeLessThan(c);
+    // ONE row for b: the editing row replaces it, it is not drawn twice.
+    expect(markup).not.toContain('data-queued-prompt-id="b"');
+    expect(markup).toContain('old b');
+    expect(markup).toContain('aria-label="Cancel"');
+    expect(markup).not.toContain('aria-label="Edit"');
+  });
+
+  test('an edit whose row has gone draws no editing row', () => {
+    const markup = render({ rows: [row({ id: 'a' })], editing: { promptId: 'gone' } });
+    expect(markup).not.toContain('data-queued-editing');
   });
 });
 

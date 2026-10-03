@@ -9,6 +9,7 @@ import type {
 	UserMessage,
 } from "../../core/runtime/runtime-types";
 import { projectWorking } from "../../core/session/working";
+import { openEventStream } from "../../core/stream/event-stream";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
@@ -1277,6 +1278,101 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hi");
+	});
+});
+
+// The stream merges a run of consecutive deltas of one part field into ONE
+// event (`core/stream/event-stream.ts`), which lists the wire events it
+// replaced in `coalesced`. The store applies the run in one update and keeps
+// the per-wire-event idempotency above.
+describe("useSyncStore — coalesced message.part.delta", () => {
+	function wireDelta(id: string, delta: string) {
+		return {
+			id,
+			type: "message.part.delta",
+			properties: { sessionID: "ses_1", messageID: "msg_1", partID: "prt_1", field: "text", delta },
+		};
+	}
+	function coalesce(wire: ReturnType<typeof wireDelta>[]) {
+		const last = wire[wire.length - 1];
+		return {
+			...last,
+			properties: { ...last.properties, delta: wire.map((e) => e.properties.delta).join("") },
+			coalesced: wire,
+		} as never;
+	}
+	const text = () => (useSyncStore.getState().parts.msg_1[0] as TextPart).text;
+
+	test("a coalesced event leaves the text its wire deltas leave, in one parts update", () => {
+		const wire = Array.from({ length: 40 }, (_, i) => wireDelta(`evt_${i}`, `w${i} `));
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hello "));
+		let partsUpdates = 0;
+		const unsubscribe = useSyncStore.subscribe((next, previous) => {
+			if (next.parts !== previous.parts) partsUpdates++;
+		});
+
+		store.applyEvent(coalesce(wire));
+		unsubscribe();
+
+		expect(text()).toBe(`Hello ${wire.map((e) => e.properties.delta).join("")}`);
+		expect(partsUpdates).toBe(1);
+	});
+
+	test("a wire delta already applied is skipped inside a coalesced event", () => {
+		const [a, b, c] = [wireDelta("evt_a", "a"), wireDelta("evt_b", "b"), wireDelta("evt_c", "c")];
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyEvent(a as never);
+		store.applyEvent(b as never);
+
+		// A second delivery of the same wire events, grouped differently.
+		store.applyEvent(coalesce([b, c]));
+		expect(text()).toBe("abc");
+
+		let updates = 0;
+		const unsubscribe = useSyncStore.subscribe(() => updates++);
+		store.applyEvent(coalesce([a, b, c]));
+		unsubscribe();
+		expect(text()).toBe("abc");
+		expect(updates).toBe(0);
+	});
+
+	test("200 streamed deltas of one part reach the store as one text update", async () => {
+		const total = 200;
+		const wire = Array.from({ length: total }, (_, i) => wireDelta(`evt_${i}`, `w${i} `));
+		useSyncStore.getState().upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		let partsUpdates = 0;
+		const unsubscribe = useSyncStore.subscribe((next, previous) => {
+			if (next.parts !== previous.parts) partsUpdates++;
+		});
+
+		const handle = openEventStream({
+			client: {
+				global: {
+					event: async ({ signal }) => ({
+						stream: (async function* () {
+							for (const event of wire) yield event;
+							await new Promise((resolve) => signal.addEventListener("abort", resolve));
+						})(),
+					}),
+				},
+			},
+			onEvent: (event) => useSyncStore.getState().applyEvent(event as never),
+		});
+		const deadline = Date.now() + 2_000;
+		const expected = wire.map((e) => e.properties.delta).join("");
+		while (text() !== expected && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		handle.close();
+		unsubscribe();
+
+		expect(text()).toBe(expected);
+		// One update per flush window the burst spans — 200 before the stream
+		// merged a run. The read loop yields every 8 ms, so a slow machine can
+		// split the burst across a few windows.
+		expect(partsUpdates).toBeLessThanOrEqual(5);
 	});
 });
 

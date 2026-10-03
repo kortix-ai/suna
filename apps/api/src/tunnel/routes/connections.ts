@@ -12,7 +12,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, inArray, isNull, ne, type SQL } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
@@ -147,6 +147,79 @@ export async function unpairMachine(tunnelId: string, where?: SQL): Promise<bool
   );
   if (deleted) tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
   return deleted;
+}
+
+/**
+ * One machine, one registration per person. Once a registration reports a
+ * hardware id (at approval, or in its first heartbeat that carries one), the
+ * owner's other registrations of the same hardware are superseded: each is
+ * unpaired with its accounts. Only offline ones: two agents running on one
+ * machine at once never cut each other off, and the next heartbeat after one
+ * stops retires it. Another person's registration is never touched. Returns
+ * the retired tunnel ids.
+ */
+export async function retireSupersededRegistrations(tunnelId: string, machineId: string): Promise<string[]> {
+  const [self] = await db
+    .select({ ownerUserId: tunnelConnections.ownerUserId })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, tunnelId))
+    .limit(1);
+  if (!self?.ownerUserId) return [];
+  const others = await db
+    .select({
+      tunnelId: tunnelConnections.tunnelId,
+      status: tunnelConnections.status,
+      lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
+      relayOwnerId: tunnelConnections.relayOwnerId,
+      relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
+    })
+    .from(tunnelConnections)
+    .where(
+      and(
+        eq(tunnelConnections.ownerUserId, self.ownerUserId),
+        sql`${tunnelConnections.machineInfo}->>'machineId' = ${machineId}`,
+        ne(tunnelConnections.tunnelId, tunnelId),
+      ),
+    );
+  const retired: string[] = [];
+  for (const other of others) {
+    if (isTunnelConnectionLive(other)) continue;
+    if (await unpairMachine(other.tunnelId)) retired.push(other.tunnelId);
+  }
+  return retired;
+}
+
+/** A registration without a hardware id is removed after this long without a sign of life. */
+export const UNIDENTIFIED_RETENTION_DAYS = 30;
+
+/**
+ * Registrations made by agents older than hardware ids cannot be matched to a
+ * computer. Once one has shown no sign of life for 30 days (no heartbeat, no
+ * update, no relay ownership), it is unpaired with its accounts. A computer
+ * that comes back pairs again; its agent says how. Runs on the tunnel cleanup
+ * tick, at most `limit` per run. Returns the removed tunnel ids.
+ */
+export async function retireStaleUnidentifiedRegistrations(limit = 100): Promise<string[]> {
+  const stale = await db
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(
+      and(
+        sql`${tunnelConnections.machineInfo}->>'machineId' is null`,
+        sql`greatest(
+          ${tunnelConnections.lastHeartbeatAt},
+          ${tunnelConnections.relayOwnerHeartbeatAt},
+          ${tunnelConnections.updatedAt},
+          ${tunnelConnections.createdAt}
+        ) < now() - make_interval(days => ${UNIDENTIFIED_RETENTION_DAYS})`,
+      ),
+    )
+    .limit(limit);
+  const retired: string[] = [];
+  for (const { tunnelId } of stale) {
+    if (await unpairMachine(tunnelId)) retired.push(tunnelId);
+  }
+  return retired;
 }
 
 export function createConnectionsRouter() {

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
 	requestRuntimeReconnect,
 	resetForServerSwitch,
+	seedConnectionFromReadyStart,
 	setRuntimeHealth,
 	setRuntimeCapabilities,
 	setSandboxStatus,
@@ -110,6 +111,36 @@ describe("runtime capabilities (E1)", () => {
 		setRuntimeCapabilities(["file.import", "session.subagents"]);
 		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBe(before);
 		resetForServerSwitch("http://another-runtime.test");
+		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBeNull();
+	});
+});
+
+// `/start` answers `ready` only after the API reached the daemon, and it lists
+// what the runtime serves. A client that waits for its own health probe
+// assumes every capability until then, and a runtime that lacks one (pi) gets
+// requests it cannot serve.
+describe("a ready start seeds the connection", () => {
+	beforeEach(resetStore);
+
+	test("connected, healthy, and the runtime's capabilities are known at once", () => {
+		seedConnectionFromReadyStart("http://runtime-a.test", ["runtime.turns.v1", "session.subagents"]);
+		const state = useSandboxConnectionStore.getState();
+		expect(state.status).toBe("connected");
+		expect(state.healthy).toBe(true);
+		expect(state.runtimeCapabilities).toEqual(["runtime.turns.v1", "session.subagents"]);
+	});
+
+	test("an API that lists nothing leaves the capabilities unknown, as before", () => {
+		seedConnectionFromReadyStart("http://runtime-unlisted.test");
+		const state = useSandboxConnectionStore.getState();
+		expect(state.status).toBe("connected");
+		expect(state.healthy).toBe(true);
+		expect(state.runtimeCapabilities).toBeNull();
+	});
+
+	test("a switch to another runtime does not keep the previous runtime's list", () => {
+		seedConnectionFromReadyStart("http://runtime-c.test", ["session.subagents"]);
+		seedConnectionFromReadyStart("http://runtime-d.test", null);
 		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBeNull();
 	});
 });

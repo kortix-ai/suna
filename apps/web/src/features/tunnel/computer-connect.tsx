@@ -20,7 +20,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Download } from '@/features/icon/icons/download';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
-import { tunnelKeys, useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { tunnelKeys, useTunnelConnections, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import {
@@ -43,6 +43,9 @@ import { buildTunnelConnectCommand } from './tunnel-connect-command';
  */
 
 export const DESKTOP_STATUS_KEY = ['desktop-computer-status'] as const;
+
+/** Fired after this desktop pairs: the workspace menu opens computer setup. */
+export const COMPUTER_SETUP_EVENT = 'kortix:computer-setup';
 
 /** Same key and fetcher as `ConnectionsList`, so both share one cache entry. */
 function connectionsQueryOptions(projectId: string) {
@@ -123,18 +126,59 @@ export function useProjectComputerAccounts(
   };
 }
 
+/**
+ * The caller's machines as people think of them: one entry per physical
+ * computer. `computers`: registrations that name their hardware (one per
+ * hardware id, the live or most recently seen one), plus any online now.
+ * `older`: registrations from agents older than hardware ids that are offline;
+ * nothing can tell which computer they were, so they are listed apart. Both
+ * live first, then most recently seen.
+ */
+export function groupOwnedComputers(machines: readonly TunnelConnection[]): {
+  computers: TunnelConnection[];
+  older: TunnelConnection[];
+} {
+  const seen = (machine: TunnelConnection) =>
+    machine.isLive ? Number.MAX_SAFE_INTEGER : Date.parse(machine.lastHeartbeatAt ?? machine.createdAt) || 0;
+  const byRecency = [...machines].sort((a, b) => seen(b) - seen(a));
+  const hardware = (machine: TunnelConnection) =>
+    typeof machine.machineInfo?.machineId === 'string' ? machine.machineInfo.machineId : null;
+  const counted = new Set<string>();
+  const computers: TunnelConnection[] = [];
+  const older: TunnelConnection[] = [];
+  for (const machine of byRecency) {
+    const id = hardware(machine);
+    if (id) {
+      if (!counted.has(id)) computers.push(machine);
+      counted.add(id);
+    } else if (machine.isLive) {
+      computers.push(machine);
+    } else {
+      older.push(machine);
+    }
+  }
+  return { computers, older };
+}
+
 /** True once the caller owns a paired machine, in any project. Polls once a
  *  minute until they do: the sidebar promo mounts it for every signed-in user
  *  and hides for good once they own one, so polling then would be waste. The
  *  connect dialog's own 5 s observer takes over while it is open. */
-export function useOwnsPairedComputer(): { isSuccess: boolean; owns: boolean } {
+export function useOwnsPairedComputer(): {
+  isSuccess: boolean;
+  owns: boolean;
+  /** The machines the caller paired, the live ones first. */
+  owned: TunnelConnection[];
+} {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const ownsAny = (machines: readonly { ownerUserId?: string | null }[] | undefined) =>
-    Boolean(user && machines?.some((machine) => machine.ownerUserId === user.id));
-  const known = ownsAny(queryClient.getQueryData(tunnelKeys.connections()));
+  const ownedBy = (machines: readonly TunnelConnection[] | undefined) =>
+    user ? (machines ?? []).filter((machine) => machine.ownerUserId === user.id) : [];
+  const known =
+    ownedBy(queryClient.getQueryData<TunnelConnection[]>(tunnelKeys.connections())).length > 0;
   const machines = useTunnelConnections({ refetchInterval: known ? false : 60_000 });
-  return { isSuccess: machines.isSuccess, owns: ownsAny(machines.data) };
+  const owned = ownedBy(machines.data).sort((a, b) => Number(b.isLive) - Number(a.isLive));
+  return { isSuccess: machines.isSuccess, owns: owned.length > 0, owned };
 }
 
 /**
@@ -178,7 +222,11 @@ export function useConnectDesktopComputer(projectId: string) {
       return result;
     },
     onSuccess: (result) => {
-      if (result.ok) successToast(t('connected'));
+      if (!result.ok) return;
+      successToast(t('connected'));
+      // Setup comes next, on the spot: the "Your computer" dialog asks macOS
+      // for every permission the approved access needs.
+      window.dispatchEvent(new Event(COMPUTER_SETUP_EVENT));
     },
     onError: (error: Error) => errorToast(error.message || t('connectFailed')),
     onSettled: () => {
@@ -246,6 +294,32 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
   };
 }
 
+/**
+ * What the workspace menu's "Your computer" row opens, and its dot:
+ * - `this`: this desktop's own paired machine, with its own state.
+ * - `mine`: the machines the caller paired, where this machine cannot pair in
+ *   one click (a browser, or a desktop build without the agent). The dot is
+ *   online when any of them is.
+ * - `connect`: the connect dialog, when there is nothing to show yet.
+ */
+export function yourComputerMenu({
+  tunnelId,
+  state,
+  oneClickHere,
+  owned,
+}: {
+  tunnelId?: string;
+  state?: ComputerState | null;
+  oneClickHere: boolean;
+  owned: readonly { isLive: boolean }[];
+}): { dialog: 'this' | 'mine' | 'connect'; dot: ComputerState | null } {
+  if (tunnelId) return { dialog: 'this', dot: state ?? null };
+  if (!oneClickHere && owned.length > 0) {
+    return { dialog: 'mine', dot: owned.some((machine) => machine.isLive) ? 'online' : 'offline' };
+  }
+  return { dialog: 'connect', dot: null };
+}
+
 /** Status dot, e.g. in the workspace menu, the "Your computer" dialog, account rows. */
 export function ComputerStateDot({
   state,
@@ -297,12 +371,20 @@ const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Ic
  * What Kortix can use on a computer. With `granted` (the capabilities approved
  * at pairing) each row says Allowed / Not allowed; without it, it is a preview.
  */
-export function ComputerCapabilities({ granted }: { granted?: readonly string[] }) {
+export function ComputerCapabilities({
+  granted,
+  needsSetup,
+}: {
+  granted?: readonly string[];
+  /** Approved, but the macOS permission it needs is still missing (setup). */
+  needsSetup?: readonly string[];
+}) {
   const t = useTranslations('computers');
   return (
     <ul className="divide-border divide-y">
       {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
-        const allowed = granted?.includes(key);
+        const allowed = granted?.includes(key) && !needsSetup?.includes(key);
+        const pending = granted?.includes(key) && needsSetup?.includes(key);
         return (
           <li key={key} className="flex items-center gap-3 py-3">
             <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-sm">
@@ -322,7 +404,11 @@ export function ComputerCapabilities({ granted }: { granted?: readonly string[] 
                 )}
               >
                 {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
-                {allowed ? t('capability.allowed') : t('capability.notAllowed')}
+                {allowed
+                  ? t('capability.allowed')
+                  : pending
+                    ? t('capability.needsSetup')
+                    : t('capability.notAllowed')}
               </span>
             ) : null}
           </li>
@@ -468,10 +554,26 @@ function ComputerConnectOptions({
             {t('downloadDesktop')}
           </Button>
         ) : null}
-        <Button variant="secondary" size="lg" className="w-full" onClick={copyCliCommand}>
-          {copied ? <SolidCheckIcon /> : null}
-          {copied ? t('commandCopied') : t('copyCliCommand')}
-        </Button>
+        {/* The CLI is the alternative: a quiet text action under the primary
+            one. It is the only action where the desktop app cannot pair. */}
+        {oneClick || inBrowser ? (
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground gap-1.5"
+              onClick={copyCliCommand}
+            >
+              {copied ? <SolidCheckIcon /> : <TerminalWindowIcon className="size-3.5 shrink-0" />}
+              {copied ? t('commandCopied') : t('copyCliCommand')}
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" size="lg" className="w-full" onClick={copyCliCommand}>
+            {copied ? <SolidCheckIcon /> : null}
+            {copied ? t('commandCopied') : t('copyCliCommand')}
+          </Button>
+        )}
       </div>
     </>
   );

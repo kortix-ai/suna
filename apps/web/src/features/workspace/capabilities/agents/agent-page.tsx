@@ -462,7 +462,7 @@ function AgentActions({
   const startSession = useNewProjectSession(projectId);
   const configure = useConfigureThread(projectId);
   const [confirmEditSource, setConfirmEditSource] = useState(false);
-  const isDefault = config.open_code_default_agent === agent.name;
+  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
   const mode = agent.mode?.toLowerCase();
   const startBlocked =
     agent.enabled === false
@@ -568,7 +568,7 @@ function AgentChips({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode = agent.mode?.toLowerCase();
-  const isDefault = config.open_code_default_agent === agent.name;
+  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
   return (
     <span className="flex items-center gap-1.5">
       {mode && mode !== 'primary' ? (
@@ -740,7 +740,7 @@ function EditableAgentPage({
             <AgentTriggersSection
               projectId={projectId}
               agentName={agent.name}
-              defaultAgent={config.open_code_default_agent}
+              defaultAgent={config.default_agent ?? config.open_code_default_agent}
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
@@ -1148,7 +1148,7 @@ function ReadOnlyAgentPage({
               <AgentTriggersSection
                 projectId={projectId}
                 agentName={agent.name}
-                defaultAgent={config.open_code_default_agent}
+                defaultAgent={config.default_agent ?? config.open_code_default_agent}
               />
             ) : section === 'actions' ? (
               <AgentAuthorityCard

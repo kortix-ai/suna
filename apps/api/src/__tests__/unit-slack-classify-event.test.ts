@@ -65,7 +65,8 @@ mock.module('../channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
-  getChannelName: async () => 'general',
+  describeSlackConversation: async () => ({ name: 'general', type: 'channel', unavailable: false }),
+  getSlackUserDisplayName: async () => null,
   isBotUser: async () => true,
   findBotUserIdByName: async () => null,
   joinChannel: async () => true,
@@ -232,9 +233,9 @@ describe('classifyEvent — non-mention routing is unchanged', () => {
 // A user typed `@Kortix hey man` in a channel that also contains the "Incident
 // reporter" bot, and Incident reporter answered:
 //
-//   mentioned bot    U0B7QL26690  (Kortix)
-//   bot that replied U0B5W5XN49Y  (Incident reporter)
-//   session created  inside kortix-incident-reporter
+//   mentioned bot    <bot_user_id>        (Kortix)
+//   bot that replied <other_bot_user_id>  (Incident reporter)
+//   session created  inside the Incident reporter's project
 //
 // Two Kortix-platform apps in one workspace, each with its own BYO webhook at
 // /slack/events/{projectId}. classifyEvent accepted EVERY app_mention on the
@@ -245,17 +246,17 @@ describe('classifyEvent — an app_mention addressed to a DIFFERENT bot', () => 
   const mention = (text: string) => ({ type: 'app_mention', text }) as any;
 
   test('THE FIX: app_mention naming another workspace bot → ignore', async () => {
-    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> hey man'), 'U0B5W5XN49Y');
+    const cls = await classifyEvent('T1', mention('<@U0TESTKRTX1> hey man'), 'U0TESTOTHR1');
     expect(cls).toBe('ignore');
   });
 
   test('the bot that WAS mentioned still answers', async () => {
-    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> hey man'), 'U0B7QL26690');
+    const cls = await classifyEvent('T1', mention('<@U0TESTKRTX1> hey man'), 'U0TESTKRTX1');
     expect(cls).toBe('mention');
   });
 
   test('mentioned alongside another bot → still ours to answer', async () => {
-    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> <@B1> both of you'), BOT);
+    const cls = await classifyEvent('T1', mention('<@U0TESTKRTX1> <@B1> both of you'), BOT);
     expect(cls).toBe('mention');
   });
 
@@ -271,7 +272,7 @@ describe('classifyEvent — an app_mention addressed to a DIFFERENT bot', () => 
   // would take every such workspace offline to fix a two-bot workspace's
   // routing, so the gate fails open and says so in the log.
   test('unknown bot id → still a mention (fail open, not a silent workspace)', async () => {
-    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> hey man'), null);
+    const cls = await classifyEvent('T1', mention('<@U0TESTKRTX1> hey man'), null);
     expect(cls).toBe('mention');
   });
 

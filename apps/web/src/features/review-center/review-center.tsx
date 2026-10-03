@@ -65,6 +65,7 @@ import {
   isQuickDecidableApproval,
   resolveBulkOutcome,
 } from './review-actions';
+import { ApprovalDecisionModal, reviewApprovalDetails } from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
   KIND_META,
@@ -152,12 +153,8 @@ function ItemRow({
   idx,
   focused,
   fresh,
-  quickDecidable,
-  pendingDecision,
   sessionLabel,
   onOpen,
-  onQuickApprove,
-  onQuickDeny,
   onAskChanges,
   onDismiss,
   onOpenSession,
@@ -167,17 +164,11 @@ function ItemRow({
   focused: boolean;
   /** Arrived on the last poll, not yet seen by the user. */
   fresh: boolean;
-  /** Whether this row exposes inline decisions. Connector approvals are false. */
-  quickDecidable: boolean;
-  /** 'approve' | 'deny' while this row's own resolve mutation is in flight. */
-  pendingDecision?: 'approve' | 'deny' | null;
   /** The item's originating session name, when known — shown inline so a
    *  Change Request or approval's origin is legible without opening it.
    *  Omitted in the grouped view (the session already names the group). */
   sessionLabel?: string;
   onOpen: () => void;
-  onQuickApprove?: () => void;
-  onQuickDeny?: () => void;
   /** Row menu — the mouse path to the `e` and `d` shortcuts. */
   onAskChanges: () => void;
   onDismiss: () => void;
@@ -187,7 +178,6 @@ function ItemRow({
   const kind = KIND_META[item.kind];
   const segment = segmentForStatus(item.status);
   const pending = segment === 'needs_you';
-  const busy = !!pendingDecision;
   const number = item.kind === 'change' ? item.detail.number : undefined;
   const diff = item.kind === 'change' ? item.detail.advanced : undefined;
   const glyph = STATUS_GLYPH[item.status];
@@ -256,26 +246,6 @@ function ItemRow({
             className="hidden text-xs sm:inline-flex"
           />
         )}
-        {pending &&
-          (quickDecidable ? (
-            <>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={onQuickDeny}>
-                {pendingDecision === 'deny' ? <Loading className="size-3.5 shrink-0" /> : null}
-                {tI18nComplete.raw('text05a2d7332eb9')}
-              </Button>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={onQuickApprove}>
-                {pendingDecision === 'approve' ? <Loading className="size-3.5 shrink-0" /> : null}
-                {tI18nComplete.raw('text6007acbe30b2')}
-              </Button>
-            </>
-          ) : (
-            <Button size="sm" variant="secondary" onClick={onOpen}>
-              {/* "Ship it" reads as instant-merge, but this only opens the
-                  detail (the modal's own button ships) — label the row
-                  action for what it does: open the full diff to decide. */}
-              {item.kind === 'change' ? 'Review' : item.primaryAction}
-            </Button>
-          ))}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -317,19 +287,14 @@ function ItemRow({
   );
 }
 
-function ListSkeleton({ rows = 5 }: { rows?: number }) {
+/** One plain bar per row, row height, while the inbox loads. */
+function ListSkeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <ul className={LIST_CLASS}>
+    <div className="space-y-1">
       {Array.from({ length: rows }).map((_, i) => (
-        <li key={i} className="flex items-center gap-3 px-3 py-1.5">
-          <Skeleton className="size-5 shrink-0 rounded-sm" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className="h-3.5 w-2/3 rounded-sm" />
-            <Skeleton className="h-3 w-1/3 rounded-sm" />
-          </div>
-        </li>
+        <Skeleton key={i} className="h-12 w-full rounded-md" />
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -793,12 +758,8 @@ export function ReviewCenter({
       idx={idx}
       focused={kbNav && idx === focusedIdx}
       fresh={freshIds.has(item.id)}
-      quickDecidable={connected && isQuickDecidableApproval(item)}
-      pendingDecision={pendingId === item.id ? pendingDecision : null}
       sessionLabel={!inGroup && item.sessionId ? labelFor(item.sessionId) : undefined}
       onOpen={() => setSelectedId(item.id)}
-      onQuickApprove={() => quickDecide(item, 'approve')}
-      onQuickDeny={() => quickDecide(item, 'deny')}
       onAskChanges={() => quickAskChanges(item)}
       onDismiss={() => dismissIds([item.id])}
       onOpenSession={
@@ -842,9 +803,41 @@ export function ReviewCenter({
     );
   }
 
-  // The review page replaces the inbox in place — same scroll container, no
-  // modal. Escape and "Back to inbox" return to the list.
-  if (selected) {
+  // A Connector call opens the standalone approve page's panel in a modal over
+  // the inbox, so it reads and decides the same way on both surfaces.
+  const approval = selected ? reviewApprovalDetails(selected) : null;
+  const approvalCall =
+    approval && selected?.kind === 'approval' ? selected.detail.actions?.[0] : undefined;
+  const approvalModal = (
+    <ApprovalDecisionModal
+      details={approval}
+      previewAuthorized={approvalCall?.previewAuthorized !== false}
+      busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
+      onDecision={
+        connected && selected
+          ? (decision, note) =>
+              actions.resolve(
+                selected.id,
+                decision === 'approve' ? 'approved' : 'rejected',
+                decision === 'approve'
+                  ? tI18nComplete.raw('text0674d4a026cb')
+                  : tI18nComplete.raw('text4341be8eb7f0'),
+                note,
+              )
+          : undefined
+      }
+      onOpenSession={
+        selected?.sessionId && onOpenSession
+          ? () => onOpenSession(selected.sessionId!)
+          : undefined
+      }
+      onClose={() => setSelectedId(null)}
+    />
+  );
+
+  // Every other review page replaces the inbox in place — same scroll
+  // container, no modal. Escape and "Back to inbox" return to the list.
+  if (selected && !approval) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1056,6 +1049,7 @@ export function ReviewCenter({
         </div>
       </div>
 
+      {approvalModal}
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );

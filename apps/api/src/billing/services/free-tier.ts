@@ -31,14 +31,19 @@ export async function initializeFreeTierAccount(accountId: string): Promise<void
  * `none` with an empty wallet", which only the stored column can answer. The
  * effective-plan resolver would report a trialing account as its trial plan and
  * skip the repair, leaving the row unprovisioned when the trial lapses.
+ *
+ * Returns the row it read when it changed nothing, so the gate that runs next
+ * does not read the same row again. Null after a repair: read it fresh.
  */
-export async function ensureFreeTierAccountReady(accountId: string): Promise<void> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
+export async function ensureFreeTierAccountReady(
+  accountId: string,
+): Promise<Awaited<ReturnType<typeof getCreditAccount>> | null> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
 
   const account = await getCreditAccount(accountId);
   if (!account) {
     await initializeFreeTierAccount(accountId);
-    return;
+    return null;
   }
 
   const balance = Number(account.balance ?? 0);
@@ -48,9 +53,11 @@ export async function ensureFreeTierAccountReady(accountId: string): Promise<voi
     account.stripeSubscriptionStatus !== 'canceled' &&
     account.stripeSubscriptionStatus !== 'unpaid';
 
-  if (hasActiveSub) return;
+  if (hasActiveSub) return account;
 
   if (tier === 'none' && balance < MINIMUM_CREDIT_FOR_RUN) {
     await initializeFreeTierAccount(accountId);
+    return null;
   }
+  return account;
 }

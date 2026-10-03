@@ -4,8 +4,10 @@
  * resolved-config → prompt-options assembly (KRTX-757, phase 1 of the
  * SessionPage split; spec `code-spec:split-session-page`).
  *
- * The real component runs with every store real (`@/lib/opencode/sync-store`,
- * `@/stores/*`, `lib/session/failed-sends`) and React Native mocked, so the
+ * The real component runs with every store real (the SDK's session and pending
+ * stores, `@/stores/*`, `lib/session/failed-sends`) and React Native mocked.
+ * The SDK's network hooks and runtime calls are stand-ins that record what the
+ * page asked for; the prompt inbox is the real SDK call over a fake `fetch`. So the
  * tests fail only when the behavior the later extraction phases must keep
  * changes — never when code moves. The pure physics they feed
  * (`lib/session/auto-scroll.ts`) stays real too.
@@ -26,12 +28,12 @@ import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 // module is the only place allowed to register that mock (see
 // stores/in-memory-async-storage.ts). Import it before any store import.
 import '@/stores/in-memory-async-storage';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import type { MessageWithParts } from '@/lib/opencode/types';
+import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react';
+import { sessionRows } from '@/lib/session/session-store';
+import type { MessageWithParts } from '@/lib/session/types';
 import { TURN_GAP_PX, turnTopGap } from '@/lib/session/auto-scroll';
 import { useFailedSendStore } from '@/lib/session/failed-sends';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { useCompactionStore } from '@/stores/compaction-store';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useTabStore } from '@/stores/tab-store';
 
@@ -66,10 +68,13 @@ let SessionConnecting: typeof import('./SessionConnecting').SessionConnecting;
 
 // ── Captures the mocks feed the assertions ───────────────────────────────────
 let listProps: any = null; // the FlatList's latest props
+let healthPillProps: { onSwitch?: () => void } | null = null;
 let composerProps: any = null; // SessionChatInput's latest props
 let wakingComposerProps: any = null; // the SavedThread Composer's latest props
 let markdownActionsValue: any = null; // MarkdownActionsProvider's value
 let turnProps: any[] = []; // every mounted SessionTurn's props
+let sessionParticipants: any; // what `useSessionParticipants` reads
+let messageAuthors: any; // what `useSessionMessageAuthors` reads
 const scrollToEndCalls: any[][] = [];
 const previewCalls: { path: string; line?: number }[] = [];
 let previewHostMounts = 0;
@@ -78,9 +83,21 @@ const fetchCalls: { url: string; method: string; body: any }[] = [];
 const scrollToCalls: { offset: number; animated: boolean }[] = [];
 const buttons: any[] = []; // every mounted design-system Button's props
 const viewProps: any[] = []; // every mounted react-native View's props
+let composerRenders = 0; // how many times SessionChatInput rendered
+let gestureAreaProps: any = null; // KeyboardGestureArea's latest props
+/** keyboard-controller's `KeyboardEvents` listeners, by event name. */
+const keyboardListeners = new Map<string, Set<() => void>>();
+const keyboardEvent = (name: string) => keyboardListeners.get(name)?.forEach((cb) => cb());
+/** The fresh-session hero's logo; found by type to tell whether it is mounted. */
+const HeroLogo = () => null;
+/** Every `Animated.timing(...).start(done)`, with its target and end callback. */
+const timingStarts: { toValue: number; done?: (result: { finished: boolean }) => void }[] = [];
+/** While true, `start` records its callback and does not end the animation. */
+let holdTimings = false;
 
 let resolvedConfig: any; // the mocked useResolvedConfig answer
-let promptResponder: () => { ok: boolean; status: number; text: string };
+/** The bound session's runtime the page reads (`useSessionRuntime`). */
+let runtimeValue: any;
 let abortResponder: () => { ok: boolean; status: number; text: string };
 let commandResponder: () => { ok: boolean; status: number; text: string };
 let abortThrows = false;
@@ -178,6 +195,12 @@ const Capture = (register: (props: any) => void) =>
     return null;
   });
 
+const NO_ROWS: never[] = [];
+const toastApi = {
+  error: (message: string) => toastCalls.push({ kind: 'error', message }),
+  info: (message: string) => toastCalls.push({ kind: 'info', message }),
+};
+
 const anyStub: any = new Proxy(
   function stub() {
     return null;
@@ -205,7 +228,15 @@ const rnNative: Record<string, any> = {
   RefreshControl: RNRefreshControl,
   Animated: {
     Value: RNAnimatedValue,
-    timing: () => ({ start: spy('animatedTiming') }),
+    // The animation ends at once: `start`'s callback runs with `finished`.
+    // With `holdTimings`, a test ends it by calling the recorded callback.
+    timing: (_value: unknown, config: { toValue: number }) => ({
+      start: (done?: (result: { finished: boolean }) => void) => {
+        calls.push({ name: 'animatedTiming', args: [] });
+        timingStarts.push({ toValue: config.toValue, done });
+        if (!holdTimings) done?.({ finished: true });
+      },
+    }),
     View: (props: any) => props.children ?? null,
   },
   Easing: { out: (x: any) => x, cubic: () => 0, bezier: () => 0 },
@@ -254,6 +285,19 @@ const moduleMocks: Record<string, Record<string, any>> = {
   'react-native': rnModule,
   'react-native-keyboard-controller': {
     KeyboardAvoidingView: (props: any) => props.children ?? null,
+    KeyboardGestureArea: (props: any) => {
+      gestureAreaProps = props;
+      return props.children ?? null;
+    },
+    KeyboardController: { isVisible: () => false },
+    KeyboardEvents: {
+      addListener: (name: string, cb: () => void) => {
+        const set = keyboardListeners.get(name) ?? new Set();
+        set.add(cb);
+        keyboardListeners.set(name, set);
+        return { remove: () => set.delete(cb) };
+      },
+    },
     useReanimatedKeyboardAnimation: () => ({ progress: { value: 0 } }),
   },
   'react-native-reanimated': {
@@ -316,17 +360,18 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/ConnectProviderSheet': { ConnectProviderSheet: Capture(() => {}) },
   '@/components/session/ConnectorAuthSheet': { ConnectorAuthSheet: Capture(() => {}) },
   '@/components/session/SessionChangeRequests': { SessionChangeRequests: Empty },
-  '@/components/session/SandboxHealthPill': { SandboxHealthPill: Empty },
+  '@/components/session/SandboxHealthPill': { SandboxHealthPill: Capture((props: { onSwitch?: () => void }) => { healthPillProps = props; }) },
   '@/components/session/LiveUpdatesPausedPill': { LiveUpdatesPausedPill: Empty },
   '@/components/session/SandboxPreviewSheet': { SandboxPreviewSheet: Capture(() => {}) },
   '@/components/session/turn/activity-sheet': { ActivitySheetHost: Empty },
   '@/components/session/QuestionPrompt': { QuestionPrompt: (props: any) => props.children ?? null },
   '@/components/session/PermissionPromptCard': { PermissionPromptCard: Empty },
-  '@/components/session/ProjectHero': { ProjectHero: Empty },
+  '@/components/session/ProjectHero': { ProjectHero: HeroLogo },
 
   './SessionChatInput': {
     SessionChatInput: (props: any) => {
       composerProps = props;
+      composerRenders += 1;
       return props.inputSlot ?? null;
     },
   },
@@ -358,11 +403,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
       }),
     },
   },
+  // One object, as the real provider's context value is.
   '@/components/kortix/toast-provider': {
-    useToast: () => ({
-      error: (message: string) => toastCalls.push({ kind: 'error', message }),
-      info: (message: string) => toastCalls.push({ kind: 'info', message }),
-    }),
+    useToast: () => toastApi,
   },
   '@/components/markdown/inline-code': {
     MarkdownActionsProvider: (props: any) => {
@@ -386,6 +429,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/contexts/SandboxContext': {
     useSandboxContext: () => ({ sandboxUrl: SANDBOX, switchSandbox: spy('switchSandbox') }),
   },
+  '@/components/session/SessionRuntime': { useSessionRuntime: () => runtimeValue },
 
   // SessionConnecting's waking view.
   '@/components/kortix/composer': {
@@ -404,12 +448,37 @@ const moduleMocks: Record<string, Record<string, any>> = {
 // Overrides layered over the captured real modules in `beforeAll` — these
 // modules are never registered partially (see MERGED below).
 const mergedOverrides: Record<string, Record<string, any>> = {
-  '@/lib/platform/hooks': {
-    useSession: () => ({ data: { title: 'Saved title' } }),
-    useSessions: () => ({ data: [] }),
-    replyToQuestion: spy('replyToQuestion'),
+  // The SDK's React layer: the stores and pure helpers stay real; the hooks
+  // that read the network and the runtime calls are stand-ins.
+  '@kortix/sdk/react': {
+    useSessionSync: () => ({
+      hasOlder: false,
+      isLoadingOlder: false,
+      loadOlder: spy('loadOlder'),
+      retryTranscript: spy('reconcile'),
+    }),
+    // Unpaced: the page asks for a 64 ms pace, the tests read each change at once.
+    useSessionMessages: (source: { runtimeSessionId?: string | null }) =>
+      useSessionStateStore((state) => {
+        const id = source.runtimeSessionId ?? '';
+        return state.buildSessionMessages(id, state.messages[id], state.parts);
+      }),
+    useRuntimeSession: () => ({ data: { title: 'Saved title' } }),
+    // React Query hands the same `data` until it changes.
+    useRuntimeSessions: () => ({ data: NO_ROWS }),
+    useRuntimeConfig: () => ({ data: null }),
+    useRuntimeCommands: () => ({ data: NO_ROWS }),
+    useQuestionSelfHeal: () => {},
+    usePermissionSelfHeal: () => {},
+    answerQuestion: spy('answerQuestion'),
     rejectQuestion: spy('rejectQuestion'),
-    replyToPermission: spy('replyToPermission'),
+    answerPermission: spy('answerPermission'),
+    abortRuntimeSession: spy('abortRuntimeSession'),
+    promptRuntimeMessage: spy('promptRuntimeMessage'),
+    executeRuntimeCommand: async (input: unknown) => {
+      calls.push({ name: 'command', args: [input] });
+      if (!commandResponder().ok) throw new Error(commandResponder().text);
+    },
   },
   '@/lib/projects/hooks': {
     useProjectDetail: () => ({ data: { config: null } }),
@@ -421,21 +490,10 @@ const mergedOverrides: Record<string, Record<string, any>> = {
       isLoading: false,
       refetchModelCount: spy('refetchModels'),
     }),
+    useSessionParticipants: () => ({ data: sessionParticipants }),
+    useSessionMessageAuthors: () => ({ data: messageAuthors }),
   },
-  '@/lib/opencode/hooks/use-opencode-data': {
-    useOpenCodeConfig: () => ({ data: null }),
-    useOpenCodeCommands: () => ({ data: [] }),
-  },
-  '@/lib/opencode/hooks/use-local-config': { useResolvedConfig: () => resolvedConfig },
-  '@/lib/opencode/session-sync': {
-    useSessionSync: () => ({ hasOlder: false, isLoadingOlder: false, loadOlder: spy('loadOlder') }),
-    reconcileLiveSession: spy('reconcile'),
-  },
-  '@/lib/opencode/session-rewind': {
-    revertSession: async (...args: any[]) => {
-      calls.push({ name: 'revertSession', args });
-    },
-  },
+  '@/lib/session/local-config': { useResolvedConfig: () => resolvedConfig },
   '@/hooks/useLiveUpdates': {
     useLiveUpdates: () => ({ paused: false, statusLabel: '', reconnect: spy('liveReconnect') }),
   },
@@ -448,10 +506,10 @@ const mergedOverrides: Record<string, Record<string, any>> = {
 const KEEP_REAL = new Set([
   'react',
   '@kortix/sdk',
-  '@/lib/opencode/types',
-  '@/lib/opencode/sync-store',
-  '@/lib/opencode/runtime-capabilities',
-  '@/lib/opencode/stream-policy',
+  '@/lib/session/participants',
+  '@/lib/session/types',
+  '@/lib/session/session-store',
+  '@/lib/session/runtime-capabilities',
   '@/lib/session/auto-scroll',
   '@/lib/session/stable-turns',
   '@/lib/session/turn-body',
@@ -464,7 +522,6 @@ const KEEP_REAL = new Set([
   '@/lib/session/composer-config',
   '@/lib/session/composer-model',
   '@/lib/session/model-picker',
-  '@/lib/session/question-poll',
   '@/lib/session/permission-prompt',
   '@/lib/session/queue-undo',
   '@/lib/session/older-history',
@@ -473,18 +530,14 @@ const KEEP_REAL = new Set([
   '@/stores/tab-store',
   '@/stores/message-queue-store',
   '@/stores/session-prompt-request-store',
-  '@/stores/compaction-store',
   '@/stores/composer-draft-store',
   '@/components/session/tool/shared/connector-handoff-context',
 ]);
 
 const CAPTURE = [
+  '@kortix/sdk/react',
   '@/lib/projects/hooks',
-  '@/lib/platform/hooks',
-  '@/lib/opencode/hooks/use-opencode-data',
-  '@/lib/opencode/hooks/use-local-config',
-  '@/lib/opencode/session-sync',
-  '@/lib/opencode/session-rewind',
+  '@/lib/session/local-config',
   '@/hooks/useLiveUpdates',
   '@/lib/session/use-composer-draft',
 ] as const;
@@ -555,23 +608,29 @@ const makeTurn = (text: string): [MessageWithParts, MessageWithParts] => {
   const user = userMsg(text);
   return [user, assistantMsg(`re: ${text}`, user.info.id)];
 };
-const seedTurns = (texts: string[]) => {
-  useSyncStore.setState({
-    messages: { [SID]: texts.flatMap((text) => makeTurn(text)) },
-    sessionStatus: { [SID]: { type: 'idle' } },
-  } as any);
-};
-const setStatus = (status: { type: string }) =>
-  useSyncStore.setState(
-    (state) => ({ sessionStatus: { ...state.sessionStatus, [SID]: status } }) as any,
-  );
-const appendMessages = (messages: MessageWithParts[]) =>
-  useSyncStore.setState(
+/** The SDK store keeps a session's message infos and each message's parts apart. */
+const appendMessages = (rows: MessageWithParts[]) =>
+  useSessionStateStore.setState(
     (state) =>
       ({
-        messages: { ...state.messages, [SID]: [...(state.messages[SID] ?? []), ...messages] },
+        messages: { ...state.messages, [SID]: [...(state.messages[SID] ?? []), ...rows.map((row) => row.info)] },
+        parts: { ...state.parts, ...Object.fromEntries(rows.map((row) => [row.info.id, row.parts])) },
       }) as any,
   );
+const setStatus = (status: { type: string }) =>
+  useSessionStateStore.setState(
+    (state) => ({ sessionStatus: { ...state.sessionStatus, [SID]: status } }) as any,
+  );
+const seedRows = (rows: MessageWithParts[]) => {
+  appendMessages(rows);
+  setStatus({ type: 'idle' });
+};
+const seedTurns = (texts: string[]) => seedRows(texts.flatMap((text) => makeTurn(text)));
+const statusOf = () => useSessionStateStore.getState().sessionStatus[SID];
+const userTexts = () =>
+  sessionRows(SID)
+    .filter((row) => row.info.role === 'user')
+    .map((row) => (row.parts[0] as any)?.text);
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 let tree: ReactTestRenderer | undefined;
@@ -621,12 +680,12 @@ const layoutTranscript = async (contentHeight: number, turnHeights: number[]) =>
 let spacerFired: number | null = null;
 
 const resetStores = () => {
-  useSyncStore.setState({ messages: {}, sessionStatus: {}, questions: {}, permissions: {} } as any);
+  useSessionStateStore.getState().reset();
+  useRuntimePendingStore.getState().clear();
   useTabStore.setState({ tabStateById: {} } as any);
   useMessageQueueStore.setState({ messages: [], hydrated: true } as any);
   useFailedSendStore.setState({ bySession: {} } as any);
   useSessionPromptRequestStore.setState({ request: null } as any);
-  useCompactionStore.setState({ compactingBySession: {} } as any);
 };
 
 // Hook and lib modules whose real versions other surfaces import are captured
@@ -655,7 +714,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
   calls.length = 0;
+  timingStarts.length = 0;
+  holdTimings = false;
   turnProps = [];
+  sessionParticipants = undefined;
+  messageAuthors = undefined;
   scrollToEndCalls.length = 0;
   previewCalls.length = 0;
   previewHostMounts = 0;
@@ -666,7 +729,11 @@ beforeEach(() => {
   viewProps.length = 0;
   listProps = null;
   spacerFired = null;
+  healthPillProps = null;
   composerProps = null;
+  composerRenders = 0;
+  gestureAreaProps = null;
+  keyboardListeners.clear();
   wakingComposerProps = null;
   markdownActionsValue = null;
   priorIds = [];
@@ -682,15 +749,27 @@ beforeEach(() => {
     setModel: spy('setModel'),
     setVariant: spy('setVariant'),
   };
-  promptResponder = pass;
   abortResponder = pass;
   commandResponder = pass;
   abortThrows = false;
   inboxRows = [];
   inboxFails = false;
+  runtimeValue = {
+    switched: true,
+    runtimeSessionId: SID,
+    isCompacting: false,
+    // The SDK's Stop: it settles, it never rejects for a refused abort.
+    cancel: async () => {
+      calls.push({ name: 'cancel', args: [] });
+      if (abortThrows) throw new Error('offline');
+      return abortResponder().ok ? { status: 'aborted' } : { status: 'failed', error: new Error('boom') };
+    },
+    rewind: async (messageId: string) => {
+      calls.push({ name: 'rewind', args: [messageId] });
+    },
+  };
   resetStores();
   globalThis.fetch = (async (input: any, init?: any) => {
-    if (abortThrows) throw new Error('offline');
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
     let body: any;
@@ -700,19 +779,15 @@ beforeEach(() => {
       body = init?.body;
     }
     fetchCalls.push({ url, method, body });
-    if (method === 'POST' && url.endsWith(`/session/${SID}/prompt_async`))
-      return respond(promptResponder);
-    if (method === 'POST' && url.endsWith('/abort')) return respond(abortResponder);
-    if (method === 'POST' && url.endsWith('/command')) return respond(commandResponder);
     if (url.includes('/projects/proj-1/sessions/ps-1/prompts')) {
-      if (method === 'GET') return okResponse({ prompts: inboxRows });
+      // A new body per read, as the network gives.
+      if (method === 'GET') return okResponse({ prompts: structuredClone(inboxRows) });
       if (method === 'POST' && url.endsWith('/prompts')) {
         if (inboxFails) return respond(fail);
         return okResponse({ prompt_id: 'p-new', state: 'queued', message_id: body?.message_id, deduped: false });
       }
       return okResponse({});
     }
-    if (url.endsWith('/question') || url.endsWith('/permission')) return okResponse([]);
     return okResponse({});
   }) as any;
 });
@@ -723,6 +798,14 @@ afterEach(async () => {
 });
 
 // ── Scroll physics ───────────────────────────────────────────────────────────
+
+describe('inactive sandbox navigation', () => {
+  test('session health pill does not offer the legacy instance selector', async () => {
+    await renderPage();
+    expect(healthPillProps).not.toBeNull();
+    expect(healthPillProps?.onSwitch).toBeUndefined();
+  });
+});
 
 describe('SessionPage scroll physics', () => {
   test('follows layout changes to the end while follow is on, instantly on the first settle', async () => {
@@ -805,11 +888,8 @@ describe('SessionPage scroll physics', () => {
       await sleep(15);
     });
     // The optimistic turn exists and the session is busy.
-    const messages = useSyncStore.getState().messages[SID] ?? [];
-    expect(
-      messages.some((m) => m.info.role === 'user' && (m.parts[0] as any).text === 'hello'),
-    ).toBe(true);
-    expect(useSyncStore.getState().sessionStatus[SID]).toEqual({ type: 'busy' });
+    expect(userTexts()).toContain('hello');
+    expect(statusOf()).toEqual({ type: 'busy' });
 
     await layoutTranscript(1468, [700, 700]);
     expect(scrollToCalls.at(-1)).toEqual({ offset: 868, animated: true });
@@ -986,42 +1066,51 @@ describe('SessionPage message queue', () => {
 
 describe('SessionPage send, retry and stop', () => {
   test('a failed prompt keeps the message in the thread and a retry re-sends it under the same ids', async () => {
+    const inboxPosts = () =>
+      fetchCalls.filter((c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'));
     seedTurns(['one']);
     await renderPage();
     await act(async () => {
-      promptResponder = fail;
+      inboxFails = true;
       composerProps.onSend('hello', {});
       await sleep(15);
     });
-    expect(useSyncStore.getState().sessionStatus[SID]).toEqual({ type: 'idle' });
-    // The message stays in the thread, dimmed: not optimistic, not gone.
-    const messages = useSyncStore.getState().messages[SID] ?? [];
-    const failedMessage = messages.find(
-      (m) => m.info.role === 'user' && (m.parts[0] as any).text === 'hello',
-    );
-    expect(failedMessage).toBeTruthy();
-    expect(useFailedSendStore.getState().bySession[SID]?.[failedMessage!.info.id]).toMatchObject({
-      text: 'hello',
-    });
+    expect(statusOf()).toEqual({ type: 'idle' });
+    // The server never had it, so it is not in the transcript; the thread
+    // still shows it, dimmed, from the failed-send store.
+    expect(userTexts()).toEqual(['one']);
+    const failed = useFailedSendStore.getState().bySession[SID] ?? {};
+    const [failedId] = Object.keys(failed);
+    expect(failed[failedId]).toMatchObject({ text: 'hello' });
+    const shown = listProps.data.map((turn: any) => [
+      turn.userMessage.info.id,
+      turn.userMessage.parts[0]?.text,
+    ]);
+    expect(shown.at(-1)).toEqual([failedId, 'hello']);
 
-    const retryTurn = turnProps.find((props) => props.uploadStatus?.state === 'failed');
+    const retryTurn = turnProps.findLast((props) => props.uploadStatus?.state === 'failed');
+    expect(retryTurn.turn.userMessage.info.id).toBe(failedId);
     expect(retryTurn.uploadStatus.onRetry).toBeTypeOf('function');
     await act(async () => {
-      promptResponder = pass;
+      inboxFails = false;
       retryTurn.uploadStatus.onRetry();
       await sleep(15);
     });
-    const promptPosts = fetchCalls.filter((c) => c.url.endsWith('/prompt_async'));
-    expect(promptPosts).toHaveLength(2);
-    expect(JSON.stringify(promptPosts[1].body)).toBe(JSON.stringify(promptPosts[0].body));
-    // One 'hello' user message again, under the failed attempt's wire id —
-    // the prompt inbox dedupes on `clientMessageId`, so a retry cannot double-run.
-    const after = (useSyncStore.getState().messages[SID] ?? []).filter(
-      (m) => m.info.role === 'user' && (m.parts[0] as any).text === 'hello',
+    // The retry re-posts under the failed attempt's ids — the prompt inbox
+    // dedupes on `client_message_id`, so a retry cannot double-run.
+    const posts = inboxPosts();
+    expect(posts).toHaveLength(2);
+    expect(posts[1].body.client_message_id).toBe(posts[0].body.client_message_id);
+    expect(posts[1].body.message_id).toBe(posts[0].body.message_id);
+    expect(posts[1].body.message_id).toBe(failedId);
+    expect(posts[1].body.parts).toEqual(posts[0].body.parts);
+    // One 'hello' again, now an accepted optimistic message under the same id.
+    const after = sessionRows(SID).filter(
+      (row) => row.info.role === 'user' && (row.parts[0] as any).text === 'hello',
     );
     expect(after).toHaveLength(1);
-    expect(after[0].info.id).toBe(failedMessage!.info.id);
-    expect(useFailedSendStore.getState().bySession[SID]?.[after[0].info.id]).toBeUndefined();
+    expect(after[0].info.id).toBe(failedId);
+    expect(useFailedSendStore.getState().bySession[SID]?.[failedId]).toBeUndefined();
   });
 
   test('stop rolls the session status back when the runtime refuses or errors', async () => {
@@ -1036,8 +1125,9 @@ describe('SessionPage send, retry and stop', () => {
       composerProps.onStop();
       await sleep(15);
     });
-    expect(fetchCalls.some((c) => c.url.endsWith('/abort'))).toBe(true);
-    expect(useSyncStore.getState().sessionStatus[SID]).toEqual({ type: 'busy' });
+    // The root thread stops through the SDK (inbox hold, then abort).
+    expect(seen('cancel')).toHaveLength(1);
+    expect(statusOf()).toEqual({ type: 'busy' });
     expect(toastsOf('error')).toEqual([
       { kind: 'error', message: "Couldn't stop. Kortix is still working." },
     ]);
@@ -1047,7 +1137,7 @@ describe('SessionPage send, retry and stop', () => {
       composerProps.onStop();
       await sleep(15);
     });
-    expect(useSyncStore.getState().sessionStatus[SID]).toEqual({ type: 'busy' });
+    expect(statusOf()).toEqual({ type: 'busy' });
     expect(toastsOf('error')).toHaveLength(2);
 
     await act(async () => {
@@ -1056,7 +1146,7 @@ describe('SessionPage send, retry and stop', () => {
       composerProps.onStop();
       await sleep(15);
     });
-    expect(useSyncStore.getState().sessionStatus[SID]).toEqual({ type: 'idle' });
+    expect(statusOf()).toEqual({ type: 'idle' });
     expect(toastsOf('error')).toHaveLength(2);
   });
 });
@@ -1064,28 +1154,25 @@ describe('SessionPage send, retry and stop', () => {
 // ── Composer option assembly ────────────────────────────────────────────────
 
 describe('SessionPage prompt-options assembly', () => {
-  test('a requested prompt sends with the resolved agent, model key and variant', async () => {
+  test('a requested prompt goes to the prompt inbox with the resolved agent, model key and variant', async () => {
     await renderPage();
     await act(async () => {
       useSessionPromptRequestStore.getState().requestSend(SID, 'open change text');
       await sleep(15);
     });
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    // Through the prompt inbox, like every send of the session's own thread.
+    const post = fetchCalls.find((c) => c.method === 'POST' && c.url.endsWith('/prompts'));
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'open change text' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
     expect(useSessionPromptRequestStore.getState().request).toBeNull();
   });
 
   test('editing a message reverts to it and sends the edited text with the same resolved options', async () => {
     const [user, assistant] = makeTurn('original');
-    useSyncStore.setState({
-      messages: { [SID]: [user, assistant] },
-      sessionStatus: { [SID]: { type: 'idle' } },
-    } as any);
+    seedRows([user, assistant]);
     await renderPage();
     await act(async () => {
       turnProps[0].onEditStart(user.info.id, 'edited');
@@ -1095,22 +1182,18 @@ describe('SessionPage prompt-options assembly', () => {
       turnProps.at(-1).onEditSend(user.info.id, 'edited');
       await sleep(15);
     });
-    expect(seen('revertSession')[0]?.args[0]).toMatchObject({
-      sandboxUrl: SANDBOX,
-      sessionId: SID,
-      messageId: user.info.id,
-      token: 'token-1',
-    });
+    // The SDK rewinds the session to the edited message.
+    expect(seen('rewind')[0]?.args).toEqual([user.info.id]);
     // The messages the revert hides leave the thread; the edit goes out as a send.
-    const after = useSyncStore.getState().messages[SID] ?? [];
-    expect(after.map((m) => [(m.parts[0] as any).text, m.info.role])).toEqual([['edited', 'user']]);
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    expect(sessionRows(SID).map((row) => [(row.parts[0] as any).text, row.info.role])).toEqual([
+      ['edited', 'user'],
+    ]);
+    const post = fetchCalls.find((c) => c.method === 'POST' && c.url.endsWith('/prompts'));
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'edited' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
   });
 
   test('a slash command posts the command with the resolved agent, model string and variant', async () => {
@@ -1119,10 +1202,10 @@ describe('SessionPage prompt-options assembly', () => {
       composerProps.onCommand({ name: 'review' }, 'args');
       await sleep(15);
     });
-    const post = fetchCalls.find((c) => c.url.endsWith('/command'));
-    expect(post?.body).toEqual({
+    expect(seen('command')[0]?.args[0]).toEqual({
+      sessionId: SID,
       command: 'review',
-      arguments: 'args',
+      args: 'args',
       agent: 'builder',
       model: 'prov/mod',
       variant: 'high',
@@ -1141,6 +1224,279 @@ describe('SessionPage file mentions', () => {
     expect(previewCalls).toEqual([{ path: 'src/app.ts', line: undefined }]);
     markdownActionsValue.onOpenFile?.('src/lib/x.ts');
     expect(previewCalls.at(-1)).toEqual({ path: 'src/lib/x.ts', line: undefined });
+  });
+});
+
+// ── Shared session: who sent each prompt ─────────────────────────────────────
+
+describe('SessionPage shared-session sender', () => {
+  const MEMBER = { user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null, is_viewer: false };
+  const ME = { ...MEMBER, user_id: 'me', name: 'Me', is_viewer: true };
+  const author = (person: typeof MEMBER) => ({
+    kind: 'member' as const,
+    user_id: person.user_id,
+    name: person.name,
+    email: person.email,
+    avatar_url: person.avatar_url,
+  });
+  const avatarOf = (person: typeof MEMBER) => ({ name: person.name, email: person.email, avatar_url: person.avatar_url });
+  const shared = { participants: [ME, MEMBER], total: 2, multi_user: true };
+  const userMessageId = () =>
+    sessionRows(SID).find((row) => row.info.role === 'user')!.info.id;
+
+  test("a single-user session passes no sender for the viewer's own prompt", async () => {
+    seedTurns(['one']);
+    sessionParticipants = { participants: [ME], total: 1, multi_user: false };
+    messageAuthors = { authors: { [userMessageId()]: author(ME) }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+  });
+
+  test("the viewer's own prompt passes the viewer as its sender in a shared session", async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: { [userMessageId()]: author(ME) }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toEqual(avatarOf(ME));
+  });
+
+  test('a shared session passes a turn the other person who wrote its prompt', async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: { [userMessageId()]: author(MEMBER) }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toEqual(avatarOf(MEMBER));
+  });
+
+  test("a prompt with no recorded author, or another session's agent, stays without an avatar", async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: {}, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+    messageAuthors = { authors: { [userMessageId()]: { kind: 'session', session_id: 'ses_lead', name: 'Lead' } }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+  });
+});
+
+// ── Render work: what must not re-render, and what must not stay mounted ─────
+
+describe('SessionPage render work', () => {
+  const aborted = { name: 'MessageAbortedError', data: { message: 'aborted' } };
+  /** A stream delta: new text on one message, nothing else. */
+  const streamDelta = async (messageId: string, text: string) => {
+    await act(async () => {
+      useSessionStateStore.setState(
+        (state) => ({ parts: { ...state.parts, [messageId]: [{ id: `part-${messageId}`, type: 'text', text }] } }) as any,
+      );
+      await sleep(15);
+    });
+  };
+  const heroMounted = () => tree!.root.findAllByType(HeroLogo).length > 0;
+  const spacerHeight = () =>
+    viewProps.findLast((props) => props.onLayout && typeof props.style?.height === 'number')?.style.height;
+
+  test('the fresh-session hero shows on an empty session and unmounts once its fade-out ends', async () => {
+    await renderPage();
+    expect(heroMounted()).toBe(true);
+    await act(async () => {
+      appendMessages(makeTurn('one'));
+      await sleep(15);
+    });
+    expect(heroMounted()).toBe(false);
+  });
+
+  /** The hero's opacity fades: the only timings the page starts with an end callback. */
+  const heroFades = () => timingStarts.filter((start) => start.done);
+  const clearMessages = () =>
+    useSessionStateStore.setState((state) => ({ messages: { ...state.messages, [SID]: [] } }) as any);
+
+  test('the fresh-session hero mounts again, fading in, when the session is empty again', async () => {
+    await renderPage();
+    await act(async () => {
+      appendMessages(makeTurn('one'));
+      await sleep(15);
+    });
+    expect(heroMounted()).toBe(false);
+    expect(heroFades().at(-1)?.toValue).toBe(0);
+    await act(async () => {
+      clearMessages();
+      await sleep(15);
+    });
+    expect(heroMounted()).toBe(true);
+    expect(heroFades().at(-1)?.toValue).toBe(1);
+  });
+
+  test('an interrupted fade-out keeps the fresh-session hero mounted', async () => {
+    holdTimings = true;
+    await renderPage();
+    await act(async () => {
+      appendMessages(makeTurn('one'));
+      await sleep(15);
+    });
+    const fadeOut = heroFades().at(-1)!;
+    expect(fadeOut.toValue).toBe(0);
+    await act(async () => fadeOut.done!({ finished: false }));
+    expect(heroMounted()).toBe(true);
+    // The same callback with a finished fade unmounts it: the check above is not vacuous.
+    await act(async () => fadeOut.done!({ finished: true }));
+    expect(heroMounted()).toBe(false);
+  });
+
+  test('a session with messages never mounts the fresh-session hero', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    expect(heroMounted()).toBe(false);
+  });
+
+  test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {
+    const user = userMsg('one');
+    const reply = assistantMsg('partial', user.info.id);
+    (reply.info as any).error = aborted;
+    const stranded = userMsg('two');
+    seedRows([user, reply, stranded]);
+    await renderPage();
+    const queueStateOf = (id: string) => turnProps.findLast((props) => props.turn.userMessage.info.id === id)?.queueState;
+    expect(queueStateOf(stranded.info.id)).toBe('interrupted');
+    const renderItem = listProps.renderItem;
+    const onStop = composerProps.onStop;
+
+    await streamDelta(reply.info.id, 'partial, more');
+    expect(listProps.renderItem).toBe(renderItem);
+    expect(queueStateOf(stranded.info.id)).toBe('interrupted');
+
+    // `useSession` hands a new object on every render; the fields are the same.
+    runtimeValue = { ...runtimeValue };
+    await streamDelta(reply.info.id, 'partial, more, again');
+    expect(listProps.renderItem).toBe(renderItem);
+    expect(composerProps.onStop).toBe(onStop);
+
+    // Stop still reaches the runtime the page has now.
+    let cancelled = 0;
+    runtimeValue = { ...runtimeValue, cancel: async () => ((cancelled += 1), { status: 'aborted' }) };
+    await act(async () => {
+      setStatus({ type: 'busy' });
+      await sleep(15);
+    });
+    await act(async () => {
+      composerProps.onStop();
+      await sleep(15);
+    });
+    expect(cancelled).toBe(1);
+  });
+
+  test('a shared session hands each turn the same sender object until the authors change', async () => {
+    seedTurns(['one']);
+    const id = sessionRows(SID).find((row) => row.info.role === 'user')!.info.id;
+    sessionParticipants = { participants: [], total: 2, multi_user: true };
+    messageAuthors = {
+      authors: { [id]: { kind: 'member', user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null } },
+      initial_author: null,
+    };
+    await renderPage();
+    const first = turnProps.at(-1).sender;
+    expect(first).toEqual({ name: 'Marko', email: 'member@example.test', avatar_url: null });
+    const reply = sessionRows(SID).find((row) => row.info.role === 'assistant')!.info.id;
+    const before = turnProps.length;
+    await streamDelta(reply, 'a longer reply');
+    expect(turnProps.length).toBeGreaterThan(before);
+    expect(turnProps.at(-1).sender).toBe(first);
+  });
+
+  test('an inbox read with the same rows does not re-render the composer, and the rows still show', async () => {
+    inboxRows = [
+      { prompt_id: 'p-1', client_message_id: 'c-1', message_id: 'm-1', state: 'queued', reason: 'turn_active', text: 'later', attempts: 0, last_error: null, created_at: '', available_at: '' },
+    ];
+    seedTurns(['one']);
+    await renderPage();
+    await act(async () => {
+      await sleep(15);
+    });
+    const toggle = buttons.find((props) => String(props.accessibilityLabel ?? '').includes('queued messages'));
+    expect(toggle).toBeTruthy();
+    await act(async () => {
+      toggle.onPress();
+      await sleep(15);
+    });
+    const renders = composerRenders;
+    // Send now re-reads the inbox: the same row comes back.
+    const sendNow = buttons.findLast((props) => props.accessibilityLabel === 'Send now');
+    await act(async () => {
+      sendNow.onPress();
+      await sleep(15);
+    });
+    expect(fetchCalls.filter((c) => c.method === 'GET' && c.url.endsWith('/prompts')).length).toBeGreaterThan(1);
+    expect(composerRenders).toBe(renders);
+    expect(composerProps.inputSlot).toBeTruthy();
+  });
+
+  test('the composer height reaches the gesture area without a page render', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    const bottomArea = viewProps.findLast(
+      (props) => props.onLayout && props.children?.props?.inputNativeID === `composer-input-${SID}`,
+    );
+    expect(bottomArea).toBeTruthy();
+    const renders = composerRenders;
+    await act(async () => {
+      bottomArea.onLayout({ nativeEvent: { layout: { height: 120.4 } } });
+    });
+    expect(gestureAreaProps.offset).toBe(120);
+    expect(composerRenders).toBe(renders);
+  });
+
+  test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    // One 200pt turn in a 600pt list: room = 600 − 200 − 24 = 376.
+    await layoutTranscript(576, [200]);
+    expect(spacerHeight()).toBe(376);
+    const renders = composerRenders;
+
+    await act(async () => {
+      keyboardEvent('keyboardWillShow');
+    });
+    for (const height of [500, 400, 300]) {
+      listProps.onLayout({ nativeEvent: { layout: { height } } });
+      await act(async () => {
+        await sleep(5);
+      });
+    }
+    // No page render per keyboard frame; the blank room is clipped meanwhile.
+    expect(composerRenders).toBe(renders);
+    expect(spacerHeight()).toBe(376);
+    await act(async () => {
+      keyboardEvent('keyboardDidShow');
+      await sleep(15);
+    });
+    expect(spacerHeight()).toBe(76);
+
+    // Closing: the room grows with the list, frame by frame, as before.
+    await act(async () => {
+      keyboardEvent('keyboardWillHide');
+    });
+    listProps.onLayout({ nativeEvent: { layout: { height: 400 } } });
+    await act(async () => {
+      await sleep(5);
+    });
+    expect(spacerHeight()).toBe(176);
+  });
+
+  test('a long thread stays pinned to its end while the keyboard opens', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    await layoutTranscript(724, [700]);
+    expect(scrollToCalls.at(-1)).toEqual({ offset: 148, animated: false });
+    await act(async () => {
+      keyboardEvent('keyboardWillShow');
+    });
+    listProps.onLayout({ nativeEvent: { layout: { height: 300 } } });
+    await act(async () => {
+      await sleep(5);
+    });
+    // content 724 − viewport 300.
+    expect(scrollToCalls.at(-1)).toEqual({ offset: 424, animated: false });
   });
 });
 
@@ -1189,21 +1545,36 @@ describe('SessionConnecting saved thread', () => {
     expect(scrollToEndCalls).toEqual([[{ animated: false }]]);
   });
 
-  test('the waking composer takes a message and hands it to onSend', async () => {
-    const sent: string[] = [];
-    await renderSavedThread({
-      onSend: (text: string) => {
-        sent.push(text);
-      },
-    });
+  test('a shared session labels the saved prompts while the computer wakes, not only once it runs', async () => {
+    const MEMBER = { user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null, is_viewer: false };
+    const messages = [...makeTurn('one'), ...makeTurn('two')];
+    const firstPrompt = messages.find((m) => m.info.role === 'user')!.info.id;
+    sessionParticipants = { participants: [MEMBER], total: 2, multi_user: true };
+    messageAuthors = {
+      authors: { [firstPrompt]: { kind: 'member', user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null } },
+      initial_author: null,
+    };
     await act(async () => {
-      wakingComposerProps.onChangeText?.('wake-up ping');
+      tree = create(
+        React.createElement(SessionConnecting, {
+          messages,
+          statusLabel: 'Waking the computer',
+          sessionId: SID,
+          onCancel: () => {},
+          projectId: 'project',
+          projectSessionId: 'project-session',
+        } as any),
+      );
     });
-    await act(async () => {
-      wakingComposerProps.onSubmit?.();
-    });
-    expect(sent).toEqual(['wake-up ping']);
-    // The composer resets after the submit.
+    expect(turnProps.map((props) => props.sender)).toEqual([
+      { name: 'Marko', email: 'member@example.test', avatar_url: null },
+      null,
+    ]);
+  });
+
+  test('the waking composer is disabled: no text, no send', async () => {
+    await renderSavedThread({});
+    expect(wakingComposerProps.disabled).toBe(true);
     expect(wakingComposerProps.value).toBe('');
   });
 
@@ -1215,7 +1586,9 @@ describe('SessionConnecting saved thread', () => {
     });
     // The thread is still rendered; the failure replaced only the composer slot.
     expect(turnProps.length).toBe(2);
-    const restartButton = buttons.find((props) => props.onPress && props.variant === 'outline');
+    // Restart is the default (primary) pill; Back to project is secondary.
+    const restartButton = buttons.find((props) => props.onPress && props.variant === 'default');
+    expect(buttons.some((props) => props.onPress && props.variant === 'secondary')).toBe(true);
     expect(restartButton).toBeTruthy();
     await act(async () => {
       restartButton.onPress();

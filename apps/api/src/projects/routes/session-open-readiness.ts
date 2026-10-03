@@ -9,7 +9,8 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { ensureOpencodeSessionPin, type EnsureResult } from '../opencode-mapping';
+import { ensureOpencodeSessionPin, sandboxOpencodeEndpoint, type EnsureResult } from '../opencode-mapping';
+import { runtimeCapabilities } from '../session-lifecycle/runtime-fetch';
 import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 import type { StartCallLog } from '../session-lifecycle/start-envelope';
 import {
@@ -153,6 +154,8 @@ export async function observeOpenCodeReadiness(
   booting: boolean;
   serving: boolean;
   servingAnswer: SessionStartResult;
+  /** What the runtime serves, for a ready answer. Null: booting, or unknown. */
+  capabilities: string[] | null;
 }> {
   const { loaded, visible, projectId, sessionId } = args;
   const accountId = visible.row.accountId;
@@ -181,6 +184,18 @@ export async function observeOpenCodeReadiness(
   // relaunched once per spell, and the relaunch exits untouched when the
   // box's own loopback answers (legacy-runtime-bootstrap.sh ONLY_IF_DEAD).
   const serving = !!ensured.pin && servesThroughProbeMiss(sandboxMetadata(row), ensured);
+  // The daemon just answered, so the client is about to use the runtime: hand
+  // it what the runtime serves. A client otherwise assumes every capability
+  // until its own first health probe answers, and a runtime that lacks one
+  // (pi) gets requests it cannot serve. Memoized per sandbox for 5 minutes;
+  // unknown on a failed read, and then the field is absent.
+  // An empty list is a daemon that lists nothing: unknown, not "serves nothing".
+  const listed = booting
+    ? null
+    : await runtimeCapabilities(runningExternalId, () =>
+        sandboxOpencodeEndpoint(runningExternalId, loaded.userId),
+      );
+  const capabilities = listed?.length ? listed : null;
   const servingAnswer: SessionStartResult = {
     stage: 'ready',
     agent_name: visible.row.agentName ?? 'default',
@@ -189,8 +204,9 @@ export async function observeOpenCodeReadiness(
     opencode_session_id: ensured.pin,
     runtime_url: sessionRuntimeUrlPath(runningExternalId),
     reason: ensured.reason,
+    ...(capabilities ? { capabilities } : {}),
   };
-  return { ensured, booting, serving, servingAnswer };
+  return { ensured, booting, serving, servingAnswer, capabilities };
 }
 
 /** The unreachable-cause diagnostics of the readiness phase (verbatim branch). */
@@ -231,11 +247,7 @@ export async function stampUnreachableDiagnostics(
     //
     // Gated on the exact cause so a healthy box never pays an exec: this runs
     // only when the daemon has explicitly told us the signature did not verify.
-    if (
-      ensured.cause === 'unsigned_context' &&
-      typeof ensured.detail === 'string' &&
-      ensured.detail.includes('bad_signature')
-    ) {
+    if (ensured.cause === 'unsigned_context' && daemonRefusalReason(ensured.detail) === 'bad_signature') {
       // One exec per poll is a spike of its own (2026-09-29: ~2200 execs in
       // 2 h across 20 stuck sessions, each holding the /start response open).
       // An attempt that did not heal backs off; a healed row stops being
@@ -418,4 +430,14 @@ export async function judgeBootBudget(
     await markRuntimeAnswered(row);
   }
   return null;
+}
+
+/** The daemon refuses a context as JSON `{error:'unauthorized', reason}`; an edge 401 body is not that. */
+function daemonRefusalReason(detail: string | undefined): string | null {
+  try {
+    const reason = (JSON.parse(detail ?? '') as { reason?: unknown }).reason;
+    return typeof reason === 'string' ? reason : null;
+  } catch {
+    return null;
+  }
 }

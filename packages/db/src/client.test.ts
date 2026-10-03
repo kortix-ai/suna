@@ -125,3 +125,52 @@ describe('instrumentSql', () => {
     expect(sql.options).toBe(options);
   });
 });
+
+// ─── preparedSql ────────────────────────────────────────────────────────────
+// Drizzle sends every statement as `client.unsafe(query, params)`, and
+// postgres.js `unsafe()` defaults to `prepare: false`: the pool's own `prepare`
+// option never reaches a Drizzle statement. `preparedSql` passes it per call.
+
+import { preparedSql } from './client';
+
+describe('preparedSql', () => {
+  const recordingSql = () => {
+    const calls: Array<{ statement: string; params: unknown; options: unknown }> = [];
+    const sql = {
+      unsafe: (statement: string, params?: unknown, options?: unknown) => {
+        calls.push({ statement, params, options });
+        return Promise.resolve([]);
+      },
+      begin: async (run: (tx: unknown) => Promise<unknown>) => run(sql),
+      savepoint: async (run: (tx: unknown) => Promise<unknown>) => run(sql),
+      end: async () => 'ended',
+    };
+    return { sql, calls };
+  };
+
+  test('every statement asks for a prepared statement, with its parameters intact', async () => {
+    const { sql, calls } = recordingSql();
+    await preparedSql(sql).unsafe('select 1 where a = $1', ['x']);
+    expect(calls).toEqual([{ statement: 'select 1 where a = $1', params: ['x'], options: { prepare: true } }]);
+  });
+
+  test('a caller that passes its own options keeps them', async () => {
+    const { sql, calls } = recordingSql();
+    await preparedSql(sql).unsafe('select 1', [], { prepare: false });
+    expect(calls[0]?.options).toEqual({ prepare: false });
+  });
+
+  test('statements inside a transaction and a savepoint are prepared too', async () => {
+    const { sql, calls } = recordingSql();
+    await preparedSql(sql).begin(async (tx) => {
+      await (tx as typeof sql).unsafe('update t set a = $1', [1]);
+      await (tx as typeof sql).savepoint(async (inner) => (inner as typeof sql).unsafe('select 2', []));
+    });
+    expect(calls.map((call) => call.options)).toEqual([{ prepare: true }, { prepare: true }]);
+  });
+
+  test('everything else passes through', async () => {
+    const { sql } = recordingSql();
+    expect(await preparedSql(sql).end()).toBe('ended');
+  });
+});

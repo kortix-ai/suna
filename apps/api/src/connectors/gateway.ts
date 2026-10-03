@@ -203,6 +203,12 @@ export interface GatewayDeps {
     threadTs: string;
   }): Promise<Record<string, unknown>>;
   /**
+   * Display names for the authors of a Slack history or thread read, keyed by
+   * Slack user id. The agent reads `user_name` beside each `user` id. Best
+   * effort: absent, failing, or slow, the read is returned unchanged.
+   */
+  nameSlackUsers?(input: { projectId: string; token: string; userIds: string[] }): Promise<ReadonlyMap<string, string>>;
+  /**
    * Keeps a Slack or Teams channel read inside the calling project's own
    * conversations (channel-read-scope.ts). Every project in a workspace or
    * tenant resolves the same platform token, so the token alone does not.
@@ -1152,7 +1158,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           ? { attachment_count: attachmentClaim.attachmentIds.length }
           : {}),
       });
-      const data = await withSlackThreadBinding(deps, input, connector, executionArgs, result.data);
+      const named = await withSlackAuthorNames(deps, input, connector, executionSecret, result.data);
+      const data = await withSlackThreadBinding(deps, input, connector, executionArgs, named);
       return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
     if (attachmentClaim?.claimToken) {
@@ -1238,6 +1245,58 @@ async function withSlackThreadBinding(
       return { bound: false, thread_ts: threadTs, reason: 'bind_failed' };
     });
   return { ...data, thread_binding: threadBinding };
+}
+
+/** Slack reads that answer with messages. */
+const SLACK_MESSAGE_READS: ReadonlySet<string> = new Set(['get_history', 'get_thread']);
+
+/**
+ * A Slack history or thread read names each message's author as `user_name`,
+ * beside the `user` id the agent still operates with. Slack answers with ids
+ * only, and an agent that reads ids answers with ids. Runs after the read-scope
+ * gate, on the messages the agent may see. A failed lookup returns the read
+ * unchanged.
+ */
+async function withSlackAuthorNames(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  token: string | null,
+  data: unknown,
+): Promise<unknown> {
+  if (
+    !deps.nameSlackUsers ||
+    !token ||
+    connector.provider !== 'channel' ||
+    connector.platform !== 'slack' ||
+    !SLACK_MESSAGE_READS.has(input.actionPath) ||
+    !data ||
+    typeof data !== 'object'
+  ) {
+    return data;
+  }
+  const messages = (data as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return data;
+  const authorOf = (message: unknown): string | null => {
+    const user = message && typeof message === 'object' ? (message as { user?: unknown }).user : null;
+    return typeof user === 'string' && user ? user : null;
+  };
+  const userIds = [...new Set(messages.map(authorOf).filter((id): id is string => id !== null))];
+  if (userIds.length === 0) return data;
+  const names = await deps.nameSlackUsers({ projectId: input.projectId, token, userIds }).catch((error) => {
+    logger.warn('[connector] slack author names failed (non-fatal)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  if (!names || names.size === 0) return data;
+  return {
+    ...data,
+    messages: messages.map((message) => {
+      const name = names.get(authorOf(message) ?? '');
+      return name ? { ...(message as Record<string, unknown>), user_name: name } : message;
+    }),
+  };
 }
 
 /**

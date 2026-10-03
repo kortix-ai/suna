@@ -2,10 +2,9 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
-export type DotmSquare12Props = DotMatrixCommonProps;
 
 // User-defined origin is cell (2,2) in a 1-based 5x5 grid => (row=1,col=1) in zero-based coords.
 const ORIGIN_ROW = 1;
