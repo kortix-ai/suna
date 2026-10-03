@@ -291,7 +291,7 @@ importers:
         specifier: ^8.0.1
         version: 8.0.2
       ajv:
-        specifier: ^8.17.1
+        specifier: 8.18.0
         version: 8.18.0
       bun-types:
         specifier: ^1.3.12
