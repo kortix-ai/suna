@@ -8,6 +8,7 @@
 
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -27,18 +28,15 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
  * it. It only widens the named agent's list; it never replaces it.
  */
 export async function secretsGrant(argv: string[], opts: CtxOpts, json = false): Promise<number> {
-
   let agent: string | undefined;
   try {
     agent = takeFlagValue(argv, ['--agent']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const identifier = argv.filter((a) => !a.startsWith('-'))[0];
   if (!identifier) {
-    process.stderr.write(`${status.err('Pass a secret identifier.')}\n`);
-    return 2;
+    return fail('Pass a secret identifier.');
   }
   if (!agent) {
     process.stderr.write(
@@ -47,8 +45,7 @@ export async function secretsGrant(argv: string[], opts: CtxOpts, json = false):
     return 2;
   }
   if (!IDENTIFIER_RE.test(identifier)) {
-    process.stderr.write(`${status.err(`"${identifier}" is not a valid secret identifier.`)}\n`);
-    return 2;
+    return fail(`"${identifier}" is not a valid secret identifier.`);
   }
 
   const ctx = await resolveProjectContext(opts);

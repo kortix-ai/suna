@@ -1,13 +1,19 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
-import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
-import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectId } from './project-link.ts';
-import { ensureDefaultProjectBinding } from './project-bind.ts';
-import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
-import { C, status } from './style.ts';
+import { type Auth, loadAuth, loadAuthForHost } from './api/auth.ts';
+import { type ApiClient, ApiError, clientFromAuth } from './api/client.ts';
+import {
+  activeAccount,
+  activeHostName,
+  getHost,
+  hasEnvTokenHost,
+  listHosts,
+} from './api/config.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
+import { ensureDefaultProjectBinding } from './project-bind.ts';
+import { loadLink, resolveProjectId } from './project-link.ts';
+import { C, status } from './style.ts';
+import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
 
 interface ProjectContextOpts {
   /** Override project via --project flag or KORTIX_PROJECT_ID env. */
@@ -48,7 +54,7 @@ export async function resolveProjectContext(
   const opts: ProjectContextOpts =
     typeof optsOrProjectArg === 'string'
       ? { projectArg: optsOrProjectArg }
-      : optsOrProjectArg ?? {};
+      : (optsOrProjectArg ?? {});
 
   // Resolve the host: explicit flag → sandbox env token → link.json's host → active.
   let hostFromLink: string | undefined;
@@ -135,12 +141,14 @@ export interface AccountContext {
  * Account resolution order: `--account` → the active account → the host's
  * default account from the stored credentials.
  */
-export function resolveAccountContext(opts: {
-  accountArg?: string;
-  hostArg?: string;
-  /** Commands on person-level routes (connected apps) run with no account. */
-  accountOptional?: boolean;
-} = {}): AccountContext | null {
+export function resolveAccountContext(
+  opts: {
+    accountArg?: string;
+    hostArg?: string;
+    /** Commands on person-level routes (connected apps) run with no account. */
+    accountOptional?: boolean;
+  } = {},
+): AccountContext | null {
   const auth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
   if (!auth?.token) {
     if (opts.hostArg) {
@@ -238,7 +246,12 @@ export async function locateSessionAnywhere(
       }
       if (expanded) {
         return {
-          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: expanded },
+          located: {
+            client: ctx.client,
+            auth: ctx.auth,
+            projectId: ctx.projectId,
+            session: expanded,
+          },
           switched: false,
         };
       }
@@ -273,7 +286,9 @@ export async function locateSessionAnywhere(
     ? await scanHostForSession(opts.hostArg, sessionId)
     : await scanAllHostsForSession(sessionId);
   if (!found) {
-    process.stderr.write(`${status.err(`Session ${sessionId} not found in any project you can access.`)}\n`);
+    process.stderr.write(
+      `${status.err(`Session ${sessionId} not found in any project you can access.`)}\n`,
+    );
     if (!opts.hostArg) printHostRetryHints(retryCommand);
     return null;
   }
@@ -312,14 +327,19 @@ export async function locateProjectAnywhere(
   if (primaryAuth?.token) {
     const probed = await probeProject(clientFromAuth(primaryAuth), projectId);
     if (probed !== false && !(probed instanceof ApiError)) {
-      return { located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed }, switched: false };
+      return {
+        located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed },
+        switched: false,
+      };
     }
     if (probed instanceof ApiError) {
       surfaceApiError(probed);
       return null;
     }
     if (pinned) {
-      process.stderr.write(`${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`);
+      process.stderr.write(
+        `${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`,
+      );
       return null;
     }
   }
@@ -341,7 +361,9 @@ export async function locateProjectAnywhere(
     };
   }
 
-  process.stderr.write(`${status.err(`Project ${projectId} not found on any host you're logged into.`)}\n`);
+  process.stderr.write(
+    `${status.err(`Project ${projectId} not found on any host you're logged into.`)}\n`,
+  );
   printHostRetryHints(retryCommand);
   return null;
 }
@@ -359,13 +381,14 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
     `  ${C.dim}Not logged in on those hosts yet. If it lives on one of them:${C.reset}\n`,
   );
   for (const name of names) {
-    process.stderr.write(`    ${C.cyan}kortix login --host ${name} && ${retryCommand(name)}${C.reset}\n`);
+    process.stderr.write(
+      `    ${C.cyan}kortix login --host ${name} && ${retryCommand(name)}${C.reset}\n`,
+    );
   }
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
-const SESSION_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expand a short session-id prefix against the project's session list,
  *  returning the matched row (the list already carries it — no re-fetch). */
@@ -428,7 +451,10 @@ async function scanAllHostsForSession(sessionId: string): Promise<LocatedSession
 
 /** Scan every account on ONE named (already logged-in) host for a session
  *  id, concurrency-capped within each account's project list. */
-async function scanHostForSession(hostName: string, sessionId: string): Promise<LocatedSession | null> {
+async function scanHostForSession(
+  hostName: string,
+  sessionId: string,
+): Promise<LocatedSession | null> {
   const auth = loadAuthForHost(hostName);
   if (!auth?.token) return null;
   let me: MeResponse;
@@ -445,7 +471,9 @@ async function scanHostForSession(hostName: string, sessionId: string): Promise<
     } catch {
       continue;
     }
-    const hit = await probeConcurrently(projects, (p) => probeSession(client, p.project_id, sessionId));
+    const hit = await probeConcurrently(projects, (p) =>
+      probeSession(client, p.project_id, sessionId),
+    );
     if (hit) {
       return {
         client,
@@ -512,9 +540,7 @@ function featureDisabledMessage(err: unknown): string | null {
   // Settings → Feature flags — print it verbatim rather than paraphrasing.
   const fromBody = body?.error;
   if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
-  return typeof carrier.message === 'string' && carrier.message.length > 0
-    ? carrier.message
-    : null;
+  return typeof carrier.message === 'string' && carrier.message.length > 0 ? carrier.message : null;
 }
 
 /** Print an HTTP error in a consistent style + return exit code 1. */

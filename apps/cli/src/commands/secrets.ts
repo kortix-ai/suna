@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { splitHelp } from '../command-argv.ts';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -204,7 +204,6 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-
 async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   // An explicit identifier (--identifier / --id) keeps a second value under the
   // same KEY. It addresses exactly one secret, so it pairs with a single
@@ -327,15 +326,21 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
   }
   const identifier = args[0]?.trim();
   if (!identifier) {
-    process.stderr.write(`${status.err('Usage: kortix secrets share IDENTIFIER --user <email|id|me> | --group <id> | --agent <name> | --everyone')}\n`);
+    process.stderr.write(
+      `${status.err('Usage: kortix secrets share IDENTIFIER --user <email|id|me> | --group <id> | --agent <name> | --everyone')}\n`,
+    );
     return 2;
   }
   if (everyone && users.length + groups.length + agents.length > 0) {
-    process.stderr.write(`${status.err('--everyone shares it with the whole project; drop --user, --group and --agent.')}\n`);
+    process.stderr.write(
+      `${status.err('--everyone shares it with the whole project; drop --user, --group and --agent.')}\n`,
+    );
     return 2;
   }
   if (!everyone && users.length + groups.length + agents.length === 0) {
-    process.stderr.write(`${status.err('Say who can use it: --user <email|id|me>, --group <id>, --agent <name>, or --everyone.')}\n`);
+    process.stderr.write(
+      `${status.err('Say who can use it: --user <email|id|me>, --group <id>, --agent <name>, or --everyone.')}\n`,
+    );
     return 2;
   }
 
@@ -343,15 +348,20 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
   if (!ctx) return 1;
   try {
     const list = await ctx.client.get<ProjectSecretsResponse>(`/projects/${ctx.projectId}/secrets`);
-    const target = list.items.find((item) => item.identifier.toUpperCase() === identifier.toUpperCase());
+    const target = list.items.find(
+      (item) => item.identifier.toUpperCase() === identifier.toUpperCase(),
+    );
     if (!target) {
-      process.stderr.write(`${status.err(`No secret with identifier "${identifier}". See: kortix secrets ls`)}\n`);
+      process.stderr.write(
+        `${status.err(`No secret with identifier "${identifier}". See: kortix secrets ls`)}\n`,
+      );
       return 1;
     }
-    const principals: Array<{ principal_type: 'user' | 'group' | 'agent'; principal_id: string }> = groups.map((id) => ({
-      principal_type: 'group',
-      principal_id: id,
-    }));
+    const principals: Array<{ principal_type: 'user' | 'group' | 'agent'; principal_id: string }> =
+      groups.map((id) => ({
+        principal_type: 'group',
+        principal_id: id,
+      }));
     let accountId: string | null = null;
     for (const who of users) {
       if (who === 'me') {
@@ -359,7 +369,8 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
         principals.push({ principal_type: 'user', principal_id: me.user_id });
         continue;
       }
-      accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`)).account_id;
+      accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`))
+        .account_id;
       const userId = await resolveUserId(ctx.client, accountId, who);
       if (!userId) return 1;
       principals.push({ principal_type: 'user', principal_id: userId });
@@ -367,14 +378,16 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
     if (agents.length > 0) {
       // An agent is its service account, one per (project, agent).
       const identities = (
-        await ctx.client.get<{ agents: Array<{ service_account_id: string; agent_name: string | null }> }>(
-          `/projects/${ctx.projectId}/agent-identities`,
-        )
+        await ctx.client.get<{
+          agents: Array<{ service_account_id: string; agent_name: string | null }>;
+        }>(`/projects/${ctx.projectId}/agent-identities`)
       ).agents;
       for (const name of agents) {
         const hit = identities.find((agent) => agent.agent_name === name);
         if (!hit) {
-          process.stderr.write(`${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`);
+          process.stderr.write(
+            `${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`,
+          );
           return 1;
         }
         principals.push({ principal_type: 'agent', principal_id: hit.service_account_id });
@@ -395,7 +408,11 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
     };
     const audience = everyone
       ? 'everyone in the project'
-      : [count('user', 'person', 'people'), count('group', 'group', 'groups'), count('agent', 'agent', 'agents')]
+      : [
+          count('user', 'person', 'people'),
+          count('group', 'group', 'groups'),
+          count('agent', 'agent', 'agents'),
+        ]
           .filter(Boolean)
           .join(', ');
     process.stdout.write(`${status.ok(`${target.identifier}: ${audience}`)}\n`);
@@ -509,7 +526,6 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
   return okCount === names.length ? 0 : 1;
 }
 
-
 /**
  * Force a re-push of all project secrets to this session's sandbox daemon.
  * Use after setting a secret via the intake link or when secrets are missing
@@ -543,17 +559,16 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
         agent_env_written: boolean;
         reason?: string;
       }>;
-    }>(
-      `/projects/${ctx.projectId}/secrets/sync`,
-      {},
-    );
+    }>(`/projects/${ctx.projectId}/secrets/sync`, {});
     if (json) {
       emitJson(result);
       return result.ok ? 0 : 1;
     }
     if (result.ok) {
       if (result.active_sandboxes === 0) {
-        process.stdout.write(`\n${status.ok('No active sandboxes require secret synchronization.')}\n\n`);
+        process.stdout.write(
+          `\n${status.ok('No active sandboxes require secret synchronization.')}\n\n`,
+        );
         return 0;
       }
       process.stdout.write(

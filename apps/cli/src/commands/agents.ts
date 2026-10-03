@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { splitHelp } from '../command-argv.ts';
 import type {
   AgentConfigBlock,
   AgentConfigResponse,
   AgentGrantSetV2,
   ProjectDetail,
 } from '@kortix/sdk';
+import { splitHelp } from '../command-argv.ts';
 
 import {
   emitJson,
@@ -155,8 +155,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           emitJson(d);
           return 0;
         }
-        const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
+        const fallback = d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
         const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(
@@ -182,9 +181,7 @@ export async function runAgents(argv: string[]): Promise<number> {
         const agent = positional[0];
         if (!agent) return missing('an agent name');
         if (clear) {
-          await ctx.client.delete(
-            `${base}?scope=agent&agentName=${encodeURIComponent(agent)}`,
-          );
+          await ctx.client.delete(`${base}?scope=agent&agentName=${encodeURIComponent(agent)}`);
           process.stdout.write(
             `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
           );
@@ -231,7 +228,10 @@ async function agentsDefault(
     const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
     const current = detail.config?.default_agent ?? null;
     if (opts.json) {
-      emitJson({ default_agent: current, agents: (detail.config?.agents ?? []).map((a) => a.name) });
+      emitJson({
+        default_agent: current,
+        agents: (detail.config?.agents ?? []).map((a) => a.name),
+      });
       return 0;
     }
     if (!agent && !opts.show) {
@@ -352,7 +352,10 @@ async function agentsScope(
   if (opts.apps !== undefined) body.apps = parseGrantSet(opts.apps);
   if (opts.required.length > 0) {
     body.connectors_required = opts.required.flatMap((v) =>
-      v.split(',').map((s) => s.trim()).filter(Boolean),
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
     );
   }
 

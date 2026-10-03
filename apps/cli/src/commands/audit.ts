@@ -1,12 +1,20 @@
 import { writeFileSync } from 'node:fs';
-import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
-import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { activeAccount } from '../api/config.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
-import { splitHelp } from '../command-argv.ts';
-import { emitJson, resolveSpanInstant, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { type AuditEvent, type AuditEventList, downloadAccountAudit } from '@kortix/sdk';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
+import { loadAuth, loadAuthForHost } from '../api/auth.ts';
+import { type ApiClient, clientFromAuth } from '../api/client.ts';
+import { activeAccount } from '../api/config.ts';
+import { splitHelp } from '../command-argv.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveSpanInstant,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+} from '../command-helpers.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -173,7 +181,8 @@ function resolveAccountContext(accountArg?: string, hostArg?: string): AuditCont
     );
     return null;
   }
-  const accountId = accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
+  const accountId =
+    accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
   if (!accountId) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -426,7 +435,11 @@ export async function runAudit(argv: string[]): Promise<number> {
         if (f.limit) search.set('limit', f.limit);
         if (f.cursor) search.set('cursor', f.cursor);
         return listAuditEvents(
-          auditPageFetcher(ctx, search, (params) => `/projects/${encodeURIComponent(projectId)}/audit?${params.toString()}`),
+          auditPageFetcher(
+            ctx,
+            search,
+            (params) => `/projects/${encodeURIComponent(projectId)}/audit?${params.toString()}`,
+          ),
           f,
           all,
           json,
@@ -506,7 +519,8 @@ export async function runAudit(argv: string[]): Promise<number> {
         const sessionId = positional[0];
         if (!sessionId) return fail('Missing a session id.');
         const projectId = f.project;
-        if (!projectId) return missing('--project <id> — the session audit route is project-scoped');
+        if (!projectId)
+          return missing('--project <id> — the session audit route is project-scoped');
         const sessionSearch = new URLSearchParams();
         if (f.limit) sessionSearch.set('limit', f.limit);
         if (f.cursor) sessionSearch.set('cursor', f.cursor);

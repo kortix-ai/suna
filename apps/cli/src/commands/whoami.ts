@@ -1,10 +1,10 @@
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
+import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
+import type { MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
-import type { MeResponse } from '../api/types.ts';
 
 const HELP = help`Usage: kortix whoami [options]
 

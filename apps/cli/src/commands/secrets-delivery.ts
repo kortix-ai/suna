@@ -8,15 +8,16 @@
 
 import { readFileSync } from 'node:fs';
 import {
-  brokerProjectSecretRequest,
-  setProjectSecretStrategy,
   type SecretBrokerRequest,
   type SecretEgressPolicy,
   type SecretInjectionSlot,
+  brokerProjectSecretRequest,
+  setProjectSecretStrategy,
 } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -138,7 +139,8 @@ const hasHttpPolicyOptions = (f: DeliveryFlags): boolean =>
 
 /** The legacy http_broker row: host rules + exactly one injection slot. */
 function buildBrokerPolicy(f: DeliveryFlags): PolicyResult {
-  if (f.allowedHosts.length === 0) return { error: 'A legacy http-broker row requires --allow-host.' };
+  if (f.allowedHosts.length === 0)
+    return { error: 'A legacy http-broker row requires --allow-host.' };
   const injectionValues = [f.injectHeader, f.injectQuery, f.injectJson].filter(
     (value): value is string => value !== undefined,
   );
@@ -221,35 +223,31 @@ function buildEgressPolicy(f: DeliveryFlags): PolicyResult {
   };
 }
 
-export async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Promise<number> {
+export async function secretsDelivery(
+  args: string[],
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
   const [identifier, strategyRaw] = args;
   const options = args.slice(2);
   if (!identifier || !IDENTIFIER_RE.test(identifier)) {
-    process.stderr.write(
-      `${status.err('Usage: kortix secrets delivery IDENTIFIER environment|enforced|none')}\n`,
-    );
-    return 2;
+    return fail('Usage: kortix secrets delivery IDENTIFIER environment|enforced|none');
   }
   const strategy = parseExposure(strategyRaw);
   if (strategy === null) {
-    process.stderr.write(
-      `${status.err(
+    return fail(
         'Exposure must be environment, enforced, or none (stored aliases: runtime, egress, broker, denied).',
-      )}\n`,
-    );
-    return 2;
+      );
   }
 
   let f: DeliveryFlags;
   try {
     f = parseDeliveryFlags(options);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   if (options.length > 0) {
-    process.stderr.write(`${status.err(`Unknown delivery option: ${options[0]}`)}\n`);
-    return 2;
+    return fail(`Unknown delivery option: ${options[0]}`);
   }
 
   const ctx = await resolveProjectContext(opts);
@@ -258,47 +256,33 @@ export async function secretsDelivery(args: string[], opts: CtxOpts, json = fals
   // Preserve the old `automation` flag as an input alias. Send only the canonical value.
   const consumer = normalizedConsumer === 'automation' ? 'connector' : normalizedConsumer;
   if (strategy === 'broker' && !['llm_gateway', 'connector', 'http_broker'].includes(consumer)) {
-    process.stderr.write(
-      `${status.err('--consumer must be llm-gateway, connector, or http-broker.')}\n`,
-    );
-    return 2;
+    return fail('--consumer must be llm-gateway, connector, or http-broker.');
   }
   if (strategy !== 'broker' && f.consumerFlag !== undefined) {
-    process.stderr.write(
-      `${status.err(
-        '--consumer names the Kortix service that spends a none-exposure secret. Pass it with the `broker` alias.',
-      )}\n`,
+    return fail(
+      '--consumer names the Kortix service that spends a none-exposure secret. Pass it with the `broker` alias.',
     );
-    return 2;
   }
   if (strategy !== 'broker' && strategy !== 'egress' && hasHttpPolicyOptions(f)) {
-    process.stderr.write(
-      `${status.err(
+    return fail(
         'Host and injection flags describe a policy, which only an enforced secret has.',
-      )}\n`,
-    );
-    return 2;
+      );
   }
   if (strategy === 'broker' && consumer !== 'http_broker' && hasHttpPolicyOptions(f)) {
-    process.stderr.write(
-      `${status.err(`HTTP policy flags cannot be used with the ${consumer.replace(/_/g, '-')} consumer.`)}\n`,
-    );
-    return 2;
+    return fail(`HTTP policy flags cannot be used with the ${consumer.replace(/_/g, '-')} consumer.`);
   }
 
   let policy: SecretEgressPolicy | undefined;
   if (strategy === 'broker' && consumer === 'http_broker') {
     const built = buildBrokerPolicy(f);
     if ('error' in built) {
-      process.stderr.write(`${status.err(built.error)}\n`);
-      return 2;
+      return fail(built.error);
     }
     policy = built;
   } else if (strategy === 'egress') {
     const built = buildEgressPolicy(f);
     if ('error' in built) {
-      process.stderr.write(`${status.err(built.error)}\n`);
-      return 2;
+      return fail(built.error);
     }
     policy = built;
   }
@@ -371,8 +355,7 @@ export async function secretsCall(args: string[], opts: CtxOpts, json = false): 
   const [identifier, rawUrl] = args;
   const options = args.slice(2);
   if (!identifier || !IDENTIFIER_RE.test(identifier) || !rawUrl) {
-    process.stderr.write(`${status.err('Usage: kortix secrets call IDENTIFIER URL [options]')}\n`);
-    return 2;
+    return fail('Usage: kortix secrets call IDENTIFIER URL [options]');
   }
 
   let methodRaw: string | undefined;
@@ -385,42 +368,35 @@ export async function secretsCall(args: string[], opts: CtxOpts, json = false): 
     inlineBody = takeFlagValue(options, ['--data']);
     bodyFile = takeFlagValue(options, ['--data-file']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   if (options.length > 0) {
-    process.stderr.write(`${status.err(`Unknown call option: ${options[0]}`)}\n`);
-    return 2;
+    return fail(`Unknown call option: ${options[0]}`);
   }
   if (inlineBody !== undefined && bodyFile !== undefined) {
-    process.stderr.write(`${status.err('Pass only one request body: --data or --data-file.')}\n`);
-    return 2;
+    return fail('Pass only one request body: --data or --data-file.');
   }
   const method = (methodRaw ?? 'GET').toUpperCase();
   if (!BROKER_METHODS.includes(method as BrokerMethod)) {
-    process.stderr.write(`${status.err(`Invalid HTTP method: ${method}`)}\n`);
-    return 2;
+    return fail(`Invalid HTTP method: ${method}`);
   }
   try {
     const parsedUrl = new URL(rawUrl);
     if (parsedUrl.protocol !== 'https:') throw new Error('not HTTPS');
   } catch {
-    process.stderr.write(`${status.err('`kortix secrets call` needs a valid https:// URL.')}\n`);
-    return 2;
+    return fail('`kortix secrets call` needs a valid https:// URL.');
   }
 
   const headers: Record<string, string> = {};
   for (const rawHeader of headerValues) {
     const separator = rawHeader.includes(':') ? rawHeader.indexOf(':') : rawHeader.indexOf('=');
     if (separator <= 0) {
-      process.stderr.write(`${status.err(`Malformed header: ${rawHeader}`)}\n`);
-      return 2;
+      return fail(`Malformed header: ${rawHeader}`);
     }
     const name = rawHeader.slice(0, separator).trim().toLowerCase();
     const value = rawHeader.slice(separator + 1).trim();
     if (!name) {
-      process.stderr.write(`${status.err(`Malformed header: ${rawHeader}`)}\n`);
-      return 2;
+      return fail(`Malformed header: ${rawHeader}`);
     }
     headers[name] = value;
   }
@@ -430,10 +406,7 @@ export async function secretsCall(args: string[], opts: CtxOpts, json = false): 
     try {
       body = readFileSync(bodyFile, 'utf8');
     } catch (err) {
-      process.stderr.write(
-        `${status.err(`Cannot read request body: ${(err as Error).message}`)}\n`,
-      );
-      return 2;
+      return fail(`Cannot read request body: ${(err as Error).message}`);
     }
   }
   const request: SecretBrokerRequest = {

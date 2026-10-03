@@ -1,14 +1,11 @@
 import { basename } from 'node:path';
 
-import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
+import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
+import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
-import { isKortixProject, loadLink, resolveProjectId } from '../project-link.ts';
+import type { ProjectSecretsResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
-import { promptSecret } from '../prompts.ts';
-import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
-import { configureProjectGitAuth, resolveProjectGitTarget, type ProjectGitTarget } from '../project-git.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import {
   commitIfNeeded,
   currentBranch,
@@ -19,6 +16,16 @@ import {
   run,
   setOrigin,
 } from '../git-ops.ts';
+import { type EnvSpec, type LocalManifest, lintManifest, loadLocalManifest } from '../manifest.ts';
+import {
+  type ProjectGitTarget,
+  configureProjectGitAuth,
+  resolveProjectGitTarget,
+} from '../project-git.ts';
+import { isKortixProject, loadLink, resolveProjectId } from '../project-link.ts';
+import { promptSecret } from '../prompts.ts';
+import { C, help, status } from '../style.ts';
+import { projectWebUrl } from '../web-url.ts';
 import { ensureConnectorsConnected, reconcileShippedManifest } from './ship-connectors.ts';
 import {
   bindShippedFolder,
@@ -27,9 +34,6 @@ import {
   manifestProjectName,
   resolveShipAccount,
 } from './ship-provision.ts';
-import { C, help, status } from '../style.ts';
-import { projectWebUrl } from '../web-url.ts';
-import type { ProjectSummary, ProjectSecretsResponse } from '../api/types.ts';
 
 const HELP = help`Usage: kortix ship [options]
 
@@ -113,21 +117,25 @@ interface ProvisionResponse extends ProjectSummary {
 }
 
 export async function runShip(argv: string[]): Promise<number> {
-  const flags = takeFlags(argv, HELP, (rest): ShipFlags => ({
-    name: takeFlagValue(rest, ['--name']),
-    account: takeFlagValue(rest, ['--account']),
-    origin: takeFlagValue(rest, ['--origin']),
-    githubToken: takeFlagValue(rest, ['--github-token']),
-    message: takeFlagValue(rest, ['--message', '-m']),
-    project: takeFlagValue(rest, ['--project']),
-    host: takeFlagValue(rest, ['--host']),
-    noCommit: takeFlagBool(rest, ['--no-commit']),
-    noVerify: takeFlagBool(rest, ['--no-verify']),
-    noEnv: takeFlagBool(rest, ['--no-env']),
-    noConnect: takeFlagBool(rest, ['--no-connect']),
-    yes: takeFlagBool(rest, ['-y', '--yes']),
-    dryRun: takeFlagBool(rest, ['-n', '--dry-run']),
-  }));
+  const flags = takeFlags(
+    argv,
+    HELP,
+    (rest): ShipFlags => ({
+      name: takeFlagValue(rest, ['--name']),
+      account: takeFlagValue(rest, ['--account']),
+      origin: takeFlagValue(rest, ['--origin']),
+      githubToken: takeFlagValue(rest, ['--github-token']),
+      message: takeFlagValue(rest, ['--message', '-m']),
+      project: takeFlagValue(rest, ['--project']),
+      host: takeFlagValue(rest, ['--host']),
+      noCommit: takeFlagBool(rest, ['--no-commit']),
+      noVerify: takeFlagBool(rest, ['--no-verify']),
+      noEnv: takeFlagBool(rest, ['--no-env']),
+      noConnect: takeFlagBool(rest, ['--no-connect']),
+      yes: takeFlagBool(rest, ['-y', '--yes']),
+      dryRun: takeFlagBool(rest, ['-n', '--dry-run']),
+    }),
+  );
   if (typeof flags === 'number') return flags;
 
   // ── Guards ───────────────────────────────────────────────────────────────
@@ -157,7 +165,9 @@ export async function runShip(argv: string[]): Promise<number> {
           `${C.cyan}kortix login --host ${hostName}${C.reset}.\n`,
       );
     } else {
-      process.stderr.write(`${status.err('Not logged in.')} Run ${C.cyan}kortix login${C.reset}.\n`);
+      process.stderr.write(
+        `${status.err('Not logged in.')} Run ${C.cyan}kortix login${C.reset}.\n`,
+      );
     }
     return 1;
   }
@@ -289,7 +299,9 @@ async function ensureProjectEnv(
 
   if (missing.length === 0) {
     const total = spec.required.length + spec.optional.length;
-    process.stdout.write(`  ${C.dim}env  ${total} declared secret${total === 1 ? '' : 's'} set${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}env  ${total} declared secret${total === 1 ? '' : 's'} set${C.reset}\n`,
+    );
     return;
   }
 
@@ -341,7 +353,6 @@ async function ensureProjectEnv(
   }
 }
 
-
 // ── First ship: create the cloud project, wire the remote, push ─────────────
 async function shipFirstTime(
   client: ApiClient,
@@ -357,9 +368,7 @@ async function shipFirstTime(
 
   // Decide origin without asking: explicit flag → existing remote → managed.
   const explicitUrl =
-    flags.origin && flags.origin !== 'managed' && flags.origin !== 'github'
-      ? flags.origin
-      : null;
+    flags.origin && flags.origin !== 'managed' && flags.origin !== 'github' ? flags.origin : null;
   const forceManaged = flags.origin === 'managed';
   const existingOrigin = forceManaged ? null : detectOrigin();
   const byoUrl = explicitUrl ?? existingOrigin;
@@ -384,8 +393,18 @@ async function shipFirstTime(
     // GitHub origin → the seamless import (one-click App install, or --github-token).
     // Non-GitHub remote → the generic project link.
     project = github
-      ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
-      : await client.post<ProjectSummary>('/projects', { repo_url: byoUrl, name, account_id: accountId });
+      ? await linkGitHubBackedProject(client, {
+          repoUrl: byoUrl,
+          name,
+          accountId,
+          githubToken: flags.githubToken,
+          yes: flags.yes,
+        })
+      : await client.post<ProjectSummary>('/projects', {
+          repo_url: byoUrl,
+          name,
+          account_id: accountId,
+        });
     bindShippedFolder(project, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
     gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
@@ -489,7 +508,6 @@ async function shipExisting(
   return finishShip(client, auth, project, target, flags, env, { pushToken, pushUsername });
 }
 
-
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {
   // Prefer the server-provided dashboard URL; only fall back to guessing from
   // the API host for older backends that don't return one.
@@ -513,7 +531,9 @@ function explainLinkedProjectError(err: unknown, projectId: string, auth: Auth):
   const host = link?.host ?? 'default';
 
   if (err.status === 403) {
-    const linkedAccount = link?.account_id ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}` : '';
+    const linkedAccount = link?.account_id
+      ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}`
+      : '';
     process.stderr.write(
       `\n${status.err("This folder is linked to a project on an account you can't access.")}\n` +
         `  ${C.dim}linked project ${C.reset}${projectId}${linkedAccount}\n` +

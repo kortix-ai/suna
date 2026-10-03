@@ -1,13 +1,13 @@
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveAccountContext,
   resolveSpanInstant,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
 } from '../command-helpers.ts';
 import { iamBase } from '../iam.ts';
 import { confirm } from '../prompts.ts';
@@ -151,17 +151,22 @@ async function connectedApps(
       process.stdout.write(`\n  ${C.dim}No connected apps.${C.reset}\n\n`);
       return 0;
     }
-    const label = (g: ConnectedApp) => (g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name);
+    const label = (g: ConnectedApp) =>
+      g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name;
     const nameW = Math.max(...grants.map((g) => visibleWidth(label(g))), 4);
     process.stdout.write('\n');
-    process.stdout.write(`  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`,
+    );
     for (const g of grants) {
       process.stdout.write(
         `  ${pad(label(g), nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
           `${pad((g.last_active_at ?? g.granted_at ?? '-').slice(0, 10), 11)}   ${C.faded}${g.client_id}${C.reset}\n`,
       );
     }
-    process.stdout.write(`\n  ${C.dim}${grants.length} app${grants.length === 1 ? '' : 's'}${C.reset}\n\n`);
+    process.stdout.write(
+      `\n  ${C.dim}${grants.length} app${grants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+    );
     return 0;
   }
   if (action === 'rm' || action === 'revoke') {
@@ -178,12 +183,16 @@ async function connectedApps(
         return 0;
       }
     }
-    const r = await ctx.client.delete<{ revoked_tokens: number }>(`/oauth/grants/${encodeURIComponent(clientId)}`);
+    const r = await ctx.client.delete<{ revoked_tokens: number }>(
+      `/oauth/grants/${encodeURIComponent(clientId)}`,
+    );
     if (json) {
       emitJson(r);
       return 0;
     }
-    process.stdout.write(`${status.ok(`Revoked ${C.bold}${clientId}${C.reset} (${r.revoked_tokens} live token${r.revoked_tokens === 1 ? '' : 's'})`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Revoked ${C.bold}${clientId}${C.reset} (${r.revoked_tokens} live token${r.revoked_tokens === 1 ? '' : 's'})`)}\n`,
+    );
     return 0;
   }
   return fail(`Unknown \`tokens apps\` action "${action}". Use ls or rm.`);
@@ -216,11 +225,18 @@ export async function runTokens(argv: string[]): Promise<number> {
   let expiresAt: string | undefined;
   if (f.expires !== undefined) {
     const iso = resolveExpiry(f.expires);
-    if (!iso) return fail(`--expires "${f.expires}" is not an ISO-8601 instant or a span like 30d/12h/6w/1y.`);
+    if (!iso)
+      return fail(
+        `--expires "${f.expires}" is not an ISO-8601 instant or a span like 30d/12h/6w/1y.`,
+      );
     expiresAt = iso;
   }
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host, accountOptional: sub === 'apps' });
+  const ctx = resolveAccountContext({
+    accountArg: f.account,
+    hostArg: f.host,
+    accountOptional: sub === 'apps',
+  });
   if (!ctx) return 1;
   const saBase = `${iamBase(ctx.accountId)}/service-accounts`;
 
@@ -251,8 +267,7 @@ export async function runTokens(argv: string[]): Promise<number> {
           `  ${C.dim}${pad('NAME', nameW)}   ${pad('PUBLIC KEY', keyW)}   ${pad('STATUS', 7)}   ${pad('EXPIRES', 10)}   TOKEN ID${C.reset}\n`,
         );
         for (const t of tokens) {
-          const state =
-            t.status === 'active' ? t.status : `${C.yellow}${t.status}${C.reset}`;
+          const state = t.status === 'active' ? t.status : `${C.yellow}${t.status}${C.reset}`;
           process.stdout.write(
             `  ${pad(t.name, nameW)}   ${pad(t.public_key, keyW)}   ${pad(state, 7)}   ` +
               `${pad(t.expires_at ? t.expires_at.slice(0, 10) : 'never', 10)}   ${C.faded}${t.token_id}${C.reset}\n`,

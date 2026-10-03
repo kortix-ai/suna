@@ -10,7 +10,7 @@ import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import type { AppBlockV2 } from '@kortix/manifest-schema';
-import type { App, AppSource, AppHostingProvider, AppAccessMode, ProjectHandle } from '@kortix/sdk';
+import type { App, AppAccessMode, AppHostingProvider, AppSource, ProjectHandle } from '@kortix/sdk';
 import ignore from 'ignore';
 import * as tar from 'tar';
 
@@ -89,10 +89,18 @@ export async function provisionDeployApp(
     const existing = (await apps.list()).find((row) => row.slug === manifestSlug);
     const settings = {
       ...(manifestBlock?.resources?.cpu !== undefined ? { cpu: manifestBlock.resources.cpu } : {}),
-      ...(manifestBlock?.resources?.memory_gb !== undefined ? { memory_gb: manifestBlock.resources.memory_gb } : {}),
-      ...(manifestBlock?.resources?.disk_gb !== undefined ? { disk_gb: manifestBlock.resources.disk_gb } : {}),
-      ...(manifestBlock?.idle_timeout_seconds !== undefined ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds } : {}),
-      ...(manifestBlock?.monthly_budget_usd !== undefined ? { monthly_budget_usd: manifestBlock.monthly_budget_usd } : {}),
+      ...(manifestBlock?.resources?.memory_gb !== undefined
+        ? { memory_gb: manifestBlock.resources.memory_gb }
+        : {}),
+      ...(manifestBlock?.resources?.disk_gb !== undefined
+        ? { disk_gb: manifestBlock.resources.disk_gb }
+        : {}),
+      ...(manifestBlock?.idle_timeout_seconds !== undefined
+        ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
+        : {}),
+      ...(manifestBlock?.monthly_budget_usd !== undefined
+        ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
+        : {}),
     };
     return existing
       ? await apps.update(existing.app_id, settings)
@@ -102,7 +110,9 @@ export async function provisionDeployApp(
           ...settings,
         });
   }
-  const inferred = flags.image ? flags.image.split('/').pop()!.split(':')[0]! : basename(sourcePath!);
+  const inferred = flags.image
+    ? flags.image.split('/').pop()!.split(':')[0]!
+    : basename(sourcePath!);
   const slug = slugFrom(flags.slug ?? inferred);
   return apps.create({ slug, name: flags.name ?? slug });
 }
@@ -127,7 +137,8 @@ export async function stageArtifact(
   json: boolean,
 ): Promise<{ artifactId: string; source: AppSource; cleanup?: () => Promise<void> }> {
   if (flags.image) {
-    if (!flags.command || !flags.port) throw new Error('OCI deployments require --command and --port');
+    if (!flags.command || !flags.port)
+      throw new Error('OCI deployments require --command and --port');
     const registered = await apps.artifacts.register({ kind: 'oci_image', image: flags.image });
     return {
       artifactId: registered.artifact.artifact_id,
@@ -158,7 +169,8 @@ export async function stageArtifact(
   const source = buildSource(kind, flags);
   const artifact = await apps.artifacts.uploadArchive(bytes, {
     onProgress: (uploaded, total) => {
-      if (!json && uploaded === total) process.stderr.write(`${C.dim}Uploaded ${total} bytes.${C.reset}\n`);
+      if (!json && uploaded === total)
+        process.stderr.write(`${C.dim}Uploaded ${total} bytes.${C.reset}\n`);
     },
   });
   return { artifactId: artifact.artifact_id, source, cleanup };
@@ -207,7 +219,10 @@ function buildSource(kind: 'static' | 'bundle' | 'dockerfile', flags: DeployFlag
   };
 }
 
-export async function archiveAppDirectory(source: string, includeNodeModules: boolean): Promise<{
+export async function archiveAppDirectory(
+  source: string,
+  includeNodeModules: boolean,
+): Promise<{
   bytes: Uint8Array;
   cleanup: () => Promise<void>;
 }> {
@@ -250,7 +265,6 @@ export async function archiveAppDirectory(source: string, includeNodeModules: bo
     cleanup: () => rm(temporary, { recursive: true, force: true }),
   };
 }
-
 
 export async function readAppArchive(source: string): Promise<Uint8Array> {
   const file = await open(source, 'r');

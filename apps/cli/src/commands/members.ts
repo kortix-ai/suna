@@ -1,14 +1,14 @@
-import { clientFromAuth } from '../api/client.ts';
+import type { clientFromAuth } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  fail,
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { confirm } from '../prompts.ts';
@@ -225,9 +225,7 @@ async function membersLs(
 // ── members invite ─────────────────────────────────────────────────────────
 
 /** `--project <id>:<role>` → the `project_grants` entry the API expects. */
-function parseProjectGrant(
-  raw: string,
-): { project_id: string; role: string } | { error: string } {
+function parseProjectGrant(raw: string): { project_id: string; role: string } | { error: string } {
   const idx = raw.lastIndexOf(':');
   const projectId = idx < 0 ? raw : raw.slice(0, idx);
   const role = idx < 0 ? 'member' : raw.slice(idx + 1);
@@ -302,7 +300,9 @@ async function membersInvite(
     }
   }
   for (const g of result.project_grants ?? []) {
-    process.stdout.write(`  ${C.dim}project ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}project ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`,
+    );
   }
   return 0;
 }

@@ -164,10 +164,7 @@ export async function runReview(argv: string[]): Promise<number> {
 
 // ── subcommands ────────────────────────────────────────────────────────────
 
-async function reviewLs(
-  f: Record<string, string | undefined>,
-  json: boolean,
-): Promise<number> {
+async function reviewLs(f: Record<string, string | undefined>, json: boolean): Promise<number> {
   if (f.segment && !(SEGMENTS as readonly string[]).includes(f.segment)) {
     return fail(`--segment must be one of ${SEGMENTS.join(', ')}`);
   }
@@ -267,7 +264,8 @@ async function reviewShow(
     ['session', item.origin_session_id ?? '—'],
     ['created', item.created_at],
   ];
-  if (item.acted_at) rows.push(['acted', `${item.acted_at}${item.acted_by ? ` by ${item.acted_by}` : ''}`]);
+  if (item.acted_at)
+    rows.push(['acted', `${item.acted_at}${item.acted_by ? ` by ${item.acted_by}` : ''}`]);
   if (item.feedback) rows.push(['feedback', item.feedback]);
   const labelW = Math.max(...rows.map(([label]) => label.length)) + 1;
 
@@ -286,7 +284,9 @@ async function reviewShow(
         .join('\n')}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}Decide it: ${C.reset}${C.cyan}kortix review act ${item.review_item_id} approve${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}Decide it: ${C.reset}${C.cyan}kortix review act ${item.review_item_id} approve${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -464,10 +464,7 @@ async function reviewBulk(
   return plan.native.length === 0 ? 1 : 0;
 }
 
-async function reviewSubmit(
-  f: Record<string, string | undefined>,
-  json: boolean,
-): Promise<number> {
+async function reviewSubmit(f: Record<string, string | undefined>, json: boolean): Promise<number> {
   if (!f.kind) return missing(`--kind ${SUBMIT_KINDS.join('|')}`);
   if (!(SUBMIT_KINDS as readonly string[]).includes(f.kind)) {
     return fail(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
