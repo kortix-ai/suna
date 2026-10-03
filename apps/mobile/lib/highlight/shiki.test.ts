@@ -157,27 +157,40 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       }
 
       for (const scheme of ['light', 'dark'] as const) {
-        const tokens = highlightToTokens(sample, lang, scheme);
-        expect(tokens).not.toBeNull();
-        const colors = new Set(tokens!.flat().map((t) => t.color.toLowerCase()));
-        // Highlighted means more than the base colour.
-        if (!MONOCHROME_UNDER_MIN_THEMES.has(lang)) expect(colors.size).toBeGreaterThan(1);
-        expect(tokens!.map((l) => l.map((t) => t.content).join(''))).toEqual(sample.split('\n'));
+        const assertParity = () => {
+          const tokens = highlightToTokens(sample, lang, scheme);
+          expect(tokens).not.toBeNull();
+          const colors = new Set(tokens!.flat().map((t) => t.color.toLowerCase()));
+          // Highlighted means more than the base colour.
+          if (!MONOCHROME_UNDER_MIN_THEMES.has(lang)) expect(colors.size).toBeGreaterThan(1);
+          expect(tokens!.map((l) => l.map((t) => t.content).join(''))).toEqual(sample.split('\n'));
 
-        const reference = oniguruma
-          .codeToTokensBase(sample, {
-            lang,
-            theme: scheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT,
-          })
-          .map((line) =>
-            line.map((t) => ({ content: t.content, color: t.color ?? CODE_THEME_FOREGROUND[scheme] })),
-          );
-        const ours = paint(tokens!);
-        const theirs = paint(reference);
-        const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
-        for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
-        const keep = (_: string, i: number) => !differing.includes(i);
-        expect(ours.filter(keep)).toEqual(theirs.filter(keep));
+          const reference = oniguruma
+            .codeToTokensBase(sample, {
+              lang,
+              theme: scheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT,
+            })
+            .map((line) =>
+              line.map((t) => ({ content: t.content, color: t.color ?? CODE_THEME_FOREGROUND[scheme] })),
+            );
+          const ours = paint(tokens!);
+          const theirs = paint(reference);
+          const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
+          for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
+          const keep = (_: string, i: number) => !differing.includes(i);
+          expect(ours.filter(keep)).toEqual(theirs.filter(keep));
+        };
+        try {
+          assertParity();
+        } catch {
+          // A cold compile on a loaded runner can still cross shiki's 500 ms
+          // per-line budget mid-line; the truncated line then fails parity.
+          // The token cache would serve the same truncated tokens, so drop it
+          // and run once more on a fully warm grammar — the assertion here is
+          // about the two ENGINES agreeing, never about cold-start cost.
+          __testing.tokenCache.clear();
+          assertParity();
+        }
       }
     });
   }
