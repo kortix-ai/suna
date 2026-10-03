@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: this throttle rate-limits a WARN log line, one copy per API
+// replica. It is not refusal accounting — the header above points exact
+// accounting at request-completion logs and auth audits, so a per-replica
+// window cannot undercount or double-count anything that matters.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
