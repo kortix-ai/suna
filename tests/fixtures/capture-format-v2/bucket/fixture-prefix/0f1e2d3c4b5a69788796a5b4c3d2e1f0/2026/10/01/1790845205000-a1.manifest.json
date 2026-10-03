@@ -1,0 +1,42 @@
+{
+  "app_version": "0.1.0",
+  "audio_id": 1,
+  "audio_name": "1790845205000.m4a",
+  "channels": 1,
+  "codec": "aac",
+  "content_type": "audio/mp4",
+  "created_at_ms": 1791051488434,
+  "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "duration_ms": 60000,
+  "encryption": null,
+  "end_ms": 1790845265000,
+  "kind": "audio",
+  "objects": {
+    "audio": {
+      "key": "0f1e2d3c4b5a69788796a5b4c3d2e1f0/2026/10/01/1790845205000-a1.m4a",
+      "plain_sha256": "f1eb9648d9e9fc87b09b77f5fe1e6d5e387bb4ab202a7e67f89e06d04a6344a6",
+      "plain_size": 1024,
+      "sha256": "f1eb9648d9e9fc87b09b77f5fe1e6d5e387bb4ab202a7e67f89e06d04a6344a6",
+      "size": 1024
+    }
+  },
+  "pii_redacted": false,
+  "privacy": {
+    "mode": "off",
+    "redact_pii": false
+  },
+  "sample_rate": 16000,
+  "schema": 2,
+  "sources": [
+    "microphone",
+    "system"
+  ],
+  "start_ms": 1790845205000,
+  "transcript": [
+    {
+      "end_ms": 1790845210000,
+      "start_ms": 1790845207000,
+      "text": "we ship the roadmap on friday"
+    }
+  ]
+}

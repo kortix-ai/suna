@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/status.schema.json",
+  "title": "status.json",
+  "description": "<prefix>/<device_id>/status.json, plaintext, written every 60 s. A reader shows the device offline when reportedAtMs is older than 120 s.",
+  "type": "object",
+  "required": [
+    "recording",
+    "reason",
+    "missingPermissions",
+    "pausedUntilMs",
+    "audio",
+    "sync",
+    "lastFrameMs",
+    "appVersion",
+    "actionsRecording",
+    "reportedAtMs"
+  ],
+  "properties": {
+    "recording": {
+      "enum": [
+        "recording",
+        "paused",
+        "permission_missing",
+        "not_recording"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "missingPermissions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pausedUntilMs": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "audio": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "ok",
+            "queued",
+            "error",
+            "off"
+          ]
+        },
+        "pending": {
+          "type": "integer"
+        },
+        "errorClass": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastUploadMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "lastFrameMs": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "appVersion": {
+      "type": "string"
+    },
+    "actionsRecording": {
+      "type": "boolean"
+    },
+    "policy": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "source"
+          ],
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "updatedAtMs": {
+              "type": "integer"
+            },
+            "fetchedAtMs": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "reportedAtMs": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

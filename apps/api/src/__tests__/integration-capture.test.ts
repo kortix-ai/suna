@@ -1,8 +1,9 @@
 /**
  * Integration test (real local PostgreSQL): Kortix Capture ingestion, detected
  * ranges, the range pipelines and retention. The object store is an in-memory
- * map behind the capture store module, holding a synthetic schema-2 day built
- * by the same fixture the CAP flows upload (tests/src/fixtures/capture.ts).
+ * map behind the capture store module, holding the engine's vendored fixture
+ * bucket (tests/fixtures/capture-format-v2, pinned) re-rooted under a Kortix
+ * prefix by the same fixture the CAP flows upload (tests/src/fixtures/capture.ts).
  * The pipelines run with a scripted model caller: the orchestration, the
  * stored outputs and the deterministic segmentation rules are what is proved
  * here; real gateway calls are proved by hand (PR body).
@@ -27,6 +28,8 @@ mock.module('../capture/store', () => ({
       return keys.length;
     },
     presignDownload: async (key: string) => ({ url: `https://store.test/${key}`, expiresAt: new Date() }),
+    list: async (prefix: string) =>
+      [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, body]) => ({ key, bytes: body.byteLength, lastModified: new Date(0) })),
   },
   captureStoreConfigured: () => true,
   captureRegion: () => 'us-east-1',
@@ -44,7 +47,7 @@ const { processRange, applyIdleWindows, computeIdleWindows, normalizeSegments } 
 const { applyRetention, closeQuietRanges, pollDevice } = await import('../capture/workers');
 const { writeProjectPolicy } = await import('../capture/policy');
 const { DEFAULT_POLICY, projectPrefix } = await import('../capture/format');
-const { buildCaptureDay } = await import('../../../../tests/src/fixtures/capture');
+const { vendoredDevice } = await import('../../../../tests/src/fixtures/capture');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -82,17 +85,17 @@ afterAll(async () => {
 });
 
 describe('ingestion', () => {
-  let day: ReturnType<typeof buildCaptureDay>;
+  let day: ReturnType<typeof vendoredDevice>;
 
   test('the index reader queues every complete item and reads live status and device.json', async () => {
-    day = buildCaptureDay({ prefix: PREFIX, deviceId, machineKeySha256: MACHINE, marker: 'zqintegration' });
+    day = vendoredDevice({ prefix: PREFIX, deviceId, machineKeySha256: MACHINE });
     for (const object of day.objects) objects.set(object.key, object.body);
     const [device] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
     const polled = await pollDevice(device!);
     expect(polled.enqueued).toBe(day.manifestKeys.length);
     const [after] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
     expect(after!.status?.recording).toBe('recording');
-    expect(after!.name).toBe('Fixture Laptop');
+    expect(after!.name).toBe('Fixture Computer');
     // Unchanged index on the next poll: nothing new is queued.
     expect((await pollDevice(after!)).enqueued).toBe(0);
   });
@@ -117,16 +120,21 @@ describe('ingestion', () => {
     expect(await count('timeline_frames')).toBe(day.expected.frames);
   });
 
-  test('two sessions 40 minutes apart are two detected ranges; activity bridging them merges them into one', async () => {
-    const ranges = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId)).orderBy(timelineRanges.startAt);
-    expect(ranges.length).toBe(2);
-    expect(ranges.every((r) => r.source === 'detected' && r.status === 'open')).toBe(true);
+  test('the fixture minute is one detected range; activity within 15 minutes grows it, a later session starts another, a bridge merges them', async () => {
+    const [only] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
+    expect(only).toMatchObject({ source: 'detected', status: 'open' });
+    expect(only!.startAt.getTime()).toBe(day.startMs);
+    expect(only!.endAt.getTime()).toBe(day.endMs);
     const device = { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, deviceId };
-    await extendDetectedRange(device, new Date(ranges[0]!.endAt.getTime() + 10 * 60_000), new Date(ranges[1]!.startAt.getTime() - 10 * 60_000));
-    const merged = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
-    expect(merged.length).toBe(1);
-    expect(merged[0]!.startAt.getTime()).toBe(ranges[0]!.startAt.getTime());
-    expect(merged[0]!.endAt.getTime()).toBe(ranges[1]!.endAt.getTime());
+    const later = new Date(day.endMs + 40 * 60_000);
+    await extendDetectedRange(device, later, new Date(later.getTime() + 60_000));
+    let ranges = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId)).orderBy(timelineRanges.startAt);
+    expect(ranges.length).toBe(2);
+    await extendDetectedRange(device, new Date(day.endMs + 10 * 60_000), new Date(later.getTime() - 10 * 60_000));
+    ranges = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
+    expect(ranges.length).toBe(1);
+    expect(ranges[0]!.startAt.getTime()).toBe(day.startMs);
+    expect(ranges[0]!.endAt.getTime()).toBe(later.getTime() + 60_000);
   });
 
   test('a changed object, a foreign object key, an unknown device and a newer schema are refused', async () => {
@@ -153,7 +161,11 @@ describe('ingestion', () => {
   test('a project with capture off indexes nothing', async () => {
     await db.update(projects).set({ metadata: { experimental: { capture: false } } }).where(eq(projects.projectId, PROJECT));
     const key = day.manifestKeys[0]!;
-    await db.delete(timelineChunks).where(eq(timelineChunks.manifestKey, key));
+    // Forget the item entirely (its lines too), as if it had never been indexed.
+    const [gone] = await db.delete(timelineChunks).where(eq(timelineChunks.manifestKey, key)).returning({ chunkId: timelineChunks.chunkId });
+    for (const table of ['timeline_frames', 'timeline_actions', 'timeline_audio']) {
+      await db.execute(sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id = ${gone!.chunkId}::uuid`);
+    }
     expect(await ingestManifest(key)).toEqual({ status: 'skipped', reason: 'capture is off for the project' });
     await db.update(projects).set({ metadata: { experimental: { capture: true } } }).where(eq(projects.projectId, PROJECT));
     expect((await ingestManifest(key)).status).toBe('indexed');
@@ -229,16 +241,48 @@ describe('ranges and processing', () => {
     expect(done!.title).toBe('Q3 budget work');
     // The timeline the model saw names what was on screen, what was typed, and what was heard.
     const seg = prompts.find((p) => p.includes('TIME-SEGMENTATION'))!;
-    expect(seg).toContain('Screen: Sheets — Q3 budget.xlsx');
-    expect(seg).toContain('Type "forecast zqintegration"');
-    expect(seg).toContain('Heard: "Let us review the zqintegration rollout plan');
+    expect(seg).toContain('Screen: Editor — Guide — Editor — https://docs.example.org/guide | text: "quarterly roadmap frame 0 sidebar"');
+    expect(seg).toContain('Type "quarterly plan"');
+    expect(seg).toContain('Heard: "we ship the roadmap on friday"');
+    // The action screenshots are the images the model sees.
+    expect(seg).toMatch(/\[shot:1\]/);
+  });
+});
+
+describe('forget', () => {
+  test('a delete line retracts the item, its rows and the outputs of overlapping ranges; a re-poll is a no-op', async () => {
+    const key = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/`) && /\/\d+-1\.manifest\.json$/.test(k))!;
+    const [chunk] = await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key));
+    const chunkFrames = await count('timeline_frames', sql`chunk_id = ${chunk!.chunkId}::uuid`);
+    expect(chunkFrames).toBeGreaterThan(0);
+    const framesBefore = await count('timeline_frames');
+    const [processed] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
+    expect(processed!.status).toBe('processed');
+    // What the engine does on `storage forget`: remove the item's objects, then append a delete line.
+    const base = key.slice(PREFIX.length + 1, -'.manifest.json'.length);
+    for (const k of [...objects.keys()]) if (k.startsWith(`${PREFIX}/${base}.`)) objects.delete(k);
+    const indexKey = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/index/`))!;
+    const line = JSON.stringify({ op: 'delete', kind: 'chunk', base, reason: 'forget', at_ms: Date.now() });
+    objects.set(indexKey, new TextEncoder().encode(`${new TextDecoder().decode(objects.get(indexKey)!)}${line}\n`));
+
+    const [device] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
+    expect(await pollDevice(device!)).toEqual({ enqueued: 0, forgotten: 1 });
+    expect(await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key))).toEqual([]);
+    expect(await count('timeline_frames')).toBe(framesBefore - chunkFrames);
+    const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, processed!.rangeId));
+    expect(range!.status).toBe('closed');
+    expect(await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, range!.rangeId))).toEqual([]);
+
+    const [again] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
+    expect(await pollDevice(again!)).toEqual({ enqueued: 0, forgotten: 0 });
   });
 });
 
 describe('retention', () => {
   test('items older than remote_days lose their objects first, then their rows', async () => {
     await writeProjectPolicy({ projectId: PROJECT, accountId: ACCOUNT }, { ...DEFAULT_POLICY, retention: { local_hours: 0, remote_days: 1 } }, MEMBER);
-    await db.execute(sql`UPDATE kortix.timeline_chunks SET end_at = now() - interval '2 days' WHERE device_id = ${deviceId}::uuid AND kind = 'actions'`);
+    // The fixture day is in the past: keep every item but the action segments inside the window.
+    await db.execute(sql`UPDATE kortix.timeline_chunks SET end_at = CASE WHEN kind = 'actions' THEN now() - interval '2 days' ELSE now() END WHERE device_id = ${deviceId}::uuid`);
     const actionChunks = await db.select().from(timelineChunks).where(and(eq(timelineChunks.deviceId, deviceId), eq(timelineChunks.kind, 'actions')));
     // Rows keep their real event time; retention deletes them by chunk.
     const removedCount = await applyRetention();

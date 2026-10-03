@@ -62,7 +62,7 @@ export async function startDeviceGrant(machineKey: string, deviceInfo: Record<st
 
 export type PollOutcome =
   | { kind: 'invalid_grant' | 'access_denied' | 'expired_token' | 'slow_down' | 'authorization_pending' }
-  | { kind: 'token'; token: string; prefix: string; deviceId: string };
+  | { kind: 'token'; token: string; prefix: string; deviceId: string; userId: string };
 
 /** RFC 8628 §3.4: the device polls with its device code. An approved grant mints the token exactly once. */
 export async function pollDeviceGrant(deviceCode: string): Promise<PollOutcome> {
@@ -95,7 +95,7 @@ export async function pollDeviceGrant(deviceCode: string): Promise<PollOutcome> 
     return row ?? null;
   });
   if (!device) return { kind: 'invalid_grant' };
-  return { kind: 'token', token, prefix: projectPrefix(device.accountId, device.projectId), deviceId: device.deviceId };
+  return { kind: 'token', token, prefix: projectPrefix(device.accountId, device.projectId), deviceId: device.deviceId, userId: device.userId };
 }
 
 /** The device behind a bearer device token, or null. Always read from the row: a revoke on any replica wins. */

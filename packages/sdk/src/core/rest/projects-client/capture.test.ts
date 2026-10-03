@@ -60,8 +60,9 @@ test('devices: list mine, a member, or the project; revoke; set and clear a devi
   expect(last().url).toBe(`${P}/devices?scope=project`);
   await revokeCaptureDevice('p1', 'd1');
   expect(last()).toMatchObject({ method: 'DELETE', url: `${P}/devices/d1` });
-  nextBody = { device_id: 'd1', enqueued: 3 };
-  expect((await syncCaptureDevice('p1', 'd1')).enqueued).toBe(3);
+  nextBody = { device_id: 'd1', enqueued: 3, forgotten: 1 };
+  const synced = await syncCaptureDevice('p1', 'd1');
+  expect([synced.enqueued, synced.forgotten]).toEqual([3, 1]);
   expect(last()).toMatchObject({ method: 'POST', url: `${P}/devices/d1/sync` });
   await setCaptureDevicePolicy('p1', 'd1', POLICY);
   expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d1/policy`, body: { policy: POLICY } });

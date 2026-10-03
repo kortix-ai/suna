@@ -19,6 +19,7 @@ import type { Context } from 'hono';
 import { config } from '../config';
 import { featureDisabledBody } from '../feature-flags/gate';
 import { resolveFeatureFlag } from '../feature-flags/registry';
+import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
 import { logger } from '../lib/logger';
 import { supabaseAuth } from '../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -44,18 +45,6 @@ import {
 } from './devices';
 import { projectPrefix } from './format';
 import { ensurePolicyObject } from './policy';
-
-const DeviceInfoSchema = z
-  .object({
-    machine_key_sha256: z.string().optional().describe('sha256 hex of the machine key; never the raw OS id'),
-    hostname: z.string().nullable().optional(),
-    computer_name: z.string().nullable().optional(),
-    os: z.string().optional(),
-    os_version: z.string().optional(),
-    arch: z.string().optional(),
-    app_version: z.string().optional(),
-  })
-  .passthrough();
 
 /** RFC 8628 / RFC 6749 §5.2 error body. */
 const RfcError = z.object({ error: z.string(), error_description: z.string().optional() });
@@ -119,10 +108,19 @@ export function createCaptureRouter() {
           required: false,
           content: {
             'application/json': {
-              schema: DeviceInfoSchema.extend({
-                client_id: z.string().optional(),
-                device: DeviceInfoSchema.optional().describe('The capture format shape; wins over the flat fields'),
-              }).passthrough(),
+              schema: z
+                .object({
+                  client_id: z.string().optional(),
+                  device: z.record(z.string(), z.any()).optional().describe('The engine nests the fields below here'),
+                  machine_key_sha256: z.string().optional().describe('sha256 hex of the machine key; never the raw OS id'),
+                  hostname: z.string().optional(),
+                  computer_name: z.string().optional(),
+                  os: z.string().optional(),
+                  os_version: z.string().optional(),
+                  arch: z.string().optional(),
+                  app_version: z.string().optional(),
+                })
+                .passthrough(),
             },
           },
         },
@@ -145,10 +143,9 @@ export function createCaptureRouter() {
     async (c) => {
       const blocked = limited(c, 'captureAuthorizeGlobal', 'global') ?? limited(c, 'captureAuthorize', requestClientKey(c));
       if (blocked) return blocked as never;
-      // The capture format names the device under `device` (capture-format.md,
-      // "Credentials"); a flat body is the older shape. Both are accepted.
       const raw = await readBody(c);
-      const body = raw.device && typeof raw.device === 'object' ? { ...raw, ...(raw.device as Record<string, unknown>) } : raw;
+      // The engine sends `{client_id, device: {machine_key_sha256, hostname, …}}`; a flat body works too.
+      const body = raw.device && typeof raw.device === 'object' ? (raw.device as Record<string, unknown>) : raw;
       const machineKey = typeof body.machine_key_sha256 === 'string' ? body.machine_key_sha256.toLowerCase() : '';
       if (!/^[0-9a-f]{64}$/.test(machineKey)) {
         return rfcError(c, 'invalid_request', 'machine_key_sha256 must be 64 hex characters') as never;
@@ -192,7 +189,13 @@ export function createCaptureRouter() {
       },
       responses: {
         200: json(
-          z.object({ device_token: z.string(), token_type: z.literal('Bearer'), prefix: z.string(), device_id: z.string() }),
+          z.object({
+            device_token: z.string(),
+            token_type: z.literal('Bearer'),
+            prefix: z.string(),
+            device_id: z.string(),
+            member: z.object({ email: z.string().nullable() }),
+          }),
           'The device token and the folder the device writes to',
         ),
         ...rfc(),
@@ -215,7 +218,17 @@ export function createCaptureRouter() {
         }[outcome.kind];
         return rfcError(c, outcome.kind, description) as never;
       }
-      return c.json({ device_token: outcome.token, token_type: 'Bearer' as const, prefix: outcome.prefix, device_id: outcome.deviceId }, 200);
+      const email = (await lookupEmailsByUserIds([outcome.userId])).get(outcome.userId) ?? null;
+      return c.json(
+        {
+          device_token: outcome.token,
+          token_type: 'Bearer' as const,
+          prefix: outcome.prefix,
+          device_id: outcome.deviceId,
+          member: { email },
+        },
+        200,
+      );
     },
   );
 
@@ -238,7 +251,7 @@ export function createCaptureRouter() {
             secret_access_key: z.string(),
             session_token: z.string(),
             expires_at_ms: z.number(),
-            path_style: z.literal(true).optional().describe('Present when the store needs path-style URLs (MinIO, self-hosted S3)'),
+            path_style: z.boolean(),
           }),
           'Credentials; refresh 5 minutes before expires_at_ms',
         ),

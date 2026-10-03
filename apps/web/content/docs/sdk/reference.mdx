@@ -621,7 +621,7 @@ reads only the timeline of the person its private session acts for
 
 | method | what |
 | --- | --- |
-| `devices.list({ userId?, scope? })` · `devices.revoke(deviceId)` · `devices.sync(deviceId)` | devices with live status (`live.state`: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status) · revoke a device's token · read its index and status now and queue new items |
+| `devices.list({ userId?, scope? })` · `devices.revoke(deviceId)` · `devices.sync(deviceId)` | devices with live status (`live.state`: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status) · revoke a device's token · read its index and status now: `enqueued` new items, `forgotten` items the device deleted (Kortix removes them and the outputs of the ranges they overlapped) |
 | `devices.setPolicy(deviceId, policy \| null)` · `devices.assetUrl(deviceId, name)` | a manager's per-device policy override (null clears it) · a 5-minute signed URL of an action screenshot |
 | `policy.get()` · `policy.set(policy)` | the project policy (`layers`, `privacy`, `retention`, `recording`, `notice`); a manager's write also publishes `<prefix>/policy.json` for devices |
 | `timeline.get({ day?, from?, to?, userId?, deviceId? })` · `timeline.items(query)` | activity runs (app and window), indexed items and ranges for a UTC day or a window up to 31 days · frames, actions and audio lines in a window (500 of each) |

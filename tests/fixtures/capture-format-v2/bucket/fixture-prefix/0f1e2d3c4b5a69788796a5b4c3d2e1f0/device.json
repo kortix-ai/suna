@@ -1,0 +1,18 @@
+{
+  "app_version": "0.1.0",
+  "arch": "aarch64",
+  "computer_name": "Fixture Computer",
+  "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "encryption": null,
+  "first_chunk_ms": 1790845200000,
+  "hostname": "fixture-host.local",
+  "last_chunk_ms": 1790845262000,
+  "machine_key_sha256": "7d8211fcdf0e93a009e33c48c970261649cb43b785744040fbc57149d9ce29e0",
+  "member": {
+    "email": "person@example.com"
+  },
+  "os": "macos",
+  "os_version": "26.0",
+  "schema": 2,
+  "updated_at_ms": 1790845320000
+}

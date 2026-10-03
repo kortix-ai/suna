@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/policy.schema.json",
+  "title": "policy.json",
+  "description": "<prefix>/policy.json or <prefix>/<device_id>/policy.json (the device file replaces the prefix file). Written by the operator; applied within 60 s; only narrows what the person allowed.",
+  "type": "object",
+  "required": [
+    "schema"
+  ],
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "layers": {
+      "type": "object",
+      "properties": {
+        "screen": {
+          "type": "boolean"
+        },
+        "actions": {
+          "type": "boolean"
+        },
+        "audio": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "privacy": {
+      "type": "object",
+      "properties": {
+        "redact_pii": {
+          "type": "boolean"
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "local_hours": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remote_days": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "recording": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "paused_until_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "notice": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updated_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
