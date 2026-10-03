@@ -216,12 +216,11 @@ describe('resolveModelDefault', () => {
   const data = {
     agentDefaults: { support: 'anthropic/claude-opus-4-8' },
     projectDefault: 'glm-5.3-flash',
-    accountDefault: null,
     platformDefault: 'kimi-k3',
     freeTier: false,
   } as unknown as ModelDefaultsResponse;
 
-  test('agent > project > account > platform, as gateway ModelKeys', () => {
+  test('agent > project > platform, as gateway ModelKeys', () => {
     expect(resolveModelDefault(data, 'support')).toEqual({
       providerID: 'kortix',
       modelID: 'anthropic/claude-opus-4-8',

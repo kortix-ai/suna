@@ -50,12 +50,6 @@ interface ModelStore {
   lastAgentName?: string;
   /** Per-session model selection — keyed by sessionId so each session remembers its own model across reloads */
   sessionModel?: Record<string, ModelKey | undefined>;
-  /**
-   * User-chosen global default model (set during onboarding setup wizard).
-   * Takes priority over agent.model but yields to per-session and per-agent selections.
-   * This ensures the user's explicit choice during setup is respected everywhere.
-   */
-  globalDefault?: ModelKey;
 }
 
 // ============================================================================
@@ -102,7 +96,6 @@ export function sanitizeModelStore(raw: unknown): ModelStore {
   if (isObj(raw.sessionAgentName)) out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
   if (typeof raw.lastAgentName === 'string') out.lastAgentName = raw.lastAgentName;
   if (isObj(raw.sessionModel)) out.sessionModel = raw.sessionModel as ModelStore['sessionModel'];
-  if (isObj(raw.globalDefault)) out.globalDefault = raw.globalDefault as ModelStore['globalDefault'];
   return out;
 }
 
@@ -154,40 +147,6 @@ registerIdentityReset(() => {
 function subscribe(fn: () => void) {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
-}
-
-/**
- * Non-hook API to SEED the global-default display cache from the server's
- * account default (useModelDefaults). Always reflects the server value (it's the
- * source of truth) but, unlike setGlobalDefaultModel, does NOT clear the user's
- * explicit per-agent / per-session picks — this is passive hydration, not an
- * explicit "make this my default everywhere" action. No-ops when unchanged.
- */
-export function seedGlobalDefaultFromServer(model: ModelKey | undefined): void {
-  const s = getStore();
-  const same =
-    (!s.globalDefault && !model) ||
-    (!!s.globalDefault &&
-      !!model &&
-      s.globalDefault.providerID === model.providerID &&
-      s.globalDefault.modelID === model.modelID);
-  if (same) return;
-  setStore({ ...s, globalDefault: model });
-}
-
-/**
- * Non-hook API to explicitly set the global default model.
- * Use when the user explicitly picks a model as their account default.
- * Clears per-agent/per-session selections so the new default takes effect everywhere.
- */
-export function setGlobalDefaultModel(model: ModelKey | undefined): void {
-  const s = getStore();
-  setStore({
-    ...s,
-    globalDefault: model,
-    selectedModel: {},
-    sessionModel: {},
-  });
 }
 
 // The default-visibility rule is framework-free (`createModelVisibility`), so
@@ -371,23 +330,6 @@ export function useModelStore(
     setStore({ ...s, sessionModel: next });
   }, []);
 
-  // Global default model (set during onboarding setup wizard)
-  const globalDefault = useMemo(() => store.globalDefault, [store.globalDefault]);
-
-  const setGlobalDefault = useCallback((model: ModelKey | undefined) => {
-    const s = getStore();
-    // When setting a new global default, clear ALL per-agent and per-session
-    // selections so the global default takes effect everywhere immediately.
-    // Without this, stale per-agent/per-session data from previous interactions
-    // would override the user's explicit setup choice.
-    setStore({
-      ...s,
-      globalDefault: model,
-      selectedModel: {},
-      sessionModel: {},
-    });
-  }, []);
-
   return {
     isVisible,
     isLatest,
@@ -405,8 +347,6 @@ export function useModelStore(
     setLastAgentName,
     getSessionModel,
     setSessionModel,
-    globalDefault,
-    setGlobalDefault,
     /** All user visibility preferences (for manage models dialog) */
     userPrefs: store.user,
   };

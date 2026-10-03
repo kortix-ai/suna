@@ -9,9 +9,8 @@ import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
 import { resolveModelDefault, useModelDefaults } from './use-model-defaults';
 
 describe('resolveModelDefault', () => {
-  test('uses agent, project, account, then platform precedence', () => {
+  test('uses agent, project, then platform precedence', () => {
     const data = {
-      accountDefault: 'openai/gpt-account',
       projectDefault: 'anthropic/claude-project',
       platformDefault: 'kortix/platform',
       agentDefaults: { coder: 'google/gemini-agent' },
@@ -33,7 +32,6 @@ describe('resolveModelDefault', () => {
     expect(
       resolveModelDefault(
         {
-          accountDefault: null,
           projectDefault: null,
           platformDefault: 'kortix/platform',
           agentDefaults: {},
@@ -55,7 +53,6 @@ describe('model defaults from the session-open snapshot', () => {
   let client: QueryClient;
   const DEFAULTS = {
     platformDefault: 'kortix/platform',
-    accountDefault: null,
     agentDefaults: { coder: 'google/gemini-agent' },
     projectDefault: 'anthropic/claude-project',
     resolvedForCaller: 'anthropic/claude-project',

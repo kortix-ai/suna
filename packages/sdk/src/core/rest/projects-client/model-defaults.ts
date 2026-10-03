@@ -1,19 +1,17 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-// ── Default model preferences (account-scoped, gateway-resolved) ───────────
+// ── Default model preferences (gateway-resolved) ───────────────────────────
 // The LLM gateway is the source of truth for concrete model defaults. These
-// functions read and write account, project, and agent defaults. Stored values
-// are gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
+// functions read and write project and agent defaults. Stored values are
+// gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
-export type ModelDefaultScope = 'account' | 'agent' | 'project';
-export type ModelDefaultSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
+export type ModelDefaultScope = 'agent' | 'project';
+export type ModelDefaultSource = 'explicit' | 'agent' | 'project' | 'platform';
 
 export interface ModelDefaultsResponse {
   /** The platform-wide concrete fallback model. */
   platformDefault: string;
-  /** Account-wide default wire model, or null when unset. */
-  accountDefault: string | null;
   /** Per-agent default wire models, keyed by agent name. */
   agentDefaults: Record<string, string>;
   /** This project's default wire model, or null when unset. */
