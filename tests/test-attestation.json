@@ -1,30 +1,23 @@
 {
-  "source_hash": "0563ac9e50a0c6778df546e333302d7e4a61319ea60a3a99debc16a65c3d5509",
+  "source_hash": "08b37677348c30cbd0e71398d749ff67c64666badc5498b7a0feebee757c78e4",
   "diff_files": [
-    "apps/cli/src/__tests__/no-inline-arg-errors.test.ts",
-    "apps/cli/src/__tests__/validate-argv.blackbox.test.ts",
-    "apps/cli/src/commands/validate.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets-download.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts",
-    "apps/mobile/lib/highlight/shiki.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "packages/db/drizzle/meta/20261003151721_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003150053416_audit_events_actor_aggregate_index.concurrent.ts",
+    "packages/db/scripts/audit-events-actor-index.integration.test.ts",
+    "packages/db/scripts/audit-events-partitioned.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "a306818837089f3e2a69766f50aa4a1c4685da459efbb7e249df7964161a0953",
-  "head": "e8661f93352cfd2a167a31718f173719042645a8",
+  "diff_hash": "5e8451c5d2e40252288ef3868dcf893ecd2cc836c6727b0cda50fa3a264cd126",
+  "head": "db4e2e9bd668129e562f5963e12024a8ebdf8385",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T16:18:07.380Z"
+  "at": "2026-10-03T15:47:53.585Z"
 }
