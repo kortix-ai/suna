@@ -11,9 +11,9 @@ The problem to solve is browser maintenance and missing coverage of real user jo
 Changing the runner does not establish that the existing suite has either problem.
 Measure maintenance effort, false passes, reliability, duration, and model usage before migrating browser tests.
 
-The catalog command on this checkout reports 610 flows, 2,665 cases, 706 route registrations, and 42 domains.
+The initial catalog on base `7703291a92` reports 610 flows, 2,665 cases, 706 route registrations, and 42 domains.
 These are catalog counts, not proof that every case passes or every behavior is covered.
-The generated route manifest separately contains 702 routes.
+That base's generated route manifest separately contains 702 routes.
 The current system already drives real HTTP routes, real CLI processes, PostgreSQL, and browser pages.
 Its distinguishing protections include isolated database suites, explicit capability exclusions, route coverage, and deployed-SHA checks.
 
@@ -33,7 +33,8 @@ The risk is that an agent finds a different path while the intended control is b
 Keep exact assertions for the control, request payload, status, persisted result, and reload behavior.
 Do not let a model redefine the expected result to make a test pass.
 
-The pilot uses one live session prompt.
+The pilot uses one live session prompt with the project's real `warm_sessions` flag explicitly disabled.
+Background warm-pool provisioning is excluded from this journey; the existing warm-session contracts retain that coverage.
 It observes the real request, checks one submission, waits for an assistant reply, verifies both messages in the durable transcript, and reloads the page.
 It creates only synthetic data and removes its session, managed repository, account, and auth user.
 Cleanup runs in `afterEach` with a separate five-minute budget, including after a test timeout.
@@ -264,6 +265,35 @@ Three executions with the corrected fixture produced these measurements:
 The warm run reported one replayed step, not a provider token-cache hit.
 Every request, transcript, and reload assertion passed. Each of its three repository purge attempts timed out upstream after 15 seconds.
 Both cloud removals were confirmed; recovery records remained available.
+Private recovery then confirmed the repository was already absent (`404`) and removed the remaining synthetic account and auth user.
+An unauthenticated request to the GitHub API root also returned `502` during recovery. The provider/network failure is not an agent failure.
 This is evidence that replay can avoid browser-agent inference. It is not evidence of a reliable gate or an end-to-end speedup.
 Only three corrected-fixture executions were measured on one loaded machine.
-The deterministic baseline, seeded false-pass checks, and 20-run reliability criteria remain pending.
+After merging base `b043e634e6`, a temporary deterministic comparison reached the assistant reply but its marker locator matched both the user prompt and assistant output.
+It used no model calls. The failed locator prevented transcript and reload assertions, so it is not a passing baseline.
+Cold image builds also dominated setup; total timing is not comparable to the earlier warm-image runs.
+The revised fixture keeps the full expected marker out of the user prompt and disables background warming through the real feature-flag API.
+It no longer treats a missing provider ID as completed cleanup. A late warm-session allocation required private recovery; its repository, both cloud sessions, account, and auth user are now removed.
+The next fresh run exposed an agent error: it interpreted the prompt's concatenation request and sent its answer instead of the requested prompt text.
+The exact POST payload assertion rejected that action despite the agent's success verdict. Cleanup completed without error.
+The agent instruction now requires verbatim input and explicitly forbids answering or transforming the prompt.
+This observed failure supports retaining exact independent assertions. It is not a completed seeded false-pass campaign.
+The rendered-page text locator still returned two candidates with the revised prompt; a controlled plain-HTML probe passed exact-match and absent-text checks.
+No general defect in exact matching is established. The journey now selects the existing `.kortix-markdown` output container with an anchored text filter.
+The final live revision passed on the merged base: one passed, zero skipped, zero flaky, and complete teardown.
+It used three model calls and 15,026 tokens. The agent step took 16.90 seconds; the test took 44.01 seconds and the root lane took 82.1 seconds.
+Interrupting an earlier diagnostic left a synthetic repository without a cloud session. Private recovery confirmed repository absence and removed its identity.
+After an interruption, audit fixture records and external resources; ordinary Node HTTP setup does not provide the engine's cancellation guarantees.
+The corrected deterministic comparison then passed the same request, UI, transcript, reload, and cleanup assertions on the same merged app source.
+The comparison changed only the browser action block; its temporary file was removed after execution.
+
+| Final fixture | Browser action | Model calls / tokens | Test + cleanup | Startup | Root duration |
+| --- | --- | --- | --- | --- | --- |
+| ChatGPT agent, fresh | 16.90 s | 3 / 15,026 | 44.01 s | 32.41 s | 82.1 s |
+| Deterministic actions | 4.72 s | 0 / 0 | 41.21 s | 21.68 s | 67.4 s |
+
+Both runs passed one selected test with zero skipped and zero flaky results.
+This pair favors deterministic action time. Startup, provisioning, application inference, and cleanup varied between runs.
+One sample per variant does not establish a stable speed ratio or maintenance benefit.
+The resource audit after these runs found zero synthetic project records and zero synthetic auth users from this pilot.
+The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.

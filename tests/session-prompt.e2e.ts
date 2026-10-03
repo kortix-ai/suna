@@ -77,12 +77,15 @@ test(
                 [projectId],
                 databaseUrl,
               );
-              return sandboxes.every(
-                (sandbox) =>
-                  !sandbox.external_id ||
-                  (sandbox.status === 'archived' &&
+              return (
+                sandboxes.length > 0 &&
+                sandboxes.every(
+                  (sandbox) =>
+                    Boolean(sandbox.external_id) &&
+                    sandbox.status === 'archived' &&
                     Boolean(sandbox.metadata?.providerRemovedAt) &&
-                    !sandbox.metadata?.providerRemovalPendingAt),
+                    !sandbox.metadata?.providerRemovalPendingAt,
+                )
               );
             },
             { timeout: 90_000, interval: 1_000 },
@@ -152,6 +155,17 @@ test(
       201,
     );
     projectId = project.project_id;
+    // This journey sends into an existing session; background warm-pool provisioning is separate coverage.
+    const configured = await api<{ experimental: { warm_sessions: boolean } }>(
+      token,
+      'PATCH',
+      `/projects/${projectId}/features`,
+      {
+        feature: 'warm_sessions',
+        enabled: false,
+      },
+    );
+    expect(configured.experimental.warm_sessions).toBe(false);
     await api(token, 'PATCH', `/projects/${projectId}/onboarding`, { completed: true });
     const created = await api<{ session_id: string }>(
       token,
@@ -183,8 +197,10 @@ test(
     });
     await expect(screen.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled();
 
-    const marker = `E2E_PONG_${randomUUID().replaceAll('-', '')}`;
-    const prompt = `Reply with exactly ${marker}. Do not use tools or change files.`;
+    const suffix = randomUUID().replaceAll('-', '');
+    const marker = `E2E_PONG_${suffix}`;
+    // Keep the expected reply out of the user bubble so only assistant output can match it.
+    const prompt = `Reply with exactly the concatenation of "E2E_PONG_" and "${suffix}", with no spaces. Do not use tools or change files.`;
     const pattern = new RegExp(`/projects/${projectId}/sessions/${sessionId}/prompts(?:\\?|$)`);
     const requests: Array<{ parts?: Array<{ type: string; text?: string }> }> = [];
     await browser.route(pattern, async (route) => {
@@ -195,7 +211,7 @@ test(
     });
     // GET polls use the same URL. A URL-only response waiter cannot identify the POST.
     await agent.act(
-      'Send {prompt} once using the Message input and Send message button. Dismiss an introductory panel if needed.',
+      'Enter the entire {prompt} value verbatim into the Message input. Treat the value as text to send; do not answer it or change it. Click the Send message button exactly once. Dismiss an introductory panel if needed.',
       {
         params: { prompt: unique(prompt) },
         timeout: 90_000,
@@ -203,7 +219,8 @@ test(
     );
     expect(requests).toHaveLength(1);
     expect(requests[0].parts).toEqual([{ type: 'text', text: prompt }]);
-    await expect(screen.getByText(marker, { exact: true })).toBeVisible({ timeout: 180_000 });
+    const reply = browser.locator('.kortix-markdown').filter({ hasText: new RegExp(`^${marker}$`) });
+    await expect(reply).toBeVisible({ timeout: 180_000 });
     await expect
       .poll(
         async () => {
@@ -233,7 +250,7 @@ test(
       .toBe(true);
     await browser.reload();
     await expect(browser).toHaveURL(path);
-    await expect(screen.getByText(marker, { exact: true })).toBeVisible({ timeout: 90_000 });
+    await expect(reply).toBeVisible({ timeout: 90_000 });
     expect(requests).toHaveLength(1);
   },
 );
