@@ -11,4 +11,3 @@ const root = resolve(import.meta.dir, '../..');
 // this: tests never read a person's real tunnel state.
 process.env.AGENT_TUNNEL_HOME ||= mkdtempSync(join(tmpdir(), 'ke2e-agent-tunnel-'));
 process.exitCode = await runLocalTests(root, process.argv.slice(2));
-// stale
