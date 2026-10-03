@@ -16,6 +16,8 @@ import {
 import { startAuditPartitionWorker, stopAuditPartitionWorker } from './shared/audit-partition-worker';
 import { startAuditArchiveWorker, stopAuditArchiveWorker } from './shared/audit-archive/worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
+import { startJobWorker, stopJobWorker } from './shared/job-queue';
+import { startCaptureWorkers, stopCaptureWorkers } from './capture/workers';
 import {
   startProjectSnapshotWorker,
   stopProjectSnapshotWorker,
@@ -152,6 +154,10 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // The durable job queue (shared/job-queue.ts): every replica claims with
+  // SKIP LOCKED, so work spreads and a restart loses nothing. Capture
+  // ingestion and range processing run here.
+  startJobWorker();
   // Keep the shared Teams bot token warm so the first message after a deploy
   // does not wait on login.microsoftonline.com before its live card is posted.
   startTeamsBotTokenRefresh();
@@ -215,6 +221,9 @@ async function startSingletonWorkers() {
   startAuditPartitionWorker();
   // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
   startAuditArchiveWorker();
+  // Kortix Capture readers (SQS events, index polling) and maintenance
+  // (close quiet ranges, partitions, retention). Idle without a capture store.
+  startCaptureWorkers();
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
   // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
   startProjectSnapshotWorker();
@@ -249,6 +258,7 @@ async function stopSingletonWorkers() {
   stopAuditPartitionWorker();
   stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
+  stopCaptureWorkers();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./oauth/sweeper');
@@ -324,6 +334,7 @@ export async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  stopJobWorker();
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')

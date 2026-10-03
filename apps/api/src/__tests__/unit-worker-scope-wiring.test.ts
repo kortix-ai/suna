@@ -50,6 +50,10 @@ const WORKERS: Record<string, string> = {
   'billing-free-tier-rotation': 'billing/rotation-schedule.ts',
   'slack-turn-gc': 'channels/slack/turn.ts',
   'teams-turn-gc': 'channels/teams/turn.ts',
+  'job-queue': 'shared/job-queue.ts',
+  'capture-index-reader': 'capture/workers.ts',
+  'capture-maintenance': 'capture/workers.ts',
+  'capture-events-reader': 'capture/workers.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -93,6 +97,8 @@ const STARTS: Record<string, string> = {
   startBillingRotation: 'billing-trial-expiry',
   startSlackTurnGc: 'slack-turn-gc',
   startTeamsTurnGc: 'teams-turn-gc',
+  startJobWorker: 'job-queue',
+  startCaptureWorkers: 'capture-index-reader',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',
