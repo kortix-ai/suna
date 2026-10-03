@@ -67,6 +67,10 @@ case "$mode" in
     # workers after each bounded batch, and run every batch even if one fails.
     test_files=()
     while IFS= read -r file; do test_files+=("$file"); done <<< "$files"
+    # The unit suite is hermetic: run it against a developer box, not against
+    # this box's runtime identity (scripts/test-box-env.sh). `--env-file` above
+    # still wins for every variable the hermetic file defines.
+    . ../../scripts/test-box-env.sh
     batch_size=80
     batch_count=$(( (count + batch_size - 1) / batch_size ))
     echo "API unit suite: $count files in $batch_count batches; Bun workers: $api_test_workers" >&2

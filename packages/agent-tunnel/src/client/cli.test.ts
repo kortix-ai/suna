@@ -117,7 +117,11 @@ function runCli(
     const child = spawn('bun', cliArgs, {
       env: {
         ...process.env,
-        TUNNEL_API_URL: `http://localhost:${mockPort}`,
+        // 127.0.0.1, not `localhost`: the CLI runs in its own process, whose
+        // name resolution cannot be shimmed by this file's preload — on a
+        // locked-down runtime whose hosts file is unreadable, `localhost`
+        // does not resolve at all (2026-10-03). The mock binds all interfaces.
+        TUNNEL_API_URL: `http://127.0.0.1:${mockPort}`,
         TUNNEL_TOKEN: 'test-token',
         TUNNEL_ID: '',
         ...envOverrides,
@@ -320,7 +324,7 @@ describe('Agent Tunnel CLI', () => {
 
     test('permission denied returns structured response', async () => {
       const r = await runCli('cua_list_apps', undefined, {
-        TUNNEL_API_URL: `http://localhost:${permPort}`,
+        TUNNEL_API_URL: `http://127.0.0.1:${permPort}`,
       });
       expect(r.json!.success).toBe(false);
       expect(r.json!.permissionRequired).toBe(true);
@@ -330,7 +334,7 @@ describe('Agent Tunnel CLI', () => {
 
   describe('server unreachable', () => {
     test('status with dead server returns error JSON', async () => {
-      const r = await runCli('status', undefined, { TUNNEL_API_URL: 'http://localhost:1' });
+      const r = await runCli('status', undefined, { TUNNEL_API_URL: 'http://127.0.0.1:1' });
       expect(r.exitCode).toBe(1);
       expect(r.json!.success).toBe(false);
     });
@@ -357,7 +361,7 @@ describe('Agent Tunnel CLI', () => {
     });
 
     test('status with no connections returns empty list', async () => {
-      const r = await runCli('status', undefined, { TUNNEL_API_URL: `http://localhost:${emptyPort}` });
+      const r = await runCli('status', undefined, { TUNNEL_API_URL: `http://127.0.0.1:${emptyPort}` });
       expect(r.exitCode).toBe(0);
       expect(r.json!.success).toBe(true);
       expect((r.json!.connections as unknown[]).length).toBe(0);
@@ -365,7 +369,7 @@ describe('Agent Tunnel CLI', () => {
 
     test('fs_read with no connections returns error', async () => {
       const r = await runCli('fs_read', '{"path":"/tmp/x"}', {
-        TUNNEL_API_URL: `http://localhost:${emptyPort}`,
+        TUNNEL_API_URL: `http://127.0.0.1:${emptyPort}`,
       });
       expect(r.exitCode).toBe(1);
       expect(r.json!.success).toBe(false);

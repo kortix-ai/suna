@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
@@ -516,15 +517,25 @@ function dockerAvailable(): boolean {
 
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
-  // No Docker (a factory sandbox): the DB lanes cannot run. Record them as
-  // skipped-no-db. verify-attestation.mjs never counts a skip as a pass.
-  const skipped: string[] = [];
-  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && !dockerAvailable()) {
-    for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name))) skipped.push(lane.name);
-    plan.lanes = plan.lanes.filter((l) => !skipped.includes(l.name));
-    plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.includes(l.name)));
-    console.log(`[test] SKIP ${skipped.join(',')}: Docker is not available (skipped-no-db, not a pass)`);
-    if (plan.lanes.length === 0) return 1;
+  // A lane this box cannot run records its sanctioned skip instead of a result;
+  // verify-attestation.mjs never counts a skip as a pass. The package-quality
+  // lane RUNS on a Kortix sandbox image: its suites are isolated from the
+  // image's platform state (preload-isolated-home.ts, test-box-env.sh, the
+  // localhost shim) and pass here — verified on KRTX-1076's branch.
+  const skipped = new Map<string, string>();
+  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
+    if (!dockerAvailable()) {
+      for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name)))
+        skipped.set(lane.name, 'skipped-no-db');
+    }
+    if (skipped.size > 0) {
+      for (const [name, value] of skipped) {
+        console.log(`[test] SKIP ${name}: Docker is not available (${value}, not a pass)`);
+      }
+      plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));
+      plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.has(l.name)));
+      if (plan.lanes.length === 0) return 1;
+    }
   }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
@@ -624,10 +635,10 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     const lanes: Record<string, string> = {};
     for (const [group, members] of Object.entries(GROUPS)) {
       const ran = results.filter((r) => members.includes(r.name));
-      const skip = skipped.filter((n) => members.includes(n));
+      const skip = [...skipped.entries()].filter(([n]) => members.includes(n));
       if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
       else if (ran.length + skip.length === members.length) {
-        lanes[group] = skip.length ? 'skipped-no-db' : 'pass';
+        lanes[group] = skip[0]?.[1] ?? 'pass';
       }
     }
     Bun.spawnSync(

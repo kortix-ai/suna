@@ -2,6 +2,7 @@ import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
+import { BAKED_LLM_CATALOG_PATH, PT_ENV_PATH } from '../shared/box-paths'
 import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper, materializeRepo, materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/lib/git/git'
 import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import { waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
@@ -23,12 +24,7 @@ import type { DaemonServer } from '../contract/server'
 // Read KEY=VALUE lines from the per-session env file into process.env. Platinum
 // restore writes it directly into the guest pre-boot at /etc/pt-env (host-agent
 // writeEnvIntoOverlay via debugfs / writeGuestEnv).
-/** The host-written env file the restore watchers read. Tests point it at an
- *  absent path: a Kortix box's own /etc/pt-env would otherwise answer for a rig
- *  that has no session env file. */
-const ptEnvFile = () => process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env'
-
-export function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
+export function reloadSessionEnv(paths: string[] = [PT_ENV_PATH]): void {
   for (const path of paths) {
     let txt: string
     try { txt = readFileSync(path, 'utf8') } catch { continue }
@@ -302,7 +298,7 @@ export async function runWarmSeedMode(
       const llmApiKey = process.env.KORTIX_TOKEN
       if (llmBaseUrl && llmApiKey) {
         const currentCatalogFile =
-          process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json'
+          process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH
         const targetCatalogFile = `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`
         const refresh = await refreshGatewayCatalogFile({
           currentCatalogFile,
@@ -382,7 +378,7 @@ export async function runWarmSeedMode(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync(ptEnvFile(), 'utf8') } catch { return }
+    try { txt = readFileSync(PT_ENV_PATH, 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll:/etc/pt-env') }
   }, 200)
 }
@@ -434,7 +430,7 @@ export function armSeedAdoption(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync(ptEnvFile(), 'utf8') } catch { return }
+    try { txt = readFileSync(PT_ENV_PATH, 'utf8') } catch { return }
     if (/^KORTIX_SESSION_ID=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll') }
   }, 250)
 }

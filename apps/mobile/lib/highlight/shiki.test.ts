@@ -154,10 +154,15 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       const sample = HIGHLIGHT_SAMPLES[lang];
       expect(await ensureLanguage(lang)).toBe(true);
       await oniguruma.loadLanguage((await LANGUAGE_LOADERS[lang]()).default);
-      // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
-      // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
-      // crossed that limit and failed the parity check below.
-      highlightToTokens(sample, lang, 'light');
+      // Warm the grammar first: the cold FIRST tokenization of a language both
+      // pays the compile (a cold cpp compile on a loaded CI runner crossed
+      // Shiki's 500 ms line budget and failed the parity check below) and, on
+      // bun 1.3.14, mispaints that first pass — the JS engine's open-tag rule
+      // swallows the newline, painting `<?php` plus the first keyword as one
+      // run (reproduced standalone, with and without the matchAll patch).
+      // The warm pass absorbs both; the cache is keyed by the exact sample, so
+      // the comparisons below tokenize fresh and see the engine's real output.
+      highlightToTokens('x', lang, 'light');
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
