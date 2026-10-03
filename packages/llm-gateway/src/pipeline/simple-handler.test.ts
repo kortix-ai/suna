@@ -68,14 +68,19 @@ describe('simple gateway pipeline', () => {
       keys.push(key);
       return new Response('limited', { status: 429, headers: { 'retry-after': key.includes('first') ? '7' : '120' } });
     } });
+    // The loopback literal, not Bun.serve's `upstream.url` (which prints
+    // `localhost`): a box may resolve that name to nothing (a factory sandbox
+    // does), and the pipeline's real fetch would answer 502 instead of the
+    // 429 this contract pins.
+    const upstreamUrl = `http://127.0.0.1:${upstream.port}/`;
     const cooldowns: string[] = [];
     try {
       const response = await handleChatCompletions({
         hooks: {
           ...hooks([], []),
           resolveUpstream: async () => [
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'first', apiKey: 'first' },
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'second', apiKey: 'second' },
+            { ...primary, baseUrl: upstreamUrl, poolSecretId: 'first', apiKey: 'first' },
+            { ...primary, baseUrl: upstreamUrl, poolSecretId: 'second', apiKey: 'second' },
           ],
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },
