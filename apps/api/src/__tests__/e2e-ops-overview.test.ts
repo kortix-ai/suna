@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 
 /**
@@ -13,10 +15,14 @@ import { Hono } from 'hono';
 type ResultOrThrow = { rows: unknown[] } | { __throw: Error };
 
 let executeResults: ResultOrThrow[] = [];
+/** The SQL text of every db.execute call, in call order — lets a test pin WHICH
+ * relation a metric reads, not merely that a query ran. */
+let executedSql: string[] = [];
 
 mock.module('../shared/db', () => ({
   db: {
-    execute: async () => {
+    execute: async (query: SQL) => {
+      executedSql.push(new PgDialect().sqlToQuery(query).sql);
       const next = executeResults.shift();
       if (next && '__throw' in next) throw next.__throw;
       return next ?? { rows: [] };
@@ -99,6 +105,7 @@ describe('ops overview dashboard API', () => {
     process.env.BETTERSTACK_API_SENTRY_DSN = 'https://example@sentry.test/1';
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = 'https://otel.example.test/v1/traces';
     executeResults = happyPathResults();
+    executedSql = [];
   });
 
   test('returns production support signals for API, queues, audit, usage, and migrations', async () => {
@@ -106,6 +113,14 @@ describe('ops overview dashboard API', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
 
+    // The 24 h audit metric reads the rollup slots (the 7th db.execute call —
+    // see happyPathResults), never audit_events itself: counting the table
+    // cannot answer under the 25 s statement_timeout at its ingest rate
+    // (KRTX-1126). Pins the relation, not merely the value.
+    expect(executedSql[6]).toContain('FROM kortix.audit_event_counts');
+    expect(
+      executedSql.some((sql) => /FROM kortix\.audit_events(\s|$)/.test(sql)),
+    ).toBe(false);
     expect(body.api).toEqual({
       status: 'ok',
       env: 'dev',

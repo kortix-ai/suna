@@ -51,15 +51,14 @@ export function slotStartOf(ms: number): number {
 }
 
 /** Slot starts the next pass should count: closed at least {@link GRACE_SLOTS}
- * ago, inside the lookback window, not yet counted, newest first, at most
- * `opts.max` of them. */
+ * ago, not yet counted, newest first, at most `opts.max` of them. */
 export function pendingSlotStarts(
   nowMs: number,
   counted: ReadonlySet<number>,
-  opts?: { lookbackMs?: number; max?: number },
+  opts?: { max?: number },
 ): number[] {
   const newest = slotStartOf(nowMs) - GRACE_SLOTS * SLOT_MS;
-  const oldest = slotStartOf(nowMs - (opts?.lookbackMs ?? LOOKBACK_MS));
+  const oldest = slotStartOf(nowMs - LOOKBACK_MS);
   const max = opts?.max ?? MAX_SLOTS_PER_TICK;
   const out: number[] = [];
   for (let start = newest; start >= oldest && out.length < max; start -= SLOT_MS) {

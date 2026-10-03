@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import pg from 'pg';
+import { app } from '../index';
+import { createAccountToken } from '../repositories/account-tokens';
 import { SLOT_MS, countPass } from './audit-event-count-worker';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
+/** The PAT identity the route test authenticates as. `getPlatformRole` reads
+ * `platform_user_roles` by the principal id, so this id gets the admin role
+ * row; no auth.users row is needed (the PAT path never touches GoTrue). */
+const TOKEN_USER = 'c7400000-0000-4000-a000-000000000001';
 const SLOT = SLOT_MS;
 const HOUR = 60 * 60_000;
 
@@ -56,6 +62,7 @@ describe.skipIf(!databaseUrl)('audit event count slots — migrated PostgreSQL',
     await q("SET kortix.audit_maintenance = 'on'");
     await q('DELETE FROM kortix.audit_events WHERE account_id = $1', [ACCOUNT]);
     await q('DELETE FROM kortix.audit_event_counts');
+    await q('DELETE FROM kortix.platform_user_roles WHERE account_id = $1', [TOKEN_USER]);
     await q('DELETE FROM kortix.accounts WHERE account_id = $1', [ACCOUNT]);
     await client.end();
   });
@@ -132,5 +139,42 @@ describe.skipIf(!databaseUrl)('audit event count slots — migrated PostgreSQL',
     expect(Number(firstRow(await slot(mustCountB)).events)).toBe(1);
     expect(again.counted).toBeLessThanOrEqual(12);
     expect(Number(firstRow(await dashboardSum()).count)).toBe(4);
+  });
+
+  test('GET /ops/overview reads audit_events_24h from the rollup slots, never from audit_events', async () => {
+    // Re-derive the counted slots (idempotent), then add one rollup slot no
+    // audit row can account for: only a read of `audit_event_counts` can see
+    // it. The previous implementation counted audit_events itself — against
+    // this fixture that returns the bare audit-row count (7) and this
+    // assertion failed, so the data source is pinned, not just the value.
+    await countPass(NOW);
+    await q('INSERT INTO kortix.audit_event_counts(slot_start, events) VALUES ($1, $2)', [
+      new Date(NOW - 15 * SLOT),
+      500,
+    ]);
+
+    await q(
+      `INSERT INTO kortix.platform_user_roles(account_id, role)
+       VALUES ($1, 'admin')
+       ON CONFLICT (account_id) DO UPDATE SET role = 'admin'`,
+      [TOKEN_USER],
+    );
+    const token = await createAccountToken({
+      accountId: ACCOUNT,
+      userId: TOKEN_USER,
+      name: 'ops-rollup-test',
+    });
+
+    // Unauthenticated: the admin surface refuses before the handler runs.
+    const anonymous = await app.request('/v1/ops/overview');
+    expect(anonymous.status).toBe(401);
+
+    const res = await app.request('/v1/ops/overview', {
+      headers: { Authorization: `Bearer ${token.secretKey}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { audit?: { events_24h?: number | null } };
+    // 4 fixture audit rows across the counted slots + the synthetic 500.
+    expect(body.audit?.events_24h).toBe(504);
   });
 });
