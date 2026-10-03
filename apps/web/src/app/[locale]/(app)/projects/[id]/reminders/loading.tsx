@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function ProjectRemindersLoading() {
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <div className="kx-titlebar-row kx-titlebar-band-height shrink-0 border-b" />
+      <div className="kx-titlebar-row kx-capability-titlebar shrink-0 border-b" />
       <div className="mx-auto w-full max-w-2xl space-y-2 px-4 py-10 lg:py-20">
         {[0, 1, 2].map((key) => (
           <Skeleton key={key} className="h-14 rounded-md" />

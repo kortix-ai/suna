@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildOpencodeConfigContent, capabilityToolRules } from '@/harness/open-code/lifecycle'
+import { buildOpencodeConfigContent, capabilityToolRules, denyBuiltinSkills } from '@/harness/open-code/lifecycle'
 import { CONNECTOR_PROXY_PLACEHOLDER_KEY, LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 
 const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
@@ -274,7 +274,7 @@ describe('buildOpencodeConfigContent — Slack sessions deny the question tool',
 
   test('does NOT touch permissions for a non-Slack (web) session — tool stays native', async () => {
     const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '1' }))!)
-    expect(config.permission).toBeUndefined()
+    expect(config.permission.question).toBeUndefined()
   })
 
   test('merges the deny onto a pre-existing permission block', async () => {
@@ -384,6 +384,43 @@ describe('buildOpencodeConfigContent — warm-fork proxy mode bakes no session c
   })
 })
 
+describe("OpenCode's built-in customize-opencode skill is denied in every permission block", () => {
+  const DENY = { 'customize-opencode': 'deny' }
+
+  test.each([
+    ['no block', undefined, { skill: DENY }],
+    ['a bare allow keeps every other rule as `*`', 'allow', { '*': 'allow', skill: DENY }],
+    ['a bare ask', 'ask', { '*': 'ask', skill: DENY }],
+    ['a skill action becomes its `*` form', { bash: 'ask', skill: 'allow' }, { bash: 'ask', skill: { '*': 'allow', ...DENY } }],
+    ['a skills grant keeps its entries', { skill: { pdf: 'allow', '*': 'deny' } }, { skill: { pdf: 'allow', '*': 'deny', ...DENY } }],
+    ['an explicit allow of the skill is overruled', { skill: { 'customize-opencode': 'allow', '*': 'ask' } }, { skill: { '*': 'ask', ...DENY } }],
+  ])('%s', (_name, permission, expected) => {
+    expect(denyBuiltinSkills(permission)).toEqual(expected)
+  })
+
+  test('the deny is the last skill rule and skill is the last key: OpenCode lets the last match win', () => {
+    const rules = denyBuiltinSkills({ skill: { 'customize-opencode': 'allow', '*': 'allow' }, bash: 'allow' }) as Record<string, Record<string, string>>
+    expect(Object.keys(rules).at(-1)).toBe('skill')
+    expect(Object.keys(rules.skill!).at(-1)).toBe('customize-opencode')
+  })
+
+  test('a block that already denies every skill is left alone', () => {
+    expect(denyBuiltinSkills('deny')).toBe('deny')
+    expect(denyBuiltinSkills({ skill: 'deny', bash: 'allow' })).toEqual({ skill: 'deny', bash: 'allow' })
+    expect(denyBuiltinSkills({ '*': 'deny' })).toEqual({ '*': 'deny' })
+  })
+
+  test('the composed config carries it globally and on an agent whose own block would outrank the global one', async () => {
+    const content = await buildOpencodeConfigContent({
+      KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ permission: 'allow', agent: { open: { permission: 'allow' }, plain: { mode: 'primary' } } }),
+    } as never)
+    const config = JSON.parse(content!) as { permission: unknown; agent: Record<string, { permission?: unknown }> }
+    expect(config.permission).toEqual({ '*': 'allow', skill: DENY })
+    expect(config.agent.open!.permission).toEqual({ '*': 'allow', skill: DENY })
+    expect(config.agent.plain!.permission).toBeUndefined()
+  })
+})
+
 describe('capability rules reach the tools that cannot ask (E9)', () => {
   const PTY = ['pty_spawn', 'pty_write', 'pty_read', 'pty_list', 'pty_kill']
 
@@ -421,6 +458,6 @@ describe('capability rules reach the tools that cannot ask (E9)', () => {
     )
     expect(config.agent.locked.permission).toMatchObject({ bash: 'deny', edit: 'deny', pty_spawn: 'deny', pty_kill: 'deny' })
     expect(config.agent.open.permission).toBeUndefined()
-    expect(config.permission).toEqual({ question: 'deny' })
+    expect(config.permission).toEqual({ question: 'deny', skill: { 'customize-opencode': 'deny' } })
   })
 })

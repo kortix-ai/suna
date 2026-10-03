@@ -126,7 +126,10 @@ const CATALOG_SQL = `
                             FROM pg_attribute a
                            WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped))), '[]')
        FROM pg_class c
-      WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p', 'v', 'm')) AS relations,
+      WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p', 'v', 'm')
+        -- A partition is part of its parent: weekly audit_events partitions appear and
+        -- disappear at runtime and are not declared anywhere.
+        AND NOT c.relispartition) AS relations,
     (SELECT coalesce(json_agg(json_build_object('type', t.typname, 'label', e.enumlabel)), '[]')
        FROM pg_type t
        JOIN pg_enum e ON e.enumtypid = t.oid
@@ -143,7 +146,7 @@ const CATALOG_SQL = `
        FROM pg_index x
        JOIN pg_class i ON i.oid = x.indexrelid
        JOIN pg_class t ON t.oid = x.indrelid
-      WHERE t.relnamespace = n.oid AND t.relkind IN ('r', 'p', 'm')) AS indexes,
+      WHERE t.relnamespace = n.oid AND t.relkind IN ('r', 'p', 'm') AND NOT t.relispartition) AS indexes,
     (SELECT coalesce(json_agg(json_build_object(
               'name', k.conname,
               'table', t.relname,
@@ -152,7 +155,7 @@ const CATALOG_SQL = `
               'validated', k.convalidated)), '[]')
        FROM pg_constraint k
        JOIN pg_class t ON t.oid = k.conrelid
-      WHERE t.relnamespace = n.oid AND k.contype IN ('p', 'u', 'f', 'c', 'x')) AS constraints
+      WHERE t.relnamespace = n.oid AND k.contype IN ('p', 'u', 'f', 'c', 'x') AND NOT t.relispartition) AS constraints
   FROM pg_namespace n
   WHERE n.nspname = $1
 `;

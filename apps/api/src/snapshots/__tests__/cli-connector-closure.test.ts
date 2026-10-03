@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLI_CONNECTOR_RUNTIME_FILES } from '@kortix/shared/sandbox-runtime-artifact';
+import { cliConnectorRuntimeArtifacts } from '@kortix/shared/sandbox-runtime-artifact';
 
 // Scope guard for the in-sandbox `kortix connectors` fingerprint (templates.ts
 // CLI_CONNECTOR_CLOSURE).
@@ -24,7 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const CLI_SRC = resolve(REPO_ROOT, 'apps/cli/src');
 
-const HASHED_CLOSURE = CLI_CONNECTOR_RUNTIME_FILES.map((entry) => entry.replace(/^src\//, ''));
+const HASHED_CLOSURE = cliConnectorRuntimeArtifacts(resolve(REPO_ROOT, 'apps/cli')).map((entry) => entry.path);
 
 // Entrypoints the sandbox actually invokes (`kortix connectors …`). The `index.ts`
 // dispatcher is deliberately NOT an entrypoint here: it imports EVERY subcommand
@@ -40,10 +40,21 @@ const ENTRYPOINTS = [
 
 /** Resolve a relative import specifier (from `fromFile`) to a real .ts file, or null. */
 function resolveImport(fromFile: string, spec: string): string | null {
-  const base = resolve(dirname(fromFile), spec);
+  const sharedPrefix = '@kortix/shared/';
+  let base: string;
+  if (spec.startsWith(sharedPrefix)) {
+    const sharedRoot = resolve(REPO_ROOT, 'packages/shared');
+    const pkg = JSON.parse(readFileSync(join(sharedRoot, 'package.json'), 'utf8'));
+    const leaf = pkg.exports[`./${spec.slice(sharedPrefix.length)}`];
+    if (typeof leaf !== 'string') throw new Error(`Unresolved shared runtime import: ${spec}`);
+    base = resolve(sharedRoot, leaf);
+  } else {
+    base = resolve(dirname(fromFile), spec);
+  }
   for (const cand of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
     if (existsSync(cand) && statSync(cand).isFile()) return cand;
   }
+  if (spec.startsWith(sharedPrefix)) throw new Error(`Missing shared runtime source: ${spec}`);
   return null;
 }
 
@@ -51,7 +62,7 @@ function resolveImport(fromFile: string, spec: string): string | null {
 function importClosure(entrypoints: string[]): Set<string> {
   const seen = new Set<string>();
   const stack = entrypoints.map((e) => resolve(CLI_SRC, e));
-  const importRe = /from\s+['"](\.[^'"]+)['"]/g;
+  const importRe = /from\s+['"]((?:\.|@kortix\/shared\/)[^'"]+)['"]/g;
   while (stack.length) {
     const file = stack.pop();
     if (!file) continue;
@@ -68,10 +79,9 @@ function importClosure(entrypoints: string[]): Set<string> {
 
 /** True iff `abs` is covered by a hashed closure entry (a file, or a dir prefix). */
 function isHashed(abs: string): boolean {
-  const rel = relative(CLI_SRC, abs);
   return HASHED_CLOSURE.some((entry) => {
     const norm = normalize(entry);
-    return rel === norm || rel.startsWith(`${norm}/`);
+    return abs === norm || abs.startsWith(`${norm}/`);
   });
 }
 

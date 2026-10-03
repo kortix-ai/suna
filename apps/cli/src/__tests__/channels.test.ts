@@ -66,6 +66,7 @@ interface MockState {
 let state: MockState;
 let installationGets = 0;
 let teamsInstall: typeof TEAMS_INSTALLATION | null = null;
+let bindingsResponse: { projectDefaultAgent: string | null; bindings: Array<Record<string, unknown>> } | null = null;
 
 function writeConfig(url = 'https://api.test'): void {
   const file = join(tmp, 'config.json');
@@ -150,6 +151,15 @@ function mockApi() {
       teamsInstall = null;
       return json({ status: 'disconnected' });
     }
+    if (url.includes('/channels/bindings') && method === 'GET') {
+      return json(bindingsResponse ?? { projectDefaultAgent: null, bindings: [] });
+    }
+    if (url.includes('/channels/bindings/') && method === 'PATCH') {
+      const id = decodeURIComponent(url.split('/channels/bindings/')[1] ?? '');
+      const row = bindingsResponse?.bindings.find((b) => b.bindingId === id);
+      if (!row) return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 });
+      return json({ ...row, ...JSON.parse(String(init?.body ?? '{}')) });
+    }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
   }) as typeof fetch;
 }
@@ -167,6 +177,7 @@ beforeEach(() => {
   requests = [];
   state = { oauthAvailable: true, installation: null, teamsEnabled: true };
   teamsInstall = null;
+  bindingsResponse = null;
   mockApi();
 });
 
@@ -486,5 +497,62 @@ describe('kortix channels --platform teams', () => {
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(true);
     expect(requests.some((r) => r.url.includes('/channels/teams/'))).toBe(false);
+  });
+});
+
+// Every Slack binding on dev listed as a bare `C0…` id (2026-10-02): no Slack
+// name lookup had ever succeeded. The CLI reads names the way the web does.
+describe('kortix channels bindings', () => {
+  const binding = (over: Record<string, unknown>) => ({
+    bindingId: 'bnd-0',
+    platform: 'slack',
+    workspaceId: 'T0TEST',
+    channelId: 'C0TEST0',
+    channelName: null,
+    channelType: null,
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-10-02T00:00:00.000Z',
+    effectiveAgent: { agent: 'kortix', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+    ...over,
+  });
+
+  test('a Slack row reads #channel, the person of a DM, and marks a deleted channel with its id', async () => {
+    bindingsResponse = {
+      projectDefaultAgent: 'kortix',
+      bindings: [
+        binding({ bindingId: 'bnd-1', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' }),
+        binding({ bindingId: 'bnd-2', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' }),
+        binding({ bindingId: 'bnd-3', channelId: 'C0GONE1', channelUnavailable: true }),
+        binding({ bindingId: 'bnd-4', channelId: 'C0TEST4' }),
+      ],
+    };
+    const code = await runChannels(['bindings']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('#general');
+    expect(out).toContain('Sam Rivera');
+    expect(out).not.toContain('#Sam Rivera');
+    expect(out).toContain('unavailable (C0GONE1)');
+    expect(out).toContain('C0TEST4');
+  });
+
+  test('bind confirms the change by the name the list shows', async () => {
+    bindingsResponse = {
+      projectDefaultAgent: 'kortix',
+      bindings: [
+        binding({ bindingId: 'bnd-1', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' }),
+        binding({ bindingId: 'bnd-2', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' }),
+      ],
+    };
+    expect(await runChannels(['bind', 'bnd-1', '--agent', 'reviewer'])).toBe(0);
+    expect(stripAnsi(stdout)).toContain('#general updated');
+
+    stdout = '';
+    expect(await runChannels(['bind', 'bnd-2', '--agent', 'reviewer'])).toBe(0);
+    expect(stripAnsi(stdout)).toContain('Sam Rivera updated');
+    expect(stripAnsi(stdout)).not.toContain('#Sam Rivera');
   });
 });

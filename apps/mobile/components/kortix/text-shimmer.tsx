@@ -19,7 +19,7 @@
  * - `muted` — the burst summary line: `muted-foreground` at 55% → `muted-foreground`.
  */
 
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
   StyleSheet,
   View,
@@ -41,6 +41,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Text } from '@/components/ui/text';
 import { SHIMMER, shimmerBandCenter, shimmerSpread } from '@/lib/session/activity';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -74,6 +75,18 @@ export interface TextShimmerProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
+/**
+ * Whether the tool row around this label may animate. A tool row in a finished
+ * turn (Stop, an interrupt, a crash) provides `false`: its call will never
+ * finish, so `TextShimmer` draws still text and `RunningLoader` draws no Lottie.
+ */
+export const ToolMotionContext = createContext(true);
+
+/** The Lottie twin of `TextShimmer`: while motion is off it keeps the box and draws nothing. */
+export function RunningLoader({ size }: { size: number }) {
+  return useContext(ToolMotionContext) ? <KortixLoader customSize={size} /> : <View style={{ width: size, height: size }} />;
+}
+
 function shimmerColors(tone: TextShimmerTone, isDark: boolean) {
   const t = isDark ? THEME.dark : THEME.light;
   if (tone === 'muted') {
@@ -82,7 +95,7 @@ function shimmerColors(tone: TextShimmerTone, isDark: boolean) {
   return { base: isDark ? SHIMMER_BASE.dark : SHIMMER_BASE.light, highlight: t.foreground };
 }
 
-function TextShimmerImpl({
+function TextShimmerSweep({
   children,
   variant,
   style,
@@ -168,6 +181,24 @@ function TextShimmerImpl({
       )}
     </View>
   );
+}
+
+/** The same box and base colour the sweep starts from, with no animation. */
+function TextShimmerStill({ children, variant, style, numberOfLines, tone = 'default', containerStyle }: TextShimmerProps) {
+  const { colorScheme } = useColorScheme();
+  const { base } = shimmerColors(tone, colorScheme === 'dark');
+  return (
+    <View style={[styles.container, containerStyle]}>
+      <Text variant={variant} style={[style, { color: base }]} numberOfLines={numberOfLines}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+function TextShimmerImpl(props: TextShimmerProps) {
+  const motion = useContext(ToolMotionContext);
+  return motion ? <TextShimmerSweep {...props} /> : <TextShimmerStill {...props} />;
 }
 
 const styles = StyleSheet.create({

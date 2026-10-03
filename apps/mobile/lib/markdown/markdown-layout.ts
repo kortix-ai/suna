@@ -268,20 +268,57 @@ function kindOfLine(line: string): BlockKind {
 }
 
 /**
+ * A line of `block` as `block.split(/\r?\n/)` gives it: the text between two
+ * newlines, without the `\r` of a `\r\n`. `start` is its index in `block`.
+ */
+interface BlockLine {
+  start: number;
+  text: string;
+}
+
+/** The line that starts at `start`. */
+function lineAt(block: string, start: number): BlockLine {
+  const newline = block.indexOf('\n', start);
+  if (newline === -1) return { start, text: block.slice(start) };
+  const end = newline > start && block.charCodeAt(newline - 1) === 13 ? newline - 1 : newline;
+  return { start, text: block.slice(start, end) };
+}
+
+function firstNonBlankLine(block: string): BlockLine | null {
+  for (let start = 0; ; ) {
+    const line = lineAt(block, start);
+    if (line.text.trim() !== '') return line;
+    const newline = block.indexOf('\n', start);
+    if (newline === -1) return null;
+    start = newline + 1;
+  }
+}
+
+function lastNonBlankLine(block: string): BlockLine | null {
+  for (let end = block.length; ; ) {
+    const start = end === 0 ? 0 : block.lastIndexOf('\n', end - 1) + 1;
+    const line = lineAt(block, start);
+    if (line.text.trim() !== '') return line;
+    if (start === 0) return null;
+    end = start - 1;
+  }
+}
+
+/**
  * The first and last construct of one `splitMarkdownBlocks` block, read from
  * its first and last lines — enough to collapse the margin BETWEEN blocks.
  * Margins between constructs INSIDE a block come from the parsed AST instead.
  */
 export function classifyBlock(block: string): { first: BlockKind; last: BlockKind } {
-  const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
-  if (lines.length === 0) return { first: 'paragraph', last: 'paragraph' };
-  const first = kindOfLine(lines[0]);
-  if (lines.length === 1) return { first, last: first };
+  const firstLine = firstNonBlankLine(block);
+  if (!firstLine) return { first: 'paragraph', last: 'paragraph' };
+  const first = kindOfLine(firstLine.text);
+  const lastLine = lastNonBlankLine(block)!;
+  if (lastLine.start === firstLine.start) return { first, last: first };
 
-  const lastLine = lines[lines.length - 1];
-  let last = kindOfLine(lastLine);
+  let last = kindOfLine(lastLine.text);
   // An indented or lazy last line belongs to the construct the block opened.
-  if (last === 'code' && !FENCE_LINE.test(lastLine) && (first === 'list' || first === 'blockquote')) {
+  if (last === 'code' && !FENCE_LINE.test(lastLine.text) && (first === 'list' || first === 'blockquote')) {
     last = first;
   }
   if (last === 'paragraph' && (first === 'list' || first === 'blockquote' || first === 'code' || first === 'math')) {

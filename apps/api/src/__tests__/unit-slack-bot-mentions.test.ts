@@ -71,7 +71,8 @@ mock.module('../channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
-  getChannelName: async () => 'general',
+  describeSlackConversation: async () => ({ name: 'general', type: 'channel', unavailable: false }),
+  getSlackUserDisplayName: async () => null,
   isBotUser: async () => true,
   findBotUserIdByName: async () => null,
   joinChannel: async () => true,
@@ -198,7 +199,7 @@ describe('source contracts', () => {
 // Worse, it returned LOUDLY into a void: postIdentityPrompt posts an ephemeral
 // AND opens a DM, both addressed to slackUserId — the bot. Nobody sees either,
 // so the mention reads as "Kortix ignored it". Verified on dev f07c04f0 with a
-// real bot-to-bot mention (Slack ts 1787153374.887479).
+// real bot-to-bot mention.
 
 describe('a bot sender is never sent an identity prompt', () => {
   test('link-bot is routed and identity-flag gated', () => {
@@ -226,7 +227,7 @@ describe('a bot sender is never sent an identity prompt', () => {
 // resolveChatActor treats the row as the authoritative
 // (workspace, slack_user) -> kortix_user mapping, so binding a person's id would
 // silently make THEIR later Slack actions run as whoever linked them. Human and
-// bot ids are the same shape — /^[UWB][A-Z0-9]{6,}$/ matches U0B8ERR54BH (a
+// bot ids are the same shape — /^[UWB][A-Z0-9]{6,}$/ matches U0A1B2C3D4E (a
 // person) exactly as it matches a bot — so only Slack can tell them apart.
 
 describe('link-bot refuses anything that is not a verified bot', () => {

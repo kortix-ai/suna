@@ -2,6 +2,7 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { resolveRemoteBranchTip } from '../git/branches';
+import { provenMirrorTip } from '../git/mirror';
 import type { FastBootGitHint } from '../git/commits';
 import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from '../git/commits';
 import type { GitBackedProject } from '../git/types';
@@ -120,7 +121,10 @@ interface FastBootGitHintDependencies {
 }
 
 const defaultDependencies: FastBootGitHintDependencies = {
-  resolveRemoteTip: resolveRemoteBranchTip,
+  // Session create has just read the manifest with the tip proof, so for the
+  // default branch the mirror already holds the proven tip: no second `ls-remote`.
+  resolveRemoteTip: async (project, ref) =>
+    (await provenMirrorTip(project, ref)) ?? resolveRemoteBranchTip(project, ref),
   resolveFreshHint: resolveFastBootGitHint,
   persistHint: persistFastBootGitHint,
 };

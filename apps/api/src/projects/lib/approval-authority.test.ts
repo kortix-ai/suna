@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  mayResolveApproval,
-  maySeeSessionApprovals,
-  maySeeSessionQuestion,
-} from './approval-authority';
+import { mayResolveApproval, maySeeSessionApprovals } from './approval-authority';
 
 const WRAPPER = 'wrapper-service-account';
 const HUMAN = 'human-1';
@@ -218,35 +214,5 @@ describe('the browser human (regression: the Supabase sessionId collision)', () 
         callerSessionId: 'sess-real-kortix-session',
       }).allowed,
     ).toBe(false);
-  });
-});
-
-describe('maySeeSessionQuestion', () => {
-  const base = {
-    isManager: false,
-    targetSessionId: 'child-1',
-    targetSessionOrigin: null,
-    targetSessionCreatedBy: 'asker-user',
-    callerUserId: 'participant-user',
-    callerSessionId: null,
-    participantUserIds: ['participant-user'],
-  };
-
-  test('a participant may answer the question of a conversation they were asked into', () => {
-    expect(maySeeSessionQuestion(base)).toBe(true);
-  });
-
-  test('a member who is neither launcher, manager nor participant may not', () => {
-    expect(maySeeSessionQuestion({ ...base, callerUserId: 'bystander' })).toBe(false);
-  });
-
-  test('the launcher and a manager keep their approval authority', () => {
-    expect(maySeeSessionQuestion({ ...base, callerUserId: 'asker-user', participantUserIds: [] })).toBe(true);
-    expect(maySeeSessionQuestion({ ...base, callerUserId: 'bystander', isManager: true })).toBe(true);
-  });
-
-  test('a session-bound caller sees only its own session, participant or not', () => {
-    expect(maySeeSessionQuestion({ ...base, callerSessionId: 'other' })).toBe(false);
-    expect(maySeeSessionQuestion({ ...base, callerSessionId: 'child-1' })).toBe(true);
   });
 });

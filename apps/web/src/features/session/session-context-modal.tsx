@@ -15,7 +15,15 @@ import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@/ui/types';
-import { formatCost, type Session } from '@kortix/sdk';
+import {
+  formatCost,
+  isAgentPart,
+  isFilePart,
+  isReasoningPart,
+  isTextPart,
+  isToolPart,
+  type Session,
+} from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useMemo } from 'react';
 import { CopyAllButton, SessionContextMessageExplorer } from './session-context-message-explorer';
@@ -69,9 +77,9 @@ export function estimateBreakdown(
     (acc, msg) => {
       if (msg.info.role === 'user') {
         const user = msg.parts.reduce((sum, part) => {
-          if (part.type === 'text') return sum + part.text.length;
-          if (part.type === 'file') return sum + (part.source?.text?.value?.length ?? 0);
-          if (part.type === 'agent') return sum + (part.source?.value?.length ?? 0);
+          if (isTextPart(part)) return sum + part.text.length;
+          if (isFilePart(part)) return sum + (part.source?.text?.value?.length ?? 0);
+          if (isAgentPart(part)) return sum + (part.source?.value?.length ?? 0);
           return sum;
         }, 0);
         return { ...acc, user: acc.user + user };
@@ -79,11 +87,9 @@ export function estimateBreakdown(
       if (msg.info.role !== 'assistant') return acc;
       const result = msg.parts.reduce(
         (sum, part) => {
-          if (part.type === 'text')
+          if (isTextPart(part) || isReasoningPart(part))
             return { assistant: sum.assistant + part.text.length, tool: sum.tool };
-          if (part.type === 'reasoning')
-            return { assistant: sum.assistant + part.text.length, tool: sum.tool };
-          if (part.type === 'tool') {
+          if (isToolPart(part)) {
             const state = part.state;
             const inputLen = Object.keys(state?.input ?? {}).length * 16;
             let toolLen = inputLen;

@@ -13,7 +13,7 @@ import {
 } from 'node:path';
 import { posix } from 'node:path';
 
-import { toSandboxAbsolutePath } from '@kortix/sdk';
+import { sessionModelPin, toSandboxAbsolutePath } from '@kortix/sdk';
 
 import { kortixFromAuth } from '../api/sdk.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -187,9 +187,7 @@ export function sessionPromptDefaults(session: {
   agent_name?: string | null;
   metadata?: Record<string, unknown> | null;
 }): { agent?: string; model?: { providerID: string; modelID: string } } {
-  const metadata = session.metadata ?? {};
-  const reference =
-    typeof metadata.opencode_model === 'string' ? metadata.opencode_model.trim() : '';
+  const reference = sessionModelPin(session) ?? '';
   const separator = reference.indexOf('/');
   const model =
     separator > 0 && separator < reference.length - 1

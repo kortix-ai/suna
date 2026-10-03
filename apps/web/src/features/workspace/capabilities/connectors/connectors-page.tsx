@@ -57,7 +57,6 @@ import {
 import { providerLabel } from './provider-label';
 
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
-import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
@@ -76,6 +75,8 @@ import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catal
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
+import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { catalogSource } from './catalog/catalog-source';
 import {
   connectorDisplayName,
   connectorSummary,
@@ -378,21 +379,13 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
-  // Whether this deployment has a catalogue to browse at all.
-  //
-  // `useCatalog` falls back to Easy Connect (Pipedream) whenever
-  // `connectors_api_discover` is off, which is the default — so with the flag
-  // off and Pipedream unconfigured, Discovery and All have no backend and every
-  // request they make answers `501`. The probe is read HERE rather than off
-  // `catalog`, because it decides `enabled` for the very hook that would
-  // otherwise report it.
-  //
-  // Only a confirmed `absent` closes the tabs. While the probe is in flight the
-  // page renders exactly as it always has: the overwhelming majority of
-  // deployments do have Pipedream, and removing two tabs for a beat on every
-  // load to spare a minority one is the wrong trade.
-  const connectStatus = useConnectProviderStatus(!discoverEnabled);
-  const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';
+  // Managed remains the landing source even after direct discovery is enabled.
+  // Keep the provider probe independent of the active scope so an absent
+  // provider cannot oscillate the catalog between enabled and disabled.
+  const directSelected =
+    catalogSource(search?.get('source') ?? null, discoverEnabled) === 'discover';
+  const connectStatus = useConnectProviderStatus(!directSelected);
+  const catalogueAvailable = directSelected || connectStatus.state !== 'absent';
 
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
@@ -477,9 +470,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // there is no catalogue to browse — see `catalogueAvailable` above and this
   // component's header comment. Connected and Channels are never filtered:
   // every deployment has its own connectors and its own inbound channels.
-  const visibleScopes = catalogueAvailable
-    ? SCOPES
-    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');
+  const visibleScopes =
+    catalogueAvailable
+      ? SCOPES
+      : SCOPES.filter((s) => s !== 'discover' && s !== 'all');
 
   // The category the catalogue should FILTER by, server-side. `null` while
   // browsing everything and while a search runs — the search is server-side
@@ -497,7 +491,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
-    discoverEnabled,
+    discoverEnabled: directSelected,
     focusCategory,
     computers: computersEnabled,
   });
@@ -668,6 +662,28 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 ))}
               </TabsList>
             </Tabs>
+            {discoverEnabled && !channelsActive && (
+              <Tabs
+                value={directSelected ? 'direct' : 'managed'}
+                onValueChange={(value) =>
+                  replaceParams((params) => {
+                    if (value === 'direct') params.set('source', value);
+                    else params.delete('source');
+                    params.delete('scope');
+                  })
+                }
+                aria-label={tI18nComplete.raw('connectorSourceLabel')}
+              >
+                <TabsList>
+                  <TabsTrigger value="managed">
+                    {tI18nComplete.raw('connectorSourceManaged')}
+                  </TabsTrigger>
+                  <TabsTrigger value="direct">
+                    {tI18nComplete.raw('connectorSourceDirect')}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
             {/* Global rules — connector approval policy, so it belongs on this
                 page and not on the shared capability bar, which also rides over
                 Agents, Skills and Triggers.

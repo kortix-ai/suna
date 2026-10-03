@@ -218,7 +218,7 @@ describe('resolveWorkingTurn', () => {
     expect(r.pendingTurnIds).toEqual([]);
   });
   test('a prompt the SERVER still holds is never the working turn — it is queued', () => {
-    // MEASURED, local stack 2026-08-26 (session 65216cc6): two sends 700ms
+    // MEASURED, local stack 2026-08-26 (one local session): two sends 700ms
     // apart, the first not streaming yet, so the working projection decides
     // from the INBOX and its `turnId` hint is null. Without the inbox fact the
     // fallback made the second prompt the working turn — full opacity, no
@@ -388,7 +388,7 @@ describe('a busy session always draws exactly one Thinking row', () => {
   });
 
   test('a turn parked on a question draws no row, even during a retry', () => {
-    // 2026-09-22, local (session 8d807956): the agent asked a 2-option
+    // 2026-09-22, local (one local session): the agent asked a 2-option
     // question; the row stayed `active` for 12m22s and the transcript shimmered
     // "Working on it" above the card asking the reader to act.
     const base = { lastTurnWorking: true, workingTurnId: 'turn', suppressed: false, workingTurnHasError: false };

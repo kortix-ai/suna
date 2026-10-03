@@ -40,6 +40,7 @@ describe('restartPendingStartSeed — the optimistic /start payload', () => {
       stage: 'provisioning',
       retriable: true,
       sandbox: null,
+      runtime_session_id: null,
       opencode_session_id: null,
       reason: 'restart_requested',
     });
@@ -81,7 +82,7 @@ describe('the hook wires the full restart behavior — the source the component 
 
   test('onSuccess refreshes everything a restart invalidates', () => {
     expect(code).toContain('clearRuntimeEnsureGuard();');
-    expect(code).toContain("queryClient.removeQueries({ queryKey: ['opencode'] });");
+    expect(code).toContain('resetRuntimeQueries(queryClient);');
     expect(code).toContain('queryClient.invalidateQueries({ queryKey: startKey });');
     expect(code).toContain('qk.project.sessionSandbox(projectId, sessionId)');
     expect(code).toContain('qk.project.sessionsScope(projectId)');

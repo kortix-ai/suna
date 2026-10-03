@@ -1,5 +1,5 @@
 /**
- * ReviewPage — the project's review inbox (web parity: customize/review).
+ * ReviewPage — the project's review inbox (web parity: /projects/<id>/review).
  *
  * One queue of everything that waits for a person: Change Requests, connector
  * calls that need approval, agent outputs, decisions and batches. Three

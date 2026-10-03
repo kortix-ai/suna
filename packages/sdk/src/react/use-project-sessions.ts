@@ -61,10 +61,7 @@ export function flattenProjectSessionPages(
 }
 
 export interface UseProjectSessionsOptions
-  extends Pick<
-    ListProjectSessionsOptions,
-    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'participant'
-  > {
+  extends Pick<ListProjectSessionsOptions, 'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels'> {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
   refetchInterval?: number | false | ((sessions: ProjectSession[]) => number | false);
@@ -79,9 +76,9 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
-  const { parent, startedBy, q, labels, participant } = options ?? {};
+  const { parent, startedBy, q, labels } = options ?? {};
   const query = useInfiniteQuery({
-    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, participant }),
+    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels }),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       listProjectSessionsPage(projectId, {
@@ -92,7 +89,6 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
         startedBy,
         q,
         labels,
-        participant,
       }),
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,

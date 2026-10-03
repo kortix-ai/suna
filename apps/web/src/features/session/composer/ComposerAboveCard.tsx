@@ -31,6 +31,7 @@ export function ComposerAboveCard({
   quotes,
   quoteListLabels,
   handleRemoveQuote,
+  aboveSlot,
   inputSlot,
   notice = null,
   onNoticeRetry,
@@ -75,6 +76,9 @@ export function ComposerAboveCard({
         onRemove={handleRemoveQuote}
       />
     </div>
+
+    {/* The queued messages: their own card, under the reply quotes. */}
+    {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
 
     {/*
       The stack above the card. Each layer owns its OWN top rounding rather

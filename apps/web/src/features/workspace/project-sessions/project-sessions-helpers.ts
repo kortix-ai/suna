@@ -139,7 +139,7 @@ export function sessionDetailFields(
   if (session.branch_name !== session.session_id) push('Branch', session.branch_name, true);
   push('Session ID', session.session_id, true);
   if (session.sandbox_id !== session.session_id) push('Sandbox ID', session.sandbox_id, true);
-  push('Root conversation ID', session.opencode_session_id, true);
+  push('Root conversation ID', session.runtime_session_id ?? session.opencode_session_id, true);
 
   return fields;
 }

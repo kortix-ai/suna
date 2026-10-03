@@ -216,9 +216,8 @@ export const NATIVE_TOOLKITS: ReadonlySet<string> = new Set(['microsoft_teams'])
 /**
  * The toolkits every catalogue view leaves out: the native ones above, and
  * those Composio cannot connect and that have no auth config yet (adding one
- * only produced a 4300 on sync). The auth-config part fails open: when either
- * list is unavailable it hides nothing, and connecting such a toolkit still
- * answers a clear 422. The native set is always hidden.
+ * only produced a 4300 on sync). Custom-auth toolkits stay hidden until an
+ * enabled config is verified. Native toolkits are always hidden.
  */
 async function hiddenToolkits(
   catalogClient: ComposioCatalogClient,
@@ -226,12 +225,17 @@ async function hiddenToolkits(
 ): Promise<Set<string>> {
   const hidden = new Set(NATIVE_TOOLKITS);
   const needy = catalog.filter(requiresOwnAuthConfig).map((item) => item.slug.toLowerCase());
-  if (needy.length === 0 || !catalogClient.authConfigs) return hidden;
+  if (needy.length === 0) return hidden;
+  if (!catalogClient.authConfigs) {
+    for (const slug of needy) hidden.add(slug);
+    return hidden;
+  }
   try {
     const configured = await cachedCustomAuthConfigIds(catalogClient);
     for (const slug of needy) if (!configured.has(slug)) hidden.add(slug);
   } catch (error) {
-    console.warn('[composio] auth config list unavailable, hiding only native toolkits:', error);
+    for (const slug of needy) hidden.add(slug);
+    console.warn('[composio] auth config list unavailable, hiding unverified toolkits:', error);
   }
   return hidden;
 }

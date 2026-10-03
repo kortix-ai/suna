@@ -1274,15 +1274,20 @@ flow(
       r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
-    await ctx.step('an unused warm session is hidden from the visible list', async () => {
+    // A warm session whose box is coming up or up bills compute from creation
+    // (warmPoolGrantMs), so it must STAY in the visible list and sidebar — a
+    // billed session its owner cannot see, open or stop is the KRTX-1068
+    // dogfood report. The marker only hides a warm row that is no longer
+    // active (reaped, failed, completed).
+    await ctx.step('an unused warm session that is provisioning or running stays in the visible list', async () => {
       const visible = await owner.get('/v1/projects/:projectId/sessions', {
         params: { projectId: p.id },
         query: { scope: 'visible' },
       });
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
-      if (visibleIds.includes(warmSessionId)) {
-        throw new Error('An unused warm session appeared in the visible session list');
+      if (!visibleIds.includes(warmSessionId)) {
+        throw new Error('A warm session whose box bills compute is hidden from the visible session list');
       }
     });
 
@@ -1738,7 +1743,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/turn'],
   },
   async (ctx) => {
-    // Session ad02e053: the sandbox memory guard stopped two turns and the
+    // A 2026-09-18 session: the sandbox memory guard stopped two turns and the
     // ledger dropped the reason, so the UI said nothing under four failed
     // sub-agent tasks. This pins what `/turn` reports about how turns died,
     // straight off seeded ledger rows: no runtime is needed to read history.
@@ -2255,6 +2260,7 @@ flow(
   async (ctx) => {
     const { Client } = await import('pg');
     const project = await ctx.fixtures.project();
+    if (!project.accountId) throw new Error('presence fixture project is missing accountId');
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: project.accountId,
@@ -2299,6 +2305,106 @@ flow(
       await ctx.step('active=false clears the lease', async () => {
         (await put(owner, { tab_id: tabId, active: false })).status(200).body().has('$.ok', true);
         if ((await leases()).length !== 0) throw new Error('lease not cleared');
+      });
+    } finally {
+      await db.end();
+    }
+  },
+);
+
+/**
+ * SESS-44 — session participants. One read answers who can open a session,
+ * for the header's avatar stack. `multi_user` is the gate: a session with one
+ * person renders as before. Who wrote each message is SESS-42.
+ */
+flow(
+  'SESS-44',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/participants',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+    ],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    const params = { projectId: project.id, sessionId };
+    const path = '/v1/projects/:projectId/sessions/:sessionId/participants';
+    type Person = { user_id: string; name: string | null; email: string | null; avatar_url: string | null; is_viewer: boolean };
+    type View = { participants: Person[]; total: number; multi_user: boolean };
+    const read = async (as: typeof owner) => {
+      const r = await as.get(path, { params });
+      r.status(200);
+      return r.json<View>();
+    };
+    const share = (body: unknown) =>
+      owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', body, { params });
+
+    await db.connect();
+    try {
+      await ctx.step('a private session has one participant, the OWNER, and is not multi-user', async () => {
+        const view = await read(owner);
+        if (view.total !== 1 || view.multi_user) throw new Error(`private: ${JSON.stringify(view)}`);
+        const [only] = view.participants;
+        if (only?.user_id !== ctx.P.OWNER.userId || !only.is_viewer) throw new Error(`owner row: ${JSON.stringify(only)}`);
+      });
+
+      await ctx.step('the MEMBER cannot read the participants of a session it cannot open → 404', async () => {
+        (await asMember.get(path, { params })).status(404);
+      });
+
+      await ctx.step('sharing with the MEMBER lists two people, OWNER first, each flagged for its own viewer', async () => {
+        (await share({ mode: 'members', memberIds: [member.userId] })).status(200);
+        const mine = await read(owner);
+        if (mine.total !== 2 || !mine.multi_user) throw new Error(`shared: ${JSON.stringify(mine)}`);
+        const ids = mine.participants.map((person) => person.user_id);
+        if (JSON.stringify(ids) !== JSON.stringify([ctx.P.OWNER.userId, member.userId])) throw new Error(`order ${ids}`);
+        if (!mine.participants[0].is_viewer || mine.participants[1].is_viewer) throw new Error('owner viewer flag');
+        const theirs = await read(asMember);
+        if (theirs.participants[0].is_viewer || !theirs.participants[1].is_viewer) throw new Error('member viewer flag');
+      });
+
+      await ctx.step('each participant carries the name, email and profile picture from the auth profile', async () => {
+        await db.query(
+          `UPDATE auth.users SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)
+             || '{"full_name":"Sess44 Member","avatar_url":"https://img.example.test/sess44.png"}'::jsonb
+           WHERE id = $1`,
+          [member.userId],
+        );
+        const person = (await read(owner)).participants.find((p) => p.user_id === member.userId);
+        if (person?.name !== 'Sess44 Member' || person.avatar_url !== 'https://img.example.test/sess44.png')
+          throw new Error(`profile: ${JSON.stringify(person)}`);
+        if (!person.email) throw new Error('email missing');
+      });
+
+      await ctx.step('after unsharing, the MEMBER gets 404 and the OWNER reads one person again', async () => {
+        (await share({ mode: 'private' })).status(200);
+        (await asMember.get(path, { params })).status(404);
+        const view = await read(owner);
+        if (view.total !== 1 || view.multi_user) throw new Error(`unshared: ${JSON.stringify(view)}`);
+      });
+
+      await ctx.step('unknown session → 404; NONMEMBER → 403; ANON → 401', async () => {
+        (await owner.get(path, { params: { projectId: project.id, sessionId: crypto.randomUUID() } })).status(404);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params })).status(403);
+        (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
       });
     } finally {
       await db.end();

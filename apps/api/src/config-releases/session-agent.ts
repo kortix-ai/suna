@@ -122,8 +122,13 @@ export function resolveSessionReleaseAgent(
  * and the box always has a release to converge onto. It is NOT "the default
  * agent minus the grant": compiling the default agent for an owner who may not
  * run it would hand that owner the agent's prompt and model through the box.
+ *
+ * `meta` is the platform coordinator, whatever `repositoryAccess` says: its
+ * session metadata reads `repository_access: true`, but provisioning never
+ * gives it a checkout (`KORTIX_PROJECT_AUTO_CLONE=0`).
  */
 export function releaseVariantFor(agent: string | null, repositoryAccess: boolean): ConfigReleaseVariant {
+  if (isMetaAgentName(agent)) return 'meta';
   if (repositoryAccess) return 'project';
   return agent ? `agent:${agent}` : 'none';
 }
