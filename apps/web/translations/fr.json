@@ -1914,7 +1914,6 @@
     "messageInput": "Champ de message",
     "attachFiles": "Joindre des fichiers",
     "selectAgent": "Sélectionner un agent",
-    "agentLockedHint": "Impossible de changer d'agent dans une session déjà démarrée.",
     "noModel": "Aucun modèle",
     "thinkingEffort": "Effort de raisonnement",
     "sessionOverrides": "Remplacements de session",
@@ -19205,7 +19204,7 @@
       "text48b78a9ab65b": "Comment les exécutions restent-elles isolées ?",
       "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
       "text39207bf34111": "Compétences associées",
-      "texte55e1e7d3eeb": "Le tour de l'agent a échoué. Aucune raison n'a été indiquée."
+      "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
