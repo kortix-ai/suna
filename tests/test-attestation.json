@@ -1,18 +1,30 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "0563ac9e50a0c6778df546e333302d7e4a61319ea60a3a99debc16a65c3d5509",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/cli/src/__tests__/no-inline-arg-errors.test.ts",
+    "apps/cli/src/__tests__/validate-argv.blackbox.test.ts",
+    "apps/cli/src/commands/validate.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
+    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets-download.ts",
+    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts",
+    "apps/mobile/lib/highlight/shiki.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "a306818837089f3e2a69766f50aa4a1c4685da459efbb7e249df7964161a0953",
+  "head": "e8661f93352cfd2a167a31718f173719042645a8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T16:18:07.380Z"
 }
