@@ -14,8 +14,7 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
-// replica-local: rate-limit windows are per-process by design; each replica
-// rate-limits its own logging, so one replica's copy is correct.
+// replica-local: a log-noise limiter; each replica rate-limits its own lines.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
