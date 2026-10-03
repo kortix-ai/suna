@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: per-replica rate-limit counters by design. A window throttle
+// only needs to bound THIS process's log volume, and a lost count on restart
+// costs at most one extra warn line; a shared store buys nothing.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
