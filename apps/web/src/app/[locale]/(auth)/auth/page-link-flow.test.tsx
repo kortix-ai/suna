@@ -36,7 +36,6 @@ mock.module('./actions', () => ({
   resolveAuthMode: async () => ({ mode: 'unknown' }),
   signInWithPassword: async () => ({}),
   signUpWithPassword: async () => ({}),
-  verifyOtp: async () => ({}),
 }));
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
