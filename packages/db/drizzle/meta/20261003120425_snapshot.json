@@ -1,6 +1,6 @@
 {
-  "id": "83e02c7f-260c-46e1-a580-2dc779b455a3",
-  "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
+  "id": "07104321-c5ea-4b81-918c-8dca8f84f466",
+  "prevId": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5513,7 +5513,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",

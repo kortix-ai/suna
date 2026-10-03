@@ -22,7 +22,7 @@ const SRC = join(import.meta.dir, '..', '..');
 const DESTINATION_PATHS = new Map<string, string>([
   [
     'app/[locale]/(auth)/auth/actions.ts',
-    'sendEmailCode (before the email link is minted), signUpWithPassword, signInWithPassword and verifyOtp all resolve a post-auth destination.',
+    'sendEmailCode (before the email link is minted), signUpWithPassword and signInWithPassword all resolve a post-auth destination.',
   ],
   [
     'app/(auth)/auth/callback/route.ts',
