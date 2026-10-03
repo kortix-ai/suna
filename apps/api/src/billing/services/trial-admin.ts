@@ -118,7 +118,6 @@ export const TEMPORARY_ACCESS_OVERRIDE_KEYS = [
   'rbac',
   'auditAccess',
   'branding',
-  'maxConcurrentSessions',
 ] as const satisfies readonly OverrideKey[];
 
 /**
@@ -137,10 +136,6 @@ export function temporaryAccessOverrides(
 ): EntitlementOverrides {
   const overrides: EntitlementOverrides = {
     managedModels: { value: plan.entitlements.managedModels, expires_at: endsAtIso },
-    maxConcurrentSessions: {
-      value: plan.limits.concurrentSessions,
-      expires_at: endsAtIso,
-    },
   };
   if (plan.entitlements.sso) overrides.sso = { value: true, expires_at: endsAtIso };
   if (plan.entitlements.scim) overrides.scim = { value: true, expires_at: endsAtIso };

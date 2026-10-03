@@ -114,7 +114,6 @@ describe('GET /admin/api/accounts — list query failure', () => {
           planType: null,
           stripeSubscriptionId: null,
           stripeSubscriptionStatus: null,
-          maxConcurrentSessions: null,
           billingModel: null,
           seatCount: null,
           trialStatus: null,
