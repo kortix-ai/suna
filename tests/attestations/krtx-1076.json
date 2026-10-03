@@ -1,7 +1,6 @@
 {
-  "source_hash": "9771b41ae44156a1dac202e4d7630df59e56544951b95b5b0b7689c85d31dd11",
+  "source_hash": "e254d8e220a65c589e68e77293867a0e8b2184916a6bb4295445781c4887f78a",
   "diff_files": [
-    ".agents/skills/testing/SKILL.md",
     "AGENTS.md",
     "apps/api/bunfig.toml",
     "apps/api/scripts/test.sh",
@@ -11,7 +10,6 @@
     "apps/cli/package.json",
     "apps/cli/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/bunfig.toml",
-    "apps/kortix-sandbox-agent-server/package.json",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
@@ -22,7 +20,6 @@
     "apps/kortix-sandbox-agent-server/src/harness/shared/box-paths.ts",
     "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
     "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
-    "apps/llm-gateway/package.json",
     "apps/mobile/lib/highlight/shiki.test.ts",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
@@ -46,19 +43,17 @@
     "packages/llm-gateway/bunfig.toml",
     "scripts/isolated-localhost.ts",
     "scripts/test-box-env.sh",
-    "tests/bin/package-quality.ts",
     "tests/src/core/local-runner.ts",
     "tests/unit/test-attestation.test.ts",
-    "tests/unit/test-runner-contract.test.ts",
-    "tests/verify-attestation.mjs"
+    "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "0d5381edccb9f6c38328f555c004a357d7bb57863f849fcefa0d660bc05cae3e",
-  "head": "d99ffa3969ddabac598fe0f1f2817ec2123d2b14",
+  "diff_hash": "c417cd89434f2c822a908ce965f88503628f7d7d996fe769eb078d69a5db9170",
+  "head": "033211616a538aef358a1b7d494a4a36a0cf94fb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:21:29.847Z"
+  "at": "2026-10-03T20:53:50.058Z"
 }
