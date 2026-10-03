@@ -160,7 +160,13 @@ describe('POST /file/import', () => {
     originalFetch = globalThis.fetch
     const warn = logger.warn
     warningSpy = spyOn(logger, 'warn').mockImplementation((message, context) => {
-      if (message !== '[files] attachment import failed') warn(message, context)
+      // '[slow-request] handler exceeded threshold' is app-level latency
+      // telemetry, not this route's behavior: under a loaded runner the import
+      // legitimately crosses the 2 s default, and this file asserts the
+      // ROUTE's warnings (the middleware has its own suite).
+      if (message !== '[files] attachment import failed' && message !== '[slow-request] handler exceeded threshold') {
+        warn(message, context)
+      }
     })
   })
 
