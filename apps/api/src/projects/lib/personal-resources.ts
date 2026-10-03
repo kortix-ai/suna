@@ -58,9 +58,8 @@ export function personalResourceOwner(input: {
  *
  * `agentPrincipal` = the credential is an agent session under the
  * agent-principal model (flag ON, governed grant). `onBehalfOfUserId` prefers
- * the fresh per-request value from the auth middleware (`fresh`), because the
- * actor's copy rides a 15 s token-binding memo and a clear must take effect on
- * the next request.
+ * the per-request value from the auth middleware (`fresh`); the actor's copy is
+ * the same read when the request seeded it, and null for an out-of-band actor.
  */
 export function actorPersonalScope(
   actor: Actor | null | undefined,
