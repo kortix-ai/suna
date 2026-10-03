@@ -101,6 +101,15 @@ async function captureAccess(
 
 const isResponse = (value: unknown): value is Response => value instanceof Response;
 
+/** Raw SQL rows carry Postgres timestamp text; the API answers ISO 8601 like every other route. */
+function isoRows<T extends Record<string, any>>(rows: Iterable<T>): T[] {
+  return Array.from(rows, (row) => {
+    const out: Record<string, any> = { ...row };
+    for (const key of ['ts', 'end_at', 'start_at']) if (out[key] != null) out[key] = new Date(out[key]).toISOString();
+    return out as T;
+  });
+}
+
 /** `[from, to)` from `day=YYYY-MM-DD` (UTC) or `from`/`to` ISO instants; default today. */
 function window(c: Context): { from: Date; to: Date } | null {
   const day = c.req.query('day');
@@ -312,7 +321,7 @@ projectsApp.openapi(
     const deviceId = c.req.query('device_id');
     const subject = access.subject!;
     // Runs: consecutive frames of one device with the same app and window, no gap over 2 minutes.
-    const runs = Array.from(
+    const runs = isoRows(
       await db.execute<Record<string, unknown>>(sql`
         SELECT device_id, app, title, (array_agg(url ORDER BY ts))[1] AS url,
                min(ts) AS start_at, max(ts) AS end_at, count(*)::int AS frames
@@ -380,7 +389,7 @@ projectsApp.openapi(
       db.execute(sql`SELECT action_id, ts, device_id, chunk_id, kind, app, window_title, description, target, screenshot FROM kortix.timeline_actions WHERE ${where} ORDER BY ts LIMIT 500`),
       db.execute(sql`SELECT line_id, ts, end_at, device_id, chunk_id, text FROM kortix.timeline_audio WHERE ${where} ORDER BY ts LIMIT 500`),
     ]);
-    return c.json({ user_id: access.subject, from: span.from.toISOString(), to: span.to.toISOString(), frames: Array.from(frames), actions: Array.from(actions), audio: Array.from(audio) });
+    return c.json({ user_id: access.subject, from: span.from.toISOString(), to: span.to.toISOString(), frames: isoRows(frames as Iterable<Record<string, any>>), actions: isoRows(actions as Iterable<Record<string, any>>), audio: isoRows(audio as Iterable<Record<string, any>>) });
   },
 );
 
@@ -443,7 +452,7 @@ projectsApp.openapi(
         sql`(SELECT 'audio' AS kind, line_id AS id, ts, device_id, chunk_id, NULL AS app, NULL AS title, NULL AS url, text FROM kortix.timeline_audio WHERE ${scope} AND ${AUDIO_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${limit})`,
     ].filter(Boolean) as ReturnType<typeof sql>[];
     if (!parts.length) return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');
-    const rows = Array.from(
+    const rows = isoRows(
       await db.execute<Record<string, any>>(sql`SELECT * FROM (${sql.join(parts, sql` UNION ALL `)}) hits ORDER BY ts DESC LIMIT ${limit}`),
     );
     return c.json({
@@ -471,7 +480,7 @@ projectsApp.openapi(
   async (c: any) => {
     const access = await captureAccess(c, { userId: c.req.query('user_id') });
     if (isResponse(access)) return access;
-    const [frame] = Array.from(
+    const [frame] = isoRows(
       await db.execute<Record<string, any>>(
         sql`SELECT * FROM kortix.timeline_frames WHERE frame_id = ${c.req.param('frameId')}::uuid AND project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid LIMIT 1`,
       ),
