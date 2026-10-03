@@ -53,6 +53,7 @@ import {
   connectorConnections,
   connectors,
   providerEvents,
+  sessionEnvironments,
   sessionLifecycleCommands,
 } from './kortix';
 
@@ -222,6 +223,22 @@ describe('canonical audit ledger', () => {
     ]) {
       expect(indexNames(auditEvents)).not.toContain(dropped);
     }
+  });
+
+  test('does not re-add the session_environments index no read path uses', () => {
+    // Dropped by 20261003055623164_drop_session_environments_status_index.
+    // Prod idx_scan is 0 (Supabase advisor unused_index): every query reaches a
+    // row by session_id (the primary key) or external_id, and the one status
+    // predicate filters the single row an earlier session_id equality located.
+    // The kept set still serves every read the code runs.
+    expect(indexNames(sessionEnvironments)).not.toContain('idx_session_environments_status');
+    expect(indexNames(sessionEnvironments)).toEqual(
+      expect.arrayContaining([
+        'idx_session_environments_project',
+        'idx_session_environments_account',
+        'idx_session_environments_external_id',
+      ]),
+    );
   });
 
   test('serves the bare session-scoped audit read from an index', () => {
