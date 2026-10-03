@@ -10,7 +10,6 @@ import {
   ChatGptSubscriptionConnectDialog,
   useShowChatGptConnectPrompt,
 } from '@/components/projects/chatgpt-subscription-connect';
-import Hint from '@/components/ui/hint';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
@@ -70,25 +69,6 @@ export function ProjectChatGptConnectNavItem({ projectId }: { projectId: string 
           {t('connectGpt')}
         </SidebarMenuButton>
       </SidebarMenuItem>
-      <ChatGptConnectDialog projectId={projectId} open={open} onOpenChange={setOpen} />
-    </>
-  );
-}
-
-export function ProjectChatGptConnectRailItem({ projectId }: { projectId: string }) {
-  const t = useTranslations('sidebar');
-  const { show } = useShowChatGptConnectPrompt(projectId);
-  const { open, setOpen, openDialog } = useChatGptConnectDialog(projectId);
-
-  if (!show) return null;
-
-  return (
-    <>
-      <Hint label={t('connectGpt')}>
-        <SidebarMenuButton type="button" aria-label={t('connectGpt')} onClick={openDialog}>
-          <OpenAI className="text-foreground size-4.5!" />
-        </SidebarMenuButton>
-      </Hint>
       <ChatGptConnectDialog projectId={projectId} open={open} onOpenChange={setOpen} />
     </>
   );
