@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realAccountResource from './account-resource';
 
 // The pooled keys a session may run on (secrets/provider-key-selection.ts).
 // The pool routes check a selection with mayUseProviderKeys: it checks keys
@@ -23,6 +24,13 @@ const filtered = (input: { providerId?: string; name?: string; ids?: string[] })
   (!input.name || row.name === input.name) &&
   (!input.ids || input.ids.includes(row.secretId)));
 mock.module('./account-resource', () => ({
+  // The two readers are the seam under test; every other export stays real.
+  // provider-key-selection's import graph reaches credentials/codex (through
+  // resolution/effective → served-managed-models → descriptors), which imports
+  // `encryptAccountSecret` from here statically — a partial mock hides that
+  // export and the import dies with "Export named 'encryptAccountSecret' not
+  // found".
+  ...realAccountResource,
   listUsableGatewaySecrets: async (input: { providerId?: string; name?: string; ids?: string[] }) => {
     queries.push(input);
     readers.push('member-gated');
