@@ -1,6 +1,8 @@
 {
-  "source_hash": "c444bcfa493343730ccad7e690d8b9fe0b740a57e88717d011599e57100211bb",
+  "source_hash": "9771b41ae44156a1dac202e4d7630df59e56544951b95b5b0b7689c85d31dd11",
   "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
     "apps/api/bunfig.toml",
     "apps/api/scripts/test.sh",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -50,13 +52,13 @@
     "tests/unit/test-runner-contract.test.ts",
     "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "4bd17716a86034c785bf3e43ac8e5864718d463c5d871f968c30b83da3857822",
-  "head": "d0f19d835bc75bc7b9539ddc9bc094ae2763c2e9",
+  "diff_hash": "0d5381edccb9f6c38328f555c004a357d7bb57863f849fcefa0d660bc05cae3e",
+  "head": "d99ffa3969ddabac598fe0f1f2817ec2123d2b14",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:01:25.896Z"
+  "at": "2026-10-03T20:21:29.847Z"
 }
