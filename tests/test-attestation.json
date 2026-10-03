@@ -1,11 +1,16 @@
 {
-  "source_hash": "778ab50534de7c4c24de4d277175827f937bb9964c9c8c2e4e83dd74c4ca2a0f",
-  "head": "8b47b3e3ba77447d94ba1c736e4efcdb68bee72f",
+  "source_hash": "aa8b88ccf64abc56e828184db90a7648ec0dab3da1074411920aca1545543e5a",
+  "diff_files": [
+    "packages/db/migrations/20261003052500000_consolidate_deletion_request_policies.sql",
+    "packages/db/scripts/consolidate-deletion-policies.integration.test.ts"
+  ],
+  "diff_hash": "b8f4805f55eb916a87812f0238d566a8aedb3f59aaac106352994a715d0f8cc0",
+  "head": "c4aec52ca89a7d9fa308b12a52f0b92416c96f5f",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T13:21:04.830Z"
+  "at": "2026-10-03T14:56:52.419Z"
 }
