@@ -1,0 +1,16 @@
+{
+  "source_hash": "2bfc832375c1d4d41aec8c62b0799720d616cc9d951537104cda57ed561ae047",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-connector-discover-catalog.test.ts",
+    "apps/api/src/connectors/connector-catalog.ts"
+  ],
+  "diff_hash": "dc0026ed4784d1d2f76f9396b3de74f691072341f56b868abb5fa8032d36125c",
+  "head": "f982301b9d7342a46287c73f987381d1ee3e7cf6",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T20:16:43.175Z"
+}
