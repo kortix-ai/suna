@@ -5,6 +5,14 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 
+// The sandbox exports BASH_ENV=/dev/shm/kortix/agent-env.sh (the session's real
+// environment file). Every non-interactive bash — including each workspace's
+// `bash scripts/test.sh` — sources it at startup, re-injecting every KORTIX_*
+// value the hermetic scrub below removes (measured: the API suite's compiled
+// runtime then rejects the foreign KORTIX_PROJECT_ID). This runner itself is
+// bun, so dropping it here cleans every child at the source.
+delete process.env.BASH_ENV;
+
 /**
  * Runner controls that must survive the hermetic scrub below.
  *

@@ -40,6 +40,10 @@ const HARNESS_KNOBS = new Set(['KORTIX_TEST_TIMEOUT_MS', 'KORTIX_ATTACHMENT_OFFL
 for (const key of Object.keys(process.env)) {
   if (key.startsWith('KORTIX_') && !HARNESS_KNOBS.has(key)) delete process.env[key]
 }
+// The sandbox also exports the session env file as BASH_ENV; every bash this
+// suite spawns (rig hooks, git wrappers) would source it and re-import the
+// platform context the loop above just removed. CI has no BASH_ENV.
+delete process.env.BASH_ENV
 // The pi harness reads this dir through managedSkillsDir() at call time; point
 // it at a fresh empty dir so no baked system skills leak into a rig.
 process.env.KORTIX_MANAGED_SKILLS_DIR = mkdtempSync(join(tmpdir(), 'kortixd-test-no-skills-'))

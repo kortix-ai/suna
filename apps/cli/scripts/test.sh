@@ -13,7 +13,13 @@
 # test harness's own knobs (timeout, package-quality's attachment switch).
 # sandboxEnvValue() also falls back to the platform's /dev/shm/kortix/
 # agent-env.sh (real session token and project secrets), so forbid reading it
-# here the way the CLI's own tests do.
+# here the way the CLI's own tests do. The platform also exports that file as
+# BASH_ENV, and every non-interactive bash — including this script — sources
+# it at startup, re-injecting every KORTIX_* value the loop below just
+# removed (measured: the compiled runtime's identity check then rejects the
+# foreign KORTIX_PROJECT_ID). Drop BASH_ENV so this script and everything it
+# spawns start from the CI condition.
+unset BASH_ENV
 while IFS='=' read -r key _; do
   case "$key" in
     KORTIX_TEST_TIMEOUT_MS|KORTIX_ATTACHMENT_OFFLOAD) ;;
