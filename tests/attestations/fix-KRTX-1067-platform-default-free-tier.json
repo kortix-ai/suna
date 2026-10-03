@@ -1,6 +1,7 @@
 {
-  "source_hash": "96fdde66bbba2d687bddbbf6a47be1f68c6a387feaf6ff3bbbc19328198c509f",
+  "source_hash": "d4cc12d11b9674801c376f241bc9c72609453a173ecb31af13c026441543c8a1",
   "diff_files": [
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
     "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
     "apps/api/src/__tests__/unit-channel-model-access.test.ts",
     "apps/api/src/__tests__/unit-channel-vision-model.test.ts",
@@ -13,29 +14,33 @@
     "apps/api/src/llm-gateway/models/catalog-models.test.ts",
     "apps/api/src/llm-gateway/models/catalog-models.ts",
     "apps/api/src/llm-gateway/models/served-managed-models.ts",
+    "apps/api/src/llm-gateway/resolution/choose-default-model.ts",
+    "apps/api/src/llm-gateway/resolution/default-model.ts",
     "apps/api/src/llm-gateway/resolution/effective.test.ts",
     "apps/api/src/llm-gateway/resolution/effective.ts",
     "apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts",
     "apps/api/src/llm-gateway/resolution/resolve-candidates.ts",
     "apps/api/src/projects/lib/session-create.ts",
     "apps/api/src/projects/lib/sessions.create-characterization.test.ts",
+    "apps/api/src/projects/routes/channel-bindings.ts",
     "apps/api/src/projects/routes/models.ts",
     "apps/api/src/projects/routes/session-open-bundle.test.ts",
     "apps/api/src/projects/routes/session-open-bundle.ts",
     "apps/api/src/projects/session-title-generate.ts",
+    "apps/api/src/shared/platinum.test.ts",
     "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
     "packages/sdk/src/core/models/composer-model.ts",
     "packages/sdk/src/core/models/composer-models.test.ts",
     "packages/sdk/src/core/models/model-visibility.ts",
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
-  "diff_hash": "a4739608c1f4e54c14b1119f4b8ea4e5e3215ae84bb25f3285a4acd0474b8890",
-  "head": "4d333b26eed20396c0bf1c1ba0b547b64f3e2baf",
+  "diff_hash": "4cd5bfda9f9bb8cbb0d0119fe2b6653327aa34367216f1969277bd664cc978fb",
+  "head": "62a22c168fecae4b0143fa5007c1223f36592c15",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T21:15:56.215Z"
+  "at": "2026-10-03T22:08:23.129Z"
 }
