@@ -130,17 +130,14 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
    * the zero-width begin at once, so a `;` comment AFTER a value on the same
    * line stays base colour. Comments at the start of a line still colour.
    */
-  // php line 0: with shiki 4.4.3 the two engines do not agree on the `<?php`
-  // open tag, and the wasm reference's own output is run-dependent — isolated
-  // `codeToTokensBase` probes on 2026-10-03 showed the reference splitting the
-  // tag (`<?` coloured, `php` unscoped) and the JavaScript engine keeping it
-  // whole, with the shapes trading places between runs and themes. No parity
-  // assertion can be deterministic against an unstable reference, so the
-  // object form below EXCLUDES a line from the parity check on that theme
-  // without asserting a direction. (The array form keeps its
-  // assert-still-differs semantics: `ini`'s `\G` divergence is deterministic.)
-  // The rest of the php sample stays under full parity, and production ships
-  // the JavaScript engine, whose open-tag output is stable and whole.
+  // php line 0: the wasm reference's own `<?php` output is run-dependent —
+  // isolated codeToTokensBase probes (2026-10-03) showed it splitting the tag
+  // and the JavaScript engine keeping it whole, with the shapes trading places
+  // between runs and themes. No parity assertion is deterministic against an
+  // unstable reference, so the object form EXCLUDES a line per theme without
+  // asserting a direction; the array form keeps its assert-still-differs
+  // semantics (ini's `\G` divergence is deterministic). Production ships the
+  // JavaScript engine, whose open-tag output is stable and whole.
   const KNOWN_ENGINE_DIFFERENCES: Record<string, number[] | Partial<Record<'light' | 'dark', number[]>>> = {
     ini: [2],
     php: { light: [0], dark: [0] },
