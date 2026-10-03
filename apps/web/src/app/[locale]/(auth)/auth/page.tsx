@@ -136,7 +136,16 @@ function AuthCardForm({
   const [pendingAction, setPendingAction] = useState<
     'continue' | 'link' | 'resend' | 'password' | 'sso' | null
   >(null);
-  const pending = pendingAction !== null;
+  const { isLoading: authBootstrapping } = useAuth();
+  // Every submit waits for the auth bootstrap to settle. The bootstrap's
+  // dead-session check (getUser → AuthSessionMissingError → signOut) tears
+  // down every stored PKCE verifier (auth-js removeAllPKCEVerifiers), and all
+  // of that runs before isLoading clears. A sign-in submitted while the
+  // bootstrap is still resolving could have its verifier cookies deleted by
+  // that teardown, and the emailed link then exchanges with no verifier —
+  // GoTrue answers 400 and the callback reports an expired link. A visitor
+  // with no session skips the check, so the gate costs one local cookie read.
+  const pending = pendingAction !== null || authBootstrapping;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
@@ -258,7 +267,7 @@ function AuthCardForm({
 
   const sendMagic = async (to?: string, source: 'continue' | 'link' | 'resend' = 'link') => {
     const target = (to ?? email).trim();
-    if (!target) return;
+    if (!target || authBootstrapping) return;
     clearNotices();
     setPendingAction(source);
 
