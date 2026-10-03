@@ -1,5 +1,5 @@
 {
-  "source_hash": "d4cc12d11b9674801c376f241bc9c72609453a173ecb31af13c026441543c8a1",
+  "source_hash": "89a1977ba5520751115b7972eda371703441cb64b9b44cedad591294eb83fd87",
   "diff_files": [
     "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
     "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
@@ -29,18 +29,19 @@
     "apps/api/src/projects/session-title-generate.ts",
     "apps/api/src/shared/platinum.test.ts",
     "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
+    "apps/web/src/features/workspace/customize/sections/view/gateway/gateway-routing.test.ts",
     "packages/sdk/src/core/models/composer-model.ts",
     "packages/sdk/src/core/models/composer-models.test.ts",
     "packages/sdk/src/core/models/model-visibility.ts",
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
-  "diff_hash": "4cd5bfda9f9bb8cbb0d0119fe2b6653327aa34367216f1969277bd664cc978fb",
-  "head": "62a22c168fecae4b0143fa5007c1223f36592c15",
-  "passed": false,
+  "diff_hash": "73d601c9ea6d586af1e0b0f16fccaea222774c79c87b298b57ee4a1d0c90c38a",
+  "head": "60f2caade7897c86e8992ae874a938bd63c0710e",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:08:23.129Z"
+  "at": "2026-10-03T22:27:03.219Z"
 }
