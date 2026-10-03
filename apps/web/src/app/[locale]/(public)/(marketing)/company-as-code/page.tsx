@@ -1,5 +1,5 @@
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { ChangeRequest } from '@/features/marketing/company-as-code/change-request';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
 import { getLocalizedCompanyAsCodeContent } from '@/features/marketing/company-as-code/content';
@@ -11,13 +11,6 @@ import { cn } from '@/lib/utils';
 import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/company-as-code` — the argument no competitor can copy: one `kortix.yaml`

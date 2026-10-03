@@ -491,7 +491,9 @@ describe('kortix CLI black-box behavior', () => {
       name: 'pdf',
       marketplaceLabel: 'Kortix',
     });
-    expect(result.stderr).toContain('host test');
+    // Machine mode (--json) keeps stderr silent: no human host notice, so a
+    // piped or merged capture parses (see whoami-json.blackbox.test.ts).
+    expect(result.stderr).toBe('');
     expect(requests).toEqual([{
       method: 'GET',
       path: '/v1/marketplace/items?query=pdf&source=kortix',
