@@ -285,6 +285,11 @@ export function highlightToTokens(
   code: string,
   language: string,
   scheme: CodeScheme,
+  /** Extra `codeToTokensBase` options, e.g. a raised `tokenizeTimeLimit` for
+   *  a test that must not depend on wall-clock scheduling. Production callers
+   *  keep shiki's 500 ms per-line budget. Not part of the cache key: a caller
+   *  that changes the budget clears `__testing.tokenCache` first. */
+  overrides?: { tokenizeTimeLimit?: number },
 ): CodeLine[] | null {
   const lang = normalizeLanguage(language);
   if (isPlainOnly(code, lang)) return plainTokens(code, scheme);
@@ -299,6 +304,7 @@ export function highlightToTokens(
       lang,
       theme: codeThemeFor(scheme),
       tokenizeMaxLineLength: MAX_LINE_LENGTH,
+      ...overrides,
     });
     lines = toCodeLines(raw, CODE_THEME_FOREGROUND[scheme]);
   } catch {

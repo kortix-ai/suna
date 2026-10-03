@@ -152,7 +152,16 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       highlightToTokens(sample, lang, 'light');
 
       for (const scheme of ['light', 'dark'] as const) {
-        const tokens = highlightToTokens(sample, lang, scheme);
+        // Shiki stops a line after 500 ms by default; under a fully loaded box
+        // (the attested packages lane) that budget can trip on a cold cpp line
+        // and truncate the pass, which then reads as an undocumented engine
+        // divergence. The fixture pins ENGINE parity, not scheduling: raise
+        // the per-line budget for both sides and bypass the truncated warm
+        // pass in the cache.
+        __testing.tokenCache.clear();
+        const tokens = highlightToTokens(sample, lang, scheme, {
+          tokenizeTimeLimit: 60_000,
+        });
         expect(tokens).not.toBeNull();
         const colors = new Set(tokens!.flat().map((t) => t.color.toLowerCase()));
         // Highlighted means more than the base colour.
@@ -163,6 +172,7 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
           .codeToTokensBase(sample, {
             lang,
             theme: scheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT,
+            tokenizeTimeLimit: 60_000,
           })
           .map((line) =>
             line.map((t) => ({ content: t.content, color: t.color ?? CODE_THEME_FOREGROUND[scheme] })),
