@@ -7,6 +7,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { UUID_RE } from '../iam.ts';
+import { splitHelp } from '../command-argv.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
@@ -101,20 +102,10 @@ async function resolveMemberId(
 }
 
 export async function runGrants(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let group = false;

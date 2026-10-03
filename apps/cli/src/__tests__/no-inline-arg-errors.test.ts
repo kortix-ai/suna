@@ -37,7 +37,7 @@ const ALLOWED: Record<'inlineArgError' | 'helpPreamble' | 'parseFlags', readonly
     'system-skills.ts',
     'triggers.ts',
   ],
-  helpPreamble: ['access.ts', 'agents.ts', 'connectors.ts', 'grants.ts', 'marketplace.ts', 'secrets.ts', 'triggers.ts'],
+  helpPreamble: ['connectors.ts', 'triggers.ts'],
   parseFlags: ['init.ts', 'marketplace.ts', 'system-skills.ts', 'validate.ts'],
 };
 

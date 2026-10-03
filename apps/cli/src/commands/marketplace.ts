@@ -1,6 +1,7 @@
 /** Marketplace discovery and agent-driven, verified installs. */
 
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
+import { splitHelp } from '../command-argv.ts';
 import { clientFromAuth, createApiClient, type ApiClient } from '../api/client.ts';
 import {
   emitJson,
@@ -292,21 +293,10 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
 }
 
 export async function runMarketplace(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
-
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let flags: MarketplaceFlags;
   try { flags = parseFlags(rest); }
   catch (error) {
