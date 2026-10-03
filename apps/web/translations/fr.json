@@ -20528,6 +20528,7 @@
     "agentDriveDescription": "La mémoire et les résultats que cet agent conserve d’une session à l’autre. Chaque session de l’agent le voit dans /drives/agent.",
     "agentFullWriteTitle": "Autoriser cet agent à écrire partout dans votre drive",
     "agentFullWriteDescription": "Dans les sessions que vous lancez, cet agent peut modifier n’importe quel fichier de votre drive, pas seulement son dossier From agents.",
-    "agentCardDrive": "Drive de {size}"
+    "agentCardDrive": "Drive de {size}",
+    "sessionSkippedDrives": "{count, plural, one {# drive n’a pas trouvé de place dans cette session} other {# drives n’ont pas trouvé de place dans cette session}} : {names}. Retirez un drive pour faire de la place, puis redémarrez la session."
   }
 }

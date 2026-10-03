@@ -112,6 +112,10 @@ export interface SessionDrives {
   drives: SessionDrive[];
   /** The session is its owner's own (private, started by them): their drives mount in it. */
   personal: boolean;
+  /** Drives the session should have that did not fit in its sandbox's mount slots. */
+  skipped?: Array<{ driveId: string; name: string }>;
+  /** What to tell people about `skipped`, or null when every drive fit. */
+  skippedMessage?: string | null;
 }
 
 export interface SessionDriveChange extends SessionDrives {

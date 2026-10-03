@@ -61,8 +61,12 @@ export const FROM_AGENTS_MOUNT_PATH = '/drives/from-agents';
 /** The folder of the personal drive that agents write by default. */
 export const FROM_AGENTS_FOLDER = '/From agents';
 export const AGENT_MOUNT_PATH = '/drives/agent';
-/** A sandbox takes at most 8 volume mounts (Platinum's per-sandbox cap). */
-export const MAX_SESSION_DRIVES = 8;
+/**
+ * Platinum's per-sandbox volume mount cap when its limits cannot be read. The
+ * live value comes from Platinum (see volumes.ts `sandboxMountLimit`); every
+ * volume counts against it, drives and the session's own state volume alike.
+ */
+export const DEFAULT_SANDBOX_MOUNT_LIMIT = 8;
 
 const RESERVED_SLUGS = new Set(['me', 'agent', 'from-agents']);
 
@@ -95,6 +99,12 @@ export interface MountCandidate<D> {
   drive: D;
   readOnly: boolean;
   role: MountRole;
+  /**
+   * Among other drives, lower mounts first when not all of them fit; ties go
+   * by name. The session plan uses it for: agent grants, project grants,
+   * shares with the owner, then drives attached by hand in attach order.
+   */
+  priority?: number;
 }
 
 export interface PlannedMount<D> extends MountCandidate<D> {
@@ -105,15 +115,24 @@ export interface PlannedMount<D> extends MountCandidate<D> {
   fromAgents?: boolean;
 }
 
+export interface DriveMountPlan<D> {
+  mounts: PlannedMount<D>[];
+  /** Drives that did not fit in the slots the sandbox had, in priority order. */
+  skipped: D[];
+}
+
 /**
  * Mount paths for one session: the owner's drive (and, when it is read-only,
  * its writable "From agents" folder beside it), the agent drive, then every
- * other drive in the given order, each drive once (the most permissive
- * candidate wins), each at a distinct path, capped at {@link MAX_SESSION_DRIVES}.
+ * other drive by priority, each drive once (the most permissive candidate and
+ * the best priority win), each at a distinct path. `slots` is how many volume
+ * mounts the sandbox has left for drives: a drive that does not fit is
+ * returned in `skipped`, never dropped silently.
  */
 export function planDriveMounts<D extends { name: string; driveId: string }>(
   candidates: MountCandidate<D>[],
-): PlannedMount<D>[] {
+  slots: number = DEFAULT_SANDBOX_MOUNT_LIMIT,
+): DriveMountPlan<D> {
   const rank = (r: MountRole) => (r === 'me' ? 0 : r === 'agent' ? 1 : 2);
   const byDrive = new Map<string, MountCandidate<D>>();
   for (const c of candidates) {
@@ -126,24 +145,34 @@ export function planDriveMounts<D extends { name: string; driveId: string }>(
       drive: c.drive,
       readOnly: seen.readOnly && c.readOnly,
       role: rank(c.role) < rank(seen.role) ? c.role : seen.role,
+      priority: Math.min(seen.priority ?? 0, c.priority ?? 0),
     });
   }
-  const ordered = [...byDrive.values()].sort((a, b) => rank(a.role) - rank(b.role));
+  const ordered = [...byDrive.values()].sort(
+    (a, b) =>
+      rank(a.role) - rank(b.role) ||
+      (a.priority ?? 0) - (b.priority ?? 0) ||
+      byText(a.drive.name.toLowerCase(), b.drive.name.toLowerCase()) ||
+      byText(a.drive.driveId, b.drive.driveId),
+  );
   const used = new Set<string>();
-  const out: PlannedMount<D>[] = [];
-  const push = (m: PlannedMount<D>) => {
-    if (out.length >= MAX_SESSION_DRIVES) return;
-    used.add(m.mountPath);
-    out.push(m);
-  };
+  const mounts: PlannedMount<D>[] = [];
+  const skipped: D[] = [];
   for (const c of ordered) {
     const base = driveMountPath(c.drive, c.role);
     if (c.role !== 'drive' && used.has(base)) continue;
+    const withFromAgents = c.role === 'me' && c.readOnly;
+    if (mounts.length + (withFromAgents ? 2 : 1) > slots) {
+      skipped.push(c.drive);
+      continue;
+    }
     let mountPath = base;
     for (let n = 2; used.has(mountPath); n++) mountPath = `${base}-${n}`;
-    push({ ...c, mountPath });
-    if (c.role === 'me' && c.readOnly) {
-      push({
+    used.add(mountPath);
+    mounts.push({ ...c, mountPath });
+    if (withFromAgents) {
+      used.add(FROM_AGENTS_MOUNT_PATH);
+      mounts.push({
         drive: c.drive,
         readOnly: false,
         role: 'me',
@@ -153,7 +182,18 @@ export function planDriveMounts<D extends { name: string; driveId: string }>(
       });
     }
   }
-  return out;
+  return { mounts, skipped };
+}
+
+/** Code-point order: the same on every server, whatever its locale. */
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** What a session tells people about drives that did not fit. */
+export function skippedDrivesMessage(names: string[], slots: number): string {
+  return (
+    `${names.length === 1 ? 'A drive did' : `${names.length} drives did`} not fit in this session: ${names.join(', ')}. ` +
+    `A session has room for ${slots} drive mounts. Take a drive out of the session to make room, then restart it.`
+  );
 }
 
 /** The Platinum volume name for a drive: stable, unique, and a valid volume name. */

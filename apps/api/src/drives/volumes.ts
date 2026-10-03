@@ -2,6 +2,7 @@
 // call here speaks the Platinum volumes API; nothing above this file does.
 
 import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
+import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
 
 /** A storage failure the drive routes turn into a response. `message` is user-facing. */
 export class DriveStorageError extends Error {
@@ -180,6 +181,47 @@ export async function restoreVolume(volume: string, to: string): Promise<void> {
   await call(`${v(volume)}/restore`, { method: 'POST', body: JSON.stringify({ to }) });
 }
 
+let mountLimitCache: { value: number; at: number } | null = null;
+const MOUNT_LIMIT_TTL_MS = 10 * 60_000;
+
+/**
+ * How many volumes one sandbox may mount, from Platinum's own limits (never
+ * above its hard cap of {@link DEFAULT_SANDBOX_MOUNT_LIMIT}). Cached; falls
+ * back to that cap when the limits cannot be read.
+ */
+export async function sandboxMountLimit(): Promise<number> {
+  if (mountLimitCache && Date.now() - mountLimitCache.at < MOUNT_LIMIT_TTL_MS) return mountLimitCache.value;
+  let value = DEFAULT_SANDBOX_MOUNT_LIMIT;
+  try {
+    const limits = await callJson<{ max_mounts_per_sandbox?: number }>('/v1/volumes/limits', {
+      signal: AbortSignal.timeout(5_000),
+    });
+    const max = Number(limits.max_mounts_per_sandbox);
+    if (Number.isFinite(max) && max >= 1) value = Math.min(DEFAULT_SANDBOX_MOUNT_LIMIT, Math.floor(max));
+  } catch (err) {
+    console.warn('[drives] reading the sandbox mount limit failed:', err instanceof Error ? err.message : err);
+    return value;
+  }
+  mountLimitCache = { value, at: Date.now() };
+  return value;
+}
+
+/** The volume mounts a sandbox has now, by mount path, or null when Platinum cannot say. */
+export async function sandboxMountPaths(externalId: string): Promise<string[] | null> {
+  try {
+    const body = await callJson<{ volume_mounts?: Array<{ mount_path?: string; path?: string }> | Record<string, unknown> }>(
+      `/v1/sandboxes/${encodeURIComponent(externalId)}`,
+      { signal: AbortSignal.timeout(10_000) },
+    );
+    const mounts = body.volume_mounts;
+    if (!mounts) return [];
+    if (Array.isArray(mounts)) return mounts.map((m) => String(m.mount_path ?? m.path ?? ''));
+    return Object.keys(mounts);
+  } catch {
+    return null;
+  }
+}
+
 const sandboxMount = (externalId: string, mountPath: string) =>
   `/v1/sandboxes/${encodeURIComponent(externalId)}/volumes/${encodeURIComponent(mountPath)}`;
 
@@ -206,7 +248,11 @@ export async function attachSandboxVolume(
   } catch (err) {
     if (!(err instanceof DriveStorageError)) throw err;
     if (err.code === 'quota_exceeded') {
-      throw new DriveStorageError(409, 'This session already has the most drives a session can mount (8)', err.code);
+      throw new DriveStorageError(
+        409,
+        'This session already mounts as many drives as a session can. Take a drive out of it first.',
+        'drive_mount_limit',
+      );
     }
     if (err.code === 'sandbox_not_running') {
       throw new DriveStorageError(409, 'The session is not running; the drive mounts when it starts', err.code);

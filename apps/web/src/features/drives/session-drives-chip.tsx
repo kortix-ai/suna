@@ -44,6 +44,7 @@ export function SessionDrivesChip({
   const session = useSessionDrives(projectId, sessionId);
   const rows = useMemo(() => foldSessionDrives(session.data?.drives ?? []), [session.data]);
   const conflicts = rows.reduce((sum, row) => sum + row.openConflicts, 0);
+  const skipped = session.data?.skipped ?? [];
   useConflictToast(conflicts, sessionId);
 
   if (!flag.enabled) return null;
@@ -58,10 +59,10 @@ export function SessionDrivesChip({
           aria-label={t('sessionChipTitle')}
           className={cn(
             'text-muted-foreground hover:text-foreground data-[state=open]:text-foreground gap-1.5 px-2',
-            conflicts > 0 && 'text-kortix-orange hover:text-kortix-orange',
+            (conflicts > 0 || skipped.length > 0) && 'text-kortix-orange hover:text-kortix-orange',
           )}
         >
-          {conflicts > 0 ? (
+          {conflicts > 0 || skipped.length > 0 ? (
             <WarningIcon className="size-4 shrink-0" weight="fill" />
           ) : (
             <HardDrivesIcon className="size-4 shrink-0" />
@@ -74,6 +75,14 @@ export function SessionDrivesChip({
           <p className="text-sm font-medium">{t('sessionChipTitle')}</p>
           <p className="text-muted-foreground text-xs text-pretty">{t('sessionChipDescription')}</p>
         </div>
+        {skipped.length > 0 ? (
+          <p role="status" className="text-kortix-orange border-b px-4 py-2.5 text-xs text-pretty">
+            {t('sessionSkippedDrives', {
+              count: skipped.length,
+              names: skipped.map((drive) => drive.name).join(', '),
+            })}
+          </p>
+        ) : null}
         <SessionDriveList
           projectId={projectId}
           sessionId={sessionId}

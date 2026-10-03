@@ -20528,6 +20528,7 @@
     "agentDriveDescription": "Memory and outputs this agent keeps across sessions. Every session of the agent sees it at /drives/agent.",
     "agentFullWriteTitle": "Let this agent write all of your drive",
     "agentFullWriteDescription": "In the sessions you start, this agent can change any file in your drive, not only its From agents folder.",
-    "agentCardDrive": "{size} drive"
+    "agentCardDrive": "{size} drive",
+    "sessionSkippedDrives": "{count, plural, one {# drive did not fit in this session} other {# drives did not fit in this session}}: {names}. Take a drive out to make room, then restart the session."
   }
 }

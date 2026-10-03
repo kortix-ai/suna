@@ -20528,6 +20528,7 @@
     "agentDriveDescription": "このエージェントがセッションをまたいで保持する記憶と成果物です。すべてのセッションで /drives/agent に表示されます。",
     "agentFullWriteTitle": "このエージェントにドライブ全体への書き込みを許可",
     "agentFullWriteDescription": "あなたが開始したセッションで、このエージェントは From agents フォルダだけでなく、ドライブ内のすべてのファイルを変更できます。",
-    "agentCardDrive": "ドライブ {size}"
+    "agentCardDrive": "ドライブ {size}",
+    "sessionSkippedDrives": "{count, plural, other {# 個のドライブがこのセッションに収まりませんでした}}: {names}。ドライブを 1 つ外して空きを作り、セッションを再起動してください。"
   }
 }

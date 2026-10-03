@@ -8,6 +8,7 @@ import {
   getDrive,
   isPersonalSession,
   readSessionDriveMounts,
+  readSkippedSessionDrives,
 } from '../../drives/service';
 import { DriveStorageError } from '../../drives/volumes';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -41,6 +42,10 @@ const SessionDrivesBody = z.object({
   drives: z.array(SessionDriveSchema),
   /** True when the session is its owner's own (private, started by them): their drives mount in it. */
   personal: z.boolean(),
+  /** Drives the session should have that did not fit in its sandbox's mount slots. */
+  skipped: z.array(z.object({ driveId: z.string(), name: z.string() })),
+  /** What to tell people about `skipped`, or null when every drive fit. */
+  skippedMessage: z.string().nullable(),
 });
 
 const Params = z.object({ projectId: z.string(), sessionId: z.string() });
@@ -58,7 +63,7 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  const mounts = await readSessionDriveMounts(sessionId);
+  const [mounts, skipped] = await Promise.all([readSessionDriveMounts(sessionId), readSkippedSessionDrives(sessionId)]);
   return {
     facts: facts ?? null,
     body: {
@@ -75,6 +80,8 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
         ...(m.ownerEmail ? { ownerEmail: m.ownerEmail } : {}),
       })),
       personal: isPersonalSession(facts ?? null, callerId ?? null),
+      skipped: skipped.skipped,
+      skippedMessage: skipped.message,
     },
   };
 }
@@ -135,7 +142,8 @@ projectsApp.openapi(
     summary: 'POST /:projectId/sessions/:sessionId/drives',
     description:
       'Attach a drive to the session: mounted in the running sandbox now, and in every later sandbox of the session. ' +
-      'A personal drive attaches only to its holder’s own private session. `readOnly` defaults to false where the caller may write.',
+      'A personal drive attaches only to its holder’s own private session. `readOnly` defaults to false where the caller may write. ' +
+      'A drive past the session’s mount limit is refused with 409 `drive_mount_limit`, and nothing changes.',
     ...auth,
     request: {
       params: Params,

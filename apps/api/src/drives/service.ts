@@ -16,6 +16,7 @@ import {
   type DriveAccess,
   type MountCandidate,
   type MountRole,
+  type DriveMountPlan,
   type PlannedMount,
   FROM_AGENTS_FOLDER,
   FROM_AGENTS_MOUNT_PATH,
@@ -25,6 +26,7 @@ import {
   driveMountPath,
   driveVolumeName,
   planDriveMounts,
+  skippedDrivesMessage,
 } from './access';
 import {
   DriveStorageError,
@@ -35,6 +37,8 @@ import {
   getDriveVolume,
   isMissingVolume,
   openDriveVolume,
+  sandboxMountLimit,
+  sandboxMountPaths,
   type VolumeInfo,
 } from './volumes';
 
@@ -502,14 +506,42 @@ export interface RecordedDriveMount {
   role?: MountRole;
 }
 
+export interface SkippedDrive {
+  driveId: string;
+  name: string;
+}
+
 export interface SessionDriveMounts {
   /** The Platinum create body's `volumes`, keyed by mount path. */
   volumes: Record<string, { volume: string; read_only?: boolean; subdir?: string }>;
   mounts: RecordedDriveMount[];
+  /** How many volume mounts the sandbox had for drives. */
+  slots: number;
+  /** Drives the session should have that did not fit in the sandbox's mount slots. */
+  skipped: SkippedDrive[];
 }
 
 /** The sandbox metadata key the boot writes the actual mounts to. */
 export const DRIVE_MOUNTS_METADATA_KEY = 'driveMounts';
+/** The sandbox metadata key for the drives that did not fit at boot. */
+export const DRIVE_SKIPPED_METADATA_KEY = 'driveMountsSkipped';
+/** The sandbox metadata key for how many mounts the boot had for drives. */
+export const DRIVE_SLOTS_METADATA_KEY = 'driveMountSlots';
+
+/**
+ * A drive change that would take the session past the volume mounts a sandbox
+ * may have. Nothing changed; `message` is user-facing.
+ */
+export class DriveMountLimitError extends DriveStorageError {
+  constructor(readonly limit: number) {
+    super(
+      409,
+      `This session already mounts as many drives as it can (${limit}). Take a drive out of the session first.`,
+      'drive_mount_limit',
+    );
+    this.name = 'DriveMountLimitError';
+  }
+}
 /** The project_sessions metadata key for what people changed about a session's drives. */
 export const SESSION_DRIVE_PREFS_KEY = 'drives';
 
@@ -555,15 +587,20 @@ export function sessionDrivePrefs(metadata: unknown): SessionDrivePrefs {
   };
 }
 
-async function updateSessionDrivePrefs(sessionId: string, change: (prefs: SessionDrivePrefs) => void): Promise<void> {
-  await db.transaction(async (tx) => {
+/** Change a session's drive prefs; returns what they were before, or null without a session. */
+async function updateSessionDrivePrefs(
+  sessionId: string,
+  change: (prefs: SessionDrivePrefs) => void,
+): Promise<SessionDrivePrefs | null> {
+  return db.transaction(async (tx) => {
     const [row] = await tx
       .select({ metadata: projectSessions.metadata })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .for('update')
       .limit(1);
-    if (!row) return;
+    if (!row) return null;
+    const before = sessionDrivePrefs(row.metadata);
     const prefs = sessionDrivePrefs(row.metadata);
     change(prefs);
     await tx
@@ -573,6 +610,7 @@ async function updateSessionDrivePrefs(sessionId: string, change: (prefs: Sessio
         updatedAt: new Date(),
       })
       .where(eq(projectSessions.sessionId, sessionId));
+    return before;
   });
 }
 
@@ -633,7 +671,14 @@ async function roleOf(userId: string, accountId: string): Promise<AccountRole | 
  * - always: the session agent's drive, and the company drives granted to the
  *   project or to the session agent;
  * - then the session's own changes: drives attached by hand (while whoever
- *   attached them can still use them), minus drives taken out.
+ *   attached them can still use them, with this session's grants), minus
+ *   drives taken out.
+ *
+ * `slots` is how many volume mounts the sandbox has for drives. When they do
+ * not all fit, they mount in this order and the rest come back in `skipped`:
+ * the owner's drive (and its "From agents" folder), the agent drive, drives
+ * granted to the agent, to the project, shared with the owner, then drives
+ * attached by hand in the order they were attached.
  */
 export async function planSessionDrives(input: {
   accountId: string;
@@ -641,7 +686,8 @@ export async function planSessionDrives(input: {
   sessionId: string;
   bootingUserId: string | null;
   agentName: string;
-}): Promise<Array<PlannedMount<DriveRow>>> {
+  slots?: number;
+}): Promise<DriveMountPlan<DriveRow>> {
   const { accountId, projectId, sessionId, agentName } = input;
   const session = await sessionFacts(sessionId);
   const personal = isPersonalSession(session, input.bootingUserId);
@@ -681,7 +727,8 @@ export async function planSessionDrives(input: {
     // with the session owner; a project or agent grant never carries one.
     if (g.drive.kind === 'personal' && (g.subjectType !== 'user' || g.drive.ownerUserId === owner)) continue;
     if (g.drive.kind === 'agent') continue;
-    candidates.push({ drive: sharedNamed(g.drive, sharers), readOnly: g.access === 'read', role: 'drive' });
+    const priority = g.subjectType === 'agent' ? 0 : g.subjectType === 'project' ? 1 : 2;
+    candidates.push({ drive: sharedNamed(g.drive, sharers), readOnly: g.access === 'read', role: 'drive', priority });
   }
 
   if (prefs.attached.length) {
@@ -689,7 +736,7 @@ export async function planSessionDrives(input: {
       .select()
       .from(drives)
       .where(and(eq(drives.accountId, accountId), inArray(drives.driveId, prefs.attached.map((a) => a.driveId))));
-    for (const a of prefs.attached) {
+    for (const [i, a] of prefs.attached.entries()) {
       const drive = rows.find((r) => r.driveId === a.driveId);
       if (!drive) continue;
       // A personal drive (own or shared) only ever mounts in its holder's personal session.
@@ -701,7 +748,7 @@ export async function planSessionDrives(input: {
         drive.kind === 'personal' && drive.ownerUserId !== owner
           ? sharedNamed(drive, await userEmails([drive.ownerUserId ?? '']))
           : drive;
-      candidates.push({ drive: named, readOnly: !accessAtLeast(access, 'write') || role === 'me', role });
+      candidates.push({ drive: named, readOnly: !accessAtLeast(access, 'write') || role === 'me', role, priority: 100 + i });
     }
   }
 
@@ -720,7 +767,7 @@ export async function planSessionDrives(input: {
       kept.push(c);
     }
   }
-  return planDriveMounts(kept);
+  return planDriveMounts(kept, input.slots);
 }
 
 /** A personal drive shared by someone else mounts under its owner's handle: /drives/ana-my-drive. */
@@ -749,7 +796,10 @@ function toRecorded(p: PlannedMount<DriveRow>): RecordedDriveMount {
  * {@link planSessionDrives}), with their volumes opened, or undefined when
  * the project has no drives. Strict: a drive whose volume does not open
  * fails the boot with a {@link DriveMountError}; a session never starts
- * without its drives.
+ * without its drives. Admission: every volume counts against Platinum's
+ * per-sandbox mount limit; `reservedSlots` are the sandbox's other volumes
+ * (the session's state volume). Drives past the limit are left out by
+ * priority and returned in `skipped`, which the session shows people.
  */
 export async function sessionVolumeMounts(input: {
   accountId: string;
@@ -757,9 +807,19 @@ export async function sessionVolumeMounts(input: {
   sessionId: string;
   bootingUserId: string | null;
   agentName: string;
+  reservedSlots?: number;
 }): Promise<SessionDriveMounts | undefined> {
   if (!(await sessionDrivesEnabled(input.projectId))) return undefined;
-  const planned = await planSessionDrives(input);
+  const limit = await sandboxMountLimit();
+  const slots = Math.max(0, limit - (input.reservedSlots ?? 0));
+  const plan = await planSessionDrives({ ...input, slots });
+  const planned = plan.mounts;
+  const skipped = plan.skipped.map((d) => ({ driveId: d.driveId, name: d.name }));
+  if (skipped.length) {
+    console.warn(
+      `[drives] session ${input.sessionId}: ${skipped.length} drive(s) past the ${slots} mount slots left out: ${skipped.map((d) => d.driveId).join(', ')}`,
+    );
+  }
   const failed: Array<{ name: string; code?: string }> = [];
   // Three tries over ~10 s ride out a storage blip; then the boot fails, loudly.
   const openWithRetry = async (drive: DriveRow): Promise<string> => {
@@ -796,7 +856,7 @@ export async function sessionVolumeMounts(input: {
       names,
     );
   }
-  const out: SessionDriveMounts = { volumes: {}, mounts: [] };
+  const out: SessionDriveMounts = { volumes: {}, mounts: [], skipped, slots };
   planned.forEach((p, i) => {
     out.volumes[p.mountPath] = {
       volume: opened[i]!,
@@ -805,7 +865,7 @@ export async function sessionVolumeMounts(input: {
     };
     out.mounts.push(toRecorded(p));
   });
-  return out.mounts.length ? out : undefined;
+  return out.mounts.length || out.skipped.length ? out : undefined;
 }
 
 /** Drives mount in this project's sessions: storage configured, the operator switch on, the project flag on. */
@@ -884,6 +944,30 @@ export async function readSessionDriveMounts(sessionId: string): Promise<Session
   });
 }
 
+/** Drives the session's current sandbox should have but did not fit at its boot, and the message for them. */
+export async function readSkippedSessionDrives(
+  sessionId: string,
+): Promise<{ skipped: SkippedDrive[]; message: string | null }> {
+  const row = await sessionSandboxRow(sessionId);
+  const md = row?.metadata as Record<string, unknown> | null | undefined;
+  const raw = md?.[DRIVE_SKIPPED_METADATA_KEY];
+  const recorded = Array.isArray(raw)
+    ? raw.filter((d): d is SkippedDrive => !!d && typeof d.driveId === 'string' && typeof d.name === 'string')
+    : [];
+  // A drive mounted since (a slot freed and someone attached it) is no longer missing.
+  const mounted = new Set(recordedDriveMounts(md).map((m) => m.driveId));
+  const skipped = recorded.filter((d) => !mounted.has(d.driveId));
+  if (!skipped.length) return { skipped, message: null };
+  const slots = Number(md?.[DRIVE_SLOTS_METADATA_KEY]);
+  return {
+    skipped,
+    message: skippedDrivesMessage(
+      skipped.map((d) => d.name),
+      Number.isFinite(slots) ? slots : await sandboxMountLimit(),
+    ),
+  };
+}
+
 /** The live Platinum sandbox of a session, when it has one that runs. */
 async function liveSandbox(sessionId: string) {
   const row = await sessionSandboxRow(sessionId);
@@ -898,10 +982,32 @@ function freeMountPath(base: string, used: Set<string>): string {
 }
 
 /**
+ * How many volume mounts a session's sandbox has for drives: Platinum's
+ * per-sandbox limit minus its volumes that are not drives (the session's
+ * state volume). A running sandbox is asked; otherwise what its boot recorded.
+ */
+async function driveSlotsFor(box: { externalId: string | null; metadata: unknown } | null, live: boolean): Promise<number> {
+  const limit = await sandboxMountLimit();
+  const recorded = Number((box?.metadata as Record<string, unknown> | null | undefined)?.[DRIVE_SLOTS_METADATA_KEY]);
+  if (live && box?.externalId) {
+    const paths = await sandboxMountPaths(box.externalId);
+    if (paths) {
+      const drivePaths = new Set(recordedDriveMounts(box.metadata).map((m) => m.mountPath));
+      return Math.max(0, limit - paths.filter((p) => !drivePaths.has(p)).length);
+    }
+  }
+  return Number.isFinite(recorded) && recorded >= 0 ? Math.min(recorded, limit) : limit;
+}
+
+/**
  * Bring the running sandbox's mounts of one drive in line with what the
- * session's plan says now: detach what the plan no longer has, attach what it
- * gained. Other drives' mounts are left alone. A session that is not running
- * only records the change; its next sandbox mounts the plan.
+ * session's plan says now: detach what the plan no longer has (a revoked
+ * drive), remount what changed access (read-only after a downgrade), attach
+ * what it gained. Other drives' mounts are left alone. A session that is not
+ * running only records the change; its next sandbox mounts the plan.
+ *
+ * Admission: a drive that would take the sandbox past its mount limit is
+ * refused with a {@link DriveMountLimitError} before anything changes.
  */
 async function applyDriveToRunningSandbox(input: {
   accountId: string;
@@ -914,8 +1020,9 @@ async function applyDriveToRunningSandbox(input: {
   const box = await liveSandbox(input.sessionId);
   if (!box) return { live: false };
   const current = recordedDriveMounts(box.metadata);
-  const plan = await planSessionDrives(input);
-  const want = plan.filter((p) => p.drive.driveId === input.driveId);
+  const slots = await driveSlotsFor(box, true);
+  const plan = await planSessionDrives({ ...input, slots });
+  const want = plan.mounts.filter((p) => p.drive.driveId === input.driveId);
   const have = current.filter((m) => m.driveId === input.driveId);
   const same =
     want.length === have.length &&
@@ -923,14 +1030,13 @@ async function applyDriveToRunningSandbox(input: {
   if (same) return { live: true };
 
   let kept = current.filter((m) => m.driveId !== input.driveId);
+  const wanted = want.length > 0 || plan.skipped.some((d) => d.driveId === input.driveId);
+  if (wanted && kept.length + Math.max(want.length, 1) > slots) throw new DriveMountLimitError(slots);
   for (const m of have) {
     await detachSandboxVolume(box.externalId, m.mountPath);
   }
   await writeRecordedMounts(box.sandboxId, kept);
   if (want.length) {
-    if (kept.length + want.length > MAX_SESSION_DRIVES) {
-      throw new DriveStorageError(409, 'This session already has the most drives a session can mount (8)', 'quota_exceeded');
-    }
     const volume = await openVolumeFor(want[0]!.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
     const used = new Set(kept.map((m) => m.mountPath));
     for (const w of want) {
@@ -965,7 +1071,7 @@ export async function changeSessionDrive(input: {
   change: SessionDriveChange;
 }): Promise<{ live: boolean }> {
   const { change } = input;
-  await updateSessionDrivePrefs(input.sessionId, (prefs) => {
+  const before = await updateSessionDrivePrefs(input.sessionId, (prefs) => {
     if (change.type === 'attach') {
       prefs.detached = prefs.detached.filter((d) => d !== change.driveId);
       if (!prefs.attached.some((a) => a.driveId === change.driveId)) {
@@ -980,7 +1086,7 @@ export async function changeSessionDrive(input: {
       prefs.modes[change.driveId] = { access: change.access, by: change.by };
     }
   });
-  return applyDriveToRunningSandbox({
+  const target = {
     accountId: input.accountId,
     projectId: input.projectId,
     sessionId: input.sessionId,
@@ -988,7 +1094,22 @@ export async function changeSessionDrive(input: {
     // Hot changes keep the boot's notion of whose session it is.
     bootingUserId: input.sessionOwner,
     agentName: input.agentName,
-  });
+  };
+  try {
+    if (change.type === 'attach' && !(await liveSandbox(input.sessionId))) {
+      // Not running: the attach must still fit the next sandbox, or it is refused now.
+      const slots = await driveSlotsFor(await sessionSandboxRow(input.sessionId), false);
+      const plan = await planSessionDrives({ ...target, slots });
+      if (plan.skipped.some((d) => d.driveId === change.driveId)) throw new DriveMountLimitError(slots);
+    }
+    return await applyDriveToRunningSandbox(target);
+  } catch (err) {
+    // A refused attach leaves the session as it was.
+    if (err instanceof DriveMountLimitError && before) {
+      await updateSessionDrivePrefs(input.sessionId, (prefs) => Object.assign(prefs, before));
+    }
+    throw err;
+  }
 }
 
 /**
@@ -1018,8 +1139,8 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
       bootingUserId: row.createdBy,
       agentName: row.agentName,
     };
-    const plan = await planSessionDrives(base);
-    const ids = new Set([...plan.map((p) => p.drive.driveId), ...recordedDriveMounts(box.metadata).map((m) => m.driveId)]);
+    const plan = await planSessionDrives({ ...base, slots: await driveSlotsFor(box, true) });
+    const ids = new Set([...plan.mounts.map((p) => p.drive.driveId), ...recordedDriveMounts(box.metadata).map((m) => m.driveId)]);
     for (const driveId of ids) {
       await applyDriveToRunningSandbox({ ...base, driveId }).catch((err) =>
         console.warn(`[drives] reconciling drive ${driveId} in session ${sessionId} failed:`, err instanceof Error ? err.message : err),
@@ -1036,7 +1157,11 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
 /** Where a session's agent reads which drives it has and what needs attention. */
 export const DRIVE_NOTES_PATH = '/drives/README.md';
 
-export function renderDriveNotes(mounts: SessionDriveView[], conflicts: Array<{ mountPath: string; path: string }>): string {
+export function renderDriveNotes(
+  mounts: SessionDriveView[],
+  conflicts: Array<{ mountPath: string; path: string }>,
+  skippedMessage?: string | null,
+): string {
   const lines = [
     '# Drives in this session',
     '',
@@ -1063,6 +1188,9 @@ export function renderDriveNotes(mounts: SessionDriveView[], conflicts: Array<{ 
     '"<name> (conflict <date> <time>)<ext>". Nothing is lost. Tell the user about a conflict copy you see; do not delete it on your own.',
     '',
   );
+  if (skippedMessage) {
+    lines.push('## Drives that did not fit', '', `${skippedMessage} Tell the user if they ask for one of them.`, '');
+  }
   if (conflicts.length) {
     lines.push('## Open conflicts', '', ...conflicts.map((c) => `- ${c.mountPath}${c.path}`), '');
   }
@@ -1089,7 +1217,8 @@ export async function refreshDriveNotes(sessionId: string): Promise<void> {
       const m = mounts.find((x) => x.driveId === c.driveId && !x.subdir);
       return m ? [{ mountPath: m.mountPath, path: c.path }] : [];
     });
-    const body = Buffer.from(renderDriveNotes(mounts, conflicts)).toString('base64');
+    const { message: skippedMessage } = await readSkippedSessionDrives(sessionId);
+    const body = Buffer.from(renderDriveNotes(mounts, conflicts, skippedMessage)).toString('base64');
     // Writable mounts belong to the runtime user. The image's drive-owner
     // helper keeps them so; this one-shot pass covers images built before it.
     const writable = mounts.filter((m) => !m.readOnly).map((m) => `'${m.mountPath.replace(/'/g, '')}'`);
@@ -1128,42 +1257,6 @@ export async function detachDriveEverywhere(driveId: string): Promise<void> {
     await writeRecordedMounts(row.sandboxId, mounts.filter((m) => m.driveId !== driveId));
     void refreshDriveNotes(row.sessionId);
   }
-}
-
-/**
- * Before a private session is shared: take every person-scoped drive (the
- * owner's own and anything shared with or attached by them) out of the running
- * sandbox. False when one is still attached, so the caller keeps the session
- * private rather than share it with the drive in it. Once shared, the session
- * is no longer personal and its next sandbox mounts none of them.
- */
-export async function detachPersonalDrives(sessionId: string): Promise<boolean> {
-  const row = await sessionSandboxRow(sessionId);
-  const mounts = recordedDriveMounts(row?.metadata);
-  const ids = [...new Set(mounts.map((m) => m.driveId))];
-  const kinds = ids.length
-    ? new Map(
-        (await db.select({ driveId: drives.driveId, kind: drives.kind }).from(drives).where(inArray(drives.driveId, ids))).map(
-          (d) => [d.driveId, d.kind],
-        ),
-      )
-    : new Map<string, string>();
-  const personal = mounts.filter((m) => m.kind === 'personal' || kinds.get(m.driveId) === 'personal');
-  if (!row || personal.length === 0) return true;
-  if (row.provider === 'platinum' && row.externalId) {
-    try {
-      for (const m of personal) await detachSandboxVolume(row.externalId, m.mountPath);
-    } catch (err) {
-      console.warn(
-        `[drives] detaching the personal drive from session ${sessionId} failed:`,
-        err instanceof Error ? err.message : err,
-      );
-      return false;
-    }
-  }
-  await writeRecordedMounts(row.sandboxId, mounts.filter((m) => !personal.includes(m)));
-  void refreshDriveNotes(sessionId);
-  return true;
 }
 
 const ENFORCE_CONCURRENCY = 4;
@@ -1295,6 +1388,42 @@ export async function enforceDriveMounts(
     }),
   );
   return { sessions: rows.length, failed };
+}
+
+/**
+ * Before a private session is shared: take every person-scoped drive (the
+ * owner's own and anything shared with or attached by them) out of the running
+ * sandbox. False when one is still attached, so the caller keeps the session
+ * private rather than share it with the drive in it. Once shared, the session
+ * is no longer personal and its next sandbox mounts none of them.
+ */
+export async function detachPersonalDrives(sessionId: string): Promise<boolean> {
+  const row = await sessionSandboxRow(sessionId);
+  const mounts = recordedDriveMounts(row?.metadata);
+  const ids = [...new Set(mounts.map((m) => m.driveId))];
+  const kinds = ids.length
+    ? new Map(
+        (await db.select({ driveId: drives.driveId, kind: drives.kind }).from(drives).where(inArray(drives.driveId, ids))).map(
+          (d) => [d.driveId, d.kind],
+        ),
+      )
+    : new Map<string, string>();
+  const personal = mounts.filter((m) => m.kind === 'personal' || kinds.get(m.driveId) === 'personal');
+  if (!row || personal.length === 0) return true;
+  if (row.provider === 'platinum' && row.externalId) {
+    try {
+      for (const m of personal) await detachSandboxVolume(row.externalId, m.mountPath);
+    } catch (err) {
+      console.warn(
+        `[drives] detaching the personal drive from session ${sessionId} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      return false;
+    }
+  }
+  await writeRecordedMounts(row.sandboxId, mounts.filter((m) => !personal.includes(m)));
+  void refreshDriveNotes(sessionId);
+  return true;
 }
 
 /**

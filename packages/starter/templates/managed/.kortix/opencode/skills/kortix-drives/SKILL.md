@@ -55,6 +55,10 @@ one version stays at the path and the other is saved beside it as
 - Writes go through `sync`/close like any disk: close files you write.
 - Do not put secrets or credentials in a drive: other people with access to
   the drive read the same files.
+- A session mounts a limited number of drives. Drives that did not fit are
+  listed in `/drives/README.md`; tell the user rather than look for them.
+- A drive can be taken away or turned read-only while you work, when someone
+  removes its grant. Its folder then disappears or refuses writes: tell the user.
 </limits>
 
 </skill>

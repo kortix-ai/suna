@@ -61,7 +61,7 @@ describe('planDriveMounts', () => {
     driveId: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
   });
 
-  test('the owner drive is read-only with its From agents folder writable beside it; names never shadow fixed paths', () => {
+  test('the owner drive is read-only with its From agents folder writable beside it; names never shadow fixed paths; others go by name', () => {
     const plan = planDriveMounts([
       { drive: d('Me', 1), readOnly: true, role: 'drive' },
       { drive: d('From agents', 6), readOnly: false, role: 'drive' },
@@ -70,12 +70,12 @@ describe('planDriveMounts', () => {
       { drive: d('default', 4), readOnly: false, role: 'agent' },
       { drive: d('My Drive', 5), readOnly: true, role: 'me' },
     ]);
-    expect(plan.map((p) => [p.mountPath, p.readOnly, p.subdir ?? null])).toEqual([
+    expect(plan.mounts.map((p) => [p.mountPath, p.readOnly, p.subdir ?? null])).toEqual([
       ['/drives/me', true, null],
       ['/drives/from-agents', false, '/From agents'],
       ['/drives/agent', false, null],
-      ['/drives/me-drive', true, null],
       ['/drives/from-agents-drive', false, null],
+      ['/drives/me-drive', true, null],
       ['/drives/sales-docs', false, null],
       ['/drives/sales-docs-2', false, null],
     ]);
@@ -83,7 +83,7 @@ describe('planDriveMounts', () => {
 
   test('full write mounts the owner drive whole, with no separate From agents mount', () => {
     const plan = planDriveMounts([{ drive: d('My Drive', 5), readOnly: false, role: 'me' }]);
-    expect(plan.map((p) => [p.mountPath, p.readOnly])).toEqual([['/drives/me', false]]);
+    expect(plan.mounts.map((p) => [p.mountPath, p.readOnly])).toEqual([['/drives/me', false]]);
   });
 
   test('a drive reached two ways mounts once, with the most permissive access', () => {
@@ -91,12 +91,46 @@ describe('planDriveMounts', () => {
       { drive: d('Brand', 7), readOnly: true, role: 'drive' },
       { drive: d('Brand', 7), readOnly: false, role: 'drive' },
     ]);
-    expect(plan.map((p) => [p.mountPath, p.readOnly])).toEqual([['/drives/brand', false]]);
+    expect(plan.mounts.map((p) => [p.mountPath, p.readOnly])).toEqual([['/drives/brand', false]]);
   });
 
-  test('never plans more mounts than a sandbox takes', () => {
+  test('never plans more mounts than the slots, and names every drive left out', () => {
     const many = Array.from({ length: 12 }, (_, i) => ({ drive: d(`Team ${i}`, i), readOnly: false, role: 'drive' as const }));
-    expect(planDriveMounts(many)).toHaveLength(MAX_SESSION_DRIVES);
+    const plan = planDriveMounts(many);
+    expect(plan.mounts).toHaveLength(DEFAULT_SANDBOX_MOUNT_LIMIT);
+    expect(plan.skipped).toHaveLength(12 - DEFAULT_SANDBOX_MOUNT_LIMIT);
+  });
+
+  test('admission by priority: own drive (two mounts), agent drive, then lower priority first, hand attaches last', () => {
+    const plan = planDriveMounts(
+      [
+        { drive: d('Zeta attached', 20), readOnly: false, role: 'drive', priority: 100 },
+        { drive: d('Shared', 21), readOnly: true, role: 'drive', priority: 2 },
+        { drive: d('Project B', 22), readOnly: false, role: 'drive', priority: 1 },
+        { drive: d('Project A', 23), readOnly: false, role: 'drive', priority: 1 },
+        { drive: d('Agent grant', 24), readOnly: false, role: 'drive', priority: 0 },
+        { drive: d('default', 25), readOnly: false, role: 'agent' },
+        { drive: d('My Drive', 26), readOnly: true, role: 'me' },
+      ],
+      // Platinum's 8, minus the session's state volume, minus two more taken.
+      5,
+    );
+    expect(plan.mounts.map((p) => p.mountPath)).toEqual([
+      '/drives/me',
+      '/drives/from-agents',
+      '/drives/agent',
+      '/drives/agent-grant',
+      '/drives/project-a',
+    ]);
+    expect(plan.skipped.map((s) => s.name)).toEqual(['Project B', 'Shared', 'Zeta attached']);
+  });
+
+  test('the same input always plans the same mounts, whatever the order', () => {
+    const input = Array.from({ length: 10 }, (_, i) => ({ drive: d(`Drive ${i % 3}`, i), readOnly: false, role: 'drive' as const }));
+    const a = planDriveMounts(input, 4);
+    const b = planDriveMounts([...input].reverse(), 4);
+    expect(b.mounts.map((p) => [p.mountPath, p.drive.driveId])).toEqual(a.mounts.map((p) => [p.mountPath, p.drive.driveId]));
+    expect(b.skipped).toEqual(a.skipped);
   });
 });
 

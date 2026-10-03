@@ -20528,6 +20528,7 @@
     "agentDriveDescription": "此智能体跨会话保留的记忆和产出。该智能体的每个会话都在 /drives/agent 看到它。",
     "agentFullWriteTitle": "允许此智能体写入你的整个云盘",
     "agentFullWriteDescription": "在你启动的会话中，此智能体可以修改你云盘中的任何文件，而不仅是 From agents 文件夹。",
-    "agentCardDrive": "{size} 云盘"
+    "agentCardDrive": "{size} 云盘",
+    "sessionSkippedDrives": "{count, plural, other {有 # 个云盘无法装入此会话}}：{names}。请移除一个云盘腾出位置，然后重启会话。"
   }
 }

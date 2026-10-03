@@ -20528,6 +20528,7 @@
     "agentDriveDescription": "Gedächtnis und Ergebnisse, die dieser Agent über Sessions hinweg behält. Jede Session des Agenten sieht es unter /drives/agent.",
     "agentFullWriteTitle": "Dieser Agent darf dein ganzes Drive beschreiben",
     "agentFullWriteDescription": "In den Sessions, die du startest, kann dieser Agent jede Datei in deinem Drive ändern, nicht nur im Ordner „From agents“.",
-    "agentCardDrive": "{size} Drive"
+    "agentCardDrive": "{size} Drive",
+    "sessionSkippedDrives": "{count, plural, one {# Drive passte nicht in diese Sitzung} other {# Drives passten nicht in diese Sitzung}}: {names}. Nimm ein Drive heraus, um Platz zu schaffen, und starte die Sitzung dann neu."
   }
 }

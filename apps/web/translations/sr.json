@@ -20528,6 +20528,7 @@
     "agentDriveDescription": "Pamćenje i rezultati koje ovaj agent čuva između sesija. Svaka sesija agenta ga vidi na /drives/agent.",
     "agentFullWriteTitle": "Dozvoli ovom agentu da piše po celom tvom drajvu",
     "agentFullWriteDescription": "U sesijama koje pokreneš, ovaj agent može da menja bilo koju datoteku na tvom drajvu, ne samo u fascikli From agents.",
-    "agentCardDrive": "Drajv {size}"
+    "agentCardDrive": "Drajv {size}",
+    "sessionSkippedDrives": "{count, plural, one {# диск није стао у ову сесију} few {# диска нису стала у ову сесију} other {# дискова није стало у ову сесију}}: {names}. Извади један диск да ослободиш место, па поново покрени сесију."
   }
 }

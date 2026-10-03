@@ -708,6 +708,15 @@ export async function provisionSessionSandbox(opts: {
       }
       if (providerName === 'platinum' && slug !== META_SANDBOX_SLUG && slug !== PI_WORKER_SANDBOX_SLUG) {
         // Imported lazily for the same reason as ensurePiWorkerImage above.
+        // Ephemeral sandboxes: the session's own state volume. Resolved once,
+        // before the drives, whose mount slots it shares; a failure to open it fails this attempt (retried by
+        // the loop) rather than booting a box that would lose the session.
+        if (!sessionStateResolved) {
+          sessionState = await import('./ephemeral-sandbox').then((m) =>
+            m.resolveSessionStateMount({ projectId, sessionId: sandbox.sandboxId, provider: providerName }),
+          );
+          sessionStateResolved = true;
+        }
         if (!driveMountsResolved) {
           driveMounts = await import('../../drives/service').then(({ sessionVolumeMounts }) =>
             sessionVolumeMounts({
@@ -716,20 +725,12 @@ export async function provisionSessionSandbox(opts: {
               sessionId: sandbox.sandboxId,
               bootingUserId: userId,
               agentName: opts.agentName ?? 'default',
+              reservedSlots: sessionState ? 1 : 0,
             }),
           );
           driveMountsResolved = true;
         }
         providerCreateInput.volumes = driveMounts?.volumes;
-        // Ephemeral sandboxes: the session's own state volume. Resolved once,
-        // like the drives; a failure to open it fails this attempt (retried by
-        // the loop) rather than booting a box that would lose the session.
-        if (!sessionStateResolved) {
-          sessionState = await import('./ephemeral-sandbox').then((m) =>
-            m.resolveSessionStateMount({ projectId, sessionId: sandbox.sandboxId, provider: providerName }),
-          );
-          sessionStateResolved = true;
-        }
         if (sessionState) {
           providerCreateInput.volumes = {
             ...(providerCreateInput.volumes ?? {}),
@@ -934,6 +935,10 @@ export async function provisionSessionSandbox(opts: {
       }
       // What this sandbox really mounted: the session's drive chip reads it back.
       const mountedDrives = providerCreateInput.volumes && driveMounts ? driveMounts.mounts : [];
+      // And the drives that did not fit, which the chip and the agent's notes name.
+      const driveAdmission = providerCreateInput.volumes && driveMounts
+        ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
+        : { driveMountsSkipped: [] };
       const timeline = tl.summary();
 
       const [currentSession] = await db
@@ -994,6 +999,7 @@ export async function provisionSessionSandbox(opts: {
                 provisionTimeline: timeline,
                 providerExternalId: result.externalId,
                 driveMounts: mountedDrives,
+                ...driveAdmission,
                 ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
               },
               attempts,
@@ -1056,6 +1062,7 @@ export async function provisionSessionSandbox(opts: {
             provisionTimeline: timeline,
             providerExternalId: result.externalId,
             driveMounts: mountedDrives,
+            ...driveAdmission,
             ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
             runtimeArtifact: {
               artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
