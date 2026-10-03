@@ -288,12 +288,18 @@ per-lane results, `at`. Commit it. The `.githooks/pre-push` hook recomputes the
 hash from the pushed commit and rejects the push when the attestation is stale,
 red, or missing. Never bypass it with `--no-verify`: the merge gate runs
 `pnpm test:verify` on the PR head: exit `0` green, `1` stale/red/missing
-(`--strict` exits `3` when `db-suites` is skipped). Any
+(`--strict` exits `3` when a lane is skipped). Any
 source edit, including a merge of `main`, makes the attestation stale: re-run
 `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
 Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db`. It is the only lane that may skip, and it is never a pass:
-the merge gate holds a DB-touching PR (`db-wait`) on it.
+`skipped-no-db`, and on a Kortix sandbox image (`/etc/pt-env` or
+`/opt/kortix/scaffold.git` exists) the `packages` lane records
+`skipped-sandbox-image`: the image's platform state (a git repo at /workspace,
+`/opt/kortix/{scaffold.git,managed-skills,llm-catalog.json}`, the /dev/shm env
+file) breaks agent-server tests that are identical at `origin/main`, so the
+lane cannot attest a PR there. Only these two lanes may skip, a skip is never
+a pass, and a main push (`--strict`) refuses both: the daily scheduled `Tests`
+run on a clean CI runner is the backstop for what a sandbox cannot attest.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant

@@ -12,10 +12,16 @@
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
 // suites), browser (only when run). db-suites alone may be "skipped-no-db";
-// that is never a pass. The merge gate holds a DB-touching PR on it.
+// that is never a pass. The merge gate holds a DB-touching PR on it. On a
+// Kortix sandbox image the packages lane may instead record
+// "skipped-sandbox-image": the image's platform state (/etc/pt-env,
+// /opt/kortix/{scaffold.git,managed-skills,llm-catalog.json}, a git repo at
+// /workspace, the /dev/shm env file) breaks agent-server tests that are
+// identical at origin/main, so the lane cannot attest a PR there and the
+// scheduled Tests run on a clean CI runner is the backstop.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
-// attestation whose db-suites was skipped exits 3 instead of 0.
+// attestation whose db-suites or packages was skipped exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,6 +32,9 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ATTESTATION = 'tests/test-attestation.json';
 export const REQUIRED_LANES = ['core', 'packages', 'db-suites'];
+/** A lane value that records a sanctioned environment skip instead of a result:
+ *  never a pass, and a main push (`--strict`) rejects it. */
+export const SANCTIONED_SKIPS = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
 
 const git = (args, env) =>
   execFileSync('git', args, { cwd: root, env: { ...process.env, ...env }, maxBuffer: 1 << 28 });
@@ -67,11 +76,12 @@ export function evaluate(attestation, currentHash, required = REQUIRED_LANES, st
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  const ok = (l) => lanes[l] === 'pass' || (SANCTIONED_SKIPS[l] !== undefined && lanes[l] === SANCTIONED_SKIPS[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  if (lanes['db-suites'] === 'skipped-no-db') {
-    return { code: strict ? 3 : 0, reason: 'green, db-suites skipped-no-db' };
+  const skippedLanes = Object.keys(SANCTIONED_SKIPS).filter((l) => lanes[l] === SANCTIONED_SKIPS[l]);
+  if (skippedLanes.length) {
+    return { code: strict ? 3 : 0, reason: `green, ${skippedLanes.join(',')} ${skippedLanes.map((l) => SANCTIONED_SKIPS[l]).join(',')}` };
   }
   return { code: 0, reason: 'green' };
 }

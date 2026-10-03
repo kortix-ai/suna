@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
@@ -505,12 +506,35 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
 const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
 /** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
 const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
+/** The attestation value each lane group records when it is skipped, never a pass. */
+const SKIP_VALUES: Record<string, string> = {
+  'db-suites': 'skipped-no-db',
+  packages: 'skipped-sandbox-image',
+};
 
 function dockerAvailable(): boolean {
   try {
     return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
   } catch {
     return false; // no docker binary at all (a factory sandbox)
+  }
+}
+
+/**
+ * Whether THIS box is a Kortix sandbox image. The image carries platform
+ * state the agent-server tests assume absent — a git repo at /workspace,
+ * /opt/kortix/scaffold.git, /opt/kortix/managed-skills,
+ * /opt/kortix/llm-catalog.json, /etc/pt-env and the /dev/shm env file — so
+ * the packages lane (package-quality) fails here on files that are identical
+ * at origin/main. CI runs the same command on a clean runner (the daily
+ * scheduled Tests on main and every release PR), which stays the backstop;
+ * this box attests the skip instead of a result.
+ */
+function managedSandboxImage(): boolean {
+  try {
+    return existsSync('/etc/pt-env') || existsSync('/opt/kortix/scaffold.git');
+  } catch {
+    return false;
   }
 }
 
@@ -525,6 +549,19 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.includes(l.name)));
     console.log(`[test] SKIP ${skipped.join(',')}: Docker is not available (skipped-no-db, not a pass)`);
     if (plan.lanes.length === 0) return 1;
+  }
+  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && managedSandboxImage()) {
+    // A Kortix sandbox image invalidates the packages lane on files identical
+    // at origin/main. Skip the lane, record skipped-sandbox-image (never a
+    // pass; --strict and a main push refuse it). CI is the backstop.
+    const skipNow = plan.lanes.filter((l) => l.name === 'package-quality').map((l) => l.name);
+    if (skipNow.length) {
+      skipped.push(...skipNow);
+      plan.lanes = plan.lanes.filter((l) => !skipNow.includes(l.name));
+      plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipNow.includes(l.name)));
+      console.log(`[test] SKIP ${skipNow.join(',')}: a Kortix sandbox image carries platform state the agent-server tests assume absent (skipped-sandbox-image, not a pass; CI is the backstop)`);
+      if (plan.lanes.length === 0) return 1;
+    }
   }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
@@ -627,7 +664,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       const skip = skipped.filter((n) => members.includes(n));
       if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
       else if (ran.length + skip.length === members.length) {
-        lanes[group] = skip.length ? 'skipped-no-db' : 'pass';
+        lanes[group] = skip.length ? (SKIP_VALUES[group] ?? 'skipped-no-db') : 'pass';
       }
     }
     Bun.spawnSync(
