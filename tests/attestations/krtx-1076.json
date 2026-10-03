@@ -1,0 +1,25 @@
+{
+  "source_hash": "07264d0de7887e3d5ff4c98ddb43ecb56acd3eb0bf35aa7677da44fe6a76cedd",
+  "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
+    "packages/db/drizzle/meta/20261003151721_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003150053416_audit_events_actor_aggregate_index.concurrent.ts",
+    "packages/db/scripts/audit-events-actor-index.integration.test.ts",
+    "packages/db/scripts/audit-events-partitioned.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "7b6a898f166dd019181b8ce2a604534ed7395e5518837f88239cf7494c9870f6",
+  "head": "cfd6ba0675439d32a4af21bc0a63297013243a8f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:30:11.969Z"
+}
