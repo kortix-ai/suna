@@ -3,7 +3,8 @@ import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
 import { CODEX_SEED_MODEL_IDS } from './codex-models';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { SERVED_MANAGED_MODELS, platformDefaultModelId } from './served-managed-models';
+import { toWireModel } from '../resolution/effective';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
@@ -227,19 +228,27 @@ describe('served catalog field passthrough', () => {
 
 describe('gatewayModelCatalog — free-tier visibility', () => {
   const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
+  const platformDefault = toWireModel(platformDefaultModelId());
 
-  // Managed ids are bare; every BYOK and codex id carries a provider prefix.
-  test('free tier sees no managed Kortix model', () => {
-    expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([]);
+  // The platform default is the ONE managed model a free tier may run — the
+  // model /model-picker advertises as `defaultModel` and /model-defaults as
+  // `platformDefault` for a free account. Every other managed id stays hidden
+  // behind the paid tier.
+  test('free tier sees exactly the platform default among managed Kortix models', () => {
+    expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([platformDefault]);
+  });
+
+  test('the served platform-default record matches the paid catalog record', () => {
+    expect(freeFull[platformDefault]).toEqual(gatewayModelCatalog('proj')[platformDefault]);
   });
 
   test('free tier still sees BYOK catalog models (own connected keys work)', () => {
     expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
   });
 
-  test('anonymous + free-only = empty catalog', () => {
-    const empty = gatewayModelCatalog(undefined, { freeManagedOnly: true });
-    expect(empty).toEqual({});
+  test('anonymous + free-only sees only the platform default record', () => {
+    const anon = gatewayModelCatalog(undefined, { freeManagedOnly: true });
+    expect(Object.keys(anon)).toEqual([platformDefault]);
   });
 });
 

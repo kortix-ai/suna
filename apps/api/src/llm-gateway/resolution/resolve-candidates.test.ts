@@ -580,6 +580,42 @@ describe('resolveCandidates — managed model tier gating', () => {
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
+  // The platform default is the ONE managed model a free tier may run: it is
+  // what /model-picker advertises as `defaultModel` and /model-defaults as
+  // `platformDefault` for a free account, so a fresh free account can send
+  // its first message (KRTX-1067). Every OTHER managed id keeps both gates.
+  test('the platform default resolves for a freeModelsOnly principal', async () => {
+    config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+
+    const candidates = await resolveCandidates(
+      principal({ freeModelsOnly: true }),
+      'deepseek-v4.1-flash',
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed', billingMode: 'credits' });
+    expect(getAccountTier).not.toHaveBeenCalled();
+  });
+
+  test('the platform default also passes the entitlement gate without the principal flag', async () => {
+    config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'free';
+
+    const candidates = await resolveCandidates(p, 'deepseek-v4.1-flash');
+    expect(candidates).toHaveLength(1);
+  });
+
+  test('a managed model that is not the platform default still refuses for a freeModelsOnly principal', async () => {
+    config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+
+    await expect(
+      resolveCandidates(principal({ freeModelsOnly: true }), 'glm-5.3-flash'),
+    ).rejects.toMatchObject({ code: 'plan_upgrade_required' });
+  });
+
   // Both refusals keep the machine-readable `plan_upgrade_required`; clients
   // branch on the code. The copy differs: a free plan is told to upgrade, a
   // paid plan without managed models is told to bring a key, never to upgrade.

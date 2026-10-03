@@ -233,13 +233,18 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('a free-tier account never resolves the platform default', () => {
+  // The platform default is the ONE managed model a free tier may run — the
+  // model `/model-picker` advertises as `defaultModel` and serves `enabled`
+  // for a free account. `resolveComposerModel` still validates the resolved
+  // key against the offered list, so a deployment that does not serve it
+  // drops out safely.
+  test('a free-tier account resolves the platform default', () => {
     expect(
       resolveModelDefault(
         { ...data, projectDefault: null, freeTier: true } as ModelDefaultsResponse,
         undefined,
       ),
-    ).toBeUndefined();
+    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
   });
 });
 

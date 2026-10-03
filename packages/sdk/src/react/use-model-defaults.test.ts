@@ -29,7 +29,10 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('does not expose the paid platform default to a free-tier caller', () => {
+  // The platform default is free-tier eligible — it is the model the API
+  // advertises (`platformDefault`, `defaultModel`) and serves for a free
+  // account, so the composer resolves it instead of a dead "No model".
+  test('a free-tier caller resolves the platform default', () => {
     expect(
       resolveModelDefault(
         {
@@ -42,7 +45,7 @@ describe('resolveModelDefault', () => {
         },
         undefined,
       ),
-    ).toBeUndefined();
+    ).toEqual({ providerID: 'kortix', modelID: 'kortix/platform' });
   });
 });
 

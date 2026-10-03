@@ -88,6 +88,8 @@ mock.module('./credentials/opencode-console', () => ({
 
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
+const { platformDefaultModelId } = await import('./models/served-managed-models');
+const { toWireModel } = await import('./resolution/effective');
 
 const TOKEN = 'test-internal-token-aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -232,13 +234,17 @@ describe('POST /models managedOnly', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(gatewayModelCatalog(undefined)).length);
   });
 
-  test('a free-tier account gets an empty managed set', async () => {
+  // The platform default is the ONE managed model a free tier may run
+  // (KRTX-1067) — the managed set is exactly that model, never empty: a
+  // sandbox that fetches this listing must register the model the composer
+  // offers.
+  test('a free-tier account gets exactly the platform default', async () => {
     const managed = await models({
       principal: { userId: 'u', accountId: 'a', projectId: 'p', keyId: 'k', freeModelsOnly: true },
       managedOnly: true,
     });
 
-    expect(managed).toEqual({});
+    expect(Object.keys(managed)).toEqual([toWireModel(platformDefaultModelId())]);
   });
 });
 
