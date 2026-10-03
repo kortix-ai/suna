@@ -5,13 +5,13 @@
     "scripts/dev-local.test.mjs",
     "tests/bin/package-quality.ts"
   ],
-  "diff_hash": "7385f4e1b3c3d354437753cc61affe813e8dec88981518d4462070416e478a6f",
-  "head": "20211e5dde88f522d8ebe89354e2a836199d6cca",
+  "diff_hash": "fa83d991aff322b3b958fc4c5934e164dbed1bb3bc94712f30ef9a15aeaee4c5",
+  "head": "859b76a33ccef50657c6dae966bb3e06b270479f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:52:42.443Z"
+  "at": "2026-10-03T23:05:22.672Z"
 }
