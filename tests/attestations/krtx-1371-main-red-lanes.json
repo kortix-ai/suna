@@ -18,12 +18,12 @@
     "tests/unit/test-runner-contract.test.ts"
   ],
   "diff_hash": "08fa6c7cf8139198a304a9944b3c43ecc4e32d62bdf982e3a2b815c6d359f3ce",
-  "head": "c2f071ab5b6c7f0b6ec310972a4f4a7af4b16dbe",
+  "head": "247e51cf4bd04b8b06199c04a00b7a352825c272",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:23:25.247Z"
+  "at": "2026-10-03T20:52:16.065Z"
 }
