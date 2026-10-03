@@ -651,8 +651,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 ### Frontend type/lint gate
 
 - `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
-  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
-  `features/file-viewer/preview-fit.test.tsx`,
+  `test.each` errors in 2 test files (`features/file-viewer/preview-fit.test.tsx`,
   `features/session/action-panel/easy/easy-panel-logic.test.ts`).
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`
