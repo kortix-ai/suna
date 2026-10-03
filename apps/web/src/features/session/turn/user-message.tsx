@@ -1,9 +1,9 @@
 'use client';
 
-import { MessageAuthorLabel, SessionMessageCard } from './session-message-card';
+import { MessageSenderAbove } from '../participants/session-participants';
+import { MessageAuthorLabel } from './message-author-label';
 import { ReminderTurnCard } from './reminder-turn-card';
-import { isAskForViewer } from './message-author';
-import { toast } from 'sonner';
+import { errorToast } from '@/components/ui/toast';
 import {
   fetchSessionAttachment,
   isSessionAttachmentRef,
@@ -81,7 +81,6 @@ import {
   parseSessionReferences,
   parseSystemNotifications,
   parseReminderPrompt,
-  parseSessionMessagePrompt,
   parseTriggerEvent,
   QUOTE_MARKER_RE,
   quoteMarker,
@@ -489,6 +488,7 @@ export interface AttachmentUploadStatus {
 }
 
 function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [downloading, setDownloading] = useState(false);
   const download = async () => {
     if (downloading) return;
@@ -505,7 +505,7 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
       link.remove();
       if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+      errorToast(error instanceof Error ? error.message : tI18nComplete('text7f755292bf51'));
     } finally {
       setDownloading(false);
     }
@@ -761,8 +761,11 @@ export function UserMessageBubble({
   textId,
   textRef,
   quoted,
+  tail = false,
   children,
 }: {
+  /** The sender's avatar sits above: the top-right corner, under it, is 4px. */
+  tail?: boolean;
   /** The text overflows its clamp, so there is something to expand. */
   canExpand: boolean;
   expanded: boolean;
@@ -785,6 +788,8 @@ export function UserMessageBubble({
       className={cn(
         BUBBLE_SURFACE,
         'relative overflow-hidden',
+        // 4px: `--radius` (10) minus 6, the corner under the sender's avatar.
+        tail && 'rounded-tr-[calc(var(--radius)-6px)]',
         fullWidth ? 'w-full' : 'w-fit',
         canExpand && 'cursor-pointer',
       )}
@@ -1082,10 +1087,6 @@ export function UserMessage({
   message,
   author,
   showAuthor,
-  headerTrusted,
-  messagingCards = true,
-  viewerEmail,
-  isLastMessage,
   agentNames,
   commandInfo,
   commands,
@@ -1107,18 +1108,6 @@ export function UserMessage({
   author?: SessionMessageAuthor;
   /** Draw the author's name above the bubble (group chat). */
   showAuthor?: boolean;
-  /** The server wrote this message's header without a ledger author (an ask's first, `no_reply` prompt). */
-  headerTrusted?: boolean;
-  /**
-   * `human_messaging` is on for the project. Off: no ask / from-session card and
-   * no reply hint, even for a message whose header the ledger confirmed; the
-   * header is stripped and the text draws as a plain bubble. Author labels stay.
-   */
-  messagingCards?: boolean;
-  /** The viewer's email, to tell whether an ask is addressed to them. */
-  viewerEmail?: string;
-  /** No user message came after this one. */
-  isLastMessage?: boolean;
   agentNames?: string[];
   commandInfo?: {
     name: string;
@@ -1179,24 +1168,9 @@ export function UserMessage({
     quotes,
     uploads: uploadedFiles,
   } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
-  // A message from another session or in a group chat opens with a platform
-  // header for the agent. The card or the author label says it instead.
-  // Anyone can type a header. Only the server's ledger (`author`) or a server
-  // `no_reply` prompt makes it real; without either it stays plain text.
-  // The header line itself is always hidden: it is agent-facing text, and a
-  // typed one claims nothing once it is gone (names come from the ledger).
-  const headerConfirmed = messagingCards && (!!author || !!headerTrusted);
-  const sessionMessage = useMemo(
-    () => (headerConfirmed ? parseSessionMessagePrompt(rawText) : undefined),
-    [rawText, headerConfirmed],
-  );
-  const textWithoutHeader = useMemo(
-    () => parseSessionMessagePrompt(textAfterFiles)?.prompt ?? textAfterFiles,
-    [textAfterFiles],
-  );
   const { cleanText: textAfterProjects } = useMemo(
-    () => parseProjectReferences(textWithoutHeader),
-    [textWithoutHeader],
+    () => parseProjectReferences(textAfterFiles),
+    [textAfterFiles],
   );
   const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
     () => parseFileMentionReferences(textAfterProjects),
@@ -1287,8 +1261,7 @@ export function UserMessage({
       const stripped = stripSystemPtyText((p as TextPart).text);
       if (stripped.trim()) lines.push(stripped);
     }
-    const joined = lines.join('\n').trim();
-    return parseSessionMessagePrompt(joined)?.prompt ?? joined;
+    return lines.join('\n').trim();
   }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
@@ -1575,26 +1548,6 @@ export function UserMessage({
     );
   }
 
-  // Another session's message, or an ask: an incoming card on the left.
-  // A session card needs a session author; an ask card any ledger author, or
-  // the server's own `no_reply` ask.
-  if (
-    sessionMessage &&
-    (sessionMessage.type === 'ask'
-      ? true
-      : author?.kind === 'session' || (headerTrusted && sessionMessage.sender.kind === 'session'))
-  ) {
-    return (
-      <div className="flex flex-col items-start gap-1">
-        <SessionMessageCard
-          info={sessionMessage}
-          author={author}
-          replyHint={isLastMessage && isAskForViewer(sessionMessage, viewerEmail)}
-        />
-      </div>
-    );
-  }
-
   if (reminderInfo) {
     return (
       <div className="flex flex-col items-end gap-1">
@@ -1656,7 +1609,9 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {showAuthor && author && <MessageAuthorLabel author={author} />}
+      {/* A member author is the avatar above the bubble; another session's
+          agent has no face, so it keeps the named label. */}
+      {showAuthor && author?.kind === 'session' && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />
@@ -1674,25 +1629,28 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <UserMessageBubble
-          canExpand={canExpand}
-          expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
-          textId={`${message.info.id}-text`}
-          textRef={textRef}
-          quoted={Boolean(quotedPieces)}
-        >
-          {quotedPieces ? (
-            <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
-          ) : (
-            (bodyText || effectiveCommandInfo) && (
-              <>
-                {commandLead}
-                {renderSegments(segments)}
-              </>
-            )
-          )}
-        </UserMessageBubble>
+        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
+          <UserMessageBubble
+            tail={showAuthor && author?.kind === 'member'}
+            canExpand={canExpand}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            textId={`${message.info.id}-text`}
+            textRef={textRef}
+            quoted={Boolean(quotedPieces)}
+          >
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              (bodyText || effectiveCommandInfo) && (
+                <>
+                  {commandLead}
+                  {renderSegments(segments)}
+                </>
+              )
+            )}
+          </UserMessageBubble>
+        </MessageSenderAbove>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate

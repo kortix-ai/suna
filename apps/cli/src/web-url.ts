@@ -50,7 +50,7 @@ export function webDashboardUrl(apiBase: string, dashboardUrl?: string | null): 
 }
 
 /** Best-effort map of an API host to its frontend host (fallback only). */
-function deriveFrontendFromApiBase(apiBase: string): string {
+export function deriveFrontendFromApiBase(apiBase: string): string {
   try {
     const url = new URL(apiBase);
     const host = url.hostname;

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'bun:test';
 import type { S3Client } from '@aws-sdk/client-s3';
 import {
@@ -189,5 +190,73 @@ describe('resolvePresignTarget stays the one presign rule', () => {
       forcePathStyle: true,
       sameAsApiClient: false,
     });
+  });
+});
+
+describe('ObjectStore.putLocked — write-once under Object Lock', () => {
+  const retainUntil = new Date('2027-10-01T00:00:00.000Z');
+  const body = Buffer.from('rows');
+  const input = { key: 'audit/a/2026/2026-10-05.000.jsonl.gz', body, contentType: 'application/gzip', retainUntil, mode: 'COMPLIANCE' as const };
+
+  test('one PutObject: Object Lock mode and date, KMS encryption, SHA-256, If-None-Match', async () => {
+    const { client, sent } = fakeClient([{ ETag: '"1"' }]);
+    const store = new ObjectStore(() => AWS, { client });
+    expect(await store.putLocked(input)).toBe('created');
+    expect(sent.map((c) => c.name)).toEqual(['PutObjectCommand']);
+    expect(sent[0]!.input).toMatchObject({
+      Bucket: 'b',
+      Key: input.key,
+      ObjectLockMode: 'COMPLIANCE',
+      ObjectLockRetainUntilDate: retainUntil,
+      ServerSideEncryption: 'aws:kms',
+      ChecksumSHA256: createHash('sha256').update(body).digest('base64'),
+      IfNoneMatch: '*',
+    });
+  });
+
+  test('an S3-compatible endpoint gets no SSE-KMS header (MinIO has no KMS)', async () => {
+    const { client, sent } = fakeClient([{}]);
+    const minio = { ...AWS, endpoint: 'http://127.0.0.1:19100', forcePathStyle: true };
+    await new ObjectStore(() => minio, { client }).putLocked(input);
+    expect(sent[0]!.input).not.toHaveProperty('ServerSideEncryption');
+    expect(sent[0]!.input.ObjectLockMode).toBe('COMPLIANCE');
+  });
+
+  test('an existing object (412) is reported, not rewritten', async () => {
+    const { client } = fakeClient([s3Error('PreconditionFailed', 412)]);
+    expect(await new ObjectStore(() => AWS, { client }).putLocked(input)).toBe('exists');
+  });
+
+  test('an endpoint that ignores If-None-Match is read first: an existing key is never overwritten', async () => {
+    const { client, sent } = fakeClient([{ ContentLength: 4, ETag: '"1"' }]);
+    expect(await new ObjectStore(() => SUPABASE, { client }).putLocked(input)).toBe('exists');
+    expect(sent.map((c) => c.name)).toEqual(['HeadObjectCommand']);
+  });
+});
+
+describe('ObjectStore.checksum / getBytes / lockMode', () => {
+  test('checksum asks S3 for the stored SHA-256 and maps a missing object to null', async () => {
+    const { client, sent } = fakeClient([{ ChecksumSHA256: 'abc=' }, s3Error('NotFound', 404)]);
+    const store = new ObjectStore(() => AWS, { client });
+    expect(await store.checksum('k')).toBe('abc=');
+    expect(sent[0]!.input.ChecksumMode).toBe('ENABLED');
+    expect(await store.checksum('missing')).toBeNull();
+  });
+
+  test('getBytes returns the object body, null when missing', async () => {
+    const { client } = fakeClient([{ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } }, s3Error('NoSuchKey', 404)]);
+    const store = new ObjectStore(() => AWS, { client });
+    expect(Array.from((await store.getBytes('k'))!)).toEqual([1, 2, 3]);
+    expect(await store.getBytes('missing')).toBeNull();
+  });
+
+  test('lockMode reads the bucket default retention mode, null when the bucket has no lock', async () => {
+    const { client } = fakeClient([
+      { ObjectLockConfiguration: { ObjectLockEnabled: 'Enabled', Rule: { DefaultRetention: { Mode: 'GOVERNANCE', Days: 365 } } } },
+      s3Error('ObjectLockConfigurationNotFoundError', 404),
+    ]);
+    const store = new ObjectStore(() => AWS, { client });
+    expect(await store.lockMode()).toBe('GOVERNANCE');
+    expect(await store.lockMode()).toBeNull();
   });
 });

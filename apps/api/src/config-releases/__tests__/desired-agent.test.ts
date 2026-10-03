@@ -92,6 +92,18 @@ describe('a declared agent is untouched', () => {
   });
 });
 
+describe('the platform meta coordinator', () => {
+  test('never receives the project release, even when its metadata says repository access', async () => {
+    const desired = await resolveDesiredRelease(
+      { project: PROJECT, baseRef: 'main', sessionAgent: 'meta', repositoryAccess: true },
+      deps(),
+    );
+    expect(built).toEqual(['meta']);
+    expect(desired.variant).toBe('meta');
+    expect(desired.descriptor.agent_repoint).toBeNull();
+  });
+});
+
 describe('the manifest dropped the session agent', () => {
   test('an authorized owner is re-pointed once, and the release is the default agent`s', async () => {
     const writes: Array<[string, string]> = [];

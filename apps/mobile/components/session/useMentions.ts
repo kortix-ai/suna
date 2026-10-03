@@ -8,8 +8,8 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
-import type { Session } from '@/lib/platform/types';
+import type { Agent } from '@/lib/session/runtime-data';
+import type { Session } from '@/lib/session/types';
 import { useMentionFileSearch } from './use-mention-file-search';
 import { detectMentionTrigger, mentionItems, pruneMentions } from '@/lib/session/mentions';
 import { appendFileMention } from '@/lib/session/session-files';
@@ -70,21 +70,19 @@ export function useMentions({
     }
   }, [items.length]);
 
-  // ── Text change handler — @ detection (matches frontend handleInput) ────
-  // On React Native we don't get cursor position from onChangeText.
-  // The caller passes cursorPos (from onSelectionChange or text.length).
-
-  const handleTextChange = useCallback(
+  // Detection uses the native selection; text changes only prune tracked tokens.
+  const detect = useCallback(
     (text: string, cursorPos: number) => {
       const detected = detectMentionTrigger(text, cursorPos, mentions);
       setMentionQuery(detected);
       if (detected) setMentionIndex(0);
-
-      // Prune tracked mentions whose @label text was deleted
-      setMentions((prev) => pruneMentions(text, prev));
     },
     [mentions],
   );
+
+  const prune = useCallback((text: string) => {
+    setMentions((prev) => pruneMentions(text, prev));
+  }, []);
 
   // ── Select a mention from the popover ───────────────────────────────────
 
@@ -160,7 +158,8 @@ export function useMentions({
     selectedIndex: mentionIndex,
     mentions,
     fileSearchLoading,
-    handleTextChange,
+    prune,
+    detect,
     selectMention,
     addFileMention,
     moveUp,

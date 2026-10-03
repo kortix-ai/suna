@@ -25,11 +25,13 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
+import { slackUserNames } from '../channels/slack/labels';
 import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsInstall,
@@ -761,6 +763,14 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
     bindSlackThread: (input) => bindSlackThreadToSession(input),
+    // ponytail: 25 distinct authors per read; a longer thread keeps ids past it.
+    nameSlackUsers: async ({ projectId, token, userIds }) =>
+      slackUserNames(
+        token,
+        (await loadSlackTeamIdForProject(projectId).catch(() => null)) ?? `project:${projectId}`,
+        userIds,
+        25,
+      ),
     gateChannelRead: (input) => gateChannelRead(input),
     gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,

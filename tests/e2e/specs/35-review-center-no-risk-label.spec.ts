@@ -68,7 +68,7 @@ test.describe('35 — Review Center shows no risk label', () => {
 
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, account.account_id);
-      await page.goto(`/projects/${project.id}/customize/review`, { waitUntil: 'domcontentloaded' });
+      await page.goto(`/projects/${project.id}/review`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
       const main = page.getByRole('main');

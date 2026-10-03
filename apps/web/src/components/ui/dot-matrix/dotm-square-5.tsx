@@ -2,14 +2,13 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import {
   diagonalSnakeNormFromIndex,
   diagonalSnakeOrderValue,
   createDotm5x5Component,
 } from '@/lib/dotmatrix-core';
 
-export type DotmSquare5Props = DotMatrixCommonProps;
 
 const animationResolver: DotAnimationResolver = ({ isActive, index, reducedMotion, phase }) => {
   if (!isActive) {

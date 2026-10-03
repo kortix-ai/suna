@@ -120,14 +120,6 @@ export function ConnectorStatusBadge({ connector }: { connector: AdminConnector 
         {tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
       </Badge>
     );
-  if (status === 'no_auth')
-    return (
-      <Badge variant="outline" size="sm">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558',
-        )}
-      </Badge>
-    );
   if (status === 'user_managed')
     return (
       <Badge variant="outline" size="sm">

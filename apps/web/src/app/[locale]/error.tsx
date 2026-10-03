@@ -7,6 +7,7 @@ import {
   recordRuntimeNotReady,
   type RuntimeNotReadyStreak,
 } from '@/lib/runtime-not-ready-budget';
+import { isRuntimeStartingError } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
@@ -20,13 +21,9 @@ import { useEffect, useState } from 'react';
  * subtree, but a caller mounted OUTSIDE that subtree (a shell/layout component,
  * or a stale-bundle race) lets it reach this global boundary. Such a transient
  * error must NEVER present as the hard "Something went wrong" crash — degrade it
- * to a silent auto-retry here too. Match on message text (the throw is a plain
- * `RuntimeNotReadyError`, but sibling env/pty guards reuse the same wording).
+ * to a silent auto-retry here too. `isRuntimeStartingError` (@kortix/sdk) is the
+ * one classifier: the unpinned URL, and the sandbox or daemon not-ready answers.
  */
-function isRuntimeNotReadyError(error: Error): boolean {
-  const m = error?.message ?? '';
-  return /server url not ready|sandbox is still loading|opencode not ready/i.test(m);
-}
 
 /**
  * The current runtime-not-ready outage. Module scope, not state: `reset()`
@@ -42,7 +39,7 @@ export default function Error({
   reset: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const runtimeNotReady = isRuntimeNotReadyError(error);
+  const runtimeNotReady = isRuntimeStartingError(error);
   // Set once the silent retry has run for its whole budget. From then on the
   // card below renders, so a runtime that never comes up is not a blank window.
   const [retryExhausted, setRetryExhausted] = useState(false);

@@ -439,23 +439,29 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 });
 
-describe('Up takes the queue back into the composer', () => {
-  test('only what the server actually removed comes back, in queue order, above the draft', () => {
+describe('Up and the pencil edit a queued entry in place', () => {
+  test('opening an edit sends no request: the row stays queued, the words arrive at once', () => {
     const takeBack = between(
       chat,
       'const handleTakeBackQueue = useCallback(',
-      '// ---- Triple-ESC to stop ----',
+      'const handleCancelQueueEdit = useCallback(',
     );
     expect(takeBack).toContain('row.takeBackEligible');
-    // Drafts are read BEFORE the removals: removing a row prunes its draft.
-    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
-      takeBack.indexOf('promptInbox.remove(row.id)'),
+    expect(takeBack).toContain(".setPrefill(sessionId, target.editText, undefined, 'replace')");
+    expect(takeBack).not.toContain('promptInbox.');
+    expect(takeBack).not.toContain('await ');
+  });
+
+  test('Submit while editing saves into the same row and never sends', () => {
+    const save = between(
+      chat,
+      'const handleSaveQueueEdit = useCallback(',
+      '// ---- Triple-ESC to stop ----',
     );
-    expect(takeBack).toContain('Promise.allSettled(');
-    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
-    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
-    // Anything that cannot come back losslessly goes back to the queue.
-    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+    expect(save).toContain('promptInbox.edit(edit.promptId, next)');
+    expect(save).not.toContain('promptInbox.enqueue');
+    expect(save).not.toContain('handleSend(');
+    expect(chat).toContain('await handleSaveQueueEdit(edit, text);');
   });
 
   test('the composer gets the key handler and the hint', () => {

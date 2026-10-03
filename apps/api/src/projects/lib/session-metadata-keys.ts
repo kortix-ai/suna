@@ -13,6 +13,8 @@
  * and both routes refuse a request that names one (`400`). Add the key here in
  * the same change that adds the server reader.
  */
+import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
+
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
   'deletedAt',
@@ -49,19 +51,13 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'teams',
   'email',
   'telegram',
-  // Warm-session pool marker (`lib/warm-sessions.ts`).
+  // Warm-session marker and trusted provisioning intent (`lib/warm-sessions.ts`).
   'warm',
+  WARM_SESSION_LOCATION_KEY,
   // Activity-ordered session list (`session-list.ts` `orderByActivity`). The
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
-  // Conversations with people (`POST /sessions` `participants`). The member
-  // grants, the "Asked you" sidebar and the sender header read these; a client
-  // value would add itself to a conversation or silence one.
-  'participants',
-  'awaiting_reply',
-  'awaiting_reply_from',
-  'asked_by',
 ] as const;
 
 /**

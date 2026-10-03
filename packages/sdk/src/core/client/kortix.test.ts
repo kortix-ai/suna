@@ -81,6 +81,17 @@ test('project(id).apps exposes the complete App lifecycle with the project id bo
   });
 });
 
+test('project(id).apps.deployments.remove deletes one deployment with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  await apps.deployments.remove('APP1', 'DEP1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments/DEP1',
+  });
+});
+
 test('project(id).connectors exposes the complete connector data plane', async () => {
   const connectors = kortix.project('PID123').connectors;
 
@@ -131,6 +142,8 @@ test('project(id).secrets.broker binds the project and encoded identifier', asyn
 test('session(projectId, sessionId) binds both ids', async () => {
   await kortix.session('PID123', 'SID456').previews();
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
+  await kortix.session('PID123', 'SID456').participants();
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/participants');
 });
 
 test('session presence writes a tab-scoped lease through the authenticated backend', async () => {
@@ -548,7 +561,9 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ label: 'Support inbox' });
 
-  await kortix.project('PID123').connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
+  await kortix
+    .project('PID123')
+    .connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
   expect(last().url).toContain('/projects/PID123/computers');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ tunnel_id: 'tunnel-1', share: 'me' });
@@ -1721,4 +1736,15 @@ test('the facade carries the connect owner through to both connect surfaces', as
   await kortix.project('PID123').setupLinks.requestConnector({ slug: 'slack-1', owner: 'me' });
   expect(last().url).toBe('http://test.local/projects/PID123/connect-requests');
   expect(last().body).toEqual({ slug: 'slack-1', owner: 'me' });
+});
+
+test('project-bound session retains both ids for transcript', async () => {
+  await kortix.project('BOUND_PROJECT').session('BOUND_SESSION').transcript();
+  expect(last().url).toContain('/projects/BOUND_PROJECT/sessions/BOUND_SESSION/transcript');
+});
+
+test('project agent identities retains its bound project id', async () => {
+  await kortix.project('BOUND_PROJECT').agentIdentities();
+  expect(last().url).toBe('http://test.local/projects/BOUND_PROJECT/agent-identities');
+  expect(last().method).toBe('GET');
 });

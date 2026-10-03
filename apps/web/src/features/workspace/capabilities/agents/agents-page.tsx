@@ -115,7 +115,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // see `triggerStartsAgent`.
   const triggerCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const fallback = config?.open_code_default_agent ?? null;
+    const fallback = config?.default_agent ?? config?.open_code_default_agent ?? null;
     for (const trigger of triggersQuery.data?.triggers ?? []) {
       const owner = trigger.agent === 'default' && fallback ? fallback : trigger.agent;
       counts.set(owner, (counts.get(owner) ?? 0) + 1);
@@ -153,7 +153,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // them. Telling the user "No agents yet" in the second case is false and
   // points at the wrong fix (clear the filter, not create an agent).
   const emptyKind = catalogEmptyKind(agents.length, filtered.length);
-  const defaultAgent = config?.open_code_default_agent ?? null;
+  const defaultAgent = config?.default_agent ?? config?.open_code_default_agent ?? null;
 
   // One control, two labels — same rule as the Skills page. The header has a
   // title beside it and can be terse; the empty state is the whole screen and
@@ -369,7 +369,7 @@ function DefaultAgentSelector({
   const queryClient = useQueryClient();
   const isV2 = detectManifestVersion(config.manifest_raw) === 2;
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
-  const current = config.open_code_default_agent;
+  const current = config.default_agent ?? config.open_code_default_agent;
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {

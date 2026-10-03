@@ -153,6 +153,7 @@ export function ComposerCard({
   lockForQuestion = false,
   lockForApproval = false,
   questionButtonLabel = null,
+  submitLabel = null,
   questionCanAct = true,
   escCount = 0,
   isBusy = false,
@@ -172,7 +173,6 @@ export function ComposerCard({
   rewind,
   selectedAgent = null,
   onAgentChange,
-  agentSelectorLocked = false,
   noAccessibleAgents = false,
   onContextClick,
   messages,
@@ -343,7 +343,6 @@ export function ComposerCard({
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
                   onAgentChange={onAgentChange}
-                  agentSelectorLocked={agentSelectorLocked}
                   noAccessibleAgents={noAccessibleAgents}
                   messages={messages}
                   models={models}
@@ -380,6 +379,7 @@ export function ComposerCard({
             escCount={escCount}
             lockForQuestion={lockForQuestion}
             questionButtonLabel={questionButtonLabel}
+            submitLabel={submitLabel}
             questionCanAct={questionCanAct}
             hasText={!isEmpty}
             canSubmit={canSubmit}
@@ -424,7 +424,6 @@ export function ComposerCard({
         agents={primaryAgents}
         selectedAgent={selectedAgent}
         onAgentChange={onAgentChange}
-        agentSelectorLocked={agentSelectorLocked}
         noAccessibleAgents={noAccessibleAgents}
         messages={messages}
         models={models}

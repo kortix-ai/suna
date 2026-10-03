@@ -39,7 +39,7 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { THEME } from '@/lib/utils/theme';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSessionRows } from '@/lib/session/session-store';
 import {
   deriveSessionFiles,
   filterSessionFiles,
@@ -61,7 +61,8 @@ export interface SessionFilesSheetProps {
   onSelect: (file: SessionFile) => void;
 }
 
-export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetProps>(
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const SessionFilesSheet = React.memo(React.forwardRef<SheetRef, SessionFilesSheetProps>(
   ({ sessionId, sandboxUrl, onSelect }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const previewSheetRef = React.useRef<SheetRef>(null);
@@ -122,7 +123,7 @@ export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetPro
       </>
     );
   }
-);
+));
 SessionFilesSheet.displayName = 'SessionFilesSheet';
 
 function SessionFilesBody({
@@ -133,7 +134,7 @@ function SessionFilesBody({
   onPreview: (file: SessionFile) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const messages = useSyncStore((s) => s.messages[sessionId]);
+  const messages = useSessionRows(sessionId);
   const [query, setQuery] = React.useState('');
 
   const files = React.useMemo(() => deriveSessionFiles(messages), [messages]);

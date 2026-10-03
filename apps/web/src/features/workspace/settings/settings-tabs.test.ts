@@ -10,6 +10,19 @@ import {
   resolveSettingsOverlayHref,
 } from './settings-tabs';
 
+describe('standalone account settings destinations', () => {
+  test('connected opens the selected account Git pane without a project', () => {
+    expect(legacySectionRedirect('', 'connected', 'acc1')).toBe(
+      '/projects?accountId=acc1&accountTab=git',
+    );
+  });
+
+  test('waits for the account rather than guessing a destination', () => {
+    expect(isAccountGraduatedSection('connected')).toBe(true);
+    expect(legacySectionRedirect('', 'connected')).toBeNull();
+  });
+});
+
 describe('SETTINGS_TABS', () => {
   test('holds every tab exactly once', () => {
     expect(new Set(SETTINGS_TABS).size).toBe(SETTINGS_TABS.length);
@@ -206,8 +219,8 @@ describe('legacySectionRedirect', () => {
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/customize/review');
-    expect(resolveSettingsOverlayHref('/projects/p1/customize/review')).toEqual({ opensOverlay: false });
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
+    expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
   });
 
   test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {

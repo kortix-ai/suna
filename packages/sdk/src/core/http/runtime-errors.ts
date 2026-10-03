@@ -88,6 +88,8 @@ export const isOpenCodeConfigInvalidError = isRuntimeConfigInvalidError;
 // Deliberately NOT here: `sandbox port unreachable` — that is emitted only
 // after the box reported active and the port still failed to answer, which is
 // a genuine failure, not parking.
+//   - `runtime_not_ready` (code), `sandbox runtime not ready`, `opencode not
+//     ready` → the daemon's own 503, `RUNTIME_NOT_READY_MARKERS` below
 const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
   /sandbox not ready/i,
   /sandbox is not (?:ready|running)/i,
@@ -95,6 +97,33 @@ const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
   /\bsandbox_not_ready\b/,
   /\bsandbox_lifecycle_unavailable\b/,
 ];
+
+/**
+ * Every spelling of the daemon's 503 while the session runtime cannot take a
+ * request, as lower-case substrings: the `code` a W6 daemon sends on both
+ * harnesses, then the two `error` texts of a daemon without the code (pi and
+ * OpenCode's boot steps; the OpenCode process itself). For a host that needs
+ * a string list (a telemetry ignore list); a predicate should call
+ * `isRuntimeNotReadyResponse`.
+ */
+export const RUNTIME_NOT_READY_MARKERS = [
+  'runtime_not_ready',
+  'sandbox runtime not ready',
+  'opencode not ready',
+] as const;
+
+// `\b` keeps the API's `runtime_not_ready_timeout` park reason out.
+const RUNTIME_NOT_READY_PATTERN = /\bruntime_not_ready\b|sandbox runtime not ready|opencode not ready/i;
+
+/**
+ * True when the daemon refused a request because the session runtime is not up
+ * yet. The request was not forwarded: nothing reached the agent, and a retry is
+ * safe. Narrower than `isSandboxNotReadyError`, which also covers a sandbox
+ * that is stopped or parked.
+ */
+export function isRuntimeNotReadyResponse(error: unknown): boolean {
+  return RUNTIME_NOT_READY_PATTERN.test(rawErrorMessage(error));
+}
 
 /**
  * True when an error means "the sandbox is still starting / parked", i.e. a
@@ -105,7 +134,21 @@ const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
 export function isSandboxNotReadyError(error: unknown): boolean {
   const raw = rawErrorMessage(error);
   if (!raw) return false;
-  return SANDBOX_NOT_READY_PATTERNS.some((pattern) => pattern.test(raw));
+  return isRuntimeNotReadyResponse(raw) || SANDBOX_NOT_READY_PATTERNS.some((pattern) => pattern.test(raw));
+}
+
+// `getClient()` and the env and pty guards throw this wording for the ~1 s
+// before a new or switched session's runtime URL is pinned.
+const RUNTIME_URL_NOT_PINNED = /server url not ready|sandbox is still loading/i;
+
+/**
+ * True for every "the session runtime is still starting" error a render path
+ * can meet: the runtime URL is not pinned yet, or the sandbox or its daemon
+ * answered not-ready. All of them clear on their own, so a boundary retries
+ * instead of showing a crash.
+ */
+export function isRuntimeStartingError(error: unknown): boolean {
+  return RUNTIME_URL_NOT_PINNED.test(rawErrorMessage(error)) || isSandboxNotReadyError(error);
 }
 
 /**

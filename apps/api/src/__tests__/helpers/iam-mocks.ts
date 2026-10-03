@@ -221,6 +221,8 @@ export interface ReadModelRows {
     createdAt?: Date;
     updatedAt?: Date;
   }>;
+  /** Awaited by `projectRoleGrants` before it answers, so a suite can hold that read open. */
+  holdProjectRoleGrants?: () => Promise<void> | void;
 }
 
 export function mockIamReadModels(rows: ReadModelRows = {}): void {
@@ -263,8 +265,9 @@ export function mockIamReadModels(rows: ReadModelRows = {}): void {
       openMembership
         ? 2
         : members().filter((m) => m.accountId === accountId && m.accountRole === 'owner').length,
-    projectRoleGrants: async (filter: { accountId: string; projectId?: string; userId?: string }) =>
-      projectMembers()
+    projectRoleGrants: async (filter: { accountId: string; projectId?: string; userId?: string }) => {
+      await rows.holdProjectRoleGrants?.();
+      return projectMembers()
         .filter(
           (g) =>
             g.accountId === filter.accountId &&
@@ -281,7 +284,8 @@ export function mockIamReadModels(rows: ReadModelRows = {}): void {
           expiresAt: g.expiresAt ?? null,
           createdAt: g.createdAt ?? new Date(0),
           updatedAt: g.updatedAt ?? new Date(0),
-        })),
+        }));
+    },
     projectRoleForUser: async (projectId: string, userId: string) => {
       if (rows.projectMembers === undefined) return openMembership ? 'manager' : null;
       const held = projectMembers()

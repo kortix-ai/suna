@@ -33,7 +33,7 @@ output is a findings report; you change nothing.
    - rediscovery of facts another session (or an earlier turn) already knew
    - stalled stretches — activity without progress toward the goal
    - the same multi-step sequence performed by hand 3+ times
-   - executable tools under `harnesses/opencode/tools/` that raised
+   - executable tools under `harnesses/opencode/tools/` or `harnesses/pi/extensions/` that raised
    - missed shortcuts or information nothing captured
 4. **Attribute each finding** to the harness component that should absorb
    it: an agent prompt, a sub-agent, a skill, a tool, or memory.

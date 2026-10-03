@@ -196,34 +196,6 @@ describe('kortix marketplace', () => {
     expect(stderr).toBe('');
   });
 
-  test('starts an agent-driven install session for a marketplace item', async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      expect(url).toBe('https://api.test/v1/projects/project-1/marketplace/install-session');
-      expect(init?.method).toBe('POST');
-      expect(JSON.parse(String(init?.body))).toEqual({ id: 'kortix-starter:pdf' });
-      return new Response(
-        JSON.stringify({ session_id: 'session-install-1', project_id: 'project-1' }),
-        { status: 201, headers: JSON_HEADERS },
-      );
-    }) as typeof fetch;
-
-    const code = await runMarketplace([
-      'install',
-      'kortix-starter:pdf',
-      '--project',
-      'project-1',
-      '--json',
-    ]);
-
-    expect(code).toBe(0);
-    expect(JSON.parse(stdout)).toMatchObject({
-      session_id: 'session-install-1',
-      project_id: 'project-1',
-    });
-    expect(stderr).toBe('');
-  });
-
   test('rejects removed deterministic lifecycle subcommands', async () => {
     for (const sub of ['add', 'status', 'installed', 'updates', 'outdated', 'update', 'remove', 'rm']) {
       const code = await runMarketplace([sub, 'pdf']);

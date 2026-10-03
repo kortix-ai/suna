@@ -19,7 +19,7 @@
  * - audio → the web layout with an "Open" button in place of `<audio>`;
  * - PDF / DOCX / PPTX / XLSX / CSV file → web's `FileCard`; tap opens
  *   the file sheet. Inline CSV content prints as mono text;
- * - a generic sandbox file reads its text (`useOpenCodeFileContent`) and
+ * - a generic sandbox file reads its text (`useSandboxFileContent`) and
  *   renders markdown or highlighted code capped at 420 (web: a fixed 420 box).
  *
  * Load status (`onStatusChange`) is reported for the two fetches mobile makes
@@ -44,7 +44,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useOpenCodeFileContent } from '@/lib/files/hooks';
+import { useSandboxFileContent } from '@/lib/files/hooks';
 import {
   ArrowSquareOutIcon,
   FileIcon,
@@ -381,7 +381,7 @@ export function ShowContentRenderer({
   const image = useSandboxImage(imagePath, Boolean(imagePath));
 
   const textPath = branch === 'sandbox-file' && !isShowBinaryPath(path) ? path : undefined;
-  const textFile = useOpenCodeFileContent(sandboxUrl, textPath, { enabled: Boolean(sandboxUrl && textPath) });
+  const textFile = useSandboxFileContent(sandboxUrl, textPath, { enabled: Boolean(sandboxUrl && textPath) });
 
   const ownStatus: ShowLoadStatus = (() => {
     if (imagePath) {

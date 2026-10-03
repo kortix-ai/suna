@@ -186,7 +186,21 @@ Each row also records the credential the API authenticated, in `credential_kind`
 
 The API never reads `X-Kortix-Client`. The CLI, the MCP server, and the web app all call the same API, and any client can send any header value, so the log records what the API can prove. Rows written before 2026-09-30 may carry a self-reported `client_reported_source`. New rows leave it empty. Filter by credential with `?credential_kind=oauth_app` on `GET /v1/accounts/:accountId/audit`, or `kortix audit ls --credential-kind oauth_app`.
 
+Rows written before 2026-10 carry `session_sequence`, `integrity_previous_hash`, and `integrity_hash`: a per-session counter and a hash chain. New rows leave all three empty, and the fields are deprecated. Nothing verified the chain, and maintaining it serialized every write of a session. A session's log is ordered by creation time: rows with a `session_sequence` come first, in that order, then newer rows in the order the API created them.
+
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
+
+### Retention
+
+| Age of an event | Where it lives | How you read it |
+| --- | --- | --- |
+| 0 to 90 days | PostgreSQL, one partition per week | The audit log in the web app, `GET /v1/accounts/:accountId/audit`, `kortix audit ls`, audit webhooks, and export |
+| 90 to 365 days | An S3 archive with Object Lock (compliance mode) | Export only: `GET /v1/accounts/:accountId/audit/export` or `kortix audit export` |
+| More than 365 days | Deleted | Not available |
+
+Weeks run Monday 00:00 UTC to Monday 00:00 UTC. A week moves to the archive once its last instant is 90 days old, so an event becomes export-only between 90 and 97 days after it happened. The archive keeps an event until 365 days after the end of its week, so an event is kept 365 to 372 days in total, and the retention lock means nobody, including Kortix staff, can shorten or delete it before then. The privacy policy states the same limit: application logs are kept up to 365 days.
+
+Export returns the archive and PostgreSQL as one list, oldest first, with the same filters, the same fields, and the same `X-Audit-Next-Cursor` paging. Both read paths need the `auditAccess` entitlement. Archived events carry the same fields as live ones; `session_sequence` and the integrity hashes are empty on events written since 2026-10 (see above).
 
 ### Actions
 

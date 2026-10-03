@@ -21,6 +21,7 @@
 import { updateUserMetadata } from '@kortix/sdk';
 
 import { getSupabaseAccessToken } from '@/lib/auth-token';
+import { createClient } from '@/lib/supabase/client';
 
 /** Thrown when there is no session to attribute the write to. */
 export class NotSignedInError extends Error {
@@ -34,4 +35,11 @@ export async function updateProfileMetadata(data: Record<string, unknown>): Prom
   const token = await getSupabaseAccessToken();
   if (!token) throw new NotSignedInError();
   await updateUserMetadata({ data }, token);
+
+  // The API write does not update the browser's session. Middleware reads
+  // locale from JWT claims, and AuthProvider reads the cached session user.
+  // Refresh both before reporting success so reloads keep the saved locale.
+  const { data: refreshed, error } = await createClient().auth.refreshSession();
+  if (error) throw error;
+  if (!refreshed.session) throw new NotSignedInError();
 }

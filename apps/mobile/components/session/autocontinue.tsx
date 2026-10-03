@@ -8,7 +8,7 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 // ─── AutoContinue configuration (shared with frontend) ────────────────────────
 
@@ -152,7 +152,8 @@ export interface AutoContinueSheetProps {
   isDark: boolean;
 }
 
-export function AutoContinueSheet({
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const AutoContinueSheet = React.memo(function AutoContinueSheet({
   visible,
   onClose,
   selected,
@@ -432,5 +433,5 @@ export function AutoContinueSheet({
       )}
     </KortixBottomSheetModal>
   );
-}
+});
 

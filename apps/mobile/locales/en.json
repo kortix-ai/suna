@@ -1184,5 +1184,11 @@
     "includes": "Includes",
     "askOwner": "Ask an account owner for a seat",
     "notNow": "Not now"
+  },
+  "sessions": {
+    "showMoreSubsessions_one": "Show {{count}} more",
+    "showMoreSubsessions_other": "Show {{count}} more",
+    "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
+    "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
   }
 }

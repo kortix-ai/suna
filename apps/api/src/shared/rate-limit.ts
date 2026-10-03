@@ -165,6 +165,8 @@ export async function enforceRateLimit(
   return rateLimitExceededResponse(c, result, auditContext);
 }
 
+// replica-local: every limiter below counts in this process, so the fleet allows
+// limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
@@ -177,7 +179,6 @@ const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
-export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 /**
  * Per-project budget on session CREATES (the 2026-08-21 storm's other half: a
@@ -238,51 +239,55 @@ export function createProjectSecretWriteRateLimitMiddleware() {
   };
 }
 
-export function createInviteAcceptRateLimitMiddleware() {
+function createAuditedRateLimitMiddleware(
+  limiter: TokenBucketRateLimiter,
+  select: (c: Context) => { key: string; policy: RateLimitPolicy; auditContext: AuditContext },
+) {
   return async (c: Context, next: Next) => {
-    const inviteId = c.req.param('inviteId') || null;
-    const denied = await enforceRateLimit(
-      c,
-      inviteAcceptLimiter,
-      requestClientKey(c),
-      {
-        limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
-        windowMs: 60_000,
-      },
-      {
-        action: RATE_LIMIT_EXCEEDED_ACTION,
-        resourceType: 'account_invite',
-        resourceId: inviteId,
-        metadata: { limiter: 'invite_accept' },
-      },
-    );
+    const { key, policy, auditContext } = select(c);
+    const denied = await enforceRateLimit(c, limiter, key, policy, auditContext);
     if (denied) return denied;
     await next();
   };
 }
 
+export function createInviteAcceptRateLimitMiddleware() {
+  return createAuditedRateLimitMiddleware(inviteAcceptLimiter, (c) => {
+    const inviteId = c.req.param('inviteId') || null;
+    return {
+      key: requestClientKey(c),
+      policy: {
+        limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
+        windowMs: 60_000,
+      },
+      auditContext: {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'account_invite',
+        resourceId: inviteId,
+        metadata: { limiter: 'invite_accept' },
+      },
+    };
+  });
+}
+
 export function createSandboxProxyRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
+  return createAuditedRateLimitMiddleware(sandboxProxyLimiter, (c) => {
     const sandboxId = c.req.param('sandboxId') || 'unknown';
-    const denied = await enforceRateLimit(
-      c,
-      sandboxProxyLimiter,
-      sandboxId,
-      {
+    return {
+      key: sandboxId,
+      policy: {
         limit: positiveInt((config as any).KORTIX_PROXY_REQS_PER_MIN, 600),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         actorUserId: ((c as any).get('userId') as string | undefined) ?? null,
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'sandbox_proxy',
         resourceId: sandboxId,
         metadata: { limiter: 'sandbox_proxy' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -296,7 +301,7 @@ export function createSandboxProxyRateLimitMiddleware() {
  * tighter than the plain metadata-only invite-accept limiter.
  */
 export function createPublicSessionShareRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
+  return createAuditedRateLimitMiddleware(publicSessionShareLimiter, (c) => {
     // Key on the share id when the ref names one (every visitor to one
     // shared link shares that bucket); otherwise fall back to client IP. This
     // MUST run before the raw param can key the bucket Map — an attacker
@@ -306,24 +311,20 @@ export function createPublicSessionShareRateLimitMiddleware() {
     // A `kps_` token and its share id name the same share, so both key the
     // same bucket.
     const shareId = shareIdFromPublicRef(c.req.param('shareId') ?? '') ?? `ip:${requestClientKey(c)}`;
-    const denied = await enforceRateLimit(
-      c,
-      publicSessionShareLimiter,
-      shareId,
-      {
+    return {
+      key: shareId,
+      policy: {
         limit: positiveInt((config as any).KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN, 60),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'public_session_share',
         resourceId: shareId,
         metadata: { limiter: 'public_session_share' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -333,25 +334,21 @@ export function createPublicSessionShareRateLimitMiddleware() {
  * fires an internal notification email.
  */
 export function createDemoRequestRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
-    const denied = await enforceRateLimit(
-      c,
-      demoRequestLimiter,
-      requestClientKey(c),
-      {
+  return createAuditedRateLimitMiddleware(demoRequestLimiter, (c) => {
+    return {
+      key: requestClientKey(c),
+      policy: {
         limit: positiveInt((config as any).KORTIX_DEMO_REQUEST_REQS_PER_MIN, 10),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'demo_request',
         resourceId: null,
         metadata: { limiter: 'demo_request' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -365,25 +362,21 @@ export function createDemoRequestRateLimitMiddleware() {
  * `unknown` and continues through the adaptive flow.
  */
 export function createCheckEmailRateLimitMiddleware() {
-  return async (c: Context, next: Next) => {
-    const denied = await enforceRateLimit(
-      c,
-      checkEmailLimiter,
-      requestClientKey(c),
-      {
+  return createAuditedRateLimitMiddleware(checkEmailLimiter, (c) => {
+    return {
+      key: requestClientKey(c),
+      policy: {
         limit: positiveInt((config as any).KORTIX_CHECK_EMAIL_REQS_PER_MIN, 60),
         windowMs: 60_000,
       },
-      {
+      auditContext: {
         action: RATE_LIMIT_EXCEEDED_ACTION,
         resourceType: 'access_check_email',
         resourceId: null,
         metadata: { limiter: 'check_email' },
       },
-    );
-    if (denied) return denied;
-    await next();
-  };
+    };
+  });
 }
 
 /**
@@ -478,5 +471,4 @@ export function resetRateLimiters() {
   projectSecretWriteLimiter.reset();
   projectSessionCreateLimiter.reset();
   llmGatewayLimiter.reset();
-  sessionLlmLimiter.reset();
 }

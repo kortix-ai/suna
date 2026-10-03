@@ -20,9 +20,12 @@
  *            sheet and the no-match state share one Reset (search + statuses).
  *            Search and filter live in `useSessionFilterStore` per project, so
  *            they survive opening a session and coming back (KRTX-250).
- *   list     Today / Yesterday / This week / Older, one `SettingsGroup` of
- *            `SettingsRow`s each (the settings screens' layout); a group's title
- *            shows only when more than one group has sessions.
+ *   list     Today / Yesterday / This week / Older, each a group of
+ *            `SettingsRow`s (the settings screens' layout); a group's title
+ *            shows only when more than one group has sessions. One virtualised
+ *            list item per row (`SettingsGroupItem`) and per group title
+ *            (`sessionListItems`), so a long "Older" group mounts only what
+ *            is on screen.
  *            Rows are top-level sessions. Row: status mark · title · starter
  *            (`initiator`: name, trigger slug, channel, API key) · child count
  *            and caret · time. A tap on the caret loads the children 20 at a
@@ -66,7 +69,7 @@ import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
-import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { SettingsGroup, SettingsGroupItem, SettingsRow } from '@/components/kortix/settings-list';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectRoutes';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
@@ -74,9 +77,11 @@ import {
   CONNECTOR_STROKE,
   SubsessionCountBadge,
   SubsessionTree,
+  SubsessionTreeMemory,
   subsessionCountLabel,
 } from '@/components/session/SessionSubsessionTree';
 import { ExpandControl, SessionChildren, StarterLabel } from '@/components/session/SessionTreeParts';
+import { useSessionStarterOf } from '@/components/session/DrawerSessionRows';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
@@ -86,7 +91,6 @@ import {
   isParentExpanded,
   rootRowsOnly,
   searchQueryParam,
-  sessionStarter,
   startedByForScope,
 } from '@/lib/session/session-tree';
 import { useAuthContext } from '@/contexts';
@@ -117,6 +121,8 @@ const NOW_TICK_MS = 60_000;
 /** `Button size="lg"`: the pinned New session button, as in the project drawer. */
 const NEW_SESSION_BUTTON_HEIGHT = 44;
 
+const sessionListItemKey = (item: SessionListItem) => item.key;
+
 /** The search field waits this long after the last keystroke before it asks the server. */
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -131,9 +137,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 /** Space between two groups: the settings screens' 18pt. */
-function GroupGap() {
-  return <View style={{ height: 18 }} />;
-}
+const GROUP_GAP = 18;
 
 // ── Row ──────────────────────────────────────────────────────────────────────
 
@@ -153,7 +157,7 @@ interface SessionRowProps {
   expanded?: boolean;
   onToggleChildren?: (session: ProjectSession) => void;
   /** A row tap opens the session on its root; a sub-session row passes that sub-session's id. */
-  onOpen: (session: ProjectSession, focusOpenCodeId?: string) => void;
+  onOpen: (session: ProjectSession, focusRuntimeId?: string) => void;
   onActions: (session: ProjectSession) => void;
 }
 
@@ -267,12 +271,13 @@ const SessionRow = React.memo(function SessionRow({
       {subsessionCount > 0 ? (
       <View className="pb-2">
         <SubsessionTree
+          parentId={session.session_id}
           subsessions={subsessions}
           parentTitle={title}
-          activeOpenCodeId={null}
+          activeRuntimeId={null}
           trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
-          showTime
+          now={now}
           onPressSubsession={openSubsession}
         />
       </View>
@@ -281,13 +286,44 @@ const SessionRow = React.memo(function SessionRow({
   );
 });
 
-// ── Page ─────────────────────────────────────────────────────────────────────
+// ── List items ───────────────────────────────────────────────────────────────
 
-interface SessionSection {
-  key: string;
-  title: string;
-  data: ProjectSession[];
+/**
+ * One list item: a group title, or one row with its place in its group
+ * (`SettingsGroupItem` corners). `first` marks the first item of every group
+ * after the first: the group gap goes above it.
+ */
+export type SessionListItem =
+  | { kind: 'title'; key: string; title: string; first: boolean }
+  | { kind: 'row'; key: string; session: ProjectSession; index: number; count: number; first: boolean };
+
+/** The groups as one flat list, in order. Titles only when `showHeaders`. */
+export function sessionListItems(
+  sections: readonly { id: string; label: string; sessions: ProjectSession[] }[],
+  showHeaders: boolean
+): SessionListItem[] {
+  const items: SessionListItem[] = [];
+  sections.forEach((section, sectionIndex) => {
+    let first = sectionIndex > 0;
+    if (showHeaders) {
+      items.push({ kind: 'title', key: `title:${section.id}`, title: section.label, first });
+      first = false;
+    }
+    section.sessions.forEach((session, index) => {
+      items.push({
+        kind: 'row',
+        key: session.session_id,
+        session,
+        index,
+        count: section.sessions.length,
+        first: index === 0 && first,
+      });
+    });
+  });
+  return items;
 }
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export interface ProjectSessionsPageProps {
   /** Focus the search field on mount — the drawer's Search row. */
@@ -381,21 +417,23 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     [allSessions, statusFilter, needsYou]
   );
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
-  const sections = React.useMemo<SessionSection[]>(
-    () => grouped.sections.map((section) => ({ key: section.id, title: section.label, data: section.sessions })),
+  const listItems = React.useMemo(
+    () => sessionListItems(grouped.sections, grouped.showHeaders),
     [grouped]
   );
 
   // ── Refresh ──
   const [refreshing, setRefreshing] = React.useState(false);
+  // `refetch` is stable; the query object is new on every render.
+  const refetchSessions = sessionsQuery.refetch;
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      await sessionsQuery.refetch();
+      await refetchSessions();
     } finally {
       setRefreshing(false);
     }
-  }, [sessionsQuery]);
+  }, [refetchSessions]);
 
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = sessionsQuery;
   const onEndReached = React.useCallback(() => {
@@ -410,9 +448,10 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const searchSettled = debouncedQuery === query && !sessionsQuery.isFetching;
 
   // ── Render ──
-  // One list item per activity group: a `SettingsGroup` of `SettingsRow`s, the
-  // settings screens' layout. The title shows only when more than one group
-  // has sessions.
+  // One list item per row and per group title (`sessionListItems`): each row
+  // is a `SettingsGroupItem`, so the groups read as the settings screens'
+  // `SettingsGroup`s. The title shows only when more than one group has
+  // sessions.
   //
   // KRTX-639: a top-level row with children shows a count and a caret. The
   // children load 20 at a time when it opens (`SessionChildren`) and render
@@ -421,6 +460,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const choices = useSessionTreeStore((state) => state.choices);
   const setChoice = useSessionTreeStore((state) => state.setChoice);
   const showStarter = storedFilter.scope !== 'mine';
+  const starterOf = useSessionStarterOf(viewerId);
   const isExpanded = React.useCallback(
     (session: ProjectSession) =>
       isParentExpanded({
@@ -434,60 +474,73 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     (session: ProjectSession) => setChoice(parentKey(projectId, session.session_id), !isExpanded(session)),
     [setChoice, projectId, isExpanded]
   );
-  const showHeaders = grouped.showHeaders;
-  const renderSection = React.useCallback<ListRenderItem<SessionSection>>(
-    ({ item: section }) => (
-      <SettingsGroup title={showHeaders ? section.title : undefined}>
-        {/* One `SessionRow` per top-level child: `SettingsGroup` wraps each
-            TOP-LEVEL child in its own rounded tile. The children of a parent
-            render inside its row. */}
-        {section.data.map((session) => (
-          <SessionRow
-            key={session.session_id}
-            session={session}
-            now={now}
-            needsYouCount={needsYou.get(session.session_id)?.count ?? 0}
-            starter={showStarter ? sessionStarter(session, viewerId) : undefined}
-            expanded={isExpanded(session)}
-            onToggleChildren={toggleParent}
-            childRows={
-              isExpanded(session) ? (
-                <SessionChildren
-                  projectId={projectId}
-                  parent={session}
-                  q={session.search_match === 'child' ? serverQuery : undefined}
-                  showLoader={showLoaders}
-                  renderChild={(child) => (
-                    <SessionRow
-                      key={child.session_id}
-                      session={child}
-                      now={now}
-                      nested
-                      needsYouCount={needsYou.get(child.session_id)?.count ?? 0}
-                      onOpen={openSession}
-                      onActions={openSessionActions}
-                    />
-                  )}
-                />
-              ) : undefined
-            }
-            onOpen={openSession}
-            onActions={openSessionActions}
-          />
-        ))}
-      </SettingsGroup>
+  // A child row of an expanded parent (`SessionChildren`).
+  const renderChild = React.useCallback(
+    (child: ProjectSession) => (
+      <SessionRow
+        key={child.session_id}
+        session={child}
+        now={now}
+        nested
+        needsYouCount={needsYou.get(child.session_id)?.count ?? 0}
+        onOpen={openSession}
+        onActions={openSessionActions}
+      />
     ),
+    [now, needsYou, openSession, openSessionActions]
+  );
+  const renderItem = React.useCallback<ListRenderItem<SessionListItem>>(
+    ({ item }) => {
+      const gap = item.first ? { marginTop: GROUP_GAP } : undefined;
+      if (item.kind === 'title') {
+        // `SettingsGroup`'s title.
+        return (
+          <Text variant="muted" className="mb-2 px-4" style={gap}>
+            {item.title}
+          </Text>
+        );
+      }
+      const session = item.session;
+      const expanded = isExpanded(session);
+      return (
+        <View style={gap}>
+          <SettingsGroupItem index={item.index} count={item.count}>
+            <SessionRow
+              session={session}
+              now={now}
+              needsYouCount={needsYou.get(session.session_id)?.count ?? 0}
+              starter={showStarter ? starterOf(session) : undefined}
+              expanded={expanded}
+              onToggleChildren={toggleParent}
+              childRows={
+                expanded ? (
+                  <SessionChildren
+                    projectId={projectId}
+                    parent={session}
+                    q={session.search_match === 'child' ? serverQuery : undefined}
+                    showLoader={showLoaders}
+                    renderChild={renderChild}
+                  />
+                ) : undefined
+              }
+              onOpen={openSession}
+              onActions={openSessionActions}
+            />
+          </SettingsGroupItem>
+        </View>
+      );
+    },
     [
-      showHeaders,
       now,
       needsYou,
       showStarter,
-      viewerId,
+      starterOf,
       isExpanded,
       toggleParent,
       projectId,
       serverQuery,
       showLoaders,
+      renderChild,
       openSession,
       openSessionActions,
     ]
@@ -599,18 +652,19 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 </Button>
               </View>
             ) : null}
+            {/* Expanded sub-session trees survive virtualisation. */}
+            <SubsessionTreeMemory>
             <FlatList
-              data={sections}
-              keyExtractor={(section) => section.key}
-              renderItem={renderSection}
-              ItemSeparatorComponent={GroupGap}
+              data={listItems}
+              keyExtractor={sessionListItemKey}
+              renderItem={renderItem}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
               showsVerticalScrollIndicator={false}
               onEndReached={onEndReached}
               onEndReachedThreshold={0.6}
               ListFooterComponent={
-                isFetchingNextPage && sections.length > 0 && showLoaders ? (
+                isFetchingNextPage && listItems.length > 0 && showLoaders ? (
                   <View className="items-center py-4">
                     <KortixLoader size="small" />
                   </View>
@@ -670,6 +724,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 />
               }
             />
+            </SubsessionTreeMemory>
           </>
         )}
       </PageContent>

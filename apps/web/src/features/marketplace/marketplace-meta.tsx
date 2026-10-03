@@ -106,17 +106,3 @@ export const TYPE_SECTIONS: Array<{ type: string; label: string }> = [
   { type: 'registry:tool', label: 'Tools' },
   { type: 'registry:bundle', label: 'Bundles' },
 ];
-
-export function localizedTypeFilters(tI18nComplete: UiTranslator) {
-  return TYPE_FILTERS.map((filter) => ({
-    ...filter,
-    label: translateUiCatalogText(filter.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
-  }));
-}
-
-export function localizedTypeSections(tI18nComplete: UiTranslator) {
-  return TYPE_SECTIONS.map((section) => ({
-    ...section,
-    label: translateUiCatalogText(section.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
-  }));
-}

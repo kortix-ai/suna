@@ -70,6 +70,7 @@ describe('qk.project', () => {
       qk.project.session(id, 'sess_1'),
       qk.project.messages(id, 'sess_1'),
       qk.project.sessionSandbox(id, 'sess_1'),
+      qk.project.sessionParticipants(id, 'sess_1'),
       qk.project.connectors(id),
       qk.project.connectorConfig(id, 'slack'),
       qk.project.connectorOAuth2Discovery(id, 'slack'),
@@ -483,14 +484,5 @@ describe('qk.project.sessionsPaged label filter', () => {
     expect(labeled).not.toEqual(plain);
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: ['eu', 'bug'] })).toEqual(labeled);
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: [] })).toEqual(plain);
-  });
-});
-
-describe('qk.project.sessionsPaged participant filter', () => {
-  test('the asked-into list gets its own cache slot', () => {
-    const plain = qk.project.sessionsPaged('P1');
-    const asked = qk.project.sessionsPaged('P1', 'visible', { participant: 'me' });
-    expect(asked).not.toEqual(plain);
-    expect(asked).not.toEqual(qk.project.sessionsPaged('P1', 'visible', { parent: 'root' }));
   });
 });

@@ -7,6 +7,7 @@ import type {
   RemovedSessionPrompt,
   SessionConfigRelease,
   SessionManagedCatalogState,
+  SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
   SessionReloadResult,
@@ -29,6 +30,7 @@ import {
   getSessionAudit,
   getSessionPreviewCandidates,
   getSessionOpenBundle,
+  getSessionParticipants,
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
@@ -42,7 +44,10 @@ import {
   restartProjectSession,
   holdSessionPrompts,
   retrySessionPrompt,
+  editSessionPrompt,
   revokeSessionPublicShare,
+  sessionModelPin,
+  setProjectSessionModel,
   setProjectSessionScope,
   setProjectSessionSharing,
   stopProjectSession,
@@ -174,12 +179,48 @@ test('listProjectSessions throws when the response is unsuccessful', async () =>
   await expect(listProjectSessions('P1')).rejects.toBeTruthy();
 });
 
+test('setProjectSessionModel PUTs the pin as `model`, with the pre-W4 key for an older API', async () => {
+  nextResponse = { status: 200, body: { model: 'kortix/glm', opencode_model: 'kortix/glm', applied_live: true } };
+  const result = await setProjectSessionModel('P1', 'S 1', 'kortix/glm');
+  expect(last().url).toContain('/projects/P1/sessions/S%201/model');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ model: 'kortix/glm', opencode_model: 'kortix/glm' });
+  expect(result.model).toBe('kortix/glm');
+});
+
+test('sessionModelPin reads the stored model pin, trimmed, or null', () => {
+  expect(sessionModelPin({ metadata: { opencode_model: ' kortix/glm ' } })).toBe('kortix/glm');
+  expect(sessionModelPin({ metadata: { opencode_model: '  ' } })).toBeNull();
+  expect(sessionModelPin({ metadata: { opencode_model: 7 } })).toBeNull();
+  expect(sessionModelPin({ metadata: null })).toBeNull();
+  expect(sessionModelPin({})).toBeNull();
+});
+
 test('setProjectSessionSharing PUTs the sharing intent', async () => {
   nextResponse = { status: 200, body: { session_id: 'S1' } };
   await setProjectSessionSharing('P1', 'S1', { mode: 'project' });
   expect(last().url).toContain('/projects/P1/sessions/S1/sharing');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ mode: 'project' });
+});
+
+const OWNER = { user_id: 'U1', name: 'Owner', email: 'owner@example.test', avatar_url: null, is_viewer: true };
+const MEMBER = { user_id: 'U2', name: null, email: 'member@example.test', avatar_url: null, is_viewer: false };
+const PARTICIPANTS: SessionParticipants = {
+  participants: [OWNER, MEMBER],
+  total: 2,
+  multi_user: true,
+};
+
+test('getSessionParticipants hits GET /participants without raising an error toast', async () => {
+  nextResponse = { status: 200, body: PARTICIPANTS };
+  const result = await getSessionParticipants('P1', 'S1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/participants');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual(PARTICIPANTS);
+  // A missing label is the fallback; a toast here is noise on every session open.
+  nextResponse = { status: 500, body: { error: 'boom' } };
+  await expect(getSessionParticipants('P1', 'S1')).rejects.toBeTruthy();
 });
 
 test('getSessionPreviewCandidates hits the previews endpoint', async () => {
@@ -1354,6 +1395,31 @@ test('retrySessionPrompt POSTs .../retry and returns the requeued row', async ()
   expect(result.state).toBe('queued');
 });
 
+test('editSessionPrompt PATCHes the row text in place and returns the row', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'say hello',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+    },
+  };
+  const result = await editSessionPrompt('P1', 'S1', 'cmd-1', 'say hello');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().method).toBe('PATCH');
+  // Text only: the row keeps its files, its place and its wire id.
+  expect(last().body).toEqual({ text: 'say hello' });
+  expect(result.text).toBe('say hello');
+  expect(result.message_id).toBe('msg_a');
+});
+
 test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {
   // Stop has to reach the QUEUE, and the queue is on the server now: pausing a
   // browser-local drain leaves the admission gate free to deliver the very
@@ -1532,18 +1598,6 @@ test('sessionParentId falls back to metadata when parent_session_id is null or s
   expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
   const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
   expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
-});
-
-test('listProjectSessions sends participant=me for the "Asked you" list', async () => {
-  nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { participant: 'me' });
-  expect(new URL(last().url).searchParams.get('participant')).toBe('me');
-});
-
-test('createProjectSession sends participants for a conversation with people', async () => {
-  nextResponse = { status: 201, body: { session_id: 'ASK-1' } };
-  await createProjectSession('P1', { participants: ['avery@example.com'], initial_prompt: 'Which region?' });
-  expect(last().body).toEqual({ participants: ['avery@example.com'], initial_prompt: 'Which region?' });
 });
 
 test('getSessionMessageAuthors reads members and sessions keyed by message id', async () => {

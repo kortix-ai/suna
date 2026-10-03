@@ -3,6 +3,7 @@ import { and, eq, isNull, like, ne } from 'drizzle-orm';
 import {
   encryptProjectSecret,
   getProjectSecretValueForConsumer,
+  getProjectSecretValuesForConsumer,
 } from '../projects/secrets';
 import { db } from '../shared/db';
 import { TEAMS_MANIFEST_VERSION } from './teams-manifest';
@@ -901,13 +902,14 @@ function isUniqueConflict(err: unknown): boolean {
   );
 }
 
+// One query for all Teams names. The connector sync calls this for every
+// project, nearly all uninstalled, so it is a probe: absent names write no audit row.
 async function readTeamsSecrets(projectId: string): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  for (const name of TEAMS_KEYS) {
-    const value = await readSecret(projectId, name);
-    if (value !== null) out[name] = value;
-  }
-  return out;
+  return getProjectSecretValuesForConsumer({
+    projectId,
+    names: [...TEAMS_KEYS],
+    consumer: 'connector',
+  });
 }
 
 async function readSecret(projectId: string, name: string): Promise<string | null> {
@@ -915,5 +917,6 @@ async function readSecret(projectId: string, name: string): Promise<string | nul
     projectId,
     name,
     consumer: 'connector',
+    probe: true, // install lookups are system probes, not access by an agent or person
   });
 }

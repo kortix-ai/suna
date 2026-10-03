@@ -5,7 +5,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AccountOverviewTab } from '@/features/billing/account-overview';
+import { AccountOverviewTab, AccountOverviewView } from '@/features/billing/account-overview';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { ClaimPerSeatCard } from '@/features/billing/claim-per-seat-card';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
@@ -129,6 +129,9 @@ export function BillingTab({
 
   return (
     <div className="space-y-8">
+      {!hasActiveSubscription && (!showWallet || showTeamCheckout) && accountState ? (
+        <AccountOverviewView state={accountState} />
+      ) : null}
       {showTeamCheckout ? (
         <section className="space-y-4">
           <div className="space-y-1">
