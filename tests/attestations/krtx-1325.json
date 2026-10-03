@@ -1,0 +1,18 @@
+{
+  "source_hash": "22f4bcbe22fc64e1cdec6727503e86e486ab840d711cdd54a064877493ad74b9",
+  "diff_files": [
+    "apps/cli/src/commands/self-host.ts",
+    "apps/cli/src/self-host/__tests__/self-host-cli.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts"
+  ],
+  "diff_hash": "9d36c9447ce28d3f79705e53fda68641d1dff2c0c74a4e880b2ec947a989b463",
+  "head": "c2f399c938edb455d7227738f200624a459adfb1",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:55:46.143Z"
+}
