@@ -11,9 +11,16 @@ import type { HTTPException } from 'hono/http-exception';
 const WINDOW_MS = 10 * 60_000;
 const MAX_TRACKED_MESSAGES = 10_000;
 
+// replica-local: the WeakSet marks exception objects that the same process
+// reads back within one request, and the Map rate-limits this replica's own
+// warn lines (six per route/reason per process per hour) -- per-replica state
+// is the correct granularity here, and exact refusal accounting lives in the
+// request-completion logs and auth audits.
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: see above -- the Map rate-limits this replica's own warn
+// lines; per-replica state is the correct granularity.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
