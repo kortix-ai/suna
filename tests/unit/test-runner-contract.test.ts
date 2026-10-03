@@ -132,20 +132,16 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    // Same per-test budget as apps/cli: the packages lane sets
-    // KORTIX_TEST_TIMEOUT_MS=30000 for loaded machines, and this package's
-    // git-heavy tests (runtime-assets chunk install, external-host probes)
-    // exceed Bun's fixed 5 s default on a slow disk (KRTX-1113 attestation
-    // run). Serial on purpose. `--parallel` implies `--isolate`, and under
-    // isolation Bun 1.3.14 re-creates process.stdout/stderr per test file, dups
-    // the stdio fd into epoll, and never ends the outgoing sinks at the swap
+    expect(agentPackage.scripts.test).toBe('bun test');
+    // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
+    // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
+    // stdio fd into epoll, and never ends the outgoing sinks at the swap
     // (oven-sh/bun#37968; the fix, oven-sh/bun#38008, is still open). A reused
     // fd number then fails EPOLL_CTL_ADD with EEXIST — Linux only, so it never
     // reproduces on a laptop — and Bun reports it as a failure that names no
     // test. That killed the packages lane on run 35331083850, both attempts at
     // the same SHA. 28 files: 11s parallel vs 34s serial, measured in a Linux
     // container against the real disposable-PostgreSQL containers.
-    expect(agentPackage.scripts.test).toBe('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}');
     // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
     // process in the `db-suites` lane of the core run, not here.
     expect(dbPackage.scripts.test).toBe(
