@@ -517,7 +517,11 @@ export const projects = kortixSchema.table(
   (table) => [
     index('idx_projects_account').on(table.accountId),
     index('idx_projects_status').on(table.status),
-    index('idx_projects_updated').on(table.updatedAt),
+    // Dropped 2026-10-03 (20261003055531313_drop_projects_updated_index):
+    // `idx_projects_updated` (updated_at). Lifetime idx_scan = 0 on prod: the
+    // account-filtered ORDER BY updated_at reads cannot use a single-column
+    // index, and the one unfiltered top-N read never chose it. Keeping it cost
+    // one index write per project row update.
     index('idx_projects_account_repo').on(table.accountId, table.repoUrl),
     // The dedupe guarantee itself, not just a lookup index: two concurrent
     // provisions carrying the same key can both miss the pre-check, and only a

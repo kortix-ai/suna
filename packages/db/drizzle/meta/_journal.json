@@ -799,6 +799,13 @@
       "when": 1790986874502,
       "tag": "20261003002114_account_secret_project_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791006889237,
+      "tag": "20261003055449_drop_projects_updated_index",
+      "breakpoints": true
     }
   ]
 }

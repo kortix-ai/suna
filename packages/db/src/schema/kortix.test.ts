@@ -578,6 +578,15 @@ describe('projects table', () => {
     expect(accountRepo).toBeDefined();
     expect(accountRepo?.config.unique).toBe(false);
   });
+
+  test('does not re-add the updated_at index no read path uses', () => {
+    // Dropped by 20261003055531313_drop_projects_updated_index. Lifetime
+    // idx_scan = 0 (pg_stat_user_indexes, prod): the account-filtered
+    // ORDER BY updated_at reads cannot use a single-column updated_at index,
+    // and the one unfiltered top-N read never chose it. Keeping it
+    // costs one index write per project row update.
+    expect(indexNames(projects)).not.toContain('idx_projects_updated');
+  });
 });
 
 describe('project_llm_routing_policies table', () => {
