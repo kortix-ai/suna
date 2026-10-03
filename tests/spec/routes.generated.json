@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 702,
+  "count": 725,
   "routes": [
     {
       "method": "GET",
@@ -1207,6 +1207,14 @@
       "path": "/v1/health/ready"
     },
     {
+      "method": "ALL",
+      "path": "/v1/llm-gateway/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/llm/*"
+    },
+    {
       "method": "GET",
       "path": "/v1/marketplace/items"
     },
@@ -1307,6 +1315,10 @@
       "path": "/v1/ops/overview"
     },
     {
+      "method": "ALL",
+      "path": "/v1/p/:sandboxId/:port/*"
+    },
+    {
       "method": "OPTIONS",
       "path": "/v1/p/auth"
     },
@@ -1321,6 +1333,22 @@
     {
       "method": "GET",
       "path": "/v1/p/public-share/:token"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/:port"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/:port/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/file"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/file/*"
     },
     {
       "method": "GET",
@@ -2563,6 +2591,38 @@
       "path": "/v1/router/chat/completions"
     },
     {
+      "method": "ALL",
+      "path": "/v1/router/context7"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/context7/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/firecrawl"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/firecrawl/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/gemini"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/gemini/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/groq"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/groq/*"
+    },
+    {
       "method": "GET",
       "path": "/v1/router/health"
     },
@@ -2579,8 +2639,40 @@
       "path": "/v1/router/models/:model"
     },
     {
+      "method": "ALL",
+      "path": "/v1/router/openai"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/openai/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/serper"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/serper/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/tavily"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/tavily/*"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/xai"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/xai/*"
     },
     {
       "method": "GET",

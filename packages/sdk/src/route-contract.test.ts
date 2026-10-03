@@ -60,10 +60,6 @@ const BASE_PRESERVING_CALLS = new Set([
 ]);
 
 const ALLOWLIST: Array<{ pattern: RegExp; reason: string }> = [
-  {
-    pattern: /^\/p\/(public-share\/)?:param\/:param(\/|$)/,
-    reason: 'sandbox proxy to the session runtime (per-session and public-share)',
-  },
   { pattern: /^\/setup(\/|$)/, reason: 'self-host installer router, not in the managed manifest' },
 ];
 
@@ -515,7 +511,8 @@ function segmentMatches(sdk: string, api: string): boolean {
 export function isServed(route: Pick<SdkRoute, 'method' | 'path'>, manifest: ManifestRoute[]): boolean {
   const segments = route.path.split('/').slice(1);
   return manifest.some((api) => {
-    if (route.method !== 'ANY' && api.method !== route.method) return false;
+    // `ALL` is a passthrough handler (`.all()`): it serves every method.
+    if (route.method !== 'ANY' && api.method !== 'ALL' && api.method !== route.method) return false;
     const wildcard = api.segments[api.segments.length - 1] === '*';
     const fixed = wildcard ? api.segments.slice(0, -1) : api.segments;
     if (wildcard ? segments.length < fixed.length : segments.length !== fixed.length) return false;
@@ -610,6 +607,12 @@ describe('route contract extractor', () => {
       export function b(q: string) { const url = q ? \`/templates/x?\${q}\` : '/templates/x'; return backendApi.get(url); }
     `);
     expect(routes.map((r) => r.path)).toEqual(['/projects/one', '/templates/x', '/templates/x']);
+  });
+
+  test('a manifest ALL route serves every method under it', () => {
+    const passthrough = loadManifest({ routes: [{ method: 'ALL', path: '/v1/p/:sandboxId/:port/*' }] });
+    expect(isServed({ method: 'POST', path: '/p/:param/:param/session' }, passthrough)).toBe(true);
+    expect(isServed({ method: 'GET', path: '/p/:param' }, passthrough)).toBe(false);
   });
 
   test('reports a path it cannot resolve instead of skipping it', () => {

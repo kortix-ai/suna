@@ -9,7 +9,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { OkSchema, TriggerListSchema, projectsApp } from '../lib/app';
+import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -39,16 +39,6 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
-
-/** `POST .../triggers/:slug/fire`: the run was queued (a session will start)
- *  or fired, or the same delivery was already queued. */
-const TriggerFireResultSchema = z.object({
-  status: z.enum(['queued', 'fired', 'deduped']),
-  command_id: z.string().nullable(),
-  session_id: z.string().nullable(),
-  reason: z.string().nullable().optional(),
-  deduped: z.boolean(),
-});
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
