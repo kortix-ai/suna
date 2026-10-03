@@ -57,13 +57,18 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  * 5xx of the route on the line, so a designed 5xx-shaped answer pages as a
  * route 5xx rise with nothing to fix. Three shapes are designed:
  *
- *   - `control_plane` 503 on a GET — the proxy answered `sandbox_not_ready`
+ *   - `control_plane` 503 on any method — the proxy answered `sandbox_not_ready`
  *     from the session-sandbox row without dialling the box (parked, stopped,
- *     or still provisioning), and a GET never wakes a box on purpose. The web
- *     app reads the response's `hop`/`code`, not this log line; the row itself
- *     carries the state. Prod, 24 h to 2026-09-29: ~40 such 503s a day on the
- *     data-path GET routes alone, each one the client's reconnect hydrate
- *     racing a park (KRTX-397).
+ *     or still provisioning). A GET never wakes a box on purpose, so a burst
+ *     of these is the client's reconnect hydrate racing a park; prod, 24 h to
+ *     2026-09-29, ~40 a day on the data-path GET routes alone (KRTX-397). A
+ *     POST to a session-data port claims the wake, but the row stays
+ *     non-`active` until the provider confirms the box, so its first attempts
+ *     get the same answer; the MCP exec caller retries it 2 s later inside the
+ *     same tool call, and a wake burst paged as a route 5xx rise on
+ *     `POST /v1/p/:id/8000/kortix/env-rpc` (KRTX-811: 40 503s over 2 days,
+ *     every one followed by a 2xx within 10 s). The web app reads the
+ *     response's `hop`/`code`, not this log line; the row carries the state.
  *   - long-poll/SSE event-stream reads (/global/event, /session/status,
  *     /session/:id/message) timing out at ~30 s (504), or the boot window
  *     answering 502/503.
@@ -72,8 +77,8 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  *
  * Everything else stays logged: a 502/503 the proxy dialled for
  * (`daemon`/`provider_ingress`/`upstream_port` hop, or no hop header at all),
- * any mutation, and a FAILED health probe. The wire response is untouched —
- * suppression is about the log line only, and the span is still emitted.
+ * any dialled mutation, and a FAILED health probe. The wire response is
+ * untouched; the post-request log line, and the span it carried, are dropped.
  */
 export function shouldSuppressRequestLog(input: {
   method: string;
@@ -84,8 +89,13 @@ export function shouldSuppressRequestLog(input: {
   proxyHop: string | null;
 }): boolean {
   const { method, path, status, durationMs, proxyHop } = input;
-  if (method !== 'GET') return false;
+  // A pre-dial `sandbox_not_ready` 503 is a designed answer regardless of the
+  // method: the proxy dialled nothing, so the mutation changed nothing, and
+  // the response marks the attempt retryable for the caller. Before
+  // KRTX-811 this class was suppressed on GETs only, so every wake retry of
+  // an MCP exec logged a WARN 5xx and a wake burst paged as a route 5xx rise.
   if (status === 503 && proxyHop === 'control_plane') return true;
+  if (method !== 'GET') return false;
   const isSandboxProxyPath = path.includes('/v1/p/');
   const isProxyLongPoll =
     isSandboxProxyPath &&

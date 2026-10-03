@@ -17,6 +17,15 @@
  * - KRTX-468: the line carries the per-stage `Server-Timing` breakdown on the
  *   slow or failed tail. A p95 anomaly used to leave one opaque `duration`;
  *   the breakdown answers "DB stretch or app-side work" from the line itself.
+ *
+ * - KRTX-811: the same pre-dial answer on a POST paged as a route 5xx rise.
+ *   An agent exec'ing into a waking box retried `POST /v1/p/:id/8000/kortix/
+ *   env-rpc` every 2 s; each attempt before the box was active was answered
+ *   `503 sandbox_not_ready` on the `control_plane` hop before any dial, and
+ *   each attempt logged a WARN 5xx the sweep counted on the route (46 5xx
+ *   lines over 2 days; 40 of them 503s, every one followed by a 2xx on the
+ *   same sandbox within 10 s). A pre-dial answer never reached a box, so the
+ *   method does not matter. A 5xx the proxy dialled for stays logged.
  */
 import { describe, expect, test } from 'bun:test';
 import { runWithContext } from './request-context';
@@ -73,14 +82,40 @@ describe('shouldSuppressRequestLog', () => {
     expect(shouldSuppressRequestLog({ ...parkedRead, status: 502 })).toBe(false);
   });
 
-  test('a mutation is never suppressed, even from the control plane', () => {
+  test('a control-plane not-ready 503 on a proxied POST is suppressed (KRTX-811)', () => {
+    // The daemon exec RPC the MCP server calls while a box wakes: every
+    // attempt before the row is active is the same pre-dial answer, and the
+    // caller retries it 2 s later inside the same tool call.
+    expect(
+      shouldSuppressRequestLog({
+        method: 'POST',
+        path: '/v1/p/<sandbox>/8000/kortix/env-rpc',
+        status: 503,
+        durationMs: 36,
+        proxyHop: 'control_plane',
+      }),
+    ).toBe(true);
+  });
+
+  test('a mutation the proxy dialled for is never suppressed', () => {
+    // The daemon or the provider edge answered: the request reached a hop,
+    // so a failure is a real outcome of the mutation.
     expect(
       shouldSuppressRequestLog({
         method: 'POST',
         path: '/v1/p/<sandbox>/8000/log',
         status: 503,
         durationMs: 20,
-        proxyHop: 'control_plane',
+        proxyHop: 'daemon',
+      }),
+    ).toBe(false);
+    expect(
+      shouldSuppressRequestLog({
+        method: 'POST',
+        path: '/v1/p/<sandbox>/8000/kortix/env-rpc',
+        status: 502,
+        durationMs: 4_501,
+        proxyHop: 'provider_ingress',
       }),
     ).toBe(false);
   });

@@ -102,4 +102,31 @@ describe('the completion log line of a slow request', () => {
     expect(lines[0]?.upstream_status).toBe('503');
     expect(JSON.stringify(lines)).not.toContain('synthetic-sensitive-body');
   });
+
+  test('a pre-dial not-ready 503 on a proxied POST is not logged (KRTX-811)', async () => {
+    const { installHttpMiddleware } = await import('../http-middleware');
+    const { runWithContext } = await import('../lib/request-context');
+    const lines: Array<Record<string, unknown>> = [];
+    const original = appLogger.warn;
+    appLogger.warn = (_message, fields) => lines.push(fields ?? {});
+    try {
+      const app = new OpenAPIHono();
+      installHttpMiddleware(app);
+      // The shape the sandbox proxy answers before it dials: the pre-dial
+      // `sandbox_not_ready` on the control_plane hop, retryable for the caller.
+      app.post('/v1/p/:id/:port/kortix/env-rpc', (c) =>
+        c.json(
+          { error: 'sandbox not ready (status: stopped)', code: 'sandbox_not_ready', retry: true },
+          503,
+          { 'X-Kortix-Proxy-Hop': 'control_plane' },
+        ),
+      );
+      await runWithContext('POST', '/v1/p/synthetic/8000/kortix/env-rpc', () =>
+        app.fetch(new Request('http://local/v1/p/synthetic/8000/kortix/env-rpc', { method: 'POST' })),
+      );
+    } finally {
+      appLogger.warn = original;
+    }
+    expect(lines).toHaveLength(0);
+  });
 });
