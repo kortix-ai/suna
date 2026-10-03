@@ -1,6 +1,5 @@
 import {
   DEFAULT_API_BASE,
-  DEFAULT_HOST_NAME,
   type Host,
   activeHost,
   activeHostName,
@@ -9,10 +8,9 @@ import {
   removeHost,
   upsertHost,
 } from './config.ts';
-import { sandboxEnvValue } from './sandbox-env.ts';
 
 // Backward-compatible auth surface — every existing command imports
-// `Auth`, `loadAuth`, `saveAuth`, `clearAuth`, `authFileLocation` from
+// `Auth`, `loadAuth`, `saveAuthForHost`, `clearAuth`, `authFileLocation` from
 // here. Internally we now delegate to the multi-host config store, but
 // the shape callers see is unchanged.
 
@@ -79,14 +77,6 @@ export function loadAuthForHost(name: string): Auth | null {
   return host ? hostToAuth(host) : null;
 }
 
-/** Persist the active host. Saves under the active host name, or under
- * `cloud` if no hosts are configured yet. Marks the touched host
- * active. */
-export function saveAuth(auth: Auth): void {
-  const targetName = activeHostName() ?? DEFAULT_HOST_NAME;
-  upsertHost(targetName, authToHost(auth, getHost(targetName)), true);
-}
-
 /** Persist a named host explicitly. */
 export function saveAuthForHost(name: string, auth: Auth, makeActive: boolean): void {
   upsertHost(name, authToHost(auth, getHost(name)), makeActive);
@@ -102,12 +92,4 @@ export function clearAuth(name?: string): boolean {
 /** Display path of the config file backing this CLI's auth state. */
 export function authFileLocation(): string {
   return configFilePath();
-}
-
-/** Resolve the API base URL the CLI should use for "no auth yet" calls. */
-export function resolveApiBase(): string {
-  const sandboxApiUrl = sandboxEnvValue('KORTIX_API_URL');
-  if (sandboxApiUrl) return sandboxApiUrl;
-  const host = activeHost();
-  return host?.url ?? DEFAULT_API_BASE;
 }
