@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { missing } from '../command-helpers.ts';
 import { splitHelp } from '../command-argv.ts';
 import type {
   AgentConfigBlock,
@@ -146,58 +147,14 @@ export async function runAgents(argv: string[]): Promise<number> {
   const base = `/projects/${ctx.projectId}/model-defaults`;
 
   try {
+    const call: AgentsCall = { ctx, base, json, positional, clear };
     switch (sub) {
       case 'models':
       case 'ls':
-      case 'list': {
-        const d = await ctx.client.get<ModelDefaults>(base);
-        if (json) {
-          emitJson(d);
-          return 0;
-        }
-        const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
-        const entries = Object.entries(d.agentDefaults ?? {});
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
-        );
-        if (entries.length === 0) {
-          process.stdout.write(
-            `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
-              `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const w = Math.max(...entries.map(([n]) => n.length), 5);
-        for (const [name, model] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
-          process.stdout.write(`  ${pad(name, w)}   ${C.cyan}${model}${C.reset}\n`);
-        }
-        process.stdout.write(
-          `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
-        );
-        return 0;
-      }
-      case 'model': {
-        const agent = positional[0];
-        if (!agent) return missing('an agent name');
-        if (clear) {
-          await ctx.client.delete(
-            `${base}?scope=agent&agentName=${encodeURIComponent(agent)}`,
-          );
-          process.stdout.write(
-            `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
-          );
-          return 0;
-        }
-        const model = positional[1];
-        if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
-        await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
-        process.stdout.write(
-          `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
-        );
-        return 0;
-      }
+      case 'list':
+        return agentsLs(call);
+      case 'model':
+        return agentsModel(call);
       case 'default':
         return await agentsDefault(ctx, positional[0], { show, json });
       case 'scope':
@@ -218,6 +175,69 @@ export async function runAgents(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+async function agentsLs(call: AgentsCall): Promise<number> {
+  const { ctx, base, json } = call;
+const d = await ctx.client.get<ModelDefaults>(base);
+if (json) {
+  emitJson(d);
+  return 0;
+}
+const fallback =
+  d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
+const entries = Object.entries(d.agentDefaults ?? {});
+process.stdout.write('\n');
+process.stdout.write(
+  `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
+);
+if (entries.length === 0) {
+  process.stdout.write(
+    `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
+      `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
+  );
+  return 0;
+}
+const w = Math.max(...entries.map(([n]) => n.length), 5);
+for (const [name, model] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
+  process.stdout.write(`  ${pad(name, w)}   ${C.cyan}${model}${C.reset}\n`);
+}
+process.stdout.write(
+  `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
+);
+return 0;
+}
+
+async function agentsModel(call: AgentsCall): Promise<number> {
+  const { ctx, base, positional, clear } = call;
+const agent = positional[0];
+if (!agent) return missing('an agent name');
+if (clear) {
+  await ctx.client.delete(
+    `${base}?scope=agent&agentName=${encodeURIComponent(agent)}`,
+  );
+  process.stdout.write(
+    `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
+  );
+  return 0;
+}
+const model = positional[1];
+if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
+await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
+process.stdout.write(
+  `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
+);
+return 0;
+}
+
+/** What every agents handler receives: the resolved project context, the
+ *  model-defaults base and the parsed invocation. */
+interface AgentsCall {
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+  base: string;
+  json: boolean;
+  positional: string[];
+  clear: boolean;
 }
 
 // ── default agent ───────────────────────────────────────────────────────────
@@ -466,7 +486,3 @@ async function agentsConfig(
   return 0;
 }
 
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}

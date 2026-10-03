@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import { loadAuthForHost } from '../api/auth.ts';
-import { locateSessionAnywhere, takeFlagValue } from '../command-helpers.ts';
+import { locateSessionAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 import { SUPERVISED_NOTICE, isSupervised } from '../supervised.ts';
@@ -127,43 +127,20 @@ export interface TuiFlags {
   help: boolean;
 }
 
-/** `kortix tui` takes flags only — a bare positional is a typo, not an id. */
+/** `kortix tui` takes flags only — a bare positional is a typo, not an id.
+ *  The boolean flags come off the shared grammar (command-helpers), help
+ *  first, so `-h` anywhere wins. */
 export function parseTuiFlags(argv: string[]): TuiFlags {
   const rest = [...argv];
   const flags: TuiFlags = {
-    help: false,
-    install: false,
-    uninstall: false,
-    newSession: false,
-    terminal: false,
-    noSidebar: false,
-    mouse: false,
+    help: takeFlagBool(rest, ['-h', '--help']),
+    install: takeFlagBool(rest, ['--install']),
+    uninstall: takeFlagBool(rest, ['--uninstall']),
+    newSession: takeFlagBool(rest, ['--new']),
+    terminal: takeFlagBool(rest, ['--terminal']),
+    noSidebar: takeFlagBool(rest, ['--no-sidebar']),
+    mouse: takeFlagBool(rest, ['--mouse']),
   };
-  for (let i = rest.length - 1; i >= 0; i -= 1) {
-    const arg = rest[i];
-    if (arg === '-h' || arg === '--help') {
-      flags.help = true;
-      rest.splice(i, 1);
-    } else if (arg === '--install') {
-      flags.install = true;
-      rest.splice(i, 1);
-    } else if (arg === '--uninstall') {
-      flags.uninstall = true;
-      rest.splice(i, 1);
-    } else if (arg === '--new') {
-      flags.newSession = true;
-      rest.splice(i, 1);
-    } else if (arg === '--terminal') {
-      flags.terminal = true;
-      rest.splice(i, 1);
-    } else if (arg === '--no-sidebar') {
-      flags.noSidebar = true;
-      rest.splice(i, 1);
-    } else if (arg === '--mouse') {
-      flags.mouse = true;
-      rest.splice(i, 1);
-    }
-  }
   flags.host = takeFlagValue(rest, ['--host']);
   flags.project = takeFlagValue(rest, ['--project']);
   flags.session = takeFlagValue(rest, ['--session']);
