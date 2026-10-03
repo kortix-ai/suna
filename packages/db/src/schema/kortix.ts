@@ -5096,7 +5096,7 @@ export const iamRoles = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_iam_roles_account').on(table.accountId),
+    // idx_iam_roles_account dropped 2026-10: covered by idx_iam_roles_account_key (account_id leading).
     uniqueIndex('idx_iam_roles_account_key').on(table.accountId, table.key),
     uniqueIndex('uq_roles_system_key')
       .on(table.key, table.scopeType)
