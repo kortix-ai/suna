@@ -1,6 +1,6 @@
 {
-  "id": "06ae6a2f-e650-4dc1-a375-495473f3c476",
-  "prevId": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
+  "id": "d414d33c-91a6-4d9a-82c2-37d44f74cea7",
+  "prevId": "fa283177-4bf6-4777-aa5c-a4c6a91339a5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -123,38 +123,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "idx_access_requests_email": {
-          "name": "idx_access_requests_email",
-          "columns": [
-            {
-              "expression": "email",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_access_requests_status": {
-          "name": "idx_access_requests_status",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -1064,27 +1033,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_members_user_account": {
-          "name": "idx_account_members_user_account",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
