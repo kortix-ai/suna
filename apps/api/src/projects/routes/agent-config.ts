@@ -44,7 +44,8 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
-import { extractAgents } from '../agents';
+import { extractAgents, grantsByAgent } from '../agents';
+import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
@@ -519,6 +520,8 @@ projectsApp.openapi(
     if (parseProblem) {
       return c.json({ error: parseProblem.error, code: 'invalid_config' }, 400);
     }
+    // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
+    await assertNoGrantEscalation(c, projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
 
     // Validate the behavior half (if the request touches it at all) BEFORE
     // committing anything — a bad frontmatter shape must never land a
