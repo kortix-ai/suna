@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { driveGrants, projectSessions } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { projectSessions } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { accessAtLeast } from '../../drives/access';
 import {
   accessFor,
@@ -156,14 +156,18 @@ projectsApp.openapi(
     const body = c.req.valid('json') as { driveId: string; readOnly?: boolean };
     const drive = isUuid(body.driveId) ? await getDrive(body.driveId) : null;
     if (!drive || drive.accountId !== loaded.row.accountId) return c.json({ error: 'Drive not found' }, 404);
+    const { facts } = await sessionView(sessionId, userId);
     const role = (await getAccountMembership(userId, drive.accountId))?.accountRole ?? null;
-    const access = await accessFor(drive, userId, role as any);
+    // A company drive reaches the caller through a grant to them, or to this
+    // session's project or agent.
+    const access = await accessFor(drive, userId, role as any, {
+      session: { projectId: loaded.row.projectId, agentName: facts?.agentName ?? 'default' },
+    });
     if (access === 'none') return c.json({ error: 'Drive not found' }, 404);
     if (drive.kind === 'agent' && drive.projectId !== loaded.row.projectId) {
       const other = await loadProjectForUser(c, drive.projectId!, 'read').catch(() => null);
       if (!other) return c.json({ error: 'Drive not found' }, 404);
     }
-    const { facts } = await sessionView(sessionId, userId);
     if (drive.kind === 'personal' && !isPersonalSession(facts, userId)) {
       return c.json({ error: 'A personal drive attaches only to private sessions you started yourself' }, 403);
     }
@@ -250,20 +254,17 @@ projectsApp.openapi(
     const { facts } = await sessionView(sessionId, userId);
     if (want === 'write') {
       const role = (await getAccountMembership(userId, drive.accountId))?.accountRole ?? null;
-      const access = await accessFor(drive, userId, role as any);
-      if (!accessAtLeast(access, 'write')) return c.json({ error: 'You can only read this drive' }, 403);
+      const access = await accessFor(drive, userId, role as any, {
+        session: { projectId: loaded.row.projectId, agentName: facts?.agentName ?? 'default' },
+      });
+      if (!accessAtLeast(access, 'write')) {
+        return c.json(
+          { error: drive.kind === 'company' ? 'This drive is granted here read-only' : 'You can only read this drive' },
+          403,
+        );
+      }
       if (drive.kind === 'personal' && !isPersonalSession(facts, userId)) {
         return c.json({ error: 'Only the drive’s owner can let an agent write it, in their own session' }, 403);
-      }
-      if (drive.kind === 'company' && access !== 'manage') {
-        const [grant] = await db
-          .select({ access: driveGrants.access })
-          .from(driveGrants)
-          .where(
-            and(eq(driveGrants.driveId, drive.driveId), eq(driveGrants.subjectType, 'project'), eq(driveGrants.projectId, loaded.row.projectId)),
-          )
-          .limit(1);
-        if (grant?.access === 'read') return c.json({ error: 'An admin granted this drive to the project read-only' }, 403);
       }
     }
     try {

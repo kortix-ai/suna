@@ -20432,7 +20432,7 @@
     "createPersonalTitle": "新建个人云盘",
     "createPersonalDescription": "只有你能打开的私人云盘。你的会话使用你的默认云盘。",
     "createCompanyTitle": "新建公司云盘",
-    "createCompanyDescription": "工作区中所有人都能打开的云盘。为某个项目开启后，该项目的会话即可使用。",
+    "createCompanyDescription": "工作区的云盘。由管理员决定授予谁：项目、成员和智能体，只读或可读写。",
     "grantOnCreate": "此项目中的会话可以立即使用它。",
     "grantTitle": "在此项目中使用",
     "grantDescription": "此项目中的会话在 {path} 看到它。",

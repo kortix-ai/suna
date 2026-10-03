@@ -130,11 +130,13 @@ flow(
         companyId = r.json<{ driveId: string }>().driveId;
       });
 
-      await ctx.step('a member lists the company drive with write access only', async () => {
+      await ctx.step('a member with no grant neither lists nor reaches the company drive → 404', async () => {
         const r = await asMember.get('/v1/drives', { query: { account_id: team.id } });
         r.status(200);
         const company = r.json<{ drives: any[] }>().drives.find((d) => d.driveId === companyId);
-        if (company?.access !== 'write') throw new Error(`member access ${JSON.stringify(company)}`);
+        if (company) throw new Error(`member sees an ungranted company drive: ${JSON.stringify(company)}`);
+        (await asMember.get('/v1/drives/:driveId/files', { ...drive(companyId), query: { path: '/' } })).status(404);
+        (await asMember.put('/v1/drives/:driveId/files/content', 'x', { ...drive(companyId), query: { path: '/x.txt' }, raw: true })).status(404);
       });
 
       await ctx.step('an empty name is rejected → 400', async () => {
@@ -145,8 +147,8 @@ flow(
         (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/drives/:driveId/files', drive(companyId))).status(404);
       });
 
-      await ctx.step('renaming a company drive is admin-only: member → 403, OWNER → 200', async () => {
-        (await asMember.patch('/v1/drives/:driveId', { name: 'Renamed' }, drive(companyId))).status(403);
+      await ctx.step('renaming a company drive is admin-only: member → 404, OWNER → 200', async () => {
+        (await asMember.patch('/v1/drives/:driveId', { name: 'Renamed' }, drive(companyId))).status(404);
         (await owner.patch('/v1/drives/:driveId', { name: 'Team Docs' }, drive(companyId)))
           .status(200)
           .body()
@@ -155,7 +157,7 @@ flow(
       });
 
       await ctx.step('granting the company drive to the project → it lists with projectAccess', async () => {
-        (await asMember.post('/v1/drives/:driveId/grants', { projectId: project.id }, drive(companyId))).status(403);
+        (await asMember.post('/v1/drives/:driveId/grants', { projectId: project.id }, drive(companyId))).status(404);
         (await owner.post('/v1/drives/:driveId/grants', { projectId: crypto.randomUUID() }, drive(companyId))).status(404);
         (await owner.post('/v1/drives/:driveId/grants', { projectId: project.id, access: 'read' }, drive(companyId)))
           .status(200)
@@ -189,8 +191,21 @@ flow(
         (await asMember.get('/v1/drives/:driveId/files', { ...drive(ownerDriveId), query: { path: '/' } })).status(404);
       });
 
-      await ctx.step('company drive grants to a person and an agent; revoking by subject → 204, then 404', async () => {
-        (await owner.post('/v1/drives/:driveId/grants', { type: 'user', userId: member.userId! }, drive(companyId))).status(200);
+      await ctx.step('a member gets exactly the company drive grant: read refuses writes, write allows them', async () => {
+        (await owner.post('/v1/drives/:driveId/grants', { type: 'user', userId: member.userId!, access: 'read' }, drive(companyId))).status(200);
+        const listed = (await asMember.get('/v1/drives', { query: { account_id: team.id } })).status(200);
+        const company = listed.json<{ drives: any[] }>().drives.find((d) => d.driveId === companyId);
+        if (company?.access !== 'read') throw new Error(`member access after a read grant: ${JSON.stringify(company)}`);
+        (await asMember.get('/v1/drives/:driveId/files', { ...drive(companyId), query: { path: '/' } })).status(200);
+        (await asMember.put('/v1/drives/:driveId/files/content', 'x', { ...drive(companyId), query: { path: '/x.txt' }, raw: true })).status(403);
+        (await asMember.get('/v1/drives/:driveId/grants', drive(companyId))).status(403);
+        (await owner.post('/v1/drives/:driveId/grants', { type: 'user', userId: member.userId!, access: 'write' }, drive(companyId))).status(200);
+        const upgraded = (await asMember.get('/v1/drives', { query: { account_id: team.id } })).status(200);
+        const writable = upgraded.json<{ drives: any[] }>().drives.find((d) => d.driveId === companyId);
+        if (writable?.access !== 'write') throw new Error(`member access after a write grant: ${JSON.stringify(writable)}`);
+      });
+
+      await ctx.step('company drive grants to a project and an agent; revoking by subject → 204, then 404', async () => {
         (await owner.post('/v1/drives/:driveId/grants', { type: 'agent', projectId: project.id, agentName: 'default', access: 'read' }, drive(companyId)))
           .status(200)
           .body()
@@ -198,7 +213,6 @@ flow(
         const params = { ...drive(companyId), query: { projectId: project.id } };
         (await owner.del('/v1/drives/:driveId/grants', params)).status(204);
         (await owner.del('/v1/drives/:driveId/grants', params)).status(404);
-        (await owner.del('/v1/drives/:driveId/grants', { ...drive(companyId), query: { userId: member.userId! } })).status(204);
         (await owner.del('/v1/drives/:driveId/grants', { ...drive(companyId), query: { projectId: project.id, agentName: 'default' } })).status(204);
       });
 
@@ -253,8 +267,13 @@ flow(
         (await owner.del('/v1/drives/:driveId/files', { ...drive(companyId), query: { path: '/notes', recursive: 'true' } })).status(204);
       });
 
-      await ctx.step('deleting the company drive → 204; it is gone → 404', async () => {
+      await ctx.step('removing the member’s grant takes the company drive away → 404', async () => {
         (await asMember.del('/v1/drives/:driveId', drive(companyId))).status(403);
+        (await owner.del('/v1/drives/:driveId/grants', { ...drive(companyId), query: { userId: member.userId! } })).status(204);
+        (await asMember.get('/v1/drives/:driveId/files', { ...drive(companyId), query: { path: '/' } })).status(404);
+      });
+
+      await ctx.step('deleting the company drive → 204; it is gone → 404', async () => {
         (await owner.del('/v1/drives/:driveId', drive(companyId))).status(204);
         (await owner.get('/v1/drives/:driveId/versions', drive(companyId))).status(404);
         companyId = '';

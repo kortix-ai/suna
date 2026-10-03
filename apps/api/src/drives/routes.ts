@@ -168,14 +168,18 @@ async function mayUseProject(c: DriveContext, projectId: string, action: 'read' 
  * 404. An agent drive belongs to its project as well as the account: reading
  * it needs read access to that project, changing its files needs the right to
  * run the project's sessions (which can already change them through the agent).
- * A personal drive shared read-only answers 403 to a write.
+ * A company drive reaches a member only through a grant: to them, or to a
+ * project they may run sessions in; read or write as granted. A drive granted
+ * or shared read-only answers 403 to a write.
  */
 async function loadDrive(c: DriveContext, need: Exclude<DriveAccess, 'none'> = 'write') {
   const userId = callerId(c);
   const driveId = c.req.param('driveId') ?? '';
   const drive = isUuid(driveId) ? await getDrive(driveId) : null;
   if (!drive) fail(404, 'Drive not found');
-  const access = await accessFor(drive, userId, await roleIn(userId, drive.accountId));
+  const access = await accessFor(drive, userId, await roleIn(userId, drive.accountId), {
+    mayUseProject: (projectId) => mayUseProject(c, projectId, 'session'),
+  });
   if (access === 'none') fail(404, 'Drive not found');
   if (drive.kind === 'agent') {
     if (!drive.projectId || !(await mayUseProject(c, drive.projectId, 'read'))) fail(404, 'Drive not found');
@@ -186,7 +190,9 @@ async function loadDrive(c: DriveContext, need: Exclude<DriveAccess, 'none'> = '
   if (need === 'manage' && access !== 'manage') {
     fail(403, drive.kind === 'personal' ? 'Only the drive’s owner can change this drive' : 'Only an account admin can change this drive');
   }
-  if (need === 'write' && !accessAtLeast(access, 'write')) fail(403, 'This drive is shared with you read-only');
+  if (need === 'write' && !accessAtLeast(access, 'write')) {
+    fail(403, drive.kind === 'company' ? 'This drive is granted to you read-only' : 'This drive is shared with you read-only');
+  }
   return { drive, userId, access };
 }
 
@@ -270,7 +276,12 @@ drivesApp.openapi(
     const role = await roleIn(userId, accountId);
     if (!role) fail(403, 'You do not have access to this account');
     await ensureDefaultPersonalDrive(accountId, userId);
-    const listed = await listDrivesFor({ accountId, userId, projectId: projectId || undefined });
+    const listed = await listDrivesFor({
+      accountId,
+      userId,
+      projectId: projectId || undefined,
+      grantContext: { mayUseProject: (id) => mayUseProject(c, id, 'session') },
+    });
     const [stats, conflicts, owners] = await Promise.all([
       driveStats(listed.map((l) => l.drive)),
       openConflictCounts(listed.map((l) => l.drive.driveId)),
@@ -278,7 +289,7 @@ drivesApp.openapi(
     ]);
     return c.json({
       drives: listed.flatMap((l) => {
-        const access = driveAccess(l.drive, { userId, accountRole: role, sharedAccess: l.sharedAccess ?? null });
+        const access = driveAccess(l.drive, { userId, accountRole: role, granted: l.sharedAccess ?? l.granted ?? null });
         return access === 'none'
           ? []
           : [

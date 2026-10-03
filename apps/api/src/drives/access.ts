@@ -20,23 +20,39 @@ export interface DriveOwnership {
 
 /**
  * `accountRole` is the caller's role in the DRIVE's account, or null when the
- * caller is not a member of it. A personal drive is its owner's alone unless
- * the owner shared it with the caller (`sharedAccess`, from a `user` grant):
- * an account admin gets no access to a colleague's personal drive.
+ * caller is not a member of it. `granted` is the best grant that reaches the
+ * caller: a share of a personal drive (a `user` grant), or for a company drive
+ * a grant to them, or to a project or agent they work through.
+ *
+ * - A personal drive is its owner's alone unless shared: an account admin gets
+ *   no access to a colleague's personal drive.
+ * - A company drive is managed by account owners and admins; anyone else gets
+ *   exactly what a grant gives them, and nothing without one.
+ * - An agent drive belongs to its project: members write it, admins manage it
+ *   (the routes also check the project).
  */
 export function driveAccess(
   drive: DriveOwnership,
-  caller: { userId: string; accountRole: AccountRole | null; sharedAccess?: 'read' | 'write' | null },
+  caller: { userId: string; accountRole: AccountRole | null; granted?: 'read' | 'write' | null },
 ): DriveAccess {
   if (!caller.accountRole) return 'none';
+  const admin = caller.accountRole === 'owner' || caller.accountRole === 'admin';
   if (drive.kind === 'personal') {
     if (drive.ownerUserId === caller.userId) return 'manage';
-    return caller.sharedAccess ?? 'none';
+    return caller.granted ?? 'none';
   }
-  if (drive.kind === 'agent' || drive.kind === 'company') {
-    return caller.accountRole === 'owner' || caller.accountRole === 'admin' ? 'manage' : 'write';
-  }
+  if (drive.kind === 'company') return admin ? 'manage' : (caller.granted ?? 'none');
+  if (drive.kind === 'agent') return admin ? 'manage' : 'write';
   return 'none';
+}
+
+/** The more permissive of two grants. */
+export function bestGrant(
+  a: 'read' | 'write' | null | undefined,
+  b: 'read' | 'write' | null | undefined,
+): 'read' | 'write' | null {
+  if (a === 'write' || b === 'write') return 'write';
+  return a ?? b ?? null;
 }
 
 export const PERSONAL_MOUNT_PATH = '/drives/me';

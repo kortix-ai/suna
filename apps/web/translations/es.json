@@ -20432,7 +20432,7 @@
     "createPersonalTitle": "Nuevo drive personal",
     "createPersonalDescription": "Un drive privado que solo tú puedes abrir. Tus sesiones usan tu drive predeterminado.",
     "createCompanyTitle": "Nuevo drive de empresa",
-    "createCompanyDescription": "Un drive que todos en tu espacio de trabajo pueden abrir. Actívalo en un proyecto para que sus sesiones puedan usarlo.",
+    "createCompanyDescription": "Un drive para tu espacio de trabajo. Los administradores eligen quién lo recibe: proyectos, personas y agentes, de solo lectura o de lectura y escritura.",
     "grantOnCreate": "Las sesiones de este proyecto pueden usarlo de inmediato.",
     "grantTitle": "Usar en este proyecto",
     "grantDescription": "Las sesiones de este proyecto lo ven en {path}.",

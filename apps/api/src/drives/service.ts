@@ -19,8 +19,8 @@ import {
   type PlannedMount,
   FROM_AGENTS_FOLDER,
   FROM_AGENTS_MOUNT_PATH,
-  MAX_SESSION_DRIVES,
   accessAtLeast,
+  bestGrant,
   driveAccess,
   driveMountPath,
   driveVolumeName,
@@ -275,6 +275,8 @@ export interface ListedDrive {
   drive: DriveRow;
   /** The caller's share of someone else's personal drive. */
   sharedAccess?: 'read' | 'write';
+  /** A company drive: the best grant that reaches the caller (see {@link accessFor}). */
+  granted?: 'read' | 'write' | null;
   projectAccess?: 'read' | 'write' | null;
   agentGrants?: Array<{ agentName: string; access: 'read' | 'write' }>;
 }
@@ -282,14 +284,17 @@ export interface ListedDrive {
 const asAccess = (a: string): 'read' | 'write' => (a === 'read' ? 'read' : 'write');
 
 /**
- * What one user sees in one account: their own personal drives, personal
- * drives shared with them, and every company drive; with a project, also its
- * agent drives, and each company drive's grants to that project and its agents.
+ * What one user may see in one account: their own personal drives, personal
+ * drives shared with them, and the company drives (each with the grant that
+ * reaches the caller; the route drops the ones nothing reaches for a member);
+ * with a project, also its agent drives, and each company drive's grants to
+ * that project and its agents.
  */
 export async function listDrivesFor(input: {
   accountId: string;
   userId: string;
   projectId?: string;
+  grantContext?: GrantContext;
 }): Promise<ListedDrive[]> {
   const { accountId, userId, projectId } = input;
   const sharedRows = await db
@@ -318,27 +323,30 @@ export async function listDrivesFor(input: {
     .where(and(eq(drives.accountId, accountId), visible))
     .orderBy(drives.createdAt);
   const companyIds = rows.filter((r) => r.kind === 'company').map((r) => r.driveId);
-  const grants =
-    projectId && companyIds.length
-      ? await db
-          .select()
-          .from(driveGrants)
-          .where(and(eq(driveGrants.projectId, projectId), inArray(driveGrants.driveId, companyIds)))
-      : [];
-  return rows.map((drive) => {
-    const out: ListedDrive = { drive };
+  const companyGrants = companyIds.length
+    ? await db.select().from(driveGrants).where(inArray(driveGrants.driveId, companyIds))
+    : [];
+  const projectReach = projectReachCache(input.grantContext);
+  const out: ListedDrive[] = [];
+  for (const drive of rows) {
+    const item: ListedDrive = { drive };
     const share = shared.get(drive.driveId);
-    if (share) out.sharedAccess = share;
+    if (share) item.sharedAccess = share;
+    if (drive.kind === 'company') {
+      const rowsFor = companyGrants.filter((g) => g.driveId === drive.driveId);
+      item.granted = await bestGrantFrom(rowsFor, userId, input.grantContext ?? {}, projectReach);
+    }
     if (projectId && drive.kind === 'company') {
-      const mine = grants.filter((g) => g.driveId === drive.driveId);
+      const mine = companyGrants.filter((g) => g.driveId === drive.driveId && g.projectId === projectId);
       const project = mine.find((g) => g.subjectType === 'project');
-      out.projectAccess = project ? asAccess(project.access) : null;
-      out.agentGrants = mine
+      item.projectAccess = project ? asAccess(project.access) : null;
+      item.agentGrants = mine
         .filter((g) => g.subjectType === 'agent' && g.agentName)
         .map((g) => ({ agentName: g.agentName!, access: asAccess(g.access) }));
     }
-    return out;
-  });
+    out.push(item);
+  }
+  return out;
 }
 
 // ─── Grants ────────────────────────────────────────────────────────────────
@@ -406,11 +414,77 @@ export async function userGrantAccess(driveId: string, userId: string): Promise<
   return row ? asAccess(row.access) : null;
 }
 
-/** The caller's access to a drive, from their role in its account and any share. */
-export async function accessFor(drive: DriveRow, userId: string, accountRole: AccountRole | null): Promise<DriveAccess> {
-  const sharedAccess =
-    drive.kind === 'personal' && drive.ownerUserId !== userId ? await userGrantAccess(drive.driveId, userId) : null;
-  return driveAccess(drive, { userId, accountRole, sharedAccess });
+/**
+ * Where a company drive grant may reach the caller from, besides a grant to
+ * them by name:
+ *
+ * - `session`: the session the access is for; grants to its project and to
+ *   its agent count (a session's mounts and changes to them);
+ * - `mayUseProject`: grants to any project the caller may run sessions in
+ *   count (the drives API: such a caller reaches the drive through any of
+ *   those sessions anyway). Agent grants reach people only through a session.
+ */
+export interface GrantContext {
+  session?: { projectId: string; agentName: string };
+  mayUseProject?: (projectId: string) => Promise<boolean>;
+}
+
+function projectReachCache(ctx: GrantContext | undefined): (projectId: string) => Promise<boolean> {
+  const seen = new Map<string, Promise<boolean>>();
+  return (projectId) => {
+    if (ctx?.session?.projectId === projectId) return Promise.resolve(true);
+    if (!ctx?.mayUseProject) return Promise.resolve(false);
+    let hit = seen.get(projectId);
+    if (!hit) {
+      hit = ctx.mayUseProject(projectId).catch(() => false);
+      seen.set(projectId, hit);
+    }
+    return hit;
+  };
+}
+
+/** The best of a company drive's grants that reaches this user in this context. */
+async function bestGrantFrom(
+  rows: DriveGrantRow[],
+  userId: string,
+  ctx: GrantContext,
+  reach: (projectId: string) => Promise<boolean> = projectReachCache(ctx),
+): Promise<'read' | 'write' | null> {
+  let best: 'read' | 'write' | null = null;
+  // Write grants first: once one reaches the caller nothing else can add to it.
+  const ordered = [...rows].sort((a, b) => (a.access === 'write' ? 0 : 1) - (b.access === 'write' ? 0 : 1));
+  for (const g of ordered) {
+    if (best === 'write' || (best === 'read' && g.access === 'read')) break;
+    const access = asAccess(g.access);
+    let reaches = false;
+    if (g.subjectType === 'user') reaches = g.userId === userId;
+    else if (g.subjectType === 'agent') {
+      reaches = !!ctx.session && g.projectId === ctx.session.projectId && g.agentName === ctx.session.agentName;
+    } else if (g.subjectType === 'project' && g.projectId) reaches = await reach(g.projectId);
+    if (reaches) best = bestGrant(best, access);
+  }
+  return best;
+}
+
+/**
+ * The caller's access to a drive, from their role in its account and the
+ * grants that reach them: a share of a personal drive, or for a company drive
+ * a grant to them, or (see {@link GrantContext}) to a project or agent they
+ * work through. A member with no grant has no access to a company drive.
+ */
+export async function accessFor(
+  drive: DriveRow,
+  userId: string,
+  accountRole: AccountRole | null,
+  ctx: GrantContext = {},
+): Promise<DriveAccess> {
+  let granted: 'read' | 'write' | null = null;
+  if (drive.kind === 'personal' && drive.ownerUserId !== userId) {
+    granted = await userGrantAccess(drive.driveId, userId);
+  } else if (drive.kind === 'company' && accountRole && accountRole !== 'owner' && accountRole !== 'admin') {
+    granted = await bestGrantFrom(await listDriveGrants(drive.driveId), userId, ctx);
+  }
+  return driveAccess(drive, { userId, accountRole, granted });
 }
 
 // ─── Session mounts ────────────────────────────────────────────────────────
@@ -571,7 +645,9 @@ export async function planSessionDrives(input: {
   const { accountId, projectId, sessionId, agentName } = input;
   const session = await sessionFacts(sessionId);
   const personal = isPersonalSession(session, input.bootingUserId);
-  const owner = personal ? session!.createdBy! : null;
+  // Someone who left the account takes no drive of it into a session.
+  const owner = personal && (await roleOf(session!.createdBy!, accountId)) ? session!.createdBy! : null;
+  const grantContext: GrantContext = { session: { projectId, agentName } };
   const prefs = sessionDrivePrefs(session?.metadata);
   const candidates: MountCandidate<DriveRow>[] = [];
 
@@ -618,7 +694,7 @@ export async function planSessionDrives(input: {
       if (!drive) continue;
       // A personal drive (own or shared) only ever mounts in its holder's personal session.
       if (drive.kind === 'personal' && a.by !== owner) continue;
-      const access = await accessFor(drive, a.by, await roleOf(a.by, accountId));
+      const access = await accessFor(drive, a.by, await roleOf(a.by, accountId), grantContext);
       if (!accessAtLeast(access, 'read')) continue;
       const role: MountRole = drive.kind === 'personal' && drive.isDefault && drive.ownerUserId === owner ? 'me' : 'drive';
       const named =
@@ -637,7 +713,7 @@ export async function planSessionDrives(input: {
     if (mode?.access === 'read') {
       kept.push({ ...c, readOnly: true });
     } else if (mode?.access === 'write') {
-      const access = await accessFor(c.drive, mode.by, await roleOf(mode.by, accountId));
+      const access = await accessFor(c.drive, mode.by, await roleOf(mode.by, accountId), grantContext);
       const ownDrive = c.role !== 'me' || mode.by === owner;
       kept.push({ ...c, readOnly: c.readOnly && !(ownDrive && accessAtLeast(access, 'write')) });
     } else {

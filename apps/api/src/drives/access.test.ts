@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_SESSION_DRIVES, conflictOriginal, driveAccess, driveVolumeName, normalizeDrivePath, planDriveMounts } from './access';
+import {
+  DEFAULT_SANDBOX_MOUNT_LIMIT,
+  bestGrant,
+  conflictOriginal,
+  driveAccess,
+  driveVolumeName,
+  normalizeDrivePath,
+  planDriveMounts,
+} from './access';
 
 const ALICE = '00000000-0000-4000-8000-00000000000a';
 const BOB = '00000000-0000-4000-8000-00000000000b';
@@ -19,18 +27,31 @@ describe('driveAccess', () => {
   });
 
   test('a shared personal drive gives exactly the shared access, never manage', () => {
-    expect(driveAccess(alicePersonal, { userId: BOB, accountRole: 'member', sharedAccess: 'read' })).toBe('read');
-    expect(driveAccess(alicePersonal, { userId: BOB, accountRole: 'owner', sharedAccess: 'write' })).toBe('write');
-    expect(driveAccess(alicePersonal, { userId: BOB, accountRole: null, sharedAccess: 'write' })).toBe('none');
+    expect(driveAccess(alicePersonal, { userId: BOB, accountRole: 'member', granted: 'read' })).toBe('read');
+    expect(driveAccess(alicePersonal, { userId: BOB, accountRole: 'owner', granted: 'write' })).toBe('write');
+    expect(driveAccess(alicePersonal, { userId: BOB, accountRole: null, granted: 'write' })).toBe('none');
   });
 
-  test('company and agent drives: members write, owners and admins manage', () => {
-    for (const kind of ['company', 'agent']) {
-      const drive = { kind, ownerUserId: null };
-      expect(driveAccess(drive, { userId: BOB, accountRole: 'member' })).toBe('write');
-      expect(driveAccess(drive, { userId: BOB, accountRole: 'admin' })).toBe('manage');
-      expect(driveAccess(drive, { userId: BOB, accountRole: 'owner' })).toBe('manage');
-    }
+  test('a company drive follows grants: a member without one has no access, owners and admins manage', () => {
+    const drive = { kind: 'company', ownerUserId: null };
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'member' })).toBe('none');
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'member', granted: 'read' })).toBe('read');
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'member', granted: 'write' })).toBe('write');
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'admin' })).toBe('manage');
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'owner' })).toBe('manage');
+    expect(driveAccess(drive, { userId: BOB, accountRole: null, granted: 'write' })).toBe('none');
+  });
+
+  test('an agent drive: members write, owners and admins manage', () => {
+    const drive = { kind: 'agent', ownerUserId: null };
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'member' })).toBe('write');
+    expect(driveAccess(drive, { userId: BOB, accountRole: 'admin' })).toBe('manage');
+  });
+
+  test('bestGrant keeps the more permissive grant', () => {
+    expect(bestGrant('read', 'write')).toBe('write');
+    expect(bestGrant(null, 'read')).toBe('read');
+    expect(bestGrant(undefined, null)).toBeNull();
   });
 });
 

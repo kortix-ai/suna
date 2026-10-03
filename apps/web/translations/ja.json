@@ -20432,7 +20432,7 @@
     "createPersonalTitle": "新しい個人ドライブ",
     "createPersonalDescription": "あなただけが開けるプライベートなドライブです。セッションではデフォルトのドライブが使われます。",
     "createCompanyTitle": "新しい会社のドライブ",
-    "createCompanyDescription": "ワークスペースの全員が開けるドライブです。プロジェクトで有効にすると、そのプロジェクトのセッションで使えます。",
+    "createCompanyDescription": "ワークスペースのドライブです。管理者が、プロジェクト、メンバー、エージェントの誰に読み取り専用または読み書きで渡すかを選びます。",
     "grantOnCreate": "このプロジェクトのセッションですぐに使えます。",
     "grantTitle": "このプロジェクトで使用",
     "grantDescription": "このプロジェクトのセッションでは {path} に表示されます。",
