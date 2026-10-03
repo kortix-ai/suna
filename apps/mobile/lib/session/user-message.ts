@@ -6,10 +6,11 @@
  * `turn/queued-prompt-bubbles.tsx`, and `session-chat.tsx`.
  */
 
-import { isAbortError, isTextPart, splitUserParts } from '@kortix/sdk';
+import { isAbortError, isSessionAttachmentRef, isTextPart, splitUserParts, type SessionPromptPart } from '@kortix/sdk';
 import type { TextPart } from '@/lib/session/types';
 import {
   fileTagBlocks,
+  promptFileReferenceXml,
   referenceHeaders,
   removeSpans,
   replaceSpans,
@@ -37,6 +38,10 @@ export interface MessageAttachment {
   filename: string;
   mime?: string;
   src?: string;
+  /** An upload ref's workspace path. Unset on a native file part. */
+  path?: string;
+  /** An upload ref's saved copy (`kortix-attachment://…`), when the API kept one. */
+  attachment?: string;
   /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
   localUri?: string;
 }
@@ -47,6 +52,7 @@ export interface ParsedFileRef {
   path: string;
   mime: string;
   filename: string;
+  attachment?: string;
 }
 
 export interface ParsedSessionRef {
@@ -208,7 +214,8 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
     const path = pick('path');
     const filename = pick('filename');
     if (path === undefined && filename === undefined) return whole;
-    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '' });
+    const attachment = pick('attachment');
+    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '', ...(attachment ? { attachment } : {}) });
     return '';
   }).trim();
 
@@ -246,6 +253,8 @@ export function parseUserMessageParts(parts: Parameters<typeof splitUserParts>[0
         filename: f.filename || f.path.split('/').pop() || 'File',
         mime: f.mime,
         src: f.path || undefined,
+        path: f.path,
+        ...(f.attachment ? { attachment: f.attachment } : {}),
       })),
       ...fileParts.map((p) => {
         const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
@@ -253,6 +262,30 @@ export function parseUserMessageParts(parts: Parameters<typeof splitUserParts>[0
       }),
     ];
     return { rawText, content, attachments };
+}
+
+/**
+ * What an edited prompt sends again for the attachments the editor kept.
+ * Port of web `editResendAttachments` (`features/session/turn/user-message.tsx`).
+ *
+ * A saved copy (`kortix-attachment://`) or a native file part rides as a URL
+ * part; the API writes a saved copy into the sandbox again. An upload whose
+ * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
+ * as text. A tile with neither source has nothing to resend.
+ */
+export function editResendAttachments(kept: readonly MessageAttachment[]): {
+  fileParts: SessionPromptPart[];
+  refs: string;
+} {
+  const fileParts: SessionPromptPart[] = [];
+  const refs: string[] = [];
+  for (const { src, path, attachment, filename, mime } of kept) {
+    const type = mime || 'application/octet-stream';
+    const url = isSessionAttachmentRef(attachment) ? attachment : path ? undefined : src;
+    if (url) fileParts.push({ type: 'file', mime: type, url, filename });
+    else if (path) refs.push(promptFileReferenceXml({ path, mime: type, filename }));
+  }
+  return { fileParts, refs: refs.join('\n') };
 }
 
 /**
