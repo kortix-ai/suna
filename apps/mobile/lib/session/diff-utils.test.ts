@@ -45,6 +45,8 @@ describe('generateLineDiff', () => {
 });
 
 describe('literal backslash-n in source code', () => {
+  // 1 line runs the exact LCS path; 501 lines puts n·m (251 001) over
+  // MAX_LCS_CELLS (250 000), so the bounded fallback paths run too.
   for (const lineCount of [1, 501]) {
     test(`${lineCount} lines preserve escapes in rows and replacement counts`, () => {
       const prefix = Array.from({ length: lineCount - 1 }, (_, i) => `line-${i}`);
