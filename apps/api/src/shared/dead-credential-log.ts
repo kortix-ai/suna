@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the warning rate-limit windows are deliberately per process.
+// The header above fixes the semantics (best-effort suppression counts, a
+// per-process budget); sharing one window across replicas would put a
+// database write on every refused request for no accuracy gain.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
