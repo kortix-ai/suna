@@ -1,0 +1,21 @@
+{
+  "source_hash": "eda4ac03028a1f10f25f1d35b9c72d3ac17ffd501e35d7f2fd43752f4f4dd528",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-account-deletion-schedule.test.ts",
+    "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
+    "apps/api/src/billing/account-deletion-schedule.ts",
+    "apps/api/src/billing/services/account-deletion-scheduled.integration.test.ts",
+    "apps/api/src/bootstrap.ts",
+    "packages/db/migrations/20261003182158767_retire_scheduled_account_deletions_cron.sql",
+    "packages/db/scripts/retire-scheduled-account-deletions.integration.test.ts"
+  ],
+  "diff_hash": "929a858c5493ee8e32b5f5f0a6b1c418771cf7568dcba96e22cb8214bd6ca246",
+  "head": "f0aa1fbf1972b08a79e451a4002906491ebfa172",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:24:12.555Z"
+}
