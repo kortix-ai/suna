@@ -9,7 +9,6 @@ import { siteMetadata } from '@/lib/site-metadata';
 const SECTION_LABELS: Record<PublicContentKind, string> = {
   marketing: 'Core pages',
   docs: 'Documentation',
-  blog: 'Blog',
   'use-case': 'Use cases',
 };
 
@@ -37,6 +36,8 @@ export function renderLlmsTxt(): string {
     `Canonical site: ${siteMetadata.url}`,
     `Full corpus: ${absoluteUrl('/llms-full.txt')}`,
     `Structured content index: ${absoluteUrl('/api/ai')}`,
+    // The blog is its own app under /blog and publishes its own index.
+    `Blog index: ${absoluteUrl('/blog/llms.txt')}`,
     '',
     ...sections,
     '',

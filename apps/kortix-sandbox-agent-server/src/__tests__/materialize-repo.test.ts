@@ -76,19 +76,19 @@ function createDetachedWarmCheckout(prefix: string): {
 
 const tempDirs: string[] = []
 
-// A Kortix host ships a real image scaffold at /opt/kortix/scaffold.git and CI
-// has none, so the suite's reset points at an absent path and every test that
-// wants the scaffold fast path installs its own (as the scaffold tests do).
-const NO_SCAFFOLD = join(tmpdir(), 'kortix-no-scaffold-absent.git')
+// The image bakes /opt/kortix/scaffold.git; a Kortix box would answer the
+// scaffold fast path for every rig. Point the reset at an absent path so this
+// file reads only the scaffolds a test sets itself.
+const ABSENT_SCAFFOLD = join(tmpdir(), 'kortix-absent-scaffold.git')
 
 beforeEach(() => {
-  __setScaffoldRepoPathForTests(NO_SCAFFOLD)
+  __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
 })
 
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  __setScaffoldRepoPathForTests(NO_SCAFFOLD)
+  __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -252,7 +252,7 @@ describe('materializeRepo', () => {
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
       expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-fresh')
     } finally {
-      __setScaffoldRepoPathForTests()
+      __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -648,7 +648,7 @@ describe('materializeRepo', () => {
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('imported repository\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(importedSha)
     } finally {
-      __setScaffoldRepoPathForTests()
+      __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
       rmSync(root, { recursive: true, force: true })
     }
   })
