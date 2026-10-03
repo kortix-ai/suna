@@ -25,7 +25,7 @@ describe('upstreamFetch — Bun idle timeout is switched off on every provider c
   test('Bun accepts timeout:false on a real request, with no init at all', async () => {
     // A runtime that rejected the option would throw here, and the whole
     // reason this module exists is a runtime-specific extension.
-    const server = Bun.serve({ port: 0, fetch: () => new Response('pong') });
+    const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('pong') });
     try {
       const res = await upstreamFetch(`http://127.0.0.1:${server.port}/`);
       expect(await res.text()).toBe('pong');

@@ -63,7 +63,7 @@ describe('simple gateway pipeline', () => {
 
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
-    const upstream = Bun.serve({ port: 0, fetch: (request) => {
+    const upstream = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (request) => {
       const key = request.headers.get('authorization') ?? '';
       keys.push(key);
       return new Response('limited', { status: 429, headers: { 'retry-after': key.includes('first') ? '7' : '120' } });
