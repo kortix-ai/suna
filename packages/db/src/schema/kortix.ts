@@ -4575,7 +4575,6 @@ export const tunnelPermissions = kortixSchema.table(
     index('idx_tunnel_permissions_tunnel').on(table.tunnelId),
     index('idx_tunnel_permissions_account').on(table.accountId),
     index('idx_tunnel_permissions_capability').on(table.capability),
-    index('idx_tunnel_permissions_status').on(table.status),
   ],
 );
 
