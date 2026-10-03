@@ -259,7 +259,7 @@ describe('reloadResultTone', () => {
     );
   });
 
-  // Verified in the browser on a real box 2026-09-24 (session 423fe876): the
+  // Verified in the browser on a real box 2026-09-24 (one session): the
   // header's "Reload config" answered
   //   "Reload didn't apply. Try again in a moment."
   // for release_outcome 'unchanged' / agent_files 'already-current'. Nothing
