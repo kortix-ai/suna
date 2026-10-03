@@ -387,6 +387,10 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
+      // The sandbox's /dev/shm/kortix/agent-env.sh must not leak into the
+      // subprocess: it carries the real platform token, API URL and project
+      // id, which would answer as the wrong host (dev/CI have no such file).
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
       ...extraEnv,
@@ -675,6 +679,9 @@ describe('MCP face', () => {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Same agent-env.sh guard as runCli: the CLI face must answer as this
+        // test's mock host, never as the platform's.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
       },
@@ -769,6 +776,9 @@ describe('MCP face', () => {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Same agent-env.sh guard as runCli: the CLI face must answer as this
+        // test's mock host, never as the platform's.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
@@ -841,6 +851,9 @@ describe('MCP face', () => {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Same agent-env.sh guard as runCli: the CLI face must answer as this
+        // test's mock host, never as the platform's.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
