@@ -233,7 +233,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, and it uses one of your concurrent-session slots until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
     // The surface is small and server-owned, but the cost tradeoff is real and
     // the presence model is new. `beta` says "we intend this on for everyone,
     // and we expect to tune the grant".
@@ -336,7 +336,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'agent_principal',
     name: 'Agents as Principals',
     description:
-      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
+      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including credential issue. An agent grants only what it holds: it cannot write a permission, connector, secret or App it does not hold into any agent\'s grant. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
     stability: 'experimental',
     available: () => true,
     // Default ON. An agent's authority is a property of the AGENT, not of

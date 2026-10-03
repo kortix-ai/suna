@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 725 route actions and 67 other events.
+This page lists 724 route actions and 67 other events.
 
 ## `account.`
 
@@ -51,7 +51,6 @@ This page lists 725 route actions and 67 other events.
 | `admin.account.member_role.set` | Changed account member role | `POST /v1/admin/api/accounts/:id/members/:userId/role` |
 | `admin.account.overrides.set` | Set account entitlement overrides | `PUT /v1/admin/api/accounts/:id/overrides` |
 | `admin.account.project.list` | Listed account projects as admin | `GET /v1/admin/api/accounts/:id/projects` |
-| `admin.account.session_limit.set` | Updated account session limit | `POST /v1/admin/api/accounts/:id/session-limit` |
 | `admin.account.sso_domain.set` | Set account SSO domain verification | `PUT /v1/admin/api/accounts/:id/sso-domain-verification` |
 | `admin.account.subscription.read` | Viewed account Stripe subscription | `GET /v1/admin/api/accounts/:id/subscription` |
 | `admin.account.tier.set` | Updated account tier | `POST /v1/admin/api/accounts/:id/tier` |

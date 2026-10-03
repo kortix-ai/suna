@@ -187,6 +187,11 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** True for a platform-owned agent (SUNA — the coordinator) that the API
+     *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
+     *  hosts render it read-only and never open the agent editor for it.
+     *  Absent/false = an ordinary editable project agent. */
+    platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).

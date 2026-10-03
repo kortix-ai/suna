@@ -39,7 +39,7 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords } from '@kortix/shared';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   CaretRightIcon,
   MagnifyingGlassIcon,
@@ -244,7 +244,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             key={agent.path}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={capitalizeWords(agent.name)}
+            title={isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
@@ -408,7 +408,7 @@ function DefaultAgentSelector({
         <SelectContent align="end">
           {availableAgents.map((agent) => (
             <SelectItem key={agent.name} value={agent.name}>
-              {capitalizeWords(agent.name)}
+              {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             </SelectItem>
           ))}
         </SelectContent>

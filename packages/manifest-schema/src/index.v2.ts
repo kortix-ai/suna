@@ -246,20 +246,22 @@ export interface AppBlockV2 {
  * to-govern back-compat); v2 defaults to `'none'` (deny-by-default, spec
  * §2.2/§2.5) — same shape, opposite default. Shape errors (e.g. a garbage
  * string) resolve to `'none'`; `validateGrantList` is what surfaces those as
- * validation errors.
+ * validation errors. `"*"`, and any list containing `*`, is `'all'`.
  */
 export function resolveGrantSet(value: unknown, defaultWhenOmitted: 'all' | 'none'): GrantSetV2 {
   if (value === undefined || value === null) return defaultWhenOmitted;
   if (typeof value === 'string') {
     const v = value.trim().toLowerCase();
     if (v === '' || v === 'none') return 'none';
-    if (v === 'all') return 'all';
+    if (v === 'all' || v === '*') return 'all';
     return 'none';
   }
   if (Array.isArray(value)) {
-    return value
+    const items = value
       .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
       .map((item) => item.trim());
+    // `*` is a synonym of `all`, alone or beside other entries.
+    return items.includes('*') ? 'all' : items;
   }
   return defaultWhenOmitted;
 }
