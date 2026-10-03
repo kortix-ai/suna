@@ -779,7 +779,7 @@
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
                 "connectors": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -792,6 +792,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -871,6 +872,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -950,6 +952,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -957,7 +960,7 @@
                   "deprecated": true
                 },
                 "env": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -970,13 +973,14 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
                   ]
                 },
                 "apps": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -989,6 +993,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -1224,7 +1229,7 @@
                   "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
                 },
                 "connectors": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -1237,6 +1242,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -1260,7 +1266,7 @@
                   "description": "Deprecated input alias for connectors_required."
                 },
                 "secrets": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -1273,13 +1279,14 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
                   ]
                 },
                 "skills": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -1292,6 +1299,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -1311,6 +1319,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -1380,6 +1389,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -1449,6 +1459,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -2879,7 +2890,7 @@
                   "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
                 },
                 "connectors": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -2892,6 +2903,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -2915,7 +2927,7 @@
                   "description": "Deprecated input alias for connectors_required."
                 },
                 "secrets": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -2928,13 +2940,14 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
                   ]
                 },
                 "skills": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
                   "oneOf": [
                     {
                       "type": "array",
@@ -2947,6 +2960,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -2966,6 +2980,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -3035,6 +3050,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }
@@ -3104,6 +3120,7 @@
                       "type": "string",
                       "enum": [
                         "all",
+                        "*",
                         "none"
                       ]
                     }

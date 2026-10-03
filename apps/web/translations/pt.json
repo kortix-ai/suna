@@ -20190,7 +20190,7 @@
     "ceilingDefault": "Teto padrão de agentes",
     "changeCeiling": "Alterar",
     "humanOnly": "Só pessoas",
-    "humanOnlyHelp": "Gerir membros, excluir o projeto e emitir credenciais ficam com pessoas.",
+    "humanOnlyHelp": "A emissão de credenciais do projeto fica com as pessoas.",
     "humanOnlyValue": "Nunca concedida",
     "effective": "Permissões efetivas",
     "effectiveHelp": "Permissões Kortix dentro da função teto, menos as permissões só para pessoas. project.read é sempre concedida.",
