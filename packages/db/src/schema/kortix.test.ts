@@ -354,7 +354,7 @@ describe('project trigger executions', () => {
     // ON DELETE set null): deleting a session runs that FK's set-null update, and
     // with no index leading with session_id it sequential-scans the whole queue
     // per deleted session (prod 2026-10-02, 163,657 rows / 264 MB heap).
-    // 20261002213109792_project_trigger_executions_session_index.concurrent.ts
+    // 20261003021928750_project_trigger_executions_session_index.concurrent.ts
     // built idx_project_trigger_executions_session for it. Regression guard: the
     // same covering rule the advisor applies — the FK columns are the leading
     // columns of some index — pinned on the schema so a new FK cannot land bare.
