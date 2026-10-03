@@ -9,7 +9,9 @@
  *  2. a file in `apps/api/src` starts a `setInterval` and is neither a
  *     registered worker nor a classified non-job timer below;
  *  3. `startSingletonWorkers` / `startReplicaServices` in `bootstrap.ts` starts
- *     something that is neither.
+ *     something that is neither;
+ *  4. a module starts a timer at import time: it then runs on every replica
+ *     (not leader-gated) and nothing can stop it.
  *
  * Adding a background job: wrap its tick in `runWorkerTick('<name>', …)` and
  * register it in WORKERS. A timer that only keeps a connection alive or
@@ -43,9 +45,9 @@ const WORKERS: Record<string, string> = {
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'tunnel/index.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
-  'billing-trial-expiry': 'billing/index.ts',
-  'billing-yearly-rotation': 'billing/index.ts',
-  'billing-free-tier-rotation': 'billing/index.ts',
+  'billing-trial-expiry': 'billing/rotation-schedule.ts',
+  'billing-yearly-rotation': 'billing/rotation-schedule.ts',
+  'billing-free-tier-rotation': 'billing/rotation-schedule.ts',
   'slack-turn-gc': 'channels/slack/turn.ts',
   'teams-turn-gc': 'channels/teams/turn.ts',
 };
@@ -57,7 +59,6 @@ const NOT_WORKERS: Record<string, string> = {
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
   'routes/system.ts': 'measures event-loop lag',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
-  'oauth/index.ts': 'expires in-memory OAuth state',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'projects/routes/session-stream.ts': 'heartbeat on one open session stream',
@@ -89,6 +90,11 @@ const STARTS: Record<string, string> = {
   startProjectSnapshotWorker: 'project-snapshots',
   startGrantExpirySweeper: 'iam-grant-expiry',
   startOAuthSweeper: 'oauth-sweep',
+  startBillingRotation: 'billing-trial-expiry',
+  startSlackTurnGc: 'slack-turn-gc',
+  startTeamsTurnGc: 'teams-turn-gc',
+  startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
+  startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',
   startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
@@ -133,6 +139,11 @@ describe('background jobs run as named workers', () => {
   test('every classified timer file still starts a setInterval', () => {
     const stale = Object.keys(NOT_WORKERS).filter((file) => !read(file).includes('setInterval('));
     expect(stale).toEqual([]);
+  });
+
+  test('no module starts a timer at import time', () => {
+    const atImport = sourceFiles(SRC).filter((file) => /^(?:setInterval|setTimeout)\(/m.test(read(file)));
+    expect(atImport).toEqual([]);
   });
 
   test('everything bootstrap.ts starts on the leader or every replica is classified', () => {
