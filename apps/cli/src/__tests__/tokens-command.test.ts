@@ -118,6 +118,31 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
       { status: 201 },
     );
   }
+  if (p === '/v1/oauth/grants' && req.method === 'GET') {
+    return Response.json({
+      grants: [
+        {
+          client_id: 'app_verified',
+          name: 'Editor',
+          self_registered: false,
+          redirect_hosts: ['editor.example.test'],
+          granted_at: '2026-07-01T00:00:00.000Z',
+          last_active_at: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          client_id: 'app_self',
+          name: 'Hand-rolled',
+          self_registered: true,
+          redirect_hosts: [],
+          granted_at: '2026-07-15T00:00:00.000Z',
+          last_active_at: null,
+        },
+      ],
+    });
+  }
+  if (p === '/v1/oauth/grants/app_verified' && req.method === 'DELETE') {
+    return Response.json({ revoked_tokens: 2 });
+  }
   if (p === `${IAM}/service-accounts/${SA}/disable` && req.method === 'POST') {
     return Response.json({ disabled: true });
   }
@@ -298,6 +323,36 @@ describe('kortix tokens', () => {
       method: 'DELETE',
       path: `${IAM}/service-accounts/${SA}`,
     });
+  });
+
+  test('apps ls lists connected apps; apps rm -y revokes via the grants route', async () => {
+    const config = boot();
+    const ls = await runCommand(runner, ['apps', 'ls'], { cwd: tmp, configFile: config });
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toContain('Editor');
+    // A self-registered app is flagged in the table...
+    expect(ls.stdout).toContain('(unverified)');
+    expect(ls.stdout).toContain('app_verified');
+
+    const json = await runCommand(runner, ['apps', 'ls', '--json'], { cwd: tmp, configFile: config });
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toHaveLength(2);
+
+    const rm = await runCommand(runner, ['apps', 'rm', 'app_verified', '-y'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(rm.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({
+      method: 'DELETE',
+      path: '/v1/oauth/grants/app_verified',
+    });
+    expect(rm.stdout).toContain('Revoked');
+    expect(rm.stdout).toContain('2 live tokens');
+
+    const bogus = await runCommand(runner, ['apps', 'bogus'], { cwd: tmp, configFile: config });
+    expect(bogus.code).toBe(2);
+    expect(bogus.stderr).toContain('Use ls or rm');
   });
 
   test('missing required arguments exit 2 without any HTTP call', async () => {

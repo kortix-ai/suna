@@ -49,3 +49,32 @@ describe('kortix connectors — built-in channel slugs', () => {
     expect(JSON.parse(stdout).code).toBe('BUILTIN_CHANNEL');
   });
 });
+
+describe('kortix connectors — unknown subcommand', () => {
+  test('falls through to the same help object for an unknown name and for no name', async () => {
+    const helpObject = {
+      name: 'kortix connectors',
+      description:
+        'One interface to every configured connector. Calls run server-side; no secrets in the sandbox.',
+      commands: {
+        ls: expect.any(String),
+        discover: expect.any(String),
+        show: expect.any(String),
+        call: expect.any(String),
+        upload: expect.any(String),
+        add: expect.any(String),
+        rm: expect.any(String),
+        accounts: expect.any(String),
+        connect: expect.any(String),
+        mcp: 'kortix connectors mcp — run the optional stdio MCP compatibility server',
+      },
+    };
+    expect(await runConnector(['definitely-not-a-subcommand'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual(helpObject);
+    stdout = '';
+    expect(await runConnector([])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual(helpObject);
+    // Neither path touches the gateway.
+    expect(fetchCalls).toBe(0);
+  });
+});

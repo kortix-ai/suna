@@ -133,223 +133,42 @@ export async function runGroups(argv: string[]): Promise<number> {
   try {
     switch (sub) {
       case 'ls':
-      case 'list': {
-        const { groups } = await ctx.client.get<{ groups: GroupRow[] }>(base);
-        if (json) {
-          emitJson(groups);
-          return 0;
-        }
-        if (groups.length === 0) {
-          process.stdout.write(
-            `\n  ${C.dim}No groups. Create one with ${C.reset}${C.cyan}kortix groups create <name>${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const nameW = Math.max(...groups.map((g) => g.name.length), 4);
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}${pad('NAME', nameW)}   ${pad('MEMBERS', 7)}   ${pad('PROJECTS', 8)}   ${pad('SOURCE', 6)}   GROUP ID${C.reset}\n`,
-        );
-        for (const g of groups) {
-          process.stdout.write(
-            `  ${pad(g.name, nameW)}   ${pad(String(g.member_count ?? 0), 7)}   ` +
-              `${pad(String(g.project_count ?? 0), 8)}   ${pad(g.source ?? 'local', 6)}   ` +
-              `${C.faded}${g.group_id}${C.reset}\n`,
-          );
-        }
-        process.stdout.write(
-          `\n  ${C.dim}${groups.length} group${groups.length === 1 ? '' : 's'}${C.reset}\n\n`,
-        );
-        return 0;
-      }
+      case 'list':
+        return await groupsLs(ctx.client, base, json);
 
       case 'create':
-      case 'new': {
-        const name = positional[0];
-        if (!name) return missing('a group name');
-        const group = await ctx.client.post<GroupRow>(base, {
-          name,
-          ...(f.description !== undefined ? { description: f.description } : {}),
-        });
-        if (json) {
-          emitJson(group);
-          return 0;
-        }
-        process.stdout.write(
-          `${status.ok(`Created group ${C.bold}${group.name}${C.reset}  ${C.faded}${group.group_id}${C.reset}`)}\n`,
-        );
-        process.stdout.write(
-          `  ${C.dim}Add people with ${C.reset}${C.cyan}kortix groups add ${group.name} <email>${C.reset}\n`,
-        );
-        return 0;
-      }
+      case 'new':
+        return await groupsCreate(ctx.client, base, positional[0], f.description, json);
 
       case 'set':
-      case 'update': {
-        const ref = positional[0];
-        if (!ref) return missing('a group id or name');
-        if (f.name === undefined && f.description === undefined && !clearDescription) {
-          return missing('--name, --description or --no-description');
-        }
-        if (f.description !== undefined && clearDescription) {
-          return fail('--description and --no-description are mutually exclusive.');
-        }
-        const group = await resolveGroup(ctx.client, base, ref);
-        if (!group) return 1;
-        const body: Record<string, unknown> = {};
-        if (f.name !== undefined) body.name = f.name;
-        if (f.description !== undefined) body.description = f.description;
-        if (clearDescription) body.description = null;
-        const updated = await ctx.client.patch<GroupRow>(
-          `${base}/${encodeURIComponent(group.group_id)}`,
-          body,
+      case 'update':
+        return await groupsSet(
+          ctx.client,
+          base,
+          positional[0],
+          f.name,
+          f.description,
+          clearDescription,
+          json,
         );
-        if (json) {
-          emitJson(updated);
-          return 0;
-        }
-        process.stdout.write(`${status.ok(`Updated group ${C.bold}${updated.name}${C.reset}`)}\n`);
-        return 0;
-      }
 
       case 'rm':
       case 'remove-group':
-      case 'delete': {
-        const ref = positional[0];
-        if (!ref) return missing('a group id or name');
-        const group = await resolveGroup(ctx.client, base, ref);
-        if (!group) return 1;
-        if (!yes) {
-          const ok = await confirm(
-            `Delete group ${C.bold}${group.name}${C.reset}? Every role it grants goes with it.`,
-            false,
-            { onEndOfInput: false },
-          );
-          if (!ok) {
-            process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
-            return 0;
-          }
-        }
-        await ctx.client.delete(`${base}/${encodeURIComponent(group.group_id)}`);
-        process.stdout.write(`${status.ok(`Deleted group ${C.bold}${group.name}${C.reset}`)}\n`);
-        return 0;
-      }
+      case 'delete':
+        return await groupsRm(ctx.client, base, positional[0], yes);
 
-      case 'members': {
-        const ref = positional[0];
-        if (!ref) return missing('a group id or name');
-        const group = await resolveGroup(ctx.client, base, ref);
-        if (!group) return 1;
-        const { members } = await ctx.client.get<{ members: GroupMemberRow[] }>(
-          `${base}/${encodeURIComponent(group.group_id)}/members`,
-        );
-        if (json) {
-          emitJson(members);
-          return 0;
-        }
-        if (members.length === 0) {
-          process.stdout.write(`\n  ${C.dim}${group.name} has no members.${C.reset}\n\n`);
-          return 0;
-        }
-        const emails = await emailMap(ctx.client, ctx.accountId);
-        const label = (m: GroupMemberRow) => emails.get(m.user_id) ?? m.user_id;
-        const w = Math.max(...members.map((m) => label(m).length), 6);
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}${pad('MEMBER', w)}   ${pad('ADDED', 10)}   USER ID${C.reset}\n`,
-        );
-        for (const m of members) {
-          process.stdout.write(
-            `  ${pad(label(m), w)}   ${pad(m.added_at.slice(0, 10), 10)}   ${C.faded}${m.user_id}${C.reset}\n`,
-          );
-        }
-        process.stdout.write(
-          `\n  ${C.dim}${members.length} member${members.length === 1 ? '' : 's'} in ${group.name}${C.reset}\n\n`,
-        );
-        return 0;
-      }
+      case 'members':
+        return await groupsMembers(ctx.client, ctx.accountId, base, positional[0], json);
 
-      case 'add': {
-        const ref = positional[0];
-        if (!ref) return missing('a group id or name');
-        const who = positional.slice(1);
-        if (who.length === 0) return missing('at least one user id or email');
-        const group = await resolveGroup(ctx.client, base, ref);
-        if (!group) return 1;
-        const userIds: string[] = [];
-        for (const w of who) {
-          const id = await resolveUserId(ctx.client, ctx.accountId, w);
-          if (!id) return 1;
-          userIds.push(id);
-        }
-        const result = await ctx.client.post<{ added: number }>(
-          `${base}/${encodeURIComponent(group.group_id)}/members`,
-          { userIds },
-        );
-        if (json) {
-          emitJson(result);
-          return 0;
-        }
-        process.stdout.write(
-          `${status.ok(`${result.added} added to ${C.bold}${group.name}${C.reset}${result.added < userIds.length ? ` ${C.faded}(${userIds.length - result.added} already a member)${C.reset}` : ''}`)}\n`,
-        );
-        return 0;
-      }
+      case 'add':
+        return await groupsAdd(ctx.client, ctx.accountId, base, positional[0], positional.slice(1), json);
 
-      case 'remove': {
-        const ref = positional[0];
-        if (!ref) return missing('a group id or name');
-        const who = positional[1];
-        if (!who) return missing('a user id or email');
-        const group = await resolveGroup(ctx.client, base, ref);
-        if (!group) return 1;
-        const userId = await resolveUserId(ctx.client, ctx.accountId, who);
-        if (!userId) return 1;
-        await ctx.client.delete(
-          `${base}/${encodeURIComponent(group.group_id)}/members/${encodeURIComponent(userId)}`,
-        );
-        process.stdout.write(
-          `${status.ok(`Removed ${C.bold}${who}${C.reset} from ${C.bold}${group.name}${C.reset}`)}\n`,
-        );
-        return 0;
-      }
+      case 'remove':
+        return await groupsRemove(ctx.client, ctx.accountId, base, positional[0], positional[1]);
 
       case 'projects':
-      case 'grants': {
-        const ref = positional[0];
-        if (!ref) return missing('a group id or name');
-        const group = await resolveGroup(ctx.client, base, ref);
-        if (!group) return 1;
-        const { grants } = await ctx.client.get<{ grants: GroupProjectGrant[] }>(
-          `${base}/${encodeURIComponent(group.group_id)}/project-grants`,
-        );
-        if (json) {
-          emitJson(grants);
-          return 0;
-        }
-        if (grants.length === 0) {
-          process.stdout.write(
-            `\n  ${C.dim}${group.name} reaches no projects. Grant one with ` +
-              `${C.reset}${C.cyan}kortix access grant --group ${group.group_id} --role member --project <id>${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const nameW = Math.max(...grants.map((g) => g.project_name.length), 7);
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}${pad('PROJECT', nameW)}   ${pad('ROLE', 8)}   ${pad('EXPIRES', 10)}   PROJECT ID${C.reset}\n`,
-        );
-        for (const g of grants) {
-          process.stdout.write(
-            `  ${pad(g.project_name, nameW)}   ${pad(g.role, 8)}   ` +
-              `${pad(g.expires_at ? g.expires_at.slice(0, 10) : 'never', 10)}   ${C.faded}${g.project_id}${C.reset}\n`,
-          );
-        }
-        process.stdout.write(
-          `\n  ${C.dim}${grants.length} project${grants.length === 1 ? '' : 's'}${C.reset}\n\n`,
-        );
-        return 0;
-      }
+      case 'grants':
+        return await groupsProjects(ctx.client, base, positional[0], json);
 
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
@@ -358,6 +177,260 @@ export async function runGroups(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+// ── groups ls ──────────────────────────────────────────────────────────────
+
+async function groupsLs(client: ApiClient, base: string, json: boolean): Promise<number> {
+  const { groups } = await client.get<{ groups: GroupRow[] }>(base);
+  if (json) {
+    emitJson(groups);
+    return 0;
+  }
+  if (groups.length === 0) {
+    process.stdout.write(
+      `\n  ${C.dim}No groups. Create one with ${C.reset}${C.cyan}kortix groups create <name>${C.reset}\n\n`,
+    );
+    return 0;
+  }
+  const nameW = Math.max(...groups.map((g) => g.name.length), 4);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('NAME', nameW)}   ${pad('MEMBERS', 7)}   ${pad('PROJECTS', 8)}   ${pad('SOURCE', 6)}   GROUP ID${C.reset}\n`,
+  );
+  for (const g of groups) {
+    process.stdout.write(
+      `  ${pad(g.name, nameW)}   ${pad(String(g.member_count ?? 0), 7)}   ` +
+        `${pad(String(g.project_count ?? 0), 8)}   ${pad(g.source ?? 'local', 6)}   ` +
+        `${C.faded}${g.group_id}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${groups.length} group${groups.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+// ── groups create ──────────────────────────────────────────────────────────
+
+async function groupsCreate(
+  client: ApiClient,
+  base: string,
+  name: string | undefined,
+  description: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!name) return missing('a group name');
+  const group = await client.post<GroupRow>(base, {
+    name,
+    ...(description !== undefined ? { description } : {}),
+  });
+  if (json) {
+    emitJson(group);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Created group ${C.bold}${group.name}${C.reset}  ${C.faded}${group.group_id}${C.reset}`)}\n`,
+  );
+  process.stdout.write(
+    `  ${C.dim}Add people with ${C.reset}${C.cyan}kortix groups add ${group.name} <email>${C.reset}\n`,
+  );
+  return 0;
+}
+
+// ── groups set / rm ────────────────────────────────────────────────────────
+
+async function groupsSet(
+  client: ApiClient,
+  base: string,
+  ref: string | undefined,
+  name: string | undefined,
+  description: string | undefined,
+  clearDescription: boolean,
+  json: boolean,
+): Promise<number> {
+  if (!ref) return missing('a group id or name');
+  if (name === undefined && description === undefined && !clearDescription) {
+    return missing('--name, --description or --no-description');
+  }
+  if (description !== undefined && clearDescription) {
+    return fail('--description and --no-description are mutually exclusive.');
+  }
+  const group = await resolveGroup(client, base, ref);
+  if (!group) return 1;
+  const body: Record<string, unknown> = {};
+  if (name !== undefined) body.name = name;
+  if (description !== undefined) body.description = description;
+  if (clearDescription) body.description = null;
+  const updated = await client.patch<GroupRow>(`${base}/${encodeURIComponent(group.group_id)}`, body);
+  if (json) {
+    emitJson(updated);
+    return 0;
+  }
+  process.stdout.write(`${status.ok(`Updated group ${C.bold}${updated.name}${C.reset}`)}\n`);
+  return 0;
+}
+
+async function groupsRm(
+  client: ApiClient,
+  base: string,
+  ref: string | undefined,
+  yes: boolean,
+): Promise<number> {
+  if (!ref) return missing('a group id or name');
+  const group = await resolveGroup(client, base, ref);
+  if (!group) return 1;
+  if (!yes) {
+    const ok = await confirm(
+      `Delete group ${C.bold}${group.name}${C.reset}? Every role it grants goes with it.`,
+      false,
+      { onEndOfInput: false },
+    );
+    if (!ok) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+  }
+  await client.delete(`${base}/${encodeURIComponent(group.group_id)}`);
+  process.stdout.write(`${status.ok(`Deleted group ${C.bold}${group.name}${C.reset}`)}\n`);
+  return 0;
+}
+
+// ── groups members / add / remove ──────────────────────────────────────────
+
+async function groupsMembers(
+  client: ApiClient,
+  accountId: string,
+  base: string,
+  ref: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!ref) return missing('a group id or name');
+  const group = await resolveGroup(client, base, ref);
+  if (!group) return 1;
+  const { members } = await client.get<{ members: GroupMemberRow[] }>(
+    `${base}/${encodeURIComponent(group.group_id)}/members`,
+  );
+  if (json) {
+    emitJson(members);
+    return 0;
+  }
+  if (members.length === 0) {
+    process.stdout.write(`\n  ${C.dim}${group.name} has no members.${C.reset}\n\n`);
+    return 0;
+  }
+  const emails = await emailMap(client, accountId);
+  const label = (m: GroupMemberRow) => emails.get(m.user_id) ?? m.user_id;
+  const w = Math.max(...members.map((m) => label(m).length), 6);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('MEMBER', w)}   ${pad('ADDED', 10)}   USER ID${C.reset}\n`,
+  );
+  for (const m of members) {
+    process.stdout.write(
+      `  ${pad(label(m), w)}   ${pad(m.added_at.slice(0, 10), 10)}   ${C.faded}${m.user_id}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${members.length} member${members.length === 1 ? '' : 's'} in ${group.name}${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+async function groupsAdd(
+  client: ApiClient,
+  accountId: string,
+  base: string,
+  ref: string | undefined,
+  who: string[],
+  json: boolean,
+): Promise<number> {
+  if (!ref) return missing('a group id or name');
+  if (who.length === 0) return missing('at least one user id or email');
+  const group = await resolveGroup(client, base, ref);
+  if (!group) return 1;
+  const userIds: string[] = [];
+  for (const w of who) {
+    const id = await resolveUserId(client, accountId, w);
+    if (!id) return 1;
+    userIds.push(id);
+  }
+  const result = await client.post<{ added: number }>(
+    `${base}/${encodeURIComponent(group.group_id)}/members`,
+    { userIds },
+  );
+  if (json) {
+    emitJson(result);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${result.added} added to ${C.bold}${group.name}${C.reset}${result.added < userIds.length ? ` ${C.faded}(${userIds.length - result.added} already a member)${C.reset}` : ''}`)}\n`,
+  );
+  return 0;
+}
+
+async function groupsRemove(
+  client: ApiClient,
+  accountId: string,
+  base: string,
+  ref: string | undefined,
+  who: string | undefined,
+): Promise<number> {
+  if (!ref) return missing('a group id or name');
+  if (!who) return missing('a user id or email');
+  const group = await resolveGroup(client, base, ref);
+  if (!group) return 1;
+  const userId = await resolveUserId(client, accountId, who);
+  if (!userId) return 1;
+  await client.delete(
+    `${base}/${encodeURIComponent(group.group_id)}/members/${encodeURIComponent(userId)}`,
+  );
+  process.stdout.write(
+    `${status.ok(`Removed ${C.bold}${who}${C.reset} from ${C.bold}${group.name}${C.reset}`)}\n`,
+  );
+  return 0;
+}
+
+// ── groups projects ────────────────────────────────────────────────────────
+
+async function groupsProjects(
+  client: ApiClient,
+  base: string,
+  ref: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!ref) return missing('a group id or name');
+  const group = await resolveGroup(client, base, ref);
+  if (!group) return 1;
+  const { grants } = await client.get<{ grants: GroupProjectGrant[] }>(
+    `${base}/${encodeURIComponent(group.group_id)}/project-grants`,
+  );
+  if (json) {
+    emitJson(grants);
+    return 0;
+  }
+  if (grants.length === 0) {
+    process.stdout.write(
+      `\n  ${C.dim}${group.name} reaches no projects. Grant one with ` +
+        `${C.reset}${C.cyan}kortix access grant --group ${group.group_id} --role member --project <id>${C.reset}\n\n`,
+    );
+    return 0;
+  }
+  const nameW = Math.max(...grants.map((g) => g.project_name.length), 7);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('PROJECT', nameW)}   ${pad('ROLE', 8)}   ${pad('EXPIRES', 10)}   PROJECT ID${C.reset}\n`,
+  );
+  for (const g of grants) {
+    process.stdout.write(
+      `  ${pad(g.project_name, nameW)}   ${pad(g.role, 8)}   ` +
+        `${pad(g.expires_at ? g.expires_at.slice(0, 10) : 'never', 10)}   ${C.faded}${g.project_id}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${grants.length} project${grants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
+  return 0;
 }
 
 /** Resolve `<group>` — a uuid passes through after a lookup, anything else is

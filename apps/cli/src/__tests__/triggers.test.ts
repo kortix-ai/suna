@@ -357,6 +357,30 @@ describe('kortix triggers — monitors', () => {
     });
   });
 
+  test('subcommand --help prints usage and exits 0 (splitHelp)', async () => {
+    for (const args of [['--help'], ['ls', '--help'], ['add', 'x', '-h'], ['rm', 'x', '--help']]) {
+      const result = await runCli(['triggers', ...args]);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('Usage: kortix triggers');
+      expect(result.stderr).not.toContain('unknown subcommand');
+    }
+  });
+
+  test('a missing slug is the shared arg error: exit 2, no HTTP call', async () => {
+    for (const args of [['add'], ['rm'], ['fire'], ['enable'], ['disable'], ['info']]) {
+      const result = await runCli(['triggers', ...args]);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('Pass a trigger slug.');
+    }
+    expect(manifestText()).not.toContain('slug:');
+  });
+
+  test('rm of an unknown local slug exits 1 with the manifest error', async () => {
+    const result = await runCli(['triggers', 'rm', 'nope']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('No [[triggers]] "nope" in kortix.yaml.');
+  });
+
   test('cron and webhook adds are unchanged', async () => {
     const cron = await runCli([
       'triggers', 'add', 'daily-digest', '--type', 'cron', '--cron', '0 0 9 * * 1-5',

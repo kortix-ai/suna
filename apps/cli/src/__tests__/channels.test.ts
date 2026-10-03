@@ -310,6 +310,75 @@ describe('kortix channels status', () => {
   });
 });
 
+// Characterization for the KRTX-1334 split: `channels manifest` builds the
+// Slack app manifest entirely client-side (no API call) and prints it — an
+// operator pastes it into api.slack.com verbatim. Pin the whole document byte
+// for byte so a restructure cannot drift a scope or the webhook URL.
+describe('kortix channels manifest', () => {
+  test('prints the full manifest JSON built client-side, no API call', async () => {
+    const code = await runChannels(['manifest']);
+    expect(code).toBe(0);
+    expect(stdout).toBe(
+      JSON.stringify(
+        {
+          display_information: {
+            name: 'Kortix',
+            description: 'Run a Kortix project from Slack',
+            background_color: '#0a0a0a',
+          },
+          features: { bot_user: { display_name: 'kortix', always_online: true } },
+          oauth_config: {
+            scopes: {
+              bot: [
+                'app_mentions:read',
+                'channels:history',
+                'channels:read',
+                'channels:join',
+                'chat:write',
+                'chat:write.public',
+                'files:read',
+                'files:write',
+                'groups:history',
+                'groups:read',
+                'im:history',
+                'im:read',
+                'im:write',
+                'mpim:history',
+                'mpim:read',
+                'reactions:read',
+                'reactions:write',
+                'users:read',
+              ],
+            },
+          },
+          settings: {
+            event_subscriptions: {
+              request_url: 'https://api.test/v1/webhooks/slack/proj_1',
+              bot_events: [
+                'app_mention',
+                'message.im',
+                'message.channels',
+                'message.groups',
+                'message.mpim',
+                'reaction_added',
+                'reaction_removed',
+                'member_joined_channel',
+                'file_shared',
+              ],
+            },
+            org_deploy_enabled: false,
+            socket_mode_enabled: false,
+            token_rotation_enabled: false,
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    expect(requests).toEqual([]);
+  });
+});
+
 describe('kortix channels --platform teams', () => {
   test('status not connected → points at `kortix channels connect --platform teams`', async () => {
     const code = await runChannels(['status', '--platform', 'teams']);

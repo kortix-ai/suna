@@ -71,6 +71,27 @@ function startServer(): string {
       if (url.pathname === `/v1/projects/${PROJECT}` && req.method === 'GET') {
         return Response.json({ project_id: PROJECT, account_id: 'account_1', name: 'Access' });
       }
+      if (url.pathname === `${base}/access` && req.method === 'GET') {
+        return Response.json({
+          members: [
+            {
+              user_id: 'user_9',
+              email: 'newbie@corp.com',
+              account_role: 'member',
+              project_role: 'member',
+              effective_project_role: 'member',
+              has_implicit_access: false,
+              effective_source: null,
+              joined_at: '2026-01-01T00:00:00.000Z',
+              expires_at: null,
+            },
+          ],
+          can_manage: true,
+        });
+      }
+      if (url.pathname === `${base}/access/pending-invites/${INVITE}` && req.method === 'DELETE') {
+        return Response.json({ ok: true });
+      }
       if (url.pathname === `${base}/access/pending-invites/${INVITE}/resend` && req.method === 'POST') {
         return Response.json({
           ok: true,
@@ -274,5 +295,31 @@ describe('kortix access — invites + access requests', () => {
     const r = await runCli(['access', 'requests', 'nope', '--project', PROJECT], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('unknown requests action "nope"');
+  });
+
+  test('ls renders the project member table, and --json emits it raw', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['access', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/projects/${PROJECT}/access`);
+    expect(r.stdout).toContain('MEMBER');
+    expect(r.stdout).toContain('newbie@corp.com');
+    expect(r.stdout).toContain('1 member');
+
+    const raw = await runCli(['access', 'ls', '--json', '--project', PROJECT], config);
+    expect(raw.code).toBe(0);
+    expect(JSON.parse(raw.stdout).members[0].email).toBe('newbie@corp.com');
+  });
+
+  test('cancel DELETEs the pending invite', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['access', 'cancel', INVITE, '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'DELETE',
+      path: `/v1/projects/${PROJECT}/access/pending-invites/${INVITE}`,
+      body: null,
+    });
+    expect(r.stdout).toContain(`Cancelled invite ${INVITE}`);
   });
 });

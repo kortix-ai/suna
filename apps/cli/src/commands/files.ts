@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import type { ApiClient } from '../api/client.ts';
+import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
@@ -133,207 +135,36 @@ export async function runFiles(argv: string[]): Promise<number> {
   try {
     switch (sub) {
       case 'ls':
-      case 'list': {
-        const p = positional[0];
-        const qs = [refQ, p ? `path=${encodeURIComponent(p)}` : ''].filter(Boolean).join('&');
-        const items = await ctx.client.get<FileEntry[]>(`${base}/files${qs ? `?${qs}` : ''}`);
-        if (json) {
-          emitJson(items);
-          return 0;
-        }
-        if (items.length === 0) {
-          process.stdout.write(`  ${C.dim}No files${p ? ` under ${p}` : ''}.${C.reset}\n`);
-          return 0;
-        }
-        process.stdout.write('\n');
-        for (const f of items) {
-          process.stdout.write(`  ${f.path}${C.faded}${f.size != null ? `  ${humanSize(f.size)}` : ''}${C.reset}\n`);
-        }
-        process.stdout.write(`\n  ${C.dim}${items.length} file${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
-        return 0;
-      }
+      case 'list':
+        return await filesLs(ctx.client, base, refQ, positional[0], json);
+
       case 'cat':
-      case 'read': {
-        const p = positional[0];
-        if (!p) return missing('a file path');
-        const qs = [`path=${encodeURIComponent(p)}`, refQ].filter(Boolean).join('&');
-        const resp = await ctx.client.get<{ path: string; ref: string; content: string }>(
-          `${base}/files/content?${qs}`,
-        );
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        process.stdout.write(resp.content);
-        if (!resp.content.endsWith('\n')) process.stdout.write('\n');
-        return 0;
-      }
-      case 'search': {
-        const q = positional[0];
-        if (!q) return missing('a search query');
-        const qs = [
-          `q=${encodeURIComponent(q)}`,
-          content ? 'content=1' : '',
-          refQ,
-          limit ? `limit=${encodeURIComponent(limit)}` : '',
-        ]
-          .filter(Boolean)
-          .join('&');
-        const resp = await ctx.client.get<{
-          results: { path: string; line_number?: number; line_text?: string }[];
-        }>(`${base}/files/search?${qs}`);
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        if (resp.results.length === 0) {
-          process.stdout.write(`  ${C.dim}No matches.${C.reset}\n`);
-          return 0;
-        }
-        process.stdout.write('\n');
-        for (const r of resp.results) {
-          if (r.line_number != null) {
-            process.stdout.write(
-              `  ${C.cyan}${r.path}${C.reset}${C.faded}:${r.line_number}${C.reset}  ${r.line_text?.trim() ?? ''}\n`,
-            );
-          } else {
-            process.stdout.write(`  ${r.path}\n`);
-          }
-        }
-        process.stdout.write(`\n  ${C.dim}${resp.results.length} match${resp.results.length === 1 ? '' : 'es'}${C.reset}\n\n`);
-        return 0;
-      }
-      case 'history': {
-        const p = positional[0];
-        if (!p) return missing('a file path');
-        const qs = [
-          `path=${encodeURIComponent(p)}`,
-          refQ,
-          limit ? `limit=${encodeURIComponent(limit)}` : '',
-        ]
-          .filter(Boolean)
-          .join('&');
-        const resp = await ctx.client.get<{ commits: CommitSummary[]; hasMore: boolean }>(
-          `${base}/files/history?${qs}`,
-        );
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        printCommitList(resp.commits, resp.hasMore);
-        return 0;
-      }
-      case 'branches': {
-        // The server excludes auto-created session branches (named after the
-        // session's own UUID) and caps the result by default (see
-        // apps/api/src/projects/git/branches.ts). This command is the one
-        // real "give me everything" listing — a human reading a table, run
-        // once per invocation, not polled — so it opts back into the full
-        // remote to keep its output unchanged.
-        const resp = await ctx.client.get<{ default_branch: string; branches: BranchInfo[] }>(
-          `${base}/branches?include_session_branches=true&limit=2000`,
-        );
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        const nameW = Math.max(...resp.branches.map((b) => b.name.length), 6);
-        process.stdout.write('\n');
-        process.stdout.write(`  ${C.dim}${pad('BRANCH', nameW)}   TIP       AHEAD/BEHIND   SUBJECT${C.reset}\n`);
-        for (const b of resp.branches) {
-          const marker = b.is_default ? `${C.green}●${C.reset} ` : '  ';
-          const ab = `${b.ahead ?? '?'}/${b.behind ?? '?'}`;
-          process.stdout.write(
-            `${marker}${pad(b.name, nameW)}   ${C.faded}${b.tip_short}${C.reset}  ${pad(ab, 12)}   ${C.dim}${trim(b.subject, 50)}${C.reset}\n`,
-          );
-        }
-        process.stdout.write(`\n  ${C.dim}default: ${resp.default_branch} · ${resp.branches.length} branches${C.reset}\n\n`);
-        return 0;
-      }
+      case 'read':
+        return await filesCat(ctx.client, base, refQ, positional[0], json);
+
+      case 'search':
+        return await filesSearch(ctx.client, base, refQ, positional[0], content, limit, json);
+
+      case 'history':
+        return await filesHistory(ctx.client, base, refQ, positional[0], limit, json);
+
+      case 'branches':
+        return await filesBranches(ctx.client, base, json);
+
       case 'commits':
-      case 'log': {
-        const qs = [
-          refQ,
-          path ? `path=${encodeURIComponent(path)}` : '',
-          limit ? `limit=${encodeURIComponent(limit)}` : '',
-        ]
-          .filter(Boolean)
-          .join('&');
-        const resp = await ctx.client.get<{ commits: CommitSummary[]; hasMore: boolean }>(
-          `${base}/commits${qs ? `?${qs}` : ''}`,
-        );
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        printCommitList(resp.commits, resp.hasMore);
-        return 0;
-      }
-      case 'show': {
-        const sha = positional[0];
-        if (!sha) return missing('a commit sha');
-        const c = await ctx.client.get<CommitDetail>(`${base}/commits/${encodeURIComponent(sha)}`);
-        if (json) {
-          emitJson(c);
-          return 0;
-        }
-        process.stdout.write('\n');
-        process.stdout.write(`  ${C.yellow}commit ${c.hash}${C.reset}\n`);
-        process.stdout.write(`  ${C.dim}Author: ${c.author_name} <${c.author_email}>${C.reset}\n`);
-        process.stdout.write(`  ${C.dim}Date:   ${c.committed_at}${C.reset}\n\n`);
-        process.stdout.write(`  ${C.bold}${c.subject}${C.reset}\n`);
-        if (c.body.trim()) process.stdout.write(`\n  ${c.body.split('\n').join('\n  ')}\n`);
-        process.stdout.write('\n');
-        for (const f of c.files) {
-          const sym =
-            f.status === 'added' ? C.green + 'A' : f.status === 'deleted' ? C.red + 'D' : C.cyan + 'M';
-          const rename = f.old_path ? `${f.old_path} → ` : '';
-          process.stdout.write(
-            `  ${sym}${C.reset} ${rename}${f.path}  ${C.green}+${f.additions}${C.reset} ${C.red}-${f.deletions}${C.reset}\n`,
-          );
-        }
-        process.stdout.write(`\n  ${C.dim}${c.files.length} file${c.files.length === 1 ? '' : 's'} changed${C.reset}\n\n`);
-        return 0;
-      }
-      case 'diff': {
-        const sha = positional[0];
-        if (!sha) return missing('a commit sha');
-        const qs = path ? `?path=${encodeURIComponent(path)}` : '';
-        const resp = await ctx.client.get<{ patch: string }>(
-          `${base}/commits/${encodeURIComponent(sha)}/diff${qs}`,
-        );
-        if (json) {
-          emitJson({ sha, path: path ?? null, patch: resp.patch });
-          return 0;
-        }
-        process.stdout.write(resp.patch.endsWith('\n') ? resp.patch : `${resp.patch}\n`);
-        return 0;
-      }
+      case 'log':
+        return await filesCommits(ctx.client, base, refQ, path, limit, json);
+
+      case 'show':
+        return await filesShow(ctx.client, base, positional[0], json);
+
+      case 'diff':
+        return await filesDiff(ctx.client, base, positional[0], path, json);
+
       case 'download':
-      case 'archive': {
-        if (!out) return missing('an output file with -o <out.zip>');
-        // The archive route streams `application/zip`, so it cannot go through
-        // the JSON client. `fetchProjectArchive` is the SDK's own binary read
-        // for exactly this route; scoping it to the host's auth is what binds
-        // its token + backend url.
-        const blob = await withKortixScope(ctx.auth, () =>
-          kortixFromAuth(ctx.auth).project(ctx.projectId).files.archive(ref ?? '', path),
-        );
-        // Read the body to completion FIRST, then write. Handing a streaming
-        // response straight to a file writer can hang; a Uint8Array cannot.
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        const target = resolve(process.cwd(), out);
-        await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, bytes);
-        if (json) {
-          emitJson({ path: target, bytes: bytes.byteLength, ref: ref ?? null, subtree: path ?? null });
-          return 0;
-        }
-        process.stdout.write(
-          `${status.ok(`Wrote ${target} ${C.faded}(${humanSize(bytes.byteLength)})${C.reset}`)}\n`,
-        );
-        return 0;
-      }
+      case 'archive':
+        return await filesDownload(ctx, out, ref, path, json);
+
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
         return 2;
@@ -342,6 +173,278 @@ export async function runFiles(argv: string[]): Promise<number> {
     return surfaceApiError(err);
   }
 }
+
+// ── files ls ───────────────────────────────────────────────────────────────
+
+async function filesLs(
+  client: ApiClient,
+  base: string,
+  refQ: string,
+  p: string | undefined,
+  json: boolean,
+): Promise<number> {
+  const qs = [refQ, p ? `path=${encodeURIComponent(p)}` : ''].filter(Boolean).join('&');
+  const items = await client.get<FileEntry[]>(`${base}/files${qs ? `?${qs}` : ''}`);
+  if (json) {
+    emitJson(items);
+    return 0;
+  }
+  if (items.length === 0) {
+    process.stdout.write(`  ${C.dim}No files${p ? ` under ${p}` : ''}.${C.reset}\n`);
+    return 0;
+  }
+  process.stdout.write('\n');
+  for (const f of items) {
+    process.stdout.write(`  ${f.path}${C.faded}${f.size != null ? `  ${humanSize(f.size)}` : ''}${C.reset}\n`);
+  }
+  process.stdout.write(`\n  ${C.dim}${items.length} file${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
+  return 0;
+}
+
+// ── files cat ──────────────────────────────────────────────────────────────
+
+async function filesCat(
+  client: ApiClient,
+  base: string,
+  refQ: string,
+  p: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!p) return missing('a file path');
+  const qs = [`path=${encodeURIComponent(p)}`, refQ].filter(Boolean).join('&');
+  const resp = await client.get<{ path: string; ref: string; content: string }>(
+    `${base}/files/content?${qs}`,
+  );
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(resp.content);
+  if (!resp.content.endsWith('\n')) process.stdout.write('\n');
+  return 0;
+}
+
+// ── files search ───────────────────────────────────────────────────────────
+
+async function filesSearch(
+  client: ApiClient,
+  base: string,
+  refQ: string,
+  q: string | undefined,
+  content: boolean,
+  limit: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!q) return missing('a search query');
+  const qs = [
+    `q=${encodeURIComponent(q)}`,
+    content ? 'content=1' : '',
+    refQ,
+    limit ? `limit=${encodeURIComponent(limit)}` : '',
+  ]
+    .filter(Boolean)
+    .join('&');
+  const resp = await client.get<{
+    results: { path: string; line_number?: number; line_text?: string }[];
+  }>(`${base}/files/search?${qs}`);
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  if (resp.results.length === 0) {
+    process.stdout.write(`  ${C.dim}No matches.${C.reset}\n`);
+    return 0;
+  }
+  process.stdout.write('\n');
+  for (const r of resp.results) {
+    if (r.line_number != null) {
+      process.stdout.write(
+        `  ${C.cyan}${r.path}${C.reset}${C.faded}:${r.line_number}${C.reset}  ${r.line_text?.trim() ?? ''}\n`,
+      );
+    } else {
+      process.stdout.write(`  ${r.path}\n`);
+    }
+  }
+  process.stdout.write(`\n  ${C.dim}${resp.results.length} match${resp.results.length === 1 ? '' : 'es'}${C.reset}\n\n`);
+  return 0;
+}
+
+// ── files history / commits ────────────────────────────────────────────────
+
+async function filesHistory(
+  client: ApiClient,
+  base: string,
+  refQ: string,
+  p: string | undefined,
+  limit: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!p) return missing('a file path');
+  const qs = [
+    `path=${encodeURIComponent(p)}`,
+    refQ,
+    limit ? `limit=${encodeURIComponent(limit)}` : '',
+  ]
+    .filter(Boolean)
+    .join('&');
+  const resp = await client.get<{ commits: CommitSummary[]; hasMore: boolean }>(
+    `${base}/files/history?${qs}`,
+  );
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  printCommitList(resp.commits, resp.hasMore);
+  return 0;
+}
+
+async function filesCommits(
+  client: ApiClient,
+  base: string,
+  refQ: string,
+  path: string | undefined,
+  limit: string | undefined,
+  json: boolean,
+): Promise<number> {
+  const qs = [
+    refQ,
+    path ? `path=${encodeURIComponent(path)}` : '',
+    limit ? `limit=${encodeURIComponent(limit)}` : '',
+  ]
+    .filter(Boolean)
+    .join('&');
+  const resp = await client.get<{ commits: CommitSummary[]; hasMore: boolean }>(
+    `${base}/commits${qs ? `?${qs}` : ''}`,
+  );
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  printCommitList(resp.commits, resp.hasMore);
+  return 0;
+}
+
+// ── files branches ─────────────────────────────────────────────────────────
+
+async function filesBranches(
+  client: ApiClient,
+  base: string,
+  json: boolean,
+): Promise<number> {
+  // The server excludes auto-created session branches (named after the
+  // session's own UUID) and caps the result by default (see
+  // apps/api/src/projects/git/branches.ts). This command is the one
+  // real "give me everything" listing — a human reading a table, run
+  // once per invocation, not polled — so it opts back into the full
+  // remote to keep its output unchanged.
+  const resp = await client.get<{ default_branch: string; branches: BranchInfo[] }>(
+    `${base}/branches?include_session_branches=true&limit=2000`,
+  );
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  const nameW = Math.max(...resp.branches.map((b) => b.name.length), 6);
+  process.stdout.write('\n');
+  process.stdout.write(`  ${C.dim}${pad('BRANCH', nameW)}   TIP       AHEAD/BEHIND   SUBJECT${C.reset}\n`);
+  for (const b of resp.branches) {
+    const marker = b.is_default ? `${C.green}●${C.reset} ` : '  ';
+    const ab = `${b.ahead ?? '?'}/${b.behind ?? '?'}`;
+    process.stdout.write(
+      `${marker}${pad(b.name, nameW)}   ${C.faded}${b.tip_short}${C.reset}  ${pad(ab, 12)}   ${C.dim}${trim(b.subject, 50)}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(`\n  ${C.dim}default: ${resp.default_branch} · ${resp.branches.length} branches${C.reset}\n\n`);
+  return 0;
+}
+
+// ── files show / diff ──────────────────────────────────────────────────────
+
+async function filesShow(
+  client: ApiClient,
+  base: string,
+  sha: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!sha) return missing('a commit sha');
+  const c = await client.get<CommitDetail>(`${base}/commits/${encodeURIComponent(sha)}`);
+  if (json) {
+    emitJson(c);
+    return 0;
+  }
+  process.stdout.write('\n');
+  process.stdout.write(`  ${C.yellow}commit ${c.hash}${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Author: ${c.author_name} <${c.author_email}>${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Date:   ${c.committed_at}${C.reset}\n\n`);
+  process.stdout.write(`  ${C.bold}${c.subject}${C.reset}\n`);
+  if (c.body.trim()) process.stdout.write(`\n  ${c.body.split('\n').join('\n  ')}\n`);
+  process.stdout.write('\n');
+  for (const f of c.files) {
+    const sym =
+      f.status === 'added' ? C.green + 'A' : f.status === 'deleted' ? C.red + 'D' : C.cyan + 'M';
+    const rename = f.old_path ? `${f.old_path} → ` : '';
+    process.stdout.write(
+      `  ${sym}${C.reset} ${rename}${f.path}  ${C.green}+${f.additions}${C.reset} ${C.red}-${f.deletions}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(`\n  ${C.dim}${c.files.length} file${c.files.length === 1 ? '' : 's'} changed${C.reset}\n\n`);
+  return 0;
+}
+
+async function filesDiff(
+  client: ApiClient,
+  base: string,
+  sha: string | undefined,
+  path: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!sha) return missing('a commit sha');
+  const qs = path ? `?path=${encodeURIComponent(path)}` : '';
+  const resp = await client.get<{ patch: string }>(
+    `${base}/commits/${encodeURIComponent(sha)}/diff${qs}`,
+  );
+  if (json) {
+    emitJson({ sha, path: path ?? null, patch: resp.patch });
+    return 0;
+  }
+  process.stdout.write(resp.patch.endsWith('\n') ? resp.patch : `${resp.patch}\n`);
+  return 0;
+}
+
+// ── files download ─────────────────────────────────────────────────────────
+
+async function filesDownload(
+  ctx: { auth: Auth; projectId: string },
+  out: string | undefined,
+  ref: string | undefined,
+  path: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!out) return missing('an output file with -o <out.zip>');
+  // The archive route streams `application/zip`, so it cannot go through
+  // the JSON client. `fetchProjectArchive` is the SDK's own binary read
+  // for exactly this route; scoping it to the host's auth is what binds
+  // its token + backend url.
+  const blob = await withKortixScope(ctx.auth, () =>
+    kortixFromAuth(ctx.auth).project(ctx.projectId).files.archive(ref ?? '', path),
+  );
+  // Read the body to completion FIRST, then write. Handing a streaming
+  // response straight to a file writer can hang; a Uint8Array cannot.
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const target = resolve(process.cwd(), out);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, bytes);
+  if (json) {
+    emitJson({ path: target, bytes: bytes.byteLength, ref: ref ?? null, subtree: path ?? null });
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Wrote ${target} ${C.faded}(${humanSize(bytes.byteLength)})${C.reset}`)}\n`,
+  );
+  return 0;
+}
+
+// ── shared renderers ───────────────────────────────────────────────────────
 
 function printCommitList(commits: CommitSummary[], hasMore: boolean): void {
   if (commits.length === 0) {
@@ -358,7 +461,6 @@ function printCommitList(commits: CommitSummary[], hasMore: boolean): void {
     `\n  ${C.dim}${commits.length} commit${commits.length === 1 ? '' : 's'}${hasMore ? ' (more available — raise --limit)' : ''}${C.reset}\n\n`,
   );
 }
-
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;

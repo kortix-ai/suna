@@ -270,6 +270,38 @@ describe('kortix groups', () => {
     expect(miss.stderr).toContain('No group "Nope" in this account');
   });
 
+  test('alias verbs dispatch to the same handlers as their canonical names', async () => {
+    const config = boot();
+    const listed = await runCommand(runner, ['list', '--json'], { cwd: tmp, configFile: config });
+    expect(listed.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({ method: 'GET', path: `${IAM}/groups` });
+
+    const created = await runCommand(runner, ['new', 'Design'], { cwd: tmp, configFile: config });
+    expect(created.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({ method: 'POST', path: `${IAM}/groups` });
+
+    const updated = await runCommand(runner, ['update', 'Engineering', '--name', 'Eng'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(updated.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({ method: 'PATCH', path: `${IAM}/groups/${GROUP}` });
+
+    const removed = await runCommand(runner, ['remove-group', 'Engineering', '-y'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(removed.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({ method: 'DELETE', path: `${IAM}/groups/${GROUP}` });
+
+    const granted = await runCommand(runner, ['grants', 'Engineering'], { cwd: tmp, configFile: config });
+    expect(granted.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({
+      method: 'GET',
+      path: `${IAM}/groups/${GROUP}/project-grants`,
+    });
+  });
+
   test('a 409 from the API surfaces its message and exits 1', async () => {
     const config = boot();
     const r = await runCommand(runner, ['create', 'Engineering'], { cwd: tmp, configFile: config });

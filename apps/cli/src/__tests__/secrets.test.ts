@@ -1097,6 +1097,87 @@ describe('kortix secrets delivery', () => {
       'Host and injection flags describe a policy, which only an enforced secret has.',
     );
   });
+
+  test('rejects --consumer outside the broker alias, and an unknown consumer', async () => {
+    // --consumer names the service that spends a none-exposure secret; on any
+    // other exposure there is no spender to name.
+    const onEnvironment = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'environment',
+      '--consumer',
+      'llm-gateway',
+    ]);
+    expect(onEnvironment).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('Pass it with the `broker` alias');
+
+    captureOutput();
+    const unknown = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--consumer',
+      'no-such-service',
+    ]);
+    expect(unknown).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain(
+      '--consumer must be llm-gateway, connector, or http-broker.',
+    );
+  });
+
+  test('rejects a --template without --inject-header, and one without the placeholder', async () => {
+    const orphan = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      'api.anthropic.com',
+      '--template',
+      '{{secret}}',
+    ]);
+    expect(orphan).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--template requires --inject-header.');
+
+    captureOutput();
+    const withoutPlaceholder = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+      '--template',
+      'Bearer static-value',
+    ]);
+    expect(withoutPlaceholder).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--template must contain {{secret}}.');
+  });
+
+  test('delivery accepts the --flag=value spelling of a repeatable flag', async () => {
+    // `takeFlagValues` is the shared helper, which takes `--allow-host=host`
+    // as well as `--allow-host host`; the delivery path must accept both.
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host=api.anthropic.com',
+    ]);
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({
+      strategy: 'egress',
+      egress_policy: {
+        rules: [{ host: 'api.anthropic.com' }],
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+    });
+  });
 });
 
 describe('kortix secrets call', () => {

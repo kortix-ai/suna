@@ -164,29 +164,44 @@ Options:
 Pinning a provider needs the \`project.customize.write\` permission.
 `;
 
+/** The `sandboxes` flags. Values arrive as strings; each use parses its own. */
+interface Flags {
+  timeout?: string;
+  project?: string;
+  host?: string;
+  image?: string;
+  dockerfile?: string;
+  name?: string;
+  cpu?: string;
+  memory?: string;
+  disk?: string;
+  json: boolean;
+  local: boolean;
+  clear: boolean;
+}
+
 export async function runSandboxes(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  const f: Record<string, string | undefined> = {};
-  let json = false;
-  let local = false;
-  let clear = false;
+  let f: Flags;
   try {
-    json = takeFlagBool(rest, ['--json']);
-    local = takeFlagBool(rest, ['--local']);
-    clear = takeFlagBool(rest, ['--clear', '--unpin']);
-    f.timeout = takeFlagValue(rest, ['--timeout']);
-    f.project = takeFlagValue(rest, ['--project']);
-    f.host = takeFlagValue(rest, ['--host']);
-    f.image = takeFlagValue(rest, ['--image']);
-    f.dockerfile = takeFlagValue(rest, ['--dockerfile']);
-    f.name = takeFlagValue(rest, ['--name']);
-    f.cpu = takeFlagValue(rest, ['--cpu']);
-    f.memory = takeFlagValue(rest, ['--memory']);
-    f.disk = takeFlagValue(rest, ['--disk']);
+    f = {
+      json: takeFlagBool(rest, ['--json']),
+      local: takeFlagBool(rest, ['--local']),
+      clear: takeFlagBool(rest, ['--clear', '--unpin']),
+      timeout: takeFlagValue(rest, ['--timeout']),
+      project: takeFlagValue(rest, ['--project']),
+      host: takeFlagValue(rest, ['--host']),
+      image: takeFlagValue(rest, ['--image']),
+      dockerfile: takeFlagValue(rest, ['--dockerfile']),
+      name: takeFlagValue(rest, ['--name']),
+      cpu: takeFlagValue(rest, ['--cpu']),
+      memory: takeFlagValue(rest, ['--memory']),
+      disk: takeFlagValue(rest, ['--disk']),
+    };
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -205,133 +220,35 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   // (It takes its own flags out of `rest` and reads the slug positional itself —
   // `positional` above was computed before --platform/--tag were stripped, so it
   // would mistake a flag VALUE for a slug.)
-  if (sub === 'build' && local) return runSandboxBuildLocal(rest, { json });
+  if (sub === 'build' && f.local) return runSandboxBuildLocal(rest, { json: f.json });
   // `--local` was consumed above, so an unhandled one would otherwise vanish
   // and the command would quietly do the CLOUD thing instead — `sandboxes
   // rebuild --local` silently rebuilding a live snapshot is not a mistake
   // anyone should be able to make by typo.
-  if (local) return fail(`--local only applies to \`sandboxes build\`, not "${sub}".`);
+  if (f.local) return fail(`--local only applies to \`sandboxes build\`, not "${sub}".`);
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}`;
 
-  // Resolve a slug to a project-scoped template_id (needed for PATCH/DELETE/build).
-  const findTemplateId = async (slug: string): Promise<string | null> => {
-    const resp = await ctx.client.get<{ items: SandboxTemplate[] }>(`${base}/sandbox-templates`);
-    return resp.items.find((t) => t.slug === slug)?.template_id ?? null;
-  };
-
   try {
     switch (sub) {
       case 'ls':
-      case 'list': {
-        const resp = await ctx.client.get<{ items: SandboxTemplate[]; default_slug: string | null }>(
-          `${base}/sandbox-templates`,
-        );
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        const slugW = Math.max(...resp.items.map((t) => t.slug.length), 4);
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}${pad('SLUG', slugW)}   STATE       SOURCE     SPEC                       RESOURCES${C.reset}\n`,
-        );
-        for (const t of resp.items) {
-          const spec = t.has_image ? t.image! : t.has_dockerfile ? t.dockerfile_path! : 'platform default';
-          const marker = t.slug === resp.default_slug ? `${C.green}●${C.reset} ` : '  ';
-          process.stdout.write(
-            `${marker}${pad(t.slug, slugW)}   ${stateCell(t.daytona_state, t.ready)}  ${pad(t.source, 9)}  ${pad(trim(spec, 24), 24)}  ${C.faded}${t.cpu}cpu/${t.memory_gb}g/${t.disk_gb}g${C.reset}\n`,
-          );
-        }
-        process.stdout.write(`\n  ${C.dim}${resp.items.length} template${resp.items.length === 1 ? '' : 's'} · default: ${resp.default_slug ?? '—'}${C.reset}\n\n`);
-        return 0;
-      }
+      case 'list':
+        return await sandboxesLs(ctx.client, base, f.json);
       case 'builds':
-      case 'log': {
-        const resp = await ctx.client.get<{ builds: SnapshotBuild[] }>(`${base}/snapshots`);
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        if (resp.builds.length === 0) {
-          process.stdout.write(`  ${C.dim}No builds yet.${C.reset}\n`);
-          return 0;
-        }
-        process.stdout.write('\n');
-        process.stdout.write(`  ${C.dim}${pad('SLUG', 12)}  STATUS    SOURCE          STARTED${C.reset}\n`);
-        for (const b of resp.builds) {
-          const sc = b.status === 'ready' ? C.green : b.status === 'failed' ? C.red : C.yellow;
-          process.stdout.write(
-            `  ${pad(b.slug, 12)}  ${sc}${pad(b.status, 8)}${C.reset}  ${pad(b.source ?? '—', 14)}  ${C.faded}${b.started_at.slice(0, 19).replace('T', ' ')}${C.reset}\n`,
-          );
-          if (b.status === 'failed' && b.error) {
-            process.stdout.write(`    ${C.red}${trim(b.error.split('\n')[0]!, 80)}${C.reset}${b.error_category ? ` ${C.faded}[${b.error_category}]${C.reset}` : ''}\n`);
-          }
-        }
-        process.stdout.write(`\n  ${C.dim}${resp.builds.length} build${resp.builds.length === 1 ? '' : 's'}${C.reset}\n\n`);
-        return 0;
-      }
-      case 'health': {
-        const h = await ctx.client.get<{
-          primary_slug: string | null;
-          ready: boolean;
-          building: boolean;
-          latest_failure: SnapshotBuild | null;
-          status?: {
-            state: 'ready' | 'building' | 'not_built' | 'degraded' | 'blocked' | 'unknown';
-            current_failure: SnapshotBuild | null;
-            stale_failure: SnapshotBuild | null;
-          } | null;
-        }>(`${base}/sandbox-health`);
-        if (json) {
-          emitJson(h);
-          return 0;
-        }
-        const currentState = h.status?.state ?? (h.ready ? 'ready' : h.building ? 'building' : 'unknown');
-        const stateColor =
-          currentState === 'ready'
-            ? C.green
-            : currentState === 'blocked' || currentState === 'degraded'
-              ? C.red
-              : C.yellow;
-        const state = `${stateColor}${currentState.replace('_', ' ')}${C.reset}`;
-        process.stdout.write(`\n  primary ${C.bold}${h.primary_slug ?? '—'}${C.reset}  ${state}\n`);
-        const currentFailure = h.status ? h.status.current_failure : h.latest_failure;
-        if (currentFailure) {
-          process.stdout.write(`  ${C.red}current failure:${C.reset} ${trim(currentFailure.error?.split('\n')[0] ?? 'unknown', 80)}\n`);
-          process.stdout.write(`  ${C.dim}Repair it with ${C.reset}${C.cyan}kortix sandboxes fix${C.reset}\n`);
-        }
-        process.stdout.write('\n');
-        return 0;
-      }
-      case 'build': {
-        const slug = positional[0];
-        if (!slug) return missing('a template slug');
-        const id = await findTemplateId(slug);
-        if (!id) {
-          process.stderr.write(`${status.err(`No project-scoped template "${slug}" to build.`)}\n`);
-          return 1;
-        }
-        await ctx.client.post(`${base}/sandbox-templates/${id}/build`);
-        process.stdout.write(`${status.ok(`Build started for ${C.bold}${slug}${C.reset}`)}\n`);
-        return 0;
-      }
-      case 'rebuild': {
-        const slug = positional[0];
-        if (!slug) return missing('a template slug');
-        const resp = await ctx.client.post<{ deleted_existing: boolean; snapshot_name: string }>(
-          `${base}/snapshots/rebuild`,
-          { slug },
-        );
-        process.stdout.write(`${status.ok(`Rebuild started for ${C.bold}${slug}${C.reset}${resp.deleted_existing ? ' (old snapshot deleted)' : ''}`)}\n`);
-        return 0;
-      }
+      case 'log':
+        return await sandboxesBuilds(ctx.client, base, f.json);
+      case 'health':
+        return await sandboxesHealth(ctx.client, base, f.json);
+      case 'build':
+        return sandboxesBuild(ctx.client, base, positional[0]);
+      case 'rebuild':
+        return sandboxesRebuild(ctx.client, base, positional[0]);
       case 'provider':
         return await sandboxProvider(ctx.client, base, positional[0], {
-          clear,
-          json,
+          clear: f.clear,
+          json: f.json,
           timeoutSec: f.timeout ? Number(f.timeout) : 600,
         });
       case 'fix': {
@@ -349,9 +266,116 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
 }
 
+async function sandboxesLs(client: Client, base: string, json: boolean): Promise<number> {
+  const resp = await client.get<{ items: SandboxTemplate[]; default_slug: string | null }>(
+    `${base}/sandbox-templates`,
+  );
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  const slugW = Math.max(...resp.items.map((t) => t.slug.length), 4);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('SLUG', slugW)}   STATE       SOURCE     SPEC                       RESOURCES${C.reset}\n`,
+  );
+  for (const t of resp.items) {
+    const spec = t.has_image ? t.image! : t.has_dockerfile ? t.dockerfile_path! : 'platform default';
+    const marker = t.slug === resp.default_slug ? `${C.green}●${C.reset} ` : '  ';
+    process.stdout.write(
+      `${marker}${pad(t.slug, slugW)}   ${stateCell(t.daytona_state, t.ready)}  ${pad(t.source, 9)}  ${pad(trim(spec, 24), 24)}  ${C.faded}${t.cpu}cpu/${t.memory_gb}g/${t.disk_gb}g${C.reset}\n`,
+    );
+  }
+  process.stdout.write(`\n  ${C.dim}${resp.items.length} template${resp.items.length === 1 ? '' : 's'} · default: ${resp.default_slug ?? '—'}${C.reset}\n\n`);
+  return 0;
+}
+
+async function sandboxesBuilds(client: Client, base: string, json: boolean): Promise<number> {
+  const resp = await client.get<{ builds: SnapshotBuild[] }>(`${base}/snapshots`);
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  if (resp.builds.length === 0) {
+    process.stdout.write(`  ${C.dim}No builds yet.${C.reset}\n`);
+    return 0;
+  }
+  process.stdout.write('\n');
+  process.stdout.write(`  ${C.dim}${pad('SLUG', 12)}  STATUS    SOURCE          STARTED${C.reset}\n`);
+  for (const b of resp.builds) {
+    const sc = b.status === 'ready' ? C.green : b.status === 'failed' ? C.red : C.yellow;
+    process.stdout.write(
+      `  ${pad(b.slug, 12)}  ${sc}${pad(b.status, 8)}${C.reset}  ${pad(b.source ?? '—', 14)}  ${C.faded}${b.started_at.slice(0, 19).replace('T', ' ')}${C.reset}\n`,
+    );
+    if (b.status === 'failed' && b.error) {
+      process.stdout.write(`    ${C.red}${trim(b.error.split('\n')[0]!, 80)}${C.reset}${b.error_category ? ` ${C.faded}[${b.error_category}]${C.reset}` : ''}\n`);
+    }
+  }
+  process.stdout.write(`\n  ${C.dim}${resp.builds.length} build${resp.builds.length === 1 ? '' : 's'}${C.reset}\n\n`);
+  return 0;
+}
+
+async function sandboxesHealth(client: Client, base: string, json: boolean): Promise<number> {
+  const h = await client.get<{
+    primary_slug: string | null;
+    ready: boolean;
+    building: boolean;
+    latest_failure: SnapshotBuild | null;
+    status?: {
+      state: 'ready' | 'building' | 'not_built' | 'degraded' | 'blocked' | 'unknown';
+      current_failure: SnapshotBuild | null;
+      stale_failure: SnapshotBuild | null;
+    } | null;
+  }>(`${base}/sandbox-health`);
+  if (json) {
+    emitJson(h);
+    return 0;
+  }
+  const currentState = h.status?.state ?? (h.ready ? 'ready' : h.building ? 'building' : 'unknown');
+  const stateColor =
+    currentState === 'ready'
+      ? C.green
+      : currentState === 'blocked' || currentState === 'degraded'
+        ? C.red
+        : C.yellow;
+  const state = `${stateColor}${currentState.replace('_', ' ')}${C.reset}`;
+  process.stdout.write(`\n  primary ${C.bold}${h.primary_slug ?? '—'}${C.reset}  ${state}\n`);
+  const currentFailure = h.status ? h.status.current_failure : h.latest_failure;
+  if (currentFailure) {
+    process.stdout.write(`  ${C.red}current failure:${C.reset} ${trim(currentFailure.error?.split('\n')[0] ?? 'unknown', 80)}\n`);
+    process.stdout.write(`  ${C.dim}Repair it with ${C.reset}${C.cyan}kortix sandboxes fix${C.reset}\n`);
+  }
+  process.stdout.write('\n');
+  return 0;
+}
+
+async function sandboxesBuild(client: Client, base: string, slug: string | undefined): Promise<number> {
+  if (!slug) return missing('a template slug');
+  // Resolve a slug to a project-scoped template_id (needed for PATCH/DELETE/build).
+  const id = (await client.get<{ items: SandboxTemplate[] }>(`${base}/sandbox-templates`))
+    .items.find((t) => t.slug === slug)?.template_id ?? null;
+  if (!id) {
+    process.stderr.write(`${status.err(`No project-scoped template "${slug}" to build.`)}\n`);
+    return 1;
+  }
+  await client.post(`${base}/sandbox-templates/${id}/build`);
+  process.stdout.write(`${status.ok(`Build started for ${C.bold}${slug}${C.reset}`)}\n`);
+  return 0;
+}
+
+async function sandboxesRebuild(client: Client, base: string, slug: string | undefined): Promise<number> {
+  if (!slug) return missing('a template slug');
+  const resp = await client.post<{ deleted_existing: boolean; snapshot_name: string }>(
+    `${base}/snapshots/rebuild`,
+    { slug },
+  );
+  process.stdout.write(`${status.ok(`Rebuild started for ${C.bold}${slug}${C.reset}${resp.deleted_existing ? ' (old snapshot deleted)' : ''}`)}\n`);
+  return 0;
+}
+
 // ── Local kortix.yaml `[[sandbox.templates]]` edits (source of truth) ────────────────
 
-function sandboxAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
+function sandboxAddLocal(slug: string | undefined, f: Flags): number {
   if (!slug) return missing('a template slug');
   if (!f.image && !f.dockerfile) return missing('--image or --dockerfile');
   if (f.image && f.dockerfile) return fail('Pass only one of --image / --dockerfile.');
@@ -378,7 +402,7 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
   }
 }
 
-function sandboxUpdateLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
+function sandboxUpdateLocal(slug: string | undefined, f: Flags): number {
   if (!slug) return missing('a template slug');
   try {
     if (!arrayEntryExists('sandbox.templates', 'slug', slug)) {
@@ -425,7 +449,6 @@ function stateCell(state: string, ready: boolean): string {
   const color = ready ? C.green : state === 'error' ? C.red : state === 'missing' ? C.faded : C.yellow;
   return `${color}${pad(state, 11)}${C.reset}`;
 }
-
 
 // ── Sandbox provider pin ────────────────────────────────────────────────────
 

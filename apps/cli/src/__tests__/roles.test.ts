@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -238,6 +238,46 @@ describe('kortix roles', () => {
     // Bulk-import receives ONLY the new binding; user-9 matches the live policy.
     const bulk = requests.find((r) => r.method === 'POST' && r.url.includes(':bulk-import'));
     expect(bulk).toBeDefined();
+    expect(bulk!.body.policies.length).toBe(1);
+    expect(bulk!.body.policies[0].principal_id).toBe('user-NEW');
+  });
+
+  test('unassign DELETEs the policy and reports it', async () => {
+    const code = await runRoles(['unassign', 'pol_1']);
+    expect(code).toBe(0);
+    expect(requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/policies/pol_1'))).toBe(true);
+    expect(stripAnsi(stdout)).toContain('Removed assignment pol_1');
+  });
+
+  test('export --format json / --out writes the RolesDoc contract', async () => {
+    const code = await runRoles(['export', '--format', 'json', '--out', 'policies.json']);
+    expect(code).toBe(0);
+    const written = JSON.parse(readFileSync(join(tmp, 'policies.json'), 'utf8')) as {
+      roles: Array<{ key: string; actions: string[] }>;
+      policies: Array<{ role_key: string }>;
+    };
+    expect(written.roles.map((r) => r.key)).toEqual(['support_agent']);
+    expect(written.roles[0]!.actions).toContain('project.read');
+    expect(written.policies[0]!.role_key).toBe('support_agent');
+    expect(stripAnsi(stdout)).toContain('Exported 1 role + 1 binding');
+  });
+
+  test('import reads a JSON RolesDoc the same way it reads TOML', async () => {
+    const file = join(tmp, 'pol.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        roles: [{ key: 'json_role', name: 'JSON Role', resource_type: 'project', actions: ['project.read'] }],
+        policies: [{ role_key: 'json_role', principal_type: 'member', principal_id: 'user-NEW', scope_type: 'project', scope_id: 'proj-1' }],
+      }),
+      'utf8',
+    );
+    const code = await runRoles(['import', file]);
+    expect(code).toBe(0);
+    const rolePosts = requests.filter((r) => r.method === 'POST' && /\/iam\/roles(\?|$)/.test(r.url));
+    expect(rolePosts.length).toBe(1);
+    expect(rolePosts[0]!.body.key).toBe('json_role');
+    const bulk = requests.find((r) => r.method === 'POST' && r.url.includes(':bulk-import'));
     expect(bulk!.body.policies.length).toBe(1);
     expect(bulk!.body.policies[0].principal_id).toBe('user-NEW');
   });

@@ -213,6 +213,26 @@ describe('a denied connector call carries its remedy', () => {
     });
   });
 
+  test('CLI: a valueless --account/--reason is a flag typo, never sent as a name', async () => {
+    respondWith = () =>
+      jsonResponse({ ok: true, status: 'ok', data: {}, account: { label: 'Work' } });
+
+    const result = await runCli([
+      'connectors',
+      'call',
+      'crm',
+      'whoami',
+      '--account',
+      '--reason',
+      '--project',
+      PROJECT_ID,
+    ]);
+
+    expect(result.code).toBe(0);
+    // Neither key reaches the wire — the call runs as the default account.
+    expect(captured[0]?.body).toEqual({ connector: 'crm', action: 'whoami', args: {} });
+  });
+
   test('MCP: the denial reaches the model as the API body, not a JSON-RPC error', async () => {
     respondWith = () => jsonResponse(UNKNOWN_ACCOUNT_DENIAL, 403);
 

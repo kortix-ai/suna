@@ -36,7 +36,7 @@ import { appendGitExcludeEntries } from '../git-exclude.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import type { Auth } from '../api/auth.ts';
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
-import { authHeaderArgs } from './ship.ts';
+import { authHeaderArgs } from '../git-ops.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */

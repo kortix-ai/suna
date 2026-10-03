@@ -19,6 +19,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
 let mergeable = true;
+let upToDate = false;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -84,6 +85,17 @@ function startServer(): string {
         return Response.json({ change_request: changeRequest() });
       }
       if (url.pathname === `${base}/change-requests/${CR_ID}/merge-preview`) {
+        if (upToDate) {
+          return Response.json({
+            base_sha: 'b',
+            head_sha: 'h',
+            merge_base: 'm',
+            can_fast_forward: false,
+            can_merge: false,
+            conflicts: [],
+            is_up_to_date: true,
+          });
+        }
         return Response.json(
           mergeable
             ? {
@@ -180,6 +192,7 @@ describe('kortix cr — review parity', () => {
     process.env = { ...ORIGINAL_ENV };
     calls = [];
     mergeable = true;
+    upToDate = false;
   });
 
   afterEach(() => {
@@ -282,5 +295,44 @@ describe('kortix cr — review parity', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No CR #99');
     expect(calls.every((c) => c.method === 'GET')).toBe(true);
+  });
+
+  // `show` and `merge-preview` must render the merge verdict through ONE
+  // code path — these pin the verdict bytes (including the trailing blank
+  // line) at the end of both outputs, for all three verdicts.
+  test('show and merge-preview end with the SAME mergeable verdict bytes', async () => {
+    const config = writeConfig(startServer());
+    const preview = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
+    const show = await runCli(['cr', 'show', CR_ID, '--project', PROJECT], config);
+    const verdict = '  ✓ Mergeable cleanly (fast-forward).\n\n';
+    expect(preview.code).toBe(0);
+    expect(show.code).toBe(0);
+    expect(preview.stdout.endsWith(verdict)).toBe(true);
+    expect(show.stdout.endsWith(verdict)).toBe(true);
+  });
+
+  test('show and merge-preview end with the SAME conflicts verdict bytes', async () => {
+    const config = writeConfig(startServer());
+    mergeable = false;
+    const preview = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
+    const show = await runCli(['cr', 'show', CR_ID, '--project', PROJECT], config);
+    const verdict = '  ⚠ Conflicts in 2 files:\n    src/a.ts\n    src/b.ts\n\n';
+    // The conflicted verdict is the one that changes the exit code.
+    expect(preview.code).toBe(1);
+    expect(show.code).toBe(0);
+    expect(preview.stdout.endsWith(verdict)).toBe(true);
+    expect(show.stdout.endsWith(verdict)).toBe(true);
+  });
+
+  test('show and merge-preview end with the SAME already-up-to-date verdict bytes', async () => {
+    const config = writeConfig(startServer());
+    upToDate = true;
+    const preview = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
+    const show = await runCli(['cr', 'show', CR_ID, '--project', PROJECT], config);
+    const verdict = '  Already at base — nothing to merge.\n\n';
+    expect(preview.code).toBe(0);
+    expect(show.code).toBe(0);
+    expect(preview.stdout.endsWith(verdict)).toBe(true);
+    expect(show.stdout.endsWith(verdict)).toBe(true);
   });
 });

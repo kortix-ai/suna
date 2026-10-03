@@ -33,17 +33,23 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
+let calls: Array<{ method: string; path: string; body: unknown }> = [];
+
 function startServer(): string {
   server = Bun.serve({
     port: 0,
-    fetch: () =>
-      Response.json({
+    fetch: async (req) => {
+      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
+      const url = new URL(req.url);
+      calls.push({ method: req.method, path: `${url.pathname}${url.search}`, body });
+      return Response.json({
         platformDefault: null,
         accountDefault: null,
         projectDefault: null,
         agentDefaults: {},
         resolvedForCaller: null,
-      }),
+      });
+    },
   });
   return `http://127.0.0.1:${server.port}`;
 }
@@ -87,6 +93,7 @@ describe('kortix agents command', () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-agents-command-'));
     process.env = { ...ORIGINAL_ENV };
+    calls = [];
   });
 
   afterEach(() => {
@@ -101,6 +108,31 @@ describe('kortix agents command', () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('explicit concrete model');
     expect(result.stdout.toLowerCase()).not.toContain('auto');
+  });
+
+  test('model pins a plain model id via PUT; --clear DELETEs the pin', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('reviewer');
+    expect(r.stdout).toContain('glm-5.3-flash');
+    expect(calls.at(-1)).toMatchObject({
+      method: 'PUT',
+      path: `/v1/projects/${PROJECT}/model-defaults`,
+      body: { scope: 'agent', agentName: 'reviewer', model: 'glm-5.3-flash' },
+    });
+
+    const cleared = await runCli(['agents', 'model', 'reviewer', '--clear', '--project', PROJECT], config);
+    expect(cleared.code).toBe(0);
+    expect(cleared.stdout).toContain('follows the default model again');
+    expect(calls.at(-1)).toMatchObject({
+      method: 'DELETE',
+      path: `/v1/projects/${PROJECT}/model-defaults?scope=agent&agentName=reviewer`,
+    });
+
+    const bare = await runCli(['agents', 'model', '--project', PROJECT], config);
+    expect(bare.code).toBe(2);
+    expect(bare.stderr).toContain('Pass an agent name.');
   });
 
   test('models does not invent Auto when a malformed server omits every default', async () => {

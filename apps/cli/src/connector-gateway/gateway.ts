@@ -18,7 +18,7 @@ import { loadAuth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
-import { CliError } from './io.ts';
+import { CliError, stringValue } from './io.ts';
 
 /**
  * The Connector gateway client — runs tool calls as the launching user.
@@ -78,17 +78,16 @@ export async function callWithApprovalHandoff<T = unknown>(
   connector: string,
   action: string,
   args: Record<string, unknown>,
-  options: { account?: string | null; approvalContext?: string | null } = {},
+  options: { account?: string | true | null; approvalContext?: string | true | null } = {},
 ): Promise<ConnectorCallResult<T>> {
-  // Only forward a real name. `parseExecArgs` turns a bare `--account` into the
-  // string 'true', which is a flag typo, not an account — sending it would deny
-  // the call with a confusing "no account named true".
-  const account = options.account?.trim();
-  // Same flag-typo guard: a bare `--reason` is 'true', not a description.
-  const approvalContext = options.approvalContext?.trim();
+  // A valueless `--account`/`--reason` arrives as `true` — a flag typo, not a
+  // name or a description. Only a real string is forwarded.
+  const account = stringValue(options.account)?.trim();
+  // Same flag-typo guard for the approval context.
+  const approvalContext = stringValue(options.approvalContext)?.trim();
   return client.call<T>(`${connector}.${action}`, args, {
-    ...(account && account !== 'true' ? { account } : {}),
-    ...(approvalContext && approvalContext !== 'true' ? { approvalContext } : {}),
+    ...(account ? { account } : {}),
+    ...(approvalContext ? { approvalContext } : {}),
   });
 }
 

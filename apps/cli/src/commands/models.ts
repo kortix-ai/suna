@@ -16,6 +16,7 @@
  * Both writes assert `project.customize.write`.
  */
 
+import type { ModelDefaultsResponse } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -44,17 +45,6 @@ interface ModelPicker {
   modelOverrides?: Record<string, boolean>;
   usingDefaults?: boolean;
   defaultModel?: string;
-}
-
-/** GET /projects/:id/model-defaults (routes/models.ts). */
-interface ModelDefaults {
-  platformDefault: string | null;
-  accountDefault: string | null;
-  agentDefaults: Record<string, string>;
-  projectDefault: string | null;
-  resolvedForCaller: string | null;
-  resolvedSource?: string;
-  freeTier?: boolean;
 }
 
 const HELP = help`Usage: kortix models <subcommand> [options]
@@ -282,7 +272,7 @@ async function modelsDefault(
   }
 
   if (!model) {
-    const d = await client.get<ModelDefaults>(path);
+    const d = await client.get<ModelDefaultsResponse>(path);
     if (opts.json) {
       emitJson(d);
       return 0;

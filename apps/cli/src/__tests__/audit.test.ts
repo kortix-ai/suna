@@ -15,12 +15,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  auditEventTitle,
-  buildAuditQuery,
-  resolveInstant,
-  truncate,
-} from '../commands/audit.ts';
+import { buildAuditQuery, resolveInstant } from '../commands/audit.ts';
+import { auditEventTitle, truncate } from '../commands/audit-render.ts';
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 
@@ -363,6 +359,80 @@ describe('audit CLI process', () => {
         null,
         'export-cursor-2',
       ]);
+    } finally {
+      server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  test('an empty session timeline exits 0 quietly; a missing project id is an arg error', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-audit-empty-'));
+    const cliEntry = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
+    const requests: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requests.push(request.url);
+        return Response.json({ events: [], next_cursor: null });
+      },
+    });
+    const configFile = join(root, 'config.json');
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: `http://127.0.0.1:${server.port}`,
+            token: 'kortix_pat_audit_test',
+            user_id: 'user-1',
+            user_email: 'audit@example.test',
+            account_id: 'account-1',
+            logged_in_at: '2026-08-07T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    async function run(args: string[]) {
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        KORTIX_CONFIG_FILE: configFile,
+        KORTIX_NO_UPDATE_CHECK: '1',
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        NO_COLOR: '1',
+        FORCE_COLOR: '0',
+      };
+      for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+        delete env[key];
+      }
+      const child = Bun.spawn({
+        cmd: [process.execPath, cliEntry, ...args],
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      return { code, stdout, stderr };
+    }
+    try {
+      // The session footer stays quiet on an empty timeline: the table's own
+      // closing blank line is the last thing printed — no count, no extra newline.
+      const empty = await run(['audit', 'session', 'sess-1', '--project', 'project-1']);
+      expect(empty.code).toBe(0);
+      expect(empty.stdout).toContain('No audit events match.');
+      expect(empty.stdout.endsWith('\n\n')).toBe(true);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatch(/\/sessions\/sess-1\/audit/);
+
+      // `project` without an id refuses before any HTTP call.
+      const noProject = await run(['audit', 'project']);
+      expect(noProject.code).toBe(2);
+      expect(noProject.stderr).toContain('Missing a project id.');
+      expect(requests).toHaveLength(1);
     } finally {
       server.stop(true);
       rmSync(root, { recursive: true, force: true });

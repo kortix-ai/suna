@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { parseExecArgs } from '../connector-gateway/io';
 import { parseConnectorCallInput } from '../commands/connector-gateway';
 
 describe('kortix connectors call input', () => {
@@ -31,5 +32,21 @@ describe('kortix connectors call input', () => {
     expect(() => parseConnectorCallInput(['google_drive.list_files', '{}'], { as: 'mike' })).toThrow(
       '`--as` is not supported. Connector identity is fixed by the session token. Start a new session to use another agent.',
     );
+  });
+});
+
+describe('parseExecArgs flag values', () => {
+  test('a valueless flag is the boolean true, a valued one is its string', () => {
+    const { args, flags, repeated } = parseExecArgs([
+      'call',
+      'crm.whoami',
+      '--account',
+      '--project',
+      'proj-1',
+    ]);
+    expect(args).toEqual(['crm.whoami']);
+    expect(flags.account).toBe(true);
+    expect(flags.project).toBe('proj-1');
+    expect(repeated.account).toEqual([true]);
   });
 });

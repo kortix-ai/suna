@@ -1,14 +1,14 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, afterEach, beforeEach } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { ApiError, type ApiClient } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
-import {
-  authHeaderArgs,
-  linkGitHubBackedProject,
-  reconcileShippedManifest,
-  resolveExistingShipGitTarget,
-  resolveProvisionShipGitTarget,
-} from '../commands/ship.ts';
+import { reconcileShippedManifest } from '../commands/ship-connectors.ts';
+import { authHeaderArgs, linkGitHubBackedProject } from '../git-ops.ts';
+import { runShip } from '../commands/ship.ts';
+import { resolveProjectGitTarget } from '../project-git.ts';
 import { resolveProjectCloneTarget } from '../commands/projects.ts';
 
 test('managed git auth headers honor the provider-selected username', () => {
@@ -105,14 +105,16 @@ describe('ship git target resolution', () => {
   // too, exactly like clone does; insisting on a minted provider token is what
   // broke `kortix ship` against Kortix Cloud.
   test('first-time managed ship pushes through the proxy origin, not the raw upstream', () => {
-    const target = resolveProvisionShipGitTarget({
+    // The provision response: a ProjectSummary plus the push credential fields.
+    const prov = {
       ...project({
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: true } },
       }),
       push_token: 'ghp_push',
       repo_id: 'repo_1',
-    });
+    };
+    const target = resolveProjectGitTarget(prov);
 
     expect(target).toEqual({
       repoUrl: 'https://api.kortix.com/v1/git/proj_1.git',
@@ -121,7 +123,7 @@ describe('ship git target resolution', () => {
   });
 
   test('existing managed ship pushes through the proxy origin', () => {
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: true } },
@@ -137,7 +139,7 @@ describe('ship git target resolution', () => {
   test('managed ship falls back to a minted token when the host has no proxy', () => {
     // Proxy off ⇒ the server mirrors repo_url into git_origin_url.
     const raw = 'https://github.com/managed-kortix/demo.git';
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({ git_origin_url: raw, metadata: { git: { managed: true } } }),
     );
 
@@ -145,11 +147,12 @@ describe('ship git target resolution', () => {
   });
 
   test('first-time managed ship on a proxy-less host mints a provider token', () => {
-    const target = resolveProvisionShipGitTarget({
+    const prov = {
       ...project({ metadata: { git: { managed: true } } }),
       push_token: 'ghp_push',
       repo_id: 'repo_1',
-    });
+    };
+    const target = resolveProjectGitTarget(prov);
 
     expect(target).toEqual({
       repoUrl: 'https://github.com/managed-kortix/demo.git',
@@ -158,7 +161,7 @@ describe('ship git target resolution', () => {
   });
 
   test('non-managed proxy projects still push through the Kortix git proxy', () => {
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({
         repo_url: 'https://github.com/acme/byo.git',
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
@@ -173,7 +176,7 @@ describe('ship git target resolution', () => {
   });
 
   test('plain BYO projects rely on local git credentials', () => {
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({
         repo_url: 'https://github.com/acme/byo.git',
         metadata: { git: { managed: false } },
@@ -199,7 +202,7 @@ describe('ship git target resolution', () => {
     ];
 
     for (const shape of shapes) {
-      const ship = resolveExistingShipGitTarget(shape);
+      const ship = resolveProjectGitTarget(shape);
       const clone = resolveProjectCloneTarget(shape, 'kortix_pat_abc');
       expect(clone.repoUrl).toBe(ship.repoUrl);
       expect(clone.needsManagedToken).toBe(ship.credentialMode === 'managed-git-token');
@@ -338,5 +341,103 @@ describe('ship refuses a project with no manifest', () => {
     const missingBranch = body.slice(body.indexOf('if (!manifest) {'));
     const refusal = missingBranch.slice(0, missingBranch.indexOf('return { ok: false'));
     expect(refusal).not.toContain('noVerify');
+  });
+});
+
+// runShip's guards all fire before any network call, and their bytes are the
+// first thing a stranded user sees. Characterized end to end — real cwd, real
+// config store, real git — so the guard output survives the module split
+// untouched: not-a-Kortix-project and not-logged-in both exit 1 with the
+// exact hints, and nothing else is printed.
+describe('runShip guards before any network call', () => {
+  const ORIGINAL_STDOUT_WRITE = process.stdout.write;
+  const ORIGINAL_STDERR_WRITE = process.stderr.write;
+  const ENV_KEYS = [
+    'KORTIX_TOKEN',
+    'KORTIX_API_URL',
+    'KORTIX_FRONTEND_URL',
+    'KORTIX_PROJECT_ID',
+    'BASH_ENV',
+    'KORTIX_DISABLE_SANDBOX_ENV_FILE',
+    'KORTIX_CONFIG_FILE',
+    'KORTIX_AUTH_FILE',
+  ] as const;
+
+  let saved: Record<string, string | undefined>;
+  let tmp: string;
+  let originalCwd: string;
+  let stdout: string;
+  let stderr: string;
+
+  beforeEach(() => {
+    saved = {};
+    for (const key of ENV_KEYS) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+    process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+    originalCwd = process.cwd();
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-ship-guards-'));
+    // Empty config store: a host record with no token means "not logged in".
+    writeFileSync(
+      join(tmp, 'config.json'),
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: 'https://api.test',
+            token: '',
+            user_id: '',
+            user_email: '',
+            account_id: '',
+            logged_in_at: '',
+          },
+        },
+      }),
+      'utf8',
+    );
+    process.env.KORTIX_CONFIG_FILE = join(tmp, 'config.json');
+    process.chdir(tmp);
+    stdout = '';
+    stderr = '';
+    (process.stdout as unknown as { write: unknown }).write = ((chunk: unknown) => {
+      stdout += String(chunk);
+      return true;
+    }) as unknown as typeof process.stdout.write;
+    (process.stderr as unknown as { write: unknown }).write = ((chunk: unknown) => {
+      stderr += String(chunk);
+      return true;
+    }) as unknown as typeof process.stderr.write;
+  });
+
+  afterEach(() => {
+    (process.stdout as unknown as { write: unknown }).write = ORIGINAL_STDOUT_WRITE;
+    (process.stderr as unknown as { write: unknown }).write = ORIGINAL_STDERR_WRITE;
+    process.chdir(originalCwd);
+    for (const key of ENV_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('a folder with no Kortix manifest refuses to ship', async () => {
+    const exit = await runShip([]);
+    expect(exit).toBe(1);
+    expect(stderr).toContain('Not a Kortix project — no .kortix/ or kortix.yaml in');
+    expect(stderr).toContain('kortix init');
+    expect(stdout).toBe('');
+  });
+
+  test('a Kortix project with no logged-in host sends the user to login', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), '', 'utf8');
+    const init = Bun.spawnSync(['git', 'init', '-q'], { cwd: tmp });
+    expect(init.exitCode).toBe(0);
+
+    const exit = await runShip([]);
+    expect(exit).toBe(1);
+    expect(stderr).toContain('Not logged in.');
+    expect(stderr).toContain('kortix login');
+    expect(stdout).toBe('');
   });
 });
