@@ -143,13 +143,16 @@ describe.skipIf(!databaseUrl)('audit event count slots — migrated PostgreSQL',
 
   test('GET /ops/overview reads audit_events_24h from the rollup slots, never from audit_events', async () => {
     // Re-derive the counted slots (idempotent), then add one rollup slot no
-    // audit row can account for: only a read of `audit_event_counts` can see
-    // it. The previous implementation counted audit_events itself — against
-    // this fixture that returns the bare audit-row count (7) and this
-    // assertion failed, so the data source is pinned, not just the value.
+    // audit row can account for and no pass of this suite ever reaches (the
+    // two passes above fill 24 slots from the grace boundary; 40 slots back
+    // is beyond both caps and still inside the dashboard's 24 h window). Only
+    // a read of `audit_event_counts` can see it. The previous implementation
+    // counted audit_events itself — against this fixture that returns the
+    // bare audit-row count (7) and this assertion failed, so the data source
+    // is pinned, not just the value.
     await countPass(NOW);
     await q('INSERT INTO kortix.audit_event_counts(slot_start, events) VALUES ($1, $2)', [
-      new Date(NOW - 15 * SLOT),
+      new Date(NOW - 40 * SLOT),
       500,
     ]);
 
