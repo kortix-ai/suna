@@ -336,7 +336,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'agent_principal',
     name: 'Agents as Principals',
     description:
-      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
+      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including credential issue. An agent grants only what it holds: it cannot write a permission, connector, secret or App it does not hold into any agent\'s grant. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
     stability: 'experimental',
     available: () => true,
     // Default ON. An agent's authority is a property of the AGENT, not of
