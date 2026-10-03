@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: best-effort warn-line rate limiting. Each replica limits its
+// own log lines; exact refusal accounting lives in the request-completion logs
+// and auth audits, so a restart losing this replica's pending counts is
+// documented and acceptable (header above).
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
