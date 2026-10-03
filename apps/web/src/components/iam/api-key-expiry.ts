@@ -28,11 +28,12 @@ export interface ExpiryOption {
 export const NEVER_EXPIRES = 'never';
 
 /** The shelf we offer from, shortest first. */
-const OFFERED_DAYS = [30, 90, 365] as const;
+const OFFERED_DAYS = [1, 30, 90, 365] as const;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function dayLabel(days: number): string {
+  if (days === 1) return '1 day';
   if (days === 365) return '1 year';
   if (days % 365 === 0) return `${days / 365} years`;
   return `${days} days`;
@@ -57,7 +58,9 @@ export function expiryOptions(
 ): ExpiryOption[] {
   const cap = policy?.max_lifetime_days ?? null;
   const withinCap = cap == null ? [...OFFERED_DAYS] : OFFERED_DAYS.filter((d) => d <= cap);
-  const days = withinCap.length > 0 ? withinCap : cap != null ? [cap] : [];
+  const days = cap != null && cap < 30 && cap !== 1
+    ? [...withinCap, cap]
+    : withinCap;
 
   const options: ExpiryOption[] = days.map((d) => ({ value: String(d), label: dayLabel(d) }));
   if (!policy?.require_expiry)

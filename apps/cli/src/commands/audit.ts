@@ -1,10 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
-import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { activeAccount } from '../api/config.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
+import { resolveAccountContext, emitJson, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
 
@@ -171,34 +168,6 @@ export function buildAuditQuery(
     search.set(key, iso);
   }
   return { search };
-}
-
-interface AuditContext {
-  client: ApiClient;
-  accountId: string;
-  auth: NonNullable<ReturnType<typeof loadAuth>>;
-}
-
-function resolveAccountContext(accountArg?: string, hostArg?: string): AuditContext | null {
-  // --host names a logged-in host other than the active one; its own stored
-  // account is the default scope there (never the global active account).
-  const auth = hostArg ? loadAuthForHost(hostArg) : loadAuth();
-  if (!auth?.token) {
-    process.stderr.write(
-      hostArg
-        ? `${status.err(`Host "${hostArg}" is not logged in.`)} Run \`kortix login --host ${hostArg}\`.\n`
-        : `${status.err('Not logged in. Run `kortix login`.')}\n`,
-    );
-    return null;
-  }
-  const accountId = accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
-  if (!accountId) {
-    process.stderr.write(
-      `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
-    );
-    return null;
-  }
-  return { client: clientFromAuth(auth, { accountId }), accountId, auth };
 }
 
 /**
@@ -375,7 +344,7 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext(f.account, f.host);
+  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/accounts/${ctx.accountId}/audit`;
 
