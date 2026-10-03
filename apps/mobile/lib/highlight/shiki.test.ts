@@ -130,8 +130,11 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
    * ini: `(^[\t ]+)?(?=;)` … `end: (?!\G)` — the engine's `\G` emulation ends
    * the zero-width begin at once, so a `;` comment AFTER a value on the same
    * line stays base colour. Comments at the start of a line still colour.
+   * Both themes.
    */
-  const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = { ini: [2] };
+  const KNOWN_ENGINE_DIFFERENCES: Record<string, { light: number[]; dark: number[] }> = {
+    ini: { light: [2], dark: [2] },
+  };
 
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
@@ -170,7 +173,7 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
           );
         const ours = paint(tokens!);
         const theirs = paint(reference);
-        const differing = KNOWN_ENGINE_DIFFERENCES[lang] ?? [];
+        const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
         for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
         const keep = (_: string, i: number) => !differing.includes(i);
         expect(ours.filter(keep)).toEqual(theirs.filter(keep));
