@@ -37,4 +37,13 @@ describe('desktop builds set up bun', () => {
   test.each(builders.map((b) => [b.where, b.body] as const))('%s installs bun', (_where, body) => {
     expect(body).toContain('oven-sh/setup-bun');
   });
+
+  // ensure-runtime.js also stages the pinned Kortix Capture engine from the
+  // private kortix-ai/capture releases; a pinned lock without a token fails.
+  test.each(builders.filter((b) => b.body.includes('ensure-runtime.js')).map((b) => [b.where, b.body] as const))(
+    '%s passes the capture release token to ensure-runtime.js',
+    (_where, body) => {
+      expect(body).toContain('KORTIX_CAPTURE_GITHUB_TOKEN: ${{ secrets.CAPTURE_RELEASES_TOKEN }}');
+    },
+  );
 });

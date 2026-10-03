@@ -406,6 +406,10 @@ jobs:
           npm_config_engine_strict: "false"
 
       - name: Ensure Electron runtime
+        # Also stages the pinned Kortix Capture engine from the private
+        # kortix-ai/capture releases (apps/desktop-electron/capture-engine.lock.json).
+        env:
+          KORTIX_CAPTURE_GITHUB_TOKEN: ${{ secrets.CAPTURE_RELEASES_TOKEN }}
         run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
       - name: Build Linux desktop installer (Electron, unsigned)

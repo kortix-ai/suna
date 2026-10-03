@@ -168,6 +168,10 @@ jobs:
       # electron-builder reads electron's binary from node_modules; .npmrc sets
       # ignore-scripts=true so its download postinstall is skipped — ensure it.
       - name: Ensure Electron runtime
+        # Also stages the pinned Kortix Capture engine from the private
+        # kortix-ai/capture releases (apps/desktop-electron/capture-engine.lock.json).
+        env:
+          KORTIX_CAPTURE_GITHUB_TOKEN: ${{ secrets.CAPTURE_RELEASES_TOKEN }}
         run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
       - name: Build desktop installer (Electron)

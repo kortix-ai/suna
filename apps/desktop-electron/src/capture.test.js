@@ -243,6 +243,7 @@ describe('paths and environment', () => {
       KORTIX_CONFIG: path.join(a, 'engine-config.yaml'),
       KORTIX_TRAY_AUTO_LAUNCH: '0',
       LOCAL_PORT: '0',
+      KORTIX_CAPTURE_KEY_STORE: 'file',
     });
   });
 
@@ -277,10 +278,10 @@ describe('paths and environment', () => {
 describe('status and tray', () => {
   const sync = {
     kortix: { signed_in: true, sign_in_required: false, prefix: `orgs/a/projects/${UUID}`, device_id: 'dev1', member_email: null },
-    policy: { layers: { audio: false }, notice: 'Recorded for the support team', recording: { paused: false } },
+    policy: { source: 'orgs/a/projects/x/policy.json', fetched_at_ms: 1, policy: { layers: { audio: false }, notice: 'Recorded for the support team', recording: { paused: false } } },
     state: { state: 'ok', pending: 2, last_upload_ms: 5, last_error: null },
   };
-  const status = { effective_state: 'recording', inactive_reason: null, recording_enabled: true, audio_enabled: false };
+  const status = { effective_state: 'recording', recorder_running: true, inactive_reason: null, recording_enabled: true, audio_enabled: false };
   const running = { recorder: { running: true, crashLoop: false }, actions: { running: true } };
 
   test('a recording device: state, project from the prefix, layers, policy, sync, permissions', () => {
@@ -314,6 +315,7 @@ describe('status and tray', () => {
     expect(at({ desktop: { on: false, actions: true } })).toBe('off');
     expect(at({ children: { recorder: { running: false, crashLoop: true } } })).toBe('crashed');
     expect(at({ children: { recorder: { running: false, crashLoop: false } } })).toBe('starting');
+    expect(at({ status: { ...status, recorder_running: false, effective_state: 'not_running' } })).toBe('starting');
   });
 
   test('no engine in this build: available false with the reason', () => {

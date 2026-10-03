@@ -89,6 +89,11 @@ function engineEnv({ library, paths, base = process.env }) {
     // The action service's local API: any free port, so a standalone Kortix
     // Capture install on 16193 is never displaced.
     LOCAL_PORT: '0',
+    // The device token in a mode-0600 file in the library, not the Keychain:
+    // a Keychain item belongs to the code signature that wrote it, and an app
+    // update re-signs the engine, so macOS would prompt or refuse after every
+    // update. The token is device-scoped and revocable in Kortix.
+    KORTIX_CAPTURE_KEY_STORE: 'file',
   };
 }
 
@@ -317,6 +322,16 @@ function supervise({ name, start, onChange = () => {}, now = Date.now, timers = 
 
 const PERMISSION_KEYS = ['screen', 'accessibility', 'microphone'];
 
+/** The permission keys macOS granted, from `kortix-capture --json permissions`. */
+function grantedPermissions(permissions) {
+  return permissions ? PERMISSION_KEYS.filter((key) => permissions[key] === true || permissions[key] === 'granted') : [];
+}
+
+/** The operator policy in force, from `sync status` (`{ source, fetched_at_ms, policy }`). */
+function policyOf(sync) {
+  return sync?.policy?.policy || null;
+}
+
 /**
  * The `capture_status` answer, from the engine's `status`, `sync status` and
  * `permissions` JSON plus this app's choices and its children.
@@ -326,15 +341,16 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
   const kortix = sync?.kortix || {};
   const signedIn = kortix.signed_in === true;
   const signInRequired = kortix.sign_in_required === true;
-  const policy = sync?.policy || null;
+  const policy = policyOf(sync);
   const recorder = children?.recorder || {};
   let state;
   if (signInRequired) state = 'signInRequired';
   else if (!signedIn) state = 'signedOut';
   else if (!desktop.on) state = 'off';
   else if (recorder.crashLoop) state = 'crashed';
-  else if (!recorder.running) state = 'starting';
-  else state = status?.effective_state || 'starting';
+  // Running but no heartbeat yet: the engine still reports `not_running`.
+  else if (!recorder.running || !status?.recorder_running) state = 'starting';
+  else state = status.effective_state || 'starting';
   return {
     available: true,
     on: desktop.on,
@@ -358,9 +374,7 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
         }
       : null,
     pausedUntilMs: status?.paused_until_ms ?? null,
-    permissions: permissions
-      ? Object.fromEntries(PERMISSION_KEYS.map((key) => [key, permissions[key] === true || permissions[key] === 'granted']))
-      : null,
+    permissions: permissions ? Object.fromEntries(PERMISSION_KEYS.map((key) => [key, grantedPermissions(permissions).includes(key)])) : null,
     sync: {
       state: sync?.state?.state || 'off',
       pending: sync?.state?.pending ?? 0,
@@ -428,11 +442,13 @@ module.exports = {
   captureStatusFrom,
   captureTrayItems,
   desiredChildren,
+  policyOf,
   engineConfigYaml,
   engineDir,
   engineEnv,
   engineFiles,
   engineJson,
+  grantedPermissions,
   enginePaths,
   issuerFromBackend,
   lastError,

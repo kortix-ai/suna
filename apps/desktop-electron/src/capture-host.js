@@ -101,6 +101,8 @@ function setupCapture(deps) {
 
   /* ─── Status ─────────────────────────────────────────────────────────── */
 
+  /** @type {string[] | null} */
+  let lastGranted = null;
   let view = capture.captureStatusFrom({ available: false, error: 'Kortix Capture is starting.' });
   let viewAt = 0;
   let refreshing = null;
@@ -117,7 +119,12 @@ function setupCapture(deps) {
     ]);
     const signedIn = sync?.kortix?.signed_in === true;
     const signInRequired = sync?.kortix?.sign_in_required === true;
-    const want = capture.desiredChildren({ available: true, desktop, signedIn, signInRequired, policy: sync?.policy });
+    const want = capture.desiredChildren({ available: true, desktop, signedIn, signInRequired, policy: capture.policyOf(sync) });
+    // macOS applies a new grant only to a process started after it: restart
+    // the recorder once when the person allows another permission.
+    const granted = capture.grantedPermissions(permissions);
+    if (lastGranted !== null && granted.some((key) => !lastGranted.includes(key)) && recorder.state().running) recorder.stop();
+    lastGranted = granted;
     if (want.recorder) recorder.run();
     else recorder.stop();
     if (want.actions) actions.run();
