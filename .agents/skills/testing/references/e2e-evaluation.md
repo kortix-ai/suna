@@ -216,105 +216,93 @@ Do not use timings from runs interrupted by system sleep as performance evidence
 These are acceptance criteria, not completed measurements.
 Until they pass, a full testing rewrite has no demonstrated benefit and has concrete coverage losses.
 
-## Initial verification
+## Verification and limits
 
+### Setup and strict checks
+
+The scaffold, dependency installation, browser installation, guide, and provider configuration completed.
+The user confirmed ChatGPT sign-in. `e2e models openai` lists `gpt-6-luna`.
 `pnpm test -- --agentic-only tests/example.e2e.ts` passed one selected test with no skips or flaky results.
-The browser test took 12.00 seconds; target startup took 256.40 seconds.
-The root lane took 287.5 seconds including orchestration and teardown.
-This is setup evidence, not a benchmark against the existing Playwright journey.
+Its initial cold startup took 256.40 seconds, the test took 12.00 seconds, and the root lane took 287.5 seconds.
+A later run on the merged base passed the example in 3.23 seconds. These are setup results, not comparative benchmarks.
 
 A temporary skipped test with `--pass-with-no-tests` produced vendor exit zero.
 The wrapper rejected it with `1 selected, 1 incomplete, 0 run errors` and root exit one.
-The temporary test was removed.
-Focused runner and documentation checks passed 26 tests.
-The new config, wrapper, and session test passed targeted TypeScript and Biome checks.
+Controlled listener checks rejected a foreign checkout without terminating its listener.
+Focused runner and documentation checks passed 26 tests. Targeted TypeScript and Biome checks passed.
 
-The broader `pnpm test` run exited one after 1,151.1 seconds.
-Package quality, route coverage, and worktree tests passed.
-REST/CLI passed 510 of 513 runnable flows; `SBX-3`, `SBX-5`, and `SSO-1` returned unexpected `503` responses.
-Database suites passed 185 of 186 files; the legacy credit-ledger index test timed out.
-Runner unit tests passed 742 of 743 tests; the documentation citation search exceeded its five-second limit.
-Two SDK scan performance guards exceeded their limits during the concurrent run.
-Both SDK files passed a direct rerun: 92 tests, zero failures.
-The same 100-millisecond URL scan guard also failed on unchanged base `7703291a92`, at 102.5 milliseconds.
-These results do not establish a green repository gate or a benefit from replacing the framework.
-The pilot does not change these API handlers, migrations, or SDK implementations.
+The final live fixture uses the existing authenticated `/metrics` profile helper.
+A real negative probe against the running deterministic stack failed with the expected profile error in 1.71 seconds.
+It made zero model calls and left the API healthy. An initial probe exposed an incorrect check of the health endpoint; that check was corrected.
 
-The first `--full` retry completed its REST/CLI and database lanes without failures: 513 flows and 186 suites containing 1,712 tests, with one quarantine.
-The SDK lane passed. The runner-unit citation search again exceeded its five-second limit; its focused rerun passed.
-During the browser lane, the frontend received `SIGKILL`. The root process later exited 137 before finishing the browser or package stages.
-The cause of the process kills is unknown. This is an incomplete full gate, not a completed browser result.
-Only orphan API and gateway processes proven to belong to this worktree were stopped afterward.
+### Live journey and deterministic comparison
 
-A second full attempt started on `99e35ca1cd` and also exited 137 during the browser stage.
-Before termination, REST/CLI passed 499 of 513 flows, database suites passed 175 of 186 files, and runner units passed 728 of 743 tests.
-The SDK and worktree lanes also failed; route coverage passed.
-Nine of 83 selected browser tests completed successfully. The browser and package stages remain incomplete.
-macOS power logs confirmed repeated deep-idle sleep and wake events during this run.
-Several failures exceeded wall-clock deadlines; other assertion failures remain unclassified.
-A keep-awake process attached after the core failures does not change their results.
-The cause of exit 137 remains unknown. Both owned app listeners were absent after termination.
-These runs provide no passing broad gate and no valid performance comparison.
+`pnpm test -- --agentic-only tests/session-prompt.e2e.ts --no-cache` passed the final fixture and complete cleanup.
+It reported one selected pass, zero selected skips, zero flaky results, and zero run errors.
+The test took 47.94 seconds, startup took 27.75 seconds, and the root lane took 80.5 seconds.
+The agent step took 16.90 seconds, three model calls, and 14,712 tokens.
+Provider token caching was 10%; `--no-cache` disabled action replay.
+The post-run audit found zero pilot project records and zero pilot auth users.
 
-The next default run used `caffeinate -i pnpm test` from startup and completed in 663.9 seconds.
-It passed all 513 REST/CLI flows, all 186 database suites containing 1,713 tests with one quarantine, all 743 runner units, SDK tests, route coverage, and worktree tests.
-Package quality failed two shared-package tests: a diagnostics timing guard and an obsolete Meta guide text assertion.
-The implicated renderer and tests matched `origin/main` byte for byte.
-A focused rerun passed the diagnostics guard without relaxing its threshold and reproduced the Meta text failure.
-Two Meta assertions now check the current orchestrator policy and prohibition on project work.
-All eight focused tests then passed. The broad gate still requires a completed rerun.
+An earlier same-source pair compared identical request, UI, transcript, reload, and cleanup assertions.
+The temporary deterministic version changed only the browser action block and was removed afterward.
 
-The user confirmed ChatGPT sign-in. `e2e models openai` lists `gpt-6-luna`.
-The first subscription-backed journey passed every UI, request, transcript, and reload assertion, then failed repository cleanup after an upstream timeout.
-Its agent step took 15.69 seconds, four model calls, and approximately 19,300 tokens.
-The report's 18% cached-token figure describes provider token caching; `--no-cache` disabled action replay for that run.
-Private recovery confirmed deletion of its synthetic repository and both cloud sessions.
-The cleanup now enumerates every project session, confirms cloud removal, retries repository purge, and retains recovery records on failure.
-Its first corrected rerun stopped before execution because Docker was unavailable. Docker and local Auth are running again.
-`pnpm test -- --agentic-only tests/session-prompt.e2e.ts --no-cache` then passed the complete corrected journey and cleanup.
-It reported one passed test, zero skipped, and zero flaky results; root duration was 86.3 seconds.
-Target startup took 33.40 seconds, and the test including teardown took 47.26 seconds.
-The browser agent used three model calls and approximately 14,800 tokens.
-Three executions with the corrected fixture produced these measurements:
-
-| Mode | Agent step | Model calls | Model tokens | Root duration | Overall result |
-| --- | --- | --- | --- | --- | --- |
-| Fresh, `--no-cache` | 16.98 s | 3 | 14,844 | 86.3 s | Passed, including cleanup |
-| Cache enabled, first recording | 27.09 s | 4 | 19,823 | 110.2 s | Passed, including cleanup |
-| Warm action replay | 16.63 s | 0 | 0 | 163.9 s | Prompt assertions passed; repository cleanup failed |
-
-The warm run reported one replayed step, not a provider token-cache hit.
-Every request, transcript, and reload assertion passed. Each of its three repository purge attempts timed out upstream after 15 seconds.
-Both cloud removals were confirmed; recovery records remained available.
-Private recovery then confirmed the repository was already absent (`404`) and removed the remaining synthetic account and auth user.
-An unauthenticated request to the GitHub API root also returned `502` during recovery. The provider/network failure is not an agent failure.
-This is evidence that replay can avoid browser-agent inference. It is not evidence of a reliable gate or an end-to-end speedup.
-Only three corrected-fixture executions were measured on one loaded machine.
-After merging base `b043e634e6`, a temporary deterministic comparison reached the assistant reply but its marker locator matched both the user prompt and assistant output.
-It used no model calls. The failed locator prevented transcript and reload assertions, so it is not a passing baseline.
-Cold image builds also dominated setup; total timing is not comparable to the earlier warm-image runs.
-The revised fixture keeps the full expected marker out of the user prompt and disables background warming through the real feature-flag API.
-It no longer treats a missing provider ID as completed cleanup. A late warm-session allocation required private recovery; its repository, both cloud sessions, account, and auth user are now removed.
-The next fresh run exposed an agent error: it interpreted the prompt's concatenation request and sent its answer instead of the requested prompt text.
-The exact POST payload assertion rejected that action despite the agent's success verdict. Cleanup completed without error.
-The agent instruction now requires verbatim input and explicitly forbids answering or transforming the prompt.
-This observed failure supports retaining exact independent assertions. It is not a completed seeded false-pass campaign.
-The rendered-page text locator still returned two candidates with the revised prompt; a controlled plain-HTML probe passed exact-match and absent-text checks.
-No general defect in exact matching is established. The journey now selects the existing `.kortix-markdown` output container with an anchored text filter.
-The final live revision passed on the merged base: one passed, zero skipped, zero flaky, and complete teardown.
-It used three model calls and 15,026 tokens. The agent step took 16.90 seconds; the test took 44.01 seconds and the root lane took 82.1 seconds.
-Interrupting an earlier diagnostic left a synthetic repository without a cloud session. Private recovery confirmed repository absence and removed its identity.
-After an interruption, audit fixture records and external resources; ordinary Node HTTP setup does not provide the engine's cancellation guarantees.
-The corrected deterministic comparison then passed the same request, UI, transcript, reload, and cleanup assertions on the same merged app source.
-The comparison changed only the browser action block; its temporary file was removed after execution.
-
-| Final fixture | Browser action | Model calls / tokens | Test + cleanup | Startup | Root duration |
+| Measured fixture | Browser action | Model calls / tokens | Test + cleanup | Startup | Root duration |
 | --- | --- | --- | --- | --- | --- |
 | ChatGPT agent, fresh | 16.90 s | 3 / 15,026 | 44.01 s | 32.41 s | 82.1 s |
 | Deterministic actions | 4.72 s | 0 / 0 | 41.21 s | 21.68 s | 67.4 s |
 
-Both runs passed one selected test with zero skipped and zero flaky results.
-This pair favors deterministic action time. Startup, provisioning, application inference, and cleanup varied between runs.
+Both variants passed one selected test with zero selected skips and zero flaky results.
+This pair favors deterministic action time. Startup, provisioning, application inference, and cleanup varied.
 One sample per variant does not establish a stable speed ratio or maintenance benefit.
-The resource audit after these runs found zero synthetic project records and zero synthetic auth users from this pilot.
+
+### Replay and observed failures
+
+One warm replay used zero model calls and zero tokens, with one replayed step taking 16.63 seconds.
+Its request, transcript, and reload assertions passed. Repository cleanup timed out upstream on all three attempts.
+The overall run failed after 163.9 seconds; private recovery confirmed the repository was already absent (`404`).
+Both cloud sessions were removed, then the retained synthetic account and auth user were deleted.
+An unauthenticated request to the GitHub API root also returned `502` during recovery.
+This proves that replay can avoid browser-agent inference. It does not establish a reliable gate or an end-to-end speedup.
+The final prompt instruction has a different recording key and has not completed the replay reliability campaign.
+
+An agent interpreted the prompt's concatenation instruction and sent its answer instead of the requested text.
+The exact POST payload assertion rejected the action despite the agent's success verdict.
+The instruction now requires verbatim input and forbids answering or transforming the prompt.
+This observed failure supports retaining exact independent assertions. It is not a completed seeded false-pass campaign.
+
+Rendered-page text selection returned ambiguous candidates. A controlled plain-HTML exact-match probe passed.
+No general engine defect is established. The fixture selects the existing `.kortix-markdown` output container with an anchored filter.
+Unsupported response predicates prevent an exact POST-status assertion; durable transcript read-back proves acceptance.
+
+A late warm-session allocation exposed an incomplete cleanup check of missing provider IDs.
+The fixture disables background warming through the real feature API and requires confirmed removal for every recorded cloud session.
+Cleanup failures preserve recovery records. Private recovery removed all known repositories, cloud sessions, accounts, and auth users.
+Interrupting a diagnostic also left a synthetic repository without a cloud session; private recovery removed it and its identity.
+After an interruption, audit fixtures and external resources. Ordinary Node HTTP setup does not have the engine's cancellation guarantees.
+
+### Repository gates
+
+The first default run exited one after 1,151.1 seconds. It passed package quality, route coverage, and worktree tests.
+REST/CLI passed 510 of 513 flows, database suites passed 185 of 186 files, and runner units passed 742 of 743 tests.
+Unexpected `503` responses and timeout failures remained. Two SDK timing guards failed under concurrent load.
+Both SDK files passed a direct rerun: 92 tests, zero failures.
+The same 100-millisecond URL guard failed on unchanged base `7703291a92` at 102.5 milliseconds.
+
+The awake default retry completed in 663.9 seconds.
+It passed all 513 REST/CLI flows, all 186 database suites containing 1,713 tests with one quarantine, all 743 runner units, SDK tests, route coverage, and worktree tests.
+Package quality failed a diagnostics timing guard and an obsolete Meta guide text assertion.
+The implicated renderer and tests matched `origin/main` byte for byte.
+Two Meta assertions now check the current orchestrator policy and prohibition on project work; eight focused tests passed.
+A full shared-package rerun passed 716 of 717 tests. The unchanged 100-millisecond diagnostics guard measured 128.6 milliseconds.
+No timing threshold was relaxed.
+
+Three full attempts exited 137 during browser verification. None completed the browser or package stages.
+The second overlapped confirmed macOS deep-idle sleep and wake events; wall-clock deadline failures cannot serve as performance evidence.
+The third prevented idle sleep from startup and passed all 513 REST/CLI flows, 186 database suites, and 743 runner units.
+Its SDK URL guard measured 145.4 milliseconds against a 100-millisecond limit. Eight of 83 selected browser tests passed before termination.
+The cause of the process kills remains unknown. Owned app listeners and root runners were absent afterward.
+These are incomplete full gates. They do not establish that all existing browser journeys pass.
+
 The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.
+The final delivery status must include the most recent completed repository gate; the evidence above does not claim a green broad gate.
