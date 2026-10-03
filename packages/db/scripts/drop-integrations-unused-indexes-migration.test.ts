@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 
 /**
- * Runtime contract of 20261003055112086_drop_integrations_unused_indexes.concurrent.ts
+ * Runtime contract of 20261003111224680_drop_integrations_unused_indexes.concurrent.ts
  * with node-pg-migrate's single-transaction batch runner — proven against the
  * REAL runner with a recording client, no database:
  *

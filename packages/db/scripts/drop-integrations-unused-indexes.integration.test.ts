@@ -7,7 +7,7 @@
  * `idx_integrations_account` (redundant with the leading column of the unique
  * `idx_integrations_account_provider_account`) and
  * `idx_integrations_provider_account` (no reader names the column). The
- * migration `20261003055112086_drop_integrations_unused_indexes.concurrent.ts`
+ * migration `20261003111224680_drop_integrations_unused_indexes.concurrent.ts`
  * drops both with `DROP INDEX CONCURRENTLY IF EXISTS`.
  *
  * The lane's template database has already applied every migration, so the
