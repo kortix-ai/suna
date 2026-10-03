@@ -1,5 +1,5 @@
 {
-  "id": "95f7afc5-6dea-41f1-8d43-db993edcaf17",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -3263,36 +3263,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "app_deployments_artifact_idx": {
-          "name": "app_deployments_artifact_idx",
-          "columns": [
-            {
-              "expression": "artifact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "app_deployments_source_session_idx": {
-          "name": "app_deployments_source_session_idx",
-          "columns": [
-            {
-              "expression": "source_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -5528,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",

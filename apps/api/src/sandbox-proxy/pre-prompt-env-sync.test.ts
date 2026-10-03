@@ -20,7 +20,7 @@
  *    suite.
  */
 import { describe, expect, test } from 'bun:test';
-import { runPrePromptEnvSync, type PrePromptEnvSyncDeps } from './pre-prompt-env-sync';
+import { isRetryableEnvSyncFailure, runPrePromptEnvSync, type PrePromptEnvSyncDeps } from './pre-prompt-env-sync';
 
 const RECORD = {
   accountId: 'acct-1',
@@ -169,5 +169,22 @@ describe('runPrePromptEnvSync — a person starting a turn binds the session tok
     expect(result?.status).toBe(502);
     expect(await result?.json()).toEqual({ error: 'could not bind the session to the person starting this turn' });
     expect(log).not.toContain('remintGrant:called');
+  });
+});
+
+describe('isRetryableEnvSyncFailure — status and error class, never the body text', () => {
+  const httpError = (status: number, body: string) =>
+    Object.assign(new Error(`env sync failed: ${status} ${body}`), { name: 'EnvSyncHttpError', status });
+
+  test('a 502/503/504 from the daemon and a fetch that never connected retry', () => {
+    for (const status of [502, 503, 504]) expect(isRetryableEnvSyncFailure(httpError(status, ''))).toBe(true);
+    expect(isRetryableEnvSyncFailure(Object.assign(new TypeError('Unable to connect'), { code: 'ConnectionRefused' }))).toBe(true);
+    expect(isRetryableEnvSyncFailure(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }))).toBe(true);
+  });
+
+  test('any other daemon status refuses, even when its body mentions a connection failure', () => {
+    expect(isRetryableEnvSyncFailure(httpError(500, 'connection refused upstream'))).toBe(false);
+    expect(isRetryableEnvSyncFailure(httpError(401, 'timeout'))).toBe(false);
+    expect(isRetryableEnvSyncFailure(new Error('socket hang up: econnreset'))).toBe(false);
   });
 });
