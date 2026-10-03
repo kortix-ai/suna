@@ -19256,7 +19256,8 @@
       "title": "Guardado, pero {agent} aún no puede leerlo",
       "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",
       "allowlist": "{names} {count, plural, one {está} other {están}} fuera de los secretos de esta sesión. Inicia una nueva sesión para {count, plural, one {usarlo} other {usarlos}}."
-    }
+    },
+    "sessionChatAgentTurnFailedNoReason": "El turno del agente falló. No se informó de ningún motivo."
   },
   "projectOnboarding": {
     "resetSuccess": "Reinicio de incorporación",

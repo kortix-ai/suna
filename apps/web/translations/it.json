@@ -19256,7 +19256,8 @@
       "title": "Salvato, ma {agent} non può ancora leggerlo",
       "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
       "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
-    }
+    },
+    "sessionChatAgentTurnFailedNoReason": "Turno dell’agente non riuscito. Nessun motivo è stato segnalato."
   },
   "projectOnboarding": {
     "resetSuccess": "Reimpostazione dell'onboarding",
