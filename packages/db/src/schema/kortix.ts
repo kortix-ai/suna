@@ -2135,8 +2135,9 @@ export const sessionSandboxes = kortixSchema.table(
     // status = 'archived' AND external_id IS NOT NULL AND metadata ?
     // 'providerRemovalPendingAt', ORDER BY metadata->>'providerRemovalRetryAfterAt'
     // ASC NULLS FIRST. Without this partial index every reaper tick scanned every
-    // archived row's metadata (jsonb ?) and sorted it — ~4.4k rows, seconds per
-    // tick, ~60% buffer hits — to usually return nothing. The predicate is the
+    // archived row's metadata (jsonb ?) and sorted it — prod pg_stat_statements:
+    // mean 1609 ms over ~2300 calls, zero returned rows, buffer hit rate 59 %
+    // (KRTX-1309) — to usually return nothing. The predicate is the
     // query's own, so the index only holds rows the reaper can act on, and its
     // key carries the sort so LIMIT 50 reads the due rows in order with no sort.
     // Built by
