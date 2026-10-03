@@ -9,7 +9,7 @@ import {
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists agent, skills, connectors, triggers, review, models, secrets, config in that order', () => {
+  test('lists agent, skills, connectors, drives, triggers, review, models, secrets, config in that order', () => {
     // Agents lead the bar (Marko, 2026-09-01): an agent is the one object a
     // person is granted access to, so it is the object Customize is built
     // around. Skills — the other thing you BUILD — follows; the rest is what
@@ -20,6 +20,7 @@ describe('CAPABILITY_TABS', () => {
       'agent',
       'skills',
       'connectors',
+      'drives',
       'triggers',
       'review',
       'models',
