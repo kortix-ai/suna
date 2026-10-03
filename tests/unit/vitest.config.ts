@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // A pinned loopback host: vite's buildStart resolves `localhost` via DNS and
+  // an unresolvable localhost (a locked-down runtime's hosts file) rejects the
+  // whole startup. 127.0.0.1 needs no lookup and serves the same interface.
+  server: { host: '127.0.0.1' },
   test: {
     name: 'unit',
     root: import.meta.dirname,
