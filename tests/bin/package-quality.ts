@@ -34,6 +34,11 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
     env[name] = value;
   }
   env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  // The platform points BASH_ENV at its agent-env file; every bash a lane
+  // spawns (apps/api/scripts/test.sh) would source it and re-export the
+  // ambient platform env right back. ENV covers the same hook for /bin/sh.
+  delete env.BASH_ENV;
+  delete env.ENV;
   // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
   // the session env file the daemon's readiness gate reads, and the image's
   // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
