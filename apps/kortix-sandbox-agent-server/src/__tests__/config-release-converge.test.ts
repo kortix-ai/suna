@@ -9,7 +9,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
@@ -1059,11 +1059,11 @@ describe('the session is told which commit it runs', () => {
     expect(applied).toContain(`commit ${release.descriptor.source_commit!.slice(0, 12)}`)
     expect(applied).toContain('`/workspace` is a separate checkout')
     expect(applied).toContain('pushed to the base branch')
-    const mtime = statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs
+    const mtime = Bun.file(CONFIG_RELEASE_NOTICE_PATH).lastModified
 
     // Nothing moved: the agent must not be told its config changed.
     expect((await converge(oc)).outcome).toBe('unchanged')
-    expect(statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs).toBe(mtime)
+    expect(Bun.file(CONFIG_RELEASE_NOTICE_PATH).lastModified).toBe(mtime)
 
     // A push to the base branch: the notice names the new commit.
     write(origin, `${DIR}/agents/kortix.md`, 'PROMPT v2\n')

@@ -192,7 +192,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stub)
 
     expect(result).toEqual({ cli: 'updated', skills: 'updated' })
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect((await stat(ws.cliPath)).mode & 0o777).toBe(0o755)
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toContain('body v2')
     expect(await readFile(join(ws.skillsDir, 'kortix-cli/SKILL.md'), 'utf8')).toBe('cli skill v2\n')
@@ -408,7 +408,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stubFetch())
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
   })
 })
 
@@ -636,7 +636,7 @@ describe('reconcileRuntimeAssets over chunks', () => {
     const result = await run(ws, stub)
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect(stub.calls).toContain(`${API_URL}/v1/runtime-assets/cli`)
   })
 })

@@ -4430,7 +4430,7 @@ export function SessionChat({
                         <TurnErrorDisplay
                           key={messageId}
                           errorText={notice.kind === 'unexplained'
-                            ? 'Agent turn failed. No reason was reported.'
+                            ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
                             : failure.error?.message ?? undefined}
                           className="mt-2"
                         />
