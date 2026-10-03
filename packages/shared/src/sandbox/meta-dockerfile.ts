@@ -1,4 +1,10 @@
-import { NODE_VERSION, OPENCODE_VERSION, PNPM_VERSION } from '../runtime-versions';
+import {
+  NODE_VERSION,
+  OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PNPM_VERSION,
+} from '../runtime-versions';
 import { kortixShellProfileRun } from './dockerfile-layer';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
@@ -86,9 +92,21 @@ RUN useradd --create-home --shell /bin/bash kortix \\
  && chown -R kortix:kortix /workspace /opt/kortix /ephemeral
 
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
-    PATH="/home/kortix/.local/share/pnpm/bin:\${PATH}"
-RUN curl -fsSL https://get.pnpm.io/install.sh \\
-      | env HOME=/home/kortix SHELL=/bin/bash PNPM_VERSION=${PNPM_VERSION} sh - \\
+    PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:\${PATH}"
+# pnpm comes from its checksum-verified standalone release artifact; the
+# public installer script is not part of the trust path.
+RUN case "$(uname -m)" in \\
+      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\
+      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\
+      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+ && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\
+      "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz" \\
+ && echo "\${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\
+ && mkdir -p /home/kortix/.local/bin \\
+ && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\
+ && rm /tmp/pnpm.tar.gz \\
+ && test "$(HOME=/home/kortix pnpm --version)" = "${PNPM_VERSION}" \\
  && HOME=/home/kortix pnpm runtime set node ${NODE_VERSION} --global \\
  && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \\
  && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
