@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: rate-limit windows are per-process accounting only; each replica
+// enforces its own budget, and exact refusal accounting comes from the request
+// logs and auth audits, as the header above states.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
