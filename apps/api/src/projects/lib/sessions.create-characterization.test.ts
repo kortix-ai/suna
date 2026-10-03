@@ -5,9 +5,11 @@ import { config } from '../../config';
 let atCap = false;
 let billing: Record<string, unknown> = { ok: true };
 let inserted: Record<string, unknown> | undefined;
+/** The billing entitlement under test. False = free tier (KRTX-1067). */
+let mayUseManagedModels = true;
 
 mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => billing }));
-mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => true }));
+mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => mayUseManagedModels }));
 mock.module('../../shared/audit', () => ({ recordAuditEvent: async () => {} }));
 mock.module('../../shared/account-limits', () => ({
   resolveAccountSessionLimit: async () => ({ tier: 'starter', limit: 1, source: 'tier' }),
@@ -45,6 +47,16 @@ mock.module('./session-runtime-context', () => ({
   mergeSessionSandboxEnv: (env: unknown) => env,
   buildSessionRuntimeContextEnv: () => ({}),
 }));
+// The default chain a fresh account's model pin flows through. Nothing is
+// stored, so it resolves to "the platform default applies".
+mock.module('../../llm-gateway/resolution/default-model', () => ({
+  isModelServableForAccount: async () => true,
+  resolveEffectiveModel: async () => ({ model: null, source: 'platform' as const }),
+}));
+mock.module('../../llm-gateway/models/served-managed-models', () => ({
+  platformDefaultModelId: () => 'deepseek-v4.1-flash',
+  isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4.1-flash',
+}));
 
 import { createProjectSession } from './sessions';
 
@@ -54,13 +66,21 @@ const project = {
 } as Parameters<typeof createProjectSession>[0]['project'];
 
 const originalKortixUrl = config.KORTIX_URL;
+const originalDefaultModel = config.LLM_GATEWAY_DEFAULT_MODEL;
 beforeEach(() => {
   atCap = false;
   billing = { ok: true };
   inserted = undefined;
+  mayUseManagedModels = true;
   config.KORTIX_URL = 'https://api.example.test';
+  // A non-default operator config, so the free-tier test can tell the RESOLVED
+  // platform default apart from the PAID path's raw config fallback.
+  config.LLM_GATEWAY_DEFAULT_MODEL = 'glm-5.3-flash';
 });
-afterAll(() => { config.KORTIX_URL = originalKortixUrl; });
+afterAll(() => {
+  config.KORTIX_URL = originalKortixUrl;
+  config.LLM_GATEWAY_DEFAULT_MODEL = originalDefaultModel;
+});
 
 test('cap 429 takes precedence over simultaneous billing 402 without inserting', async () => {
   atCap = true;
@@ -86,5 +106,30 @@ test('insert stores the exact create-time metadata fields and override order', a
       actor_type: 'human', authoritative_source: 'human',
       initiator_actor_type: null, initiator_actor_id: null, delegation_depth: 0,
     },
+  });
+});
+
+// KRTX-1067: the boot model of a session with nothing stored. The gateway
+// serves the platform default to every tier, so a fresh FREE account must boot
+// pinned to it — an unpinned session was the dead composer of the bug report.
+test('a fresh free-tier account boots pinned to the platform default', async () => {
+  mayUseManagedModels = false;
+  config.LLM_GATEWAY_ENABLED = true;
+  const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
+  expect(result.error).toBeUndefined();
+  expect(inserted?.metadata).toMatchObject({
+    opencode_model: 'kortix/deepseek-v4.1-flash',
+    opencode_model_source: 'platform',
+  });
+});
+
+test('a paid account keeps the raw operator config as its boot fallback', async () => {
+  mayUseManagedModels = true;
+  config.LLM_GATEWAY_ENABLED = true;
+  const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
+  expect(result.error).toBeUndefined();
+  expect(inserted?.metadata).toMatchObject({
+    opencode_model: 'kortix/glm-5.3-flash',
+    opencode_model_source: 'platform',
   });
 });
