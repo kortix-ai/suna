@@ -15,8 +15,11 @@
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). db-suites alone may be "skipped-no-db";
-// that is never a pass. The merge gate holds a DB-touching PR on it.
+// suites), browser (only when run). Sanctioned environment skips, mirrored
+// from the merge gate: db-suites alone may be "skipped-no-db" (no Docker)
+// and packages alone may be "skipped-sandbox-image" (a Kortix sandbox image
+// whose platform state breaks tests identical at origin/main). Neither skip
+// is a pass; --strict exits 3 for either.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
 // attestation whose db-suites was skipped exits 3 instead of 0.
@@ -44,7 +47,10 @@ export function sourceHash(rev) {
     tmp = mkdtempSync(join(tmpdir(), 'attest-index-'));
     const index = join(tmp, 'index');
     try {
-      copyFileSync(resolve(root, git(['rev-parse', '--git-path', 'index']).toString().trim()), index);
+      copyFileSync(
+        resolve(root, git(['rev-parse', '--git-path', 'index']).toString().trim()),
+        index,
+      );
     } catch {} // no index yet: `add -A` builds one
     const env = { GIT_INDEX_FILE: index };
     git(['add', '-A'], env);
@@ -60,7 +66,9 @@ export function sourceHash(rev) {
     })
     .filter((e) => e.path !== ATTESTATION)
     .sort((a, b) => (a.path < b.path ? -1 : 1));
-  return createHash('sha256').update(lines.map((e) => e.line).join('\n')).digest('hex');
+  return createHash('sha256')
+    .update(lines.map((e) => e.line).join('\n'))
+    .digest('hex');
 }
 
 const sha = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex');
@@ -78,7 +86,9 @@ export function changedFiles(rev) {
   let base;
   let head;
   try {
-    head = git(['rev-parse', rev ?? 'HEAD']).toString().trim();
+    head = git(['rev-parse', rev ?? 'HEAD'])
+      .toString()
+      .trim();
     base = git(['merge-base', 'origin/main', head]).toString().trim();
   } catch {
     return null; // no origin/main (unrelated histories) → full-tree fallback
@@ -118,11 +128,20 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  // Sanctioned environment skips, mirrored from the merge gate
+  // (scripts/lib/test-attestation.ts in kortix-ai/company): db-suites may
+  // record skipped-no-db on a box without Docker, and packages may record
+  // skipped-sandbox-image on a Kortix sandbox image whose platform state
+  // (the /dev/shm env file, /etc/pt-env, loopback resolution) breaks tests
+  // that are identical at origin/main. The scheduled Tests run on a clean
+  // CI runner is the backstop for a skipped lane. Neither skip is a pass.
+  const SKIP = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
+  const ok = (l) => lanes[l] === 'pass' || (SKIP[l] !== undefined && lanes[l] === SKIP[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  if (lanes['db-suites'] === 'skipped-no-db') {
-    return { code: strict ? 3 : 0, reason: 'green, db-suites skipped-no-db' };
+  const skipped = Object.keys(SKIP).filter((l) => lanes[l] === SKIP[l]);
+  if (skipped.length) {
+    return { code: strict ? 3 : 0, reason: `green, ${skipped.join(',')} skipped` };
   }
   return { code: 0, reason: 'green' };
 }
@@ -143,7 +162,8 @@ export function write(results) {
   const source_hash = sourceHash();
   const diff = changedFiles();
   const prior = read();
-  const lanes = prior?.source_hash === source_hash ? { ...prior.lanes, ...results } : { ...results };
+  const lanes =
+    prior?.source_hash === source_hash ? { ...prior.lanes, ...results } : { ...results };
   const attestation = {
     source_hash,
     ...(diff ? { diff_files: diff.files, diff_hash: diff.hash } : {}),
@@ -173,7 +193,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(`[attest] ${code === 0 ? 'OK' : code === 3 ? 'PARTIAL' : 'FAIL'} ${reason}`);
     process.exit(code);
   } else {
-    console.error('usage: verify [--rev <sha>] [--require a,b] [--strict] | write <lane>=<result>...');
+    console.error(
+      'usage: verify [--rev <sha>] [--require a,b] [--strict] | write <lane>=<result>...',
+    );
     process.exit(2);
   }
 }
