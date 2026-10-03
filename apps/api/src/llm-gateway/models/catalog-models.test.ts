@@ -3,7 +3,7 @@ import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
 import { CODEX_SEED_MODEL_IDS } from './codex-models';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { platformDefaultModelId, SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
@@ -229,17 +229,28 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
   const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
 
   // Managed ids are bare; every BYOK and codex id carries a provider prefix.
-  test('free tier sees no managed Kortix model', () => {
-    expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([]);
+  // KRTX-1067: the platform default is the ONE managed model a free-tier
+  // account may run — it is what makes a fresh free account usable. Every
+  // other managed id stays hidden.
+  test('free tier sees only the platform default among managed Kortix models', () => {
+    expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([
+      platformDefaultModelId(),
+    ]);
+  });
+
+  test('the free-tier platform default is the full served record', () => {
+    expect(freeFull[platformDefaultModelId()]).toEqual(
+      gatewayModelCatalog('proj')[platformDefaultModelId()],
+    );
   });
 
   test('free tier still sees BYOK catalog models (own connected keys work)', () => {
     expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
   });
 
-  test('anonymous + free-only = empty catalog', () => {
-    const empty = gatewayModelCatalog(undefined, { freeManagedOnly: true });
-    expect(empty).toEqual({});
+  test('anonymous + free-only = the platform default alone', () => {
+    const anonymous = gatewayModelCatalog(undefined, { freeManagedOnly: true });
+    expect(Object.keys(anonymous)).toEqual([platformDefaultModelId()]);
   });
 });
 

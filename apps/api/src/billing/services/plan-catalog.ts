@@ -147,8 +147,10 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     shape: 'none',
     rank: 1,
     price: { amountUsd: 0, unit: 'month' },
-    // $2 of expiring sandbox-only credits — sandbox-only because
-    // managedModels is false, not because the wallet is partitioned.
+    // $2 of expiring credits. The managed lineup stays gated behind
+    // `managedModels: false` — the platform default model is the one
+    // exception the gateway serves on every tier (KRTX-1067) — so the grant
+    // funds sandbox compute plus first-contact turns on that default.
     grant: { includedCreditsUsd: 2, per: 'account' },
     entitlements: {
       ...NO_ENTERPRISE,

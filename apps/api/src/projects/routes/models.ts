@@ -393,7 +393,10 @@ projectsApp.openapi(
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+      // The platform default is servable on every tier (KRTX-1067), so an
+      // unresolved free-tier chain still lands on it — a fresh free account's
+      // composer reads this as its model instead of "No model".
+      resolvedForCaller: resolved.model ?? platformDefaultModelId(),
       resolvedSource: resolved.source,
       freeTier,
     });

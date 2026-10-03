@@ -194,8 +194,10 @@ const handleSessionSnapshot = async (c: any) => {
               accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
-              resolvedForCaller:
-                resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+              // The platform default is servable on every tier (KRTX-1067),
+              // so an unresolved free-tier chain still lands on it — same
+              // answer as `GET .../model-defaults` computes.
+              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
               resolvedSource: resolved.source,
               freeTier,
             };
