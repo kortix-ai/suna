@@ -20,6 +20,7 @@ import {
   platformRoleEnum,
   changeRequestStatusEnum,
   accounts,
+  accountModelPreferences,
   accountMembers,
   accountMemberships,
   projects,
@@ -762,5 +763,16 @@ describe('canonical RBAC tables (PR2)', () => {
     // filters account_id = :id, so those rows are invisible to old code.
     const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
     expect(col?.notNull).toBe(false);
+  });
+});
+
+describe('account model preferences foreign-key coverage', () => {
+  test('covers the projects foreign key with a project-led index', () => {
+    const covering = getTableConfig(accountModelPreferences).indexes.find((index) => {
+      const column = index.config.columns[0];
+      return column && 'name' in column && column.name === 'project_id';
+    });
+    expect(covering).toBeDefined();
+    expect(covering?.config.where).toBeUndefined();
   });
 });
