@@ -1159,10 +1159,6 @@
           "name": "Harness Pi (en el sandbox)",
           "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
         },
-        "agent_principal": {
-          "name": "Agentes como principales",
-          "description": "Los agentes actúan como sí mismos: con sus permisos de Kortix, limitados por su rol. Quien ejecuta un agente solo aporta sus propias cuentas."
-        },
         "config_releases": {
           "name": "Versiones de configuración",
           "description": "Ejecuta las sesiones con la configuración de agente actual de la rama base, servida en solo lectura, para que un agente, skill o herramienta fusionado llegue a cada sesión en curso. Desactivado, cada sesión lee su propia carpeta de configuración del workspace."
@@ -20212,9 +20208,7 @@
     "openWithoutGrant": "No requiere concesión",
     "grantNote": "El agente también necesita project.app.read en sus permisos de Kortix.",
     "emptyTitle": "Aún no hay Apps",
-    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija.",
-    "flagOffHint": "Agente como principal está desactivado en este proyecto, así que la concesión se guarda pero todavía no controla ninguna App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija."
   },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"
