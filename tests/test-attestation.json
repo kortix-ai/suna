@@ -1,18 +1,26 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "cb00fe0c516941fe9b8e8b0570ed06a829c4acc216077bb47e10828423820984",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261003153537_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003153543419_project_session_public_shares_account_index.concurrent.ts",
+    "packages/db/src/schema/kortix.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "f744cb2b0c7adb51102c4b812f9113b0866bfb84ff9d168d453fba09561bb54a",
+  "head": "891347ec5ceac0aad5aefe669b9d62f89b4b64ce",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T16:05:48.946Z"
 }
