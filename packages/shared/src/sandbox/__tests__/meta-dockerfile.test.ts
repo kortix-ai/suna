@@ -31,8 +31,11 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# Kortix Meta Agent');
-    expect(dockerfile).toContain('You coordinate work. You do not perform project work in this sandbox.');
+    // The guide is the current META_AGENT_GUIDE (#9017 rewrote it; the old
+    // assertions pinned the previous wording and failed since).
+    expect(dockerfile).toContain('# Meta');
+    expect(dockerfile).toContain('You are Meta: the single agent the user talks to, and a pure');
+    expect(dockerfile).toContain('NEVER do project work in this sandbox.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
     );
