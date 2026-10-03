@@ -47,6 +47,7 @@ import {
   auditSessionSequences,
   auditWebhookDeliveries,
   accountSsoProviders,
+  accountSsoGroupMappings,
   accountScimUsers,
   connectorAuthorizationStrategyEnum,
   connectorCalls,
@@ -707,6 +708,37 @@ describe('accountSsoProviders table', () => {
     expect(col).toBeDefined();
     expect(col?.notNull).toBe(true);
     expect(col?.default).toBe(false);
+  });
+});
+
+describe('accountSsoGroupMappings table', () => {
+  test('keeps only the unique claim index and does not re-add the indexes no read path uses', () => {
+    // Dropped by 20261003054928441_drop_unused_sso_mappings_indexes: zero
+    // prod scans (`pg_stat_user_indexes.idx_scan`), Supabase advisor lint
+    // unused_index, and no query on this table filters sso_provider_id or
+    // group_id — every read and write predicates on
+    // (account_id, claim_value[, mapping_id]). Re-adding either costs one
+    // index write per mapping write for nothing.
+    const names = indexNames(accountSsoGroupMappings);
+    expect(names).toContain('idx_account_sso_mappings_claim');
+    for (const dropped of ['idx_account_sso_mappings_provider', 'idx_account_sso_mappings_group']) {
+      expect(names).not.toContain(dropped);
+    }
+  });
+
+  test('the kept unique claim index backs the ON CONFLICT target', () => {
+    // createSsoGroupMapping/ensureAutoProvisionedGroup insert with
+    // onConflictDoNothing() on (account_id, claim_value): the unique index
+    // must stay, or the insert 42P10s (there is no unique or exclusion
+    // constraint matching the ON CONFLICT specification).
+    const claim = getTableConfig(accountSsoGroupMappings).indexes.find(
+      (i) => i.config.name === 'idx_account_sso_mappings_claim',
+    );
+    expect(claim?.config.unique).toBe(true);
+    expect(claim?.config.columns.map((c) => ('name' in c ? c.name : undefined))).toEqual([
+      'account_id',
+      'claim_value',
+    ]);
   });
 });
 

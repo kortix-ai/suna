@@ -5650,8 +5650,15 @@ export const accountSsoGroupMappings = kortixSchema.table(
     // surprise double-membership). To map a claim to multiple groups,
     // put those users in one IAM group and attach the policies there.
     uniqueIndex('idx_account_sso_mappings_claim').on(table.accountId, table.claimValue),
-    index('idx_account_sso_mappings_provider').on(table.ssoProviderId),
-    index('idx_account_sso_mappings_group').on(table.groupId),
+    // `idx_account_sso_mappings_provider` (sso_provider_id) and
+    // `idx_account_sso_mappings_group` (group_id) were dropped 2026-10-03
+    // (migration 20261003054928441_drop_unused_sso_mappings_indexes): zero
+    // scans on prod (`pg_stat_user_indexes.idx_scan`), reported by the
+    // Supabase advisor (lint unused_index), and no query on this table
+    // filters either column — every read and write predicates on
+    // (account_id, claim_value[, mapping_id]) and is served by the unique
+    // index above or the primary key. The two columns' FK cascades resolve
+    // through a seq scan, fine for a per-account config table.
   ],
 );
 
