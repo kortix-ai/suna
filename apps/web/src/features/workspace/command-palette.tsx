@@ -876,7 +876,7 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
-  // What the active session's runtime serves (E1): a pi session has no compact.
+  // What the active session's runtime serves (E1): a control shows only with its capability.
   const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
