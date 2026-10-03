@@ -246,19 +246,17 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
+/** The image bakes managed skills and a host env file this box really has; a
+ *  rig that reads the machine is not a test, so point both at absent paths. */
+const absentBoxState = join(tmpdir(), 'pi-harness-absent-box-state')
 const realManagedSkillsDir = process.env.KORTIX_MANAGED_SKILLS_DIR
 const realPtEnvPath = process.env.KORTIX_PT_ENV_PATH
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
-  // This box can be a Kortix sandbox whose /etc/pt-env carries a live
-  // session's AUTO_CLONE and branch; a rig must read only its own env. The
-  // host-health read resolves the file through KORTIX_PT_ENV_PATH.
-  process.env.KORTIX_PT_ENV_PATH = join(homeDir, 'absent-pt-env')
-  // The same for the image's baked managed skills: managedSkillsDir() reads
-  // process.env directly, and the /skill assertions count skills.
-  process.env.KORTIX_MANAGED_SKILLS_DIR = join(homeDir, 'absent-managed-skills')
+  process.env.KORTIX_MANAGED_SKILLS_DIR = absentBoxState
+  process.env.KORTIX_PT_ENV_PATH = absentBoxState
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -268,11 +266,11 @@ afterEach(async () => {
   resetKortixEventBusForTests()
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
-  rmSync(homeDir, { recursive: true, force: true })
-  if (realPtEnvPath === undefined) delete process.env.KORTIX_PT_ENV_PATH
-  else process.env.KORTIX_PT_ENV_PATH = realPtEnvPath
   if (realManagedSkillsDir === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
   else process.env.KORTIX_MANAGED_SKILLS_DIR = realManagedSkillsDir
+  if (realPtEnvPath === undefined) delete process.env.KORTIX_PT_ENV_PATH
+  else process.env.KORTIX_PT_ENV_PATH = realPtEnvPath
+  rmSync(homeDir, { recursive: true, force: true })
 })
 
 /** Wait until the root's transcript shows a tool part in the running state. */

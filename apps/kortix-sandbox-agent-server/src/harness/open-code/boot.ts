@@ -28,7 +28,7 @@ import {
 import { logger } from '@/lib/log/logger'
 import {
   catalogIsDegraded,
-  bakedLlmCatalogPath,
+  bakedCatalogPath,
   hasKortixLlmGateway,
   missingManagedModelIds,
   refreshGatewayCatalogFile,
@@ -564,7 +564,7 @@ export async function reconcileManagedModels(
       return
     }
     const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? bakedLlmCatalogPath(),
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
       targetCatalogFile:
         opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
       managed: live,

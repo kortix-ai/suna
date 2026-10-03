@@ -71,24 +71,15 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
   return (JSON.parse(raw!) as ProviderConfig).provider.kortix.models
 }
 
-// A Kortix sandbox box bakes the full catalog at /opt/kortix; the no-catalog
-// scenarios below must not read the box's file, so the baked path is a test
-// override (the same seam buildOpencodeConfigContent consults).
-const ABSENT_BAKED_CATALOG = join(tmpdir(), 'kortix-absent-baked-catalog.json')
-const realBakedCatalogPath = process.env.KORTIX_LLM_CATALOG_BAKED_PATH
-
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
-  process.env.KORTIX_LLM_CATALOG_BAKED_PATH = ABSENT_BAKED_CATALOG
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
-  if (realBakedCatalogPath === undefined) delete process.env.KORTIX_LLM_CATALOG_BAKED_PATH
-  else process.env.KORTIX_LLM_CATALOG_BAKED_PATH = realBakedCatalogPath
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 
@@ -254,6 +245,17 @@ describe('boot config composition', () => {
 })
 
 describe('the boot config never touches the network', () => {
+  // The image-baked catalog at the well-known path exists on a Kortix sandbox
+  // image and would answer for the absent fixture below; point the baked
+  // fallback at an absent path so this describe reads only its own disk.
+  const ABSENT_BAKED = join(tmpdir(), 'kortix-absent-baked-catalog.json')
+  beforeEach(() => {
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = ABSENT_BAKED
+  })
+  afterEach(() => {
+    delete process.env.KORTIX_BAKED_LLM_CATALOG_PATH
+  })
+
   // `opencode serve` cannot bind until this config exists, so the build reads
   // only disk: a catalog file, else the bundled minimal set.
   const NO_FILE_ENV = {

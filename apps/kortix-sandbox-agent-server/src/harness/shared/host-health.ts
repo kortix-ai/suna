@@ -13,12 +13,12 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
-// The host env file's path, read at CALL time: a test that overrides it
-// through KORTIX_PT_ENV_PATH does so in a beforeEach, after this module has
-// already loaded.
-function ptEnvPath(): string {
-  return process.env.KORTIX_PT_ENV_PATH || '/etc/pt-env'
-}
+const PT_ENV_PATH = '/etc/pt-env'
+
+/** The env file THIS read consults. `KORTIX_PT_ENV_PATH` is read at call time so
+ *  a test can pin it after this module has loaded: a Kortix box's own
+ *  /etc/pt-env would otherwise answer for a rig that has no session env file. */
+const ptEnvPath = () => process.env.KORTIX_PT_ENV_PATH || PT_ENV_PATH
 
 function wantedSessionBranch(): string {
   try {
