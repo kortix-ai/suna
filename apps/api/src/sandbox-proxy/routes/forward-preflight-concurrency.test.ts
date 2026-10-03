@@ -28,8 +28,15 @@ const ACTIVE_RECORD = {
   provider: 'daytona',
 };
 
-/** Delay (ms) each instrumented gate holds before resolving. */
-const GATE_DELAY_MS = 40;
+/** Delay (ms) each instrumented gate holds before resolving.
+ *
+ * 150, not 40: the timing bound below is 2× one gate, so the absolute headroom
+ * for scheduler jitter equals one delay. At 40 the bound was 80 ms and the
+ * packages wave's co-scheduling pushed a green run to 83 ms; at 150 the bound
+ * is 300 ms against ~450 ms sequential — same discrimination, 150 ms of
+ * headroom the runner cannot eat through.
+ */
+const GATE_DELAY_MS = 150;
 let gateLog: string[] = [];
 
 function hold(label: string, ms: number): Promise<void> {
