@@ -638,7 +638,13 @@
       "verified": "Verificado",
       "unverified": "No verificado",
       "signedOutOtherDevices": "Cerró sesión en sus otros dispositivos",
-      "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos"
+      "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos",
+      "currentDevice": "Este navegador",
+      "deviceSignedInAt": "Conectado el {date}",
+      "deviceActive": "Activo",
+      "noDevices": "No hay dispositivos conectados",
+      "noDevicesDescription": "No tienes sesión iniciada en ningún dispositivo en este momento.",
+      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados"
     },
     "appearance": {
       "theme": "Tema",

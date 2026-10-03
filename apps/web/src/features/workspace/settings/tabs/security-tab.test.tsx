@@ -94,6 +94,47 @@ describe('SecurityTabView — two-factor list states', () => {
   });
 });
 
+/**
+ * The Devices section answers "which devices hold access to this account".
+ * Loading is a shape-matched skeleton; a failed fetch is an error state with
+ * a Retry, never the empty-state copy — like the factor list above, a fetch
+ * that failed knows nothing about the account; an empty list is said out
+ * loud instead of leaving a silent gap under the section heading.
+ */
+describe('SecurityTabView — devices list states', () => {
+  const devices = [{ label: 'This browser', detail: 'Signed in October 3, 2026' }];
+
+  test('a signed-in device renders as a row, with no empty-state banner', () => {
+    const out = renderToStaticMarkup(<SecurityTabView devices={devices} />);
+    expect(out).toContain('This browser');
+    expect(out).toContain('Signed in October 3, 2026');
+    expect(out).toContain('Active');
+    expect(out).not.toContain('No signed-in devices');
+  });
+
+  test('an in-flight device list shows a skeleton, not a blank gap', () => {
+    const out = renderToStaticMarkup(<SecurityTabView devicesLoading />);
+    expect(out).toContain('animate-pulse');
+    expect(out).not.toContain('No signed-in devices');
+  });
+
+  test('a failed devices fetch shows an error with a retry, not the empty-state banner', () => {
+    const out = renderToStaticMarkup(<SecurityTabView devicesError onRetryDevices={() => {}} />);
+    expect(out).toContain('load your signed-in devices');
+    expect(out).toContain('>Retry<');
+    expect(out).not.toContain('No signed-in devices');
+  });
+
+  test('loading takes priority over the error state', () => {
+    const out = renderToStaticMarkup(<SecurityTabView devicesLoading devicesError />);
+    expect(out).not.toContain('load your signed-in devices');
+  });
+
+  test('no devices at all is said out loud, not left blank', () => {
+    expect(html()).toContain('No signed-in devices');
+  });
+});
+
 describe('totpQrSrc', () => {
   test('passes a data URL through untouched', () => {
     const url = 'data:image/svg+xml;utf8,%3Csvg%3E%3C/svg%3E';

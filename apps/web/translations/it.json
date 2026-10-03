@@ -638,7 +638,13 @@
       "verified": "Verificato",
       "unverified": "Non verificato",
       "signedOutOtherDevices": "Disconnesso dagli altri tuoi dispositivi",
-      "signOutOtherDevicesFailed": "Impossibile disconnettersi da altri dispositivi"
+      "signOutOtherDevicesFailed": "Impossibile disconnettersi da altri dispositivi",
+      "currentDevice": "Questo browser",
+      "deviceSignedInAt": "Connesso il {date}",
+      "deviceActive": "Attivo",
+      "noDevices": "Nessun dispositivo connesso",
+      "noDevicesDescription": "Non hai una sessione attiva su nessun dispositivo in questo momento.",
+      "devicesLoadFailed": "Impossibile caricare i tuoi dispositivi connessi"
     },
     "appearance": {
       "theme": "Tema",

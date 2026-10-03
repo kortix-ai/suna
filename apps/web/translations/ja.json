@@ -638,7 +638,13 @@
       "verified": "確認済み",
       "unverified": "未検証",
       "signedOutOtherDevices": "他のデバイスからサインアウトしました",
-      "signOutOtherDevicesFailed": "他のデバイスからサインアウトできませんでした"
+      "signOutOtherDevicesFailed": "他のデバイスからサインアウトできませんでした",
+      "currentDevice": "このブラウザー",
+      "deviceSignedInAt": "{date}にサインイン",
+      "deviceActive": "アクティブ",
+      "noDevices": "サインイン中のデバイスはありません",
+      "noDevicesDescription": "現在どのデバイスでもサインインしていません。",
+      "devicesLoadFailed": "サインイン中のデバイスを読み込めませんでした"
     },
     "appearance": {
       "theme": "テーマ",
