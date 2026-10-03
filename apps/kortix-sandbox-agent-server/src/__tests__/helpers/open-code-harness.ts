@@ -1,4 +1,7 @@
 import { createHmac } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -39,13 +42,20 @@ export const TEST_SANDBOX_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 /** A complete OpenCode daemon config for tests: no clone, fixed ports. */
 export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCodeConfig {
+  // The default workspace must be a real but repo-FREE directory: the suites
+  // that keep the helper default assert "nothing materialized" (the refresh
+  // route answers 409). The hardcoded '/workspace' made that
+  // machine-dependent — the path does not exist on a CI runner but is a live
+  // git repo inside a Kortix agent sandbox — so a fresh empty temp dir gives
+  // every machine the same starting state.
+  const workspace = mkdtempSync(join(tmpdir(), 'kortixd-test-workspace-'))
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
-    workspace: '/workspace',
-    projectTarget: '/workspace',
+    workspace,
+    projectTarget: workspace,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
