@@ -1,5 +1,5 @@
 {
-  "source_hash": "781d397f21525a99459571c993d17cb89972803060d702cd0b611ca344819f05",
+  "source_hash": "d56df33fd7aa7ef2998d55275b965db249133e4404bb3995490aa5d9258d3330",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-03T060228Z-land-every-new-lint-visible-pattern-with-its-inline-justific.md",
@@ -12,13 +12,13 @@
     "tests/bin/package-quality.ts",
     "tests/unit/test-attestation.test.ts"
   ],
-  "diff_hash": "172f6008f594913b3f359bd70154555dd0c1c16de1a5e0d46cd12bb9a0383fb0",
-  "head": "41d800fab977ac0de55ab4266ed6dd4272cd5b72",
+  "diff_hash": "a99aa9e2ef8b2f6fafe5c3eb41bb98f0758d8710ce44afdead1d39dd5c1cd5db",
+  "head": "a4eb233e6b2152f8f28c7faf76ef9cd75ba8334a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:51:15.183Z"
+  "at": "2026-10-03T23:33:07.788Z"
 }
