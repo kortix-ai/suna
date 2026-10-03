@@ -19204,6 +19204,7 @@
       "text9e52157faaab": "可以。同一个 Kortix CLI 在每个沙盒中都已预先认证，Agent 使用的命令与你完全相同。",
       "text48b78a9ab65b": "运行之间如何保持隔离？",
       "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。",
+      "text39207bf34111": "相关技能",
       "text73112526c03a": "agent 回合失败，未报告原因。"
     },
     "publicShareConfirm": {
