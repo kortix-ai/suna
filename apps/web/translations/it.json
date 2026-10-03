@@ -260,10 +260,6 @@
       "fallbackName": "questo spazio",
       "confetti": "Lancia coriandoli"
     },
-    "runtime": {
-      "metaLabel": "Runtime Meta",
-      "metaDescription": "Meta usa una sandbox minima fissa e avvia sessioni specializzate per il lavoro sul progetto."
-    },
     "sandbox": {
       "label": "Modello sandbox",
       "agentEnvironment": "Ambiente dell’agente",
@@ -20190,7 +20186,7 @@
     "ceilingDefault": "Limite predefinito per agenti",
     "changeCeiling": "Cambia",
     "humanOnly": "Solo persone",
-    "humanOnlyHelp": "Gestire i membri, eliminare il progetto ed emettere credenziali restano alle persone.",
+    "humanOnlyHelp": "L’emissione delle credenziali del progetto resta alle persone.",
     "humanOnlyValue": "Mai concesso",
     "effective": "Permessi effettivi",
     "effectiveHelp": "Permessi Kortix entro il ruolo limite, esclusi i permessi solo per persone. project.read è sempre concesso.",

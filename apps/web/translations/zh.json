@@ -260,10 +260,6 @@
       "fallbackName": "此工作区",
       "confetti": "撒些彩纸"
     },
-    "runtime": {
-      "metaLabel": "Meta 运行环境",
-      "metaDescription": "Meta 使用固定的最小沙盒，并为项目工作启动专门会话。"
-    },
     "sandbox": {
       "label": "沙盒模板",
       "agentEnvironment": "智能体环境",
@@ -20190,7 +20186,7 @@
     "ceilingDefault": "默认智能体上限",
     "changeCeiling": "更改",
     "humanOnly": "仅限人员",
-    "humanOnlyHelp": "管理成员、删除项目和签发凭据始终由人员执行。",
+    "humanOnlyHelp": "签发项目凭据仅限人员操作。",
     "humanOnlyValue": "从不授予",
     "effective": "有效权限",
     "effectiveHelp": "上限角色内的 Kortix 权限，减去仅限人员的权限。始终授予 project.read。",

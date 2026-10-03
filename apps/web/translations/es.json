@@ -260,10 +260,6 @@
       "fallbackName": "este espacio",
       "confetti": "Lanzar confeti"
     },
-    "runtime": {
-      "metaLabel": "Entorno Meta",
-      "metaDescription": "Meta usa un entorno aislado mínimo fijo e inicia sesiones especializadas para el trabajo del proyecto."
-    },
     "sandbox": {
       "label": "Plantilla del entorno aislado",
       "agentEnvironment": "Entorno del agente",
@@ -20190,7 +20186,7 @@
     "ceilingDefault": "Techo predeterminado de agentes",
     "changeCeiling": "Cambiar",
     "humanOnly": "Solo personas",
-    "humanOnlyHelp": "Gestionar miembros, eliminar el proyecto y emitir credenciales quedan en manos de personas.",
+    "humanOnlyHelp": "La emisión de credenciales del proyecto queda en manos de personas.",
     "humanOnlyValue": "Nunca concedido",
     "effective": "Permisos efectivos",
     "effectiveHelp": "Permisos de Kortix dentro del rol techo, menos los permisos solo para personas. project.read siempre se concede.",

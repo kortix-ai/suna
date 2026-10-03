@@ -1,4 +1,5 @@
 import type { ParsedManifest } from '../triggers';
+import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
 import type { GitBackedProject, MirrorRefresh } from '../git';
 import {
@@ -355,13 +356,18 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
 
   const permissionsRaw = resolvePermissionsKey(name, normalizedRow, filename);
   if (!permissionsRaw.ok) return permissionsRaw;
-  const kortixResolved = resolveGrantSet(permissionsRaw.value, 'none');
-  if (Array.isArray(kortixResolved)) {
-    for (const action of kortixResolved) {
-      const problem = validateKortixAction(action);
-      if (problem) return err(name, problem);
-    }
-  }
+  // An action that is not grantable drops out of the list on its own. Failing
+  // the entry instead gave the agent an EMPTY grant on every dimension (a
+  // prod `kortix` agent lost connectors and secrets over one bad string). The
+  // validator still rejects it, so a CR or `kortix validate` names it.
+  const kortixRaw = resolveGrantSet(permissionsRaw.value, 'none');
+  const kortixResolved = Array.isArray(kortixRaw)
+    ? kortixRaw.filter((action) => {
+        const problem = validateKortixAction(action);
+        if (problem) logger.warn('[agents] ignoring an ungrantable kortix_permissions entry', { agent: name, filename, problem });
+        return !problem;
+      })
+    : kortixRaw;
 
   // v2 renamed the grant-set key `env` → `secrets` (spec §2.2/§2.4); same
   // shape as connectors/kortix_permissions, same deny-by-default resolution — mapped
@@ -401,7 +407,7 @@ function toGrantSet(value: GrantSetV2): GrantSet {
 /**
  * Parse a `connectors` / `kortix_permissions` value, which may be:
  *   - omitted / null          → [] (default-deny)
- *   - the string "all"        → 'all'
+ *   - the string "all" / "*"  → 'all' (also any array containing "*")
  *   - the string "none"       → []
  *   - an array of strings     → validated list (each via `validate`, if given)
  */
@@ -416,9 +422,9 @@ function parseGrantSet(
   if (raw === undefined || raw === null) return { ok: true, value: [] };
   if (typeof raw === 'string') {
     const v = raw.trim().toLowerCase();
-    if (v === 'all') return { ok: true, value: 'all' };
+    if (v === 'all' || v === '*') return { ok: true, value: 'all' };
     if (v === 'none' || v === '') return { ok: true, value: [] };
-    return err(name, `\`${key}\` string must be "all" or "none" — use an array for a specific list`);
+    return err(name, `\`${key}\` string must be "all", "*" or "none" — use an array for a specific list`);
   }
   if (!Array.isArray(raw)) {
     return err(name, `\`${key}\` must be an array of strings, "all", or "none"`);
@@ -433,8 +439,12 @@ function parseGrantSet(
     const value = item.trim();
     if (value === '*') return { ok: true, value: 'all' };
     if (validate) {
+      // Drop the one bad entry, never the whole grant (see parseAgentEntryV2).
       const problem = validate(value);
-      if (problem) return err(name, problem);
+      if (problem) {
+        logger.warn('[agents] ignoring an ungrantable grant entry', { agent: name, filename, problem });
+        continue;
+      }
     }
     if (!seen.has(value)) {
       seen.add(value);

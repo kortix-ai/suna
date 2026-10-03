@@ -260,10 +260,6 @@
       "fallbackName": "このワークスペース",
       "confetti": "紙吹雪を投げる"
     },
-    "runtime": {
-      "metaLabel": "Meta ランタイム",
-      "metaDescription": "Meta は固定の最小サンドボックスを使用し、プロジェクト作業用の専門セッションを開始します。"
-    },
     "sandbox": {
       "label": "サンドボックステンプレート",
       "agentEnvironment": "エージェント環境",
@@ -20190,7 +20186,7 @@
     "ceilingDefault": "エージェントの既定の上限",
     "changeCeiling": "変更",
     "humanOnly": "人のみ",
-    "humanOnlyHelp": "メンバーの管理、プロジェクトの削除、認証情報の発行は人が行います。",
+    "humanOnlyHelp": "プロジェクト認証情報の発行は人が行います。",
     "humanOnlyValue": "付与されません",
     "effective": "有効な権限",
     "effectiveHelp": "上限ロール内の Kortix 権限から、人のみの権限を除いたもの。project.read は常に付与されます。",
