@@ -15,6 +15,7 @@ import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from '@/harness/harness'
+import { wantedSessionBranch } from '@/harness/shared/host-health'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { buildDaemonApp } from '@/app/server'
 import { requirePiConfig } from '@/harness/pi/config'
@@ -142,7 +143,15 @@ beforeAll(() => {
 afterAll(() => {
   gateway.stop()
   rmSync(catalogDir, { recursive: true, force: true })
+  if (savedBootConfigRoot === undefined) delete process.env.KORTIX_BOOT_CONFIG_ROOT
+  else process.env.KORTIX_BOOT_CONFIG_ROOT = savedBootConfigRoot
 })
+
+// The daemon's boot-config root defaults to /opt/kortix/config, which exists on
+// a machine that IS a Kortix sandbox; its boot link would inject the runtime's
+// own managed skills into every prompt these tests assert on. Each rig points
+// it at a throwaway root; afterAll restores what the process had.
+const savedBootConfigRoot = process.env.KORTIX_BOOT_CONFIG_ROOT
 
 interface Rig {
   app: ReturnType<typeof buildDaemonApp>
@@ -161,6 +170,10 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
     KORTIX_HARNESS: 'pi',
     KORTIX_LLM_BASE_URL: gateway.baseUrl,
     KORTIX_LLM_CATALOG_FILE: join(catalogDir, 'catalog.json'),
+    // A throwaway boot-config root: the default (/opt/kortix/config) exists on
+    // a machine that IS a Kortix sandbox, and its boot link would inject the
+    // runtime's own 44 managed skills into every prompt these tests assert on.
+    KORTIX_BOOT_CONFIG_ROOT: join(workspace, '.boot-config'),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
@@ -190,6 +203,22 @@ async function boot(input: {
 }): Promise<Rig> {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
   input.prepare?.(workspace)
+  process.env.KORTIX_BOOT_CONFIG_ROOT = join(workspace, '.boot-config')
+  if (process.env.KORTIX_MANAGED_SKILLS_DIR === undefined) {
+    savedManagedSkillsDir = undefined
+    process.env.KORTIX_MANAGED_SKILLS_DIR = join(workspace, '.managed-skills')
+  }
+  // The host decides repo readiness from /etc/pt-env (host-health.ts), not from
+  // the session env. On a machine that IS a Kortix sandbox that file requires a
+  // repo on the session branch, so `runtimeReady` would stay false for a
+  // repo-less rig. Seed exactly the branch the box asks for, into a fresh rig
+  // workspace only — a test-supplied workspace owns its own repo and history.
+  if (!existsSync(join(workspace, '.git'))) {
+    const sessionBranch = wantedSessionBranch()
+    const git = (...args: string[]) => Bun.spawnSync(['git', '-C', workspace, ...args])
+    git('init', '-q', ...(sessionBranch ? ['-b', sessionBranch] : []))
+    git('-c', 'user.email=agent@kortix.ai', '-c', 'user.name=Kortix Agent', 'commit', '-q', '--allow-empty', '-m', 'seed')
+  }
   gateway.script(input.script)
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
@@ -246,6 +275,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
+// Same isolation for the baked managed-skills dir: /opt/kortix/managed-skills
+// exists on a machine that IS a Kortix sandbox, and a rig that does not name
+// its own dir would carry the runtime's 44 managed skills into every prompt.
+let savedManagedSkillsDir: string | undefined
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
@@ -260,6 +293,8 @@ afterEach(async () => {
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
   rmSync(homeDir, { recursive: true, force: true })
+  if (savedManagedSkillsDir === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  else process.env.KORTIX_MANAGED_SKILLS_DIR = savedManagedSkillsDir
 })
 
 /** Wait until the root's transcript shows a tool part in the running state. */

@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -45,7 +47,10 @@ export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCode
     opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
-    projectTarget: '/workspace',
+    // A hermetic target: the agent sandbox's real /workspace IS a git checkout,
+    // which would make `app({})` tests see a materialized repo (and then hit the
+    // direct-origin refusal) instead of the 'not materialized' path they assert.
+    projectTarget: join(tmpdir(), 'kortix-test-workspace'),
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,

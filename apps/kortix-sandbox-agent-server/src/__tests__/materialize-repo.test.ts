@@ -77,7 +77,12 @@ function createDetachedWarmCheckout(prefix: string): {
 const tempDirs: string[] = []
 
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  // An ABSENT scaffold, not the baked default: on a machine that IS a Kortix
+  // sandbox /opt/kortix/scaffold.git exists and would route every
+  // materializeRepo through the scaffold fast path (a depth-1 delta fetch),
+  // which is not what the plain-clone tests pin. Tests that exercise the
+  // scaffold path set their own fixture with __setScaffoldRepoPathForTests.
+  __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-absent-scaffold.git'))
 })
 
 afterEach(() => {
@@ -692,6 +697,9 @@ function threeCommitOrigin(): string {
     git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', `c${i}`], seed)
   }
   git(['clone', '--bare', seed, remote])
+  console.log('DEBUG-SEED-LOG', gitOutput(['log', '--oneline'], { cwd: seed }))
+  console.log('DEBUG-SEED-REFLOG', gitOutput(['reflog'], { cwd: seed }))
+  console.log('DEBUG-SEED-STATUS', gitOutput(['status', '--short', '--branch'], { cwd: seed }))
   return remote
 }
 
@@ -714,6 +722,7 @@ describe('clone depth', () => {
       cloneDepth,
     }))
 
+    console.log('DEBUG-CLONE', gitOutput(['-C', target, 'log', '--oneline']))
     expect(gitOutput(['-C', target, 'rev-list', '--count', 'HEAD'])).toBe(commits)
     expect(await isShallowRepo(target)).toBe(shallow)
   })

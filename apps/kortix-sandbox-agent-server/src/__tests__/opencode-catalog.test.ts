@@ -67,6 +67,12 @@ async function bakedCatalogFile(body: unknown = STALE_BAKED): Promise<string> {
 
 type ProviderConfig = { provider: { kortix: { models: Record<string, { name?: string }> } } }
 
+// An absent image-baked catalog path: the boot-config tests describe a box
+// with NO image bake, and on a machine that IS a Kortix sandbox the real
+// /opt/kortix/llm-catalog.json would win the file→baked→minimal fallback
+// chain. beforeEach points KORTIX_LLM_CATALOG_BAKED_PATH here.
+const NO_BAKED = join(tmpdir(), 'kortix-absent-baked-catalog.json')
+
 function providerModels(raw: string | undefined): Record<string, { name?: string }> {
   return (JSON.parse(raw!) as ProviderConfig).provider.kortix.models
 }
@@ -74,9 +80,14 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  // The boot-config tests below describe a box with no image-baked catalog;
+  // on a machine that IS a Kortix sandbox the real /opt/kortix/llm-catalog.json
+  // would win the fallback chain.
+  process.env.KORTIX_LLM_CATALOG_BAKED_PATH = NO_BAKED
 })
 
 afterEach(async () => {
+  delete process.env.KORTIX_LLM_CATALOG_BAKED_PATH
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
@@ -288,9 +299,9 @@ describe('the boot config never touches the network', () => {
   test('catalogIsDegraded is true with no file and false with one', async () => {
     const file = join(await mkdtemp(join(tmpdir(), 'kortix-degraded-')), 'catalog.json')
     tempDirs.push(join(file, '..'))
-    expect(catalogIsDegraded(file)).toBe(true)
+    expect(catalogIsDegraded(file, NO_BAKED)).toBe(true)
     await writeFile(file, JSON.stringify({ models: { 'a/b': { name: 'B' } } }))
-    expect(catalogIsDegraded(file)).toBe(false)
+    expect(catalogIsDegraded(file, NO_BAKED)).toBe(false)
   })
 
   test('every model gets a context window: a known one by id tail, else the conservative default', async () => {

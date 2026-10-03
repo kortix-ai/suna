@@ -132,7 +132,11 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    // Serial on purpose (the EEXIST note below). The --timeout comes from the
+    // same shared lane env the api and cli lanes read: several git-heavy
+    // materialize tests exceed bun's 5 s default on a loaded box and pass
+    // everywhere with the lane's headroom.
+    expect(agentPackage.scripts.test).toBe('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}');
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

@@ -40,6 +40,11 @@ async function workspace() {
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'opt', 'runtime-assets-state.json'),
     configDir: join(dir, 'config'),
+    // An ABSENT baked-agent path: on a machine that IS a Kortix sandbox the
+    // real /usr/local/bin/kortix-agent (110 MB) exists and the chunked
+    // reconcile would hash it CHUNK-size bytes at a time (8 bytes here),
+    // blowing the test timeout. Absent sources contribute nothing.
+    agentBakedPath: join(dir, 'opt', 'no-baked-agent'),
   }
 }
 
@@ -116,6 +121,7 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    agentBakedPath: ws.agentBakedPath,
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
@@ -143,6 +149,7 @@ describe('reconcileRuntimeAssets', () => {
       cliPath: ws.cliPath,
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
+      agentBakedPath: ws.agentBakedPath,
       fetchImpl: stub.impl,
     })
     expect(result).toEqual({ cli: 'skipped', skills: 'skipped', reason: 'api url or token unset' })
@@ -224,6 +231,7 @@ describe('reconcileRuntimeAssets', () => {
       cliPath: ws.cliPath,
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
+      agentBakedPath: ws.agentBakedPath,
       fetchImpl: (async (input: string | URL | Request) => {
         const url = String(input)
         if (url.endsWith('/manifest')) {
@@ -261,6 +269,7 @@ describe('reconcileRuntimeAssets', () => {
       cliPath: ws.cliPath,
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
+      agentBakedPath: ws.agentBakedPath,
       fetchImpl: (() => Promise.reject(new Error('ECONNREFUSED'))) as unknown as typeof fetch,
     })
     expect(result.cli).toBe('skipped')

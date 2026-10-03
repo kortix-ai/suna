@@ -13,7 +13,9 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
-function wantedSessionBranch(): string {
+/** The session branch the host expects, or '' — exported for test rigs that
+ *  must match it (see pi-harness.test.ts). */
+export function wantedSessionBranch(): string {
   try {
     const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]

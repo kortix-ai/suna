@@ -56,6 +56,10 @@ function lastHeaders(): Headers | null {
 beforeAll(() => {
   upstream = Bun.serve({
     port: 0,
+    // Explicit loopback address: Bun.serve's default hostname is the NAME
+    // 'localhost', and on hosts whose resolver has no localhost entry (the
+    // Docker-less factory sandbox locks /etc/hosts) nothing can resolve it.
+    hostname: '127.0.0.1',
     fetch(req) {
       received = new Headers(req.headers)
       return new Response('ok', { headers: { 'content-type': 'text/plain' } })
@@ -213,7 +217,7 @@ describe('/web-proxy stays off the box control plane', () => {
     // The whole point of this proxy. Blocking all of loopback would have been a
     // cheaper fix and would have broken the internal browser.
     const res = await guarded().request(
-      `/web-proxy/http/localhost:${upstreamPort}/index.html`,
+      `/web-proxy/http/127.0.0.1:${upstreamPort}/index.html`,
       { method: 'GET' },
     )
     expect(res.status).toBe(200)
@@ -242,10 +246,10 @@ describe('a vetted destination is the one we connect to', () => {
     // Virtual hosting on the agent's own dev server depends on it.
     received = null
     const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
-    const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {
+    const res = await open.request(`/web-proxy/http/127.0.0.1:${upstreamPort}/x`, {
       method: 'GET',
     })
     expect(res.status).toBe(200)
-    expect(lastHeaders()?.get('host')).toBe(`localhost:${upstreamPort}`)
+    expect(lastHeaders()?.get('host')).toBe(`127.0.0.1:${upstreamPort}`)
   })
 })

@@ -85,6 +85,10 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   'KORTIX_CONNECTORS_PROXY_URL',
   // Local catalog-file override; operator/dev-only, not an API-driven field.
   'KORTIX_LLM_CATALOG_FILE',
+  // Where the image-baked catalog fallback lives. Default is the sandbox
+  // location; only tests (and exotic self-host layouts) override it, so it is
+  // boot-only exactly like KORTIX_LLM_CATALOG_FILE.
+  'KORTIX_LLM_CATALOG_BAKED_PATH',
   // Manual operator debug toggle (checked against `process.env` directly, not
   // part of the env-sync contract at all).
   'KORTIX_OPENCODE_DEBUG',

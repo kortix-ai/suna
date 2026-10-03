@@ -52,6 +52,7 @@ const ENV_KEYS = [
   'KORTIX_CONTINUATION_DISABLED',
   'KORTIX_LLM_PROXY_URL',
   'KORTIX_LLM_CATALOG_FILE',
+  'KORTIX_LLM_CATALOG_BAKED_PATH',
   'KORTIX_LLM_BASE_URL',
   'KORTIX_TOKEN',
   'KORTIX_RUNTIME_STATE_DIR',
@@ -882,6 +883,11 @@ describe('a model a turn names', () => {
     process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
     process.env.KORTIX_TOKEN = 'kortix_pat_test'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // This world's image predates the model: no baked catalog may fill the
+    // fallback. On a machine that IS a Kortix sandbox the real
+    // /opt/kortix/llm-catalog.json carries the model and would register it at
+    // boot, defeating the test's premise.
+    process.env.KORTIX_LLM_CATALOG_BAKED_PATH = join(root, 'no-baked-catalog.json')
     process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
     resetManagedModelsStateForTests()
     return gateway
