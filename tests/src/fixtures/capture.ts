@@ -182,6 +182,20 @@ export async function localCaptureStore(): Promise<S3Target> {
 }
 
 /** Read one object back from a store (the flows read `policy.json` as a device would). */
+/** Delete objects as the device does when the person forgets a time range. */
+export async function deleteCaptureObjects(target: S3Target, keys: string[]): Promise<void> {
+  const client = new Bun.S3Client({
+    endpoint: target.endpoint,
+    bucket: target.bucket,
+    region: target.region,
+    accessKeyId: target.accessKeyId,
+    secretAccessKey: target.secretAccessKey,
+    sessionToken: target.sessionToken,
+    virtualHostedStyle: false,
+  });
+  for (const key of keys) await client.delete(key);
+}
+
 export async function readCaptureObject(target: S3Target, key: string): Promise<string | null> {
   const client = new Bun.S3Client({
     endpoint: target.endpoint,

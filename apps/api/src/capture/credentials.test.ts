@@ -38,11 +38,13 @@ test('the issued credentials match the engine’s issuer-credentials schema and 
   expect(JSON.parse(String(sent[0]!.Policy))).toEqual(deviceSessionPolicy('kortix-capture', PREFIX, DEVICE));
 });
 
-test('the session policy reaches exactly one device folder, the project policy.json, and a prefix-bound list', () => {
+test('the session policy reaches exactly one device folder (read, write, delete, multipart), the project policy.json, and a prefix-bound list', () => {
   const policy = deviceSessionPolicy('kortix-capture', PREFIX, DEVICE);
   const byId = Object.fromEntries(policy.Statement.map((s) => [s.Sid, s]));
   expect(byId.DeviceFolder!.Resource).toEqual([`arn:aws:s3:::kortix-capture/${PREFIX}/${DEVICE}/*`]);
-  expect(byId.DeviceFolder!.Action).toEqual(['s3:PutObject', 's3:GetObject', 's3:AbortMultipartUpload', 's3:ListMultipartUploadParts']);
+  // capture-format.md "Credentials": the engine probes with PUT, HEAD, DELETE and
+  // deletes a forgotten range's objects itself, so delete is part of the contract.
+  expect(byId.DeviceFolder!.Action).toEqual(['s3:PutObject', 's3:GetObject', 's3:DeleteObject', 's3:AbortMultipartUpload', 's3:ListMultipartUploadParts']);
   expect(byId.ProjectPolicy).toMatchObject({ Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::kortix-capture/${PREFIX}/policy.json`] });
   // Without s3:ListBucket a missing key answers 403, not 404 (learnings 2026-09-14).
   expect(byId.ListDeviceFolder).toMatchObject({
@@ -51,7 +53,9 @@ test('the session policy reaches exactly one device folder, the project policy.j
     Condition: { StringLike: { 's3:prefix': [`${PREFIX}/${DEVICE}/*`] } },
   });
   const flat = JSON.stringify(policy);
-  expect(flat).not.toContain('DeleteObject');
+  // Delete reaches the device folder only: never the project policy.json or another device.
+  expect(policy.Statement.filter((s) => s.Action.includes('s3:DeleteObject')).map((s) => s.Resource)).toEqual([[`arn:aws:s3:::kortix-capture/${PREFIX}/${DEVICE}/*`]]);
+  expect(flat).not.toContain('DeleteObjects');
   expect(flat).not.toContain('"s3:*"');
   expect(flat).not.toContain(`${PREFIX}/*`);
 });

@@ -13,7 +13,7 @@ import {
   checkManifest,
   jsonLines,
   liveState,
-  manifestKeysFromIndex,
+  foldIndex,
   objectKey,
   parseActionLine,
   parseCaptureKey,
@@ -110,19 +110,25 @@ describe('keys and index', () => {
     expect(objectKey(PREFIX, DEVICE, `${DEVICE}/../other/a.mp4`)).toBeNull();
   });
 
-  test('schema-valid index lines name their manifests; deletes, incomplete items and torn lines do not', () => {
+  test('schema-valid index lines fold to live manifests; a delete retracts its item until a later put', () => {
+    const base = (id: string) => `${DEVICE}/2026/10/01/${id}`;
     const index = [
-      { op: 'put', kind: 'chunk', base: `${DEVICE}/2026/10/01/1790845200000-1`, start_ms: 1790845200000, end_ms: 1790845204000, manifest: true, at_ms: 1 },
-      { op: 'put', kind: 'audio', base: `${DEVICE}/2026/10/01/1790845205000-a1`, start_ms: 1790845205000, end_ms: 1790845265000, manifest: true },
-      { op: 'put', kind: 'actions', base: `${DEVICE}/2026/10/01/1790845201000-x1`, start_ms: 1790845201000, end_ms: 1790845213000, manifest: false },
-      { op: 'delete', base: `${DEVICE}/2026/10/01/1790845200000-1`, reason: 'retention' },
+      { op: 'put', kind: 'chunk', base: base('1790845200000-1'), start_ms: 1790845200000, end_ms: 1790845204000, manifest: true, at_ms: 1 },
+      { op: 'put', kind: 'audio', base: base('1790845205000-a1'), start_ms: 1790845205000, end_ms: 1790845265000, manifest: true },
+      { op: 'put', kind: 'actions', base: base('1790845201000-x1'), start_ms: 1790845201000, end_ms: 1790845213000, manifest: false },
+      { op: 'put', kind: 'chunk', base: base('1790845260000-2'), start_ms: 1790845260000, end_ms: 1790845264000, manifest: true, at_ms: 2 },
+      { op: 'delete', kind: 'chunk', base: base('1790845200000-1'), reason: 'forget', at_ms: 3 },
+      { op: 'delete', kind: 'chunk', base: base('1790845260000-2'), reason: 'retention', at_ms: 4 },
+      { op: 'put', kind: 'chunk', base: base('1790845260000-2'), start_ms: 1790845260000, end_ms: 1790845264000, manifest: true, at_ms: 5 },
+      { op: 'delete', kind: 'chunk', base: `other-device/2026/10/01/1-1`, reason: 'forget', at_ms: 6 },
     ];
-    for (const line of index) conforms('index-line', line);
+    for (const line of index.slice(0, 7)) conforms('index-line', line);
     const body = [...index.map((l) => JSON.stringify(l)), '{torn'].join('\n');
-    expect(manifestKeysFromIndex(PREFIX, DEVICE, body)).toEqual([
-      `${PREFIX}/${DEVICE}/2026/10/01/1790845200000-1.manifest.json`,
-      `${PREFIX}/${DEVICE}/2026/10/01/1790845205000-a1.manifest.json`,
-    ]);
+    const key = (id: string) => `${PREFIX}/${base(id)}.manifest.json`;
+    expect(foldIndex(PREFIX, DEVICE, body)).toEqual({
+      live: [key('1790845205000-a1'), key('1790845260000-2')],
+      deleted: [key('1790845200000-1')],
+    });
   });
 });
 

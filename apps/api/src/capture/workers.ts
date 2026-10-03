@@ -8,23 +8,24 @@
  *   - events reader: long-polls the SQS queue of the bucket's `*.manifest.json`
  *     ObjectCreated events (AWS), enqueueing one ingest per key;
  *   - index reader: for each active device, reads `status.json` (live status),
- *     `device.json` and today's `index/<day>.jsonl`, enqueueing every complete
- *     item. Works on any S3 store, events or not; enqueue is idempotent, so the
- *     two readers never double-index;
+ *     `device.json` and every changed `index/<day>.jsonl`, enqueueing every
+ *     complete item and retracting every item a `delete` line names (the person
+ *     forgot it, or the device's retention removed it). Works on any S3 store,
+ *     events or not; enqueue is idempotent, so the two readers never double-index;
  *   - maintenance: closes detected ranges after RANGE_GAP_MS of silence and
  *     queues their processing, keeps monthly partitions 3 months ahead, applies
  *     remote retention, prunes expired sign-ins and finished jobs.
  */
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
-import { captureDeviceGrants, captureDevices, projects, timelineChunks, timelineRanges } from '@kortix/db';
-import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { captureDeviceGrants, captureDevices, projects, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
+import { and, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
-import { deviceFields, jsonLines, manifestKeysFromIndex, PolicySchema, projectPrefix, statusReportedAt, utcDay } from './format';
+import { deviceFields, foldIndex, jsonLines, PolicySchema, projectPrefix, statusReportedAt, utcDay } from './format';
 import { RANGE_GAP_MS, ingestManifest } from './ingest';
 import { readProjectPolicy } from './policy';
 import { processRange } from './processing';
@@ -80,7 +81,7 @@ const decodeJson = (bytes: Uint8Array): Record<string, unknown> | null => {
 };
 
 /** Read one device's status, description and index. Exported for the flow-facing sync route and tests. */
-export async function pollDevice(device: typeof captureDevices.$inferSelect): Promise<{ enqueued: number }> {
+export async function pollDevice(device: typeof captureDevices.$inferSelect): Promise<{ enqueued: number; forgotten: number }> {
   const folder = `${projectPrefix(device.accountId, device.projectId)}/${device.deviceId}`;
   const patch: Partial<typeof captureDevices.$inferInsert> = {};
 
@@ -103,6 +104,7 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
   // offline uploads its backlog into the day files of when it recorded, not today.
   // Cursor (index_etag): {"<day>": "<bytes>:<last modified ms>"} of the files read.
   let enqueued = 0;
+  let forgotten = 0;
   let cursor: Record<string, string> = {};
   try {
     cursor = JSON.parse(device.indexEtag ?? '{}') ?? {};
@@ -119,8 +121,9 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
     if (cursor[day] === mark) continue;
     const body = await captureStore.getText(file.key);
     if (body === null) continue;
-    const keys = manifestKeysFromIndex(projectPrefix(device.accountId, device.projectId), device.deviceId, body);
-    enqueued += await enqueueJobs(INGEST_QUEUE, keys.map((key) => ({ key, payload: { key } })));
+    const { live, deleted } = foldIndex(projectPrefix(device.accountId, device.projectId), device.deviceId, body);
+    enqueued += await enqueueJobs(INGEST_QUEUE, live.map((key) => ({ key, payload: { key } })));
+    forgotten += await forgetManifests(device.deviceId, deleted);
   }
   const days = Object.keys(next).sort();
   if (JSON.stringify(next) !== JSON.stringify(cursor)) {
@@ -130,7 +133,52 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
   if (Object.keys(patch).length) {
     await db.update(captureDevices).set({ ...patch, updatedAt: sql`now()` }).where(eq(captureDevices.deviceId, device.deviceId));
   }
-  return { enqueued };
+  return { enqueued, forgotten };
+}
+
+/**
+ * Retract the items a device deleted: their rows go, and so do the derived
+ * outputs of every range of the device that overlaps them (a summary must not
+ * outlive what it summarises). The range itself stays, `closed`, so a later
+ * process run rebuilds it from what remains. The device already removed the
+ * objects. Idempotent: a key with no row is a no-op.
+ */
+export async function forgetManifests(deviceId: string, keys: string[]): Promise<number> {
+  if (keys.length === 0) return 0;
+  const chunks = await db
+    .select({ chunkId: timelineChunks.chunkId, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
+    .from(timelineChunks)
+    .where(and(eq(timelineChunks.deviceId, deviceId), inArray(timelineChunks.manifestKey, keys)));
+  if (chunks.length === 0) return 0;
+  const from = new Date(Math.min(...chunks.map((c) => c.startAt.getTime())));
+  const to = new Date(Math.max(...chunks.map((c) => Math.max(c.startAt.getTime(), c.endAt.getTime()))));
+  await db.transaction(async (tx) => {
+    await removeChunkRows(tx, chunks);
+    const ranges = await tx
+      .update(timelineRanges)
+      .set({ status: 'closed', updatedAt: sql`now()` })
+      .where(and(eq(timelineRanges.deviceId, deviceId), lte(timelineRanges.startAt, to), gte(timelineRanges.endAt, from), ne(timelineRanges.status, 'open')))
+      .returning({ rangeId: timelineRanges.rangeId });
+    if (ranges.length) await tx.delete(rangeOutputs).where(inArray(rangeOutputs.rangeId, ranges.map((r) => r.rangeId)));
+  });
+  logger.info('[capture] forgot items', { deviceId, items: chunks.length });
+  return chunks.length;
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Delete chunks and their frame, action and audio rows. */
+async function removeChunkRows(tx: Tx, chunks: Array<{ chunkId: string; startAt: Date; endAt: Date }>): Promise<void> {
+  const ids = chunks.map((chunk) => chunk.chunkId);
+  // Bounds on `ts` let Postgres prune the monthly partitions; a day of slack covers device clock skew.
+  const floor = new Date(Math.min(...chunks.map((chunk) => chunk.startAt.getTime())) - 86_400_000);
+  const ceil = new Date(Math.max(...chunks.map((chunk) => Math.max(chunk.startAt.getTime(), chunk.endAt.getTime()))) + 86_400_000);
+  for (const table of ['timeline_frames', 'timeline_actions', 'timeline_audio']) {
+    await tx.execute(
+      sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND ts >= ${floor.toISOString()}::timestamptz AND ts < ${ceil.toISOString()}::timestamptz`,
+    );
+  }
+  await tx.delete(timelineChunks).where(inArray(timelineChunks.chunkId, ids));
 }
 
 async function pollAllDevices(): Promise<void> {
@@ -216,20 +264,11 @@ export async function applyRetention(limitPerProject = 200): Promise<number> {
     ]);
     // Objects first: a row without its object is harmless; an object without a row is invisible forever.
     await captureStore.remove(keys);
-    const ids = old.map((chunk) => chunk.chunkId);
-    // Bounds on `ts` let Postgres prune the monthly partitions; a day of slack covers device clock skew.
-    const floor = new Date(Math.min(...old.map((chunk) => chunk.startAt.getTime())) - 86_400_000);
-    const ceil = new Date(Math.max(...old.map((chunk) => Math.max(chunk.startAt.getTime(), chunk.endAt.getTime()))) + 86_400_000);
     await db.transaction(async (tx) => {
-      for (const table of ['timeline_frames', 'timeline_actions', 'timeline_audio']) {
-        await tx.execute(
-          sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND ts >= ${floor.toISOString()}::timestamptz AND ts < ${ceil.toISOString()}::timestamptz`,
-        );
-      }
-      await tx.delete(timelineChunks).where(inArray(timelineChunks.chunkId, ids));
+      await removeChunkRows(tx, old);
       await tx.delete(timelineRanges).where(and(eq(timelineRanges.projectId, projectId), lt(timelineRanges.endAt, cutoff)));
     });
-    removed += ids.length;
+    removed += old.length;
   }
   return removed;
 }

@@ -249,6 +249,35 @@ describe('ranges and processing', () => {
   });
 });
 
+describe('forget', () => {
+  test('a delete line retracts the item, its rows and the outputs of overlapping ranges; a re-poll is a no-op', async () => {
+    const key = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/`) && /\/\d+-1\.manifest\.json$/.test(k))!;
+    const [chunk] = await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key));
+    const chunkFrames = await count('timeline_frames', sql`chunk_id = ${chunk!.chunkId}::uuid`);
+    expect(chunkFrames).toBeGreaterThan(0);
+    const framesBefore = await count('timeline_frames');
+    const [processed] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
+    expect(processed!.status).toBe('processed');
+    // What the engine does on `storage forget`: remove the item's objects, then append a delete line.
+    const base = key.slice(PREFIX.length + 1, -'.manifest.json'.length);
+    for (const k of [...objects.keys()]) if (k.startsWith(`${PREFIX}/${base}.`)) objects.delete(k);
+    const indexKey = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/index/`))!;
+    const line = JSON.stringify({ op: 'delete', kind: 'chunk', base, reason: 'forget', at_ms: Date.now() });
+    objects.set(indexKey, new TextEncoder().encode(`${new TextDecoder().decode(objects.get(indexKey)!)}${line}\n`));
+
+    const [device] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
+    expect(await pollDevice(device!)).toEqual({ enqueued: 0, forgotten: 1 });
+    expect(await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key))).toEqual([]);
+    expect(await count('timeline_frames')).toBe(framesBefore - chunkFrames);
+    const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, processed!.rangeId));
+    expect(range!.status).toBe('closed');
+    expect(await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, range!.rangeId))).toEqual([]);
+
+    const [again] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
+    expect(await pollDevice(again!)).toEqual({ enqueued: 0, forgotten: 0 });
+  });
+});
+
 describe('retention', () => {
   test('items older than remote_days lose their objects first, then their rows', async () => {
     await writeProjectPolicy({ projectId: PROJECT, accountId: ACCOUNT }, { ...DEFAULT_POLICY, retention: { local_hours: 0, remote_days: 1 } }, MEMBER);

@@ -94,9 +94,14 @@ export function isEncrypted(manifest: Manifest): boolean {
 
 // ─── Index files ─────────────────────────────────────────────────────────────
 
-/** Manifest keys named by one `index/<day>.jsonl` body (complete items only). */
-export function manifestKeysFromIndex(prefix: string, deviceId: string, body: string): string[] {
-  const keys = new Set<string>();
+/**
+ * Fold one `index/<day>.jsonl` body (capture-format.md "Index lines"): the
+ * latest `put` of a base is live until a `delete` of it. `live` holds the
+ * manifests of complete items; `deleted` holds the manifests of items the
+ * person forgot or the device's retention removed, which Kortix retracts.
+ */
+export function foldIndex(prefix: string, deviceId: string, body: string): { live: string[]; deleted: string[] } {
+  const state = new Map<string, 'live' | 'incomplete' | 'deleted'>();
   for (const line of body.split('\n')) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
@@ -105,11 +110,14 @@ export function manifestKeysFromIndex(prefix: string, deviceId: string, body: st
     } catch {
       continue;
     }
-    if (entry.op !== 'put' || entry.manifest !== true || typeof entry.base !== 'string') continue;
+    if (typeof entry.base !== 'string') continue;
     const key = objectKey(prefix, deviceId, `${entry.base}.manifest.json`);
-    if (key) keys.add(key);
+    if (!key) continue;
+    if (entry.op === 'put') state.set(key, entry.manifest === true ? 'live' : 'incomplete');
+    else if (entry.op === 'delete') state.set(key, 'deleted');
   }
-  return [...keys];
+  const keys = (want: string) => [...state].filter(([, value]) => value === want).map(([key]) => key);
+  return { live: keys('live'), deleted: keys('deleted') };
 }
 
 /** The UTC day (`YYYY-MM-DD`) of an instant. */

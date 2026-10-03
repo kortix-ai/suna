@@ -20,7 +20,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
 import { AgentPrincipalsWorld, openDb } from '../fixtures/agent-principals';
-import { captureSchemaErrors, localCaptureStore, readCaptureObject, syntheticMachineKey, uploadCaptureObjects, vendoredDevice, type CaptureSchemaName } from '../fixtures/capture';
+import { captureSchemaErrors, deleteCaptureObjects, localCaptureStore, readCaptureObject, syntheticMachineKey, uploadCaptureObjects, vendoredDevice, type CaptureSchemaName } from '../fixtures/capture';
 import { createHash } from 'node:crypto';
 import { CliSandbox } from '../fixtures/cli';
 
@@ -339,6 +339,22 @@ flow(
       (await asMember.get(path(R.range), { params: { ...params, rangeId } })).status(200).body().has('$.range_id', rangeId);
       (await asMember.post(path(R.process), {}, { params: { ...params, rangeId } })).status(202).body().has('$.queued', true);
       (await asMember.post(path(R.saveRange), { start_at: '2026-01-02T00:00:00Z', end_at: '2026-01-01T00:00:00Z' }, { params })).status(400);
+    });
+
+    await ctx.step('the device forgets its audio item (objects deleted, a delete line appended) → sync retracts it: forgotten 1, the transcript no longer matches', async () => {
+      const audioKey = day.manifestKeys.find((key) => /-a\d+\.manifest\.json$/.test(key))!;
+      const base = audioKey.slice(device.prefix.length + 1, -'.manifest.json'.length);
+      await deleteCaptureObjects(store, day.objects.filter((o) => o.key.startsWith(`${device.prefix}/${base}.`)).map((o) => o.key));
+      const index = day.objects.find((o) => o.key.includes(`/${device.device_id}/index/`))!;
+      const line = { op: 'delete', kind: 'audio', base, reason: 'forget', at_ms: Date.now() };
+      conforms('index-line', line);
+      const body = new TextEncoder().encode(`${new TextDecoder().decode(index.body)}${JSON.stringify(line)}\n`);
+      await uploadCaptureObjects(store, [{ ...index, body }]);
+      (await asMember.post(path(R.sync), {}, { params: { ...params, deviceId: device.device_id } })).status(200).body().has('$.forgotten', 1).has('$.enqueued', 0);
+      const after = (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', limit: 50 } })).status(200).json<{ hits: Hit[] }>().hits;
+      if (after.some((h) => h.kind === 'audio')) throw new Error(`audio hit survived the forget: ${JSON.stringify(after).slice(0, 300)}`);
+      if (!after.some((h) => h.kind === 'screen')) throw new Error('the screen hits went with it');
+      (await asMember.post(path(R.sync), {}, { params: { ...params, deviceId: device.device_id } })).status(200).body().has('$.forgotten', 0);
     });
   },
 );
