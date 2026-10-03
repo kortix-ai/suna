@@ -19194,7 +19194,8 @@
       "text0e5f7f6732e0": "Biforca conversazione",
       "text32ad3abe4479": "Impossibile biforcare la conversazione",
       "text85b7a59cdbd5": "Agente della piattaforma",
-      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."    },
+      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."
+    },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
       "description": "Chiunque abbia il link può vederlo senza accedere. Il link resta attivo finché non lo revochi.",

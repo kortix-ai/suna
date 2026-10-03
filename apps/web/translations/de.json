@@ -19194,7 +19194,8 @@
       "text0e5f7f6732e0": "Unterhaltung abspalten",
       "text32ad3abe4479": "Unterhaltung konnte nicht abgespalten werden",
       "text85b7a59cdbd5": "Plattform-Agent",
-      "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren."    },
+      "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren."
+    },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",

@@ -19205,7 +19205,8 @@
       "text0e5f7f6732e0": "Fork conversation",
       "text32ad3abe4479": "Failed to fork conversation",
       "text85b7a59cdbd5": "Platform agent",
-      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."    },
+      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
+    },
     "publicShareConfirm": {
       "title": "Create a public link?",
       "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",

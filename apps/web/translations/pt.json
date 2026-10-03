@@ -19194,7 +19194,8 @@
       "text0e5f7f6732e0": "Bifurcar conversa",
       "text32ad3abe4479": "Falha ao bifurcar a conversa",
       "text85b7a59cdbd5": "Agente da plataforma",
-      "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui."    },
+      "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui."
+    },
     "publicShareConfirm": {
       "title": "Criar um link público?",
       "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
