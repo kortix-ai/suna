@@ -123,6 +123,7 @@ export async function chunkStoreSources(
   cliPath: string,
   options: RuntimeAssetsOptions,
 ): Promise<string[]> {
+  if (options.localChunkSources) return options.localChunkSources
   const stateDir = agentStateDirOf(options)
   return [
     cliPath,
