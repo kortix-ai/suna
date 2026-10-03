@@ -1,0 +1,20 @@
+{
+  "source_hash": "347a3c5ac21ce9862df11d4822f42119db1238b43b1b38481590a10cfe4faad1",
+  "diff_files": [
+    "apps/mobile/lib/session/diff-utils.test.ts",
+    "apps/mobile/lib/session/diff-utils.ts",
+    "apps/mobile/lib/session/unified-diff.ts",
+    "tests/unit/attestation-diff.test.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "4c55d66fb4a71388b7ec2314c8c7784e2b2b563a3c8ecfbcd8aa18a54fd4cb3b",
+  "head": "73702746d7dce2eb5a6ab0aba3f34d72121386c3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:59:14.720Z"
+}
