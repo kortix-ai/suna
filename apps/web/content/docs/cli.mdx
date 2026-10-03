@@ -569,9 +569,9 @@ it decides what pickers offer, never what the gateway serves.
 | `kortix models enable <model-id>...` | Offer these models. |
 | `kortix models disable <model-id>...` | Stop offering them. The project default refuses with `409` — change the default first. |
 | `kortix models reset` | Drop every exception; back to the catalog default. |
-| `kortix models default [--json]` | Print the default chain (project → account → platform) and what it resolves to. |
-| `kortix models default <model-id> [--account]` | Set the project default, or the account-wide one with `--account`. |
-| `kortix models default --clear [--account]` | Clear the project, or account, default. |
+| `kortix models default [--json]` | Print the default chain (project → platform) and what it resolves to. |
+| `kortix models default <model-id>` | Set the project default. |
+| `kortix models default --clear` | Clear the project default. |
 
 Model ids are gateway wire ids — a bare managed id (`glm-5.3-flash`) or a BYOK
 `provider/model`. Copy one from `kortix models ls --json`. Per-agent pins live

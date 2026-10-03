@@ -85,32 +85,30 @@ import { Tag } from '@/components/ui/tag';
 type ModelRef = { providerID: string; modelID: string };
 
 /**
- * The one default this picker sets: the ACCOUNT default model, from the star on
- * a row. It is the default for every member of the account, so it needs
+ * The one default this picker sets: the PROJECT default model, from the star on
+ * a row. It is the default for this project's sessions, so it needs
  * `project.customize.write` and the star is hidden without it.
  *
- * The other two scopes are gone from here, not lost — each already had a
- * better home, on the screen that owns the thing being defaulted:
+ * The agent default is gone from here, not lost — it has a better home on the
+ * agent's own detail page (`capabilities/agents/agent-detail-aside.tsx`'s
+ * `AgentModel`), which also offers the "Reset to default" this footer never had.
  *
- *  - **Project default** → the provider modal's Models tab
- *    (`llm-provider/models-tab.tsx`), which stars a row AND badges the current
- *    one `project default`, AND explains why that row's switch is locked.
- *  - **Agent default** → the agent's own detail page
- *    (`capabilities/agents/agent-detail-aside.tsx`'s `AgentModel`), which also
- *    offers the "Reset to default" this footer never had.
+ * The provider modal's Models tab (`llm-provider/models-tab.tsx`) also sets the
+ * project default — it stars a row AND badges the current one `project default`,
+ * AND explains why that row's switch is locked.
  *
- * Three buttons stacked under a model list could set a default at three scopes
+ * Several buttons stacked under a model list could set a default at several scopes
  * with nothing on screen saying which was in force at any of them. Do not add
  * them back here.
  */
 export interface ModelDefaultControls {
   /**
-   * Which model is the account default right now, so a row can SHOW it with a
+   * Which model is the project default right now, so a row can SHOW it with a
    * filled star. Without it the star is a button you press into silence — no
    * confirmation, and no way to tell you are re-setting what is already set.
    */
-  accountDefault?: ModelRef | null;
-  onSetAccountDefault: (model: ModelRef) => void;
+  projectDefault?: ModelRef | null;
+  onSetProjectDefault: (model: ModelRef) => void;
 }
 
 /**
@@ -129,7 +127,7 @@ function ModelRow({
   groupProviderID,
   groupProviderName,
   isSelected,
-  isAccountDefault,
+  isProjectDefault,
   defaultControls,
   onSelect,
   scope,
@@ -139,7 +137,7 @@ function ModelRow({
   groupProviderID: string;
   groupProviderName: string;
   isSelected: boolean;
-  isAccountDefault: boolean;
+  isProjectDefault: boolean;
   defaultControls?: ModelDefaultControls;
   onSelect: (model: FlatModel) => void;
   /** Which copy of the model this is — see `modelItemValue`. The pinned copy
@@ -263,13 +261,13 @@ function ModelRow({
           <button
             type="button"
             aria-label={
-              isAccountDefault
+              isProjectDefault
                 ? t('defaultAria', { model: model.modelName })
                 : t('setDefaultAria', { model: model.modelName })
             }
-            title={isAccountDefault ? t('defaultTitle') : t('setDefaultTitle')}
+            title={isProjectDefault ? t('defaultTitle') : t('setDefaultTitle')}
             /* No `aria-pressed`: that promises a toggle, and clicking the
-               filled star does nothing. Clearing an account default is a real
+               filled star does nothing. Clearing a project default is a real
                action with a real fallback behind it, and it belongs where the
                default is managed, not on a hover affordance. */
             /* cmdk highlights on pointer move and selects on the item's own
@@ -279,8 +277,8 @@ function ModelRow({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              if (isAccountDefault) return;
-              defaultControls.onSetAccountDefault({
+              if (isProjectDefault) return;
+              defaultControls.onSetProjectDefault({
                 providerID: model.providerID,
                 modelID: model.modelID,
               });
@@ -297,7 +295,7 @@ function ModelRow({
                  under the finger while changing nothing is a worse lie than no
                  feedback. `motion-safe` so reduced motion loses the movement
                  and keeps every colour cue, rather than losing both. */
-              !isAccountDefault && 'motion-safe:active:scale-[0.96]',
+              !isProjectDefault && 'motion-safe:active:scale-[0.96]',
               /* Hidden means BOTH invisible and unclickable — an opacity-0
                  button still takes clicks, which would put a dead hit target
                  over the row's own click area. Focus is unaffected by
@@ -312,14 +310,14 @@ function ModelRow({
               'focus-visible:ring-kortix-base focus-visible:ring-2 focus-visible:outline-none',
               /* The default keeps its star at rest ONLY when the check is not
                  already using the slot. Selected wins; see above. */
-              isAccountDefault && 'text-foreground cursor-default hover:bg-transparent',
-              isAccountDefault && !isSelected && 'pointer-events-auto opacity-100',
+              isProjectDefault && 'text-foreground cursor-default hover:bg-transparent',
+              isProjectDefault && !isSelected && 'pointer-events-auto opacity-100',
             )}
           >
             {/* `weight="fill"` or no weight at all — Phosphor's `regular` IS the
                 default, so passing it made the two states read as a deliberate
                 pair when only one of them says anything. */}
-            {isAccountDefault ? (
+            {isProjectDefault ? (
               <Star weight="fill" className="size-3.5" />
             ) : (
               <Star className="size-3.5" />
@@ -554,7 +552,7 @@ export function ModelSelector({
   );
 
   /**
-   * The account default, lifted to the top of the list in its own section.
+   * The project default, lifted to the top of the list in its own section.
    *
    * The picker's job for a non-technical user is "pick the one I use", and
    * before this that model was somewhere inside an alphabetical provider group
@@ -568,7 +566,7 @@ export function ModelSelector({
    * the model is grouped below so the pinned copy shows the same provider mark.
    */
   const pinnedDefault = useMemo(() => {
-    const ref = defaultControls?.accountDefault;
+    const ref = defaultControls?.projectDefault;
     if (!ref) return null;
     const model = visibleModels.find(
       (m) => m.providerID === ref.providerID && m.modelID === ref.modelID,
@@ -580,7 +578,7 @@ export function ModelSelector({
       providerID: groupID,
       providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, model) : model.providerName,
     };
-  }, [defaultControls?.accountDefault, llmGatewayEnabled, visibleModels]);
+  }, [defaultControls?.projectDefault, llmGatewayEnabled, visibleModels]);
 
   const handleSelect = useCallback(
     (model: FlatModel) => {
@@ -714,7 +712,7 @@ export function ModelSelector({
                             availableSelectedModel?.providerID === pinnedDefault.model.providerID &&
                             availableSelectedModel?.modelID === pinnedDefault.model.modelID
                           }
-                          isAccountDefault
+                          isProjectDefault
                           defaultControls={rowDefaultControls}
                           onSelect={handleSelect}
                           scope="pinned"
@@ -803,9 +801,9 @@ export function ModelSelector({
                                   availableSelectedModel?.providerID === model.providerID &&
                                   availableSelectedModel?.modelID === model.modelID
                                 }
-                                isAccountDefault={
-                                  defaultControls?.accountDefault?.providerID === model.providerID &&
-                                  defaultControls?.accountDefault?.modelID === model.modelID
+                                isProjectDefault={
+                                  defaultControls?.projectDefault?.providerID === model.providerID &&
+                                  defaultControls?.projectDefault?.modelID === model.modelID
                                 }
                                 defaultControls={rowDefaultControls}
                                 onSelect={handleSelect}

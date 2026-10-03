@@ -49,7 +49,7 @@ export function pickerGroupLabel(groupID: string, model: FlatModel): string {
 /**
  * The `value` cmdk keys a picker row by.
  *
- * The account default renders TWICE — once pinned in its own section at the
+ * The project default renders TWICE — once pinned in its own section at the
  * top, once in the provider group it belongs to — and cmdk drives filtering,
  * keyboard navigation and `data-selected` off this string. Two rows sharing one
  * value is a SILENT failure: arrow-key navigation lands on both, the highlight

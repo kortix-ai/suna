@@ -42,7 +42,6 @@ import {
   FolderSimpleIcon as Folder,
   DotsThreeIcon as MoreHorizontal,
   ShieldCheckIcon as ShieldCheck,
-  StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { ProviderAccessMenu } from './provider-access-menu';
@@ -260,12 +259,6 @@ export function ModelsTab({
                   // Lock the switch and say why instead of letting the click
                   // become a failed action.
                   const isProjectDefault = wireId === enablement.defaultModel;
-                  // `useModelDefaults` builds every scope with `wireToModelKey`,
-                  // which parks the whole wire id in `modelID` under the `kortix`
-                  // provider — so comparing `modelID` to this row's `wireId` is
-                  // the same comparison `isProjectDefault` makes one line up, not
-                  // a lucky string match.
-                  const isAccountDefault = defaults.accountDefault?.modelID === wireId;
                   const ctx = formatTokenCount(model.contextWindow);
                   const priceIn = formatPricePerMillion(model.cost?.input);
                   const priceOut = formatPricePerMillion(model.cost?.output);
@@ -309,17 +302,12 @@ export function ModelsTab({
                               <Tag>{tI18nComplete.raw('textf096ba0a2aa6')}</Tag>
                             </Hint>
                           )}
-                          {/* Both scopes badge the model that holds them. A
-                            "set as default" control with no matching "this one
-                            IS the default" is the reason these moved here. */}
+                          {/* The project default badges the model that holds it.
+                            A "set as default" control with no matching "this one
+                            IS the default" is the reason it moved here. */}
                           {isProjectDefault && (
                             <Hint label={tI18nComplete.raw('text68cde35131cf')}>
                               <Tag>{tI18nComplete.raw('text5e06ae1125b5')}</Tag>
-                            </Hint>
-                          )}
-                          {isAccountDefault && (
-                            <Hint label={tI18nComplete.raw('textd197e66e9634')}>
-                              <Tag>{tI18nComplete.raw('text071c0f5e8495')}</Tag>
                             </Hint>
                           )}
                         </div>
@@ -365,20 +353,11 @@ export function ModelsTab({
                         )}
                       </div>
                       {/*
-                      Both default scopes, on the row they apply to.
+                      The project default, on the row it applies to.
 
                       Gated on `enabled` rather than on "is not already the
-                      default": a model the project does not OFFER cannot be
-                      anyone's default (the server refuses it), but a model that
-                      already holds one scope can still be given the other — the
-                      old `!isProjectDefault` gate hid the control on exactly the
-                      row you would reach for to also make it your own default.
-
-                      A menu rather than two icon buttons: two stars side by side
-                      say nothing about which is which, and each item can state
-                      its scope in words and carry its own check. It costs the
-                      project default a second click; it buys the account default
-                      a home and both of them a readable current state.
+                      default": a model the project does not OFFER cannot be the
+                      default (the server refuses it).
 
                       `DropdownMenuContent` resolves its z-index through
                       `useDialogDepth`, so it stacks above the modal this tab
@@ -427,16 +406,6 @@ export function ModelsTab({
                               <Folder className="size-3.5" />
                               {tI18nComplete.raw('text246d55bd2682')}
                               {isProjectDefault && <Check className="ml-auto size-3.5" />}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              disabled={!enabled || isAccountDefault || defaults.isUpdating}
-                              onSelect={() =>
-                                void defaults.setAccountDefault(wireToModelKey(wireId))
-                              }
-                            >
-                              <Star className="size-3.5" />
-                              {tI18nComplete.raw('textc74a21a56d79')}
-                              {isAccountDefault && <Check className="ml-auto size-3.5" />}
                             </DropdownMenuItem>
                             {/* The wire id's only home now that it is off the
                               row. It was printed under every model name —

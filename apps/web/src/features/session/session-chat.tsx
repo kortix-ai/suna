@@ -3482,19 +3482,19 @@ export function SessionChat({
     [local.model],
   );
 
-  // Only the ACCOUNT default is settable from the picker now — it is the one
-  // scope with no screen of its own. The project default lives in the provider
-  // modal's Models tab and the agent default on the agent's detail page, both
-  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
-  // Native mode (llm_gateway off) has NO model-defaults chain: the star's
-  // write 404s llm_gateway_disabled, so the affordance disappears entirely.
+  // The PROJECT default is settable from the picker star. The provider modal's
+  // Models tab also sets it, and the agent default lives on the agent's detail
+  // page — both of which also SHOW and can CLEAR what is set. See
+  // ModelDefaultControls. Native mode (llm_gateway off) has NO model-defaults
+  // chain: the star's write 404s llm_gateway_disabled, so the affordance
+  // disappears entirely.
   const chatModelDefaultControls: ModelDefaultControls | undefined = useMemo(
     () =>
       local.model.defaults.llmGatewayEnabled
         ? {
-            accountDefault: local.model.defaults.accountDefault ?? null,
-            onSetAccountDefault: (m) => {
-              void local.model.defaults.setAccountDefault(m);
+            projectDefault: local.model.defaults.projectDefault ?? null,
+            onSetProjectDefault: (m) => {
+              void local.model.defaults.setProjectDefault(m);
             },
           }
         : undefined,
