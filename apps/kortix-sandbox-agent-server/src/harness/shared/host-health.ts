@@ -13,14 +13,16 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
-/** The host-written env file. Tests point KORTIX_PT_ENV_FILE elsewhere so a
- *  Kortix worker sandbox's own snapshot (/etc/pt-env carries the session's
- *  auto-clone and branch) cannot decide a rig's repo gate. */
-const PT_ENV_FILE = process.env.KORTIX_PT_ENV_FILE ?? '/etc/pt-env'
+const PT_ENV_PATH = '/etc/pt-env'
+
+/** The env file THIS read consults. `KORTIX_PT_ENV_PATH` is read at call time so
+ *  a test can pin it after this module has loaded: a Kortix box's own
+ *  /etc/pt-env would otherwise answer for a rig that has no session env file. */
+const ptEnvPath = () => process.env.KORTIX_PT_ENV_PATH || PT_ENV_PATH
 
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync(PT_ENV_FILE, 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(ptEnvPath(), 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -38,7 +40,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(PT_ENV_FILE, 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(ptEnvPath(), 'utf8'))
   } catch {
     return false
   }
