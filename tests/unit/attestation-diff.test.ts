@@ -97,11 +97,16 @@ describe('attestation keyed to the PR diff', () => {
     expect(r.status).toBe(1);
   });
 
-  it('3: lane gates — skipped-no-db passes, a failed lane and --strict do not', () => {
+  it('3: lane gates — sanctioned skips pass, a failed lane and --strict do not', () => {
     const skip = initRepo();
     attestPrBranch(skip, ['core=pass', 'packages=pass', 'db-suites=skipped-no-db']);
     expect(run(skip, 'verify', '--rev', head(skip)).status).toBe(0);
     expect(run(skip, 'verify', '--rev', head(skip), '--strict').status).toBe(3);
+
+    const image = initRepo();
+    attestPrBranch(image, ['core=pass', 'packages=skipped-sandbox-image', 'db-suites=skipped-no-db']);
+    expect(run(image, 'verify', '--rev', head(image)).status).toBe(0);
+    expect(run(image, 'verify', '--rev', head(image), '--strict').status).toBe(3);
 
     const red = initRepo();
     attestPrBranch(red, ['core=pass', 'packages=fail', 'db-suites=pass']);

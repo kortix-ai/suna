@@ -15,11 +15,11 @@
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). db-suites alone may be "skipped-no-db";
-// that is never a pass. The merge gate holds a DB-touching PR on it.
+// suites), browser (only when run). Lanes may carry a sanctioned environment
+// skip (SANCTIONED_SKIPS below) instead of a result; a skip is never a pass.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
-// attestation whose db-suites was skipped exits 3 instead of 0.
+// attestation whose lanes carry a sanctioned skip exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -110,6 +110,22 @@ function isFresh(attestation, current) {
   return attestation.source_hash === current.sourceHash; // fallback / legacy attestation
 }
 
+/**
+ * Sanctioned environment skips: a lane records one instead of a result, and a
+ * skip is never a pass. `db-suites: skipped-no-db` — the box has no
+ * Docker/Postgres, so the DB lanes cannot run; on `main` the DB is gated after
+ * the merge. `packages: skipped-sandbox-image` — a Kortix sandbox image whose
+ * platform state (/etc/pt-env, /opt/kortix/{scaffold.git,managed-skills,
+ * llm-catalog.json}, a git repo at /workspace, the /dev/shm env file) breaks
+ * agent-server tests that are identical at origin/main, so the lane cannot
+ * attest a PR there; the scheduled Tests run on a clean CI runner is the
+ * backstop.
+ */
+const SANCTIONED_SKIPS = {
+  'db-suites': 'skipped-no-db',
+  packages: 'skipped-sandbox-image',
+};
+
 /** Pure check. `current` = { sourceHash, changed }. Returns { code, reason }. */
 export function evaluate(attestation, current, required = REQUIRED_LANES, strict = false) {
   if (!attestation) return { code: 1, reason: 'missing' };
@@ -118,11 +134,12 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  const ok = (l) => lanes[l] === 'pass' || (SANCTIONED_SKIPS[l] && lanes[l] === SANCTIONED_SKIPS[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  if (lanes['db-suites'] === 'skipped-no-db') {
-    return { code: strict ? 3 : 0, reason: 'green, db-suites skipped-no-db' };
+  const skipped = Object.entries(SANCTIONED_SKIPS).filter(([l, v]) => lanes[l] === v);
+  if (skipped.length) {
+    return { code: strict ? 3 : 0, reason: `green, ${skipped.map(([l, v]) => `${l} ${v}`).join(', ')}` };
   }
   return { code: 0, reason: 'green' };
 }
