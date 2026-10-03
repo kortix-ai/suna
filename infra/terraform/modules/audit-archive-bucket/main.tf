@@ -10,8 +10,8 @@
 # including the account root, can shorten retention or delete it early.
 
 #trivy:ignore:AVD-AWS-0089 Write-once archive reached only by the API task role; CloudTrail data events cover object access when enabled. No log bucket exists to receive S3 server access logs.
-resource "aws_s3_bucket" "this" {
-  #checkov:skip=CKV_AWS_19:Encryption at rest is configured on aws_s3_bucket_server_side_encryption_configuration.this (SSE-KMS); the legacy inline-block check cannot see the split resource.
+resource "aws_s3_bucket" "audit_archive" {
+  #checkov:skip=CKV_AWS_19:Encryption at rest is configured on aws_s3_bucket_server_side_encryption_configuration.audit_archive (SSE-KMS); the legacy inline-block check cannot see the split resource.
   #checkov:skip=CKV_AWS_18:No shared S3 access-log bucket exists in this repo; Object Lock plus CloudTrail data events cover access auditing.
   #checkov:skip=CKV_AWS_144:The archive is a regional, single-writer store; cross-region replication is not required.
   #checkov:skip=CKV2_AWS_62:The archive has no event consumer.
@@ -21,30 +21,30 @@ resource "aws_s3_bucket" "this" {
   tags                = merge(var.tags, { Name = var.name })
 }
 
-resource "aws_s3_bucket_public_access_block" "this" {
-  bucket                  = aws_s3_bucket.this.id
+resource "aws_s3_bucket_public_access_block" "audit_archive" {
+  bucket                  = aws_s3_bucket.audit_archive.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_ownership_controls" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_ownership_controls" "audit_archive" {
+  bucket = aws_s3_bucket.audit_archive.id
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
 }
 
-resource "aws_s3_bucket_versioning" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_versioning" "audit_archive" {
+  bucket = aws_s3_bucket.audit_archive.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_object_lock_configuration" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_object_lock_configuration" "audit_archive" {
+  bucket = aws_s3_bucket.audit_archive.id
   rule {
     default_retention {
       mode = var.object_lock_mode
@@ -52,7 +52,7 @@ resource "aws_s3_bucket_object_lock_configuration" "this" {
     }
   }
 
-  depends_on = [aws_s3_bucket_versioning.this]
+  depends_on = [aws_s3_bucket_versioning.audit_archive]
 }
 
 # ── Encryption key ────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ data "aws_iam_policy_document" "key" {
   }
 }
 
-resource "aws_kms_key" "this" {
+resource "aws_kms_key" "audit_archive" {
   description             = "${var.name} audit archive encryption"
   enable_key_rotation     = true
   deletion_window_in_days = 30
@@ -83,17 +83,17 @@ resource "aws_kms_key" "this" {
   tags                    = merge(var.tags, { Name = "${var.name}-audit-archive" })
 }
 
-resource "aws_kms_alias" "this" {
+resource "aws_kms_alias" "audit_archive" {
   name          = "alias/${var.name}"
-  target_key_id = aws_kms_key.this.key_id
+  target_key_id = aws_kms_key.audit_archive.key_id
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "audit_archive" {
+  bucket = aws_s3_bucket.audit_archive.id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.this.arn
+      kms_master_key_id = aws_kms_key.audit_archive.arn
     }
     bucket_key_enabled = true
   }
@@ -104,8 +104,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
 # last lock: the API sets retain-until = week end + 365 days, which is at most
 # retention_days - archive_lag_days after the upload (it only uploads weeks older than
 # archive_lag_days). Expiry therefore counts from the upload, not from the default retention.
-resource "aws_s3_bucket_lifecycle_configuration" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_lifecycle_configuration" "audit_archive" {
+  bucket = aws_s3_bucket.audit_archive.id
 
   rule {
     id     = "audit-archive-retention"
@@ -132,7 +132,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 
-  depends_on = [aws_s3_bucket_versioning.this]
+  depends_on = [aws_s3_bucket_versioning.audit_archive]
 }
 
 data "aws_iam_policy_document" "bucket" {
@@ -140,7 +140,7 @@ data "aws_iam_policy_document" "bucket" {
     sid       = "DenyInsecureTransport"
     effect    = "Deny"
     actions   = ["s3:*"]
-    resources = [aws_s3_bucket.this.arn, "${aws_s3_bucket.this.arn}/*"]
+    resources = [aws_s3_bucket.audit_archive.arn, "${aws_s3_bucket.audit_archive.arn}/*"]
     principals {
       type        = "*"
       identifiers = ["*"]
@@ -158,7 +158,7 @@ data "aws_iam_policy_document" "bucket" {
     sid       = "DenyPutWithoutKmsEncryption"
     effect    = "Deny"
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.this.arn}/*"]
+    resources = ["${aws_s3_bucket.audit_archive.arn}/*"]
     principals {
       type        = "*"
       identifiers = ["*"]
@@ -171,9 +171,9 @@ data "aws_iam_policy_document" "bucket" {
   }
 }
 
-resource "aws_s3_bucket_policy" "this" {
-  bucket = aws_s3_bucket.this.id
+resource "aws_s3_bucket_policy" "audit_archive" {
+  bucket = aws_s3_bucket.audit_archive.id
   policy = data.aws_iam_policy_document.bucket.json
 
-  depends_on = [aws_s3_bucket_public_access_block.this]
+  depends_on = [aws_s3_bucket_public_access_block.audit_archive]
 }
