@@ -23,6 +23,11 @@ import type { DaemonServer } from '../contract/server'
 // Read KEY=VALUE lines from the per-session env file into process.env. Platinum
 // restore writes it directly into the guest pre-boot at /etc/pt-env (host-agent
 // writeEnvIntoOverlay via debugfs / writeGuestEnv).
+/** The host-written env file the restore watchers read. Tests point it at an
+ *  absent path: a Kortix box's own /etc/pt-env would otherwise answer for a rig
+ *  that has no session env file. */
+const ptEnvFile = () => process.env.KORTIX_PT_ENV_FILE ?? '/etc/pt-env'
+
 export function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
   for (const path of paths) {
     let txt: string
@@ -377,7 +382,7 @@ export async function runWarmSeedMode(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    try { txt = readFileSync(ptEnvFile(), 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll:/etc/pt-env') }
   }, 200)
 }
@@ -429,7 +434,7 @@ export function armSeedAdoption(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    try { txt = readFileSync(ptEnvFile(), 'utf8') } catch { return }
     if (/^KORTIX_SESSION_ID=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll') }
   }, 250)
 }
