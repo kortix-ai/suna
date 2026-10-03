@@ -43,7 +43,6 @@ function runDevLocal(caseEnv) {
   const bin = mkdtempSync(join(tmpdir(), 'dev-local-stubs-'));
   const state = join(bin, 'state');
   mkdirSync(state);
-  mkdirSync(join(ROOT, 'output'), { recursive: true });
   const scriptCopy = join(ROOT, 'scripts', `.dev-local-harness-${process.pid}-${Date.now()}.sh`);
 
   const src = readFileSync(SCRIPT, 'utf8');

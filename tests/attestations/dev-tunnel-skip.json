@@ -1,11 +1,17 @@
 {
-  "source_hash": "3e488ccc30d88a5612ca9aa219f6f1e28f0f582f95033b9772e2ee0f31c00fed",
-  "head": "4f35e75c57f03a38dcde615d0112c940baa6125f",
+  "source_hash": "ab1b4b28eac9a0dc28492d4ce5250c27304c73b5e35eca8849a40f0b1278ca73",
+  "diff_files": [
+    "scripts/dev-local.sh",
+    "scripts/dev-local.test.mjs",
+    "tests/bin/package-quality.ts"
+  ],
+  "diff_hash": "7385f4e1b3c3d354437753cc61affe813e8dec88981518d4462070416e478a6f",
+  "head": "20211e5dde88f522d8ebe89354e2a836199d6cca",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:12:41.586Z"
+  "at": "2026-10-03T22:52:42.443Z"
 }
