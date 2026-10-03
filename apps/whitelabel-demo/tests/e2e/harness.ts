@@ -154,7 +154,14 @@ export async function startApp(
       throw new Error(`next start exited before printing a URL (code ${proc.exitCode}). Output:\n${log}`);
     }
     const m = log.match(/Local:\s+(http:\/\/localhost:\d+)/);
-    if (m) baseUrl = m[1];
+    if (m) {
+      // Name the loopback family. `localhost` resolves to ::1 first inside a
+      // Kortix platform sandbox (its hosts entry is not readable) while
+      // `next start` binds the IPv4 loopback, so the readiness probe below
+      // would be refused until the deadline. 127.0.0.1 is what the server
+      // binds on a laptop and on CI alike.
+      baseUrl = `http://127.0.0.1:${new URL(m[1]).port}`;
+    }
   }
 
   // The URL line can print a beat before the listener actually accepts
