@@ -20,6 +20,9 @@ mock.module('../repositories/project-model-access', () => ({
 mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => false }));
 
 let accountMayUseManaged = false;
+let billingAdmission: { ok: true } | { ok: false; reason: string; message: string; balance: number } = {
+  ok: true,
+};
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -45,6 +48,12 @@ mock.module('../billing/services/entitlements', () => ({
   getCachedAccountTier: async () => 'free',
   getAccountTier: async () => 'free',
   accountMayUseManagedModels: async () => accountMayUseManaged,
+}));
+
+// The platform default bills wallet credits on an entitlement-less account, so
+// resolution applies the same admission the web prompt route applies.
+mock.module('../billing/services/billing-gate', () => ({
+  checkBillingAdmission: async () => billingAdmission,
 }));
 
 mock.module('../projects/secrets', () => ({
@@ -114,6 +123,7 @@ describe('resolveCandidates — the platform default is servable on the free tie
 
   beforeEach(() => {
     accountMayUseManaged = false;
+    billingAdmission = { ok: true };
   });
 
   test('a free account resolves the platform default as a managed (credits) candidate', async () => {
@@ -135,6 +145,21 @@ describe('resolveCandidates — the platform default is servable on the free tie
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'plan_upgrade_required',
+    });
+  });
+
+  test('a drained wallet refuses the platform default with the billing reason', async () => {
+    billingAdmission = {
+      ok: false,
+      reason: 'subscription_required',
+      message: 'An active subscription is required.',
+      balance: 0,
+    };
+    await expect(
+      resolveCandidates(principal('free-drained'), 'deepseek-v4.1-flash'),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'subscription_required',
     });
   });
 

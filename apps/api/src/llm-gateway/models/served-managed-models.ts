@@ -42,11 +42,12 @@ export function platformDefaultModelId(): string {
  * model servable on every tier (KRTX-1067). It is what makes a fresh free-tier
  * account usable: the picker offers it, session creation boots it, and the
  * gateway serves it while every other managed id still needs the
- * `managedModels` entitlement. Only ever true when the default names a model
- * this deployment can actually serve (empty when the managed provider is off,
- * or when the operator pointed the default at a BYOK/codex ref).
+ * `managedModels` entitlement. False when the managed provider is off or the
+ * operator pointed the default at a BYOK/codex ref — the default must name a
+ * model this deployment can actually serve, or the carve-out would advertise
+ * and gate-waive a model request-time resolution refuses.
  */
 export function isPlatformDefaultModelId(wire: string): boolean {
   const def = platformDefaultModelId();
-  return !!def && wire === def;
+  return !!def && SERVED_MANAGED_MODELS.some((model) => model.id === def) && wire === def;
 }

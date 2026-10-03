@@ -303,11 +303,12 @@ function platformDefaultModel(): string | null {
  * default (free tier or a gateway-disabled project).
  *
  * The account's own default chain first, then the platform default — but ONLY
- * ever a model the gateway will actually serve for this account+project. The
- * unconditional platform default is a trap: it is a MANAGED id, so on a free
- * tier (or a deployment with no managed provider) the gateway refuses it and
- * every prompt pays a mint → doomed completion → revoke. The caller skips that
- * spend and persists its deterministic prompt excerpt instead.
+ * ever a model the gateway will actually serve for this account+project: every
+ * candidate passes `isModelServableForAccount` before it is used, so a refusal
+ * can never doom a title generation into a mint → doomed completion → revoke.
+ * The platform default is servable on every tier since KRTX-1067 (it is the
+ * one managed model a free account may run), so the fallback titles with it
+ * there too; only a deployment with no managed provider still refuses it.
  *
  */
 async function resolveFallbackModel(

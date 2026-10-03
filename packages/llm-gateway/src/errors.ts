@@ -97,7 +97,14 @@ export type NoUpstreamReasonCode =
   | 'provider_pool_rate_limited'
   // The credential exists, but the running agent's secret grant does not name
   // it. The fix is the agent's `secrets` list, not a new connection.
-  | 'agent_grant_excludes';
+  | 'agent_grant_excludes'
+  // The account's BILLING admission refused the request (`checkBillingAdmission`
+  // inside the platform-default carve-out, resolution/resolve-candidates.ts).
+  // These are the same reasons the 402 billing path already surfaces, named
+  // here so a drained wallet reads as "top up", never as an upgrade pitch.
+  | 'subscription_required'
+  | 'insufficient_credits'
+  | 'no_account';
 
 export class GatewayResolutionError extends Error {
   constructor(
