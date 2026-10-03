@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the warn-suppression window is best-effort per process by
+// design — exact refusal accounting lives in the request-completion logs and
+// auth audits (see the header above), so per-replica counts are correct.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
