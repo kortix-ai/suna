@@ -69,7 +69,7 @@ They reuse a running API only when it proves the deterministic test profile.
 Browser runs use two Playwright workers, locally and in each CI shard.
 
 A green `pnpm test` writes `tests/test-attestation.json`; commit it. Format:
-`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
+`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|<sanctioned skip>}, at}`.
 `diff_files` is the files the PR itself changed (`git diff origin/main...HEAD`,
 minus the attestation) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
@@ -85,9 +85,12 @@ its runner lanes ran in that run or one failed. A filtered or sharded run
 (`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
 lane-only mode updates only the lanes it fully covers, on unchanged source.
 `pnpm test:verify` (`tests/verify-attestation.mjs`) recomputes the diff:
-exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`, and `db-suites` alone may be `skipped-no-db`
-(no Docker; never a pass). `--strict` exits `3` for that skip. No in-sandbox
+exit `0` green, `1` missing/stale/red. Every lane must be `pass` or carry its
+one sanctioned environment skip — `db-suites: skipped-no-db` (no Docker; the
+merge gate holds DB PRs on it) or `packages: skipped-sandbox-image` (a Kortix
+sandbox image cannot attest the packages lane; CI's scheduled Tests run is the
+backstop). A skip is never a pass, and `--strict` (the main-push hook) exits
+`3` for any skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except
