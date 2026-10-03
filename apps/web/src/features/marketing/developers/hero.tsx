@@ -12,7 +12,8 @@ import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { m, useReducedMotion } from 'motion/react';
 import { useState, type ReactNode } from 'react';
-import { DOCS_URL, hero } from './content';
+import { DOCS_URL } from './content';
+import { useDevelopersCopy } from './use-developers-copy';
 import { DitherField } from './shared';
 
 const STAGGER_MS = 60;
@@ -49,6 +50,7 @@ const tabState = (active: boolean) =>
 type Audience = 'humans' | 'agents';
 
 function InstallRow({ audience }: { audience: Audience }) {
+  const { hero } = useDevelopersCopy();
   const { copied, copy } = useCopy({ toast: false });
   const text = audience === 'humans' ? KORTIX_CLI_INSTALL_COMMAND : hero.agentInstruction;
 
@@ -84,6 +86,7 @@ function InstallRow({ audience }: { audience: Audience }) {
 }
 
 function FileWindow() {
+  const { hero } = useDevelopersCopy();
   const reduce = useReducedMotion();
   const [active, setActive] = useState(0);
   const tab = hero.fileTabs[active];
@@ -125,6 +128,7 @@ function FileWindow() {
 }
 
 export function DevelopersHero() {
+  const { hero } = useDevelopersCopy();
   const [audience, setAudience] = useState<Audience>('humans');
   return (
     <section id="hero" className="relative w-full overflow-clip">

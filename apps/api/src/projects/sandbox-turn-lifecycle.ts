@@ -19,6 +19,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import type { DeadlineTarget } from './sandbox-deadline';
 import { contractIdleDeadline } from './sandbox-deadline';
 import {
@@ -30,7 +31,6 @@ import {
 } from './sandbox-deadline-policy';
 import { confirmInboxPromptConsumed } from './session-lifecycle/consumption';
 import {
-  activeTurnEntries,
   ABORT_END_ERROR_NAMES,
   type ActiveTurnRenewal,
   type RuntimeTurnAdoption,
@@ -44,6 +44,7 @@ import {
   type SandboxTurnStartObservation,
   type SessionTurnEndErrorRecord,
   type SessionTurnEndReason,
+  activeTurnEntries,
   endErrorRecord,
   endedLedgerTurns,
   endedTurnLedger,
@@ -188,24 +189,36 @@ export async function beginSandboxTurn(
   // returned, so a stop cannot commit between the two (it waits on the sandbox
   // row lock and then settles this row, or lands first and the grant matches
   // nothing). It ran as a second round trip before the prompt's upstream call.
-  const result = await withLedger(
-    grant,
-    sql`WITH granted AS (${grant}), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT ${turn.token}, granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                 ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
-                 ${observedAt}, now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted`,
-    `insert delivering ${turn.token}`,
-  );
+  const { withDbTransaction } = await import('../shared/db');
+  const result = await withDbTransaction(async () => {
+    await execute(sql`SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE ${targetPredicate(target)})
+      FOR UPDATE OF session`);
+    const result = await withLedger(
+      grant,
+      sql`WITH granted AS (${grant}), ledger AS (
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT ${turn.token}, granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                   ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
+                   ${observedAt}, now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted`,
+      `insert delivering ${turn.token}`,
+    );
+    const granted = normalizeRows(result);
+    if (granted?.[0]?.session_id) {
+      const { transitionSession } = await import('./session-lifecycle/status-transitions');
+      await transitionSession('wake', String(granted[0].session_id), { error: null });
+    }
+    return result;
+  });
   const rows = normalizeRows(result);
   if (rows === null) {
     throw new Error('sandbox turn lifecycle write returned an unsupported database result');
@@ -220,11 +233,15 @@ export async function beginSandboxTurn(
  */
 async function withLedger(authority: SQL, combined: SQL, context: string) {
   try {
-    return await execute(combined);
+    // Nested contextual transaction is a savepoint: a ledger statement error
+    // must not poison admission's outer authority + wake transaction.
+    const { withDbTransaction } = await import('../shared/db');
+    return await withDbTransaction(() => execute(combined));
   } catch (error) {
-    console.warn(
-      `[turn-ledger] ${context} failed with its authority write; retrying the authority write alone:`,
-      error instanceof Error ? error.message : error,
+    logger.warn(
+      `[turn-ledger] ${context} failed with its authority write; retrying the authority write alone: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
     return execute(authority);
   }
@@ -239,8 +256,8 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
  * `activeTurns` record, and therefore no deadline grant: `GET .../turn`
  * reported idle for minutes of live streaming, the composer read "not
  * running" over a working session, and a long pty-driven work phase ran on
- * the 15-minute idle tail (live incident 2026-08-20, SampleCo session
- * d1b74954). The daemon now relays `turn_begin` when it observes the root go
+ * the 15-minute idle tail (live incident 2026-08-20, a SampleCo
+ * session). The daemon now relays `turn_begin` when it observes the root go
  * busy; this is that relay's write.
  *
  * Idempotent by construction, so the daemon may relay freely:
@@ -557,7 +574,12 @@ export async function completeSandboxTurn(
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
   }
-  const result = await execute(sql`
+  const { withDbTransaction } = await import('../shared/db');
+  const result = await withDbTransaction(async () => {
+    // Match lifecycle writers' session -> sandbox lock order.
+    await execute(sql`SELECT session_id FROM kortix.project_sessions
+      WHERE session_id = ${sessionId} FOR UPDATE`);
+    const result = await execute(sql`
     WITH target AS (${sandboxTurnTargetCte(sessionId)})${turnSelectionCtes(identity)}
     , next_state AS (${removeAndReturnTurns()})
     UPDATE kortix.session_sandboxes s
@@ -567,11 +589,31 @@ export async function completeSandboxTurn(
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM ${activeTurnEntries(sql`next_state.metadata`)}
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
               s.session_id, s.sandbox_id, s.project_id, s.account_id,
               true AS completed`);
+    const completed = normalizeRows(result)?.[0];
+    const closed = endedLedgerTurns(completed?.ended_turns);
+    // active_turn_count is the historical pre-removal public result. Parking
+    // depends on the authority left AFTER this exact completion instead.
+    if (
+      status === 'error' &&
+      closed.length > 0 &&
+      Number(completed?.remaining_turn_count ?? 0) === 0 &&
+      !ABORT_END_ERROR_NAMES.includes(error?.name ?? '')
+    ) {
+      const cause = [error?.name, error?.message].filter(Boolean).join(': ');
+      const { transitionSession } = await import('./session-lifecycle/status-transitions');
+      await transitionSession('parkTurnError', sessionId, {
+        error: (cause ? `agent turn failed: ${cause}` : 'agent turn failed').slice(0, 1000),
+      });
+    }
+    return result;
+  });
   const rows = normalizeRows(result);
   if (!rows || rows.length === 0) {
     return { outcome: 'no_active_turn', activeTurnCount: 0, closedTurnCount: 0 };

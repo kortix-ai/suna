@@ -22,6 +22,11 @@ The audit log records the credential your `getToken` returns (a browser
 session, a personal access token, a connected app), not a label your host
 reports. `clientSource` is deprecated and does nothing.
 
+Set `clientVersion` to your app's name and release version, for example
+`my-app/1.4.0`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+Kortix writes it to request logs only, to see which client versions still call
+an API route before that route is retired. It never reaches the audit log.
+
 ## Personal access tokens
 
 A personal access token (PAT) is the credential for the SDK, the CLI, and CI.

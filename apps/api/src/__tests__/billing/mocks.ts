@@ -38,7 +38,6 @@ export const mockRegistry = {
   recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
   isWebhookEventProcessed: null as ((eventId: string) => Promise<boolean>) | null,
 
-  provisionSandboxFromCheckout: null as ((...args: any[]) => Promise<any>) | null,
   resolveAccountId: null as ((userId: string) => Promise<string>) | null,
 
   getActiveDeletionRequest: null as ((id: string) => Promise<any>) | null,
@@ -141,11 +140,6 @@ export function registerGlobalMocks() {
   // NOTE: The wallet mock is NOT registered here. Test files whose code under
   // test moves credit call registerWalletMock() and read `fakeWallet.calls`.
 
-
-  mock.module('../../platform/services/sandbox-provisioner', () => ({
-    provisionSandboxFromCheckout: async (...args: any[]) =>
-      mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
-  }));
 
   // account-deletion.ts's stopAccountSandboxes reads active sandboxes and stops
   // them via the provider before tearing down the account. None of the

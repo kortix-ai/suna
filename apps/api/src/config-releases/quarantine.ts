@@ -55,7 +55,7 @@ export interface ConfigReleaseLedger {
  * has no `bun`), and two such sessions quarantined a release that every other
  * session of the project loads. Those rows stay in the table.
  */
-const notFromMetaSession = sql`not exists (
+export const notFromMetaSession = sql`not exists (
   select 1 from ${projectSessions}
   where ${projectSessions.sessionId} = ${qualifiedColumn(configReleaseFailures.sessionId)}::text
     and ${projectSessions.agentName} = ${META_AGENT_NAME}

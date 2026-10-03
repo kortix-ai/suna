@@ -474,9 +474,11 @@ export class PlatinumProvider implements SandboxProvider {
       auto_resume: workloadType === 'app',
       // The project's `us_region` flag (platform/services/sandbox-region.ts).
       // Absent ⇒ Platinum places the box in its home region, exactly as
-      // before. PLATINUM_API_URL forwards a regional create to that region's
-      // control plane; the answer names the owner (`api_url`), and every
-      // later call by id goes straight to it (shared/platinum.ts).
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
@@ -593,7 +595,7 @@ export class PlatinumProvider implements SandboxProvider {
     // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
     // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
     // an intermittent guest-boot stall surfaced as a "running" session that was
-    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // actually failed-start (proven 2026-07-07 on one session: Platinum
     // state=failed-start, comp status=active). Throw on a non-running terminal
     // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
     // another host) instead of silently returning an unusable sandbox. The
@@ -986,7 +988,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (!isMissingSandboxError(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:
