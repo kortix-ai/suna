@@ -18,7 +18,7 @@
     "typecheck": "bun tsc --noEmit",
     "lint": "eslint src",
     "test:architecture": "node --test scripts/check-architecture.mjs",
-    "test": "bun test"
+    "test": "bash scripts/test.sh"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",

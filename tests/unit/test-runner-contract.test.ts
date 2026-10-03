@@ -129,10 +129,18 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain(
+    // The hermetic env wrapper (scripts/hermetic-test-env.sh) owns the
+    // environment; the bun invocation it execs is still the proven one.
+    expect(cliPackage.scripts.test).toBe('pnpm lint:sdk-boundary && bash scripts/test.sh');
+    expect(readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    // The hermetic env wrapper (scripts/hermetic-test-env.sh) owns the
+    // environment; the bun invocation it execs is still the proven one.
+    expect(agentPackage.scripts.test).toBe('bash scripts/test.sh');
+    expect(readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/scripts/test.sh'), 'utf8')).toContain(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

@@ -116,6 +116,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Keep the chunk store off this box's real agent binaries. The indexer
+    // reads every source at the FIXTURE's chunk size (80 bytes here), and the
+    // box's 110 MB /usr/local/bin/kortix-agent turns that into over a million
+    // reads. The suite must run as a laptop that has no baked agent.
+    agentStateDir: ws.root,
+    agentBakedPath: '/nonexistent',
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

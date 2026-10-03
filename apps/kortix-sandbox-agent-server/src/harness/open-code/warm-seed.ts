@@ -19,6 +19,7 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import type { HarnessBootContext } from '../harness'
 import type { OpenCodeHarnessService } from './service'
 import type { DaemonServer } from '../contract/server'
+import { bakedLlmCatalogPath } from '@/lib/platform-paths'
 
 // Read KEY=VALUE lines from the per-session env file into process.env. Platinum
 // restore writes it directly into the guest pre-boot at /etc/pt-env (host-agent
@@ -297,7 +298,7 @@ export async function runWarmSeedMode(
       const llmApiKey = process.env.KORTIX_TOKEN
       if (llmBaseUrl && llmApiKey) {
         const currentCatalogFile =
-          process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json'
+          process.env.KORTIX_LLM_CATALOG_FILE ?? bakedLlmCatalogPath()
         const targetCatalogFile = `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`
         const refresh = await refreshGatewayCatalogFile({
           currentCatalogFile,
