@@ -14,6 +14,7 @@
 #   skills/<name>/SKILL.md    skills, loaded by every harness
 #   memory/                   the project brain (the `kortix-memory` skill)
 #   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
+#   harnesses/pi/             files only pi reads (`pi.config_dir`); create it when needed
 kortix_version: 2
 
 # The agent a session/trigger boots when it names no concrete agent (the

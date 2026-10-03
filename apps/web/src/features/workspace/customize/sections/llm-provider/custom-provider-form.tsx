@@ -33,7 +33,7 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { useCopy } from '@/hooks/use-copy';
 import { upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
@@ -338,18 +338,11 @@ function CustomProviderSnippetView({
   onDone: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      successToast(tI18nComplete.raw('texte957fd04449d'));
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      errorToast(tI18nComplete.raw('text94f69e8f103e'));
-    }
-  }
+  const { copied, copy } = useCopy({
+    duration: 1500,
+    successMessage: tI18nComplete.raw('texte957fd04449d'),
+    errorMessage: tI18nComplete.raw('text94f69e8f103e'),
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -383,7 +376,7 @@ function CustomProviderSnippetView({
           </span>
           <button
             type="button"
-            onClick={handleCopy}
+            onClick={() => copy(snippet)}
             aria-label={copied ? 'Copied' : tI18nComplete.raw('text968d0a9d24a6')}
             className="text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors active:scale-[0.97]"
           >

@@ -4,7 +4,8 @@ import * as realAccess from '../projects/lib/access';
 
 let dbResults: unknown[][] = [];
 const inserts: unknown[] = [];
-const ephemerals: Array<{ channel: string; user: string; text: string; threadTs?: string }> = [];
+const ephemerals: Array<{ channel: string; user: string; text: string; blocks?: unknown[]; threadTs?: string }> = [];
+let requesterHasEmail = true;
 
 function makeChain(kind?: string): any {
   const chain: any = {};
@@ -33,8 +34,8 @@ mock.module('../channels/install-store', () => ({
 }));
 
 mock.module('../channels/slack-api', () => ({
-  postEphemeral: async (_token: string, channel: string, user: string, text: string, _blocks?: unknown[], threadTs?: string) => {
-    ephemerals.push({ channel, user, text, threadTs });
+  postEphemeral: async (_token: string, channel: string, user: string, text: string, blocks?: unknown[], threadTs?: string) => {
+    ephemerals.push({ channel, user, text, blocks, threadTs });
     return true;
   },
 }));
@@ -44,7 +45,8 @@ mock.module('../channels/slack-api', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../projects/lib/access', () => ({
   ...realAccess,
-  lookupEmailsByUserIds: async (ids: string[]) => new Map(ids.map((id) => [id, `${id}@example.com`])),
+  lookupEmailsByUserIds: async (ids: string[]) =>
+    new Map(requesterHasEmail ? ids.map((id) => [id, `${id}@example.com`]) : []),
 }));
 
 let deciderMayWork = true;
@@ -70,7 +72,14 @@ beforeEach(() => {
   inserts.length = 0;
   ephemerals.length = 0;
   deciderMayWork = true;
+  requesterHasEmail = true;
 });
+
+/** The mrkdwn of the owner's approval card: its first section. */
+function ownerCardText(): string {
+  const blocks = ephemerals[1]?.blocks as Array<{ text?: { text?: string } }> | undefined;
+  return blocks?.[0]?.text?.text ?? '';
+}
 
 describe('Slack thread participants', () => {
   test('unknown policy defaults to project-open sharing', () => {
@@ -130,6 +139,38 @@ describe('Slack thread participants', () => {
     expect(ephemerals[1]?.text).toContain('wants to join');
   });
 
+  // The owner's card printed `<@U…>` as literal text (2026-10-02): the label
+  // went through `escapeMrkdwn`, which turns a mention into `&lt;@U…&gt;`.
+  // A live mention is Slack's own label: every client shows the person's name.
+  const requestJoin = () => {
+    dbResults = [[], [], [{ participantId: 'p1' }]];
+    return ensureSlackThreadParticipant({
+      projectId: 'proj-1',
+      teamId: 'T1',
+      channel: 'C1',
+      threadId: '90.0',
+      sessionId: 'sess-1',
+      sessionOwnerId: 'owner-user',
+      sessionMetadata: { slack: { conversation_policy: 'owner_approval' } },
+      channelPolicy: null,
+      slackUserId: 'Urequester',
+      actorUserId: 'requester-user',
+    });
+  };
+
+  test("the owner's card names the requester with a live Slack mention and their Kortix email", async () => {
+    await requestJoin();
+    expect(ownerCardText()).toStartWith('*<@Urequester> (requester-user@example.com)* wants to join');
+    expect(ephemerals[1]?.text).toStartWith('<@Urequester> (requester-user@example.com) wants to join');
+  });
+
+  test('a requester with no Kortix email is still a live mention, never escaped markup', async () => {
+    requesterHasEmail = false;
+    await requestJoin();
+    expect(ownerCardText()).toStartWith('*<@Urequester>* wants to join');
+    expect(ownerCardText()).not.toContain('&lt;');
+  });
+
   const pendingRequest = { participantId: 'p1', status: 'pending', userId: 'requester-user', sessionId: 'sess-1' };
   const decide = (decision: 'approved' | 'denied' = 'approved') =>
     decideSlackThreadJoin({
@@ -152,7 +193,7 @@ describe('Slack thread participants', () => {
 
     const result = await decide();
 
-    expect(result).toEqual({ ok: true, text: 'Approved requester-user@example.com for this Kortix session.' });
+    expect(result).toEqual({ ok: true, text: 'Approved <@Urequester> (requester-user@example.com) for this Kortix session.' });
     expect(inserts[0]).toMatchObject({ sessionId: 'sess-1', principalType: 'member', principalId: 'requester-user' });
     expect(ephemerals[0]?.user).toBe('Urequester');
     expect(ephemerals[0]?.text).toContain('approved');

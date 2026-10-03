@@ -7,7 +7,7 @@ import {
   resolveSkillSubmission,
   suggestionMenuTakesSubmit,
 } from './skill-mentions';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 function cmd(name: string, source?: Command['source'], description = ''): Command {
   return { name, description, source, template: '', hints: [] };
@@ -118,6 +118,13 @@ describe('pruneSkillMentions', () => {
 
   test('drops every mention once the text has none of their tokens', () => {
     expect(pruneSkillMentions('plain text', [{ label: 'web-research' }])).toEqual([]);
+  });
+
+  test('returns the same array when nothing is pruned, so a keystroke keeps its identity', () => {
+    const mentions = [{ label: 'web-research' }];
+    expect(pruneSkillMentions('please #web-research now', mentions)).toBe(mentions);
+    const none: { label: string }[] = [];
+    expect(pruneSkillMentions('any text', none)).toBe(none);
   });
 });
 

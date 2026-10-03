@@ -141,7 +141,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
     const sendStart = Date.now();
     try {
       const reply = await sendAndWaitForReply(
-        { auth, handle, opencodeSessionId: runtimeSessionId },
+        { auth, handle, runtimeSessionId },
         flags.prompt,
       );
       const text = reply.parts

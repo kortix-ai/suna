@@ -83,7 +83,7 @@ describe('runAttach', () => {
           expect(renderer.calls).toEqual(['suspend']);
           options.onStatus?.('resolving', 'Resolving session s1…', {});
           options.onStatus?.('attached', 'Connecting to s1', {});
-          return { exitCode: 0, opencodeSessionId: 'ses_1', proxyUrl: 'http://127.0.0.1:1234' };
+          return { exitCode: 0, runtimeSessionId: 'ses_1', proxyUrl: 'http://127.0.0.1:1234' };
         },
       },
     });
@@ -169,7 +169,7 @@ describe('runAttach', () => {
           };
           options.onChild?.(child as never);
           for (const signal of FORWARDED_SIGNALS) handlers.get(signal)?.();
-          return { exitCode: 130, opencodeSessionId: 'ses_1', proxyUrl: 'http://127.0.0.1:1' };
+          return { exitCode: 130, runtimeSessionId: 'ses_1', proxyUrl: 'http://127.0.0.1:1' };
         },
       },
     });

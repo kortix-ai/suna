@@ -122,6 +122,9 @@ export function isBotMentioned(activity: {
 
 export type TeamsConversationScope = 'personal' | 'groupChat' | 'channel';
 
+/** What Teams calls the channel every team starts with; it arrives without a name. */
+export const TEAMS_GENERAL_CHANNEL = 'General';
+
 /** Personal chats deliver every message to the bot; channels and group chats only mentions — unless RSC grants more. */
 export function conversationScope(activity: {
   conversation?: { conversationType?: string };
@@ -141,21 +144,44 @@ export function isPersonalChat(activity: { conversation?: { conversationType?: s
   return (activity.conversation?.conversationType ?? '').toLowerCase() === 'personal';
 }
 
+/** A channel thread's conversation id: `19:…@thread.tacv2;messageid=…`. */
+export function isTeamsChannelThreadId(conversationId: string): boolean {
+  return conversationId.startsWith('19:') && conversationId.includes(';messageid=');
+}
+
+/** The channel a channel conversation lives in: its id, without `;messageid=…`. */
+export function teamsChannelRoot(activity: {
+  conversation?: { id?: string };
+  channelData?: { channel?: { id?: string } };
+}): string | undefined {
+  return activity.channelData?.channel?.id || activity.conversation?.id?.split(';')[0] || undefined;
+}
+
 /**
  * What to call this conversation in the bindings table. Teams conversation ids
  * (`19:…@thread.tacv2;messageid=…`, `a:1FQyR…`) mean nothing to a person; the
  * team + channel name, "Group chat", or the person's name do.
+ *
+ * A channel is named only when the activity says which team: a message
+ * carries the team's id but rarely its name, and a bare channel name would
+ * overwrite a stored `Team › Channel`. `labelTeamsChannelBinding` asks Teams
+ * for the rest.
  */
 export function describeTeamsConversation(activity: {
-  conversation?: { conversationType?: string; name?: string };
-  channelData?: { team?: { name?: string }; channel?: { name?: string } };
+  conversation?: { conversationType?: string; name?: string; id?: string };
+  channelData?: { team?: { id?: string; name?: string }; channel?: { id?: string; name?: string } };
   from?: { name?: string };
-}): { channelName: string; channelType: TeamsConversationScope } {
+}): { channelName?: string; channelType: TeamsConversationScope } {
   const scope = conversationScope(activity);
   if (scope === 'channel') {
     const team = activity.channelData?.team?.name?.trim();
-    const channel = activity.channelData?.channel?.name?.trim() || activity.conversation?.name?.trim() || 'General';
-    return { channelName: team ? `${team} › ${channel}` : channel, channelType: scope };
+    const teamId = activity.channelData?.team?.id;
+    // The General channel's id is the team's id, and it arrives without a name.
+    const channel =
+      activity.channelData?.channel?.name?.trim() ||
+      activity.conversation?.name?.trim() ||
+      (teamId && teamsChannelRoot(activity) === teamId ? TEAMS_GENERAL_CHANNEL : undefined);
+    return team && channel ? { channelName: `${team} › ${channel}`, channelType: scope } : { channelType: scope };
   }
   if (scope === 'groupChat') {
     return { channelName: activity.conversation?.name?.trim() || 'Group chat', channelType: scope };

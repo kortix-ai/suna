@@ -207,7 +207,7 @@ export function groupSessions(
   const hidden = new Set(hiddenSections ?? []);
 
   // Precompute last-activity once per session (decorate-sort-undecorate):
-  // sessionLastActivityAt re-scans opencode_sessions, so calling it inside a
+  // sessionLastActivityAt re-scans runtime_sessions, so calling it inside a
   // comparator would repeat that scan O(n log n) times instead of O(n).
   // Same NaN guard as sortSessionsByLastActivity — an unparseable date reads
   // as 0, not NaN.

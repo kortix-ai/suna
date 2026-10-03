@@ -54,7 +54,8 @@ export function UserAvatar({
     () => initialsFromIdentity(name ?? undefined, email || ''),
     [name, email],
   );
-  const chalk = chalkColors(`${name}`);
+  // Keyed on the email when there is no name, so nameless people still differ.
+  const chalk = chalkColors(name || email);
 
   return (
     <Avatar

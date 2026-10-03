@@ -2,16 +2,15 @@ import { requireOpenCodeConfig, type OpenCodeConfig } from './config'
 import { ConvergeBusyError } from '@/services/config-release/release'
 import { configReleaseReport, convergeConfigRelease } from './config-release'
 import {
+  applyCatalogIfIdle,
   cachedManagedModels,
   configuredKortixProviderModelIds,
   missingManagedModelIds,
   settleManagedModelsPrefetch,
   startManagedModelsPrefetch,
-  writeManagedOverlayCatalogFile,
   type Opencode,
 } from './lifecycle'
 import { opencodeTurnInFlight } from './opencode-turn-state'
-import { OPENCODE_HOME } from './paths'
 import { logger } from '@/lib/log/logger'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { configureRuntimeTruth, startRuntimeTruthTicker, type RuntimeTruthDeps } from '@/services/runtime-assets/runtime-truth'
@@ -86,17 +85,10 @@ async function reconcileCatalog(cfg: HostConfig, opencode: Opencode): Promise<vo
   if (missing.length === 0) return
   const openCodeCfg = resolveOpenCodeConfig(cfg)
   if (!openCodeCfg) return
-  const turnInFlight = await opencodeTurnInFlight(opencode.getInternalUrl(), openCodeCfg.workspace)
-  if (turnInFlight !== false) return // Never restart under a live or unreadable turn; the next tick tries again.
   try {
-    const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
-      targetCatalogFile: `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
-      managed: live,
-    })
-    if (written) process.env.KORTIX_LLM_CATALOG_FILE = written
-    await opencode.restart()
-    logger.info('[runtime-truth] catalog tick restarted opencode with newly-available managed models', { missing })
+    // Declined under a live or unreadable turn; the next tick tries again.
+    const result = await applyCatalogIfIdle(opencode, openCodeCfg, { live, missing })
+    logger.info('[runtime-truth] catalog tick', result)
   } catch (err) {
     logger.warn('[runtime-truth] catalog tick failed', { err: String(err) })
   }

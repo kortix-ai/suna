@@ -1,5 +1,6 @@
 import { getClient } from '../../core/runtime/client';
 import { unwrap } from './shared';
+import { rankWorkspaceSearchEntry, workspaceEntryMatchesQuery } from '../../workspace-search/core';
 
 // ============================================================================
 // File Search (direct SDK call, not a hook)
@@ -22,28 +23,6 @@ let mentionDirScanCache:
 export async function findRuntimeFiles(query: string): Promise<string[]> {
   const client = getClient();
   const normalizedQuery = query.trim();
-  const ql = normalizedQuery.toLowerCase();
-
-  const rankFile = (path: string): number => {
-    const lower = path.toLowerCase();
-    const base = lower.split('/').pop() ?? lower;
-    const depth = path.split('/').length - 1;
-    if (ql.length === 0) return depth;
-    if (base === ql) return 0 + depth * 0.01;
-    if (base.startsWith(ql)) return 10 + depth * 0.01;
-    if (base.includes(ql)) return 20 + depth * 0.01;
-    if (lower.startsWith(ql)) return 30 + depth * 0.01;
-    if (lower.includes(ql)) return 40 + depth * 0.01;
-    return 1000 + depth;
-  };
-
-  const fileMatchesQuery = (path: string): boolean => {
-    if (ql.length === 0) return true;
-    const lower = path.toLowerCase();
-    if (lower.includes(ql)) return true;
-    const base = lower.split('/').pop() ?? lower;
-    return base.includes(ql);
-  };
 
   const readEntries = async (request: Promise<{ data?: unknown; error?: unknown }>): Promise<string[]> => {
     try {
@@ -99,7 +78,7 @@ export async function findRuntimeFiles(query: string): Promise<string[]> {
         const children = await readEntries(client.file.list({ path }));
         return children
           .filter((child) => !child.endsWith('/'))
-          .filter((child) => fileMatchesQuery(child));
+          .filter((child) => workspaceEntryMatchesQuery({ path: child, name: '', isDir: false }, normalizedQuery, 'runtime-files'));
       }),
     );
 
@@ -119,7 +98,7 @@ export async function findRuntimeFiles(query: string): Promise<string[]> {
     ]);
     for (const entry of [...rootWorkspace, ...rootEmpty]) {
       if (entry.endsWith('/')) continue;
-      if (fileMatchesQuery(entry)) fileMatches.add(entry);
+      if (workspaceEntryMatchesQuery({ path: entry, name: '', isDir: false }, normalizedQuery, 'runtime-files')) fileMatches.add(entry);
     }
   }
 
@@ -165,7 +144,7 @@ export async function findRuntimeFiles(query: string): Promise<string[]> {
     }
 
     for (const path of mentionDirScanCache?.files ?? []) {
-      if (fileMatchesQuery(path)) fileMatches.add(path);
+      if (workspaceEntryMatchesQuery({ path, name: '', isDir: false }, normalizedQuery, 'runtime-files')) fileMatches.add(path);
     }
   }
 
@@ -192,12 +171,16 @@ export async function findRuntimeFiles(query: string): Promise<string[]> {
     }
 
     for (const path of mentionFileIndexCache?.files ?? []) {
-      if (fileMatchesQuery(path)) fileMatches.add(path);
+      if (workspaceEntryMatchesQuery({ path, name: '', isDir: false }, normalizedQuery, 'runtime-files')) fileMatches.add(path);
     }
   }
 
   return Array.from(fileMatches)
-    .sort((a, b) => rankFile(a) - rankFile(b) || a.localeCompare(b))
+    .sort((a, b) =>
+      rankWorkspaceSearchEntry({ path: a, name: '', isDir: false }, normalizedQuery, 'runtime-files') -
+        rankWorkspaceSearchEntry({ path: b, name: '', isDir: false }, normalizedQuery, 'runtime-files') ||
+      a.localeCompare(b),
+    )
     .slice(0, 20);
 }
 

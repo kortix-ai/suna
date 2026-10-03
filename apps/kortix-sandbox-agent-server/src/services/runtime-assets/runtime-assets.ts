@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 import type { Config } from '@/lib/config/config'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { harnessAssets, swapAssets, stagedAgentSha, agentUpdatesPinned, recentlyFullyConverged, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle } from './runtime-assets-swap-report'
-export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
+export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, __resetVerifiedDigestsForTests, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
 export type { AgentSwapDecision, AgentSwapOptions, RuntimeConvergenceReport, RunningRuntimeAssets } from './runtime-assets-swap-report'
 import type {
   HarnessAssetOutcome,

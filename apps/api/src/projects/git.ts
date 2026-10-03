@@ -41,6 +41,7 @@ export {
   invalidateProjectMirror,
   resolveTreeOid,
   materializeRepoContext,
+  type MirrorRefresh,
 } from './git/mirror';
 
 export {

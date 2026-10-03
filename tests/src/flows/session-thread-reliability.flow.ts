@@ -626,6 +626,7 @@ flow(
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
     ],
@@ -786,6 +787,35 @@ flow(
         { params: { ...params, promptId } },
       );
       r.status([200, 404]);
+    });
+
+    await ctx.step('PATCH edits a waiting prompt in place, or refuses it honestly if it is on the wire', async () => {
+      // The queue list's edit: new text, same row, nothing sent. 409 means the
+      // agent already has the old text; 404 means it is answered and gone.
+      const empty = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+        { text: '  ' },
+        { params: { ...params, promptId } },
+      );
+      empty.status(400);
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+        { text: 'SESS-25 edited prompt' },
+        { params: { ...params, promptId } },
+      );
+      r.status([200, 409, 404]);
+      if (r.statusCode === 200) {
+        const edited = r.json<any>();
+        if (edited.prompt_id !== promptId || edited.full_text !== 'SESS-25 edited prompt') {
+          throw new Error(`PATCH did not return the edited row: ${JSON.stringify(edited)}`);
+        }
+        const listed = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params });
+        listed.status(200);
+        const mine = (listed.json<any>().prompts ?? []).find((p: any) => p.prompt_id === promptId);
+        if (mine && mine.full_text !== 'SESS-25 edited prompt') {
+          throw new Error(`the queue still lists the old text: ${mine.full_text}`);
+        }
+      }
     });
 
     await ctx.step('DELETE removes the prompt, or refuses it honestly if it is on the wire', async () => {

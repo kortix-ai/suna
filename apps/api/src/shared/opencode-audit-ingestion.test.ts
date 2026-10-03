@@ -345,3 +345,38 @@ describe('parseOpenCodeAuditBatch', () => {
     });
   });
 });
+
+describe('parseOpenCodeAuditBatch: instants the partitioned table cannot hold', () => {
+  const now = new Date('2026-10-01T10:30:00.000Z');
+  const DAY = 86_400_000;
+  const parseOne = (occurredAt: Date) =>
+    parseOpenCodeAuditBatch({ events: [event({ occurred_at: occurredAt.toISOString() })] }, { ...scope, now })
+      .values[0]!;
+
+  test('an instant inside [now - 80 days, now + 1 day] is stored as sent', () => {
+    for (const at of [new Date(now.getTime() - 79 * DAY), new Date(now.getTime() - 5_000), new Date(now.getTime() + 0.5 * DAY)]) {
+      const value = parseOne(at);
+      expect(value.occurredAt).toEqual(at);
+      expect(value.metadata).not.toHaveProperty('original_occurred_at');
+    }
+  });
+
+  test('an older or later instant moves to the start of today (UTC) and keeps the real one in metadata', () => {
+    const today = new Date('2026-10-01T00:00:00.000Z');
+    for (const at of [new Date(now.getTime() - 81 * DAY), new Date(now.getTime() + 2 * DAY)]) {
+      const value = parseOne(at);
+      expect(value.occurredAt).toEqual(today);
+      expect(value.metadata).toMatchObject({ original_occurred_at: at.toISOString() });
+    }
+  });
+
+  test('a re-send of a clamped event produces the same instant, so the dedupe key still matches', () => {
+    const at = new Date(now.getTime() - 200 * DAY);
+    const later = new Date(now.getTime() + 3 * 3_600_000); // same UTC day
+    const again = parseOpenCodeAuditBatch(
+      { events: [event({ occurred_at: at.toISOString() })] },
+      { ...scope, now: later },
+    ).values[0]!;
+    expect(again.occurredAt).toEqual(parseOne(at).occurredAt);
+  });
+});

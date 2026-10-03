@@ -10,7 +10,7 @@
  * - `parseUnifiedPatch(patch)` — reads an existing unified patch (apply_patch,
  *   git diff) into the same rows.
  *
- * Lines split on `\n` / `\r\n` only. (`lib/opencode/diff-utils.ts` also turns
+ * Lines split on `\n` / `\r\n` only. (`lib/session/diff-utils.ts` also turns
  * the two characters `\n` into a newline, which corrupts source code that
  * contains the escape, so it is not reused here.)
  */

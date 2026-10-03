@@ -8,7 +8,7 @@ import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
 import { listCreatedSession, projectKeys, useCreateProjectSession } from '@/lib/projects/hooks';
-import { getProjectSession, getSessionHealth, projectSessionForRuntimeId } from '@kortix/sdk';
+import { getSessionHealth, projectSessionForRuntimeId, sessionStartKey } from '@kortix/sdk';
 import { mapSandboxHealth, type SandboxHealth } from './project-health';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
@@ -20,7 +20,14 @@ import { deleteProjectSession, startProjectSession, restartProjectSession, type 
 import { connectStepFromRequestError, connectStepFromStart, shouldAwaitHealthProbe, startPollDelayMs } from '@/lib/session/connect-step';
 import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import {
+  addOptimisticMessage,
+  markSeededPrompt,
+  sessionMessageIds,
+  sessionRows,
+  sessionStatus,
+  setLocalSessionStatus,
+} from '@/lib/session/session-store';
 import { threadOpenTarget, returnThreadForPage, type PendingThreadFocus } from '@/lib/session/project-stack';
 import { resolveSessionTitle } from '@/lib/session/session-list';
 import type { OpenedThread } from '@/lib/session/session-sandbox';
@@ -90,7 +97,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // in. A ref: the thread (zustand) can commit before the sandbox (React
   // state), and that render must already see the expected URL.
   const openedThreadRef = useRef<OpenedThread | null>(null);
-  // The thread a tool page was opened over (its OpenCode session id), for the
+  // The thread a tool page was opened over (its runtime session id), for the
   // way back. Every opener is covered: the project sheet's rows, and a thread's
   // own links (Connect provider). Read by `returnToThread`, cleared by `goHome`.
   const returnThreadRef = useRef<string | null>(null);
@@ -106,7 +113,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       }),
     []
   );
-  // The busy watchdog of each seeded root (COR-185), keyed by OpenCode id.
+  // The busy watchdog of each seeded root (COR-185), keyed by runtime session id.
   const seedWatchdogsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   useEffect(() => {
     const watchdogs = seedWatchdogsRef.current;
@@ -115,35 +122,36 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     };
   }, []);
 
-  // Write a dashboard send's first prompt into the sync store as an optimistic
+  // Write a dashboard send's first prompt into the session store as an optimistic
   // user message, plus a busy status, BEFORE the thread mounts (COR-185).
   // SessionPage then opens with the prompt and the busy row on its first
   // frame, instead of the empty hero until the echo lands. The echo replaces
-  // the seed through the ordinary optimistic swap. Always under the OpenCode
-  // root, never the Kortix session id. The server holds this prompt, so the
+  // the seed through the ordinary optimistic swap. Always under the runtime's
+  // root session, never the Kortix session id. The server holds this prompt, so the
   // seed never offers "Try again" (a client re-send would run it twice): the
   // watchdog only clears a busy row that saw no sign of the prompt in 30 s,
   // and the seed stays optimistic so a late echo still replaces it.
   const seedFirstPrompt = useCallback(
     (root: string, first: { text: string; files: AttachedFile[] } | undefined) => {
       if (!first) return;
-      const store = useSyncStore.getState();
       const seed = firstPromptSeed({
         ...first,
-        opencodeSessionId: root,
-        knownMessageIds: (store.messages[root] ?? []).map((m) => m.info.id),
+        runtimeSessionId: root,
+        knownMessageIds: sessionMessageIds(root),
         nowMs: Date.now(),
       });
       if (!seed) return;
-      store.addOptimisticMessage(root, seed);
-      store.setStatus(root, { type: 'busy' });
+      addOptimisticMessage(root, seed);
+      // The server holds the prompt under an id this device never sees: the
+      // first user message the runtime reports is its echo and replaces it.
+      markSeededPrompt(root, seed.info.id);
+      setLocalSessionStatus(root, { type: 'busy' });
       clearTimeout(seedWatchdogsRef.current[root]);
       seedWatchdogsRef.current[root] = setTimeout(() => {
         delete seedWatchdogsRef.current[root];
-        const now = useSyncStore.getState();
-        if (seedUndelivered(now.messages[root], seed.info.id) && now.sessionStatus[root]?.type === 'busy') {
+        if (seedUndelivered(sessionRows(root), seed.info.id) && sessionStatus(root)?.type === 'busy') {
           log.warn(`⏱️ [connect] first prompt not seen in ${SEED_BUSY_WATCHDOG_MS} ms; clearing busy`);
-          now.setStatus(root, { type: 'idle' });
+          setLocalSessionStatus(root, { type: 'idle' });
         }
       }, SEED_BUSY_WATCHDOG_MS);
     },
@@ -151,7 +159,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   );
 
   // The Kortix `session_id` of each thread this screen opened, keyed by its
-  // OpenCode root id. The thread's `projectSessionId` falls back to it while
+  // runtime root session id. The thread's `projectSessionId` falls back to it while
   // the sessions list has not caught up with a just-created session, so a
   // new thread takes photos from its first frame (COR-185).
   const openedProjectSessionIdsRef = useRef<Record<string, string>>({});
@@ -167,46 +175,57 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   }, [queryClient, projectId]);
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
-  // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
+  // both the sandbox URL and the runtime's root session (`runtime_session_id`).
   const connectToProjectSession = useCallback(
     (ps: ProjectSession) => {
-      if (!ps.sandbox_url || !ps.opencode_session_id) return false;
+      const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+      if (!ps.sandbox_url || !rootId) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
       // The root, or a pending sub-session of this session. The sandbox gate
       // (openedThreadRef) records the id the store is about to show.
-      const threadId = threadOpenTarget(pendingThreadFocusRef.current, ps.session_id, ps.opencode_session_id);
+      const threadId = threadOpenTarget(pendingThreadFocusRef.current, ps.session_id, rootId);
       pendingThreadFocusRef.current = null;
       // The same value switchSandbox derives from `external_id`.
       openedThreadRef.current = {
         sessionId: threadId,
         sandboxUrl: getSandboxUrl(externalId),
       };
-      switchSandbox({
-        sandbox_id: ps.sandbox_id || ps.session_id,
-        external_id: externalId,
-        name: ps.name || 'Session',
-        provider: (ps.sandbox_provider as SandboxProviderName) || 'daytona',
-        base_url: ps.sandbox_url,
-        status: 'running',
-        created_at: ps.created_at,
-        updated_at: ps.updated_at,
-      });
+      switchSandbox(
+        {
+          sandbox_id: ps.sandbox_id || ps.session_id,
+          external_id: externalId,
+          name: ps.name || 'Session',
+          provider: (ps.sandbox_provider as SandboxProviderName) || 'daytona',
+          base_url: ps.sandbox_url,
+          status: 'running',
+          created_at: ps.created_at,
+          updated_at: ps.updated_at,
+        },
+        // The SDK binds to this session: its live stream and runtime calls.
+        { projectId, sessionId: ps.session_id },
+      );
+      if (freshSessionIdRef.current === ps.session_id) freshSessionIdRef.current = null;
+      seedFirstPrompt(rootId, firstPromptRef.current[ps.session_id]);
+      delete firstPromptRef.current[ps.session_id];
+      openedProjectSessionIdsRef.current[rootId] = ps.session_id;
+      openedProjectSessionIdsRef.current[threadId] = ps.session_id;
+      // The thread first, the connecting state cleared after. Every render in
+      // between must see one of them: `isHome` is "no page, no thread, not
+      // connecting", and the view route pops itself and resets the project
+      // the moment it reads true. Cleared first, a render forced in between
+      // (`seedFirstPrompt` writes the sync store) read home, and a home send
+      // that opened at once (a warm session) landed back on project home.
+      navigateToSession(threadId);
       setConnectingProjectSessionId(null);
       setConnectError(null);
       erroredSessionRef.current = null;
-      if (freshSessionIdRef.current === ps.session_id) freshSessionIdRef.current = null;
-      seedFirstPrompt(ps.opencode_session_id, firstPromptRef.current[ps.session_id]);
-      delete firstPromptRef.current[ps.session_id];
-      openedProjectSessionIdsRef.current[ps.opencode_session_id] = ps.session_id;
-      openedProjectSessionIdsRef.current[threadId] = ps.session_id;
-      navigateToSession(threadId);
       // The row may be missing from the lists yet (a just-created session):
       // refetch them, so the thread's title and `···` menu appear.
       refreshSessionLists();
       return true;
     },
-    [switchSandbox, navigateToSession, seedFirstPrompt, refreshSessionLists]
+    [projectId, switchSandbox, navigateToSession, seedFirstPrompt, refreshSessionLists]
   );
 
   // Resolve the session's canonical runtime through the unified /start endpoint,
@@ -218,8 +237,8 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     setConnectError(err);
   }, []);
   // Bring a project session online and open it. POST /start is the only open
-  // driver: it provisions/resumes runtime, resolves opencode_session_id, and
-  // returns a readiness payload. The client only polls that one contract.
+  // driver: it provisions/resumes runtime, resolves the runtime's root session,
+  // and returns a readiness payload. The client only polls that one contract.
   const ensureAndOpen = useCallback(
     async (sessionId: string) => {
       if (!projectId || ensuringRef.current === sessionId) return;
@@ -234,7 +253,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
           attempt += 1;
 
           // ONE server call: POST /start idempotently provisions/resumes the
-          // sandbox AND resolves the OpenCode pin server-side.
+          // sandbox AND resolves the runtime's root session server-side.
           let start: SessionStartResult;
           try {
             start = await startProjectSession(projectId, sessionId);
@@ -263,23 +282,29 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
           const sandbox = start.sandbox;
           if (step.kind === 'open' && sandbox?.external_id) {
             const sandboxUrl = getSandboxUrl(sandbox.external_id);
-            const openSession = (opencodeSessionId: string) =>
-              connectToProjectSession({
+            const rootId = start.runtime_session_id ?? start.opencode_session_id;
+            const openSession = (runtimeSessionId: string) => {
+              // The SDK's own `/start` read (`useSession`, bound by the switch
+              // below) starts from this answer instead of asking again.
+              if (start.stage === 'ready') queryClient.setQueryData(sessionStartKey(projectId, sessionId), start);
+              return connectToProjectSession({
                 session_id: sessionId,
                 sandbox_id: sandbox.sandbox_id,
                 sandbox_url: sandboxUrl,
-                opencode_session_id: opencodeSessionId,
+                runtime_session_id: runtimeSessionId,
+                opencode_session_id: runtimeSessionId,
                 sandbox_provider: sandbox.provider ?? 'daytona',
                 created_at: sandbox.created_at,
                 updated_at: sandbox.updated_at,
               } as ProjectSession);
+            };
 
             // `/start` already reports the runtime ready with its pin: open
             // the thread now (COR-185). The probe still runs, unawaited, as
             // it keeps the proxy route warm.
-            if (!shouldAwaitHealthProbe(start) && start.opencode_session_id) {
+            if (!shouldAwaitHealthProbe(start) && rootId) {
               log.log(`💓 [connect] attempt ${attempt}: stage=ready pin=ok, opening without the health wait`);
-              openSession(start.opencode_session_id);
+              openSession(rootId);
               void getSessionHealth(sandboxUrl, { signal: AbortSignal.timeout(15_000) }).catch(() => {});
               return;
             }
@@ -300,11 +325,11 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
             }
 
             log.log(
-              `💓 [connect] attempt ${attempt}: stage=${start.stage} health=${health.status} pin=${start.opencode_session_id ? 'ok' : '-'}`
+              `💓 [connect] attempt ${attempt}: stage=${start.stage} health=${health.status} pin=${rootId ? 'ok' : '-'}`
             );
 
-            if (start.stage === 'ready' && start.opencode_session_id) {
-              openSession(start.opencode_session_id);
+            if (start.stage === 'ready' && rootId) {
+              openSession(rootId);
               return;
             }
           } else {
@@ -331,27 +356,29 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
         if (ensuringRef.current === sessionId) ensuringRef.current = null;
       }
     },
-    [projectId, connectToProjectSession, failConnect, showUpgradeForError]
+    [projectId, queryClient, connectToProjectSession, failConnect, showUpgradeForError]
   );
 
   // Open a project session from the list. Always enter the connecting state —
   // ensureAndOpen polls the sandbox endpoint (re-provisioning/waking as needed)
   // before opening, so even a previously-idle session comes back cleanly.
-  // `focusOpenCodeId` (a sub-session row): the thread opens on that
+  // `focusRuntimeSessionId` (a sub-session row): the thread opens on that
   // sub-session instead of the root once it connects.
   const handleOpenProjectSession = useCallback(
-    (ps: ProjectSession, focusOpenCodeId?: string) => {
-      pendingThreadFocusRef.current = focusOpenCodeId
-        ? { sessionId: ps.session_id, openCodeId: focusOpenCodeId }
+    (ps: ProjectSession, focusRuntimeSessionId?: string) => {
+      pendingThreadFocusRef.current = focusRuntimeSessionId
+        ? { sessionId: ps.session_id, runtimeId: focusRuntimeSessionId }
         : null;
       haptics.tap();
       releaseWarmSession(ps.session_id);
-      navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
       // A reopened session, never a fresh one: Cancel must not stop it server-side.
       freshSessionIdRef.current = null;
+      // Connecting first, the open thread cleared after: never a render that
+      // reads project home (see connectToProjectSession).
       setConnectingProjectSessionId(ps.session_id);
+      navigateToSession(null);
     },
     [navigateToSession, releaseWarmSession]
   );
@@ -361,11 +388,11 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     (sessionId: string) => {
       pendingThreadFocusRef.current = null;
       releaseWarmSession(sessionId);
-      navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
       freshSessionIdRef.current = null;
       setConnectingProjectSessionId(sessionId);
+      navigateToSession(null);
     },
     [navigateToSession, releaseWarmSession]
   );
@@ -393,11 +420,11 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       setRestartingSession(false);
     }
   }, [connectingProjectSessionId, restartingSession, projectId, ensureAndOpen]);
-  // The active tab's project-session row. The tab store's activeSessionId is an
-  // OPENCODE id — the root (connectToProjectSession navigates with
-  // ps.opencode_session_id), or a sub-session of it (a drawer sub-session row,
-  // a task tool's View) — so resolve back to the Kortix row through the pin or
-  // the row's `opencode_sessions` snapshot. Every
+  // The active tab's project-session row. The tab store's activeSessionId is a
+  // RUNTIME session id — the root (connectToProjectSession navigates with
+  // the row's `runtime_session_id`), or a sub-session of it (a drawer
+  // sub-session row, a task tool's View) — so resolve back to the Kortix row
+  // through the pin or the row's `runtime_sessions` snapshot. Every
   // /projects/:id/sessions/:sid API call needs the Kortix UUID.
   const activeProjectSession = useMemo(
     () => projectSessionForRuntimeId(projectSessions, activeSessionId),

@@ -46,8 +46,9 @@ type GrantSet = 'all' | 'none' | string[];
 
 /**
  * The full agent block on the wire — `AgentConfigBlock`
- * (the SDK agent-config module). `opencode`
- * is the behavior half, merged in from the agent's `.md` by the API.
+ * (the SDK agent-config module). `behavior`
+ * is the agent's `.md` half, merged in by the API. `opencode` is its pre-W4
+ * name: the API answers both and accepts either.
  */
 interface AgentConfigBlock {
   enabled?: boolean;
@@ -63,6 +64,8 @@ interface AgentConfigBlock {
   /** @deprecated Pre-rename name of `kortix_permissions`. */
   kortix_cli?: GrantSet;
   workspace?: 'runtime' | 'read' | 'branch';
+  behavior?: Record<string, unknown>;
+  /** @deprecated Pre-W4 name of `behavior`. */
   opencode?: Record<string, unknown>;
 }
 
@@ -123,7 +126,7 @@ Scope options (all replace, none merge):
 Config options:
   --file <path>                   A JSON file holding the WHOLE block. \`-\` = stdin.
   --set <key>=<value>             Repeatable. Dotted path, e.g.
-                                  \`opencode.model=glm-5.3-flash\`, \`enabled=false\`,
+                                  \`behavior.model=glm-5.3-flash\`, \`enabled=false\`,
                                   \`connectors=["slack"]\`. The value is parsed as
                                   JSON when it parses, else kept as a string.
 
@@ -503,7 +506,7 @@ async function agentsConfig(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${block.opencode ? ' + the agent .md' : ''})${C.reset}\n`,
+    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${(block.behavior ?? block.opencode) ? ' + the agent .md' : ''})${C.reset}\n`,
   );
   return 0;
 }

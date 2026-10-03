@@ -10,6 +10,12 @@ describe('previewFailure', () => {
     expect(failure.message).toBe('This file is no longer in the sandbox. It was moved or deleted.');
   });
 
+  test('reads the status the SDK file client puts on its error', () => {
+    const failure = previewFailure(Object.assign(new Error('Not Found'), { status: 404 }), true);
+    expect(failure.kind).toBe('missing');
+    expect(failure.status).toBe(404);
+  });
+
   test('no sandbox URL means the session is not connected', () => {
     const failure = previewFailure(null, false);
     expect(failure.kind).toBe('unreachable');

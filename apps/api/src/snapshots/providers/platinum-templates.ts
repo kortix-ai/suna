@@ -1,4 +1,5 @@
-import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { platinumJson, platinumJsonResponse, isPlatinumConfigured } from '../../shared/platinum';
 import { normalizeExistingProviderState } from './state';
 import type { BuildLogTap } from './index';
 import { shortLivedObservation } from '../observation-cache';
@@ -51,15 +52,19 @@ export class PlatinumTemplateListingError extends Error {
 const TEMPLATES_PAGE_SIZE = 50;
 /** Hard page cap so an API bug (an ignored/broken cursor) can NEVER spin forever.
  *  Hitting it with full, still-advancing pages is a listing FAILURE (throw), not
- *  an exhausted/absent list. */
-const TEMPLATES_MAX_PAGES = 40; // 40 * 50 = 2000 templates
+ *  an exhausted/absent list. The cap is a safety net, not a size limit: the
+ *  Kortix Dev org held 1,671 templates on 2026-10-02 and grows ~70 a day, so a
+ *  2,000 cap (the old 40) was weeks from making every full walk throw. */
+const TEMPLATES_MAX_PAGES = 200; // 200 * 50 = 10,000 templates
 
 async function fetchTemplatePage(
   offset: number,
   client: PlatinumClient,
+  name?: string,
 ): Promise<PlatinumTemplate[]> {
+  const nameParam = name === undefined ? '' : `&name=${encodeURIComponent(name)}`;
   const rows = await client.json<PlatinumTemplate[]>(
-    `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}`,
+    `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}${nameParam}`,
   );
   if (!Array.isArray(rows)) {
     throw new PlatinumTemplateListingError(`expected an array page, got ${typeof rows}`);
@@ -81,13 +86,18 @@ async function fetchTemplatePage(
 export async function paginateTemplates<R>(
   onPage: (page: PlatinumTemplate[], all: PlatinumTemplate[]) => R | undefined,
   client: PlatinumClient = productionPlatinumClient,
+  /** Page 0, already fetched (an exact-name probe the control plane ignored). */
+  firstPage?: PlatinumTemplate[],
 ): Promise<{ early: R | undefined; all: PlatinumTemplate[] }> {
   const all: PlatinumTemplate[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
     let rows: PlatinumTemplate[];
     try {
-      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client);
+      rows =
+        page === 0 && firstPage
+          ? firstPage
+          : await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client);
     } catch (err) {
       // Preserve the 401/403 signature end to end (getSnapshotState rethrows it;
       // the transition classifier recognizes it as permanent). Everything else is
@@ -107,6 +117,50 @@ export async function paginateTemplates<R>(
   }
   throw new PlatinumTemplateListingError(
     `exceeded ${TEMPLATES_MAX_PAGES} pages (> ${TEMPLATES_MAX_PAGES * TEMPLATES_PAGE_SIZE} templates) without exhausting the list`,
+  );
+}
+
+/**
+ * Every template named exactly `name`, newest first, via the control plane's
+ * `GET /v1/templates?name=` filter: ONE request instead of a walk.
+ *
+ * Why it matters (measured 2026-10-02): the first session after each Kortix
+ * deploy resolved its image through name lookups that walked the whole list.
+ * The Kortix Dev org held 1,671 templates = 34 pages at ~250 ms each from
+ * us-west-2 to the EU control plane, so `image:resolved` took 8.7 s.
+ *
+ * A control plane that predates the filter answers with the unfiltered first
+ * page. That is detected (a row with another name) and returned as
+ * `{ firstPage }`, so callers continue the classic walk from page 1 with the
+ * exact number of requests they made before this helper existed.
+ *
+ * Errors keep `paginateTemplates`' contract: an auth failure propagates
+ * verbatim, anything else is a PlatinumTemplateListingError, never "absent".
+ */
+export async function lookupTemplatesNamed(
+  name: string,
+  client: PlatinumClient = productionPlatinumClient,
+): Promise<{ named: PlatinumTemplate[] } | { firstPage: PlatinumTemplate[] }> {
+  const named: PlatinumTemplate[] = [];
+  for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
+    let rows: PlatinumTemplate[];
+    try {
+      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client, name);
+    } catch (err) {
+      if (isPlatinumAuthFailure(err) || err instanceof PlatinumTemplateListingError) throw err;
+      throw new PlatinumTemplateListingError(err instanceof Error ? err.message : String(err));
+    }
+    if (rows.some((t) => t.name !== name)) {
+      if (page === 0) return { firstPage: rows };
+      throw new PlatinumTemplateListingError(
+        `name filter for ${name} returned other templates past page 0`,
+      );
+    }
+    named.push(...rows);
+    if (rows.length < TEMPLATES_PAGE_SIZE) return { named };
+  }
+  throw new PlatinumTemplateListingError(
+    `exceeded ${TEMPLATES_MAX_PAGES} pages of templates named ${name}`,
   );
 }
 
@@ -135,9 +189,12 @@ export async function findTemplateByName(
   name: string,
   client: PlatinumClient = productionPlatinumClient,
 ): Promise<PlatinumTemplate | null> {
+  const lookup = await lookupTemplatesNamed(name, client);
+  if ('named' in lookup) return lookup.named[0] ?? null;
   const { early } = await paginateTemplates<PlatinumTemplate>(
     (page) => page.find((t) => t.name === name),
     client,
+    lookup.firstPage,
   );
   return early ?? null;
 }
@@ -257,6 +314,90 @@ export function requireExternalTemplateId(id: unknown, context: string): string 
     );
   }
   return id;
+}
+
+/**
+ * Answers of `POST /v1/templates/:id/prepare` (Platinum #1381) that mean "not
+ * resident yet, ask again". The copy state and the queue status are reported
+ * independently: the control plane that runs a copy answers
+ * `replicating`/`queued` until it finishes, and a failed copy past its cooldown
+ * answers `failed`/`queued` when it is requeued. Only HTTP 200 with
+ * `ready`/`ready` proves residency.
+ */
+const PREPARE_PENDING_STATES = new Set(['absent', 'replicating', 'failed']);
+const PREPARE_PENDING_STATUSES = new Set(['queued', 'copying', 'cooling_down']);
+
+/**
+ * Make an exact, ready template resident in `region`'s object store and wait
+ * until Platinum proves it (HTTP 200, `ready`). Throws on a deadline, on an
+ * identity or region mismatch, and on any answer outside the prepare contract.
+ * Platinum copies at most once per (template, region); repeated calls only
+ * observe progress.
+ */
+export async function preparePlatinumTemplateRegion(
+  snapshotName: string,
+  region: string,
+  opts: {
+    client?: PlatinumClient;
+    request?: typeof platinumJsonResponse;
+    timeoutMs?: number;
+  } = {},
+): Promise<{ templateId: string; region: string }> {
+  const timeoutMs = opts.timeoutMs ?? ACTIVATE_DEADLINE_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const client = opts.client ?? productionPlatinumClient;
+  const request = opts.request ?? platinumJsonResponse;
+  const callSignal = () => AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
+  let lastState = 'resolving template';
+  try {
+    const template = await findTemplateByName(snapshotName, {
+      isConfigured: () => client.isConfigured(),
+      json: <T>(path: string, init: RequestInit = {}) => client.json<T>(path, { ...init, signal: callSignal() }),
+    });
+    const templateId = requireExternalTemplateId(template?.id, `lookup for ${snapshotName}`);
+    while (!controller.signal.aborted) {
+      const response = await request<{
+        template_id?: unknown;
+        region?: unknown;
+        state?: unknown;
+        status?: unknown;
+        retry_after_ms?: unknown;
+      }>(`/v1/templates/${encodeURIComponent(templateId)}/prepare`, {
+        method: 'POST',
+        body: JSON.stringify({ region }),
+        signal: callSignal(),
+      });
+      controller.signal.throwIfAborted();
+      const body = response.body;
+      if (body.template_id !== templateId || body.region !== region) {
+        throw new Error(`Platinum prepare identity/region mismatch for ${snapshotName} in ${region}`);
+      }
+      if (response.status === 200 && body.state === 'ready' && body.status === 'ready') {
+        return { templateId, region };
+      }
+      const pending = response.status === 202
+        && PREPARE_PENDING_STATES.has(String(body.state))
+        && PREPARE_PENDING_STATUSES.has(String(body.status))
+        && typeof body.retry_after_ms === 'number'
+        && Number.isFinite(body.retry_after_ms) && body.retry_after_ms >= 0;
+      if (!pending) {
+        throw new Error(`Platinum prepare returned an invalid residency response for ${snapshotName} in ${region}`);
+      }
+      lastState = `${body.state}/${body.status}`;
+      await sleep(Math.max(250, Math.min(body.retry_after_ms as number, 30_000)), undefined, {
+        signal: controller.signal,
+      });
+    }
+    throw new Error('prepare deadline elapsed');
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`Platinum template ${snapshotName} did not become resident in ${region} within ${timeoutMs}ms (last state: ${lastState})`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

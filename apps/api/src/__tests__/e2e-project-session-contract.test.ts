@@ -76,6 +76,8 @@ let runtimeContactCalls = 0;
 let releaseProviderRecovery: (() => void) | null = null;
 let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
+/** The signed daemon endpoint `/start` reads the runtime capabilities from. Null: unresolvable. */
+let runtimeEndpoint: { url: string; headers: Record<string, string> } | null = null;
 let activeSessionCount = 0;
 let accountSessionLimit = 1;
 let sessionRow: typeof projectSessions.$inferSelect | null;
@@ -152,6 +154,7 @@ function resetState() {
   releaseProviderRecovery = null;
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
+  runtimeEndpoint = null;
   activeSessionCount = 0;
   accountSessionLimit = 1;
   lastSessionInsertValues = null;
@@ -462,8 +465,11 @@ const realSessionSandbox = await import('../platform/services/session-sandbox');
 mock.module('../platform/services/session-sandbox', () => ({
   ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
+    // The env arrives as a promise: provisioning awaits it where it builds the
+    // provider input, as the real function does. Recorded once it is in hand.
+    const extraEnvVars = await input.extraEnvVars;
+    lastProvisionInput = { ...input, extraEnvVars };
     sandboxProvisionCalls += 1;
-    lastProvisionInput = input;
   },
 }));
 
@@ -550,7 +556,7 @@ mock.module('../projects/opencode-mapping', () => ({
   resolveRootSessionId: () => 'ses_root_existing',
   sandboxOpencodeEndpoint: async () => {
     runtimeContactCalls += 1;
-    return null;
+    return runtimeEndpoint;
   },
   listSandboxOpencodeSessions: async () => {
     runtimeContactCalls += 1;
@@ -1666,8 +1672,8 @@ describe('project session API contract', () => {
     ];
 
     // SampleCo 2026-08-26: this gate used to answer `false` for ever, so the
-    // stamp could only be cleared by a human pressing Restart (sessions
-    // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
+    // stamp could only be cleared by a human pressing Restart (two
+    // SampleCo sessions). Past the cooldown it is permission to try again.
     expect(
       await resumeStoppedSandbox({
         sandboxId: SESSION_ID,
@@ -1695,7 +1701,7 @@ describe('project session API contract', () => {
   });
 
   test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
-    // SampleCo 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // SampleCo 2026-08-26, one session on an E2B box. Attempt 1's
     // `runtimeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
     // boot was judged against a 10-minute cap that had already run ~7 minutes.
     // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
@@ -2742,7 +2748,7 @@ describe('project session API contract', () => {
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): a box
   // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
   // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
   // This endpoint is polled every second and Daytona folds `stopping` and
@@ -2982,6 +2988,60 @@ describe('project session API contract', () => {
     const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
+  });
+
+  // The client assumes every capability until it knows the list. `/start`
+  // hands it over with `ready`, before the client's own first health probe.
+  test('a ready start carries what the runtime serves, read from the daemon health', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
+    const box = (externalId: string): typeof sessionSandboxRows => [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: { initStatus: 'ready', initSucceededAt: new Date(Date.now() - 2 * 60 * 1000).toISOString() },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    const start = () => app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    const realFetch = globalThis.fetch;
+    let health: unknown = { status: 'ok', capabilities: ['runtime.turns.v1', 'session.subagents'] };
+    globalThis.fetch = (async (url: unknown) =>
+      String(url).endsWith('/kortix/health')
+        ? Response.json(health)
+        : new Response(null, { status: 404 })) as unknown as typeof fetch;
+    try {
+      runtimeEndpoint = { url: 'https://daemon.test', headers: {} };
+      sessionSandboxRows = box('box-capabilities');
+      expect(await (await start()).json()).toMatchObject({
+        stage: 'ready',
+        capabilities: ['runtime.turns.v1', 'session.subagents'],
+      });
+
+      // A daemon that lists nothing: unknown, not "serves nothing". No field.
+      health = { status: 'ok' };
+      sessionSandboxRows = box('box-no-capability-list');
+      expect(await (await start()).json()).not.toHaveProperty('capabilities');
+
+      // The health read fails: the start still answers ready, without the field.
+      runtimeEndpoint = null;
+      sessionSandboxRows = box('box-health-unreadable');
+      const unreadable = await (await start()).json();
+      expect(unreadable).toMatchObject({ stage: 'ready' });
+      expect(unreadable).not.toHaveProperty('capabilities');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
@@ -3609,7 +3669,7 @@ describe('project session API contract', () => {
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
 
     // The park stamps a retry clock, so the immediate re-poll is a COOLDOWN,
-    // not the 10-hour `stage:"failed"` replay session 9c8749ac lived in.
+    // not the 10-hour `stage:"failed"` replay a SampleCo session lived in.
     expect(typeof parkedMetadata.runtimeStartRetryAfterAt).toBe('string');
     expect(parkedMetadata.runtimeStartFailureCount).toBe(1);
 
@@ -4244,6 +4304,25 @@ describe('project session API contract', () => {
       expect(metadata).not.toHaveProperty(key);
     }
     expect(lifecycleCommandInserts).toEqual([]);
+  });
+
+  test('clients cannot forge or change server-owned warm placement intent', async () => {
+    const app = createApp();
+    const before = sessionRow;
+    for (const [method, path] of [
+      ['POST', `/v1/projects/${PROJECT_ID}/sessions`],
+      ['PATCH', `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`],
+    ] as const) {
+      const res = await app.request(path, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ metadata: { warmSandboxLocation: 'us-east' } }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'metadata key is server-managed: warmSandboxLocation' });
+    }
+    expect(sessionRow).toBe(before);
+    expect(branchCreateCalls).toBe(0);
   });
 
   test('rejects unknown providers before creating a git branch', async () => {

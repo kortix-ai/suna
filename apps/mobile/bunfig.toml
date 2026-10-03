@@ -8,4 +8,6 @@
 # that store to the real, unmocked package and break every later test of it —
 # in-memory-async-storage.test.ts only catches a competing `mock.module` call,
 # not a missing one.
-preload = ["./stores/in-memory-async-storage.ts"]
+# `lib/testing/sdk-single-instance.ts`: `@kortix/sdk/react` shares this app's React and
+# React Query (the SDK package has its own copies; see the file).
+preload = ["./stores/in-memory-async-storage.ts", "./lib/testing/sdk-single-instance.ts"]

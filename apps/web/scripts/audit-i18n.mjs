@@ -845,7 +845,7 @@ function scanFile(file) {
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        ['USE_CASE_OPTIONS', 'STARTER_PROMPTS'].includes(catalogRoot);
+        catalogRoot === 'USE_CASE_OPTIONS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
@@ -1009,8 +1009,7 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_BUCKET_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/profile-tab.tsx') &&
           catalogRoot === 'DEFAULT_PROFILE_TAB_COPY') ||
-        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata') ||
-        (file === path.join(srcDir, 'components/home/cli-demo.tsx') && catalogRoot === 'PALETTE');
+        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
       const coveredTechnicalCatalog =
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||

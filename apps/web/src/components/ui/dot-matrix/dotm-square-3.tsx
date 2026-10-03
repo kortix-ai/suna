@@ -2,14 +2,13 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import {
   createDotm5x5Component,
   spiralInwardNormFromIndex,
   spiralInwardOrderValue,
 } from '@/lib/dotmatrix-core';
 
-export type DotmSquare3Props = DotMatrixCommonProps;
 
 const animationResolver: DotAnimationResolver = ({ isActive, index, reducedMotion, phase }) => {
   if (!isActive) {

@@ -78,6 +78,12 @@ export interface SessionStartResult {
    */
   runtime_url?: string | null;
   reason?: string;
+  /**
+   * What the session's runtime serves, as the daemon lists it in
+   * `GET /kortix/health`. Present with `stage: 'ready'` on APIs that read it;
+   * `useSession` then knows the list before its own first health probe.
+   */
+  capabilities?: string[];
 
   // ── Session-open envelope. Every field describes THIS call, not the row's
   // accumulated history. Optional: an older API omits them entirely.

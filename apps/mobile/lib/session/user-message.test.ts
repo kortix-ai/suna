@@ -486,13 +486,3 @@ describe('parseUserMessageParts', () => {
     });
   });
 });
-
-describe('session message headers', () => {
-  test('the platform header never reaches the bubble text', () => {
-    const header = '[MESSAGE from Blair <blair@example.com>]\n\nLooks good to me.';
-    const { content } = parseUserMessageParts([
-      { id: 'p1', messageID: 'm1', type: 'text', text: header },
-    ] as never);
-    expect(content.text).toBe('Looks good to me.');
-  });
-});

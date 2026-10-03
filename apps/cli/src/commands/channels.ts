@@ -178,6 +178,10 @@ interface ChannelBinding {
   channelId: string;
   channelName: string | null;
   channelType: string | null;
+  /** Slack answered that the conversation is deleted or out of the bot's reach. */
+  channelUnavailable?: boolean;
+  /** A Teams channel thread: its session's title, which tells threads of one channel apart. */
+  threadTitle?: string | null;
   agentName: string | null;
   opencodeModel: string | null;
   conversationPolicy: ConversationPolicy;
@@ -925,6 +929,16 @@ async function emailCommand(
 
 // ─── Channel bindings ────────────────────────────────────────────────────
 
+/** `#general`, a person's name for a Slack DM, or the id when nothing names it. */
+function bindingLabel(b: ChannelBinding): string {
+  if (b.platform === 'slack') {
+    if (b.channelName) return b.channelType === 'im' || b.channelType === 'mpim' ? b.channelName : `#${b.channelName}`;
+    if (b.channelUnavailable) return `unavailable (${b.channelId})`;
+  }
+  if (b.threadTitle) return `${b.channelName ?? b.channelId} · ${b.threadTitle}`;
+  return b.channelName ?? b.channelId;
+}
+
 async function bindingsLs(
   ctxOpts: { projectArg?: string; hostArg?: string },
   rest: string[],
@@ -955,7 +969,7 @@ async function bindingsLs(
     return 0;
   }
   const idW = Math.max(...resp.bindings.map((b) => b.bindingId.length), 10);
-  const chW = Math.max(...resp.bindings.map((b) => (b.channelName ?? b.channelId).length), 7);
+  const chW = Math.max(...resp.bindings.map((b) => bindingLabel(b).length), 7);
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.dim}${pad('BINDING', idW)}  ${pad('CHANNEL', chW)}  PLATFORM  AGENT             MODEL             POLICY${C.reset}\n`,
@@ -964,7 +978,7 @@ async function bindingsLs(
     const agent = `${b.effectiveAgent.agent}${b.agentName ? '' : ` ${C.faded}(${b.effectiveAgent.source})${C.reset}`}`;
     const model = `${b.effectiveModel.model ?? 'auto'}${b.opencodeModel ? '' : ` ${C.faded}(${b.effectiveModel.source})${C.reset}`}`;
     process.stdout.write(
-      `  ${pad(b.bindingId, idW)}  ${pad(b.channelName ?? b.channelId, chW)}  ` +
+      `  ${pad(b.bindingId, idW)}  ${pad(bindingLabel(b), chW)}  ` +
         `${pad(b.platform, 8)}  ${pad(agent, 26)}  ${pad(model, 26)}  ${C.faded}${b.conversationPolicy}${C.reset}\n`,
     );
   }
@@ -1018,7 +1032,7 @@ async function bindingsPatch(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${C.bold}${binding.channelName ?? binding.channelId}${C.reset} updated`)}\n` +
+    `${status.ok(`${C.bold}${bindingLabel(binding)}${C.reset} updated`)}\n` +
       `         agent   ${C.cyan}${binding.effectiveAgent.agent}${C.reset} ${C.faded}(${binding.effectiveAgent.source})${C.reset}\n` +
       `         model   ${C.cyan}${binding.effectiveModel.model ?? 'auto'}${C.reset} ${C.faded}(${binding.effectiveModel.source})${C.reset}\n` +
       `         policy  ${C.dim}${binding.conversationPolicy}${C.reset}\n`,

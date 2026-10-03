@@ -93,5 +93,14 @@ describe('harness ownership boundary', () => {
     const native = await transport.request('/exclusive-feature', { method: 'POST', body: 'native input' })
     expect(native.status).toBe(201)
     expect(await native.json()).toEqual({ nativeFeature: '/exclusive-feature', input: 'native input' })
+
+    // A runtime that cannot take a request answers one machine code beside the adapter's own details.
+    const booting = createRuntimeProxyRouter(
+      { cfg, bootState: { repoMaterializationError: null, timeline: [] } },
+      { ...service.proxy, readiness: async () => ({ ready: false, phase: 'boot', details: { error: 'adapter wording' } }) },
+    )
+    const refused = await booting.request('/exclusive-feature')
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toEqual({ code: 'runtime_not_ready', error: 'adapter wording', phase: 'boot' })
   })
 })
