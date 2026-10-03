@@ -34,6 +34,11 @@ import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitiv
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
+import {
+  clearStashedPkceVerifier,
+  resumePkceExchange,
+  stashBrowserPkceVerifier,
+} from '@/lib/auth/pkce-resume';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
@@ -274,6 +279,12 @@ function AuthCardForm({
         setSentEmail((result as any).email || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
+        // Snapshot the PKCE verifier the server action just handed this browser
+        // as a cookie. If the cookie does not survive the mailbox detour, the
+        // callback bounces the code back here and the resume effect completes
+        // the exchange from this snapshot instead of leaving the visitor on a
+        // false "expired" screen.
+        stashBrowserPkceVerifier();
       } else if (result && 'message' in result) {
         failWith((result as any).message as string);
       }
@@ -824,6 +835,36 @@ function AuthContent() {
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const hasStartedMobileHandoff = useRef(false);
+  const hasResumedPkceCode = useRef(false);
+
+  // A bounced-back PKCE code: the server-side exchange in /auth/callback failed
+  // because this browser's verifier cookie did not survive the mailbox detour,
+  // and the code is still fresh and unconsumed. Re-seed the verifier this tab
+  // snapshotted when the send ran and finish the exchange here, then hard
+  // navigate to the same destination the callback would have used. Runs once:
+  // a retry after a real failure can only repeat the failure, and the params
+  // are stripped so a refresh cannot loop on a spent code.
+  const pkceResumeCode = searchParams.get('pkce_code');
+  useEffect(() => {
+    if (!pkceResumeCode || hasResumedPkceCode.current || isLoading) return;
+    hasResumedPkceCode.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('pkce_code');
+    window.history.replaceState(null, '', url.toString());
+    void resumePkceExchange(pkceResumeCode, supabase).then((resume) => {
+      if (resume.resumed) {
+        // The exchange already wrote the session cookies through this client;
+        // a document navigation is the only handoff that carries them into the
+        // app without a stale route cache (see establishSessionAndRedirect).
+        window.location.assign(returnUrl);
+        return;
+      }
+      if (resume.message) {
+        errorToast(resume.message);
+      }
+    });
+  }, [pkceResumeCode, isLoading, supabase, returnUrl]);
+
 
   // `useAuth()`'s `user` can be stale: it's seeded from whatever session the
   // client already had cached, and only gets corrected once something

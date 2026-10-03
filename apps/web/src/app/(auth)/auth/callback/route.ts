@@ -131,6 +131,26 @@ export async function GET(request: NextRequest) {
       if (error) {
         console.error('Error exchanging code for session:', error);
 
+        // The PKCE verifier lives in a browser cookie that must survive the
+        // mailbox detour and a redirect chain before this handler runs. When it
+        // does not, the exchange fails WITHOUT consuming the code (a missing
+        // verifier throws before any request; a mismatched one is a plain 400),
+        // so the link itself is still fresh. Hand the code back to the browser
+        // that started the flow: the auth page re-seeds the verifier it snapshotted
+        // at send time and completes the exchange client-side. A genuinely expired
+        // link keeps the expired UX below.
+        const expiryCode = error.code;
+        const isResumeablePkceFailure =
+          expiryCode === 'pkce_code_verifier_not_found' ||
+          (error.status === 400 &&
+            !['otp_expired', 'expired_token', 'token_expired'].includes(expiryCode ?? ''));
+        if (isResumeablePkceFailure) {
+          const resumeUrl = new URL(`${baseUrl}/auth`);
+          resumeUrl.searchParams.set('pkce_code', code);
+          if (next) resumeUrl.searchParams.set('returnUrl', next);
+          return NextResponse.redirect(resumeUrl);
+        }
+
         // Check if the error is due to expired/invalid link
         const isExpired =
           error.message?.toLowerCase().includes('expired') ||
