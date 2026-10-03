@@ -1111,22 +1111,11 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_parent')
       .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.parentSessionId} is not null`),
-    // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
-    // origin_ref's live sessions, checked on every backend session create.
-    // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
-    // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
-    // NULL, so it indexes only live backend sessions — a small fraction of the
-    // table, and nothing at all for non-KaaB projects.
-    // Supports the KaaB "list this end-user's sessions" filter, which spans ALL
-    // statuses — the partial active-only index below cannot serve it.
-    index('idx_project_sessions_project_origin')
-      .on(table.projectId, table.originRef)
-      .where(sql`${table.originRef} is not null`),
-    index('idx_project_sessions_account_origin_active')
-      .on(table.accountId, table.originRef)
-      .where(
-        sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
-      ),
+    // NOTE: the two KaaB origin_ref indexes (idx_project_sessions_project_origin,
+    // idx_project_sessions_account_origin_active) were dropped by
+    // migrations/20261003055631852_drop_project_sessions_origin_indexes.concurrent.ts:
+    // the KaaB flows they served are gone from the code and prod showed
+    // idx_scan = 0 for both. Rebuild with CREATE INDEX CONCURRENTLY if needed.
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
