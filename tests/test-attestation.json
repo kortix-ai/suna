@@ -1,18 +1,28 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "ab0618778bb2a89d0d888906c4b8d61273df9b581a887bc60f78f237548ba4ff",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-03T055500Z-a-docker-less-sandbox-can-still-verify-a-db-migration-instal.md",
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
+    "apps/api/src/__tests__/helpers/compiled-runtime-env.ts",
+    "apps/api/src/git-proxy/compiled-pi-runtime.test.ts",
+    "apps/api/src/git-proxy/compiled-runtime.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261003163150_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003163147064_oauth_auth_requests_client_index.concurrent.ts",
+    "packages/db/scripts/oauth-authorization-requests-client-index.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "f47cfda9a364dfaffc2eb71bb3c97f03f182712d65e70701a2a935edd9c50da7",
+  "head": "3f91b722e8f3cc0ea873d6dfc20a9ccbc2f5af18",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T17:15:16.834Z"
 }
