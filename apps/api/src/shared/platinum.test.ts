@@ -40,11 +40,17 @@ afterEach(() => {
 test('platinumJson gives up on a stalled connection instead of hanging forever', async () => {
   // Accepts the connection but never resolves the handler — simulates a
   // Daytona/Platinum-style network stall, not a fast error response.
+  // Pin the loopback family: `localhost` resolves to ::1 first inside a
+  // Kortix platform sandbox (its hosts entry is not readable), so the request
+  // would be refused before the stall — and this assertion would fail on the
+  // connect error instead of the 1500 ms budget. 127.0.0.1 is the address the
+  // server binds on a laptop and on CI alike.
   server = Bun.serve({
+    hostname: '127.0.0.1',
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -58,10 +64,11 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
 
 test('platinumJson respects an explicit caller-provided signal instead of the default', async () => {
   server = Bun.serve({
+    hostname: '127.0.0.1',
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 

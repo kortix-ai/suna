@@ -42,6 +42,11 @@ function ownInterfaceAddresses(): string[] {
 
 const SERVICE_KEY = 'sandbox-service-key-under-test'
 
+// Pin the loopback family on the upstream and on every URL that reaches it:
+// `localhost` resolves to ::1 first inside a Kortix platform sandbox (its
+// hosts entry is not readable), while Bun.serve binds the IPv4 loopback — the
+// mismatch refuses every proxied hop. 127.0.0.1 is the address this server
+// binds on a laptop and on CI alike.
 let upstream: ReturnType<typeof Bun.serve>
 let upstreamPort: number
 /** Headers the attacker-controlled upstream actually saw. */
@@ -55,6 +60,7 @@ function lastHeaders(): Headers | null {
 
 beforeAll(() => {
   upstream = Bun.serve({
+    hostname: '127.0.0.1',
     port: 0,
     fetch(req) {
       received = new Headers(req.headers)
@@ -213,7 +219,7 @@ describe('/web-proxy stays off the box control plane', () => {
     // The whole point of this proxy. Blocking all of loopback would have been a
     // cheaper fix and would have broken the internal browser.
     const res = await guarded().request(
-      `/web-proxy/http/localhost:${upstreamPort}/index.html`,
+      `/web-proxy/http/127.0.0.1:${upstreamPort}/index.html`,
       { method: 'GET' },
     )
     expect(res.status).toBe(200)
@@ -242,10 +248,10 @@ describe('a vetted destination is the one we connect to', () => {
     // Virtual hosting on the agent's own dev server depends on it.
     received = null
     const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
-    const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {
+    const res = await open.request(`/web-proxy/http/127.0.0.1:${upstreamPort}/x`, {
       method: 'GET',
     })
     expect(res.status).toBe(200)
-    expect(lastHeaders()?.get('host')).toBe(`localhost:${upstreamPort}`)
+    expect(lastHeaders()?.get('host')).toBe(`127.0.0.1:${upstreamPort}`)
   })
 })

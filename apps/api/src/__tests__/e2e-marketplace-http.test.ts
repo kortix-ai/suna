@@ -24,8 +24,13 @@ describe('marketplace HTTP contract', () => {
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-    server = Bun.serve({ port: 0, fetch: app.fetch });
-    baseUrl = `http://${server.hostname}:${server.port}/v1`;
+    // Pin the loopback family. `localhost` resolves to ::1 first inside a
+    // Kortix platform sandbox (its hosts entry is not readable), while
+    // Bun.serve binds the IPv4 loopback — the mismatch refuses every request
+    // and the contract reads as ConnectionRefused. 127.0.0.1 is the address
+    // this server binds on a laptop and on CI alike.
+    server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch });
+    baseUrl = `http://127.0.0.1:${server.port}/v1`;
   });
 
   afterAll(() => {
