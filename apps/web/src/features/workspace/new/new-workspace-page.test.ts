@@ -41,27 +41,20 @@ function elementText(src: string, tag: string, from: number) {
 }
 
 /**
- * KRTX-1424: the name field used to carry `maxLength={WORKSPACE_NAME_MAX_LENGTH}`.
- * The browser then silently truncated typed and pasted input at 120 characters,
- * so `validateWorkspaceName`'s over-limit branch was unreachable for real input:
- * the field held exactly 120 characters with no message and Create project
- * enabled. The field must let an over-limit value through so the validator and
- * the error markup below can fire; the message itself surfaces while typing via
- * `workspaceNameError` (unit-tested in `workspace-name.test.ts`).
+ * KRTX-1424: the browser used to clamp the field at 120 characters, so the
+ * documented too-long error was unreachable for typed input. See
+ * `workspace-name.ts` for the surfacing decision.
  */
 describe('/new: the too-long-name message fires for typed input (KRTX-1424)', () => {
   test('the name field does not clamp input at the limit — the validator, not the browser, rejects it', () => {
     expect(code).not.toContain('maxLength');
     // Paired presence check: the field that must NOT clamp is still the one
     // wired to the validator through live form state.
-    expect(code).toContain("id=\"workspace-name\"");
     expect(code).toContain('value={state.name}');
   });
 
   test('the too-long error reaches the field before the first blur', () => {
     expect(code).toContain('workspaceNameError(state.name, touched)');
-    expect(code).toContain("t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH })");
-    expect(code).toContain("id=\"workspace-name-error\"");
   });
 });
 

@@ -277,9 +277,7 @@ describe('isSubmittable', () => {
   });
 
   test('false when the name exceeds the API ceiling — a 200-character typed name can never submit (KRTX-1424)', () => {
-    // KRTX-1424 removed the field's `maxLength` clamp, so the form state can
-    // now hold more characters than the API accepts. The submit gate is what
-    // keeps "no project is created" true for that input.
+    // The clamp removal (KRTX-1424) lets the form state exceed the API limit.
     const typed = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 80);
     expect(isSubmittable({ ...INITIAL_FORM_STATE, name: typed }, 1)).toBe(false);
   });
