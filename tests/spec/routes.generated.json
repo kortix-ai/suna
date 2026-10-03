@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 702,
+  "count": 724,
   "routes": [
     {
       "method": "GET",
@@ -976,6 +976,30 @@
     },
     {
       "method": "POST",
+      "path": "/v1/capture/credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/authorize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/device/grants/:user_code"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/grants/:user_code/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/grants/:user_code/deny"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/token"
+    },
+    {
+      "method": "POST",
       "path": "/v1/channels/slack/identity/bind"
     },
     {
@@ -1593,6 +1617,70 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/chunks/:chunkId/media"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/devices"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/capture/devices/:deviceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/devices/:deviceId/assets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/capture/devices/:deviceId/policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/people"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/capture/policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/ranges"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/capture/ranges"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/ranges/:rangeId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/capture/ranges/:rangeId/process"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/timeline"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/timeline/items"
     },
     {
       "method": "GET",

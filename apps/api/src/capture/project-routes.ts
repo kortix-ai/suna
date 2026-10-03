@@ -288,6 +288,9 @@ const subjectQuery = z.object({
   to: z.string().optional(),
 });
 
+/** A timestamptz parameter. A bare Date in raw SQL is sent as its local `toString()`. */
+const at = (d: Date) => sql`${d.toISOString()}::timestamptz`;
+
 const deviceFilter = (column: string, deviceId: string | undefined) =>
   deviceId ? sql` AND ${sql.raw(column)} = ${deviceId}::uuid` : sql``;
 
@@ -321,7 +324,7 @@ projectsApp.openapi(
                                     THEN 0 ELSE 1 END AS brk
                           FROM kortix.timeline_frames
                          WHERE project_id = ${access.projectId}::uuid AND user_id = ${subject}::uuid
-                           AND ts >= ${span.from} AND ts < ${span.to} AND NOT inactive
+                           AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive
                            ${deviceFilter('device_id', deviceId)}
                         WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
          GROUP BY device_id, grp, app, title
@@ -371,7 +374,7 @@ projectsApp.openapi(
     const span = window(c);
     if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart');
     const deviceId = c.req.query('device_id');
-    const where = sql`project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid AND ts >= ${span.from} AND ts < ${span.to} ${deviceFilter('device_id', deviceId)}`;
+    const where = sql`project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${deviceFilter('device_id', deviceId)}`;
     const [frames, actions, audio] = await Promise.all([
       db.execute(sql`SELECT frame_id, ts, device_id, chunk_id, frame_index, app, bundle_id, title, url, domain, ocr_text, inactive FROM kortix.timeline_frames WHERE ${where} ORDER BY ts LIMIT 500`),
       db.execute(sql`SELECT action_id, ts, device_id, chunk_id, kind, app, window_title, description, target, screenshot FROM kortix.timeline_actions WHERE ${where} ORDER BY ts LIMIT 500`),
@@ -404,7 +407,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/capture/search',
     tags,
-    summary: 'Full-text search of one person’s timeline: screen (app, window, URL, on-screen text), actions and audio',
+    summary: 'Full-text search of one person’s timeline: screen (app, window, URL, on-screen text; one hit per chunk and window), actions and audio',
     ...auth,
     request: {
       params,
@@ -429,11 +432,11 @@ projectsApp.openapi(
     const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 20) || 20, 1), 100);
     const app = c.req.query('app');
     const deviceId = c.req.query('device_id');
-    const scope = sql`project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid AND ts >= ${from} AND ts < ${to} ${deviceFilter('device_id', deviceId)} ${app ? sql` AND lower(app) = lower(${app})` : sql``}`;
+    const scope = sql`project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid AND ts >= ${at(from)} AND ts < ${at(to)} ${deviceFilter('device_id', deviceId)} ${app ? sql` AND lower(app) = lower(${app})` : sql``}`;
     const query = sql`websearch_to_tsquery('simple', ${q})`;
     const parts = [
       kinds.has('screen') &&
-        sql`(SELECT 'screen' AS kind, frame_id AS id, ts, device_id, chunk_id, app, title, url, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${limit})`,
+        sql`(SELECT * FROM (SELECT DISTINCT ON (chunk_id, title) 'screen' AS kind, frame_id AS id, ts, device_id, chunk_id, app, title, url, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY chunk_id, title, ts DESC) per_window ORDER BY ts DESC LIMIT ${limit})`,
       kinds.has('actions') &&
         sql`(SELECT 'actions' AS kind, action_id AS id, ts, device_id, chunk_id, app, window_title AS title, NULL AS url, description AS text FROM kortix.timeline_actions WHERE ${scope} AND ${ACTION_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${limit})`,
       kinds.has('audio') &&
@@ -441,7 +444,7 @@ projectsApp.openapi(
     ].filter(Boolean) as ReturnType<typeof sql>[];
     if (!parts.length) return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');
     const rows = Array.from(
-      await db.execute<Record<string, any>>(sql`${sql.join(parts, sql` UNION ALL `)} ORDER BY ts DESC LIMIT ${limit}`),
+      await db.execute<Record<string, any>>(sql`SELECT * FROM (${sql.join(parts, sql` UNION ALL `)}) hits ORDER BY ts DESC LIMIT ${limit}`),
     );
     return c.json({
       user_id: access.subject,
@@ -718,14 +721,14 @@ projectsApp.openapi(
         SELECT user_id, app, round(sum(LEAST(EXTRACT(EPOCH FROM (next_ts - ts)), 60)))::int AS seconds
           FROM (SELECT user_id, app, ts, inactive, lead(ts) OVER (PARTITION BY device_id ORDER BY ts) AS next_ts
                   FROM kortix.timeline_frames
-                 WHERE project_id = ${access.projectId}::uuid AND ts >= ${span.from} AND ts < ${span.to}) f
+                 WHERE project_id = ${access.projectId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)}) f
          WHERE NOT inactive AND next_ts IS NOT NULL
          GROUP BY user_id, app`),
     );
     const ranges = Array.from(
       await db.execute<{ user_id: string; ranges: number }>(sql`
         SELECT user_id, count(*)::int AS ranges FROM kortix.timeline_ranges
-         WHERE project_id = ${access.projectId}::uuid AND end_at >= ${span.from} AND start_at < ${span.to}
+         WHERE project_id = ${access.projectId}::uuid AND end_at >= ${at(span.from)} AND start_at < ${at(span.to)}
          GROUP BY user_id`),
     );
     const devices = await db

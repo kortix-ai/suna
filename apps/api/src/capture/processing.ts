@@ -42,7 +42,7 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const IDLE_GAP_SEC = 120;
 const GAP_EPSILON_SEC = 2;
 const MAX_TRANSCRIPT_WINDOWS = 12;
-const CALL_TIMEOUT_MS = 180_000;
+const CALL_TIMEOUT_MS = 300_000;
 const KEY_NAME = 'internal-capture-processing';
 
 // ─── Input ───────────────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ const emptyUsage = (): Usage => ({ requests: 0, prompt_tokens: 0, completion_tok
 
 interface Caller {
   model: string;
-  call<T>(schema: z.ZodType<T>, prompt: string, images: RangeInput['images'], usage: Usage): Promise<T>;
+  call<S extends z.ZodTypeAny>(schema: S, prompt: string, images: RangeInput['images'], usage: Usage): Promise<z.output<S>>;
 }
 
 /** Strip a code fence and parse the first JSON object in a model reply. */
@@ -258,6 +258,13 @@ function gatewayCaller(authorization: string, model: string): Caller {
 
 // ─── Segmentation ────────────────────────────────────────────────────────────
 
+// Models drift from a schema in small ways (a number as a string, null for an
+// absent field). Accept those; reject only what is structurally wrong.
+const num = z.coerce.number();
+const refs = z.array(z.coerce.number()).nullish().transform((v) => v ?? []);
+const optStr = z.string().nullish().transform((v) => v ?? undefined);
+const strs = z.array(z.string()).nullish().transform((v) => v ?? []);
+
 export const CATEGORIES = ['work', 'communication', 'personal', 'entertainment', 'idle', 'other'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
@@ -269,9 +276,9 @@ const segmentationZod = z.object({
       category: z.string(),
       title: z.string(),
       annotation: z.string(),
-      app: z.string().optional(),
-      confidence: z.number().optional(),
-      screenshotRefs: z.array(z.number()).optional(),
+      app: optStr,
+      confidence: num.optional(),
+      screenshotRefs: refs,
     }),
   ),
 });
@@ -318,7 +325,7 @@ export function normalizeSegments(raw: z.infer<typeof segmentationZod>['segments
       annotation: s.annotation.trim(),
       app: s.app?.trim() || undefined,
       confidence: typeof s.confidence === 'number' ? Math.min(Math.max(s.confidence, 0), 1) : 0.6,
-      screenshotRefs: s.screenshotRefs ?? [],
+      screenshotRefs: s.screenshotRefs,
     }))
     .filter((s) => s.endSec > s.startSec)
     .sort((a, b) => a.startSec - b.startSec);
@@ -448,8 +455,8 @@ async function runSegmentation(caller: Caller, input: RangeInput, meta: Record<s
 
 const segmentNarrativeZod = z.object({
   narrative: z.string(),
-  keyPoints: z.array(z.string()).optional(),
-  entities: z.array(z.string()).optional(),
+  keyPoints: strs,
+  entities: strs,
 });
 const synthesisZod = z.object({ title: z.string(), summary: z.string() });
 
@@ -511,8 +518,8 @@ Return ONLY JSON. No markdown fences.`;
       ...base,
       idle: false,
       narrative: result.narrative,
-      keyPoints: (result.keyPoints ?? []).slice(0, 8),
-      entities: (result.entities ?? []).slice(0, 12),
+      keyPoints: result.keyPoints.slice(0, 8),
+      entities: result.entities.slice(0, 12),
       screenshotRefs: shots.map((s) => s.index),
     });
   }
@@ -554,42 +561,41 @@ ${outline}`,
 const pass1Zod = z.object({
   title: z.string(),
   summary: z.string(),
-  apps: z.array(z.string()),
-  entities: z.array(z.string()),
+  apps: strs,
+  entities: strs,
   segments: z.array(
     z.object({
       tStart: z.string(),
-      tEnd: z.string().optional(),
+      tEnd: optStr,
       heading: z.string(),
       description: z.string(),
-      app: z.string().optional(),
-      screenshotRefs: z.array(z.number()),
-      confidence: z.number(),
+      app: optStr,
+      screenshotRefs: refs,
+      confidence: num.catch(0.5),
     }),
   ),
-  keyMoments: z.array(z.object({ time: z.string(), label: z.string(), screenshotRefs: z.array(z.number()), importance: z.string() })),
-  sourceOfTruth: z.object({ narrative: z.string(), keyInsights: z.array(z.string()), timelineRef: z.string() }),
-  dataQuality: z.object({ coverage: z.string(), gaps: z.array(z.string()), confidence: z.number() }),
+  keyMoments: z.array(z.object({ time: z.string(), label: z.string(), screenshotRefs: refs, importance: z.string().catch('medium') })).catch([]),
+  sourceOfTruth: z.object({ narrative: z.string(), keyInsights: strs, timelineRef: z.string().catch('') }),
+  dataQuality: z.object({ coverage: z.string().catch('low'), gaps: strs, confidence: num.catch(0.5) }),
 });
 
 const pass2Zod = z.object({
-  corrections: z.array(z.object({ issue: z.string(), severity: z.string(), fix: z.string() })),
-  enrichedSegments: z.array(
-    z.object({ heading: z.string(), description: z.string(), screenshotRefs: z.array(z.number()).optional(), confidence: z.number() }),
-  ),
-  enrichedNarrative: z.string(),
-  qualityScore: z.number(),
-  missingDetails: z.array(z.string()),
+  corrections: z.array(z.object({ issue: z.string(), severity: z.string().catch('minor'), fix: z.string().catch('') })).catch([]),
+  enrichedSegments: z
+    .array(z.object({ heading: z.string(), description: z.string(), screenshotRefs: refs, confidence: num.catch(0.5) }))
+    .catch([]),
+  enrichedNarrative: z.string().catch(''),
+  qualityScore: num.catch(0),
+  missingDetails: strs,
 });
 
-const ref = z.array(z.number()).default([]);
 const extractionZod = z.object({
-  links: z.array(z.object({ url: z.string(), label: z.string().optional(), context: z.string(), timestamp: z.string().optional(), screenshotRefs: ref })).default([]),
-  files: z.array(z.object({ name: z.string(), path: z.string().optional(), operation: z.string(), context: z.string(), timestamp: z.string().optional(), screenshotRefs: ref })).default([]),
-  decisions: z.array(z.object({ decision: z.string(), rationale: z.string().optional(), context: z.string(), timestamp: z.string().optional(), screenshotRefs: ref })).default([]),
-  actionItems: z.array(z.object({ action: z.string(), priority: z.string().optional(), context: z.string(), timestamp: z.string().optional(), screenshotRefs: ref })).default([]),
-  communications: z.array(z.object({ type: z.string(), platform: z.string().optional(), subject: z.string().optional(), participants: z.array(z.string()).optional(), context: z.string(), screenshotRefs: ref })).default([]),
-  workPatterns: z.array(z.object({ pattern: z.string(), frequency: z.string().optional(), tools_used: z.array(z.string()).optional(), description: z.string() })).default([]),
+  links: z.array(z.object({ url: z.string(), label: optStr, context: z.string(), timestamp: optStr, screenshotRefs: refs })).catch([]),
+  files: z.array(z.object({ name: z.string(), path: optStr, operation: z.string(), context: z.string(), timestamp: optStr, screenshotRefs: refs })).catch([]),
+  decisions: z.array(z.object({ decision: z.string(), rationale: optStr, context: z.string(), timestamp: optStr, screenshotRefs: refs })).catch([]),
+  actionItems: z.array(z.object({ action: z.string(), priority: optStr, context: z.string(), timestamp: optStr, screenshotRefs: refs })).catch([]),
+  communications: z.array(z.object({ type: z.string(), platform: optStr, subject: optStr, participants: strs, context: z.string(), screenshotRefs: refs })).catch([]),
+  workPatterns: z.array(z.object({ pattern: z.string(), frequency: optStr, tools_used: strs, description: z.string() })).catch([]),
 });
 
 async function runAnnotation(caller: Caller, input: RangeInput, meta: Record<string, unknown>, usage: Usage) {
@@ -729,7 +735,7 @@ If an item is only weakly implied, omit it rather than hallucinating. Return ONL
   const segments = pass1.segments
     .map((segment, i) => {
       const enriched = pass2?.enrichedSegments[i];
-      return enriched ? { ...segment, ...enriched, screenshotRefs: enriched.screenshotRefs ?? segment.screenshotRefs } : segment;
+      return enriched ? { ...segment, ...enriched, screenshotRefs: enriched.screenshotRefs.length ? enriched.screenshotRefs : segment.screenshotRefs } : segment;
     })
     .filter((s) => s.tStart || s.tEnd || s.screenshotRefs.length || s.description.length >= 40);
   return {
@@ -795,10 +801,15 @@ export async function processRange(rangeId: string, caller?: Caller): Promise<vo
       totalSeconds: Math.round(input.totalSeconds),
       apps: input.apps.slice(0, 20),
     };
-    const segmentation = await record(rangeId, 'segmentation', caller.model, (u) => runSegmentation(caller!, input, meta, u));
-    const segments = (segmentation?.segments as Segment[] | undefined) ?? normalizeSegments([], input.totalSeconds);
-    const transcript = await record(rangeId, 'transcript', caller.model, (u) => runTranscript(caller!, input, segments, u));
-    const annotation = await record(rangeId, 'annotation', caller.model, (u) => runAnnotation(caller!, input, meta, u));
+    // The transcript needs the segmentation; the annotation needs neither, so it runs alongside.
+    const [[segmentation, transcript], annotation] = await Promise.all([
+      (async () => {
+        const seg = await record(rangeId, 'segmentation', caller!.model, (u) => runSegmentation(caller!, input, meta, u));
+        const segments = (seg?.segments as Segment[] | undefined) ?? normalizeSegments([], input.totalSeconds);
+        return [seg, await record(rangeId, 'transcript', caller!.model, (u) => runTranscript(caller!, input, segments, u))] as const;
+      })(),
+      record(rangeId, 'annotation', caller.model, (u) => runAnnotation(caller!, input, meta, u)),
+    ]);
     const ok = [segmentation, transcript, annotation].some(Boolean);
     const title = range.title ?? ((transcript?.title as string | undefined) || (annotation?.title as string | undefined) || null);
     // A range that grew while it was processed is `open` again: leave it for its next run.

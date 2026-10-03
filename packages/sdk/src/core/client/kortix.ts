@@ -14,6 +14,7 @@ import { bindProjectCore } from './project-core';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
 import { bindProjectPlatformSecurity } from './project-platform-security';
+import { bindProjectCapture } from './project-capture';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -67,6 +68,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       ...bindProjectOperations(projectId, connections),
       ...bindProjectPlatformResources(projectId),
       ...bindProjectPlatformSecurity(projectId),
+      ...bindProjectCapture(projectId),
       session: (sessionId: string) =>
         session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
     };
@@ -100,6 +102,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
+    /** Kortix Capture device sign-in approval (the person half of the RFC 8628 grant; not project-scoped). */
+    capture: {
+      deviceGrant: P.getCaptureDeviceGrant,
+      approveDevice: P.approveCaptureDeviceGrant,
+      denyDevice: P.denyCaptureDeviceGrant,
+    },
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

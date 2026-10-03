@@ -25,6 +25,7 @@ import { resolveFeatureFlag } from '../feature-flags/registry';
 import { featureDisabledBody } from '../feature-flags/gate';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { loadProjectForUser } from '../projects/lib/access';
+import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { supabaseAuth } from '../middleware/auth';
 import { requestClientKey } from '../shared/client-ip';
 import { generateDeviceCode, hashSecretKey, randomAlphanumeric } from '../shared/crypto';
@@ -124,7 +125,7 @@ async function grantByUserCode(userCode: string) {
 /** A person, not an agent or a service: approval pairs the device to this human. */
 function humanCaller(c: Context): boolean {
   const authType = c.get('authType') as string | undefined;
-  return (authType === 'supabase' || authType === 'pat') && !c.get('sessionId');
+  return (authType === 'supabase' || authType === 'pat') && !callerKortixSessionId(c);
 }
 
 export function createCaptureRouter() {

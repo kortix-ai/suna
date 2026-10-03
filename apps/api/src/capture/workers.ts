@@ -212,7 +212,7 @@ export async function applyRetention(limitPerProject = 200): Promise<number> {
     await db.transaction(async (tx) => {
       for (const table of ['timeline_frames', 'timeline_actions', 'timeline_audio']) {
         await tx.execute(
-          sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND ts >= ${floor} AND ts < ${cutoff}`,
+          sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND ts >= ${floor.toISOString()}::timestamptz AND ts < ${cutoff.toISOString()}::timestamptz`,
         );
       }
       await tx.delete(timelineChunks).where(inArray(timelineChunks.chunkId, ids));
