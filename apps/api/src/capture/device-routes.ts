@@ -45,6 +45,18 @@ import {
 import { projectPrefix } from './format';
 import { ensurePolicyObject } from './policy';
 
+const DeviceInfoSchema = z
+  .object({
+    machine_key_sha256: z.string().optional().describe('sha256 hex of the machine key; never the raw OS id'),
+    hostname: z.string().nullable().optional(),
+    computer_name: z.string().nullable().optional(),
+    os: z.string().optional(),
+    os_version: z.string().optional(),
+    arch: z.string().optional(),
+    app_version: z.string().optional(),
+  })
+  .passthrough();
+
 /** RFC 8628 / RFC 6749 §5.2 error body. */
 const RfcError = z.object({ error: z.string(), error_description: z.string().optional() });
 const rfc = () => ({ 400: json(RfcError, 'RFC 8628 error'), 429: json(RfcError, 'Rate limited (slow_down)') });
@@ -107,17 +119,10 @@ export function createCaptureRouter() {
           required: false,
           content: {
             'application/json': {
-              schema: z
-                .object({
-                  machine_key_sha256: z.string().describe('sha256 hex of the machine key; never the raw OS id'),
-                  hostname: z.string().optional(),
-                  computer_name: z.string().optional(),
-                  os: z.string().optional(),
-                  os_version: z.string().optional(),
-                  arch: z.string().optional(),
-                  app_version: z.string().optional(),
-                })
-                .passthrough(),
+              schema: DeviceInfoSchema.extend({
+                client_id: z.string().optional(),
+                device: DeviceInfoSchema.optional().describe('The capture format shape; wins over the flat fields'),
+              }).passthrough(),
             },
           },
         },
@@ -140,7 +145,10 @@ export function createCaptureRouter() {
     async (c) => {
       const blocked = limited(c, 'captureAuthorizeGlobal', 'global') ?? limited(c, 'captureAuthorize', requestClientKey(c));
       if (blocked) return blocked as never;
-      const body = await readBody(c);
+      // The capture format names the device under `device` (capture-format.md,
+      // "Credentials"); a flat body is the older shape. Both are accepted.
+      const raw = await readBody(c);
+      const body = raw.device && typeof raw.device === 'object' ? { ...raw, ...(raw.device as Record<string, unknown>) } : raw;
       const machineKey = typeof body.machine_key_sha256 === 'string' ? body.machine_key_sha256.toLowerCase() : '';
       if (!/^[0-9a-f]{64}$/.test(machineKey)) {
         return rfcError(c, 'invalid_request', 'machine_key_sha256 must be 64 hex characters') as never;

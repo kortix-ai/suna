@@ -94,6 +94,14 @@ flow(
       (await anon.post(path(R.authorize), { machine_key_sha256: 'not-a-key' })).status(400).body().has('$.error', 'invalid_request');
     });
 
+    await ctx.step('the capture format body (client_id + nested device, null hostname) starts a sign-in → 200', async () => {
+      const r = await anon.post(path(R.authorize), {
+        client_id: 'kortix-capture',
+        device: { machine_key_sha256: syntheticMachineKey(ctx.fixtures.name('cap1-nested')), hostname: null, os: 'macos', app_version: '0.1.0' },
+      });
+      r.status(200).body().has('$.interval', 5);
+    });
+
     await ctx.step('the device starts a sign-in → 200 with a device code, an XXXX-0000 user code, the approval URL, interval 5, 900 s', async () => {
       const r = await anon.post(path(R.authorize), { machine_key_sha256: machineKey, computer_name: 'Fixture Laptop', os: 'macos' });
       r.status(200).body().has('$.interval', 5).has('$.expires_in', 900);
