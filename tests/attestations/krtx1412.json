@@ -1,0 +1,19 @@
+{
+  "source_hash": "e6731688c2423107484f571a6efa93d8377f3db74156b0a248fd10f67d1d5bcc",
+  "diff_files": [
+    "apps/web/src/app/(auth)/auth/callback/pkce-resume-redirect.test.ts",
+    "apps/web/src/app/(auth)/auth/callback/route.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
+    "apps/web/src/lib/auth/pkce-resume.test.ts",
+    "apps/web/src/lib/auth/pkce-resume.ts"
+  ],
+  "diff_hash": "b3f92c8b5ffcff3e2a87fb65e862f78e604c771a281c5384c7f936cc3f357dcf",
+  "head": "52c26bed4f7f662f1e8ec1c40aa1519e55ba0cb6",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T23:09:11.085Z"
+}
