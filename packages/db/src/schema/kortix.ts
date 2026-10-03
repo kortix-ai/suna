@@ -1246,12 +1246,16 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
     .where(sql`${table.status} = 'active'`),
 ]);
 
-// Account-scoped default model preferences. Drives server-side resolution of the
-// synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
-// per-agent default (scope='agent', scope_key=agent_name) → the account default
-// (scope='account', scope_key='') → the platform default. The stored `model` is a
-// gateway wire model (a bare managed id like 'glm-5.3-flash', a BYOK 'provider/model',
-// or 'codex/<id>') — never the synthetic `auto`.
+// Default model preferences. Drives server-side resolution of the synthetic
+// `auto` model in the LLM gateway: a request for `auto` resolves to the
+// per-agent default (scope='agent', scope_key=agent_name) → the project default
+// (scope='project', scope_key=project_id) → the platform default. The stored
+// `model` is a gateway wire model (a bare managed id like 'glm-5.3-flash', a BYOK
+// 'provider/model', or 'codex/<id>') — never the synthetic `auto`.
+//
+// The account-level default (scope='account') was removed 2026-10-03
+// (20261003*_remove_account_scope_model_preferences.sql deletes those rows); the
+// column and table stay to serve the agent/project scopes above.
 //
 // `project_id` (added 2026-07-18, see 20260718*_account_model_preferences_project_id.sql)
 // scopes an agent-name pin to the ONE project that set it: agent names are declared
@@ -1259,13 +1263,13 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
 // projects sharing an account and an agent name (almost always the conventional
 // 'kortix') would clobber each other's pin — the row was keyed only on
 // (account, scope, scope_key=agent_name), account-wide. `project_id` is NULL for
-// scope IN ('account','project') always, and for PRE-migration `scope='agent'` rows
+// scope='project' always, and for PRE-migration `scope='agent'` rows
 // (they keep applying account-wide as a fallback until the owning project explicitly
 // re-pins that agent, which writes a NEW project-scoped row — the legacy row is
 // never auto-migrated/deleted, so OTHER projects that never re-pin keep seeing it).
 // Two unique indexes replace the old single one so both shapes stay enforced:
 //   idx_account_model_preferences_scope_global  (account_id, scope, scope_key)
-//     WHERE project_id IS NULL   — account/project scope + legacy global agent pins
+//     WHERE project_id IS NULL   — project scope + legacy global agent pins
 //   idx_account_model_preferences_scope_project (account_id, scope, scope_key, project_id)
 //     WHERE project_id IS NOT NULL — new per-project agent pins
 export const accountModelPreferences = kortixSchema.table(
