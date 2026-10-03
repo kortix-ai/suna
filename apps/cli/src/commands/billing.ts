@@ -364,7 +364,22 @@ interface SessionCostView {
   next_offset: number | null;
 }
 
-async function costsCommand(ctx: AccountContext, f: Flags): Promise<number> {
+/** The flags `kortix billing costs` reads, typed once for its four paths. */
+interface CostsFlags {
+  by?: string;
+  sort?: string;
+  csv?: string;
+  json: boolean;
+  project?: string;
+  session?: string;
+  owner?: string;
+  since?: string;
+  until?: string;
+  limit?: string;
+  offset?: string;
+}
+
+async function costsCommand(ctx: AccountContext, f: CostsFlags): Promise<number> {
   const by = f.by;
   if (by !== undefined && by !== 'project' && by !== 'session') {
     return fail('--by must be project or session');
@@ -379,100 +394,103 @@ async function costsCommand(ctx: AccountContext, f: Flags): Promise<number> {
     return fail('--csv needs --by project or --by session; the account summary has no CSV export');
   }
 
-  if (f.csv) {
-    // Both CSV routes require a Bearer token, so `fetchCostExportCsv` in the
-    // SDK owns the authenticated transport. `x-kortix-row-cap` is the server's
-    // row cap — surface it so a truncated finance export is never silent.
-    const kind = by === 'project' ? 'projects' : 'sessions';
-    const options =
-      kind === 'projects'
-        ? {
-            accountId: ctx.accountId,
-            projectId: f.project,
-            from: f.since,
-            to: f.until,
-            sort: f.sort as never,
-          }
-        : {
-            accountId: ctx.accountId,
-            projectId: f.project,
-            ownerId: f.owner,
-            from: f.since,
-            to: f.until,
-            sort: f.sort as never,
-          };
-    const result = await withKortixScope(ctx.auth, () =>
-      kind === 'projects'
-        ? fetchCostExportCsv('projects', options)
-        : fetchCostExportCsv('sessions', options),
-    );
-    const bytes = new Uint8Array(await result.blob.arrayBuffer());
-    await writeFile(f.csv, bytes);
-    if (f.json) {
-      emitJson({ file: f.csv, bytes: bytes.byteLength, row_cap: result.rowCap });
-      return 0;
-    }
-    process.stdout.write(`\n  ${status.ok(`wrote ${bytes.byteLength} bytes to ${f.csv}`)}\n`);
-    if (result.rowCap !== null) {
-      process.stdout.write(`  ${C.dim}capped at ${result.rowCap} rows${C.reset}\n`);
-    }
-    process.stdout.write('\n');
+  // The CSV export wins over the rollup: `--by project --csv <file>` writes
+  // the file, it does not print the table.
+  if (f.csv) return costsCsv(ctx, f, by === 'session' ? 'sessions' : 'projects');
+  if (by === 'project') return costsByProject(ctx, f);
+  if (by === 'session') return costsBySession(ctx, f);
+  return costsSummary(ctx, f);
+}
+
+/** Both CSV routes require a Bearer token, so `fetchCostExportCsv` in the SDK
+ *  owns the authenticated transport. `x-kortix-row-cap` is the server's row
+ *  cap — surface it so a truncated finance export is never silent. `by` is
+ *  already validated to project|session; `name_asc` to the project rollup, so
+ *  the two option shapes narrow without a cast. */
+async function costsCsv(ctx: AccountContext, f: CostsFlags, kind: 'projects' | 'sessions'): Promise<number> {
+  const window = { accountId: ctx.accountId, projectId: f.project, from: f.since, to: f.until };
+  // costsCommand validated --sort against COST_SORTS (and name_asc onto the
+  // project rollup), so the literal union narrows both option shapes without a
+  // `as never`.
+  const sort = f.sort as (typeof COST_SORTS)[number] | undefined;
+  const result = await withKortixScope(ctx.auth, () =>
+    kind === 'projects'
+      ? fetchCostExportCsv('projects', { ...window, sort })
+      : fetchCostExportCsv('sessions', {
+          ...window,
+          ownerId: f.owner,
+          sort: sort === 'name_asc' ? undefined : sort,
+        }),
+  );
+  const bytes = new Uint8Array(await result.blob.arrayBuffer());
+  await writeFile(f.csv!, bytes);
+  if (f.json) {
+    emitJson({ file: f.csv, bytes: bytes.byteLength, row_cap: result.rowCap });
     return 0;
   }
+  process.stdout.write(`\n  ${status.ok(`wrote ${bytes.byteLength} bytes to ${f.csv}`)}\n`);
+  if (result.rowCap !== null) {
+    process.stdout.write(`  ${C.dim}capped at ${result.rowCap} rows${C.reset}\n`);
+  }
+  process.stdout.write('\n');
+  return 0;
+}
 
+async function costsByProject(ctx: AccountContext, f: CostsFlags): Promise<number> {
   const window = { from: f.since, to: f.until, sort: f.sort };
   const paging = { limit: integer(f.limit, '--limit'), offset: integer(f.offset, '--offset') };
-
-  if (by === 'project') {
-    const page = await ctx.client.get<ProjectCostView>(
-      `/usage/cost-by-project${query({ ...window, ...paging, project_id: f.project })}`,
-    );
-    if (f.json) {
-      emitJson(page);
-      return 0;
-    }
-    if (page.projects.length === 0) {
-      process.stdout.write(`\n  ${C.dim}No spend in this window.${C.reset}\n\n`);
-      return 0;
-    }
-    const nameW = Math.max(7, ...page.projects.map((p) => p.project_name.length));
-    process.stdout.write(
-      `\n  ${C.bold}${pad('PROJECT', nameW)}  ${pad('SESSIONS', 8)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
-    );
-    for (const p of page.projects) {
-      process.stdout.write(
-        `  ${pad(p.project_name, nameW)}  ${pad(String(p.session_count), 8)}  ${pad(money(p.llm_cost), 10)}  ${pad(money(p.compute_cost), 10)}  ${money(p.total_cost)}\n`,
-      );
-    }
-    process.stdout.write(`\n  ${C.dim}${page.projects.length} of ${page.total}${C.reset}\n\n`);
+  const page = await ctx.client.get<ProjectCostView>(
+    `/usage/cost-by-project${query({ ...window, ...paging, project_id: f.project })}`,
+  );
+  if (f.json) {
+    emitJson(page);
     return 0;
   }
-
-  if (by === 'session') {
-    const page = await ctx.client.get<SessionCostView>(
-      `/usage/session-costs${query({ ...window, ...paging, project_id: f.project, owner_id: f.owner })}`,
-    );
-    if (f.json) {
-      emitJson(page);
-      return 0;
-    }
-    if (page.sessions.length === 0) {
-      process.stdout.write(`\n  ${C.dim}No sessions in this window.${C.reset}\n\n`);
-      return 0;
-    }
-    const projW = Math.max(7, ...page.sessions.map((s) => s.project_name.length));
-    process.stdout.write(
-      `\n  ${C.bold}${pad('SESSION', 10)}  ${pad('PROJECT', projW)}  ${pad('REQS', 6)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
-    );
-    for (const s of page.sessions) {
-      process.stdout.write(
-        `  ${pad(s.session_id.slice(0, 8), 10)}  ${pad(s.project_name, projW)}  ${pad(String(s.request_count), 6)}  ${pad(money(s.llm_cost), 10)}  ${pad(money(s.compute_cost), 10)}  ${money(s.total_cost)}\n`,
-      );
-    }
-    process.stdout.write(`\n  ${C.dim}${page.sessions.length} of ${page.total}${C.reset}\n\n`);
+  if (page.projects.length === 0) {
+    process.stdout.write(`\n  ${C.dim}No spend in this window.\n\n`);
     return 0;
   }
+  const nameW = Math.max(7, ...page.projects.map((p) => p.project_name.length));
+  process.stdout.write(
+    `\n  ${C.bold}${pad('PROJECT', nameW)}  ${pad('SESSIONS', 8)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
+  );
+  for (const p of page.projects) {
+    process.stdout.write(
+      `  ${pad(p.project_name, nameW)}  ${pad(String(p.session_count), 8)}  ${pad(money(p.llm_cost), 10)}  ${pad(money(p.compute_cost), 10)}  ${money(p.total_cost)}\n`,
+    );
+  }
+  process.stdout.write(`\n  ${C.dim}${page.projects.length} of ${page.total}${C.reset}\n\n`);
+  return 0;
+}
 
+async function costsBySession(ctx: AccountContext, f: CostsFlags): Promise<number> {
+  const window = { from: f.since, to: f.until, sort: f.sort };
+  const paging = { limit: integer(f.limit, '--limit'), offset: integer(f.offset, '--offset') };
+  const page = await ctx.client.get<SessionCostView>(
+    `/usage/session-costs${query({ ...window, ...paging, project_id: f.project, owner_id: f.owner })}`,
+  );
+  if (f.json) {
+    emitJson(page);
+    return 0;
+  }
+  if (page.sessions.length === 0) {
+    process.stdout.write(`\n  ${C.dim}No sessions in this window.\n\n`);
+    return 0;
+  }
+  const projW = Math.max(7, ...page.sessions.map((s) => s.project_name.length));
+  process.stdout.write(
+    `\n  ${C.bold}${pad('SESSION', 10)}  ${pad('PROJECT', projW)}  ${pad('REQS', 6)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
+  );
+  for (const s of page.sessions) {
+    process.stdout.write(
+      `  ${pad(s.session_id.slice(0, 8), 10)}  ${pad(s.project_name, projW)}  ${pad(String(s.request_count), 6)}  ${pad(money(s.llm_cost), 10)}  ${pad(money(s.compute_cost), 10)}  ${money(s.total_cost)}\n`,
+    );
+  }
+  process.stdout.write(`\n  ${C.dim}${page.sessions.length} of ${page.total}${C.reset}\n\n`);
+  return 0;
+}
+
+async function costsSummary(ctx: AccountContext, f: CostsFlags): Promise<number> {
   const summary = await ctx.client.get<CostSummaryView>(
     `/usage/cost-summary${query({
       from: f.since,

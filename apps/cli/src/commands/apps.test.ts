@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as tar from 'tar';
 import type { AppDeployment } from '@kortix/sdk';
-import { archiveAppDirectory, loadManifestAppDefaults, readAppArchive, resolveDeploymentTarget } from './apps';
+import { loadManifestAppDefaults, resolveDeploymentTarget } from './apps';
+import { archiveAppDirectory, readAppArchive } from './apps-deploy';
 
 const temporaryRoots: string[] = [];
 

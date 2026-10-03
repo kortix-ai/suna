@@ -27,6 +27,13 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { loadLocalManifest } from '../manifest.ts';
+import {
+  mergeManifestDefaults,
+  provisionDeployApp,
+  stageArtifact,
+  type DeployFlags,
+  type ManifestAppDefaults,
+} from './apps-deploy.ts';
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
@@ -366,32 +373,6 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   return 0;
 }
 
-interface DeployFlags {
-  app?: string;
-  slug?: string;
-  name?: string;
-  type?: string;
-  image?: string;
-  command?: string[];
-  port?: number;
-  dockerfile?: string;
-  root?: string;
-  outputDir?: string;
-  installCommand?: string;
-  buildCommand?: string;
-  readinessPath?: string;
-  spa?: boolean;
-  provider?: AppHostingProvider;
-  wait: boolean;
-  waitSeconds: number;
-  includeNodeModules: boolean;
-  manifestApp?: string;
-  accessMode?: AppAccessMode;
-  password?: string;
-  memberIds?: string[];
-  groupIds?: string[];
-}
-
 function csv(value: string | undefined): string[] | undefined {
   if (value === undefined) return undefined;
   return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
@@ -440,12 +421,6 @@ function deployFlags(rest: string[]): DeployFlags {
   };
 }
 
-interface ManifestAppDefaults {
-  name: string;
-  root: string;
-  block: AppBlockV2;
-}
-
 export function loadManifestAppDefaults(
   cwd: string,
   requestedName?: string,
@@ -464,106 +439,6 @@ export function loadManifestAppDefaults(
     return null;
   }
   return { name: selected[0], root: dirname(manifest.path), block: selected[1] };
-}
-
-function inferSourceType(root: string, explicit?: string): 'static' | 'bundle' | 'dockerfile' {
-  if (explicit) {
-    if (!['static', 'bundle', 'dockerfile'].includes(explicit)) {
-      throw new Error('--type must be static, bundle, or dockerfile');
-    }
-    return explicit as 'static' | 'bundle' | 'dockerfile';
-  }
-  if (existsSync(join(root, 'Dockerfile'))) return 'dockerfile';
-  if (existsSync(join(root, 'package.json'))) return 'bundle';
-  return 'static';
-}
-
-function buildSource(kind: 'static' | 'bundle' | 'dockerfile', flags: DeployFlags): AppSource {
-  if (kind === 'static') {
-    return {
-      kind,
-      ...(flags.root ? { root: flags.root } : {}),
-      ...(flags.spa !== undefined ? { spa: flags.spa } : {}),
-      ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
-    };
-  }
-  if (kind === 'bundle') {
-    return {
-      kind,
-      ...(flags.installCommand ? { install_command: flags.installCommand } : {}),
-      ...(flags.buildCommand ? { build_command: flags.buildCommand } : {}),
-      ...(flags.outputDir ? { output_dir: flags.outputDir } : {}),
-      ...(flags.spa !== undefined ? { spa: flags.spa } : {}),
-      ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
-    };
-  }
-  if (!flags.command || !flags.port) {
-    throw new Error('Dockerfile deployments require --command and --port');
-  }
-  return {
-    kind,
-    command: flags.command,
-    port: flags.port,
-    ...(flags.dockerfile ? { dockerfile: flags.dockerfile } : {}),
-    ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
-  };
-}
-
-export async function archiveAppDirectory(source: string, includeNodeModules: boolean): Promise<{
-  bytes: Uint8Array;
-  cleanup: () => Promise<void>;
-}> {
-  const temporary = await mkdtemp(join(tmpdir(), 'kortix-app-cli-'));
-  const output = join(temporary, 'source.tar.gz');
-  const matcher = ignore();
-  for (const filename of ['.gitignore', '.dockerignore', '.kortixignore']) {
-    const path = join(source, filename);
-    if (existsSync(path)) matcher.add(await readFile(path, 'utf8'));
-  }
-  matcher.add([
-    '.git',
-    '.git/**',
-    '**/.git',
-    '**/.git/**',
-    '.kortix',
-    '.kortix/**',
-    '**/.kortix',
-    '**/.kortix/**',
-    '.env*',
-    '**/.env*',
-    ...(includeNodeModules ? [] : ['node_modules', 'node_modules/**', '**/node_modules/**']),
-  ]);
-  await tar.c(
-    {
-      cwd: source,
-      file: output,
-      gzip: true,
-      portable: true,
-      noMtime: true,
-      filter: (entry) => {
-        const normalized = entry.replace(/^\.\//, '').replace(/\/$/, '');
-        return normalized === '' || normalized === '.' || !matcher.ignores(normalized);
-      },
-    },
-    ['.'],
-  );
-  return {
-    bytes: new Uint8Array(await readFile(output)),
-    cleanup: () => rm(temporary, { recursive: true, force: true }),
-  };
-}
-
-export async function readAppArchive(source: string): Promise<Uint8Array> {
-  const file = await open(source, 'r');
-  try {
-    const sourceStats = await file.stat();
-    if (!sourceStats.isFile()) {
-      throw new Error('Source archive must be a regular file');
-    }
-    return new Uint8Array(await file.readFile());
-  } finally {
-    await file.close();
-  }
 }
 
 async function waitForDeployment(
@@ -598,58 +473,21 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
     flags.manifestApp,
     !pathArgument && !flags.image,
   );
-  const manifestBlock = manifestDefaults?.block;
-  flags = {
-    ...flags,
-    type: flags.type ?? manifestBlock?.type,
-    image: flags.image ?? manifestBlock?.image,
-    command: flags.command ?? manifestBlock?.command,
-    port: flags.port ?? manifestBlock?.port,
-    dockerfile: flags.dockerfile ?? manifestBlock?.dockerfile,
-    root: flags.root ?? manifestBlock?.root,
-    outputDir: flags.outputDir ?? manifestBlock?.output_dir,
-    installCommand: flags.installCommand ?? manifestBlock?.install_command,
-    buildCommand: flags.buildCommand ?? manifestBlock?.build_command,
-    readinessPath: flags.readinessPath ?? manifestBlock?.readiness_path,
-    spa: flags.spa ?? manifestBlock?.spa,
-  };
+  flags = mergeManifestDefaults(flags, manifestDefaults?.block);
   if (flags.image && pathArgument) throw new Error('Use a source path or --image, not both');
   const sourcePath = flags.image
     ? undefined
     : pathArgument
       ? resolve(pathArgument)
-      : resolve(manifestDefaults?.root ?? process.cwd(), manifestBlock?.path ?? '.');
+      : resolve(manifestDefaults?.root ?? process.cwd(), manifestDefaults?.block?.path ?? '.');
   if (sourcePath && !existsSync(sourcePath)) throw new Error(`Source path does not exist: ${sourcePath}`);
 
   const ctx = await context(options);
   if (!ctx) return 1;
   return scoped(ctx, async () => {
-    let app: App;
-    if (flags.app) {
-      app = await resolveApp(ctx.apps, flags.app);
-    } else if (manifestDefaults) {
-      const manifestSlug = slugFrom(flags.slug ?? manifestDefaults.name);
-      const existing = (await ctx.apps.list()).find((row) => row.slug === manifestSlug);
-      const settings = {
-        ...(manifestBlock?.resources?.cpu !== undefined ? { cpu: manifestBlock.resources.cpu } : {}),
-        ...(manifestBlock?.resources?.memory_gb !== undefined ? { memory_gb: manifestBlock.resources.memory_gb } : {}),
-        ...(manifestBlock?.resources?.disk_gb !== undefined ? { disk_gb: manifestBlock.resources.disk_gb } : {}),
-        ...(manifestBlock?.idle_timeout_seconds !== undefined ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds } : {}),
-        ...(manifestBlock?.monthly_budget_usd !== undefined ? { monthly_budget_usd: manifestBlock.monthly_budget_usd } : {}),
-      };
-      app = existing
-        ? await ctx.apps.update(existing.app_id, settings)
-        : await ctx.apps.create({
-            slug: manifestSlug,
-            name: flags.name ?? manifestDefaults.name,
-            ...settings,
-          });
-    } else {
-      const inferred = flags.image ? flags.image.split('/').pop()!.split(':')[0]! : basename(sourcePath!);
-      const slug = slugFrom(flags.slug ?? inferred);
-      app = await ctx.apps.create({ slug, name: flags.name ?? slug });
-    }
-
+    let app = flags.app
+      ? await resolveApp(ctx.apps, flags.app)
+      : await provisionDeployApp(ctx.apps, flags, manifestDefaults, sourcePath);
     if (flags.accessMode) {
       await ctx.apps.access.update(app.app_id, {
         mode: flags.accessMode,
@@ -660,51 +498,14 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
       app = await ctx.apps.get(app.app_id);
     }
 
-    let artifactId: string;
-    let source: AppSource;
-    let cleanup: (() => Promise<void>) | undefined;
+    const staged = await stageArtifact(ctx.apps, flags, sourcePath, json);
     try {
-      if (flags.image) {
-        if (!flags.command || !flags.port) throw new Error('OCI deployments require --command and --port');
-        const registered = await ctx.apps.artifacts.register({ kind: 'oci_image', image: flags.image });
-        artifactId = registered.artifact.artifact_id;
-        source = {
-          kind: 'oci_image',
-          image: flags.image,
-          command: flags.command,
-          port: flags.port,
-          ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
-        };
-      } else {
-        const sourceStats = await stat(sourcePath!);
-        let bytes: Uint8Array;
-        let inferenceRoot = sourcePath!;
-        if (sourceStats.isDirectory()) {
-          const archived = await archiveAppDirectory(sourcePath!, flags.includeNodeModules);
-          bytes = archived.bytes;
-          cleanup = archived.cleanup;
-        } else if (/\.(?:tar\.gz|tgz)$/i.test(sourcePath!)) {
-          bytes = await readAppArchive(sourcePath!);
-          inferenceRoot = process.cwd();
-        } else {
-          throw new Error('Source must be a directory, .tar.gz, or .tgz archive');
-        }
-        const kind = inferSourceType(inferenceRoot, flags.type);
-        source = buildSource(kind, flags);
-        const artifact = await ctx.apps.artifacts.uploadArchive(bytes, {
-          onProgress: (uploaded, total) => {
-            if (!json && uploaded === total) process.stderr.write(`${C.dim}Uploaded ${total} bytes.${C.reset}\n`);
-          },
-        });
-        artifactId = artifact.artifact_id;
-      }
-
       let deployment = await ctx.apps.deployments.create(app.app_id, {
-        artifact_id: artifactId,
-        source,
+        artifact_id: staged.artifactId,
+        source: staged.source,
         ...(flags.provider ? { provider: flags.provider } : {}),
-        ...(manifestBlock?.env ? { environment: manifestBlock.env } : {}),
-        ...(manifestBlock?.secrets ? { secrets: manifestBlock.secrets } : {}),
+        ...(manifestDefaults?.block?.env ? { environment: manifestDefaults.block.env } : {}),
+        ...(manifestDefaults?.block?.secrets ? { secrets: manifestDefaults.block.secrets } : {}),
       });
       if (flags.wait) deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
       const currentApp = flags.wait ? await ctx.apps.get(app.app_id) : app;
@@ -714,7 +515,7 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
       }
       return 0;
     } finally {
-      await cleanup?.();
+      await staged.cleanup?.();
     }
   });
 }
