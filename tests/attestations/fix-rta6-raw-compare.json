@@ -1,0 +1,15 @@
+{
+  "source_hash": "f9880100e61eec2e286878ba8e7d197a0d769e877a18697b3378ef31d1654291",
+  "diff_files": [
+    "tests/src/flows/runtime-assets.flow.ts"
+  ],
+  "diff_hash": "3d5688eef91f414b81a9a9e467ebcbc60a74bba436cb5873dbdab31750475793",
+  "head": "e72e22f09c6e5f7bee95060fe2037b55a5d0ba33",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:19:30.552Z"
+}

@@ -56,9 +56,10 @@ describe('startErrorMessage, bound to Teams', () => {
     expect(m).not.toContain('/login');
   });
 
-  test('402 and 429 keep the copy Teams already shipped', () => {
+  test('402 keeps the credits copy; 429 reads as a request rate, not a session limit', () => {
     expect(teams(402, {}).toLowerCase()).toContain('out of credits');
-    expect(teams(429, {}).toLowerCase()).toContain('concurrent-session limit');
+    expect(teams(429, {}).toLowerCase()).toContain('too many requests');
+    expect(teams(429, {}).toLowerCase()).not.toContain('session limit');
   });
 
   test('5xx reads as temporary, and an unknown status still leaves a next step', () => {

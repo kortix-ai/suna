@@ -42,7 +42,7 @@ export async function createSession(
   const backpressure =
     queuePolicy === 'never'
       ? null
-      : await sessionBackpressureState(command.project.accountId, command.project.projectId);
+      : await sessionBackpressureState(command.project.projectId);
   const shouldQueue =
     queuePolicy === 'always' || (queuePolicy === 'on_backpressure' && backpressure?.shouldQueue);
   const reason = shouldQueue ? (backpressure?.reason ?? 'queued by policy') : null;
@@ -318,7 +318,6 @@ export async function executeQueuedCreate(
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
     mayManageSystemConnections: payload.mayManageSystemConnections,
-    enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
     // Replay the origin-derivation signals captured at enqueue time so a
@@ -344,7 +343,6 @@ async function executeCreateSession(
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
     body: command.body,
-    enforceAccountCap: command.enforceAccountCap,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
@@ -360,7 +358,6 @@ async function executeCreateSession(
     return {
       status: 'failed',
       error: result.error,
-      headers: result.headers,
       retryable: isRetryableCreateError(result.error.status),
     };
   }
@@ -378,7 +375,6 @@ async function executeCreateSession(
     status: 'created',
     sessionId: result.row!.sessionId,
     row: result.row,
-    headers: result.headers,
     retryable: true,
   };
 }
