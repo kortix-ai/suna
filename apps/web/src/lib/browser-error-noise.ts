@@ -96,6 +96,7 @@ export {
 } from './browser-noise/rules/react';
 export {
   isAnonymousAuthRefreshRace,
+  isMediaPlayNotAllowedNoise,
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
   isOperationErrorPopErrorScopeNoise,

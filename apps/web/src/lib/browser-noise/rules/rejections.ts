@@ -4,6 +4,8 @@ import {
   isFirstPartyResolvedSource,
   isResolvableFrameSource,
   normalizeString,
+  sourcesOf,
+  stripErrorWrappers,
 } from '../evidence';
 
 // Sentry 10.x's GlobalHandlers `onunhandledrejection` integration synthesizes a
@@ -466,6 +468,88 @@ export function isAnonymousAuthRefreshRace(input: {
     !frames.some((frame) => isFirstPartyResolvedSource(frame.filename));
 }
 
+// HTMLMediaElement `play()` NotAllowedError rejection noise — the canonical
+// spec wording of the `NotAllowedError` DOMException the browser rejects
+// `play()` with when its autoplay policy forbids playback:
+//   `The play method is not allowed by the user agent or the platform in the
+//    current context, possibly because the user denied permission.`
+// This is the WebKit (Safari / all iOS browsers) AND Gecko (Firefox) wording;
+// Chrome's programmatic wording differs (`play() failed because the user
+// didn't interact with the document first.`) and is deliberately NOT matched.
+//
+// The dominant first-party surface is the `autoplay` ATTRIBUTE path: the
+// browser's own internal `play()` call behind `<video autoplay>` /
+// `<audio autoplay>`. Safari's low-power mode and Firefox's
+// `dom.media.autoplay.block-*` policy block even a muted autoplay attribute,
+// and the attribute's promise then rejects with this exact message as an
+// UNHANDLED rejection (mechanism
+// `auto.browser.global_handlers.onunhandledrejection`) — a rejection no app
+// code can catch, because the call is the browser's own. The marketing hero
+// and blog `<video autoplay muted loop>` surfaces (`hero-surfaces.tsx`, the
+// blog `[slug]` page) are exactly that shape, reached anonymously, which is
+// why the capture carries 0 identified users. Programmatic `.play()` call
+// sites reject with the same message; `video-renderer.tsx`'s
+// `togglePlay`/`handleRestart` now catch their rejections, and any future
+// first-party call site that does not catch de-minifies to an
+// `apps/web/src/…` frame — which the negative guard below keeps reporting.
+//
+// Better Stack pattern
+// 3fcd960e70b449ebba706970a7b6dc43d89258e52785dea78693c955e6337225
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+// users, first/last 2026-10-03T03:55:02Z, call site `unknown` (KRTX-1333).
+//
+// The message is the user-agent's canonical DOMException wording, never an
+// app-logic phrase — but a FIRST-PARTY `.play()` call CAN produce it (that is
+// the call site this rule wants surfaced), so — mirroring
+// `isOperationErrorPopErrorScopeNoise` / `isConnectionClosedNoise` — the
+// matcher carries a NEGATIVE guard: if any source location (the window.onerror
+// `filename`, any stacktrace frame) resolves, the event keeps reporting. Only
+// the frameless capture (the autoplay-attribute shape: the browser's own call
+// has no first-party stack) is dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `play()` regression the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate.
+const MEDIA_PLAY_NOT_ALLOWED_MESSAGE =
+  'The play method is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.';
+
+/**
+ * Whether a Sentry / window.onerror event is the HTMLMediaElement `play()`
+ * NotAllowedError noise class: the browser's canonical
+ * `The play method is not allowed by the user agent or the platform in the
+ * current context, possibly because the user denied permission.` rejection of
+ * `play()` under its autoplay policy. Requires the EXACT spec wording (the
+ * WebKit/Gecko message; Chrome's different play() wording keeps reporting)
+ * AND a NEGATIVE guard: any resolvable source location — a de-minified
+ * first-party `apps/web/src/…` frame or any other attributable stack — keeps
+ * reporting, so a first-party `.play()` call site that fails to catch its
+ * rejection is never hidden. Only the frameless capture (the `autoplay`
+ * attribute's browser-internal play() rejection, uncatchable in app code) is
+ * dropped. See `MEDIA_PLAY_NOT_ALLOWED_MESSAGE` for the full rationale.
+ */
+export function isMediaPlayNotAllowedNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (stripped !== MEDIA_PLAY_NOT_ALLOWED_MESSAGE) {
+    return false;
+  }
+  const sources = sourcesOf(input);
+  // Negative guard: any resolvable source (first-party `apps/web/src/…` frame,
+  // app chunk, URL, or the window.onerror `filename`) means an attributable
+  // `.play()` call site — keep reporting. A first-party call site that fails
+  // to catch its rejection de-minifies to `apps/web/src/…` and is never
+  // hidden. Only the frameless capture remains → the autoplay-attribute
+  // browser-internal rejection, uncatchable in app code.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
+
 export const REJECTION_RULES: readonly NoiseRule[] = [
   {
     id: 'non-error-undefined-rejection',
@@ -474,6 +558,7 @@ export const REJECTION_RULES: readonly NoiseRule[] = [
   },
   { id: 'anonymous-auth-refresh-race', appliesTo: 'sentry', match: isAnonymousAuthRefreshRace },
   { id: 'pop-error-scope', appliesTo: 'sentry', match: isOperationErrorPopErrorScopeNoise },
+  { id: 'media-play-not-allowed', appliesTo: 'both', match: isMediaPlayNotAllowedNoise },
   { id: 'supabase-token-expired', appliesTo: 'sentry', match: isSupabaseTokenExpiredNoise },
   {
     id: 'non-error-object-not-found',

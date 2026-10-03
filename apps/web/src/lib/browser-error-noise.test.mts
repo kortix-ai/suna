@@ -30,6 +30,7 @@ import {
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isLikelyDomMutationNoise,
+  isMediaPlayNotAllowedNoise,
   isModelNotServableNoise,
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
@@ -12204,4 +12205,130 @@ test('anonymous Supabase refresh race is noise only on the landing page', () => 
     request: { url: input.requestUrl },
     exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
   }), true);
+});
+
+// ---------------------------------------------------------------------------
+// `NotAllowedError: The play method is not allowed by the user agent or the
+// platform in the current context, possibly because the user denied
+// permission.` — the canonical HTMLMediaElement `play()` NotAllowedError
+// message (Better Stack pattern
+// 3fcd960e70b449ebba706970a7b6dc43d89258e52785dea78693c955e6337225, Kortix
+// Frontend prod, application_id 2346967; 1 occurrence / 0 identified users,
+// first/last 2026-10-03T03:55:02Z, call site `unknown` — KRTX-1333).
+//
+// The browser rejects `play()` when its autoplay policy forbids playback:
+// Safari's low-power mode and Firefox's `dom.media.autoplay.block-*` block
+// even a muted autoplay-attribute `<video>`/`<audio>`, and the attribute's
+// INTERNAL play() promise then rejects with this exact message — a rejection
+// no app code can catch, because the call is the browser's own. The spec
+// wording is shared by WebKit and Gecko; Chrome's programmatic wording
+// differs (`play() failed because the user didn't interact with the document
+// first.`) and is deliberately NOT matched here. First-party call sites that
+// reject the same way carry a stack, so the matcher keeps anything with a
+// resolvable source frame reporting (see `isOperationErrorPopErrorScopeNoise`).
+// ---------------------------------------------------------------------------
+
+const MEDIA_PLAY_NOT_ALLOWED_MESSAGE =
+  'The play method is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.';
+
+test('classifies the frameless HTMLMediaElement play-not-allowed rejection', () => {
+  assert.equal(
+    isMediaPlayNotAllowedNoise({
+      message: MEDIA_PLAY_NOT_ALLOWED_MESSAGE,
+      frames: [],
+    }),
+    true,
+  );
+});
+
+test('classifies the play-not-allowed rejection behind its NotAllowedError and unhandled-rejection wrappers', () => {
+  assert.equal(
+    isMediaPlayNotAllowedNoise({ message: `NotAllowedError: ${MEDIA_PLAY_NOT_ALLOWED_MESSAGE}` }),
+    true,
+  );
+  assert.equal(
+    isMediaPlayNotAllowedNoise({
+      message: `Unhandled promise rejection: NotAllowedError: ${MEDIA_PLAY_NOT_ALLOWED_MESSAGE}`,
+    }),
+    true,
+  );
+});
+
+test('suppresses the frameless play-not-allowed Sentry event via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: MEDIA_PLAY_NOT_ALLOWED_MESSAGE,
+            mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the frameless play-not-allowed runtime capture via the runtime gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: `NotAllowedError: ${MEDIA_PLAY_NOT_ALLOWED_MESSAGE}` }),
+    true,
+  );
+});
+
+test('does NOT suppress the play-not-allowed rejection when a first-party frame is present', () => {
+  const frames = [{ filename: 'apps/web/src/features/file-renderers/video-renderer.tsx' }];
+  assert.equal(
+    isMediaPlayNotAllowedNoise({ message: MEDIA_PLAY_NOT_ALLOWED_MESSAGE, frames }),
+    false,
+    `expected first-party play() rejection from ${JSON.stringify(frames)} to keep reporting`,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: MEDIA_PLAY_NOT_ALLOWED_MESSAGE, stacktrace: { frames } }],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress the play-not-allowed rejection when a chunk frame is present', () => {
+  const frames = [{ filename: 'app:///_next/static/chunks/main.js' }];
+  assert.equal(
+    isMediaPlayNotAllowedNoise({ message: MEDIA_PLAY_NOT_ALLOWED_MESSAGE, frames }),
+    false,
+    `expected attributable play() rejection from ${JSON.stringify(frames)} to keep reporting`,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: MEDIA_PLAY_NOT_ALLOWED_MESSAGE, stacktrace: { frames } }],
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: MEDIA_PLAY_NOT_ALLOWED_MESSAGE,
+      filename: 'app:///_next/static/chunks/main.js',
+    }),
+    false,
+  );
+});
+
+test('does NOT match Chrome play() wording or a near-worded message', () => {
+  assert.equal(
+    isMediaPlayNotAllowedNoise({
+      message: 'play() failed because the user didn\'t interact with the document first.',
+    }),
+    false,
+  );
+  assert.equal(
+    isMediaPlayNotAllowedNoise({ message: 'The play method is not allowed by the user agent.' }),
+    false,
+  );
+  assert.equal(isMediaPlayNotAllowedNoise({ message: '' }), false);
 });
