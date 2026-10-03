@@ -149,6 +149,15 @@ describe('kortix <group> <subcommand> --help', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
+  test('projects help does not promise dedicated options pages for fallback subcommands', async () => {
+    for (const args of [['projects', '--help'], ['projects', 'use', '--help']]) {
+      const result = await runCli(args);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('Usage: kortix projects');
+      expect(result.stdout).not.toContain('Run kortix projects <subcommand> --help for options.');
+    }
+  });
+
   for (const group of GROUPS) {
     test(`${group}: every documented subcommand prints help, exit 0, no auth, no HTTP`, async () => {
       const before = requests.length;
