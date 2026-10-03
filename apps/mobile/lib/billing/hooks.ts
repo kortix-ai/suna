@@ -18,7 +18,6 @@ import {
   type CreatePortalSessionResponse,
   type CancelSubscriptionRequest,
   type PurchaseCreditsRequest,
-  type TokenUsage,
 } from './api';
 
 // Re-export types for convenience
@@ -437,17 +436,6 @@ export function usePurchaseCredits() {
   });
 }
 
-export function useDeductTokenUsage() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (usage: TokenUsage) => billingApi.deductTokenUsage(usage),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
 export function useSyncSubscription() {
   const queryClient = useQueryClient();
 
@@ -476,45 +464,6 @@ export function useTransactions(limit = 50, offset = 0) {
     queryKey: [...accountStateKeys.all, 'transactions', limit, offset],
     queryFn: () => billingApi.getTransactions(limit, offset),
     staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-}
-
-// =============================================================================
-// TRIAL HOOKS
-// =============================================================================
-
-export function useTrialStatus(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: [...accountStateKeys.all, 'trial'],
-    queryFn: () => billingApi.getTrialStatus(),
-    enabled: options?.enabled ?? true,
-    staleTime: 1000 * 60 * 5,
-  });
-}
-
-export function useStartTrial() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (request: { success_url: string; cancel_url: string }) =>
-      billingApi.startTrial(request),
-    onSuccess: (data) => {
-      invalidateAccountState(queryClient);
-      if (data.checkout_url) {
-        // In mobile, handled by checkout functions
-      }
-    },
-  });
-}
-
-export function useCancelTrial() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => billingApi.cancelTrial(),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient);
-    },
   });
 }
 

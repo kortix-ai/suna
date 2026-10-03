@@ -7,7 +7,7 @@ describe('isServablePreviewUrl', () => {
   it('accepts a preview origin this deployment serves', () => {
     expect(
       isServablePreviewUrl(
-        'https://dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com/learn',
+        'https://dev-p8081-sbx-01bbbbbbbbbbbbbbbbbbbbbbbb.p.kortix.com/learn',
         TEMPLATE,
       ),
     ).toBe(true);
