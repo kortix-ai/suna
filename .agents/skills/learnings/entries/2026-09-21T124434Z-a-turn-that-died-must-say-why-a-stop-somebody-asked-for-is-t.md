@@ -15,7 +15,7 @@ let a named cause always replace a request or a bare abort. Never derive
 adjacent to the abort (the inbox hold): the tag dies on the next
 `message.updated`, and the adjacent call can time out or be skipped.
 
-**Incident.** Session ad02e053, 2026-09-18: the daemon's memory guard aborted
+**Incident.** One session, 2026-09-18: the daemon's memory guard aborted
 two turns at 97 % box memory and reported `SandboxMemoryGuard`. `apps/api`
 dropped the frame twice — no `turn_message_id` (`identity_mismatch`) and
 `error_retryable: true` (`non_terminal`) — and had no column for the reason.

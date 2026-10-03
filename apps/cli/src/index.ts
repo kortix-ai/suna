@@ -213,7 +213,7 @@ async function main(argv: string[]): Promise<number> {
     (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
       ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
-  if (!connectorMachineCommand) {
+  if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
@@ -483,6 +483,15 @@ function closestCommand(input: string): string | undefined {
 function printActiveHostNotice(argv: readonly string[]): void {
   const notice = renderHostNotice(argv);
   if (notice) process.stderr.write(notice);
+}
+
+/** A `--json` invocation asked for machine-readable output. The human host +
+ *  update notices stay off entirely — even on stderr — so every capture style
+ *  pipes cleanly: `kortix whoami --json | jq` and a merged
+ *  `kortix whoami --json 2>&1 | jq` both parse. The command's own
+ *  diagnostics (auth errors, API failures) always keep their stream. */
+function isMachineOutput(argv: readonly string[]): boolean {
+  return argv.includes('--json');
 }
 
 // Passive, cache-only nudge for subcommands (never touches the network, so it
