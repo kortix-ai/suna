@@ -4,10 +4,15 @@ import type { ConnectorGateConnection } from '@/stores/connector-gate-store';
  * How a failed session create resolves, keyed by the server's error code.
  *
  * - `upgrade`  → open the Team-plan dialog (billing said no); stay put.
- * - `silent`   → the global 429 handler already surfaced it; stay put.
+ * - `silent`   → nothing to show (a timeout the create path already recovers); stay put.
  * - `connect`  → a required connector isn't connected — open the connect-to-start
  *               gate so the user connects their own account and retries; stay put.
  * - `toast`    → terminal failure the user must see; stay put.
+ *
+ * `reportedBySdk` is true for an SDK `ApiError`. The SDK already handed it to
+ * the global error sink (`handleApiError`), which toasts it — an HTTP refusal
+ * and a dropped connection alike — so it resolves to `silent` here instead of
+ * `toast`: two toasts for one refusal is the bug.
  *
  * Every branch stays on the current page: `useNewProjectSession` only navigates
  * AFTER a successful create, so there is no optimistic route to unwind. (The
@@ -18,9 +23,9 @@ import type { ConnectorGateConnection } from '@/stores/connector-gate-store';
  */
 export function resolveCreateFailure(
   code: string | undefined,
+  reportedBySdk = false,
 ): 'upgrade' | 'silent' | 'connect' | 'toast' {
   if (code === 'subscription_required' || code === 'no_account') return 'upgrade';
-  if (code === 'concurrent_session_limit') return 'silent';
   if (code === 'TIMEOUT' || code === 'request_deadline') return 'silent';
   // One code, not two. `CONNECTOR_CONNECTION_REQUIRED` was also listed here and
   // the API has never emitted it — a dead branch that cost nothing only because
@@ -31,7 +36,7 @@ export function resolveCreateFailure(
   // someone to connect an account to something that does not exist; the toast is
   // the honest outcome until a project owner adds it.
   if (code === 'CONNECTOR_CONNECTION_REQUIRED') return 'connect';
-  return 'toast';
+  return reportedBySdk ? 'silent' : 'toast';
 }
 
 export {

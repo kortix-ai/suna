@@ -144,11 +144,6 @@
       "count": 7
     }
   },
-  "src/admin/account-session-limit.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/admin/analytics.ts": {
     "no-console": {
       "count": 2
@@ -1508,11 +1503,6 @@
   "src/projects/lib/sandbox-session-push.ts": {
     "no-console": {
       "count": 4
-    }
-  },
-  "src/projects/lib/session-caps.ts": {
-    "no-console": {
-      "count": 3
     }
   },
   "src/projects/lib/session-control-reconciler.ts": {
