@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: rate-limit accounting only shapes this replica's own log
+// lines, so losing the counts on restart or failover loses no fact the audit
+// trail does not already carry (see the module docblock).
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
