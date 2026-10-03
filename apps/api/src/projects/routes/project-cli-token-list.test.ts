@@ -2,7 +2,7 @@
  * GET /v1/projects/:projectId/cli-token — a person's CLI token list must not
  * show session-bound credentials as ordinary tokens.
  *
- * The runtime mints one project-scoped token per session (`mintConnectorToken`,
+ * The runtime mints one project-scoped token per session (`mintSessionToken`,
  * `platform/services/session-sandbox.ts`, name `Session <8-hex>`) and injects
  * it into the sandbox as `KORTIX_TOKEN`. `listAccountTokens` returns every
  * project-scoped row, so `kortix projects cli-tokens ls` gained rows a person

@@ -53,7 +53,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const tokens = await listAccountTokens(loaded.row.accountId, projectId);
   // Session-bound tokens are not CLI tokens. The runtime mints one per session
-  // (the sandbox's KORTIX_TOKEN, `mintConnectorToken`) and revokes it with the
+  // (the sandbox's KORTIX_TOKEN, `mintSessionToken`) and revokes it with the
   // session; a person never creates one, and revoking the one a live box still
   // holds bricks that session (learnings, 2026-10-01). This is the same call
   // the personal tokens page makes server-side (`listPersonalAccountTokens`,
