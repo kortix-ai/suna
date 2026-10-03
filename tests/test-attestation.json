@@ -1,11 +1,28 @@
 {
-  "source_hash": "5553a8a92dde01931310a37591d42fa0137dcc725c8bd0b4e298e0a9498f4a17",
-  "head": "852677ea11b417c7ccd98392f469c5d4ffe2521c",
+  "source_hash": "b2b28412cba327fde2f799548ef368af624f26ebcaa5db002fd32868b12c5923",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/open-code-harness.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
+    "apps/mobile/lib/highlight/shiki.ts",
+    "packages/db/drizzle/meta/20261003055529_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003055626684_drop_permissions_unused_scope_area_index.concurrent.ts",
+    "packages/db/scripts/drop-permissions-unused-scope-area-index-migration.test.ts",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "497128ed9dbbbc86cb4bc289c241386a2de2f40ce06b381320cf28d06d52e76a",
+  "head": "6fb035192d2e1450dccd4def24259fd4575f6da2",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:36:23.915Z"
+  "at": "2026-10-03T16:08:12.100Z"
 }
