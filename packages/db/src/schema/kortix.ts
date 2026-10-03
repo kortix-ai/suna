@@ -6027,6 +6027,17 @@ export const connectionOAuthApplications = kortixSchema.table(
     }).onDelete('cascade'),
     uniqueIndex('idx_connection_oauth_applications_connection').on(table.connectionId),
     index('idx_connection_oauth_applications_project').on(table.projectId),
+    // Covers the connection_tenant FK (connection_oauth_applications_connection_tenant_fk,
+    // built by 20261003120915220_connection_oauth_applications_tenant_fk_index.concurrent.ts): a
+    // connector_connections row delete/update RI-checks this table by the FK's leading
+    // columns, and that lookup otherwise seq-scans the table (Supabase advisor:
+    // unindexed_foreign_keys, columns 2-5). Named after the FK it serves.
+    index('connection_oauth_applications_connection_tenant_fk').on(
+      table.accountId,
+      table.projectId,
+      table.connectorId,
+      table.connectionId,
+    ),
   ],
 );
 
