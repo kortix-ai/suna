@@ -18,6 +18,12 @@
 export const BAKED_LLM_CATALOG_PATH =
   (process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? '').trim() || '/opt/kortix/llm-catalog.json'
 
+/** The same path read at CALL time, so a test can pin the override after this
+ *  module has loaded. The const above stays for module-load-time readers. */
+export function bakedCatalogPath(): string {
+  return (process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? '').trim() || BAKED_LLM_CATALOG_PATH
+}
+
 /** The host-written env file carrying the live session's variables
  *  (`KORTIX_BRANCH_NAME`, `KORTIX_PROJECT_AUTO_CLONE`, …). Absent on a
  *  developer box; every reader treats that as "not a session sandbox". */

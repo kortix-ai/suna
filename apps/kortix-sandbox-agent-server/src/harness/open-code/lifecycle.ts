@@ -109,7 +109,7 @@ import { access, constants, open, readdir, readFile, realpath, stat } from 'node
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
-import { BAKED_LLM_CATALOG_PATH } from '../shared/box-paths'
+import { bakedCatalogPath } from '../shared/box-paths'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -608,7 +608,7 @@ export async function buildOpencodeConfigContent(
       // path that gates opencode's port bind. loadGatewayCatalog is local-only
       // by construction now; a missing file degrades to the minimal set and is
       // repaired in the background (scheduleCatalogWarm), never by blocking boot.
-      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
       // OpenCode answers "Model not found" for an id its provider map lacks,
       // and the map is a snapshot of an image-baked file. The gateway decides
       // whether a model is served, so every model this box is told to use is
@@ -880,16 +880,16 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
     }
     logger.warn(`[opencode] baked catalog ${opts.catalogFile} unreadable/empty; falling back`)
   }
-  const baked = readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const baked = readCatalogFile(bakedCatalogPath())
   if (baked) {
-    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
+    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${bakedCatalogPath()}`)
     return baked
   }
   // Loud: this means the image was built without its catalog layer, which is a
   // bake regression, not a runtime condition. The session boots fast on the
   // minimal set rather than paying a cross-region fetch to hide it.
   logger.error(
-    `[opencode] no catalog file at ${BAKED_LLM_CATALOG_PATH} — booting on the minimal ` +
+    `[opencode] no catalog file at ${bakedCatalogPath()} — booting on the minimal ` +
       `${Object.keys(MINIMAL_FALLBACK_MODELS).length}-model set. This is an IMAGE BAKE defect ` +
       `(build-context.ts stages kortix-llm-catalog.json unconditionally); boot latency is preserved by design.`,
   )
@@ -898,7 +898,7 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
 
 /** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
 export function catalogIsDegraded(catalogFile?: string): boolean {
-  return !readCatalogFile(catalogFile ?? BAKED_LLM_CATALOG_PATH) && !readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  return !readCatalogFile(catalogFile ?? bakedCatalogPath()) && !readCatalogFile(bakedCatalogPath())
 }
 
 /**
@@ -968,7 +968,7 @@ function sanitizeCatalogForDisk(
 }
 
 export function scheduleCatalogWarm(fetchBaseURL?: string, fetchApiKey?: string): void {
-  scheduleCatalogWarmToPath(fetchBaseURL, fetchApiKey, BAKED_LLM_CATALOG_PATH)
+  scheduleCatalogWarmToPath(fetchBaseURL, fetchApiKey, bakedCatalogPath())
 }
 
 /** Test seam: same repair, to a caller-chosen path (the real one is root-owned). */
@@ -1404,7 +1404,7 @@ export function writeManagedOverlayCatalogFile(opts: {
   targetCatalogFile: string
   managed: Record<string, KortixGatewayModel>
 }): string | null {
-  const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(bakedCatalogPath())
   const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? MINIMAL_FALLBACK_MODELS, opts.managed))
   if (!composed) return null
   mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
@@ -1534,7 +1534,7 @@ export async function convergeManagedModelCatalog(
 /** Write the listing over the catalog file every later config build reads. */
 function persistManagedOverlay(live: Record<string, KortixGatewayModel>, targetCatalogFile?: string): void {
   const written = writeManagedOverlayCatalogFile({
-    currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+    currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
     targetCatalogFile: targetCatalogFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
     managed: live,
   })
