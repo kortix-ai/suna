@@ -833,9 +833,14 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
 // on every modern image; used as the fast, always-available fallback so a slow or
 // down gateway never collapses the picker to the ~13-model minimal set. A host
 // that really bakes one (every Kortix sandbox image) hides it from the test
-// suite through KORTIX_BAKED_LLM_CATALOG_PATH.
-const BAKED_LLM_CATALOG_PATH =
-  process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
+// suite through KORTIX_BAKED_LLM_CATALOG_PATH — read at CALL time (bakedCatalogPath
+// below), so a test can pin it after this module has loaded.
+const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
+
+/** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
+ *  run on a box whose image already carries the real catalog, where the image
+ *  file would otherwise answer for a missing one. */
+const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
  *  Returns null when missing, unreadable, or empty so callers can fall through. */
@@ -886,16 +891,16 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
     }
     logger.warn(`[opencode] baked catalog ${opts.catalogFile} unreadable/empty; falling back`)
   }
-  const baked = readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const baked = readCatalogFile(bakedCatalogPath())
   if (baked) {
-    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
+    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${bakedCatalogPath()}`)
     return baked
   }
   // Loud: this means the image was built without its catalog layer, which is a
   // bake regression, not a runtime condition. The session boots fast on the
   // minimal set rather than paying a cross-region fetch to hide it.
   logger.error(
-    `[opencode] no catalog file at ${BAKED_LLM_CATALOG_PATH} — booting on the minimal ` +
+    `[opencode] no catalog file at ${bakedCatalogPath()} — booting on the minimal ` +
       `${Object.keys(MINIMAL_FALLBACK_MODELS).length}-model set. This is an IMAGE BAKE defect ` +
       `(build-context.ts stages kortix-llm-catalog.json unconditionally); boot latency is preserved by design.`,
   )
@@ -904,7 +909,7 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
 
 /** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
 export function catalogIsDegraded(catalogFile?: string): boolean {
-  return !readCatalogFile(catalogFile ?? BAKED_LLM_CATALOG_PATH) && !readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  return !readCatalogFile(catalogFile ?? bakedCatalogPath()) && !readCatalogFile(bakedCatalogPath())
 }
 
 /**
@@ -1410,7 +1415,7 @@ export function writeManagedOverlayCatalogFile(opts: {
   targetCatalogFile: string
   managed: Record<string, KortixGatewayModel>
 }): string | null {
-  const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(bakedCatalogPath())
   const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? MINIMAL_FALLBACK_MODELS, opts.managed))
   if (!composed) return null
   mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
