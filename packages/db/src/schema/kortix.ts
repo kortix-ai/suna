@@ -2851,7 +2851,6 @@ export const kortixApiKeys = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_kortix_api_keys_public_key').on(table.publicKey),
     index('idx_kortix_api_keys_secret_hash').on(table.secretKeyHash),
-    index('idx_kortix_api_keys_sandbox').on(table.sandboxId),
     index('idx_kortix_api_keys_account').on(table.accountId),
   ],
 );
