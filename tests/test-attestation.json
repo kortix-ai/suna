@@ -1,11 +1,41 @@
 {
-  "source_hash": "3239f19aaf2a29ac4457b3cba7eace843719db8dcce898cb2ae362a1f8634918",
-  "head": "67d6b69fd8a41489a9ce8688ae56055437a9607f",
+  "source_hash": "7e5cfe07f11c652ee0af6aa2e3db1e362edacc87d2c91d2fbee8dc43dcf1ea17",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
+    "apps/api/src/__tests__/unit-channel-model-access.test.ts",
+    "apps/api/src/__tests__/unit-channel-vision-model.test.ts",
+    "apps/api/src/__tests__/unit-choose-default-model.test.ts",
+    "apps/api/src/billing/services/plan-catalog.ts",
+    "apps/api/src/llm-gateway/hooks.test.ts",
+    "apps/api/src/llm-gateway/hooks.ts",
+    "apps/api/src/llm-gateway/internal-routes.test.ts",
+    "apps/api/src/llm-gateway/internal-routes.ts",
+    "apps/api/src/llm-gateway/models/catalog-models.test.ts",
+    "apps/api/src/llm-gateway/models/catalog-models.ts",
+    "apps/api/src/llm-gateway/models/served-managed-models.ts",
+    "apps/api/src/llm-gateway/resolution/effective.test.ts",
+    "apps/api/src/llm-gateway/resolution/effective.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.ts",
+    "apps/api/src/projects/lib/session-create.ts",
+    "apps/api/src/projects/lib/sessions.create-characterization.test.ts",
+    "apps/api/src/projects/routes/models.ts",
+    "apps/api/src/projects/routes/session-open-bundle.test.ts",
+    "apps/api/src/projects/routes/session-open-bundle.ts",
+    "apps/api/src/projects/session-title-generate.ts",
+    "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
+    "packages/sdk/src/core/models/composer-model.ts",
+    "packages/sdk/src/core/models/composer-models.test.ts",
+    "packages/sdk/src/core/models/model-visibility.ts",
+    "packages/sdk/src/react/use-model-defaults.test.ts"
+  ],
+  "diff_hash": "a4739608c1f4e54c14b1119f4b8ea4e5e3215ae84bb25f3285a4acd0474b8890",
+  "head": "4a676090fa5f4d6aae4b6c9f305faabec41c448e",
   "passed": false,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T16:56:57.400Z"
+  "at": "2026-10-03T17:37:09.030Z"
 }
