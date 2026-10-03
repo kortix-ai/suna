@@ -5,7 +5,7 @@ commit: 8d95a67a2e
 # Bind retained message retries to their originating runtime
 
 **Incident (2026-09-15, PR #7267):** production retried three native conversation
-IDs against sandbox `61e4c0bd-bacd-4fc1-80e2-df289cf6772a`. Database records mapped
+IDs against one sandbox. Database records mapped
 each conversation to a different sandbox. Cached controllers resolved the global
 active client after navigation. Message reads returned repeated `404` responses.
 

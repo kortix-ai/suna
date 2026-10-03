@@ -233,7 +233,7 @@ describe('pushSessionScopeToSandbox', () => {
   });
 });
 
-// Prod 2026-08-27, session b3848cf5: `session_sandboxes.status` was 'stopped'
+// A prod session, 2026-08-27: `session_sandboxes.status` was 'stopped'
 // while the Platinum VM was genuinely running and serving prompts. Every push
 // filtered the lookup on `status = 'active'` and returned a bare
 // 'no active sandbox' that no caller logged, so the session silently received

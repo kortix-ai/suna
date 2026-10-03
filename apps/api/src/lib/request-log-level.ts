@@ -106,3 +106,22 @@ export function shouldSuppressRequestLog(input: {
     (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
   );
 }
+
+const CLIENT_VERSION_RE = /^[0-9a-z][0-9a-z.+/-]{0,63}$/i;
+const CREDENTIAL_PREFIX_RE = /^(?:sk-|gh[opusr]_|kortix_(?:pat|sbx)_)/i;
+
+/**
+ * The caller's self-reported `<surface>/<version>` (`X-Kortix-Client-Version`,
+ * e.g. `cli/0.13.42`) for the `Request completed:` line, so a route or alias
+ * can be retired once no supported client version calls it. Telemetry only:
+ * any client can send any value, so it never reaches the audit trail, which
+ * records the authenticated credential. A missing, malformed or
+ * credential-shaped value is omitted.
+ */
+export function requestClientLogFields(
+  header: (name: string) => string | undefined,
+): { client_version?: string } {
+  const value = header('x-kortix-client-version')?.trim() ?? '';
+  if (!CLIENT_VERSION_RE.test(value) || CREDENTIAL_PREFIX_RE.test(value)) return {};
+  return { client_version: value };
+}
