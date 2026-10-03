@@ -3172,10 +3172,7 @@ export const oauthRefreshTokens = kortixSchema.table(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex('idx_oauth_refresh_token_hash').on(table.tokenHash),
-    index('idx_oauth_refresh_tokens_client').on(table.clientId),
-  ],
+  (table) => [uniqueIndex('idx_oauth_refresh_token_hash').on(table.tokenHash)],
 );
 
 export const sandboxesRelations = relations(sandboxes, ({ one, many }) => ({
