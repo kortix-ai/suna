@@ -26,7 +26,7 @@ import type { DaemonServer } from '../contract/server'
 /** The host-written env file the restore watchers read. Tests point it at an
  *  absent path: a Kortix box's own /etc/pt-env would otherwise answer for a rig
  *  that has no session env file. */
-const ptEnvFile = () => process.env.KORTIX_PT_ENV_FILE ?? '/etc/pt-env'
+const ptEnvFile = () => process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env'
 
 export function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
   for (const path of paths) {

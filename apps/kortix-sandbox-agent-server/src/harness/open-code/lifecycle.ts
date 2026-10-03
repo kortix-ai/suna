@@ -833,9 +833,9 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
 // on every modern image; used as the fast, always-available fallback so a slow or
 // down gateway never collapses the picker to the ~13-model minimal set. A host
 // that really bakes one (every Kortix sandbox image) hides it from the test
-// suite through KORTIX_BAKED_LLM_CATALOG_PATH.
-const BAKED_LLM_CATALOG_PATH =
-  process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
+// suite through KORTIX_BAKED_LLM_CATALOG_PATH — read at CALL time (bakedCatalogPath
+// below), so a test can pin it after this module has loaded.
+const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 
 /** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
  *  run on a box whose image already carries the real catalog, where the image
