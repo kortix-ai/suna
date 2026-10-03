@@ -18,6 +18,8 @@ import {
 import { type LoadedAgents, extractAgents } from '../agents';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
+import { GitOperationError } from './mirror';
+import { configuredTimeoutMs, TimeoutError, withTimeout } from '../../shared/with-timeout';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
 async function optionalFile(project: GitBackedProject, filePath: string) {
@@ -412,7 +414,41 @@ async function scanCommands(
   );
 }
 
+/** Wall-clock budget for one project-config load (manifest + agents/skills/
+ * commands scans). Every git op inside already carries its own per-op timeout
+ * and a bounded retry ladder, but a project whose git remote hangs pays the
+ * FULL ladder again on every read it triggers: measured in prod (2026-10-03),
+ * the manifest stage of one `GET /v1/projects/:id/secrets` ran 542474 ms
+ * against a hung remote while the client was 503'd at the 25 s request
+ * deadline. Bounding the whole load keeps every caller inside that deadline;
+ * the losing ladder keeps settling in the background under its own per-op
+ * timeouts. */
 export async function loadProjectConfig(
+  project: GitBackedProject,
+  files?: ProjectFileEntry[],
+): Promise<ProjectConfigSummary> {
+  try {
+    return await withTimeout(
+      buildProjectConfig(project, files),
+      configuredTimeoutMs('KORTIX_PROJECT_CONFIG_TIMEOUT_MS', 10_000, 1_000),
+      'project config load',
+    );
+  } catch (err) {
+    // A `TimeoutError` is not one of the per-op git failures the mirror already
+    // classifies, so `isTransientGitMirrorError` would not recognize it and it
+    // would surface as an unhandled 500. Map it into the same retryable
+    // `GitOperationError` the mirror throws for its own per-op timeouts:
+    // callers without their own catch get the standard transient-git 503
+    // (Retry-After, no Sentry page), and the secrets route's catch degrades to
+    // `manifest_status: 'error'` inside the request deadline.
+    if (err instanceof TimeoutError) {
+      throw new GitOperationError({ kind: 'timeout', message: err.message, gitArgs: ['config-load'], cause: err });
+    }
+    throw err;
+  }
+}
+
+async function buildProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
 ): Promise<ProjectConfigSummary> {
