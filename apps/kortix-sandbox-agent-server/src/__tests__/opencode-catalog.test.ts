@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@/harness/open-code/fallback-models'
+import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@kortix/api-contract/fallback-models'
 import {
   buildOpencodeConfigContent,
   catalogIsDegraded,

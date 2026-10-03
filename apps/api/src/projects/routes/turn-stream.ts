@@ -19,7 +19,7 @@ import {
   relayContent,
   settleTurnEnd,
 } from './turn-stream-handlers';
-import { normalizeRuntimeRelayBody } from '@kortix/api-contract/runtime-relay';
+import { normalizeRuntimeRelayBody, TurnStreamRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './turn-stream-kind';
 
 // POST /v1/projects/:projectId/turn-stream
@@ -38,7 +38,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // Documents the frame; the handler owns validation (its own 400s) and
+      // accepts the pre-W3 spellings an older daemon sends.
+      body: { content: { 'application/json': { schema: TurnStreamRelayBodySchema.or(AnyObject) } } },
     },
     responses: {
       200: {

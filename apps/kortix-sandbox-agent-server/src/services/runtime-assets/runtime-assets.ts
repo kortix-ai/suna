@@ -1,3 +1,4 @@
+import { MANAGED_SKILLS_DIR, RUNTIME_ASSETS_STATE_PATH } from '@kortix/api-contract/sandbox-layout'
 import { createHash } from 'node:crypto'
 import {
   chmod,
@@ -114,9 +115,9 @@ function cliPathFallback(): string {
 }
 
 /** Image-baked managed-skill overlay root; created here when the image had none. */
-const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
+const DEFAULT_MANAGED_SKILLS_DIR = MANAGED_SKILLS_DIR
 /** Digest bookkeeping, so a converged box never re-hashes a 100 MB binary. */
-const DEFAULT_STATE_PATH = '/opt/kortix/runtime-assets-state.json'
+const DEFAULT_STATE_PATH = RUNTIME_ASSETS_STATE_PATH
 
 /**
  * The image-baked daemon — an IMMUTABLE FLOOR, not an update target.

@@ -742,18 +742,6 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     expect(upstream.searchParams.get('wake')).toBeNull();
     expect(upstream.searchParams.get('cursor')).toBe('5');
   });
-
-  // Both sides of one contract in two packages: the daemon's health payload
-  // must publish the field the lookup reads.
-  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
-    const health = await Bun.file(
-      new URL(
-        '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
-        import.meta.url,
-      ).pathname,
-    ).text();
-    expect(health).toContain('port: opencode.getActivePort()');
-  });
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

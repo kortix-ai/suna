@@ -14,6 +14,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
+import { HarnessHealthSchema, healthRuntimePort } from '@kortix/api-contract/runtime-relay'
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import {
   buildOpenCodeTestApp,
@@ -85,6 +86,9 @@ describe('daemon proxy auth gate', () => {
     // The pre-W3 flat fields an older API reads, composed from the block.
     expect(body.opencode_pid).toBe(body.harness.details.pid)
     expect(body.opencode_port).toBe(body.harness.details.port)
+    // apps/api reads the runtime port for its PTY proxy with this function.
+    expect(HarnessHealthSchema.parse(body.harness).details.port).toBe(4096)
+    expect(healthRuntimePort(body)).toBe(4096)
     expect(body.runtime_truth).toBeDefined()
     const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
     expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))
