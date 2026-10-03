@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { chmod, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { logger } from '../logger'
-import { type DriveRemote, DriveSyncRefused, type RemoteEntry, sha256File } from './remote'
+import { type DriveRemote, DriveSyncRefused, RemoteChanged, type RemoteEntry, sha256File } from './remote'
 
 /**
  * One drive folder in the box, kept in sync with its drive.
@@ -248,7 +248,16 @@ export class MountSync {
     // Gone from the drive: the change here re-creates it.
     const drifted = before ? !base || remoteToken(before) !== base.rv : false
     if (drifted) return 'conflict'
-    const { version, sha256 } = await this.opts.remote.upload(this.remotePath(rel), this.localPath(rel))
+    // Conditional on the version just checked: a write landing on the drive
+    // in between is refused by the API (409), and both versions are kept.
+    let uploaded: { version: string | null; sha256: string }
+    try {
+      uploaded = await this.opts.remote.upload(this.remotePath(rel), this.localPath(rel), before ? remoteToken(before) : 'absent')
+    } catch (err) {
+      if (err instanceof RemoteChanged) return 'conflict'
+      throw err
+    }
+    const { version, sha256 } = uploaded
     const after = await this.opts.remote.stat(this.remotePath(rel))
     const now = await this.localStat(rel)
     // Someone else wrote the path right after this upload: keep the old base, so
@@ -466,6 +475,21 @@ export class MountSync {
     }
     for (const rel of this.manifest.keys()) if (!local.has(rel)) n++
     return this.opts.readOnly ? 0 : n
+  }
+
+  /**
+   * Keep the local copy at `dest` instead of deleting it: the drive left the
+   * session (or turned read-only) with changes the drive does not have.
+   * `move` false copies it, leaving the mount in place.
+   */
+  async setAside(dest: string, move: boolean): Promise<void> {
+    await mkdir(dirname(dest), { recursive: true })
+    if (move) {
+      await rename(this.opts.localDir, dest)
+      await rm(this.opts.statePath, { force: true }).catch(() => {})
+    } else {
+      await cp(this.opts.localDir, dest, { recursive: true, filter: (src) => !src.split('/').pop()!.startsWith(TEMP_PREFIX) })
+    }
   }
 
   /** Remove the local copy and its state (the drive left the session). */

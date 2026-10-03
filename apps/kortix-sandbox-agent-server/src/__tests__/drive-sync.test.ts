@@ -267,3 +267,115 @@ describe('drive sync in the daemon', () => {
     }
   })
 })
+
+describe('drive sync data safety', () => {
+  test('a drive write landing between the check and the upload is refused, and both versions are kept', async () => {
+    fake.write(DRIVE, '/plan.md', 'base')
+    const sync = mount()
+    await sync.cycle()
+    edit('plan.md', 'mine')
+    // Another writer lands after the box checked the drive's version, before its write.
+    fake.beforeWrite = (driveId, path) => {
+      if (path !== '/plan.md') return
+      fake.beforeWrite = null
+      fake.write(driveId, path, 'theirs, landed mid-push')
+    }
+    const stats = await sync.cycle()
+    expect(stats.conflicts).toBe(1)
+    expect(fake.read(DRIVE, '/plan.md')).toBe('theirs, landed mid-push')
+    expect(read('plan.md')).toBe('theirs, landed mid-push')
+    const copy = fake.paths(DRIVE).find((p) => p.startsWith('/plan (conflict '))!
+    expect(fake.read(DRIVE, copy)).toBe('mine')
+  })
+
+  test('the same race on a block upload is refused at commit, and both versions are kept', async () => {
+    const big = new Uint8Array(9 * 1024 * 1024).fill(7)
+    fake.write(DRIVE, '/big.bin', big)
+    const sync = mount()
+    await sync.cycle()
+    const mine = new Uint8Array(9 * 1024 * 1024).fill(8)
+    writeFileSync(local('big.bin'), mine)
+    fake.beforeWrite = (driveId, path) => {
+      if (path !== '/big.bin') return
+      fake.beforeWrite = null
+      fake.write(driveId, path, 'theirs')
+    }
+    expect((await sync.cycle()).conflicts).toBe(1)
+    expect(fake.read(DRIVE, '/big.bin')).toBe('theirs')
+    expect(fake.paths(DRIVE).some((p) => p.startsWith('/big (conflict '))).toBe(true)
+  })
+
+  function service(settleMs: number) {
+    return new DriveSyncService({ api: api(), root: dir, stateDir: join(dir, '.state'), settleMs })
+  }
+
+  test('a drive leaving the session with unsent changes is kept aside, never deleted, and the notes say where', async () => {
+    fake.mounts = [{ driveId: DRIVE, name: 'Team', mountPath: '/drives/team', readOnly: false }]
+    fake.write(DRIVE, '/doc.md', 'shared')
+    const svc = service(60_000)
+    await svc.refreshMounts()
+    await svc.syncOnce()
+    writeFileSync(join(dir, 'team', 'draft.md'), 'not sent yet')
+    // Detached: the API no longer lets this box write the drive.
+    fake.mounts = []
+    await svc.refreshMounts()
+    expect(existsSync(join(dir, 'team'))).toBe(false)
+    const [kept] = readdirSync(join(dir, '.detached'))
+    expect(kept).toMatch(/^team-\d{8}-\d{6}$/)
+    expect(readFileSync(join(dir, '.detached', kept!, 'draft.md'), 'utf8')).toBe('not sent yet')
+    expect(fake.read(DRIVE, '/draft.md')).toBeNull()
+    const notes = readFileSync(join(dir, 'README.md'), 'utf8')
+    expect(notes).toContain('/drives/team (Team) left this session with 1 change(s)')
+    expect(notes).toContain(`/drives/.detached/${kept}`)
+  })
+
+  test('the API’s pre-detach push of one drive sends its changes, so the detach then deletes nothing unsent', async () => {
+    const OTHER = 'aaaaaaaa-0000-0000-0000-000000000002'
+    fake.mounts = [
+      { driveId: DRIVE, name: 'Team', mountPath: '/drives/team', readOnly: false },
+      { driveId: OTHER, name: 'Agent', mountPath: '/drives/agent', readOnly: false },
+    ]
+    const svc = service(60_000)
+    await svc.refreshMounts()
+    await svc.syncOnce()
+    writeFileSync(join(dir, 'team', 'a.md'), 'team change')
+    writeFileSync(join(dir, 'agent', 'b.md'), 'agent change')
+    expect((await svc.flush(10_000, DRIVE)).ok).toBe(true)
+    expect(fake.read(DRIVE, '/a.md')).toBe('team change')
+    expect(fake.read(OTHER, '/b.md')).toBeNull()
+    fake.mounts = fake.mounts.filter((m) => m.driveId !== DRIVE)
+    await svc.refreshMounts()
+    expect(existsSync(join(dir, 'team'))).toBe(false)
+    expect(existsSync(join(dir, '.detached'))).toBe(false)
+  })
+
+  test('a drive turning read-only keeps a copy of unsent edits before they are put back', async () => {
+    fake.mounts = [{ driveId: DRIVE, name: 'Team', mountPath: '/drives/team', readOnly: false }]
+    fake.write(DRIVE, '/doc.md', 'official')
+    const svc = service(60_000)
+    await svc.refreshMounts()
+    await svc.syncOnce()
+    writeFileSync(join(dir, 'team', 'doc.md'), 'my unsent edit')
+    fake.mounts = [{ ...fake.mounts[0]!, readOnly: true }]
+    await svc.refreshMounts()
+    await svc.syncOnce()
+    const [kept] = readdirSync(join(dir, '.detached'))
+    expect(readFileSync(join(dir, '.detached', kept!, 'doc.md'), 'utf8')).toBe('my unsent edit')
+    expect(readFileSync(join(dir, 'team', 'doc.md'), 'utf8')).toBe('official')
+    expect(fake.read(DRIVE, '/doc.md')).toBe('official')
+  })
+
+  test('without a writable /drives (no passwordless sudo) the drives sync into the fallback folder', async () => {
+    const { resolveDriveSyncRoot } = await import('../drive-sync')
+    const locked = join(dir, 'locked')
+    mkdirSync(locked)
+    chmodSync(locked, 0o555)
+    try {
+      expect(resolveDriveSyncRoot(join(locked, 'drives'), join(dir, 'home', 'drives'))).toBe(join(dir, 'home', 'drives'))
+      expect(existsSync(join(dir, 'home', 'drives'))).toBe(true)
+      expect(resolveDriveSyncRoot(join(dir, 'ok'), join(dir, 'unused'))).toBe(join(dir, 'ok'))
+    } finally {
+      chmodSync(locked, 0o755)
+    }
+  })
+})

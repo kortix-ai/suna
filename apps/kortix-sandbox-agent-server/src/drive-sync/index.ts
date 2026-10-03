@@ -1,3 +1,4 @@
+import { accessSync, constants, mkdirSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Hono } from 'hono'
@@ -35,6 +36,8 @@ export class DriveSyncService {
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
   private notes: string | null = null
+  private written: string | null = null
+  private readonly notices: string[] = []
   private tick: Promise<void> | null = null
 
   constructor(private readonly opts: DriveSyncServiceOptions) {
@@ -58,14 +61,17 @@ export class DriveSyncService {
     const want = new Map(answer.mounts.map((m) => [this.key(m), m]))
     for (const [key, entry] of this.mounts) {
       if (want.has(key)) continue
-      // The drive left the session (detached, access removed, drive deleted): its copy goes too.
+      // The drive left the session (detached, access removed, drive deleted).
+      // The API already pushed it on a detach; anything still not on the
+      // drive is kept aside, never deleted.
       this.mounts.delete(key)
-      await entry.sync.discard()
-      logger.info('[drive-sync] drive removed from the session', { mountPath: entry.info.mountPath })
+      await this.release(entry, true)
     }
     for (const [key, info] of want) {
       const have = this.mounts.get(key)
       if (have) {
+        // Turning read-only reverts local edits: keep a copy of any the drive lacks first.
+        if (info.readOnly && !have.info.readOnly) await this.release(have, false)
         have.sync.setReadOnly(info.readOnly)
         have.info = info
         continue
@@ -83,14 +89,49 @@ export class DriveSyncService {
       })
       logger.info('[drive-sync] syncing drive', { mountPath: info.mountPath, readOnly: info.readOnly })
     }
-    if (answer.notes !== null && answer.notes !== this.notes) {
-      await mkdir(this.root, { recursive: true })
-      const tmp = join(this.root, '.kortix-sync-readme')
-      await writeFile(tmp, answer.notes, { mode: 0o644 })
-      await rename(tmp, join(this.root, 'README.md'))
-      this.notes = answer.notes
-    }
+    if (answer.notes !== null) this.notes = answer.notes
+    await this.writeNotes()
     return true
+  }
+
+  /**
+   * A mount loses write (`gone`: leaves the box). Push what is left; what
+   * still is not on the drive goes to /drives/.detached/<name>-<time> and the
+   * notes say so. Only a copy with nothing unsent is deleted.
+   */
+  private async release(entry: { info: SyncMountInfo; sync: MountSync }, gone: boolean): Promise<void> {
+    const { info, sync } = entry
+    let pending = await sync.pendingLocalChanges().catch(() => 1)
+    if (pending > 0) {
+      await sync.cycle({ flush: true }).catch(() => {})
+      pending = await sync.pendingLocalChanges().catch(() => 1)
+    }
+    if (pending === 0) {
+      if (gone) await sync.discard()
+      logger.info('[drive-sync] drive released, nothing unsent', { mountPath: info.mountPath, gone })
+      return
+    }
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-')
+    const dest = join(this.root, '.detached', `${info.mountPath.split('/').pop()}-${stamp}`)
+    await sync.setAside(dest, gone)
+    const shown = dest.startsWith(this.root) ? `${DRIVES_PREFIX}${dest.slice(this.root.length)}` : dest
+    this.notices.push(
+      `${info.mountPath} (${info.name}) ${gone ? 'left this session' : 'became read-only'} with ${pending} change(s) the drive does not have. They are kept at ${shown}.`,
+    )
+    logger.warn('[drive-sync] unsent changes kept aside', { mountPath: info.mountPath, keptAt: dest, pending, gone })
+  }
+
+  private async writeNotes(): Promise<void> {
+    if (this.notes === null) return
+    const text = this.notices.length
+      ? `${this.notes}\n## Kept aside\n\n${this.notices.map((n) => `- ${n}`).join('\n')}\n`
+      : this.notes
+    if (text === this.written) return
+    await mkdir(this.root, { recursive: true })
+    const tmp = join(this.root, '.kortix-sync-readme')
+    await writeFile(tmp, text, { mode: 0o644 })
+    await rename(tmp, join(this.root, 'README.md'))
+    this.written = text
   }
 
   /** One pass over every mount. A failing mount does not stop the others. */
@@ -121,16 +162,24 @@ export class DriveSyncService {
     void loop()
   }
 
-  /** Push everything not yet on the drives, now (the box is about to stop). */
-  async flush(timeoutMs = 25_000): Promise<{ ok: boolean }> {
+  /**
+   * Push everything not yet on the drives (or on one drive), now: the box is
+   * about to stop or the drive is leaving. `ok` only when nothing is left unsent.
+   */
+  async flush(timeoutMs = 25_000, driveId?: string): Promise<{ ok: boolean }> {
+    const targets = [...this.mounts.values()].filter((m) => !driveId || m.info.driveId === driveId)
     const work = (async () => {
       await this.tick?.catch(() => {})
-      await this.syncOnce({ flush: true })
+      await Promise.all(targets.map((m) => m.sync.cycle({ flush: true }).catch(() => {})))
+      let left = 0
+      for (const m of targets) left += await m.sync.pendingLocalChanges().catch(() => 1)
+      return left
     })()
     const timedOut = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), timeoutMs).unref?.())
-    const result = await Promise.race([work.then(() => 'done' as const), timedOut])
+    const result = await Promise.race([work, timedOut])
     if (result === 'timeout') logger.warn('[drive-sync] final push did not finish in time', { timeoutMs })
-    return { ok: result === 'done' }
+    else if (result > 0) logger.warn('[drive-sync] final push left changes unsent', { left: result })
+    return { ok: result === 0 }
   }
 
   stop(): void {
@@ -140,6 +189,28 @@ export class DriveSyncService {
 }
 
 let service: DriveSyncService | null = null
+
+/**
+ * The folder the drives sync into: `preferred` (/drives) when the runtime
+ * user can write it. The entrypoint hands /drives over with sudo; an image
+ * without passwordless sudo leaves it root-owned, and the drives then sync
+ * into `fallback` (~/drives), loudly, instead of not at all.
+ */
+export function resolveDriveSyncRoot(preferred: string, fallback: string): string {
+  try {
+    mkdirSync(preferred, { recursive: true })
+    accessSync(preferred, constants.W_OK)
+    return preferred
+  } catch (err) {
+    logger.error('[drive-sync] drives folder is not writable by the runtime user; syncing into the fallback', {
+      preferred,
+      fallback,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    mkdirSync(fallback, { recursive: true })
+    return fallback
+  }
+}
 
 /** Start drive sync when the API asked for it. One per process. */
 export function startDriveSyncFromEnv(cfg: Config, env: NodeJS.ProcessEnv = process.env): DriveSyncService | null {
@@ -151,9 +222,13 @@ export function startDriveSyncFromEnv(cfg: Config, env: NodeJS.ProcessEnv = proc
     logger.error('[drive-sync] missing API/project/session/token env; drives will not sync')
     return null
   }
+  const root = resolveDriveSyncRoot(
+    env.KORTIX_DRIVE_SYNC_ROOT?.trim() || DRIVES_PREFIX,
+    join(env.HOME?.trim() || '/home/kortix', 'drives'),
+  )
   service = new DriveSyncService({
     api: createHttpDriveSyncApi({ apiUrl: cfg.apiUrl, projectId: cfg.projectId, sessionId, token: cfg.sandboxToken }),
-    root: env.KORTIX_DRIVE_SYNC_ROOT?.trim() || DRIVES_PREFIX,
+    root,
     stateDir: join(resolveKortixRuntimeStateDirectory(env), 'drive-sync'),
   })
   service.start()
@@ -176,7 +251,7 @@ export function createDriveSyncRouter(cfg: Config): Hono {
     const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
     if (!auth.ok) return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
     if (!service) return c.json({ ok: true, syncing: false })
-    const { ok } = await service.flush()
+    const { ok } = await service.flush(25_000, c.req.query('driveId') || undefined)
     return c.json({ ok, syncing: true }, ok ? 200 : 202)
   })
   return app

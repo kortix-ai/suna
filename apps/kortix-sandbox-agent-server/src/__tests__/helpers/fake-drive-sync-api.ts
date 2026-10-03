@@ -25,6 +25,8 @@ export interface FakeDriveSyncApi {
   mounts: SyncMountInfo[]
   ready: boolean
   notes: string
+  /** Runs before a sync write is checked: a test lands another writer's change here. */
+  beforeWrite: ((driveId: string, path: string) => void) | null
   /** Blocks uploaded through the block protocol, by sha. */
   blocks: Map<string, Uint8Array>
   write(driveId: string, path: string, content: string | Uint8Array): void
@@ -66,6 +68,7 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
     ready: true,
     notes: '# Drives in this session\n',
     blocks: new Map(),
+    beforeWrite: null,
     write: (driveId, path, content) => {
       put(driveId, path, typeof content === 'string' ? new TextEncoder().encode(content) : content)
     },
@@ -142,8 +145,19 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
         }
         return new Response(f.data, { headers: { 'content-length': String(f.data.byteLength) } })
       }
+      // The API's conditional write: `expect` must still be the drive's version.
+      const stale = (p: string) => {
+        api.beforeWrite?.(driveId!, p)
+        const expect = q.get('expect')
+        if (!expect) return false
+        const f = d.files.get(p)
+        return (f ? `${f.data.byteLength}:${f.mtime}` : 'absent') !== expect
+      }
+      const changed = () => Response.json({ error: 'changed', code: 'remote_changed' }, { status: 409 })
       if (sub === '/files/content' && req.method === 'PUT') {
-        const f = put(driveId!, path, new Uint8Array(await req.arrayBuffer()))
+        const data = new Uint8Array(await req.arrayBuffer())
+        if (stale(path)) return changed()
+        const f = put(driveId!, path, data)
         return Response.json({ path, size: f.data.byteLength, version: f.version })
       }
       if (sub === '/files' && req.method === 'DELETE') {
@@ -182,6 +196,7 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
       if (commit) {
         const up = uploads.get(commit[1]!)
         if (!up) return Response.json({ error: 'no upload' }, { status: 404 })
+        if (stale(up.path)) return changed()
         const parts = up.blocks.map((b) => api.blocks.get(b)!)
         const data = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0))
         let off = 0

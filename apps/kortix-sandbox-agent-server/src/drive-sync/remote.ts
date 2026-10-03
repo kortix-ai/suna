@@ -28,8 +28,12 @@ export interface DriveRemote {
   stat(path: string): Promise<RemoteStat | null>
   /** Write the file at `path` into `dest` (replacing it); returns its sha256. */
   download(path: string, dest: string): Promise<string>
-  /** Upload the local file `src` to `path`; returns the version storage gave it, when it says. */
-  upload(path: string, src: string): Promise<{ version: string | null; sha256: string }>
+  /**
+   * Upload the local file `src` to `path`, only if the drive's file is still
+   * `expect` ("size:mtime", or "absent"); throws {@link RemoteChanged} when it
+   * moved. Returns the version storage gave it, when it says.
+   */
+  upload(path: string, src: string, expect: string): Promise<{ version: string | null; sha256: string }>
   remove(path: string): Promise<void>
   move(src: string, dst: string): Promise<void>
 }
@@ -64,6 +68,17 @@ export class DriveSyncRefused extends Error {
   }
 }
 
+/**
+ * The drive's file is no longer the version the change was based on: the
+ * API refused the write (409). The engine keeps both versions.
+ */
+export class RemoteChanged extends Error {
+  constructor(readonly path: string) {
+    super(`${path} changed on the drive`)
+    this.name = 'RemoteChanged'
+  }
+}
+
 /** Files up to this size go in one PUT; larger ones use the block upload. */
 export const SINGLE_PUT_MAX = 8 * 1024 * 1024
 export const BLOCK_BYTES = 1024 * 1024
@@ -87,6 +102,9 @@ export function createHttpDriveSyncApi(opts: {
     })
     if (res.ok || okStatuses.includes(res.status)) return res
     const text = await res.text().catch(() => '')
+    if (res.status === 409 && text.includes('remote_changed')) {
+      throw new RemoteChanged(new URL(`${base}${path}`).searchParams.get('path') ?? path)
+    }
     if (res.status === 403 || res.status === 404 || res.status === 413 || res.status === 400) {
       throw new DriveSyncRefused(res.status, `${init.method ?? 'GET'} ${path}: ${res.status} ${text.slice(0, 200)}`)
     }
@@ -154,12 +172,12 @@ export function createHttpDriveSyncApi(opts: {
         await rename(part, dest)
         return sha
       },
-      async upload(path, src) {
+      async upload(path, src, expect) {
         const size = (await stat(src)).size
         if (size <= SINGLE_PUT_MAX) {
           const body = new Uint8Array(await Bun.file(src).arrayBuffer())
           const sha = createHash('sha256').update(body).digest('hex')
-          const r = await json<{ version?: string }>(`${d}/files/content${q({ path })}`, {
+          const r = await json<{ version?: string }>(`${d}/files/content${q({ path, expect })}`, {
             method: 'PUT',
             body,
             headers: { 'Content-Type': 'application/octet-stream' },
@@ -196,7 +214,7 @@ export function createHttpDriveSyncApi(opts: {
               headers: { 'Content-Type': 'application/octet-stream' },
             })
           }
-          await req(`${d}/files/upload/${encodeURIComponent(plan.upload_id)}/commit`, { method: 'POST' })
+          await req(`${d}/files/upload/${encodeURIComponent(plan.upload_id)}/commit${q({ path, expect })}`, { method: 'POST' })
         } finally {
           await fh.close()
         }

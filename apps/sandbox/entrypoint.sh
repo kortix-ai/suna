@@ -206,7 +206,8 @@ if [ "${KORTIX_DRIVE_SYNC:-}" = "1" ]; then
   if [ "$(id -u)" -eq 0 ]; then
     mkdir -p /drives && chown "$(id -u):$(id -g)" /drives || true
   else
-    sudo -n mkdir -p /drives 2>/dev/null && sudo -n chown "$(id -u):$(id -g)" /drives 2>/dev/null || true
+    { sudo -n mkdir -p /drives && sudo -n chown "$(id -u):$(id -g)" /drives; } 2>/dev/null \
+      || echo "[entrypoint] drive sync: cannot hand /drives to $(id -un) (no passwordless sudo); the daemon syncs into ~/drives" >&2
   fi
 fi
 
