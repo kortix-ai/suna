@@ -4114,7 +4114,12 @@ export const appAccessGrants = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('app_access_grants_app_idx').on(table.appId),
+    // Dropped 2026-10-03 (migration 20261003055520493_drop_app_access_grants_app_idx):
+    // idx_scan = 0 (prod pg_stat_user_indexes, read-only, 2026-10-03) and the
+    // Supabase advisor flags it as unused_index. app_access_grants_unique
+    // carries app_id as its leading column, so every read that filtered on
+    // app_id alone — the identity-transfer DELETE and the apps ON DELETE
+    // CASCADE walk — keeps its index path. One index write less per grant row.
     uniqueIndex('app_access_grants_unique').on(
       table.appId,
       table.principalType,
