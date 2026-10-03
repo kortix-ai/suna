@@ -295,7 +295,7 @@ The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
 rejects the push when the attestation is stale, red, or missing. Never bypass
 it with `--no-verify`: the merge gate runs
 `pnpm test:verify --rev <head> --branch <headRefName>`: exit `0` green, `1`
-stale/red/missing (`--strict` exits `3` when a lane is skipped). Verify
+stale/red/missing (`--strict` exits `3` when `db-suites` is skipped). Verify
 reads the attestation file the PR's diff adds or edits under
 `tests/attestations/` (with several, the `--branch` match, else the newest
 `at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
@@ -303,15 +303,12 @@ carries the legacy file and conflicts on it after a merge of `origin/main`:
 delete it and re-run `pnpm test`.
 The attestation stays green after a merge of `origin/main` that touches other
 files; it goes stale only when a file the PR itself changed is edited after the
-run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. Two
-sanctioned environment skips exist, never a pass and refused by `--strict`: with
-no Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db` — the merge gate holds a DB-touching PR (`db-wait`) on it — and
-on a Kortix sandbox image (a factory worker box) `packages` records
-`skipped-sandbox-image`: the image's platform state breaks agent-server tests
-that are byte-identical at `origin/main`, so the lane cannot attest a PR there;
-the daily scheduled `Tests` run and every release PR run the same command on a
-clean CI runner, which stays the backstop.
+run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
+Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
+`skipped-no-db`; on a Kortix sandbox image `packages` records
+`skipped-sandbox-image`. These are the only two skips, and neither is a pass:
+on `main` the DB is gated after the merge (path-gated `DB Migrations`) and by the
+staging promote, and the scheduled clean-runner `Tests` run backs up `packages`.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant

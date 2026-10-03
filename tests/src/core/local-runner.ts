@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
@@ -502,47 +501,10 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   }
 }
 
-/** Attestation lane groups: the runner lanes whose outcome proves each attested
- *  lane. A group is written only when every member ran (or was sanctioned-skipped)
- *  in this run, or when one member failed. */
-const GROUPS: Record<string, string[]> = {
-  core: ['sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
-  packages: ['package-quality'],
-  'db-suites': ['api-cli-flows', 'db-suites'],
-  browser: ['browser'],
-};
-
-/** Map runner-lane results and sanctioned skips to attestation lane values.
- *  A group is written only when every member ran (or was skipped) in this run,
- *  or when one member failed; the recorded skip reason passes through verbatim
- *  and verify-attestation.mjs rejects a reason the lane is not sanctioned for. */
-export function attestationLaneValues(
-  results: readonly { name: string; exitCode: number }[],
-  skips: Readonly<Record<string, string>>,
-): Record<string, string> {
-  const lanes: Record<string, string> = {};
-  for (const [group, members] of Object.entries(GROUPS)) {
-    const ran = results.filter((r) => members.includes(r.name));
-    const skippedNames = members.filter((n) => n in skips);
-    if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
-    else if (ran.length + skippedNames.length === members.length) {
-      lanes[group] = skippedNames.length === 0 ? 'pass' : skips[skippedNames[0]];
-    }
-  }
-  return lanes;
-}
-
 /** Lanes that start the local Supabase, so they need Docker. */
 const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
 /** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
 const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
-/** The package-quality lane on a Kortix sandbox image: the image's platform
- *  state (/etc/pt-env, /opt/kortix/{scaffold.git,managed-skills,llm-catalog.json},
- *  a git repo at /workspace, the /dev/shm env file) breaks agent-server tests
- *  that are byte-identical at origin/main, so the lane cannot attest a PR there
- *  (Marko, 2026-10-03). The daily scheduled Tests run and every release PR run
- *  the same command on a clean CI runner, which stays the backstop. */
-const SANDBOX_IMAGE_LANES = new Set(['package-quality']);
 
 function dockerAvailable(): boolean {
   try {
@@ -552,46 +514,17 @@ function dockerAvailable(): boolean {
   }
 }
 
-/** The Kortix sandbox image a factory worker runs on: two independent markers
- *  of the image build, absent on a dev box and on every CI runner. */
-function onSandboxImage(): boolean {
-  return existsSync('/etc/pt-env') && existsSync('/opt/kortix/managed-skills');
-}
-
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
-  // Sanctioned skips: no Docker (a factory sandbox) removes the DB lanes, and a
-  // Kortix sandbox image removes the package-quality lane. The attestation
-  // records each reason; a skip is never a pass, and --strict refuses both.
-  const skips: Record<string, string> = {};
-  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
-    if (!dockerAvailable()) {
-      for (const lane of plan.lanes)
-        if (DOCKER_LANES.has(lane.name)) skips[lane.name] = 'skipped-no-db';
-    }
-    if (onSandboxImage()) {
-      for (const lane of plan.lanes)
-        if (SANDBOX_IMAGE_LANES.has(lane.name)) skips[lane.name] = 'skipped-sandbox-image';
-    }
-    if (Object.keys(skips).length > 0) {
-      plan.lanes = plan.lanes.filter((l) => !(l.name in skips));
-      plan.stages = plan.stages.map((stage) => stage.filter((l) => !(l.name in skips)));
-      const noDb = Object.entries(skips)
-        .filter(([, reason]) => reason === 'skipped-no-db')
-        .map(([name]) => name);
-      const image = Object.entries(skips)
-        .filter(([, reason]) => reason === 'skipped-sandbox-image')
-        .map(([name]) => name);
-      if (noDb.length > 0)
-        console.log(
-          `[test] SKIP ${noDb.join(',')}: Docker is not available (skipped-no-db, not a pass)`,
-        );
-      if (image.length > 0)
-        console.log(
-          `[test] SKIP ${image.join(',')}: Kortix sandbox image (skipped-sandbox-image, not a pass)`,
-        );
-      if (plan.lanes.length === 0) return 1;
-    }
+  // No Docker (a factory sandbox): the DB lanes cannot run. Record them as
+  // skipped-no-db. verify-attestation.mjs never counts a skip as a pass.
+  const skipped: string[] = [];
+  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && !dockerAvailable()) {
+    for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name))) skipped.push(lane.name);
+    plan.lanes = plan.lanes.filter((l) => !skipped.includes(l.name));
+    plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.includes(l.name)));
+    console.log(`[test] SKIP ${skipped.join(',')}: Docker is not available (skipped-no-db, not a pass)`);
+    if (plan.lanes.length === 0) return 1;
   }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
@@ -680,14 +613,25 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   const MODE_FLAGS = ['--', '--full', '--flows-only', '--sdk-only', '--db-only', '--browser-only', '--packages-only'];
   const partial = args.some((a) => !MODE_FLAGS.includes(a));
   if (ATTESTED_MODES.has(plan.mode) && !partial) {
-    const lanes = attestationLaneValues(results, skips);
+    // Attestation lanes group the runner lanes. A group is written only when
+    // every member ran (or was skipped) in this run, or when one failed.
+    const GROUPS: Record<string, string[]> = {
+      core: ['sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      packages: ['package-quality'],
+      'db-suites': ['api-cli-flows', 'db-suites'],
+      browser: ['browser'],
+    };
+    const lanes: Record<string, string> = {};
+    for (const [group, members] of Object.entries(GROUPS)) {
+      const ran = results.filter((r) => members.includes(r.name));
+      const skip = skipped.filter((n) => members.includes(n));
+      if (ran.some((r) => r.exitCode !== 0)) lanes[group] = 'fail';
+      else if (ran.length + skip.length === members.length) {
+        lanes[group] = skip.length ? 'skipped-no-db' : 'pass';
+      }
+    }
     Bun.spawnSync(
-      [
-        'node',
-        'tests/verify-attestation.mjs',
-        'write',
-        ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`),
-      ],
+      ['node', 'tests/verify-attestation.mjs', 'write', ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`)],
       { cwd: root, stdout: 'inherit', stderr: 'inherit' },
     );
   }

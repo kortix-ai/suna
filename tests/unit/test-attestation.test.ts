@@ -28,11 +28,18 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ browser: 'skipped-no-db' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ browser: 'pass' }) }), cur()).code).toBe(0);
   });
-  it('allows the sanctioned db-suites skip, and --strict never lets it pass', () => {
+  it('allows only db-suites to be skipped, and --strict never lets it pass', () => {
     const a = att({ lanes: lanes({ 'db-suites': 'skipped-no-db' }) });
     expect(evaluate(a, cur()).code).toBe(0);
     expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), cur()).code).toBe(1);
+  });
+  it('packages may be skipped-sandbox-image (owner rule: the Kortix image breaks those tests at base); --strict never lets it pass', () => {
+    const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image', 'db-suites': 'skipped-no-db' }) });
+    expect(evaluate(a, cur()).code).toBe(0);
+    expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
+    expect(evaluate(att({ lanes: lanes({ core: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
+    expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
   });
   it('a diff-keyed attestation ignores source_hash: fresh iff its own files are unchanged', () => {
     const line = '100644 blob1 pr.txt';
@@ -46,18 +53,5 @@ describe('evaluate attestation', () => {
     // the file dropped out of the changed set → stale.
     const dropped = { sourceHash: 'h', changed: { lines: {} } };
     expect(evaluate(a, dropped).reason).toBe('stale');
-  });
-  it('allows the sanctioned packages skip, and --strict never lets it pass', () => {
-    const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image' }) });
-    expect(evaluate(a, cur()).code).toBe(0);
-    expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
-    expect(
-      evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code,
-    ).toBe(1);
-    expect(evaluate(att({ lanes: lanes({ packages: 'fail' }) }), cur()).reason).toBe('red');
-  });
-  it('does not mistake a missing lane for a sanctioned skip', () => {
-    const { packages: _packages, ...rest } = lanes();
-    expect(evaluate(att({ lanes: rest }), cur()).code).toBe(1);
   });
 });

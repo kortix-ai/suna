@@ -24,19 +24,11 @@
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). Two sanctioned environment skips exist;
-// neither is ever a pass, and --strict refuses both:
-//   db-suites: skipped-no-db — the box has no Docker (a factory sandbox), so
-//     the DB lanes cannot run; the merge gate holds a DB-touching PR on it.
-//   packages: skipped-sandbox-image — the Kortix sandbox image's platform state
-//     (/etc/pt-env, /opt/kortix/{scaffold.git,managed-skills,llm-catalog.json},
-//     a git repo at /workspace, the /dev/shm env file) breaks agent-server
-//     tests that are byte-identical at origin/main, so the lane cannot attest
-//     a PR there (Marko, 2026-10-03). The daily scheduled Tests run and every
-//     release PR run the same command on a clean CI runner, the backstop.
+// suites), browser (only when run). Only two skips exist: db-suites
+// "skipped-no-db" and packages "skipped-sandbox-image"; neither is a pass.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
-// attestation with a sanctioned skip (db-suites or packages) exits 3 instead of 0.
+// attestation with a skipped lane exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -48,12 +40,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DIR = 'tests/attestations';
 export const LEGACY = 'tests/test-attestation.json';
 export const REQUIRED_LANES = ['core', 'packages', 'db-suites'];
-
-/** Sanctioned environment skips, per lane. Never a pass; --strict refuses both. */
-export const SANCTIONED_SKIPS = {
-  'db-suites': 'skipped-no-db',
-  packages: 'skipped-sandbox-image',
-};
 
 const git = (args, env) =>
   execFileSync('git', args, { cwd: root, env: { ...process.env, ...env }, maxBuffer: 1 << 28 });
@@ -168,16 +154,17 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) =>
-    lanes[l] === 'pass' || (SANCTIONED_SKIPS[l] !== undefined && lanes[l] === SANCTIONED_SKIPS[l]);
+  // The only allowed skips: db-suites without Postgres, and packages on a Kortix
+  // sandbox image (its platform state breaks agent-server tests identically at
+  // origin/main; the scheduled clean-runner Tests run is the backstop). Mirrors
+  // the company merge gate's G11 rule.
+  const SKIPS = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
+  const ok = (l) => lanes[l] === 'pass' || (l in SKIPS && lanes[l] === SKIPS[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  const skipped = Object.keys(SANCTIONED_SKIPS).filter((l) => lanes[l] === SANCTIONED_SKIPS[l]);
+  const skipped = Object.keys(SKIPS).filter((l) => lanes[l] === SKIPS[l]);
   if (skipped.length) {
-    return {
-      code: strict ? 3 : 0,
-      reason: `green, ${skipped.map((l) => `${l} ${SANCTIONED_SKIPS[l]}`).join(', ')}`,
-    };
+    return { code: strict ? 3 : 0, reason: `green, skipped: ${skipped.map((l) => `${l} ${SKIPS[l]}`).join(', ')}` };
   }
   return { code: 0, reason: 'green' };
 }

@@ -94,12 +94,10 @@ reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
 several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
 rev (`--branch`, else the checked-out branch), else the legacy file. It
 recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`, and two sanctioned environment skips exist —
-never a pass, and `--strict` exits `3` for either: `db-suites` may be
-`skipped-no-db` (no Docker) and `packages` may be `skipped-sandbox-image` on a
-Kortix sandbox image, whose platform state breaks agent-server tests that are
-byte-identical at `origin/main`; the daily scheduled `Tests` run and every
-release PR run the same command on a clean CI runner, the backstop. No in-sandbox
+every other lane must be `pass`. Two skips exist, neither a pass: `db-suites`
+`skipped-no-db` (no Docker) and `packages` `skipped-sandbox-image` (a Kortix
+sandbox image breaks those tests identically at `origin/main`; the scheduled
+clean-runner `Tests` run is the backstop). `--strict` exits `3` for either skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except
