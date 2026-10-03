@@ -188,6 +188,17 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   return false; // plain http to a public host — refuse to send secrets in cleartext
 }
 
+/** The daemon answered the env push with a non-2xx. */
+export class EnvSyncHttpError extends Error {
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
+    super(`env sync failed: ${status}${body ? ` ${body.slice(0, 500)}` : ''}`);
+    this.name = 'EnvSyncHttpError';
+  }
+}
+
 export async function postEnvToDaemon(args: {
   previewUrl: string;
   providerHeaders: Record<string, string>;
@@ -255,7 +266,7 @@ export async function postEnvToDaemon(args: {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
+    throw new EnvSyncHttpError(res.status, body);
   }
   // The daemon echoes opencode's post-sync state. After a model-affecting change
   // it restarts opencode and reports `starting` here — the signal we use to wait

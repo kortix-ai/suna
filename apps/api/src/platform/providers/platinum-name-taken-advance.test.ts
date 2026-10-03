@@ -29,6 +29,7 @@
 // — so the NEXT top-level provisioning call's restorePlatinumCreateAttempt
 // reads the ADVANCED attempt and never re-mints the stuck name.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { platinumHttpError } from '../../__tests__/helpers/platinum-http-error';
 mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
@@ -70,7 +71,7 @@ function normalizeHeaders(h: RequestInit['headers']): Record<string, string> {
 }
 
 function nameTakenError(name: string): Error {
-  return new Error(
+  return platinumHttpError(
     `platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 409 ` +
     `{"error":"name '${name}' is already in use by another active sandbox in this org","code":"name_taken","name":"${name}"}`,
   );
