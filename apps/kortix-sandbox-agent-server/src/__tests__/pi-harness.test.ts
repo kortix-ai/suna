@@ -246,10 +246,18 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
+/** A pt-env path that does not exist: see the file-level hook below. */
+const ABSENT_PT_ENV = join(tmpdir(), 'kortix-absent-pt-env')
+
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
+  // The readiness gates read /etc/pt-env behind process.env. Inside a Kortix
+  // sandbox that file is THIS session's real env (auto-clone on, its branch),
+  // which marks every repo-less rig here repo_required and never ready.
+  // Point the gate at a path that does not exist: dev-box behavior.
+  process.env.KORTIX_PT_ENV_FILE = ABSENT_PT_ENV
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -259,6 +267,7 @@ afterEach(async () => {
   resetKortixEventBusForTests()
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
+  delete process.env.KORTIX_PT_ENV_FILE
   rmSync(homeDir, { recursive: true, force: true })
 })
 
@@ -961,22 +970,34 @@ describe('pi harness', () => {
   })
 
   test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
-    const r = await boot({ script: [{ text: 'ok' }], start: false })
-    const skill = (root: string, name: string, description: string) => {
-      const dir = join(r.workspace, root, name)
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+    // Pin the managed overlay to an empty dir: inside a Kortix sandbox image
+    // the default resolves to /opt/kortix/managed-skills and its 40+ platform
+    // skills would join the project's two.
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-empty-'))
+    const previousManaged = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({ script: [{ text: 'ok' }], start: false })
+      const skill = (root: string, name: string, description: string) => {
+        const dir = join(r.workspace, root, name)
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+      }
+      skill('skills', 'deploy', 'Ship to prod')
+      skill('.kortix/opencode/skills', 'review', 'Review a change')
+      // Same name in both roots: the root layout wins.
+      skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
+      await r.service.lifecycle.start()
+      const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>
+      expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
+        ['deploy', 'Ship to prod'],
+        ['review', 'Review a change'],
+      ])
+    } finally {
+      rmSync(managed, { recursive: true, force: true })
+      if (previousManaged === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previousManaged
     }
-    skill('skills', 'deploy', 'Ship to prod')
-    skill('.kortix/opencode/skills', 'review', 'Review a change')
-    // Same name in both roots: the root layout wins.
-    skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
-    await r.service.lifecycle.start()
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>
-    expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
-      ['deploy', 'Ship to prod'],
-      ['review', 'Review a change'],
-    ])
   })
 
   test.each([

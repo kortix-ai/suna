@@ -74,12 +74,17 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  // This suite pins the "no catalog anywhere" state: point the image-baked
+  // fallback at a path that does not exist, or a run inside a Kortix sandbox
+  // image inherits that image's full catalog as the fallback instead.
+  process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(tmpdir(), 'kortix-absent-baked-catalog.json')
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  delete process.env.KORTIX_BAKED_LLM_CATALOG_PATH
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

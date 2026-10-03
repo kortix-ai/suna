@@ -116,6 +116,11 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Keep the chunk store inside the fixture: the box's real daemon/CLI
+    // binaries (110 MB here) would otherwise be indexed chunk-by-chunk with
+    // this suite's 8-byte test chunks — millions of reads, minutes of hashing.
+    agentStateDir: join(ws.root, 'agent-state'),
+    agentBakedPath: join(ws.root, 'no-baked-agent'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

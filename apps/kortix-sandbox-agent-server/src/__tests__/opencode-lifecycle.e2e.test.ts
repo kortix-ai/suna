@@ -882,6 +882,11 @@ describe('a model a turn names', () => {
     process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
     process.env.KORTIX_TOKEN = 'kortix_pat_test'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // Never the image-baked catalog: inside a Kortix sandbox image that file
+    // exists with the full live lineup, so `codex/gpt-6.1-sol` would already
+    // be "managed" and the swap/restart under test would converge to
+    // `unchanged`. These tests pin the stale-catalog state.
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
     process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
     resetManagedModelsStateForTests()
     return gateway

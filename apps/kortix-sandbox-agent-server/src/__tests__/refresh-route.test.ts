@@ -118,7 +118,16 @@ function fakeOpencode(
 }
 
 function app(cfg: Partial<Config>, lifecycle: FakeLifecycle = fakeOpencode()) {
-  return buildOpenCodeTestApp(testOpenCodeConfig(cfg), lifecycle.opencode, Date.now())
+  // An empty scratch target, never the default '/workspace': inside a Kortix
+  // agent session that path IS a git checkout, so the "repo not materialized"
+  // fixtures below would find a real repo and answer 500 instead of 409.
+  const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-route-'))
+  roots.push(root)
+  return buildOpenCodeTestApp(
+    testOpenCodeConfig({ workspace: root, projectTarget: root, ...cfg }),
+    lifecycle.opencode,
+    Date.now(),
+  )
 }
 
 const SERVICE = { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}`, [KORTIX_SERVICE_CALL_HEADER]: '1' }

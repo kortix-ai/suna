@@ -77,13 +77,18 @@ function createDetachedWarmCheckout(prefix: string): {
 const tempDirs: string[] = []
 
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  // Default to a scaffold path that does not exist, not the image-baked
+  // /opt/kortix/scaffold.git: inside a Kortix sandbox that file is present,
+  // so every clone-depth expectation below would silently take the scaffold
+  // fast path (which depth-1 fetches and leaves the backfill to restore
+  // history). The tests that exercise the scaffold pass their own path.
+  __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-no-scaffold.git'))
 })
 
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-no-scaffold.git'))
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
