@@ -132,8 +132,8 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
-    // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
+    // Serial on purpose: no --parallel (it implies --isolate), and under
+    // isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap
     // (oven-sh/bun#37968; the fix, oven-sh/bun#38008, is still open). A reused
@@ -144,6 +144,11 @@ describe('local test runner contract', () => {
     // container against the real disposable-PostgreSQL containers.
     // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
     // process in the `db-suites` lane of the core run, not here.
+    // The one allowed addition is the shared timeout flag: the root runner
+    // exports KORTIX_TEST_TIMEOUT_MS (30000) and the CLI and API scripts
+    // honor it; the 5 s bun default flaked timing tests under load.
+    expect(agentPackage.scripts.test).toContain('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}');
+    expect(agentPackage.scripts.test).not.toMatch(/--parallel|--isolate/);
     expect(dbPackage.scripts.test).toBe(
       "bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'",
     );
