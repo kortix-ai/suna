@@ -1,0 +1,24 @@
+{
+  "source_hash": "c4339d59a5f8bc98f2fbe25a702914ec4497d77f1f1963209474dd8a59d1d016",
+  "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    ".githooks/pre-push",
+    "AGENTS.md",
+    "apps/cli/src/__tests__/connectors-session-flag.test.ts",
+    "apps/cli/src/commands/connectors.ts",
+    "apps/cli/src/index.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/local-runner.test.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "289e498037e057d25fd14a8c58fc1c2e6e72f6608b23e17c2ce0236f432db3d9",
+  "head": "e48d0b20e5274328f28b99a3f1bdfd15861185a2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:32:04.774Z"
+}
