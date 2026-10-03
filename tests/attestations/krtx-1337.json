@@ -1,0 +1,29 @@
+{
+  "source_hash": "feec92a14062d92a32f92040a925ebd23a1b4c59edb6befdd328b815071a0a88",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/cli/src/__tests__/access-assignments.test.ts",
+    "apps/cli/src/commands/access.ts",
+    "apps/kortix-sandbox-agent-server/bunfig.toml",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/static-web-credential-read.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
+    "apps/llm-gateway/package.json",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "packages/db/migrations/20261003010107485_basejump_accounts_fk_covering_indexes.concurrent.ts"
+  ],
+  "diff_hash": "badcaefb6b130cc28f61d09fb921582d1562b845031813eefaa2a53965019c33",
+  "head": "91ea941fcea5ef4c1acbf05035f88f5e710a835b",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:33:29.367Z"
+}

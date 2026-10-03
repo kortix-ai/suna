@@ -842,12 +842,6 @@ const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
  *  file would otherwise answer for a missing one. */
 const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
-/** The baked path, resolved at call time. `KORTIX_BAKED_LLM_CATALOG_PATH`
- *  lets a test hide the image's bake and pin the no-catalog behavior; the
- *  default is unchanged everywhere else. */
-const bakedCatalogPath = (): string =>
-  process.env.KORTIX_BAKED_LLM_CATALOG_PATH || BAKED_LLM_CATALOG_PATH
-
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
  *  Returns null when missing, unreadable, or empty so callers can fall through. */
 function readCatalogFile(path: string): Record<string, KortixGatewayModel> | null {
