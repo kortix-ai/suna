@@ -31,9 +31,11 @@ if (!hasRuntime()) {
 // is impossible, so a package never ships without it.
 require('../src/computer').ensureDevAgentCli();
 
-// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js).
+// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js);
+// the pinned Kortix Capture engine inside every app (fetch-capture-engine.js).
 require('./fetch-cua-driver')
   .fetchCuaDriver()
+  .then(() => require('./fetch-capture-engine').fetchCaptureEngine())
   .catch((error) => {
     console.error(error);
     process.exit(1);
