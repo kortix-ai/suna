@@ -138,6 +138,62 @@ test('a connected finalize flips the phase and names the identity; a transient f
   await setup.unmount();
 });
 
+test('one finalize request is in flight at a time: the next timer waits for the pending one', async () => {
+  const calls: string[] = [];
+  const gate = deferred<{ connected: boolean }>();
+  const INFO = {
+    project_name: 'Project 1',
+    slug: 'miro',
+    app: 'miro',
+    name: 'Miro',
+    expires_at: '2099-01-01T00:00:00.000Z',
+  };
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+    const call = `${init?.method ?? 'GET'} ${String(url)}`;
+    calls.push(call);
+    if (call.endsWith('/start')) {
+      return Response.json({ connect_url: 'https://composio.test/connect' });
+    }
+    if (call.endsWith('/finalize')) {
+      return gate.promise.then((body) => Response.json(body));
+    }
+    return Response.json(INFO);
+  }) as unknown as typeof fetch;
+
+  jest.useFakeTimers();
+  const setup = harness({ openPopup: () => undefined });
+  await setup.mount();
+  await setup.connect();
+
+  try {
+    // The 3s timer fires while the first finalize is still pending.
+    await act(async () => {
+      jest.advanceTimersByTime(3_000);
+      for (let hop = 0; hop < 20; hop++) await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(4_000);
+      for (let hop = 0; hop < 20; hop++) await Promise.resolve();
+    });
+    expect(calls.filter((c) => c.endsWith('/finalize'))).toHaveLength(1);
+
+    // The pending finalize settles not-connected: only then is the next
+    // timer armed, 5s after the settle.
+    gate.resolve({ connected: false });
+    await act(async () => {
+      for (let hop = 0; hop < 30; hop++) await Promise.resolve();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+      for (let hop = 0; hop < 30; hop++) await Promise.resolve();
+    });
+    expect(calls.filter((c) => c.endsWith('/finalize'))).toHaveLength(2);
+  } finally {
+    jest.useRealTimers();
+  }
+  await setup.unmount();
+});
+
 test('unmount cancels the poll: a settled finalize after unmount changes nothing', async () => {
   const openedUrls: string[] = [];
   const finalizeGate = deferred<{ connected: boolean; connected_as?: string | null }>();

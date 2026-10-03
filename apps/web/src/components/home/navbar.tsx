@@ -58,15 +58,6 @@ const CTA_LINK = '/auth';
  */
 const CONTENT_MEASURE = 'mx-auto w-full max-w-7xl px-6';
 
-/**
- * The scrolled surface is a blur veil, not a bar with an edge. It extends 22px
- * past the header and its mask fades the blur out over that overhang, so the
- * frosted panel dissolves into the page instead of ending on a line. The row
- * content sits in the fully-opaque top of the mask, so nothing behind the logo
- * or the buttons is ever half-blurred.
- */
-const BAR_VEIL_MASK = '[mask-image:linear-gradient(to_bottom,#000_0%,#000_72%,transparent_100%)]';
-
 /** The links a drawer row expands to; empty for a row that simply navigates. */
 function drawerSubLinks(item: NavLink): NavSubLink[] {
   if ('menu' in item) return item.menu.columns.flatMap((column) => column.links);
