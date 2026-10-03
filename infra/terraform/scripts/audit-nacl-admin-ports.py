@@ -30,8 +30,6 @@ import sys
 ADMIN_PORTS = {22: "SSH", 3389: "RDP"}
 # NACL protocol numbers. "-1" means every protocol.
 PROTOCOLS = {"6": "tcp", "17": "udp"}
-# AWS applies a packet only to rules whose CIDR matches the packet's address
-# family, so each family runs its own first-match walk over the rule list.
 FAMILIES = {"CidrBlock": "0.0.0.0/0", "Ipv6CidrBlock": "::/0"}
 
 
@@ -76,10 +74,7 @@ def audit_acl(acl: dict, region: str) -> list[dict]:
                     if not rule_matches(entry, port, protocol):
                         continue
                     cidr = entry.get(cidr_field)
-                    # A rule of the other family, or a narrower source, never
-                    # applies to internet traffic. Only the first internet-wide
-                    # rule of this family decides, allow or deny.
-                    if cidr != wide_cidr:
+                    if cidr != wide_cidr:  # other family, or a narrower source
                         continue
                     if entry["RuleAction"] == "allow":
                         findings.append(
