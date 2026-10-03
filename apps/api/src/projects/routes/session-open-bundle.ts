@@ -191,7 +191,6 @@ const handleSessionSnapshot = async (c: any) => {
             });
             return {
               platformDefault: platformDefaultModelId(),
-              accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
               resolvedForCaller:

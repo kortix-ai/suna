@@ -213,8 +213,6 @@ function sourceLabel(source: string): string {
       return 'agent default';
     case 'project':
       return 'project default';
-    case 'account':
-      return 'account default';
     default:
       return 'platform default';
   }

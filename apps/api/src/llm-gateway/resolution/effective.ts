@@ -4,7 +4,7 @@ import { canonicalManagedModelId, isRuntimeManagedModelId } from '../models/mana
 // the precedence here means Slack, the web picker, and the gateway agree.
 
 /** Where an effective model came from — drives honest UI copy ("· project default"). */
-export type ModelSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
+export type ModelSource = 'explicit' | 'agent' | 'project' | 'platform';
 /** Where an effective agent came from. */
 export type AgentSource = 'explicit' | 'project' | 'fallback';
 
@@ -46,7 +46,7 @@ function isManagedRef(ref: string): boolean {
 /**
  * Pure precedence for the DEFAULT model chain (no explicit/request override —
  * that's handled by the async resolver, which must validate servability):
- *   per-agent default → project default → account default → platform default.
+ *   per-agent default → project default → platform default.
  *
  * The MOST-SPECIFIC present layer wins; the free-tier managed-drop then applies
  * to that single chosen candidate (dropping to the platform default rather than
@@ -55,7 +55,6 @@ function isManagedRef(ref: string): boolean {
 export function chooseEffectiveModel(params: {
   agentDefault?: string | null;
   projectDefault?: string | null;
-  accountDefault?: string | null;
   freeModelsOnly?: boolean;
 }): { model: string | null; source: ModelSource } {
   let candidate: string | null = null;
@@ -66,9 +65,6 @@ export function chooseEffectiveModel(params: {
   } else if (params.projectDefault) {
     candidate = params.projectDefault;
     source = 'project';
-  } else if (params.accountDefault) {
-    candidate = params.accountDefault;
-    source = 'account';
   }
   if (!candidate) return { model: null, source: 'platform' };
   // Free tier cannot use managed Kortix models; the chosen candidate is dropped

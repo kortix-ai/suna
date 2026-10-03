@@ -56,21 +56,19 @@ beforeEach(() => {
 });
 
 describe('getAccountModelDefaults', () => {
-  test('buckets account / agent / project rows (legacy project-less agent row, no projectId arg)', async () => {
+  test('buckets agent / project rows (legacy project-less agent row, no projectId arg)', async () => {
     selectRows = [
-      { scope: 'account', scopeKey: '', projectId: null, model: 'glm-5.3-flash' },
       { scope: 'agent', scopeKey: 'reviewer', projectId: null, model: 'claude-opus-4.8' },
       { scope: 'project', scopeKey: 'p1', projectId: null, model: 'anthropic/claude-sonnet-4.6' },
       { scope: 'project', scopeKey: 'p2', projectId: null, model: 'qwen3.7-max' },
     ];
     const defaults = await getAccountModelDefaults('a1');
-    expect(defaults.account).toBe('glm-5.3-flash');
     expect(defaults.agents).toEqual({ reviewer: 'claude-opus-4.8' });
     expect(defaults.projects).toEqual({ p1: 'anthropic/claude-sonnet-4.6', p2: 'qwen3.7-max' });
   });
 
   test('empty → all buckets empty', async () => {
-    expect(await getAccountModelDefaults('a1')).toEqual({ account: null, agents: {}, projects: {} });
+    expect(await getAccountModelDefaults('a1')).toEqual({ agents: {}, projects: {} });
   });
 
   // The core bug fix: agent-scope pins keyed only by agent name used to be
@@ -146,12 +144,6 @@ describe('upsertAccountModelPreference', () => {
     // Targets the GLOBAL partial index (account_id, scope, scope_key) WHERE project_id IS NULL.
     expect(conflictConfig.target).toHaveLength(3);
     expect(conflictConfig.targetWhere).toBeDefined();
-  });
-
-  test('account scope pins scope_key to empty string, project_id stays null', async () => {
-    await upsertAccountModelPreference({ accountId: 'a1', scope: 'account', model: 'glm-5.3-flash' });
-    expect(insertedValues.scopeKey).toBe('');
-    expect(insertedValues.projectId).toBeNull();
   });
 
   test('agent scope WITH a projectId writes project_id and targets the 4-column project partial index', async () => {

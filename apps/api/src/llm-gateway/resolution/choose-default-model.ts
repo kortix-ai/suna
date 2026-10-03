@@ -2,7 +2,7 @@ import { chooseEffectiveModel } from './effective';
 
 /**
  * Pure default-model decision used by the gateway:
- *   per-agent default → project default → account default → undefined (→ platform).
+ *   per-agent default → project default → undefined (→ platform).
  *
  * Thin adapter over `chooseEffectiveModel` (the single precedence definition) that
  * returns the gateway's `string | undefined` shape. Free tier cannot use managed
@@ -11,7 +11,6 @@ import { chooseEffectiveModel } from './effective';
  * is kept for free tier (resolved via their key).
  */
 export function chooseDefaultModel(params: {
-  accountDefault: string | null;
   agentDefaults: Record<string, string>;
   agentName?: string | null;
   projectDefault?: string | null;
@@ -20,7 +19,6 @@ export function chooseDefaultModel(params: {
   const { model } = chooseEffectiveModel({
     agentDefault: params.agentName ? params.agentDefaults[params.agentName] : null,
     projectDefault: params.projectDefault ?? null,
-    accountDefault: params.accountDefault,
     freeModelsOnly: params.freeModelsOnly,
   });
   return model ?? undefined;

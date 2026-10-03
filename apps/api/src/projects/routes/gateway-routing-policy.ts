@@ -45,12 +45,10 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
-  const effectiveDefault = projectDefault ?? defaults.account ?? platformDefaultModelId();
+  const effectiveDefault = projectDefault ?? platformDefaultModelId();
   const defaultModelSource = projectDefault
     ? ('project' as const)
-    : defaults.account
-      ? ('account' as const)
-      : ('platform' as const);
+    : ('platform' as const);
   const route = await resolveGatewayRoute(
     {
       userId: ctx.userId,
@@ -176,7 +174,7 @@ projectsApp.openapi(
     }
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary =
-      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
+      policy.defaultModel ?? defaults.projects[projectId] ?? platformDefaultModelId();
     if (effectivePrimary && !modelAccessAllows(readModelAccess(loaded.row.metadata), effectivePrimary)) {
       return c.json({ error: 'Enable the default model and its provider before selecting it.', code: 'model_disabled' }, 409);
     }
@@ -293,7 +291,7 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       freeModelsOnly,
-      defaultModel: defaults.projects[projectId] ?? defaults.account ?? undefined,
+      defaultModel: defaults.projects[projectId] ?? undefined,
     };
     const route = await resolveGatewayRoute(principal, {
       requestedModel: body.requestedModel,

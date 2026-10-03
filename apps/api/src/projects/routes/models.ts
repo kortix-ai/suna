@@ -179,7 +179,7 @@ projectsApp.openapi(createRoute({
   const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
   return c.json({
     ...readModelAccess(loaded.row.metadata),
-    defaultModel: toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined,
+    defaultModel: toWireModel(defaults.projects[projectId] ?? platformDefaultModelId() ?? '') || undefined,
     enforced: projectLlmGatewayEnabled(loaded.row.metadata),
   });
 });
@@ -208,7 +208,7 @@ projectsApp.openapi(createRoute({
     }
   }
   const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-  const defaultModel = toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined;
+  const defaultModel = toWireModel(defaults.projects[projectId] ?? platformDefaultModelId() ?? '') || undefined;
   const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
   if (result.conflict) return c.json({
     error: 'Change the project default to another enabled provider or model first.',
@@ -273,7 +273,7 @@ projectsApp.openapi(
     // charge, which always offers the current one.
     const defaults = await getAccountModelDefaults(accountId, projectId);
     const effectiveDefault =
-      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId();
+      defaults.projects[projectId] ?? platformDefaultModelId();
     if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
       return c.json(
         {
@@ -347,9 +347,9 @@ projectsApp.openapi(
   },
 );
 
-// ─── Default model preferences (account-scoped) ─────────────────────────────
+// ─── Default model preferences ──────────────────────────────────────────────
 // The gateway is the source of truth for concrete model defaults. These routes
-// manage account, project, and agent defaults. Stored values are gateway wire
+// manage project and agent defaults. Stored values are gateway wire
 // models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
 // GET /v1/projects/:projectId/model-defaults
@@ -390,7 +390,6 @@ projectsApp.openapi(
     });
     return c.json({
       platformDefault: platformDefaultModelId(),
-      accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
       resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
@@ -401,7 +400,7 @@ projectsApp.openapi(
 );
 
 const ModelDefaultBody = z.object({
-  scope: z.enum(['account', 'agent', 'project']),
+  scope: z.enum(['agent', 'project']),
   agentName: z.string().min(1).max(128).optional(),
   model: z.string().min(1).max(128),
 });
@@ -488,8 +487,8 @@ projectsApp.openapi(
     await upsertAccountModelPreference({
       accountId: ownerAccountId,
       scope,
-      // agent → agent name; project → the project id; account → '' (in the repo).
-      scopeKey: scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined,
+      // agent → agent name; project → the project id.
+      scopeKey: scope === 'agent' ? agentName : projectId,
       // agent-scope pins are project-scoped — see repositories/model-preferences.ts.
       projectId: scope === 'agent' ? projectId : undefined,
       model,
@@ -505,7 +504,7 @@ projectsApp.openapi(
   },
 );
 
-// DELETE /v1/projects/:projectId/model-defaults?scope=account|agent&agentName=
+// DELETE /v1/projects/:projectId/model-defaults?scope=project|agent&agentName=
 projectsApp.openapi(
   createRoute({
     method: 'delete',
@@ -516,7 +515,7 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string() }),
       query: z.object({
-        scope: z.enum(['account', 'agent', 'project']),
+        scope: z.enum(['agent', 'project']),
         agentName: z.string().min(1).max(128).optional(),
       }),
     },
@@ -535,9 +534,9 @@ projectsApp.openapi(
     const { ownerAccountId } = writer;
     const scope = c.req.query('scope');
     const agentName = c.req.query('agentName');
-    if (scope !== 'account' && scope !== 'agent' && scope !== 'project') {
+    if (scope !== 'agent' && scope !== 'project') {
       return c.json(
-        { error: "scope must be 'account', 'agent', or 'project'", code: 'invalid_scope' },
+        { error: "scope must be 'agent' or 'project'", code: 'invalid_scope' },
         400,
       );
     }
@@ -547,7 +546,7 @@ projectsApp.openapi(
         400,
       );
     }
-    const scopeKey = scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined;
+    const scopeKey = scope === 'agent' ? agentName : projectId;
     await deleteAccountModelPreference({
       accountId: ownerAccountId,
       scope,

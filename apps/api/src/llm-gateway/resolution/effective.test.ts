@@ -8,27 +8,19 @@ import {
 } from './effective';
 
 describe('chooseEffectiveModel', () => {
-  test('most-specific layer wins: agent → project → account', () => {
+  test('most-specific layer wins: agent → project', () => {
     expect(
       chooseEffectiveModel({
         agentDefault: 'claude-opus-4.8',
         projectDefault: 'glm-5.3-flash',
-        accountDefault: 'deepseek-v4-flash',
       }),
     ).toEqual({ model: 'claude-opus-4.8', source: 'agent' });
   });
 
-  test('project default wins over account when no agent default', () => {
+  test('project default applies when no agent default', () => {
     expect(
-      chooseEffectiveModel({ projectDefault: 'glm-5.3-flash', accountDefault: 'deepseek-v4-flash' }),
+      chooseEffectiveModel({ projectDefault: 'glm-5.3-flash' }),
     ).toEqual({ model: 'glm-5.3-flash', source: 'project' });
-  });
-
-  test('account default applies when nothing more specific', () => {
-    expect(chooseEffectiveModel({ accountDefault: 'deepseek-v4-flash' })).toEqual({
-      model: 'deepseek-v4-flash',
-      source: 'account',
-    });
   });
 
   test('nothing configured → platform default', () => {
@@ -37,11 +29,11 @@ describe('chooseEffectiveModel', () => {
 
   test('free tier: a managed chosen candidate drops to platform (not downgraded)', () => {
     // agent (managed) is most specific → dropped entirely, does NOT fall through
-    // to the account BYOK default.
+    // to the project BYOK default.
     expect(
       chooseEffectiveModel({
         agentDefault: 'glm-5.3-flash',
-        accountDefault: 'anthropic/claude-sonnet-4.6',
+        projectDefault: 'anthropic/claude-sonnet-4.6',
         freeModelsOnly: true,
       }),
     ).toEqual({ model: null, source: 'platform' });

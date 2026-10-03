@@ -2,11 +2,10 @@ import { accountModelPreferences, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 
-// Persistent store for account-scoped default model preferences. Drives the
-// server-side resolution of the synthetic `auto` model in the LLM gateway:
+// Persistent store for default model preferences. Drives the server-side
+// resolution of the synthetic `auto` model in the LLM gateway:
 //   per-agent default (scope='agent', key=agent_name) → project default
-//   (scope='project', key=project_id) → account default (scope='account') →
-//   platform default.
+//   (scope='project', key=project_id) → platform default.
 // Stored `model` values are gateway wire models (bare managed id like 'glm-5.3-flash',
 // a BYOK 'provider/model', or 'codex/<id>') — never the synthetic `auto` and
 // never the opencode-only `kortix/` prefix.
@@ -22,18 +21,16 @@ import { db } from '../shared/db';
 // OWN project-scoped pin for that agent name yet — never deleted or
 // rewritten automatically, only shadowed once a project explicitly re-pins.
 
-export type ModelPreferenceScope = 'account' | 'agent' | 'project';
+export type ModelPreferenceScope = 'agent' | 'project';
 
-// Account-wide is the only scope that pins scope_key to ''. Agent (key=agent_name)
-// and project (key=project_id) both carry a caller-supplied key; the unique index
-// (account_id, scope, scope_key) keeps them from colliding.
-function preferenceScopeKey(scope: ModelPreferenceScope, scopeKey?: string): string {
-  return scope === 'account' ? '' : (scopeKey ?? '');
+// Agent (key=agent_name) and project (key=project_id) both carry a
+// caller-supplied key; the unique index (account_id, scope, scope_key) keeps
+// them from colliding.
+function preferenceScopeKey(_scope: ModelPreferenceScope, scopeKey?: string): string {
+  return scopeKey ?? '';
 }
 
 export interface AccountModelDefaults {
-  /** Account-wide default wire model, or null when unset. */
-  account: string | null;
   /**
    * Per-agent default wire models, keyed by agent name — resolved for the ONE
    * `projectId` passed to `getAccountModelDefaults` (or, if omitted, the
@@ -68,10 +65,9 @@ export async function getAccountModelDefaults(
     .from(accountModelPreferences)
     .where(eq(accountModelPreferences.accountId, accountId));
 
-  const defaults: AccountModelDefaults = { account: null, agents: {}, projects: {} };
+  const defaults: AccountModelDefaults = { agents: {}, projects: {} };
   for (const row of rows) {
-    if (row.scope === 'account') defaults.account = row.model;
-    else if (row.scope === 'project' && row.scopeKey) defaults.projects[row.scopeKey] = row.model;
+    if (row.scope === 'project' && row.scopeKey) defaults.projects[row.scopeKey] = row.model;
     else if (row.scope === 'agent' && row.scopeKey && row.projectId == null) {
       defaults.agents[row.scopeKey] = row.model; // legacy/global fallback
     }

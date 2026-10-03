@@ -17,14 +17,14 @@ import {
 } from './effective';
 import { resolveCandidates } from './resolve-candidates';
 
-// Resolves the account/agent/project-configured default model for a gateway
+// Resolves the agent/project-configured default model for a gateway
 // principal, once at authentication (in withResolvedTier). The result is attached
 // to the principal as `defaultModel` for concrete default-route matching.
 //
 // Resolution order (most-specific wins): per-agent default → project default →
-// account default → undefined (the caller then falls back to the platform
-// default). Per-session and explicit models never reach here — a concrete model
-// is passed through unchanged.
+// undefined (the caller then falls back to the platform default). Per-session
+// and explicit models never reach here — a concrete model is passed through
+// unchanged.
 
 const PREFS_TTL_MS = 30_000;
 const SESSION_AGENT_TTL_MS = 60_000;
@@ -57,7 +57,7 @@ async function cachedAccountDefaults(accountId: string, projectId?: string): Pro
 // /default-agent route; provisioning + a CLI's first push don't always stamp
 // it). Left unresolved, an agent-scope model pin set on the project's REAL
 // default agent name is silently never looked up — the session falls through
-// to the project/account/platform default with no error anywhere. Resolve the
+// to the project/platform default with no error anywhere. Resolve the
 // sentinel to the project's declared default agent here (reusing the same
 // `chooseEffectiveAgent` precedence the channel-bindings/Slack surfaces
 // already use) so the pin applies to the sessions that actually run it, even
@@ -78,9 +78,9 @@ async function cachedSessionAgent(sessionId: string): Promise<string | null> {
 
 /** Drop a caller's prefs cache so a just-changed default takes effect immediately.
  *  Clears every project-keyed cache entry for the account (the prefs cache
- *  key is `${accountId}:${projectId}` — see prefsCacheKey), since a write
- *  from one project (e.g. account/project scope) can also change what a
- *  DIFFERENT project's principals resolve. */
+ *  key is `${accountId}:${projectId}` — see prefsCacheKey), since a legacy
+ *  global agent pin (project_id IS NULL) applies account-wide and a write can
+ *  change what a DIFFERENT project's principals resolve. */
 export function invalidateAccountModelDefaults(accountId: string): void {
   const prefix = `${accountId}:`;
   for (const key of prefsCache.keys()) {
@@ -126,7 +126,7 @@ export async function resolveDefaultModelForPrincipal(
   const projectDefault = principal.projectId ? defaults.projects[principal.projectId] : undefined;
   // Fast path: nothing configured for this account/project → the platform default
   // applies (no session read needed).
-  if (!defaults.account && !hasAgentDefaults && !projectDefault) return undefined;
+  if (!hasAgentDefaults && !projectDefault) return undefined;
 
   let agentName: string | null = null;
   if (hasAgentDefaults && principal.sessionId) {
@@ -134,7 +134,6 @@ export async function resolveDefaultModelForPrincipal(
   }
 
   const chosen = chooseDefaultModel({
-    accountDefault: defaults.account,
     agentDefaults: defaults.agents,
     agentName,
     projectDefault,
@@ -230,7 +229,7 @@ export async function isModelServableForAccount(params: {
  * An `explicit` override (a channel/session pin) wins only when it's actually
  * servable for the account+project; an unservable pin (e.g. a BYOK model whose
  * key was disconnected, or a retired managed id) degrades to the project →
- * account → platform chain instead of producing a dead turn. The returned
+ * platform chain instead of producing a dead turn. The returned
  * `model` is a concrete gateway wire id, or null when only the platform default
  * applies (the caller omits it and the gateway resolves `auto`).
  */
@@ -262,7 +261,6 @@ export async function resolveEffectiveModel(params: {
   const chain = chooseEffectiveModel({
     agentDefault: params.agentName ? defaults.agents[params.agentName] : null,
     projectDefault: defaults.projects[params.projectId],
-    accountDefault: defaults.account,
     freeModelsOnly: params.freeModelsOnly,
   });
   // Degrade a stale/unservable resolved default (e.g. a BYOK model whose key was
@@ -294,7 +292,7 @@ export async function resolveEffectiveModel(params: {
   );
   if (!kept) return { model: null, source: 'platform' };
   // kept === chain.model means the originally-configured default WAS servable
-  // (probe passed) — return it with its real source (agent/project/account).
+  // (probe passed) — return it with its real source (agent/project).
   // Any other value is the connected-provider fallback degrade target, which
   // isn't the account's configured choice, so it's labeled 'platform' like
   // every other degrade-to-something-usable case.

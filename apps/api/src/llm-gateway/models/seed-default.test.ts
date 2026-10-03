@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// Auto-seed-on-first-provider-connect. Only seeds when the account has NO model
+// Auto-seed-on-first-provider-connect. Only seeds when the project has NO model
 // default yet and the provider flagship is servable; never clobbers an existing
 // default; idempotent. The pure effective.ts (toWireModel) is used for real.
 
 let flagshipRef: string | null = 'anthropic/claude-opus-4.8';
 mock.module('./picker-catalog', () => ({ flagshipRefForEnvVar: () => flagshipRef }));
 
-let defaults: any = { account: null, agents: {}, projects: {} };
+let defaults: any = { agents: {}, projects: {} };
 const upsert = mock(async () => {});
 mock.module('../../repositories/model-preferences', () => ({
   getAccountModelDefaults: async () => defaults,
@@ -27,7 +27,7 @@ const params = { projectId: 'p1', accountId: 'a1', userId: 'u1', secretName: 'AN
 
 beforeEach(() => {
   flagshipRef = 'anthropic/claude-opus-4.8';
-  defaults = { account: null, agents: {}, projects: {} };
+  defaults = { agents: {}, projects: {} };
   servable = true;
   upsert.mockClear();
   invalidate.mockClear();
@@ -55,14 +55,8 @@ describe('seedProjectDefaultModelOnConnect', () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  test('never clobbers an existing account default', async () => {
-    defaults = { account: 'glm-5.3-flash', agents: {}, projects: {} };
-    await seedProjectDefaultModelOnConnect(params);
-    expect(upsert).not.toHaveBeenCalled();
-  });
-
   test('never clobbers an existing project default', async () => {
-    defaults = { account: null, agents: {}, projects: { p1: 'glm-5.3-flash' } };
+    defaults = { agents: {}, projects: { p1: 'glm-5.3-flash' } };
     await seedProjectDefaultModelOnConnect(params);
     expect(upsert).not.toHaveBeenCalled();
   });
