@@ -199,6 +199,17 @@ KORTIX_DRIVE_OWNER_PY
 }
 start_drive_owner || true
 
+# Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
+# daemon copies the session's drives into /drives and keeps them in sync, as
+# the runtime user, so /drives must be that user's.
+if [ "${KORTIX_DRIVE_SYNC:-}" = "1" ]; then
+  if [ "$(id -u)" -eq 0 ]; then
+    mkdir -p /drives && chown "$(id -u):$(id -g)" /drives || true
+  else
+    sudo -n mkdir -p /drives 2>/dev/null && sudo -n chown "$(id -u):$(id -g)" /drives 2>/dev/null || true
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # Session state on a volume (ephemeral sandboxes).
 #
