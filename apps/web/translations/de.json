@@ -219,6 +219,7 @@
       "create": "Projekt erstellen",
       "tryAgain": "Erneut versuchen",
       "upgrade": "Tarif upgraden",
+      "settings": "Einstellungen",
       "logOut": "Abmelden",
       "signingOut": "Abmeldung läuft",
       "back": "Zurück zu den Projekten"
@@ -19204,7 +19205,8 @@
       "textd4586396b9ba": "Können Agenten die CLI selbst nutzen?",
       "text9e52157faaab": "Ja. Dieselbe Kortix CLI läuft vorab authentifiziert in jeder Sandbox, sodass Agenten genau dieselben Befehle verwenden wie du.",
       "text48b78a9ab65b": "Wie bleiben Läufe isoliert?",
-      "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt."
+      "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
+      "text73112526c03a": "Agent-Durchlauf fehlgeschlagen. Es wurde kein Grund gemeldet."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
