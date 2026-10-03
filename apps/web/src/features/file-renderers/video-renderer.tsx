@@ -173,7 +173,7 @@ export function VideoRenderer({
         videoRef.current.pause();
       } else {
         // A refused play() rejects with NotAllowedError; an uncaught
-        // rejection pages Better Stack (KRTX-1333).
+        // rejection pages Better Stack (KRTX-1333). Same catch as film.tsx.
         void videoRef.current.play().catch(() => {});
       }
       setIsPlaying(!isPlaying);
@@ -208,7 +208,6 @@ export function VideoRenderer({
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       setCurrentTime(0);
-      // Same catch as togglePlay: a refused play() must not page Better Stack.
       void videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }

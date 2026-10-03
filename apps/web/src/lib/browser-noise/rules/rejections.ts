@@ -516,17 +516,10 @@ const MEDIA_PLAY_NOT_ALLOWED_MESSAGE =
 
 /**
  * Whether a Sentry / window.onerror event is the HTMLMediaElement `play()`
- * NotAllowedError noise class: the browser's canonical
- * `The play method is not allowed by the user agent or the platform in the
- * current context, possibly because the user denied permission.` rejection of
- * `play()` under its autoplay policy. Requires the EXACT spec wording (the
- * WebKit/Gecko message; Chrome's different play() wording keeps reporting)
- * AND a NEGATIVE guard: any resolvable source location — a de-minified
- * first-party `apps/web/src/…` frame or any other attributable stack — keeps
- * reporting, so a first-party `.play()` call site that fails to catch its
- * rejection is never hidden. Only the frameless capture (the `autoplay`
- * attribute's browser-internal play() rejection, uncatchable in app code) is
- * dropped. See `MEDIA_PLAY_NOT_ALLOWED_MESSAGE` for the full rationale.
+ * NotAllowedError noise class. See `MEDIA_PLAY_NOT_ALLOWED_MESSAGE` for the
+ * full rationale: exact spec wording, and any resolvable source frame keeps
+ * reporting so a first-party `.play()` call site that fails to catch its
+ * rejection is never hidden.
  */
 export function isMediaPlayNotAllowedNoise(input: {
   message?: unknown;
