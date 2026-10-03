@@ -883,9 +883,9 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
     }
     logger.warn(`[opencode] baked catalog ${opts.catalogFile} unreadable/empty; falling back`)
   }
-  const baked = readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const baked = readCatalogFile(process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH)
   if (baked) {
-    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
+    logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH}`)
     return baked
   }
   // Loud: this means the image was built without its catalog layer, which is a
@@ -901,7 +901,8 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
 
 /** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
 export function catalogIsDegraded(catalogFile?: string): boolean {
-  return !readCatalogFile(catalogFile ?? BAKED_LLM_CATALOG_PATH) && !readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const bakedPath = process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH
+  return !readCatalogFile(catalogFile ?? bakedPath) && !readCatalogFile(bakedPath)
 }
 
 /**

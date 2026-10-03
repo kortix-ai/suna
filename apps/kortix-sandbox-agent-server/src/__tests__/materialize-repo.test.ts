@@ -696,6 +696,10 @@ function threeCommitOrigin(): string {
 }
 
 describe('clone depth', () => {
+  // The image-baked scaffold at /opt/kortix/scaffold.git exists on a Kortix
+  // worker sandbox and takes the delta-fetch fast path, which pins depth 1.
+  // These tests exercise the plain clone path, so point the scaffold away.
+  beforeEach(() => __setScaffoldRepoPathForTests('/nonexistent-scaffold-for-tests'))
   // Boot latency: a depth-1 clone is the default; history is restored off the
   // critical path by scheduleHistoryBackfill.
   it.each([

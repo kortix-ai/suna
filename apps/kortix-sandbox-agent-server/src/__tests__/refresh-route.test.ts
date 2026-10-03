@@ -118,7 +118,14 @@ function fakeOpencode(
 }
 
 function app(cfg: Partial<Config>, lifecycle: FakeLifecycle = fakeOpencode()) {
-  return buildOpenCodeTestApp(testOpenCodeConfig(cfg), lifecycle.opencode, Date.now())
+  // A rig with no projectTarget means "no repo": point it at a path that cannot
+  // be a checkout on ANY machine (the /workspace default is a real git repo on
+  // a Kortix worker sandbox), so the route's 409 no-repo path is hermetic.
+  return buildOpenCodeTestApp(
+    testOpenCodeConfig({ projectTarget: join(tmpdir(), 'kortix-refresh-no-repo'), ...cfg }),
+    lifecycle.opencode,
+    Date.now(),
+  )
 }
 
 const SERVICE = { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}`, [KORTIX_SERVICE_CALL_HEADER]: '1' }
