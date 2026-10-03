@@ -108,7 +108,7 @@ export function staleRuntimeWakeReason(
   // LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS (8 min), so the fence parked EVERY
   // repair that needed more than 90 seconds and the platform then spent the
   // remaining ~6.5 minutes fixing a box it had already reported as `failed`.
-  // Measured on dev session 8e3d6a63, 2026-09-28: repair started 08:17:58.513,
+  // Measured on a dev session, 2026-09-28: repair started 08:17:58.513,
   // park stamped 08:20:15.322 (`runtime_status_unknown_timeout`), repair ran on
   // until 08:26:08.293.
   //

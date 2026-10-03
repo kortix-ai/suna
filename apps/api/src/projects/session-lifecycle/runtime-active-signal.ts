@@ -12,6 +12,10 @@
  *
  * A leaf module (no imports): provisioning and the delivery both import it.
  */
+// replica-local: an in-process wake only. The same prompt polls the session
+// open on its own timer, so a delivery served by another replica, or a signal
+// nobody waited for, loses nothing but the 1.5 s head start this optimisation
+// buys; correctness never depends on the signal crossing a replica.
 const waiters = new Map<string, Set<() => void>>();
 
 export function signalSessionRuntimeActive(sessionId: string): void {

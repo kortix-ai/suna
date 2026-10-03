@@ -424,6 +424,15 @@ describe('Kortix Apps schema', () => {
     expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
   });
 
+  test('covers the app_deployment_events runtime foreign key with an index', () => {
+    // The FK runtime_id -> app_runtimes.runtime_id is ON DELETE set null: a
+    // runtime delete scans app_deployment_events for referencing rows. The
+    // advisor (supabase:advisor:unindexed-foreign-keys:kortix.app_deployment_events)
+    // flags the FK when no index leads with runtime_id; the deployment_idx
+    // leads with deployment_id and cannot serve it.
+    expect(indexNames(appDeploymentEvents)).toContain('app_deployment_events_runtime_idx');
+  });
+
   test('attributes compute windows to App runtimes', () => {
     expect(columnNames(sandboxComputeSessions)).toEqual(
       expect.arrayContaining(['workload_type', 'app_runtime_id']),
