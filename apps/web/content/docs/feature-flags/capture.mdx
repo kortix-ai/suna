@@ -1,0 +1,59 @@
+---
+title: Capture
+description: A searchable timeline of a member's screen, actions and audio, with ranges, devices and a project policy.
+---
+
+Kortix Capture records a member's own computer: the screen (app, window title,
+URL, on-screen text), input actions with screenshots, and audio when the project
+policy allows it. Kortix indexes the recordings into one timeline per person and
+shows it in the project under **Capture**.
+
+Capture is a [feature flag](/docs/feature-flags). It is off by default. Turn it on
+per project before a device can sign in.
+
+Building on Capture from TypeScript? See [SDK → reference](/docs/sdk/reference)
+(`p.capture`) for the client surface and the React hooks.
+
+## Turn Capture on
+
+Open **Settings → Experimental** and switch **Capture** on for the project. You
+need `project.customize.write`.
+
+While the flag is off:
+
+- Every capture route answers `403` with `code: "feature_disabled"`.
+- The **Capture** entry does not appear in the project sidebar or the command
+  palette.
+- `/projects/<id>/capture` and every page under it answer `404`.
+
+## Who sees what
+
+| Person | Reads |
+|---|---|
+| A member | Their own devices, timeline, ranges and Ask answers |
+| A person who manages the project | Any member's timeline, the whole project's devices, **People** and **Settings** |
+| An agent | Only the timeline of the person its private session acts for |
+
+Every time a manager opens another member's capture data, or the **People**
+page, the API writes a `capture.member_view` or `capture.project_view` entry to
+the project's audit log. A member's own timeline says that managers can view it
+and that each view is logged.
+
+## Pages
+
+| Page | What it does |
+|---|---|
+| **Timeline** | One person's day. The day button lists recorded days; picking one jumps to its last recorded moment. The track shows app runs, an actions lane, an audio lane and the day's ranges. Click or drag the track, or use the arrow keys (Shift for ten minutes), to move the moment. The viewer shows the screen at that moment and the details list the on-screen text, the actions and the audio within two minutes. Search finds what you saw, did or heard. **Save range** saves a span of your own day. |
+| **Ask** | Ask a question about your own timeline. An agent answers in a new private session with `kortix capture search`, `timeline` and `frame`, and links every moment it cites back to the Timeline. |
+| **Ranges** | Detected activity sessions and saved spans of the last 7 or 30 days. A range page has **Steps**, **Transcript** and **Summary** from its processing, time by app, and **Process again**. |
+| **Devices** | One row per computer: live status (recording, paused, needs permission and which one, or offline after 120 seconds without a status), layers, upload queue, last frame and app version. **Sync now** reads a device's index at once; **Revoke device** stops its uploads. **Connect a device** links the downloads and explains the sign-in. |
+| **People** | Managers: per member, active time, top apps, ranges and devices for today, 7 or 30 days, and **Open timeline**. |
+| **Settings** | Managers: the capture policy every device reads. Layers (screen, actions, audio), personal-data masking on the device, a project-wide pause, retention on the device and in Kortix, and the notice the device shows the person being recorded. |
+
+## Connect a device
+
+1. Install the Kortix desktop app, or the standalone Kortix Capture engine.
+2. In the app, choose **Sign in with Kortix**. The browser opens
+   `/capture/authorize` with a code.
+3. Check that the code matches the app, then choose the project. The device
+   shows up on **Devices** under your name.

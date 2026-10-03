@@ -6551,3 +6551,318 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   index('idx_push_device_tokens_user').on(table.userId),
   check('push_device_tokens_platform', sql`${table.platform} in ('ios', 'android')`),
 ]);
+
+// ─── Durable job queue ───────────────────────────────────────────────────────
+
+/**
+ * A minimal Postgres-backed job queue (`apps/api/src/shared/job-queue.ts`).
+ * Workers claim due rows with `FOR UPDATE SKIP LOCKED` and hold them for a
+ * visibility timeout (`locked_until`); a crash leaves the row claimable again
+ * once that passes. `(queue, job_key)` is the idempotency key: enqueueing a key
+ * that exists is a no-op, so a producer can re-send freely. Done and dead rows
+ * are pruned after 7 days, which bounds the table.
+ */
+export const jobQueue = kortixSchema.table(
+  'job_queue',
+  {
+    jobId: uuid('job_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    queue: text('queue').notNull(),
+    jobKey: text('job_key').notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('queued').notNull(),
+    runAt: timestamp('run_at', { withTimezone: true }).defaultNow().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(8).notNull(),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_job_queue_key').on(table.queue, table.jobKey),
+    index('idx_job_queue_due').on(table.queue, table.runAt).where(sql`${table.status} = 'queued'`),
+    index('idx_job_queue_finished').on(table.updatedAt).where(sql`${table.status} <> 'queued'`),
+    check('job_queue_status', sql`${table.status} in ('queued', 'done', 'dead')`),
+  ],
+);
+
+// ─── Kortix Capture ──────────────────────────────────────────────────────────
+//
+// The desktop app writes the Kortix Capture format (schema 2) to S3 under
+// `orgs/<account_id>/projects/<project_id>/<device_id>/`. Kortix signs devices
+// in (RFC 8628 grants below), issues scoped S3 credentials, and indexes every
+// finished item (one manifest) into the timeline tables. The timeline tables
+// that grow with recorded time (frames, actions, audio) are RANGE-partitioned
+// by month on their event time (migration *_capture_timeline); drizzle-kit has
+// no syntax for that, so they are declared here as their parents.
+
+/** One pending RFC 8628 device authorization. Short-lived (15 min). */
+export const captureDeviceGrants = kortixSchema.table(
+  'capture_device_grants',
+  {
+    grantId: uuid('grant_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    deviceCodeHash: varchar('device_code_hash', { length: 128 }).notNull(),
+    userCode: varchar('user_code', { length: 9 }).notNull(),
+    machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /** Untrusted device description sent with the request (hostname, os, …). */
+    deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('pending').notNull(),
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    deviceId: uuid('device_id'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_device_grants_user_code').on(table.userCode),
+    uniqueIndex('idx_capture_device_grants_device_code').on(table.deviceCodeHash),
+    index('idx_capture_device_grants_expires').on(table.expiresAt),
+    check(
+      'capture_device_grants_status',
+      sql`${table.status} in ('pending', 'approved', 'denied', 'consumed')`,
+    ),
+  ],
+);
+
+/** One signed-in device: one machine, one member, one project. */
+export const captureDevices = kortixSchema.table(
+  'capture_devices',
+  {
+    deviceId: uuid('device_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /** Hash of the current device token (`hashSecretKey`). Null after a revoke. */
+    tokenHash: varchar('token_hash', { length: 128 }),
+    tokenIssuedAt: timestamp('token_issued_at', { withTimezone: true }),
+    name: text('name'),
+    os: text('os'),
+    osVersion: text('os_version'),
+    arch: text('arch'),
+    appVersion: text('app_version'),
+    /** The device's last `device.json`. */
+    deviceInfo: jsonb('device_info').$type<Record<string, unknown>>().default({}).notNull(),
+    /** The device's last `status.json` and when the device reported it. */
+    status: jsonb('status').$type<Record<string, unknown>>(),
+    statusReportedAt: timestamp('status_reported_at', { withTimezone: true }),
+    lastCredentialsAt: timestamp('last_credentials_at', { withTimezone: true }),
+    /** Operator override written to `<prefix>/<device_id>/policy.json`. Null = project policy. */
+    policyOverride: jsonb('policy_override').$type<Record<string, unknown>>(),
+    /** Index reader cursor: the newest index day, `{"<day>": "<bytes>:<mtime>"}` of the day files read (index_etag), and their count. */
+    indexDay: text('index_day'),
+    indexEtag: text('index_etag'),
+    indexLines: integer('index_lines').default(0).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_capture_devices_identity').on(
+      table.projectId,
+      table.machineKeySha256,
+      table.userId,
+    ),
+    uniqueIndex('idx_capture_devices_token').on(table.tokenHash),
+    index('idx_capture_devices_project_user').on(table.projectId, table.userId),
+  ],
+);
+
+/** The operator's capture policy for a project, mirrored to `<prefix>/policy.json`. */
+export const capturePolicies = kortixSchema.table('capture_policies', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  policy: jsonb('policy').$type<Record<string, unknown>>().notNull(),
+  updatedBy: uuid('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One indexed item: one manifest (`chunk`, `audio` or `actions`). The ingest ledger. */
+export const timelineChunks = kortixSchema.table(
+  'timeline_chunks',
+  {
+    chunkId: uuid('chunk_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => captureDevices.deviceId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    kind: text('kind').notNull(),
+    manifestKey: text('manifest_key').notNull(),
+    startAt: timestamp('start_at', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    itemCount: integer('item_count').default(0).notNull(),
+    encrypted: boolean('encrypted').default(false).notNull(),
+    manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_timeline_chunks_manifest').on(table.manifestKey),
+    index('idx_timeline_chunks_project_user_start').on(
+      table.projectId,
+      table.userId,
+      table.startAt,
+    ),
+    index('idx_timeline_chunks_device_start').on(table.deviceId, table.startAt),
+    check('timeline_chunks_kind', sql`${table.kind} in ('chunk', 'audio', 'actions')`),
+  ],
+);
+
+const timelineSearch = (...columns: AnyPgColumn[]) =>
+  sql`to_tsvector('simple'::regconfig, ${sql.join(
+    columns.map((column) => sql`coalesce(${column}, '')`),
+    sql` || ' ' || `,
+  )})`;
+
+/** One screen frame: app, window, URL and on-screen text. Partitioned by month on `ts`. */
+export const timelineFrames = kortixSchema.table(
+  'timeline_frames',
+  {
+    frameId: uuid('frame_id').default(sql`kortix.uuid_v7()`).notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    chunkId: uuid('chunk_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    frameIndex: integer('frame_index'),
+    app: text('app'),
+    bundleId: text('bundle_id'),
+    title: text('title'),
+    url: text('url'),
+    domain: text('domain'),
+    ocrText: text('ocr_text'),
+    ocrBoxes: jsonb('ocr_boxes').$type<unknown[]>(),
+    inactive: boolean('inactive').default(false).notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'timeline_frames_pkey', columns: [table.frameId, table.ts] }),
+    index('idx_timeline_frames_project_user_ts').on(table.projectId, table.userId, table.ts),
+    index('idx_timeline_frames_chunk').on(table.chunkId),
+    index('idx_timeline_frames_search').using(
+      'gin',
+      timelineSearch(table.app, table.title, table.url, table.ocrText),
+    ),
+  ],
+);
+
+/** One input action (click, key, …). Partitioned by month on `ts`. */
+export const timelineActions = kortixSchema.table(
+  'timeline_actions',
+  {
+    actionId: uuid('action_id').default(sql`kortix.uuid_v7()`).notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    chunkId: uuid('chunk_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    kind: text('kind').notNull(),
+    app: text('app'),
+    windowTitle: text('window_title'),
+    /** Human-readable line, e.g. `Click left at 41%,20%` or `Type "invoice"`. */
+    description: text('description'),
+    target: jsonb('target').$type<Record<string, unknown>>(),
+    /** Content-addressed asset name of the action screenshot, or null. */
+    screenshot: text('screenshot'),
+  },
+  (table) => [
+    primaryKey({ name: 'timeline_actions_pkey', columns: [table.actionId, table.ts] }),
+    index('idx_timeline_actions_project_user_ts').on(table.projectId, table.userId, table.ts),
+    index('idx_timeline_actions_chunk').on(table.chunkId),
+    index('idx_timeline_actions_search').using(
+      'gin',
+      timelineSearch(table.kind, table.app, table.windowTitle, table.description),
+    ),
+  ],
+);
+
+/** One audio transcript line. Partitioned by month on `ts` (the line's start). */
+export const timelineAudio = kortixSchema.table(
+  'timeline_audio',
+  {
+    lineId: uuid('line_id').default(sql`kortix.uuid_v7()`).notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    chunkId: uuid('chunk_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    text: text('text').notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'timeline_audio_pkey', columns: [table.lineId, table.ts] }),
+    index('idx_timeline_audio_project_user_ts').on(table.projectId, table.userId, table.ts),
+    index('idx_timeline_audio_chunk').on(table.chunkId),
+    index('idx_timeline_audio_search').using('gin', timelineSearch(table.text)),
+  ],
+);
+
+/** A span of one member's time: an activity session (detected) or a span a person saved. */
+export const timelineRanges = kortixSchema.table(
+  'timeline_ranges',
+  {
+    rangeId: uuid('range_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    /** Detected ranges belong to one device; a saved range may span several (null). */
+    deviceId: uuid('device_id').references(() => captureDevices.deviceId, {
+      onDelete: 'cascade',
+    }),
+    source: text('source').notNull(),
+    title: text('title'),
+    startAt: timestamp('start_at', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    status: text('status').default('open').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_timeline_ranges_project_user_start').on(
+      table.projectId,
+      table.userId,
+      table.startAt,
+    ),
+    index('idx_timeline_ranges_open').on(table.endAt).where(sql`${table.status} = 'open'`),
+    check('timeline_ranges_source', sql`${table.source} in ('detected', 'saved')`),
+    check(
+      'timeline_ranges_status',
+      sql`${table.status} in ('open', 'closed', 'processing', 'processed', 'failed')`,
+    ),
+  ],
+);
+
+/** One processing result for a range: `segmentation`, `transcript` or `annotation`. */
+export const rangeOutputs = kortixSchema.table(
+  'range_outputs',
+  {
+    outputId: uuid('output_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    rangeId: uuid('range_id')
+      .notNull()
+      .references(() => timelineRanges.rangeId, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    model: text('model'),
+    output: jsonb('output').$type<Record<string, unknown>>(),
+    /** `{ requests, prompt_tokens, completion_tokens, cost_usd }` across the pipeline's calls. */
+    usage: jsonb('usage').$type<Record<string, unknown>>(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_range_outputs_range_kind').on(table.rangeId, table.kind),
+    check('range_outputs_kind', sql`${table.kind} in ('segmentation', 'transcript', 'annotation')`),
+    check('range_outputs_status', sql`${table.status} in ('running', 'done', 'failed')`),
+  ],
+);

@@ -1174,6 +1174,10 @@
         "us_region": {
           "name": "Région États-Unis",
           "description": "Exécutez les nouvelles sessions de ce projet dans la région Est des États-Unis. Une session en cours garde sa région jusqu’à son redémarrage."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Permet aux membres de connecter l'application de bureau Kortix Capture à ce projet. Leur écran, leurs actions et l'audio autorisé deviennent une chronologie consultable que seuls eux et les responsables du projet peuvent lire. Les agents des sessions propres d'un membre peuvent rechercher dans sa chronologie."
         }
       }
     },
@@ -1579,7 +1583,8 @@
       "failed": "Impossible d’enregistrer les libellés",
       "tooLong": "Un libellé compte au plus 64 caractères.",
       "tooMany": "Une session a au plus 20 libellés."
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -19192,7 +19197,36 @@
       "text39207bf34111": "Compétences associées",
       "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
       "text85b7a59cdbd5": "Agent de la plateforme",
-      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici."
+      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici.",
+      "texta6d6b4ec7eac": "Connexion d'un appareil Capture démarrée",
+      "text0eab78d793bb": "Connexion d'un appareil Capture interrogée",
+      "texte52ffa7bb9da": "Identifiants de stockage Capture émis",
+      "textdc2d4533ec39": "Connexion d'un appareil Capture consultée",
+      "text266a5a40483f": "Connexion d'un appareil Capture approuvée",
+      "textda06e844a7d6": "Connexion d'un appareil Capture refusée",
+      "text1ba9cde823f2": "Appareils Capture listés",
+      "textc7d6cc3caadb": "Appareil Capture révoqué",
+      "text0162a2d48e16": "Politique d'un appareil Capture mise à jour",
+      "texta54e0f5b2592": "Capture d'écran Capture ouverte",
+      "text824bd00e2a12": "Politique Capture consultée",
+      "text59d82688db84": "Politique Capture mise à jour",
+      "text3eea23f138ae": "Chronologie Capture consultée",
+      "text5e3631b144e8": "Éléments de chronologie Capture consultés",
+      "text5972f4c2a0e8": "Chronologie Capture recherchée",
+      "text177ca40772f2": "Image Capture consultée",
+      "text1ab1f7711ad9": "Média Capture ouvert",
+      "textb79f82e2a021": "Plages Capture listées",
+      "text5999eed4729c": "Plage Capture enregistrée",
+      "text02b4e4353cdf": "Plage Capture consultée",
+      "text532c9ccb5e9d": "Plage Capture retraitée",
+      "texte9c3e69646f7": "Synthèse des personnes Capture consultée",
+      "text976ea5cbcc50": "Données Capture d'un membre consultées",
+      "text4d2eb8231235": "Données Capture d'un projet consultées",
+      "textafa16172b21b": "Un agent a lu la chronologie Capture de la personne pour laquelle il agit",
+      "textec9dc2164abe": "Appareil Capture synchronisé",
+      "textba3a78850415": "A consulté les jours d’une chronologie Capture",
+      "text1900b478a586": "Capture",
+      "text536272f04b07": "capture chronologie écran enregistrement plages appareils kortix capture"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20475,5 +20509,405 @@
     "people": "Personnes dans cette session : {names}",
     "peopleMore": "Personnes dans cette session : {names} et {count} de plus",
     "more": "{count} autres peuvent ouvrir cette session"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Connecter Kortix Capture",
+      "description": "Vérifiez que ce code correspond à celui de l'application, puis choisissez le projet dans lequel elle enregistre.",
+      "approvingAs": "Connexion en tant que {email}",
+      "projectLabel": "Projet",
+      "noProjects": "Aucun de vos projets n'a Capture activé. Toute personne qui gère un projet peut l'activer dans Paramètres → Feature flags.",
+      "notice": "L'application enregistre votre écran et vos actions, et l'audio quand le projet l'autorise. Vous et les personnes qui gèrent le projet pouvez le lire. Chaque lecture par un responsable est journalisée.",
+      "approve": "Connecter l'application",
+      "deny": "Refuser la connexion",
+      "approvedTitle": "Kortix Capture est connecté",
+      "approvedDescription": "L'application enregistre maintenant dans {project}. Vous pouvez fermer cet onglet.",
+      "approvedDescriptionNoProject": "L'application est connectée. Vous pouvez fermer cet onglet.",
+      "deniedTitle": "Connexion refusée",
+      "deniedDescription": "L'application n'est pas connectée. Vous pouvez fermer cet onglet.",
+      "expiredTitle": "Ce code a expiré",
+      "expiredDescription": "Relancez la connexion dans l'application Kortix Capture.",
+      "invalidTitle": "Code introuvable",
+      "invalidDescription": "Le code est peut-être faux ou déjà utilisé. Vérifiez le code dans l'application et réessayez.",
+      "enterCodeTitle": "Saisissez le code de Kortix Capture",
+      "enterCodeDescription": "L'application affiche un code de huit caractères.",
+      "codeLabel": "Code",
+      "continue": "Continuer",
+      "codePlaceholder": "ABCD-1234"
+    },
+    "desktop": {
+      "menu": "Capture",
+      "title": "Kortix Capture",
+      "state": {
+        "recording": "Enregistrement",
+        "paused": "En pause",
+        "permission_missing": "Autorisation requise",
+        "not_recording": "N’enregistre pas",
+        "starting": "Démarrage…",
+        "crashed": "Arrêté",
+        "off": "Désactivé",
+        "signInRequired": "Se reconnecter",
+        "signedOut": "Non configuré"
+      },
+      "unavailableTitle": "Indisponible",
+      "unavailable": "Cette app de bureau n’inclut pas Kortix Capture. Mettez Kortix à jour vers la dernière version.",
+      "changeFailed": "Impossible de modifier Capture. Réessayez.",
+      "signedOut": "Capture déconnecté",
+      "signOutFailed": "Impossible de déconnecter Capture. Réessayez.",
+      "crashed": "Capture s’est arrêté après plusieurs plantages. Kortix continue d’essayer.",
+      "policyNotice": "De la part des personnes qui gèrent ce projet",
+      "record": "Enregistrer",
+      "recordDescription": "Kortix enregistre tant qu’il tourne et s’ouvre à la connexion.",
+      "layersTitle": "Ce que Capture enregistre",
+      "layers": {
+        "screen": "Écran",
+        "screenDescription": "Une capture d’écran environ toutes les 2 secondes, avec son texte.",
+        "actions": "Actions",
+        "actionsDescription": "Clics, touches et texte saisi, avec des captures d’écran.",
+        "audio": "Audio",
+        "audioDescription": "Votre micro et ce que cet ordinateur diffuse."
+      },
+      "layerOffByPolicy": "Désactivé pour ce projet. Les personnes qui le gèrent en décident.",
+      "recordsInto": "Enregistre dans {project}.",
+      "recordsIntoUnknown": "Enregistre dans un projet que vous ne pouvez pas ouvrir ici.",
+      "syncError": "Échec de l’envoi : {error}",
+      "lastUpload": "Dernier envoi {time}, {pending} en attente.",
+      "noUploadYet": "Rien n’a encore été envoyé.",
+      "changeProject": "Changer de projet",
+      "openTimeline": "Ouvrir la chronologie",
+      "showLogs": "Afficher les journaux",
+      "signOutEllipsis": "Se déconnecter…",
+      "signOutTitle": "Se déconnecter de Capture ?",
+      "signOutDescription": "Capture s’arrête sur cet ordinateur, et cet ordinateur perd l’accès au projet. Les enregistrements restent dans le projet. Pour enregistrer à nouveau, vous vous reconnectez.",
+      "signOut": "Se déconnecter",
+      "permissionsTitle": "Autorisations macOS",
+      "permissions": {
+        "screen": "Enregistrement de l’écran",
+        "accessibility": "Accessibilité",
+        "microphone": "Micro"
+      },
+      "permissionGranted": "Autorisé pour Kortix",
+      "permissionMissing": "Pas encore autorisé",
+      "openSystemSettings": "Ouvrir Réglages Système",
+      "permissionsHint": "macOS les demande pour Kortix. Capture redémarre seul dès que vous en autorisez une.",
+      "signInCancelled": "Connexion annulée",
+      "signInFailed": "Impossible de connecter Capture. Réessayez.",
+      "signedIn": "Capture activé",
+      "signInRequiredHint": "Cet ordinateur a perdu l’accès à son projet. Capture est peut-être désactivé pour le projet, ou quelqu’un a retiré cet ordinateur. Reconnectez-vous pour enregistrer.",
+      "intro": "Capture enregistre cet ordinateur dans un projet où Capture est activé, pour que vous et vos agents puissiez rechercher ce que vous avez fait. Kortix connecte Capture avec votre compte.",
+      "waitingOnPage": "Approuvez la connexion sur la page ouverte dans votre navigateur.",
+      "signingIn": "Connexion…",
+      "turnOn": "Activer Capture",
+      "cancel": "Annuler"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} h {minutes} min",
+      "minutes": "{minutes} min"
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "Chronologie",
+        "ask": "Demander",
+        "ranges": "Plages",
+        "devices": "Appareils",
+        "people": "Personnes",
+        "settings": "Paramètres"
+      }
+    },
+    "timeline": {
+      "person": "Personne",
+      "you": "Vous",
+      "device": "Appareil",
+      "allDevices": "Tous les appareils",
+      "unnamedDevice": "Appareil sans nom",
+      "dayPicker": "Choisir un jour",
+      "recordedDays": "Jours enregistrés",
+      "noDay": "Aucun jour enregistré",
+      "today": "Aujourd'hui",
+      "yesterday": "Hier",
+      "aMember": "un membre",
+      "viewingMember": "Vous consultez la chronologie de {member}",
+      "viewingMemberAudit": "Chaque consultation des données Capture d'un autre membre est consignée dans le journal d'audit du projet.",
+      "auditNotice": "Les personnes qui gèrent ce projet peuvent ouvrir votre chronologie. Chaque consultation est consignée dans le journal d'audit du projet.",
+      "loadFailed": "Impossible de charger la chronologie.",
+      "tryAgain": "Réessayer",
+      "empty": "Vos jours enregistrés apparaîtront ici",
+      "emptyHint": "Connectez un ordinateur avec l'app Kortix Capture pour démarrer une chronologie.",
+      "emptyMember": "Cette personne n'a pas encore de jour enregistré",
+      "connectDevice": "Connecter un appareil",
+      "layers": "Couches",
+      "layer": {
+        "screen": "Écran",
+        "actions": "Actions",
+        "audio": "Audio",
+        "ranges": "Plages"
+      },
+      "previousFrame": "Image précédente",
+      "nextFrame": "Image suivante",
+      "saveRange": "Enregistrer la plage",
+      "trackLabel": "Moment sur la chronologie",
+      "openRange": "Ouvrir la plage {range}",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "App inconnue",
+      "search": {
+        "label": "Rechercher dans la chronologie",
+        "placeholder": "Cherchez ce que vous avez vu, fait ou entendu",
+        "results": "Résultats de recherche",
+        "none": "Rien sur cette chronologie ne correspond à la recherche.",
+        "kind": {
+          "screen": "Écran",
+          "actions": "Action",
+          "audio": "Audio"
+        }
+      },
+      "frame": {
+        "label": "Enregistrement d'écran de {app}",
+        "none": "Aucune image d'écran près de ce moment.",
+        "encrypted": "L'appareil a chiffré cet enregistrement. Kortix ne peut pas l'afficher.",
+        "noVideo": "La vidéo de ce moment n'est pas dans le stockage Capture."
+      },
+      "details": {
+        "label": "Détails du moment",
+        "noScreen": "Aucune activité à l'écran",
+        "onScreen": "À l'écran",
+        "actions": "Actions autour de ce moment",
+        "noActions": "Aucune action dans les deux minutes.",
+        "audio": "Audio autour de ce moment",
+        "noAudio": "Aucun audio dans les deux minutes.",
+        "partOf": "Fait partie de"
+      }
+    },
+    "saveRange": {
+      "title": "Enregistrer la plage",
+      "description": "Une plage enregistrée obtient ses étapes, sa transcription et son résumé. Le traitement démarre à l'enregistrement.",
+      "name": "Nom",
+      "namePlaceholder": "Exécution de la checklist de release",
+      "from": "De",
+      "to": "À",
+      "endBeforeStart": "La fin doit être après le début.",
+      "cancel": "Annuler",
+      "submit": "Enregistrer la plage",
+      "saved": "Plage enregistrée",
+      "failed": "Impossible d'enregistrer la plage."
+    },
+    "ranges": {
+      "title": "Plages",
+      "description": "Portions d'une chronologie avec étapes, transcription et résumé. Kortix en détecte une pour chaque session d'activité ; vous enregistrez les vôtres.",
+      "sourceLabel": "Source",
+      "source": {
+        "all": "Toutes",
+        "saved": "Enregistrées",
+        "detected": "Détectées"
+      },
+      "periodLabel": "Période",
+      "period": {
+        "week": "7 jours",
+        "month": "30 jours"
+      },
+      "status": {
+        "open": "Enregistrement",
+        "closed": "En file d'attente",
+        "processing": "Traitement",
+        "processed": "Traitée",
+        "failed": "Échec"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "Tous les appareils",
+      "loadFailed": "Impossible de charger les plages.",
+      "tryAgain": "Réessayer",
+      "empty": "Les plages apparaîtront ici",
+      "emptyHint": "Kortix détecte une plage pour chaque session d'activité. Enregistrez les vôtres depuis la chronologie."
+    },
+    "range": {
+      "backToRanges": "Plages",
+      "openInTimeline": "Ouvrir dans la chronologie",
+      "processAgain": "Retraiter",
+      "queuedToast": "Plage mise en file d'attente",
+      "reprocessFailed": "Impossible de mettre la plage en file d'attente.",
+      "tab": {
+        "steps": "Étapes",
+        "transcript": "Transcription",
+        "summary": "Résumé"
+      },
+      "processing": "Traitement en cours. Les étapes, la transcription et le résumé apparaissent ici quand les pipelines se terminent.",
+      "queued": "En file d'attente. Le traitement démarre en moins d'une minute.",
+      "failed": "Impossible de traiter cette plage.",
+      "noSteps": "Aucune étape dans cette plage.",
+      "noTranscript": "Aucune transcription pour cette plage.",
+      "noSummary": "Aucun résumé pour cette plage.",
+      "timeByApp": "Temps par app",
+      "noScreen": "Aucune activité à l'écran dans cette plage.",
+      "unknownApp": "App inconnue",
+      "notFound": "Cette plage n'existe plus.",
+      "notFoundHint": "Le lien est peut-être incorrect, ou la plage appartient à une autre personne."
+    },
+    "devices": {
+      "title": "Appareils",
+      "description": "Chaque ordinateur qui enregistre dans ce projet, avec son état en direct. Un appareil est hors ligne après 120 secondes sans état.",
+      "connect": "Connecter un appareil",
+      "connectThisComputer": "Connecter cet ordinateur",
+      "scopeLabel": "Appareils de qui",
+      "scopeMine": "Mes appareils",
+      "scopeProject": "Tout le projet",
+      "column": {
+        "device": "Appareil",
+        "owner": "Propriétaire",
+        "status": "État",
+        "layers": "Couches",
+        "sync": "Synchro",
+        "lastFrame": "Dernière image",
+        "actions": "Actions"
+      },
+      "status": {
+        "recording": "Enregistre",
+        "paused": "En pause",
+        "permission": "Autorisation requise",
+        "notRecording": "N'enregistre pas",
+        "offline": "Hors ligne",
+        "unknown": "Inconnu"
+      },
+      "detail": {
+        "permission": "Manquant : {permissions}",
+        "pausedUntil": "Jusqu'à {time}",
+        "lastSeen": "Dernier état {time}"
+      },
+      "permission": {
+        "screen_recording": "Enregistrement de l’écran",
+        "accessibility": "Accessibilité",
+        "microphone": "Microphone"
+      },
+      "layer": {
+        "screen": "Écran",
+        "actions": "Actions",
+        "audio": "Audio"
+      },
+      "sync": {
+        "upToDate": "À jour",
+        "pending": "{count, plural, one {# élément en file d'attente} other {# éléments en file d'attente}}",
+        "failed": "Échec de l'envoi",
+        "unknown": "Inconnu"
+      },
+      "never": "Aucun pour l'instant",
+      "unnamed": "Appareil sans nom",
+      "you": "Vous",
+      "member": "Un membre",
+      "actionsFor": "Actions pour {name}",
+      "syncNow": "Synchroniser maintenant",
+      "synced": "{count, plural, =0 {Appareil synchronisé, rien de nouveau} one {Appareil synchronisé, # élément en file d'attente} other {Appareil synchronisé, # éléments en file d'attente}}",
+      "syncFailed": "Impossible de synchroniser l'appareil",
+      "revoke": "Révoquer l'appareil",
+      "revokeTitle": "Révoquer cet appareil ?",
+      "revokeDescription": "{name} cesse d'envoyer des données immédiatement. Pour enregistrer de nouveau, reconnectez-le depuis l'app.",
+      "revoked": "Appareil révoqué",
+      "revokeFailed": "Impossible de révoquer l'appareil",
+      "loadFailed": "Impossible de charger les appareils.",
+      "tryAgain": "Réessayer",
+      "empty": "Les appareils que vous connectez apparaîtront ici",
+      "footnote": "Une ligne par ordinateur. Réinstaller ou mettre à jour l'app conserve la même ligne."
+    },
+    "connect": {
+      "title": "Connecter un appareil",
+      "description": "Installez une app qui enregistre, puis connectez-la à ce projet.",
+      "desktopTitle": "App de bureau Kortix",
+      "desktopHint": "L'app de bureau inclut Kortix Capture.",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Moteur Kortix Capture",
+      "engineHint": "L'enregistreur seul, pour un ordinateur sans l'app de bureau.",
+      "engineLink": "Ouvrir les versions",
+      "stepsTitle": "Connexion",
+      "step1": "Ouvrez l'app et choisissez Se connecter avec Kortix. Votre navigateur s'ouvre.",
+      "step2": "Vérifiez que le code du navigateur correspond à celui de l'app.",
+      "step3": "Choisissez {project}. L'appareil apparaît ici sous votre nom en moins d'une minute.",
+      "close": "Fermer"
+    },
+    "people": {
+      "title": "Personnes",
+      "description": "Par membre : temps actif, apps utilisées, plages et appareils.",
+      "periodLabel": "Période",
+      "period": {
+        "today": "Aujourd'hui",
+        "week": "7 jours",
+        "month": "30 jours"
+      },
+      "auditTitle": "Seules les personnes qui gèrent ce projet voient cette page",
+      "auditBody": "Ouvrir cette page ou la chronologie d'un membre écrit une entrée dans le journal d'audit du projet. Les membres voient sur leur propre chronologie que les gestionnaires peuvent la consulter.",
+      "column": {
+        "member": "Membre",
+        "active": "Temps actif",
+        "apps": "Apps principales",
+        "ranges": "Plages",
+        "devices": "Appareils",
+        "open": "Ouvrir"
+      },
+      "role": {
+        "manager": "Gestionnaire",
+        "member": "Membre",
+        "viewer": "Lecteur",
+        "none": "N'est plus membre"
+      },
+      "you": "{email} (vous)",
+      "formerMember": "Ancien membre",
+      "noActivity": "Aucune activité",
+      "unknownApp": "App inconnue",
+      "openTimeline": "Ouvrir la chronologie",
+      "openTimelineOf": "Ouvrir la chronologie de {member}",
+      "loadFailed": "Impossible de charger le récapitulatif des personnes.",
+      "tryAgain": "Réessayer",
+      "empty": "Les membres apparaîtront ici"
+    },
+    "settings": {
+      "title": "Paramètres",
+      "description": "La politique Capture que chaque appareil de ce projet lit dans le stockage Capture.",
+      "layersTitle": "Couches",
+      "layer": {
+        "screen": "Écran",
+        "screenHint": "L'écran, l'app et la fenêtre au premier plan, et le texte à l'écran.",
+        "actions": "Actions",
+        "actionsHint": "Clics, saisie et raccourcis, avec une capture par clic.",
+        "audio": "Audio",
+        "audioHint": "Microphone et audio système, avec transcription."
+      },
+      "privacyTitle": "Confidentialité",
+      "masking": "Masquer les données personnelles",
+      "maskingHint": "Les appareils masquent les données personnelles dans ce qu'ils enregistrent, avant que cela quitte l'ordinateur.",
+      "pause": "Mettre l'enregistrement en pause",
+      "pauseHint": "Chaque appareil de ce projet arrête chaque couche jusqu'à ce que vous désactiviez cette option.",
+      "retentionTitle": "Conservation",
+      "localHours": "Sur l'appareil (heures)",
+      "localHoursHint": "Durée pendant laquelle un appareil garde les médias après leur envoi. 0 les garde sans limite.",
+      "remoteDays": "Dans Kortix (jours)",
+      "remoteDaysHint": "Durée pendant laquelle Kortix garde les éléments indexés. 0 les garde sans limite.",
+      "noticeTitle": "Avis",
+      "noticePlaceholder": "L'enregistrement est activé pour ce projet.",
+      "noticeHint": "Les appareils affichent ce texte dans le menu et la fenêtre de paramètres de l'app.",
+      "lastChanged": "Dernière modification {time}",
+      "defaultPolicy": "La politique par défaut s'applique.",
+      "discard": "Annuler les modifications",
+      "save": "Enregistrer la politique",
+      "saved": "Politique Capture enregistrée",
+      "saveFailed": "Impossible d'enregistrer la politique Capture",
+      "loadFailed": "Impossible de charger la politique Capture.",
+      "tryAgain": "Réessayer"
+    },
+    "ask": {
+      "title": "Demander",
+      "description": "Posez une question sur ce que vous avez vu, fait et entendu. Un agent répond dans une nouvelle session privée et lie chaque moment utilisé.",
+      "label": "Question",
+      "placeholder": "Sur quoi ai-je travaillé hier après-midi ?",
+      "submit": "Demander",
+      "scope": "L'agent lit uniquement votre chronologie, via la session qu'il exécute pour vous.",
+      "suggestion": {
+        "yesterday": "Sur quoi ai-je travaillé hier ?",
+        "lastOpened": "Quand ai-je ouvert la checklist de release pour la dernière fois ?",
+        "byApp": "Résume aujourd'hui par app.",
+        "said": "Qu'est-ce qui s'est dit au stand-up d'aujourd'hui ?"
+      },
+      "instructions": "Réponds à partir de ma chronologie Kortix Capture. Cherche dedans avec `kortix capture search`, lis un jour avec `kortix capture timeline` et ouvre un écran avec `kortix capture frame`. Cite chaque moment utilisé sous forme de lien Markdown : [14:32]({timelineUrl}?at=ISO-8601-TIME). Cite une plage ainsi : [son titre]({timelineUrl}/ranges/RANGE_ID). Mon fuseau horaire est {tz}. Réponds dans la langue de ma question."
+    }
   }
 }

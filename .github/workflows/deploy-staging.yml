@@ -376,7 +376,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_CAPTURE_S3_BUCKET":"kortix-staging-capture-store","KORTIX_CAPTURE_S3_REGION":"us-west-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-west-2.amazonaws.com/935064898258/kortix-staging-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-staging-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-staging-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

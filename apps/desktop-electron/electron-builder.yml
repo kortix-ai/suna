@@ -71,12 +71,23 @@ mac:
   # Computer Use: the agent runs this driver embedded, so the macOS grants
   # belong to Kortix (scripts/fetch-cua-driver.js). It is already a universal
   # binary: x64ArchFiles lets the universal merge keep the one file.
+  # Kortix Capture: the pinned engine (scripts/fetch-capture-engine.js), run
+  # as children of the app, so Screen Recording, Accessibility and the
+  # Microphone belong to Kortix. electron-builder signs each binary and the
+  # dylib with the app identity, hardened runtime and entitlementsInherit.
+  # The staged files are universal when the lock pins both arches (lipo), else
+  # arm64 only; x64ArchFiles keeps them as is in the universal merge.
   extraResources:
     - from: vendor/cua-driver/cua-driver
       to: cua-driver/cua-driver
-  x64ArchFiles: Contents/Resources/cua-driver/cua-driver
+    - from: vendor/capture/darwin
+      to: capture
+  x64ArchFiles: Contents/Resources/{cua-driver/cua-driver,capture/*}
   extendInfo:
     NSAppleEventsUsageDescription: Kortix agents use this to work with the apps on this computer when you allow Computer Use.
+    NSScreenCaptureUsageDescription: Kortix Capture records your screen when you turn Capture on, so you and your agents can search what you have seen.
+    NSMicrophoneUsageDescription: Kortix Capture records audio only after you turn on Audio in Capture.
+    NSSpeechRecognitionUsageDescription: Kortix Capture transcribes recorded audio on this computer, only after you turn on transcription.
     NSAppTransportSecurity:
       NSAllowsArbitraryLoads: true
       NSAllowsArbitraryLoadsInWebContent: true
@@ -90,6 +101,9 @@ dmg:
 
 win:
   icon: build/icon.ico
+  extraResources:
+    - from: vendor/capture/win32
+      to: capture
   target:
     - nsis
   artifactName: ${productName}-Setup-${version}.${ext}
@@ -101,6 +115,9 @@ nsis:
 
 linux:
   icon: build/icon.png
+  extraResources:
+    - from: vendor/capture/linux
+      to: capture
   category: Utility
   target:
     - AppImage

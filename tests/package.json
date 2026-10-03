@@ -26,6 +26,8 @@
     "@playwright/test": "^1.61.0",
     "@types/bun": "latest",
     "@types/pg": "^8.11.0",
+    "@aws-sdk/client-s3": "^3.1131.0",
+    "ajv": "^8.17.1",
     "pg": "^8.13.0",
     "typescript": "^5.5.0",
     "vitest": "^3.2.0"

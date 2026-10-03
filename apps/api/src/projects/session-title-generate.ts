@@ -55,7 +55,8 @@ const TITLE_SYSTEM_PROMPT =
 // compare-and-set in `persistTitle`.
 const inFlight = new Set<string>();
 
-function standaloneGatewayUrl(): string | null {
+/** `<gateway>/v1/chat/completions` of the standalone LLM gateway, or null when unconfigured. */
+export function standaloneGatewayUrl(): string | null {
   const target =
     config.LLM_GATEWAY_PROXY_TARGET ||
     (config.LLM_GATEWAY_PROXY_PORT

@@ -682,6 +682,38 @@ const envSchema = z.object({
   // route streams the bytes when that host is loopback or private.
   KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: optUrl(''),
 
+  // ── Kortix Capture (optional) ───────────────────────────────────────────
+  // Devices write the Kortix Capture format to this bucket under
+  // `orgs/<account_id>/projects/<project_id>/<device_id>/`. The API reads it
+  // (ingestion), writes `policy.json`, and signs short-lived media URLs.
+  //   dev/staging/prod: the Terraform bucket, credentials from the ECS task role.
+  //   local/self-host: an S3-compatible store (MinIO, Supabase Storage).
+  // Unset bucket ⇒ every capture route that needs storage answers 503.
+  KORTIX_CAPTURE_S3_BUCKET: optStr,
+  KORTIX_CAPTURE_S3_REGION: optStr,
+  /** S3-compatible endpoint for the API's own calls. Empty = the AWS regional endpoint. */
+  KORTIX_CAPTURE_S3_ENDPOINT: optUrl(''),
+  /** Endpoint a DEVICE reaches (credentials response, signed URLs). Empty = the endpoint above / AWS. */
+  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: optUrl(''),
+  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: optBoolFalse,
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: optStr,
+  // Credential issuer: STS AssumeRole with an inline session policy that
+  // narrows the role to one device's prefix. AWS: the Terraform device role
+  // (trusts the API task role). MinIO: any ARN; MinIO enforces the session
+  // policy. Unset ⇒ `POST /v1/capture/credentials` answers 503.
+  KORTIX_CAPTURE_STS_ROLE_ARN: optStr,
+  /** STS endpoint override (MinIO serves STS on its S3 endpoint). Empty = AWS STS. */
+  KORTIX_CAPTURE_STS_ENDPOINT: optUrl(''),
+  /** Device credential lifetime. AWS role chaining caps it at 3600 s; the floor is 900 s. */
+  KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS: optInt(3600),
+  /** SQS queue with the bucket's `*.manifest.json` ObjectCreated events. Unset ⇒ index polling only. */
+  KORTIX_CAPTURE_SQS_QUEUE_URL: optStr,
+  /** How often the index reader polls each active device's `index/<day>.jsonl` and `status.json`. */
+  KORTIX_CAPTURE_INDEX_POLL_SECONDS: optInt(60),
+  /** Managed vision model the range pipelines call through the LLM gateway. */
+  KORTIX_CAPTURE_MODEL: optStrDefault('glm-5.3-flash'),
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -1393,6 +1425,19 @@ export const config = {
   AUDIT_ARCHIVE_ACCESS_KEY_ID: env.AUDIT_ARCHIVE_ACCESS_KEY_ID,
   AUDIT_ARCHIVE_SECRET_ACCESS_KEY: env.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
   AUDIT_ARCHIVE_ROWS_PER_SECOND: env.AUDIT_ARCHIVE_ROWS_PER_SECOND,
+  KORTIX_CAPTURE_S3_BUCKET: env.KORTIX_CAPTURE_S3_BUCKET,
+  KORTIX_CAPTURE_S3_REGION: env.KORTIX_CAPTURE_S3_REGION,
+  KORTIX_CAPTURE_S3_ENDPOINT: env.KORTIX_CAPTURE_S3_ENDPOINT,
+  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: env.KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT,
+  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: env.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE,
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID,
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: env.KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY,
+  KORTIX_CAPTURE_STS_ROLE_ARN: env.KORTIX_CAPTURE_STS_ROLE_ARN,
+  KORTIX_CAPTURE_STS_ENDPOINT: env.KORTIX_CAPTURE_STS_ENDPOINT,
+  KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS: env.KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS,
+  KORTIX_CAPTURE_SQS_QUEUE_URL: env.KORTIX_CAPTURE_SQS_QUEUE_URL,
+  KORTIX_CAPTURE_INDEX_POLL_SECONDS: env.KORTIX_CAPTURE_INDEX_POLL_SECONDS,
+  KORTIX_CAPTURE_MODEL: env.KORTIX_CAPTURE_MODEL,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,

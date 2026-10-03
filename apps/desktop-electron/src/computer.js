@@ -530,14 +530,19 @@ function clock(iso) {
  * Tray menu (A5). `actions` are the click handlers; this stays a plain
  * template so the item list is tested without Electron.
  */
-function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, now = Date.now() }, actions) {
-  const paused = Boolean(status?.paired && status.paused);
+function trayMenuTemplate(
+  status,
+  access,
+  { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, captureItems = [], now = Date.now() },
+  actions,
+) {
+  const paired = Boolean(status?.paired);
+  const paused = Boolean(paired && status.paused);
   const granted = access.mode === 'ask' && access.grantedUntil && Date.parse(access.grantedUntil) > now;
   const mode = (id, label) => ({ label, type: 'radio', checked: access.mode === id, click: () => actions.setMode(id) });
-  return [
-    { id: 'status', label: statusLabel(status), enabled: false },
-    { type: 'separator' },
-    { id: 'open', label: 'Open Kortix', click: actions.open },
+  // Capture alone (no paired computer): its items, without the computer's.
+  const withComputer = paired || captureItems.length === 0;
+  const computerItems = [
     { type: 'separator' },
     {
       id: 'access',
@@ -556,22 +561,33 @@ function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, kee
     {
       id: 'pause',
       label: paused ? 'Resume computer access' : 'Pause computer access',
-      enabled: Boolean(status?.paired),
+      enabled: paired,
       click: paused ? actions.resume : actions.pause,
     },
     { id: 'logs', label: 'Show logs', click: actions.logs },
+  ];
+  return [
+    ...(withComputer ? [{ id: 'status', label: statusLabel(status), enabled: false }] : []),
+    ...captureItems,
+    { type: 'separator' },
+    { id: 'open', label: 'Open Kortix', click: actions.open },
+    ...(withComputer ? computerItems : []),
     { type: 'separator' },
     ...(loginItemSupported
       ? [{ id: 'login', label: 'Open at login', type: 'checkbox', checked: openAtLogin, click: actions.toggleLogin }]
       : []),
-    { id: 'disconnect', label: 'Disconnect this computer…', enabled: Boolean(status?.paired), click: actions.disconnect },
+    ...(withComputer ? [{ id: 'disconnect', label: 'Disconnect this computer…', enabled: paired, click: actions.disconnect }] : []),
     { type: 'separator' },
-    {
-      id: 'quit',
-      label: status?.paired && !paused ? 'Quit Kortix (your computer stays connected)' : 'Quit Kortix',
-      click: actions.quit,
-    },
+    { id: 'quit', label: quitLabel(paired && !paused, captureItems.length > 0), click: actions.quit },
   ];
+}
+
+/** The computer is an OS service and stays connected; Capture runs inside the app and stops. */
+function quitLabel(computerStays, captureRuns) {
+  if (computerStays && captureRuns) return 'Quit Kortix (Capture stops; your computer stays connected)';
+  if (computerStays) return 'Quit Kortix (your computer stays connected)';
+  if (captureRuns) return 'Quit Kortix (Capture stops)';
+  return 'Quit Kortix';
 }
 
 /** Keep the app alive in the tray, instead of quitting, when a computer is paired. */

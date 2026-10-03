@@ -49,6 +49,20 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: 'true',
     ...(c.s3AccessKeyId ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: c.s3AccessKeyId } : {}),
     ...(c.s3SecretAccessKey ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: c.s3SecretAccessKey } : {}),
+    // Kortix Capture reads and writes THIS slot's Supabase Storage (bucket
+    // `kortix-capture`, created by migration) unless the shell names another
+    // store. Supabase Storage has no STS, so device credentials need the MinIO
+    // recipe in .agents/skills/worktree/references/capture-local-store.md.
+    ...(process.env.KORTIX_CAPTURE_S3_BUCKET
+      ? {}
+      : {
+          KORTIX_CAPTURE_S3_BUCKET: 'kortix-capture',
+          KORTIX_CAPTURE_S3_REGION: 'local',
+          KORTIX_CAPTURE_S3_ENDPOINT: `${c.supabaseUrl.replace(/\/+$/, '')}/storage/v1/s3`,
+          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: 'true',
+          ...(c.s3AccessKeyId ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: c.s3AccessKeyId } : {}),
+          ...(c.s3SecretAccessKey ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: c.s3SecretAccessKey } : {}),
+        }),
     INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     SCHEDULER_ENABLED: 'false',
     // Billing is opt-in. --billing exposes local routes. --stripe also injects

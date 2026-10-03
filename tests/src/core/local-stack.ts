@@ -675,6 +675,16 @@ export async function ensureLocalStack(
           ...(S3_PROTOCOL_ACCESS_KEY_SECRET
             ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
             : {}),
+          // Kortix Capture reads the same endpoint, bucket `kortix-capture`
+          // (migration). Supabase Storage has no STS: device credentials answer
+          // 503 here and the CAP flows write as a static-credential device.
+          KORTIX_CAPTURE_S3_BUCKET: "kortix-capture",
+          KORTIX_CAPTURE_S3_REGION: "local",
+          KORTIX_CAPTURE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true",
+          ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
+          ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
+          KORTIX_CAPTURE_INDEX_POLL_SECONDS: "2",
           SCHEDULER_ENABLED: "false",
           // OAU-7 replays a rotated refresh token after this window; keep it short.
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",

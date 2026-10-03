@@ -67,6 +67,7 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
+  MonitorPlayIcon as MonitorPlay,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
@@ -747,6 +748,18 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
+  },
+  {
+    id: 'proj-capture',
+    label: 'Capture',
+    icon: MonitorPlay,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/capture',
+    requiresProject: true,
+    requiresFlag: 'capture',
+    keywords: 'capture timeline screen recording ranges devices kortix capture',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
   // are gone with `/projects/<id>/config` (retired 2026-09-02). General,

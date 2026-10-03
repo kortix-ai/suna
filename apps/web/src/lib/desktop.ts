@@ -419,6 +419,72 @@ export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAcce
 export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
   desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
 
+/* ─── Kortix Capture (desktop app) ────────────────────────────────────────
+   The desktop app bundles the Capture engine and runs it as its own child,
+   so one install records into a project with Capture on. These wrappers
+   return null in a browser and on a desktop build without Capture. */
+
+export type DesktopCaptureLayer = 'screen' | 'actions' | 'audio';
+export type DesktopCapturePermission = 'screen' | 'accessibility' | 'microphone' | 'inputMonitoring';
+
+export interface DesktopCaptureStatus {
+  /** False when this build has no engine or it cannot run here; `error` says why. */
+  available: boolean;
+  error?: string;
+  version?: string;
+  /** The person's switch: record while Kortix runs. */
+  on?: boolean;
+  signedIn?: boolean;
+  /** The issuer refused this device (revoked, or Capture turned off for the project). */
+  signInRequired?: boolean;
+  /** The project this device records into (from its sign-in). */
+  projectId?: string | null;
+  deviceId?: string | null;
+  /** `recording`, `paused`, `permission_missing`, `not_recording`, `starting`, `crashed`, `off`, `signInRequired`, `signedOut`. */
+  state?: string;
+  reason?: string | null;
+  layers?: Record<DesktopCaptureLayer, boolean>;
+  /** The project's policy; a layer set to false is off whatever the person chose. */
+  policy?: { layers: Record<DesktopCaptureLayer, boolean>; notice: string; paused: boolean } | null;
+  pausedUntilMs?: number | null;
+  /** macOS grants Kortix holds for Capture; null elsewhere. */
+  permissions?: Record<'screen' | 'accessibility' | 'microphone', boolean> | null;
+  sync?: { state: string; pending: number; lastUploadMs: number | null; error: string | null };
+}
+
+export interface DesktopCaptureSignIn {
+  ok: boolean;
+  userCode?: string;
+  verificationUrl?: string;
+  error?: string;
+}
+
+export interface DesktopCaptureSignInResult {
+  ok: boolean;
+  error?: string;
+  status?: DesktopCaptureStatus;
+}
+
+export const desktopCaptureStatus = () => desktopCommand<DesktopCaptureStatus>('capture_status');
+/** Starts the engine's device sign-in; resolves with the code to approve. */
+export const desktopCaptureSignInStart = () => desktopAction<DesktopCaptureSignIn>('capture_sign_in_start');
+/** Resolves once the engine holds its device token (or the sign-in failed). */
+export const desktopCaptureSignInFinish = () => desktopAction<DesktopCaptureSignInResult>('capture_sign_in_finish');
+export const desktopCaptureSignInCancel = () => desktopAction<null>('capture_sign_in_cancel');
+/** Rejects with the desktop app's message. */
+export const desktopCaptureSet = (input: { on?: boolean } & Partial<Record<DesktopCaptureLayer, boolean>>) =>
+  desktopAction<DesktopCaptureStatus>('capture_set', input);
+export const desktopCapturePause = (minutes = 60) => desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
+export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
+export const desktopCaptureSignOut = () => desktopAction<DesktopCaptureStatus>('capture_sign_out');
+export const desktopCaptureOpenTimeline = () => desktopAction<null>('capture_open_timeline');
+export const desktopCaptureOpenPermission = (permission: DesktopCapturePermission) =>
+  desktopAction<null>('capture_open_permission', { permission });
+export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_logs');
+
+/** The desktop app's tray asks the page to open Capture settings. */
+export const DESKTOP_CAPTURE_SETTINGS_COMMAND = 'capture-settings';
+
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and
  * `data-desktop-platform` on <html> so CSS can react before first paint —

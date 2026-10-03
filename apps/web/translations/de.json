@@ -1174,6 +1174,10 @@
         "us_region": {
           "name": "US-Region",
           "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Mitglieder können die Kortix-Capture-Desktop-App bei diesem Projekt anmelden. Bildschirm, Aktionen und erlaubtes Audio werden zu einer durchsuchbaren Zeitleiste, die nur sie selbst und Projektmanager lesen können. Agenten in den eigenen Sitzungen eines Mitglieds können dessen Zeitleiste durchsuchen."
         }
       }
     },
@@ -1579,7 +1583,8 @@
       "failed": "Die Labels konnten nicht gespeichert werden",
       "tooLong": "Ein Label hat höchstens 64 Zeichen.",
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19192,7 +19197,36 @@
       "text39207bf34111": "Ähnliche Fähigkeiten",
       "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet.",
       "text85b7a59cdbd5": "Plattform-Agent",
-      "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren."
+      "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren.",
+      "texta6d6b4ec7eac": "Capture-Geräteanmeldung gestartet",
+      "text0eab78d793bb": "Capture-Geräteanmeldung abgefragt",
+      "texte52ffa7bb9da": "Capture-Speicherzugangsdaten ausgestellt",
+      "textdc2d4533ec39": "Capture-Geräteanmeldung angesehen",
+      "text266a5a40483f": "Capture-Geräteanmeldung genehmigt",
+      "textda06e844a7d6": "Capture-Geräteanmeldung abgelehnt",
+      "text1ba9cde823f2": "Capture-Geräte aufgelistet",
+      "textc7d6cc3caadb": "Capture-Gerät widerrufen",
+      "text0162a2d48e16": "Capture-Geräterichtlinie aktualisiert",
+      "texta54e0f5b2592": "Capture-Screenshot geöffnet",
+      "text824bd00e2a12": "Capture-Richtlinie angesehen",
+      "text59d82688db84": "Capture-Richtlinie aktualisiert",
+      "text3eea23f138ae": "Capture-Zeitleiste angesehen",
+      "text5e3631b144e8": "Capture-Zeitleisteneinträge angesehen",
+      "text5972f4c2a0e8": "Capture-Zeitleiste durchsucht",
+      "text177ca40772f2": "Capture-Frame angesehen",
+      "text1ab1f7711ad9": "Capture-Medien geöffnet",
+      "textb79f82e2a021": "Capture-Zeiträume aufgelistet",
+      "text5999eed4729c": "Capture-Zeitraum gespeichert",
+      "text02b4e4353cdf": "Capture-Zeitraum angesehen",
+      "text532c9ccb5e9d": "Capture-Zeitraum neu verarbeitet",
+      "texte9c3e69646f7": "Capture-Personenübersicht angesehen",
+      "text976ea5cbcc50": "Capture-Daten eines Mitglieds angesehen",
+      "text4d2eb8231235": "Capture-Daten eines Projekts angesehen",
+      "textafa16172b21b": "Ein Agent hat die Capture-Zeitleiste der Person gelesen, für die er handelt",
+      "textec9dc2164abe": "Capture-Gerät synchronisiert",
+      "textba3a78850415": "Tage einer Capture-Zeitleiste angesehen",
+      "text1900b478a586": "Capture",
+      "text536272f04b07": "capture zeitleiste bildschirm aufnahme zeiträume geräte kortix capture"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20475,5 +20509,405 @@
     "people": "Personen in dieser Sitzung: {names}",
     "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
     "more": "{count} weitere können diese Sitzung öffnen"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Kortix Capture anmelden",
+      "description": "Prüfe, dass dieser Code dem in der App entspricht, und wähle dann das Projekt, in das sie aufzeichnet.",
+      "approvingAs": "Anmeldung als {email}",
+      "projectLabel": "Projekt",
+      "noProjects": "Keines deiner Projekte hat Capture aktiviert. Wer ein Projekt verwaltet, kann es unter Einstellungen → Feature-Flags aktivieren.",
+      "notice": "Die App zeichnet deinen Bildschirm und deine Aktionen auf, und Audio, wenn das Projekt es erlaubt. Du und die Personen, die das Projekt verwalten, können es lesen. Jeder Zugriff durch einen Manager wird protokolliert.",
+      "approve": "App anmelden",
+      "deny": "Anmeldung ablehnen",
+      "approvedTitle": "Kortix Capture ist angemeldet",
+      "approvedDescription": "Die App zeichnet jetzt in {project} auf. Du kannst diesen Tab schließen.",
+      "approvedDescriptionNoProject": "Die App ist angemeldet. Du kannst diesen Tab schließen.",
+      "deniedTitle": "Anmeldung abgelehnt",
+      "deniedDescription": "Die App ist nicht angemeldet. Du kannst diesen Tab schließen.",
+      "expiredTitle": "Dieser Code ist abgelaufen",
+      "expiredDescription": "Starte die Anmeldung in der Kortix-Capture-App erneut.",
+      "invalidTitle": "Code nicht gefunden",
+      "invalidDescription": "Der Code ist eventuell falsch oder schon verwendet. Prüfe den Code in der App und versuche es erneut.",
+      "enterCodeTitle": "Code aus Kortix Capture eingeben",
+      "enterCodeDescription": "Die App zeigt einen achtstelligen Code.",
+      "codeLabel": "Code",
+      "continue": "Weiter",
+      "codePlaceholder": "ABCD-1234"
+    },
+    "desktop": {
+      "menu": "Capture",
+      "title": "Kortix Capture",
+      "state": {
+        "recording": "Nimmt auf",
+        "paused": "Pausiert",
+        "permission_missing": "Braucht eine Berechtigung",
+        "not_recording": "Nimmt nicht auf",
+        "starting": "Startet…",
+        "crashed": "Gestoppt",
+        "off": "Aus",
+        "signInRequired": "Erneut anmelden",
+        "signedOut": "Nicht eingerichtet"
+      },
+      "unavailableTitle": "Nicht verfügbar",
+      "unavailable": "Diese Desktop-App enthält kein Kortix Capture. Aktualisiere Kortix auf die neueste Version.",
+      "changeFailed": "Capture konnte nicht geändert werden. Versuche es erneut.",
+      "signedOut": "Capture abgemeldet",
+      "signOutFailed": "Capture konnte nicht abgemeldet werden. Versuche es erneut.",
+      "crashed": "Capture wurde nach wiederholten Abstürzen gestoppt. Kortix versucht es weiter.",
+      "policyNotice": "Von den Personen, die dieses Projekt verwalten",
+      "record": "Aufnehmen",
+      "recordDescription": "Kortix nimmt auf, solange es läuft, und startet bei der Anmeldung.",
+      "layersTitle": "Was Capture aufnimmt",
+      "layers": {
+        "screen": "Bildschirm",
+        "screenDescription": "Etwa alle 2 Sekunden ein Screenshot, mit seinem Text.",
+        "actions": "Aktionen",
+        "actionsDescription": "Klicks, Tasten und getippter Text, mit Screenshots.",
+        "audio": "Audio",
+        "audioDescription": "Dein Mikrofon und was dieser Computer abspielt."
+      },
+      "layerOffByPolicy": "Für dieses Projekt aus. Die Personen, die es verwalten, entscheiden.",
+      "recordsInto": "Nimmt in {project} auf.",
+      "recordsIntoUnknown": "Nimmt in ein Projekt auf, das du hier nicht öffnen kannst.",
+      "syncError": "Upload fehlgeschlagen: {error}",
+      "lastUpload": "Letzter Upload {time}, {pending} wartend.",
+      "noUploadYet": "Noch nichts hochgeladen.",
+      "changeProject": "Projekt wechseln",
+      "openTimeline": "Zeitleiste öffnen",
+      "showLogs": "Logs anzeigen",
+      "signOutEllipsis": "Abmelden…",
+      "signOutTitle": "Von Capture abmelden?",
+      "signOutDescription": "Capture stoppt auf diesem Computer, und dieser Computer verliert den Zugriff auf das Projekt. Aufnahmen bleiben im Projekt. Um wieder aufzunehmen, meldest du dich erneut an.",
+      "signOut": "Abmelden",
+      "permissionsTitle": "macOS-Berechtigungen",
+      "permissions": {
+        "screen": "Bildschirmaufnahme",
+        "accessibility": "Bedienungshilfen",
+        "microphone": "Mikrofon"
+      },
+      "permissionGranted": "Für Kortix erlaubt",
+      "permissionMissing": "Noch nicht erlaubt",
+      "openSystemSettings": "Systemeinstellungen öffnen",
+      "permissionsHint": "macOS fragt diese für Kortix ab. Capture startet von selbst neu, sobald du eine erlaubst.",
+      "signInCancelled": "Anmeldung abgebrochen",
+      "signInFailed": "Capture konnte nicht angemeldet werden. Versuche es erneut.",
+      "signedIn": "Capture eingeschaltet",
+      "signInRequiredHint": "Dieser Computer hat den Zugriff auf sein Projekt verloren. Capture ist für das Projekt vielleicht aus, oder jemand hat diesen Computer entfernt. Melde dich erneut an, um aufzunehmen.",
+      "intro": "Capture nimmt diesen Computer in ein Projekt mit eingeschaltetem Capture auf, damit du und deine Agents durchsuchen könnt, was du getan hast. Kortix meldet Capture mit deinem Konto an.",
+      "waitingOnPage": "Bestätige die Anmeldung auf der Seite, die sich in deinem Browser geöffnet hat.",
+      "signingIn": "Wird angemeldet…",
+      "turnOn": "Capture einschalten",
+      "cancel": "Abbrechen"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} Std. {minutes} Min.",
+      "minutes": "{minutes} Min."
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "Zeitleiste",
+        "ask": "Fragen",
+        "ranges": "Zeiträume",
+        "devices": "Geräte",
+        "people": "Personen",
+        "settings": "Einstellungen"
+      }
+    },
+    "timeline": {
+      "person": "Person",
+      "you": "Du",
+      "device": "Gerät",
+      "allDevices": "Alle Geräte",
+      "unnamedDevice": "Unbenanntes Gerät",
+      "dayPicker": "Tag auswählen",
+      "recordedDays": "Aufgezeichnete Tage",
+      "noDay": "Keine aufgezeichneten Tage",
+      "today": "Heute",
+      "yesterday": "Gestern",
+      "aMember": "ein Mitglied",
+      "viewingMember": "Du siehst die Zeitleiste von {member}",
+      "viewingMemberAudit": "Jeder Aufruf der Capture-Daten eines anderen Mitglieds wird im Audit-Log des Projekts protokolliert.",
+      "auditNotice": "Wer dieses Projekt verwaltet, kann deine Zeitleiste öffnen. Jeder solche Aufruf wird im Audit-Log des Projekts protokolliert.",
+      "loadFailed": "Die Zeitleiste konnte nicht geladen werden.",
+      "tryAgain": "Erneut versuchen",
+      "empty": "Deine aufgezeichneten Tage erscheinen hier",
+      "emptyHint": "Verbinde einen Computer mit der Kortix-Capture-App, um eine Zeitleiste zu starten.",
+      "emptyMember": "Diese Person hat noch keine aufgezeichneten Tage",
+      "connectDevice": "Gerät verbinden",
+      "layers": "Ebenen",
+      "layer": {
+        "screen": "Bildschirm",
+        "actions": "Aktionen",
+        "audio": "Audio",
+        "ranges": "Zeiträume"
+      },
+      "previousFrame": "Vorheriges Bild",
+      "nextFrame": "Nächstes Bild",
+      "saveRange": "Zeitraum speichern",
+      "trackLabel": "Moment auf der Zeitleiste",
+      "openRange": "Zeitraum {range} öffnen",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "Unbekannte App",
+      "search": {
+        "label": "Zeitleiste durchsuchen",
+        "placeholder": "Suche, was du gesehen, getan oder gehört hast",
+        "results": "Suchergebnisse",
+        "none": "Nichts auf dieser Zeitleiste entspricht der Suche.",
+        "kind": {
+          "screen": "Bildschirm",
+          "actions": "Aktion",
+          "audio": "Audio"
+        }
+      },
+      "frame": {
+        "label": "Bildschirmaufnahme von {app}",
+        "none": "Kein Bildschirmbild in der Nähe dieses Moments.",
+        "encrypted": "Das Gerät hat diese Aufnahme verschlüsselt. Kortix kann sie nicht anzeigen.",
+        "noVideo": "Das Video dieses Moments ist nicht im Capture-Speicher."
+      },
+      "details": {
+        "label": "Details zum Moment",
+        "noScreen": "Keine Bildschirmaktivität",
+        "onScreen": "Auf dem Bildschirm",
+        "actions": "Aktionen rund um diesen Moment",
+        "noActions": "Keine Aktionen innerhalb von zwei Minuten.",
+        "audio": "Audio rund um diesen Moment",
+        "noAudio": "Kein Audio innerhalb von zwei Minuten.",
+        "partOf": "Teil von"
+      }
+    },
+    "saveRange": {
+      "title": "Zeitraum speichern",
+      "description": "Ein gespeicherter Zeitraum erhält Schritte, Transkript und Zusammenfassung. Die Verarbeitung startet beim Speichern.",
+      "name": "Name",
+      "namePlaceholder": "Ablauf der Release-Checkliste",
+      "from": "Von",
+      "to": "Bis",
+      "endBeforeStart": "Das Ende muss nach dem Start liegen.",
+      "cancel": "Abbrechen",
+      "submit": "Zeitraum speichern",
+      "saved": "Zeitraum gespeichert",
+      "failed": "Der Zeitraum konnte nicht gespeichert werden."
+    },
+    "ranges": {
+      "title": "Zeiträume",
+      "description": "Abschnitte einer Zeitleiste mit Schritten, Transkript und Zusammenfassung. Kortix erkennt einen für jede Aktivitätssitzung; eigene speicherst du selbst.",
+      "sourceLabel": "Quelle",
+      "source": {
+        "all": "Alle",
+        "saved": "Gespeichert",
+        "detected": "Erkannt"
+      },
+      "periodLabel": "Zeitspanne",
+      "period": {
+        "week": "7 Tage",
+        "month": "30 Tage"
+      },
+      "status": {
+        "open": "Aufnahme läuft",
+        "closed": "In Warteschlange",
+        "processing": "Wird verarbeitet",
+        "processed": "Verarbeitet",
+        "failed": "Fehlgeschlagen"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "Alle Geräte",
+      "loadFailed": "Die Zeiträume konnten nicht geladen werden.",
+      "tryAgain": "Erneut versuchen",
+      "empty": "Zeiträume erscheinen hier",
+      "emptyHint": "Kortix erkennt einen Zeitraum für jede Aktivitätssitzung. Speichere eigene über die Zeitleiste."
+    },
+    "range": {
+      "backToRanges": "Zeiträume",
+      "openInTimeline": "In Zeitleiste öffnen",
+      "processAgain": "Erneut verarbeiten",
+      "queuedToast": "Zeitraum in die Warteschlange gestellt",
+      "reprocessFailed": "Der Zeitraum konnte nicht in die Warteschlange gestellt werden.",
+      "tab": {
+        "steps": "Schritte",
+        "transcript": "Transkript",
+        "summary": "Zusammenfassung"
+      },
+      "processing": "Wird verarbeitet. Schritte, Transkript und Zusammenfassung erscheinen hier, sobald die Pipelines fertig sind.",
+      "queued": "In der Warteschlange. Die Verarbeitung startet innerhalb einer Minute.",
+      "failed": "Dieser Zeitraum konnte nicht verarbeitet werden.",
+      "noSteps": "Keine Schritte in diesem Zeitraum.",
+      "noTranscript": "Kein Transkript für diesen Zeitraum.",
+      "noSummary": "Keine Zusammenfassung für diesen Zeitraum.",
+      "timeByApp": "Zeit pro App",
+      "noScreen": "Keine Bildschirmaktivität in diesem Zeitraum.",
+      "unknownApp": "Unbekannte App",
+      "notFound": "Dieser Zeitraum existiert nicht mehr.",
+      "notFoundHint": "Der Link ist möglicherweise falsch, oder der Zeitraum gehört einer anderen Person."
+    },
+    "devices": {
+      "title": "Geräte",
+      "description": "Jeder Computer, der in dieses Projekt aufzeichnet, mit seinem Live-Status. Ein Gerät gilt nach 120 Sekunden ohne Status als offline.",
+      "connect": "Gerät verbinden",
+      "connectThisComputer": "Diesen Computer verbinden",
+      "scopeLabel": "Wessen Geräte",
+      "scopeMine": "Meine Geräte",
+      "scopeProject": "Ganzes Projekt",
+      "column": {
+        "device": "Gerät",
+        "owner": "Besitzer",
+        "status": "Status",
+        "layers": "Ebenen",
+        "sync": "Sync",
+        "lastFrame": "Letztes Bild",
+        "actions": "Aktionen"
+      },
+      "status": {
+        "recording": "Nimmt auf",
+        "paused": "Pausiert",
+        "permission": "Berechtigung nötig",
+        "notRecording": "Nimmt nicht auf",
+        "offline": "Offline",
+        "unknown": "Unbekannt"
+      },
+      "detail": {
+        "permission": "Fehlt: {permissions}",
+        "pausedUntil": "Bis {time}",
+        "lastSeen": "Letzter Status {time}"
+      },
+      "permission": {
+        "screen_recording": "Bildschirmaufnahme",
+        "accessibility": "Bedienungshilfen",
+        "microphone": "Mikrofon"
+      },
+      "layer": {
+        "screen": "Bildschirm",
+        "actions": "Aktionen",
+        "audio": "Audio"
+      },
+      "sync": {
+        "upToDate": "Aktuell",
+        "pending": "{count, plural, one {# Element in Warteschlange} other {# Elemente in Warteschlange}}",
+        "failed": "Upload schlägt fehl",
+        "unknown": "Unbekannt"
+      },
+      "never": "Noch keins",
+      "unnamed": "Unbenanntes Gerät",
+      "you": "Du",
+      "member": "Ein Mitglied",
+      "actionsFor": "Aktionen für {name}",
+      "syncNow": "Jetzt synchronisieren",
+      "synced": "{count, plural, =0 {Gerät synchronisiert, nichts Neues} one {Gerät synchronisiert, # Element in Warteschlange} other {Gerät synchronisiert, # Elemente in Warteschlange}}",
+      "syncFailed": "Das Gerät konnte nicht synchronisiert werden",
+      "revoke": "Gerät widerrufen",
+      "revokeTitle": "Dieses Gerät widerrufen?",
+      "revokeDescription": "{name} hört sofort auf, Daten hochzuladen. Um wieder aufzuzeichnen, melde es erneut in der App an.",
+      "revoked": "Gerät widerrufen",
+      "revokeFailed": "Das Gerät konnte nicht widerrufen werden",
+      "loadFailed": "Die Geräte konnten nicht geladen werden.",
+      "tryAgain": "Erneut versuchen",
+      "empty": "Geräte, die du verbindest, erscheinen hier",
+      "footnote": "Eine Zeile pro Computer. Neuinstallation oder Update der App behält dieselbe Zeile."
+    },
+    "connect": {
+      "title": "Gerät verbinden",
+      "description": "Installiere eine App, die aufzeichnet, und melde sie dann bei diesem Projekt an.",
+      "desktopTitle": "Kortix-Desktop-App",
+      "desktopHint": "Die Desktop-App enthält Kortix Capture.",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Kortix-Capture-Engine",
+      "engineHint": "Der Recorder allein, für einen Computer ohne Desktop-App.",
+      "engineLink": "Releases öffnen",
+      "stepsTitle": "Anmelden",
+      "step1": "Öffne die App und wähle Mit Kortix anmelden. Dein Browser öffnet sich.",
+      "step2": "Prüfe, ob der Code im Browser mit dem Code in der App übereinstimmt.",
+      "step3": "Wähle {project}. Das Gerät erscheint innerhalb einer Minute unter deinem Namen hier.",
+      "close": "Schließen"
+    },
+    "people": {
+      "title": "Personen",
+      "description": "Pro Mitglied: aktive Zeit, genutzte Apps, Zeiträume und Geräte.",
+      "periodLabel": "Zeitspanne",
+      "period": {
+        "today": "Heute",
+        "week": "7 Tage",
+        "month": "30 Tage"
+      },
+      "auditTitle": "Nur Personen, die dieses Projekt verwalten, sehen diese Seite",
+      "auditBody": "Das Öffnen dieser Seite oder der Zeitleiste eines Mitglieds schreibt einen Eintrag in den Audit-Log des Projekts. Mitglieder sehen in ihrer eigenen Zeitleiste, dass Manager sie einsehen können.",
+      "column": {
+        "member": "Mitglied",
+        "active": "Aktive Zeit",
+        "apps": "Top-Apps",
+        "ranges": "Zeiträume",
+        "devices": "Geräte",
+        "open": "Öffnen"
+      },
+      "role": {
+        "manager": "Manager",
+        "member": "Mitglied",
+        "viewer": "Betrachter",
+        "none": "Kein Mitglied mehr"
+      },
+      "you": "{email} (du)",
+      "formerMember": "Ehemaliges Mitglied",
+      "noActivity": "Keine Aktivität",
+      "unknownApp": "Unbekannte App",
+      "openTimeline": "Zeitleiste öffnen",
+      "openTimelineOf": "Zeitleiste von {member} öffnen",
+      "loadFailed": "Die Personenübersicht konnte nicht geladen werden.",
+      "tryAgain": "Erneut versuchen",
+      "empty": "Mitglieder erscheinen hier"
+    },
+    "settings": {
+      "title": "Einstellungen",
+      "description": "Die Capture-Richtlinie, die jedes Gerät in diesem Projekt aus dem Capture-Speicher liest.",
+      "layersTitle": "Ebenen",
+      "layer": {
+        "screen": "Bildschirm",
+        "screenHint": "Der Bildschirm, die App und das Fenster im Vordergrund sowie der Text auf dem Bildschirm.",
+        "actions": "Aktionen",
+        "actionsHint": "Klicks, Eingaben und Tastenkürzel, mit einem Screenshot pro Klick.",
+        "audio": "Audio",
+        "audioHint": "Mikrofon und Systemaudio, mit Transkript."
+      },
+      "privacyTitle": "Datenschutz",
+      "masking": "Personenbezogene Daten maskieren",
+      "maskingHint": "Geräte maskieren personenbezogene Daten in ihren Aufnahmen, bevor diese den Computer verlassen.",
+      "pause": "Aufnahme pausieren",
+      "pauseHint": "Jedes Gerät in diesem Projekt stoppt jede Ebene, bis du dies ausschaltest.",
+      "retentionTitle": "Aufbewahrung",
+      "localHours": "Auf dem Gerät (Stunden)",
+      "localHoursHint": "Wie lange ein Gerät Medien nach dem Upload behält. 0 bewahrt sie ohne Limit auf.",
+      "remoteDays": "In Kortix (Tage)",
+      "remoteDaysHint": "Wie lange Kortix indexierte Elemente behält. 0 bewahrt sie ohne Limit auf.",
+      "noticeTitle": "Hinweis",
+      "noticePlaceholder": "Die Aufnahme ist für dieses Projekt aktiviert.",
+      "noticeHint": "Geräte zeigen diesen Text im Menü und im Einstellungsfenster der App.",
+      "lastChanged": "Zuletzt geändert {time}",
+      "defaultPolicy": "Es gilt die Standardrichtlinie.",
+      "discard": "Änderungen verwerfen",
+      "save": "Richtlinie speichern",
+      "saved": "Capture-Richtlinie gespeichert",
+      "saveFailed": "Die Capture-Richtlinie konnte nicht gespeichert werden",
+      "loadFailed": "Die Capture-Richtlinie konnte nicht geladen werden.",
+      "tryAgain": "Erneut versuchen"
+    },
+    "ask": {
+      "title": "Fragen",
+      "description": "Frage nach dem, was du gesehen, getan und gehört hast. Ein Agent antwortet in einer neuen privaten Sitzung und verlinkt jeden Moment, den er nutzt.",
+      "label": "Frage",
+      "placeholder": "Woran habe ich gestern Nachmittag gearbeitet?",
+      "submit": "Fragen",
+      "scope": "Der Agent liest nur deine Zeitleiste, über die Sitzung, die er für dich ausführt.",
+      "suggestion": {
+        "yesterday": "Woran habe ich gestern gearbeitet?",
+        "lastOpened": "Wann habe ich zuletzt die Release-Checkliste geöffnet?",
+        "byApp": "Fasse den heutigen Tag nach App zusammen.",
+        "said": "Was wurde im heutigen Standup gesagt?"
+      },
+      "instructions": "Antworte anhand meiner Kortix-Capture-Zeitleiste. Durchsuche sie mit `kortix capture search`, lies einen Tag mit `kortix capture timeline` und öffne einen Bildschirm mit `kortix capture frame`. Belege jeden verwendeten Moment als Markdown-Link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Belege einen Zeitraum als [sein Titel]({timelineUrl}/ranges/RANGE_ID). Meine Zeitzone ist {tz}. Antworte in der Sprache meiner Frage."
+    }
   }
 }

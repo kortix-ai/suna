@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/index-line.schema.json",
+  "title": "Index line",
+  "description": "One line of <device_id>/index/<YYYY-MM-DD>.jsonl. Fold in order: the latest put of a base is live until a delete of it.",
+  "type": "object",
+  "required": [
+    "op",
+    "base"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "put",
+        "delete"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "chunk",
+        "audio",
+        "actions"
+      ]
+    },
+    "base": {
+      "type": "string",
+      "pattern": "^[^/]+/(([0-9]{4}/[0-9]{2}/[0-9]{2}/[0-9]+-(a|x)?[0-9]+))$"
+    },
+    "start_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "end_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "manifest": {
+      "type": "boolean"
+    },
+    "at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason": {
+      "type": "string"
+    },
+    "video_id": {
+      "type": "integer"
+    },
+    "audio_id": {
+      "type": "integer"
+    },
+    "segment_id": {
+      "type": "integer"
+    },
+    "frames": {
+      "type": "integer"
+    },
+    "transcript_lines": {
+      "type": "integer"
+    },
+    "events": {
+      "type": "integer"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "put"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "start_ms",
+          "end_ms",
+          "manifest"
+        ]
+      }
+    }
+  ]
+}

@@ -79,6 +79,9 @@ describe('session-title invariant', () => {
       offenders(/\bdeleteGatewayKey\b/, [
         'llm-gateway/gateway-keys.ts',
         'projects/session-title-generate.ts',
+        // The capture range pipelines mint and delete their own internal key the same
+        // way, from the job worker; no route reaches it (capture/processing.ts).
+        'capture/processing.ts',
       ]),
     ).toEqual([]);
   });

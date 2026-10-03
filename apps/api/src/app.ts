@@ -68,6 +68,12 @@ registerSystemRoutes(app);
 
 registerPlatformEndpoints(app);
 
+// /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
+// device credential endpoint (device token), and the approval reads (per-route
+// supabaseAuth). Project-scoped capture reads live under /v1/projects.
+import { createCaptureRouter } from './capture/device-routes';
+app.route('/v1/capture', createCaptureRouter());
+
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit

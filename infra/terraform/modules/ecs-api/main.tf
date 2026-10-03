@@ -285,6 +285,43 @@ resource "aws_iam_role_policy" "audit_archive" {
   })
 }
 
+# Kortix Capture (modules/capture-store). The API reads device objects
+# (ingestion), writes and deletes policy.json, deletes items past retention,
+# signs media GETs, consumes the manifest-event queue, and assumes the device
+# role to issue per-device credentials (always with a session policy that
+# narrows it to one device folder: apps/api/src/capture/credentials.ts).
+resource "aws_iam_role_policy" "capture" {
+  # A plan-time boolean, not the ARNs: they come from resources created in the
+  # same apply, and count cannot depend on a value unknown until apply.
+  count = var.capture_enabled ? 1 : 0
+  name  = "${local.name}-capture"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "CaptureObjects"
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+      Resource = "${var.capture_bucket_arn}/*"
+      }, {
+      Sid      = "CaptureMissingKeyIs404"
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket"]
+      Resource = var.capture_bucket_arn
+      }, {
+      Sid      = "CaptureManifestEvents"
+      Effect   = "Allow"
+      Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"]
+      Resource = var.capture_queue_arn
+      }, {
+      Sid      = "CaptureIssueDeviceCredentials"
+      Effect   = "Allow"
+      Action   = ["sts:AssumeRole"]
+      Resource = var.capture_device_role_arn
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"

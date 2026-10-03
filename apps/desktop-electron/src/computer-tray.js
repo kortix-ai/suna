@@ -40,6 +40,8 @@ const WATCHED_FILES = ['state.json', 'config.json', 'access.json', 'access-reque
  *   getMainWindow: () => import('electron').BrowserWindow | null,
  *   openMainWindow: () => void,
  *   backgroundColor: () => string,
+ *   captureItems: () => object[],
+ *   captureKeepsRunning: () => boolean,
  * }} deps
  */
 function setupComputer(deps) {
@@ -392,7 +394,8 @@ function setupComputer(deps) {
   };
 
   function renderTray() {
-    if (!status?.paired) {
+    const captureItems = deps.captureItems();
+    if (!status?.paired && captureItems.length === 0) {
       tray?.destroy();
       tray = null;
       return;
@@ -402,7 +405,7 @@ function setupComputer(deps) {
       // Windows and Linux: a left click opens the app; the menu is on right click.
       if (process.platform !== 'darwin') tray.on('click', actions.open);
     }
-    tray.setToolTip(`Kortix — ${computer.statusLabel(status)}`);
+    tray.setToolTip(status?.paired ? `Kortix — ${computer.statusLabel(status)}` : 'Kortix');
     tray.setContextMenu(
       Menu.buildFromTemplate(
         computer.trayMenuTemplate(
@@ -412,6 +415,7 @@ function setupComputer(deps) {
             openAtLogin: app.getLoginItemSettings().openAtLogin,
             loginItemSupported: process.platform === 'darwin' || process.platform === 'win32',
             keepAwakeSupported: computer.keepAwakeSupported(process.platform),
+            captureItems,
           },
           actions,
         ),
@@ -783,7 +787,10 @@ function setupComputer(deps) {
     start,
     invoke,
     /** Closing the last window keeps the app in the tray while a computer is paired. */
-    keepRunning: () => computer.keepRunningInTray(status),
+    keepRunning: () => computer.keepRunningInTray(status) || deps.captureKeepsRunning(),
+    /** The instance's backend (Capture signs in to it). */
+    backend: () => context(),
+    renderTray: renderTraySafely,
   };
 }
 

@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/manifest-actions.schema.json",
+  "title": "Action segment manifest",
+  "description": "<prefix>/<device_id>/<YYYY>/<MM>/<DD>/<start_ms>-x<segment_id>.manifest.json. objects.actions is the zstd JSONL of action lines (actions-line.schema.json); every name in screenshots is an object under <device_id>/assets/ written before this manifest.",
+  "type": "object",
+  "required": [
+    "schema",
+    "kind",
+    "device_id",
+    "start_ms",
+    "end_ms",
+    "app_version",
+    "created_at_ms",
+    "encryption",
+    "privacy",
+    "objects",
+    "segment_id",
+    "event_count",
+    "screenshots"
+  ],
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "kind": {
+      "const": "actions"
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/]+$"
+    },
+    "start_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "end_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "app_version": {
+      "type": "string"
+    },
+    "created_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "objects": {
+      "type": "object",
+      "required": [
+        "actions"
+      ],
+      "properties": {
+        "actions": {
+          "$ref": "#/$defs/object"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/object"
+      }
+    },
+    "segment_id": {
+      "type": "integer"
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "screenshots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "object": {
+      "type": "object",
+      "required": [
+        "key",
+        "size",
+        "sha256",
+        "plain_size",
+        "plain_sha256"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plain_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plain_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "asset": {
+      "type": "string",
+      "pattern": "^(sha256-)?[0-9a-f]{64}\\.[a-z0-9]+$"
+    },
+    "encryption": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "alg",
+            "key_id"
+          ],
+          "properties": {
+            "alg": {
+              "type": "string"
+            },
+            "key_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "required": [
+        "redact_pii",
+        "mode"
+      ],
+      "properties": {
+        "redact_pii": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "off",
+            "patterns",
+            "model"
+          ]
+        }
+      }
+    }
+  }
+}
