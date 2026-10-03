@@ -1,5 +1,5 @@
 {
-  "id": "aaaae5e6-b0c4-4e32-9cfc-72f66c86fe04",
+  "id": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "prevId": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "version": "7",
   "dialect": "postgresql",
@@ -1688,6 +1688,21 @@
             },
             {
               "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_secret_resources_project_id": {
+          "name": "idx_account_secret_resources_project_id",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -6427,27 +6442,6 @@
           ],
           "isUnique": true,
           "where": "\"kortix\".\"connection_credentials\".\"connection_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connection_credentials_connector_connection": {
-          "name": "idx_connection_credentials_connector_connection",
-          "columns": [
-            {
-              "expression": "connector_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
