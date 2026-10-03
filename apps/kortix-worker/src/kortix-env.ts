@@ -60,8 +60,8 @@ export interface KortixEnvOptions {
   headers?: Record<string, string>;
   /** Per-call timeout. */
   timeoutMs?: number;
-  /** Which transport carries the RPC. See src/rpc-transport.ts and the gate. */
-  transport?: TransportKind;
+  /** Which transport carries the RPC. See src/rpc-transport.ts and the gate. A prebuilt transport overrides the kind — tests inject a stub. */
+  transport?: TransportKind | RpcTransport;
 }
 
 export class KortixExecutionEnv {
@@ -82,7 +82,10 @@ export class KortixExecutionEnv {
     this.headers = opts.headers ?? {};
     // Default to keepalive: one pooled connection, handshake paid once per
     // session rather than once per tool call. See the RPC-tax gate.
-    this.transport = makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
+    this.transport =
+      typeof opts.transport === 'object'
+        ? opts.transport
+        : makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
     this.timeoutMs = opts.timeoutMs ?? 120_000;
   }
 
