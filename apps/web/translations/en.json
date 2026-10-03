@@ -20760,6 +20760,7 @@
       "title": "Devices",
       "description": "Every computer that records into this project, with its live status. A device counts as offline after 120 seconds without a status.",
       "connect": "Connect a device",
+      "connectThisComputer": "Connect this computer",
       "scopeLabel": "Whose devices",
       "scopeMine": "My devices",
       "scopeProject": "Whole project",

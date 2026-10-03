@@ -20760,6 +20760,7 @@
       "title": "Appareils",
       "description": "Chaque ordinateur qui enregistre dans ce projet, avec son état en direct. Un appareil est hors ligne après 120 secondes sans état.",
       "connect": "Connecter un appareil",
+      "connectThisComputer": "Connecter cet ordinateur",
       "scopeLabel": "Appareils de qui",
       "scopeMine": "Mes appareils",
       "scopeProject": "Tout le projet",

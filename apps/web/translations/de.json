@@ -20760,6 +20760,7 @@
       "title": "Geräte",
       "description": "Jeder Computer, der in dieses Projekt aufzeichnet, mit seinem Live-Status. Ein Gerät gilt nach 120 Sekunden ohne Status als offline.",
       "connect": "Gerät verbinden",
+      "connectThisComputer": "Diesen Computer verbinden",
       "scopeLabel": "Wessen Geräte",
       "scopeMine": "Meine Geräte",
       "scopeProject": "Ganzes Projekt",

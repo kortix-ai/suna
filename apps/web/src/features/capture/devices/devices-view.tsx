@@ -38,6 +38,7 @@ import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/ca
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { relativeTime } from '../capture-time';
+import { DesktopCaptureModal, useDesktopCaptureStatus } from '../desktop-capture-modal';
 import { useCaptureMembers, useCaptureViewer } from '../use-capture-viewer';
 import { ConnectDeviceModal } from './connect-device-modal';
 import { deviceStatus, type DeviceStatusView } from './device-status';
@@ -184,6 +185,9 @@ export function DevicesView({ projectId }: { projectId: string }) {
   const revoke = useRevokeCaptureDevice(projectId);
   const [revoking, setRevoking] = useState<CaptureDevice | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
+  // Inside the Kortix desktop app with its bundled engine: sign this computer in without a browser trip.
+  const desktopCapture = useDesktopCaptureStatus();
+  const [thisComputerOpen, setThisComputerOpen] = useState(false);
 
   const rows = (devices.data?.devices ?? []).filter((device) => !device.revoked_at);
   const ownerOf = (device: CaptureDevice) =>
@@ -279,6 +283,13 @@ export function DevicesView({ projectId }: { projectId: string }) {
         <p className="text-muted-foreground text-xs text-pretty">{t('footnote')}</p>
       </div>
 
+      {desktopCapture.data?.available ? (
+        <DesktopCaptureModal
+          projectId={projectId}
+          open={thisComputerOpen}
+          onOpenChange={setThisComputerOpen}
+        />
+      ) : null}
       <ConnectDeviceModal
         open={connectOpen}
         onOpenChange={setConnectOpen}

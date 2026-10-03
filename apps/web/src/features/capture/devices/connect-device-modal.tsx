@@ -14,13 +14,10 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { useTranslations } from '@/i18n/use-translations';
+import { desktopDownloadUrl } from '@/lib/desktop';
 
-/** The Kortix desktop app, per OS: the public download routes (`/download/<os>`). */
-const DESKTOP_DOWNLOADS = [
-  { os: 'macos', href: '/download/macos' },
-  { os: 'windows', href: '/download/windows' },
-  { os: 'linux', href: '/download/linux' },
-] as const;
+/** The Kortix desktop app, per OS (`desktopDownloadUrl`: `/download/<os>` redirects to the latest installer). */
+const DESKTOP_OS = ['macos', 'windows', 'linux'] as const;
 
 /** The standalone capture engine's releases. */
 const ENGINE_RELEASES_URL = 'https://github.com/kortix-ai/capture/releases/latest';
@@ -52,11 +49,16 @@ export function ConnectDeviceModal({
             <p className="text-foreground text-sm font-medium">{t('desktopTitle')}</p>
             <p className="text-muted-foreground text-xs text-pretty">{t('desktopHint')}</p>
             <div className="flex flex-wrap gap-2">
-              {DESKTOP_DOWNLOADS.map((item) => (
-                <Button key={item.os} asChild variant="outline" size="sm" className="gap-1.5">
-                  <Link href={item.href} target="_blank" rel="noopener noreferrer" prefetch={false}>
+              {DESKTOP_OS.map((os) => (
+                <Button key={os} asChild variant="outline" size="sm" className="gap-1.5">
+                  <Link
+                    href={desktopDownloadUrl(os)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    prefetch={false}
+                  >
                     <DownloadSimpleIcon className="size-3.5 shrink-0" />
-                    {t(`os.${item.os}`)}
+                    {t(`os.${os}`)}
                   </Link>
                 </Button>
               ))}

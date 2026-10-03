@@ -20760,6 +20760,7 @@
       "title": "Dispositivos",
       "description": "Cada computador que grava neste projeto, com seu status ao vivo. Um dispositivo conta como offline após 120 segundos sem status.",
       "connect": "Conectar um dispositivo",
+      "connectThisComputer": "Conectar este computador",
       "scopeLabel": "Dispositivos de quem",
       "scopeMine": "Meus dispositivos",
       "scopeProject": "Projeto inteiro",

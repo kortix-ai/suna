@@ -20760,6 +20760,7 @@
       "title": "Dispositivos",
       "description": "Cada ordenador que graba en este proyecto, con su estado en vivo. Un dispositivo se considera sin conexión tras 120 segundos sin estado.",
       "connect": "Conectar un dispositivo",
+      "connectThisComputer": "Conectar este ordenador",
       "scopeLabel": "De quién",
       "scopeMine": "Mis dispositivos",
       "scopeProject": "Todo el proyecto",

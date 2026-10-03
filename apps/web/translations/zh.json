@@ -20760,6 +20760,7 @@
       "title": "设备",
       "description": "向此项目录制的每台电脑及其实时状态。设备超过 120 秒没有状态即视为离线。",
       "connect": "连接设备",
+      "connectThisComputer": "连接这台电脑",
       "scopeLabel": "谁的设备",
       "scopeMine": "我的设备",
       "scopeProject": "整个项目",

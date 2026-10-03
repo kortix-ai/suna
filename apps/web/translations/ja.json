@@ -20760,6 +20760,7 @@
       "title": "デバイス",
       "description": "このプロジェクトに記録しているすべてのコンピューターとそのライブ状態です。120 秒間状態がないデバイスはオフラインと見なされます。",
       "connect": "デバイスを接続",
+      "connectThisComputer": "このコンピュータを接続",
       "scopeLabel": "対象",
       "scopeMine": "自分のデバイス",
       "scopeProject": "プロジェクト全体",
