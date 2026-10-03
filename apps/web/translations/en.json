@@ -20771,7 +20771,6 @@
         "layers": "Layers",
         "sync": "Sync",
         "lastFrame": "Last frame",
-        "version": "Version",
         "actions": "Actions"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "Unknown"
       },
       "never": "None yet",
-      "unknownVersion": "Unknown",
       "unnamed": "Unnamed device",
       "you": "You",
       "member": "A member",

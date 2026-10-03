@@ -42,7 +42,7 @@ export function MomentDetails({
 
   return (
     <aside
-      className="bg-background space-y-5 rounded-md border px-4 py-5"
+      className="bg-background space-y-5 self-start rounded-md border px-4 py-5"
       aria-label={t('details.label')}
     >
       <div className="space-y-1">
@@ -85,7 +85,7 @@ export function MomentDetails({
             <ul className="space-y-1.5">
               {nearActions.map((action) => (
                 <li key={action.action_id} className="flex gap-3 text-xs">
-                  <span className="text-muted-foreground w-16 shrink-0 tabular-nums">
+                  <span className="text-muted-foreground w-20 shrink-0 whitespace-nowrap tabular-nums">
                     {clockTime(action.ts, locale, true)}
                   </span>
                   <span className="min-w-0 wrap-anywhere">{action.description ?? action.kind}</span>
@@ -105,7 +105,7 @@ export function MomentDetails({
             <ul className="space-y-1.5">
               {nearAudio.map((line) => (
                 <li key={line.line_id} className="flex gap-3 text-xs">
-                  <span className="text-muted-foreground w-16 shrink-0 tabular-nums">
+                  <span className="text-muted-foreground w-20 shrink-0 whitespace-nowrap tabular-nums">
                     {clockTime(line.ts, locale, true)}
                   </span>
                   <span className="min-w-0 text-pretty">{line.text}</span>

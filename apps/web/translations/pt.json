@@ -20771,7 +20771,6 @@
         "layers": "Camadas",
         "sync": "Sincronização",
         "lastFrame": "Último quadro",
-        "version": "Versão",
         "actions": "Ações"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "Desconhecido"
       },
       "never": "Ainda nenhum",
-      "unknownVersion": "Desconhecida",
       "unnamed": "Dispositivo sem nome",
       "you": "Você",
       "member": "Um membro",

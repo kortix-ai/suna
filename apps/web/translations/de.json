@@ -20771,7 +20771,6 @@
         "layers": "Ebenen",
         "sync": "Sync",
         "lastFrame": "Letztes Bild",
-        "version": "Version",
         "actions": "Aktionen"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "Unbekannt"
       },
       "never": "Noch keins",
-      "unknownVersion": "Unbekannt",
       "unnamed": "Unbenanntes Gerät",
       "you": "Du",
       "member": "Ein Mitglied",

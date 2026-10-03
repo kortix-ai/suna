@@ -147,13 +147,20 @@ export function TimelineTrack({
     <div className="bg-background space-y-2 rounded-md border px-4 py-3">
       <div className="flex items-center gap-3">
         <span className="w-16 shrink-0" aria-hidden />
-        <div className="text-muted-foreground relative h-4 flex-1 text-xs tabular-nums" aria-hidden>
+        <div
+          className="text-muted-foreground @container relative h-4 flex-1 text-xs tabular-nums"
+          aria-hidden
+        >
           {hourTicks(span.start, span.end).map((tick, i, all) => (
             <span
               key={tick}
               className={cn(
-                'absolute top-0',
+                'absolute top-0 whitespace-nowrap',
                 i === 0 ? '' : i === all.length - 1 ? '-translate-x-full' : '-translate-x-1/2',
+                // Every hour fits from 42rem of track; below it, every other hour (the first stays).
+                all.length > 5 && i % 2 === 1 && '@max-2xl:hidden',
+                // A long day labels every other hour at any width.
+                all.length > 12 && i % 2 === 1 && 'hidden',
               )}
               style={{ left: pct(tick) }}
             >

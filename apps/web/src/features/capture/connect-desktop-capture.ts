@@ -25,7 +25,8 @@ export async function connectDesktopCapture(
 ): Promise<DesktopCaptureSignInResult> {
   const started = await deps.start();
   if (!started) return { ok: false, error: 'This desktop app has no Kortix Capture.' };
-  if (!started.ok || !started.userCode) return { ok: false, error: started.error || 'Capture sign-in did not start.' };
+  if (!started.ok || !started.userCode)
+    return { ok: false, error: started.error || 'Capture sign-in did not start.' };
   try {
     await deps.approve(started.userCode, projectId);
   } catch (error) {

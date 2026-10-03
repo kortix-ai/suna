@@ -20771,7 +20771,6 @@
         "layers": "レイヤー",
         "sync": "同期",
         "lastFrame": "最後のフレーム",
-        "version": "バージョン",
         "actions": "操作"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "不明"
       },
       "never": "まだありません",
-      "unknownVersion": "不明",
       "unnamed": "名前のないデバイス",
       "you": "あなた",
       "member": "メンバー",

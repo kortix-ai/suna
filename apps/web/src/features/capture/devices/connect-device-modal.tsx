@@ -64,7 +64,7 @@ export function ConnectDeviceModal({
               ))}
             </div>
           </section>
-          <section className="space-y-2">
+          <section className="flex flex-col items-start gap-2">
             <p className="text-foreground text-sm font-medium">{t('engineTitle')}</p>
             <p className="text-muted-foreground text-xs text-pretty">{t('engineHint')}</p>
             <Button asChild variant="outline" size="sm" className="gap-1.5">

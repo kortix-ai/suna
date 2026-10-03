@@ -20771,7 +20771,6 @@
         "layers": "Livelli",
         "sync": "Sincronizzazione",
         "lastFrame": "Ultimo fotogramma",
-        "version": "Versione",
         "actions": "Azioni"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "Sconosciuto"
       },
       "never": "Ancora nessuno",
-      "unknownVersion": "Sconosciuta",
       "unnamed": "Dispositivo senza nome",
       "you": "Tu",
       "member": "Un membro",

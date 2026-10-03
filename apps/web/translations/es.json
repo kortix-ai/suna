@@ -20771,7 +20771,6 @@
         "layers": "Capas",
         "sync": "Sincronización",
         "lastFrame": "Último fotograma",
-        "version": "Versión",
         "actions": "Acciones"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "Desconocido"
       },
       "never": "Aún ninguno",
-      "unknownVersion": "Desconocida",
       "unnamed": "Dispositivo sin nombre",
       "you": "Tú",
       "member": "Un miembro",

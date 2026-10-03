@@ -181,7 +181,7 @@ export function RangeView({ projectId, rangeId }: { projectId: string; rangeId: 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-10 pb-20">
-        <div className="space-y-3">
+        <div className="flex flex-col items-start gap-3">
           <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1.5">
             <Link
               href={`/projects/${projectId}/capture/ranges${otherUser ? `?user=${otherUser}` : ''}`}
@@ -190,7 +190,7 @@ export function RangeView({ projectId, rangeId }: { projectId: string; rangeId: 
               {t('backToRanges')}
             </Link>
           </Button>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-1.5">
               <h2 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
                 {summary.title ?? data.title ?? span}
@@ -272,7 +272,7 @@ export function RangeView({ projectId, rangeId }: { projectId: string; rangeId: 
                       >
                         <Link
                           href={momentHref(at)}
-                          className="text-muted-foreground w-12 shrink-0 pt-0.5 text-xs tabular-nums underline-offset-2 hover:underline"
+                          className="text-muted-foreground w-16 shrink-0 pt-0.5 text-xs whitespace-nowrap tabular-nums underline-offset-2 hover:underline"
                         >
                           {clockTime(at, locale)}
                         </Link>

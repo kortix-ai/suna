@@ -78,23 +78,24 @@ export function AskView({ projectId }: { projectId: string }) {
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        <div className="flex flex-wrap items-center gap-2">
-          {SUGGESTIONS.map((key) => (
-            <Button
-              key={key}
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setQuestion(t(`suggestion.${key}`))}
-            >
-              {t(`suggestion.${key}`)}
-            </Button>
-          ))}
-          <span className="flex-1" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {SUGGESTIONS.map((key) => (
+              <Button
+                key={key}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setQuestion(t(`suggestion.${key}`))}
+              >
+                {t(`suggestion.${key}`)}
+              </Button>
+            ))}
+          </div>
           <Button
             type="submit"
             size="sm"
-            className="gap-1.5"
+            className="shrink-0 gap-1.5"
             disabled={!question.trim() || sending}
             aria-busy={sending}
           >

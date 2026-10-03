@@ -63,7 +63,10 @@ export function useDesktopCaptureStatus({ poll = false }: { poll?: boolean } = {
 function useCaptureProjects() {
   const { sections, listsLoading } = useProjectSelectorData();
   const projects = useMemo(
-    () => sections.flatMap((section) => section.projects).filter((project) => project.experimental?.capture),
+    () =>
+      sections
+        .flatMap((section) => section.projects)
+        .filter((project) => project.experimental?.capture),
     [sections],
   );
   return { projects, loading: listsLoading };
@@ -79,7 +82,9 @@ export function DesktopCaptureMenuItem({ onSelect }: { onSelect: () => void }) {
     <DropdownMenuItem onSelect={onSelect} size="sm">
       <RecordIcon />
       {t('menu')}
-      {status.data.signedIn ? <CaptureStateDot state={status.data.state} className="ml-auto" /> : null}
+      {status.data.signedIn ? (
+        <CaptureStateDot state={status.data.state} className="ml-auto" />
+      ) : null}
     </DropdownMenuItem>
   );
 }
@@ -87,7 +92,8 @@ export function DesktopCaptureMenuItem({ onSelect }: { onSelect: () => void }) {
 function CaptureStateDot({ state, className }: { state?: string; className?: string }) {
   const t = useTranslations('capture.desktop');
   const recording = state === 'recording';
-  const attention = state === 'permission_missing' || state === 'crashed' || state === 'signInRequired';
+  const attention =
+    state === 'permission_missing' || state === 'crashed' || state === 'signInRequired';
   return (
     <span
       role="img"
@@ -101,7 +107,17 @@ function CaptureStateDot({ state, className }: { state?: string; className?: str
   );
 }
 
-const STATES = ['recording', 'paused', 'permission_missing', 'not_recording', 'starting', 'crashed', 'off', 'signInRequired', 'signedOut'];
+const STATES = [
+  'recording',
+  'paused',
+  'permission_missing',
+  'not_recording',
+  'starting',
+  'crashed',
+  'off',
+  'signInRequired',
+  'signedOut',
+];
 const stateKey = (state?: string) => (state && STATES.includes(state) ? state : 'not_recording');
 
 export function DesktopCaptureModal({
@@ -157,7 +173,8 @@ function CaptureContent({ currentProjectId }: { currentProjectId: string }) {
     retry: false,
     // Server first: the device loses its access in Kortix, then this app forgets it.
     mutationFn: async (view: DesktopCaptureStatus) => {
-      if (view.projectId && view.deviceId) await revokeCaptureDevice(view.projectId, view.deviceId).catch(() => undefined);
+      if (view.projectId && view.deviceId)
+        await revokeCaptureDevice(view.projectId, view.deviceId).catch(() => undefined);
       return desktopCaptureSignOut();
     },
     onSuccess: (next) => {
@@ -184,7 +201,9 @@ function CaptureContent({ currentProjectId }: { currentProjectId: string }) {
       <>
         <CaptureHeader status={t('unavailableTitle')} />
         <ModalBody>
-          <p className="text-muted-foreground text-sm text-pretty">{view?.error || t('unavailable')}</p>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {view?.error || t('unavailable')}
+          </p>
         </ModalBody>
       </>
     );
@@ -207,7 +226,9 @@ function CaptureContent({ currentProjectId }: { currentProjectId: string }) {
   }
 
   const project = projects.find((p) => p.project_id === view.projectId);
-  const lastUpload = view.sync?.lastUploadMs ? relativeTime(new Date(view.sync.lastUploadMs).toISOString()) : '';
+  const lastUpload = view.sync?.lastUploadMs
+    ? relativeTime(new Date(view.sync.lastUploadMs).toISOString())
+    : '';
 
   return (
     <>
@@ -221,8 +242,14 @@ function CaptureContent({ currentProjectId }: { currentProjectId: string }) {
         }
       />
       <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
-        {view.state === 'crashed' && view.error ? <InfoBanner tone="warning" title={t('crashed')}>{view.error}</InfoBanner> : null}
-        {view.policy?.notice ? <InfoBanner title={t('policyNotice')}>{view.policy.notice}</InfoBanner> : null}
+        {view.state === 'crashed' && view.error ? (
+          <InfoBanner tone="warning" title={t('crashed')}>
+            {view.error}
+          </InfoBanner>
+        ) : null}
+        {view.policy?.notice ? (
+          <InfoBanner title={t('policyNotice')}>{view.policy.notice}</InfoBanner>
+        ) : null}
 
         <SettingsRowGroup>
           <SettingsRow label={t('record')} description={t('recordDescription')}>
@@ -269,7 +296,12 @@ function CaptureContent({ currentProjectId }: { currentProjectId: string }) {
                 ? t('lastUpload', { time: lastUpload, pending: view.sync?.pending ?? 0 })
                 : t('noUploadYet')}
           </p>
-          <Button size="sm" variant="link" className="h-auto px-0 text-xs" onClick={() => setChanging(true)}>
+          <Button
+            size="sm"
+            variant="link"
+            className="h-auto px-0 text-xs"
+            onClick={() => setChanging(true)}
+          >
             {t('changeProject')}
           </Button>
         </section>
@@ -279,14 +311,18 @@ function CaptureContent({ currentProjectId }: { currentProjectId: string }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void desktopCaptureOpenTimeline().catch((error: Error) => errorToast(error.message))}
+            onClick={() =>
+              void desktopCaptureOpenTimeline().catch((error: Error) => errorToast(error.message))
+            }
           >
             {t('openTimeline')}
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))}
+            onClick={() =>
+              void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))
+            }
           >
             {t('showLogs')}
           </Button>
@@ -328,12 +364,20 @@ function Permissions({ view }: { view: DesktopCaptureStatus }) {
         {needed.map((key) => {
           const granted = view.permissions?.[key] === true;
           return (
-            <SettingsRow key={key} label={t(`permissions.${key}`)} description={granted ? t('permissionGranted') : t('permissionMissing')}>
+            <SettingsRow
+              key={key}
+              label={t(`permissions.${key}`)}
+              description={granted ? t('permissionGranted') : t('permissionMissing')}
+            >
               {granted ? null : (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => void desktopCaptureOpenPermission(key).catch((error: Error) => errorToast(error.message))}
+                  onClick={() =>
+                    void desktopCaptureOpenPermission(key).catch((error: Error) =>
+                      errorToast(error.message),
+                    )
+                  }
                 >
                   {t('openSystemSettings')}
                 </Button>
@@ -366,7 +410,11 @@ function SignIn({
   const tAuthorize = useTranslations('capture.authorize');
   const [picked, setPicked] = useState<string | null>(null);
   const [waitingOnPage, setWaitingOnPage] = useState(false);
-  const fallback = projects.some((p) => p.project_id === defaultProjectId) ? defaultProjectId : projects.length === 1 ? projects[0]!.project_id : null;
+  const fallback = projects.some((p) => p.project_id === defaultProjectId)
+    ? defaultProjectId
+    : projects.length === 1
+      ? projects[0]!.project_id
+      : null;
   const projectId = picked ?? fallback;
 
   const connect = useMutation({
@@ -384,7 +432,10 @@ function SignIn({
           if (!openExternalRoute(route)) window.open(url, '_blank');
         },
       });
-      if (!result.ok) throw new Error(result.error === 'cancelled' ? t('signInCancelled') : result.error || t('signInFailed'));
+      if (!result.ok)
+        throw new Error(
+          result.error === 'cancelled' ? t('signInCancelled') : result.error || t('signInFailed'),
+        );
       return result.status;
     },
     onSuccess: (next) => {
@@ -396,7 +447,9 @@ function SignIn({
 
   return (
     <>
-      <CaptureHeader status={view.signInRequired ? t('state.signInRequired') : t('state.signedOut')} />
+      <CaptureHeader
+        status={view.signInRequired ? t('state.signInRequired') : t('state.signedOut')}
+      />
       <ModalBody className="min-h-0 space-y-5 overflow-y-auto">
         {view.signInRequired ? <InfoBanner tone="warning" title={t('signInRequiredHint')} /> : null}
         <p className="text-muted-foreground text-sm text-pretty">{t('intro')}</p>
@@ -409,21 +462,36 @@ function SignIn({
           ) : (
             <RadioGroup value={projectId ?? ''} onValueChange={setPicked}>
               {projects.map((project) => (
-                <RadioGroupItem key={project.project_id} value={project.project_id} variant="outline" label={project.name} />
+                <RadioGroupItem
+                  key={project.project_id}
+                  value={project.project_id}
+                  variant="outline"
+                  label={project.name}
+                />
               ))}
             </RadioGroup>
           )}
         </section>
         <p className="text-muted-foreground text-xs text-pretty">{tAuthorize('notice')}</p>
         {connect.error ? <InfoBanner tone="warning" title={connect.error.message} /> : null}
-        {waitingOnPage ? <p className="text-muted-foreground text-xs">{t('waitingOnPage')}</p> : null}
+        {waitingOnPage ? (
+          <p className="text-muted-foreground text-xs">{t('waitingOnPage')}</p>
+        ) : null}
         <div className="space-y-2">
-          <Button className="w-full" disabled={!projectId || connect.isPending} onClick={() => projectId && connect.mutate(projectId)}>
+          <Button
+            className="w-full"
+            disabled={!projectId || connect.isPending}
+            onClick={() => projectId && connect.mutate(projectId)}
+          >
             {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
             {connect.isPending ? t('signingIn') : t('turnOn')}
           </Button>
           {connect.isPending ? (
-            <Button variant="ghost" className="w-full" onClick={() => void desktopCaptureSignInCancel()}>
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => void desktopCaptureSignInCancel()}
+            >
               {t('cancel')}
             </Button>
           ) : onCancel ? (

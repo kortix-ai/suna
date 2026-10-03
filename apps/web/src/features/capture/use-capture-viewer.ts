@@ -23,7 +23,9 @@ export function useCaptureViewer(projectId: string) {
   const project = detail.data?.project;
   return {
     enabled: flag.enabled,
-    isLoading: flag.isLoading || detail.isLoading,
+    // A cached "off" (hydrated or stale) is not an answer while a refetch runs:
+    // turning the flag on elsewhere must not 404 the area until the fresh read lands.
+    isLoading: flag.isLoading || detail.isLoading || (!flag.enabled && detail.isFetching),
     isManager: project?.effective_project_role === 'manager',
     projectName: project?.name ?? '',
   };

@@ -41,7 +41,7 @@ export function FrameViewer({
     return () => element.removeEventListener('loadedmetadata', seek);
   }, [video, offset]);
 
-  if (loading && !detail) return <Skeleton className="aspect-video w-full rounded-md" />;
+  if (loading && !detail) return <Skeleton className="aspect-video max-h-96 w-full rounded-md" />;
 
   const reason = !frame
     ? t('frame.none')
@@ -52,7 +52,7 @@ export function FrameViewer({
         : null;
 
   return (
-    <div className="bg-muted relative aspect-video w-full overflow-hidden rounded-md border">
+    <div className="bg-muted relative aspect-video max-h-96 w-full overflow-hidden rounded-md border">
       {video && !video.encrypted ? (
         <video
           ref={videoRef}

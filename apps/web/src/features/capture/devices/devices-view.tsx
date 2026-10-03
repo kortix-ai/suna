@@ -97,19 +97,23 @@ function DeviceRow({
   return (
     <TableRow>
       <TableCell className="align-middle">
-        <p className="text-foreground text-sm font-medium">{device.name ?? t('unnamed')}</p>
+        <p className="text-foreground text-sm font-medium whitespace-normal">
+          {device.name ?? t('unnamed')}
+        </p>
         <p className="text-muted-foreground text-xs">
-          {[device.os, device.os_version].filter(Boolean).join(' ')}
+          {[[device.os, device.os_version].filter(Boolean).join(' '), device.app_version]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </TableCell>
       {owner !== null ? <TableCell className="align-middle text-sm">{owner}</TableCell> : null}
       <TableCell className="align-middle">
         <StatusCell view={view} />
       </TableCell>
-      <TableCell className="align-middle text-xs">
+      <TableCell className="align-middle text-xs whitespace-normal">
         {view.layers.map((layer) => t(`layer.${layer}`)).join(' · ')}
       </TableCell>
-      <TableCell className="align-middle text-xs">
+      <TableCell className="align-middle text-xs whitespace-normal">
         {view.syncFailed
           ? t('sync.failed')
           : view.pending === null
@@ -120,9 +124,6 @@ function DeviceRow({
       </TableCell>
       <TableCell className="align-middle text-xs tabular-nums">
         {view.lastFrameMs ? relativeTime(view.lastFrameMs, locale) : t('never')}
-      </TableCell>
-      <TableCell className="align-middle font-mono text-xs">
-        {device.app_version ?? t('unknownVersion')}
       </TableCell>
       <TableCell className="align-middle">
         <DeviceActions projectId={projectId} device={device} onRevoke={onRevoke} />
@@ -261,7 +262,6 @@ export function DevicesView({ projectId }: { projectId: string }) {
                 <TableHead>{t('column.layers')}</TableHead>
                 <TableHead>{t('column.sync')}</TableHead>
                 <TableHead>{t('column.lastFrame')}</TableHead>
-                <TableHead>{t('column.version')}</TableHead>
                 <TableHead className="w-12">
                   <span className="sr-only">{t('column.actions')}</span>
                 </TableHead>

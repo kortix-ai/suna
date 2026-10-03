@@ -9,7 +9,11 @@ function deps(over: Partial<ConnectDesktopCaptureDeps> = {}) {
   const d: ConnectDesktopCaptureDeps = {
     start: async () => {
       calls.push('start');
-      return { ok: true, userCode: 'ABCD-1234', verificationUrl: 'https://kortix.test/capture/authorize?user_code=ABCD-1234' };
+      return {
+        ok: true,
+        userCode: 'ABCD-1234',
+        verificationUrl: 'https://kortix.test/capture/authorize?user_code=ABCD-1234',
+      };
     },
     approve: async (code, project) => {
       calls.push(`approve ${code} ${project}`);
@@ -43,7 +47,11 @@ describe('connectDesktopCapture', () => {
       },
     });
     expect(await connectDesktopCapture(PROJECT, d)).toEqual({ ok: true });
-    expect(calls).toEqual(['start', 'open https://kortix.test/capture/authorize?user_code=ABCD-1234', 'finish']);
+    expect(calls).toEqual([
+      'start',
+      'open https://kortix.test/capture/authorize?user_code=ABCD-1234',
+      'finish',
+    ]);
   });
 
   test('a failed approval with no page to open cancels the sign-in and reports why', async () => {
@@ -53,7 +61,10 @@ describe('connectDesktopCapture', () => {
         throw new Error('feature_disabled');
       },
     });
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({ ok: false, error: 'feature_disabled' });
+    expect(await connectDesktopCapture(PROJECT, d)).toEqual({
+      ok: false,
+      error: 'feature_disabled',
+    });
     expect(calls).toEqual(['cancel']);
   });
 
@@ -70,6 +81,9 @@ describe('connectDesktopCapture', () => {
 
   test('the engine refusing the token (denied, expired) comes back from finish', async () => {
     const { d } = deps({ finish: async () => ({ ok: false, error: 'the sign-in was denied' }) });
-    expect(await connectDesktopCapture(PROJECT, d)).toEqual({ ok: false, error: 'the sign-in was denied' });
+    expect(await connectDesktopCapture(PROJECT, d)).toEqual({
+      ok: false,
+      error: 'the sign-in was denied',
+    });
   });
 });

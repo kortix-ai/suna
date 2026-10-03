@@ -20771,7 +20771,6 @@
         "layers": "Couches",
         "sync": "Synchro",
         "lastFrame": "Dernière image",
-        "version": "Version",
         "actions": "Actions"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "Inconnu"
       },
       "never": "Aucun pour l'instant",
-      "unknownVersion": "Inconnue",
       "unnamed": "Appareil sans nom",
       "you": "Vous",
       "member": "Un membre",

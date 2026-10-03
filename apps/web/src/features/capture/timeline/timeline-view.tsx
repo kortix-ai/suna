@@ -360,7 +360,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
           />
         ) : days.isLoading ? (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <Skeleton className="aspect-video w-full rounded-md" />
+            <Skeleton className="aspect-video max-h-96 w-full rounded-md" />
             <Skeleton className="h-64 rounded-md" />
           </div>
         ) : days.isError ? (

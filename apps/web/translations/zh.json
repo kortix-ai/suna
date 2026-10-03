@@ -20771,7 +20771,6 @@
         "layers": "图层",
         "sync": "同步",
         "lastFrame": "最后一帧",
-        "version": "版本",
         "actions": "操作"
       },
       "status": {
@@ -20804,7 +20803,6 @@
         "unknown": "未知"
       },
       "never": "暂无",
-      "unknownVersion": "未知",
       "unnamed": "未命名设备",
       "you": "你",
       "member": "一位成员",
