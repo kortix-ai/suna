@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -47,9 +46,16 @@ interface OperationResult {
 }
 
 function runQuotaGc(script: string): unknown {
-  const output = execFileSync('bun', ['--eval', script], {
+  // Bun.spawnSync, not node's execFileSync: bun 1.3.14 re-creates the per-file
+  // stdout/stderr sinks and dups their fds into epoll without ever closing the
+  // old ones (oven-sh/bun#37968, the same bug tests/unit/
+  // test-runner-contract.test.ts documents for --parallel). When a reused fd
+  // number lands in execFileSync's node-compat stdio piping, the worker fails
+  // EPOLL_CTL_ADD with EEXIST — measured once in this sandbox, taking the
+  // whole batch worker down with a 100 % CPU spin. Bun's own spawnSync pipes
+  // without that path.
+  const proc = Bun.spawnSync(['bun', '--eval', script], {
     cwd: REPO_ROOT,
-    encoding: 'utf8',
     env: {
       ...process.env,
       DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:54322/postgres',
@@ -65,8 +71,9 @@ function runQuotaGc(script: string): unknown {
       INTERNAL_KORTIX_ENV: 'dev',
     },
   });
+  const output = proc.stdout.toString();
   const marker = output.lastIndexOf(RESULT_MARKER);
-  if (marker < 0) throw new Error(`quota GC subprocess returned no result: ${output}`);
+  if (marker < 0) throw new Error(`quota GC subprocess returned no result (exit ${proc.exitCode}): ${output}`);
   return JSON.parse(output.slice(marker + RESULT_MARKER.length));
 }
 
