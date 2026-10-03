@@ -481,7 +481,7 @@ export function slugifyKey(name: string): string {
 /** Create carries an optional duplicate-prefill and no role; edit and view
  *  always carry the role they open. The union turns the impossible states — an
  *  edit with no role, a create with one — into compile errors instead of
- *  `role!` assertions at every use. 'view' is read-only — everyone gets it
+ *  non-null assertions at every use. 'view' is read-only — everyone gets it
  *  (including non-managers and on built-in roles), not just people who can
  *  edit: "What can this role actually do?" should never require permission to
  *  change it. */
