@@ -102,7 +102,7 @@ export interface ProjectHomeSubmit {
   agent: string | null;
 }
 
-export interface ProjectHomeProps {
+interface ProjectHomeProps {
   projectId: string;
   /** A send is in flight: the composer keeps its content and locks. */
   sending?: boolean;

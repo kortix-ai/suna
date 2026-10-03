@@ -39,18 +39,30 @@ import {
 import { cn } from '@/lib/utils/index';
 
 /** Height of one sub-session row. Fixed, so the trunk length is exact. */
-export const SUBSESSION_ROW_HEIGHT = 40;
+const SUBSESSION_ROW_HEIGHT = 40;
 /** Horizontal reach of an elbow; the row box starts where the curve ends (web: 3.5 spacing). */
 export const CONNECTOR_RUN = 14;
 /** Stroke of the trunk and the elbows (web: `border-2`). */
 export const CONNECTOR_STROKE = 2;
+/**
+ * Sub-session tree geometry, from the row's content edge, shared by the two
+ * surfaces that hang a tree under a session row (the drawer's
+ * `DrawerSessionNode`, the Sessions page's `SessionRow`). The trunk runs down
+ * the centre of the row's status mark: `px-4` (16) + half the 20pt mark slot
+ * (10). Each sub-session title starts on the row's title edge: `px-4` + the
+ * 20pt slot + the title's 12pt lead (`gap-3` in the drawer, `mr-3` on the
+ * page). A nested row adds its own leading to both (`NESTED_LEAD`, local to
+ * each surface).
+ */
+export const TRUNK_X_TOP_LEVEL = 16 + 10;
+export const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 /**
  * Right inset of the tree: with a row's `px-3` (12) the time ends 16pt from
  * the edge, on the same line as the parent row's content (`px-4`).
  */
 const TREE_END_INSET = 4;
 /** Rows a tree shows before its "Show N more" row. */
-export const SUBSESSION_TREE_CAP = 5;
+const SUBSESSION_TREE_CAP = 5;
 
 /** Parent session ids whose tree shows every row, for one list. */
 const ExpandedTreesContext = React.createContext<Set<string> | null>(null);
@@ -138,7 +150,7 @@ function SubsessionRow({
   );
 }
 
-export interface SubsessionTreeProps {
+interface SubsessionTreeProps {
   /** The parent project session's id: the key `SubsessionTreeMemory` remembers. */
   parentId: string;
   /** `directSubsessions(parent)`, already ordered. Renders nothing when empty. */

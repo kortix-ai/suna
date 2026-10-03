@@ -56,7 +56,7 @@ const CONNECT_RETURN_URL = 'kortix://connectors';
 const CONNECT_SUCCESS_URI = 'kortix://connectors/success';
 const CONNECT_ERROR_URI = 'kortix://connectors/error';
 
-export interface ConnectorAuthSheetProps {
+interface ConnectorAuthSheetProps {
   /** The row currently asking to connect. Null between requests — the sheet
    *  stays mounted, so its body just has nothing to show until one arrives. */
   request: ConnectorHandoffRequest | null;

@@ -56,8 +56,7 @@ import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
-import { directSubsessions } from '@kortix/sdk';
-import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
+import { type BottomSheetModal } from '@gorhom/bottom-sheet';
 import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
@@ -69,25 +68,18 @@ import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
-import { SettingsGroup, SettingsGroupItem, SettingsRow } from '@/components/kortix/settings-list';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { SettingsGroupItem } from '@/components/kortix/settings-list';
 import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectRoutes';
-import { SessionStatusMark } from '@/components/session/SessionStatusMark';
-import {
-  CONNECTOR_STROKE,
-  SubsessionCountBadge,
-  SubsessionTree,
-  SubsessionTreeMemory,
-  subsessionCountLabel,
-} from '@/components/session/SessionSubsessionTree';
-import { ExpandControl, SessionChildren, StarterLabel } from '@/components/session/SessionTreeParts';
+import { SubsessionTree, SubsessionTreeMemory } from '@/components/session/SessionSubsessionTree';
+import { SessionChildren } from '@/components/session/SessionTreeParts';
+import { SessionsFilterSheet } from '@/components/session/sessions-filter-sheet';
+import { SessionRow } from '@/components/session/sessions-page-row';
 import { useSessionStarterOf } from '@/components/session/DrawerSessionRows';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import {
   SESSION_SCOPES,
-  childCountOf,
   isParentExpanded,
   rootRowsOnly,
   searchQueryParam,
@@ -98,19 +90,12 @@ import { parentKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import type { SessionStarter } from '@/lib/session/session-tree';
 import {
-  SESSION_STATUS_FILTERS,
-  showSubsessionCountBadge,
   filterSessionsByStatus,
   groupSessionsByActivity,
-  sessionDisplayStatus,
-  sessionDisplayTitle,
-  sessionLastActivityAt,
   sessionStatusFilterSummary,
-  sessionStatusLabel,
-  shortRelative,
-  spokenRelative,
+  sessionListItems,
+  type SessionListItem,
   type SessionStatusFilter,
 } from '@/lib/session/session-list';
 import { THEME } from '@/lib/utils/theme';
@@ -139,198 +124,83 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 /** Space between two groups: the settings screens' 18pt. */
 const GROUP_GAP = 18;
 
-// ── Row ──────────────────────────────────────────────────────────────────────
-
-interface SessionRowProps {
-  session: ProjectSession;
-  now: number;
-  /** A sub-agent session (spawned by another session in this group, COR-162):
-   *  a short connector elbow joins the status mark, indenting the label past the
-   *  usual leading slot — the row's own tile stays full width. */
-  nested?: boolean;
-  /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
-  needsYouCount: number;
-  /** Who started the run (`initiator`), after the title. */
-  starter?: SessionStarter;
-  /** The parent's children show under it (KRTX-639); `undefined` = no children. */
-  childRows?: React.ReactNode;
-  expanded?: boolean;
-  onToggleChildren?: (session: ProjectSession) => void;
-  /** A row tap opens the session on its root; a sub-session row passes that sub-session's id. */
-  onOpen: (session: ProjectSession, focusRuntimeId?: string) => void;
-  onActions: (session: ProjectSession) => void;
-}
-
 /**
- * Sub-session tree geometry, from the tile's left edge. The trunk runs down
- * the centre of the row's status mark: `SettingsRow` `px-4` (16) + half the
- * 20pt slot (10). Each sub-session title starts on the row's label edge:
- * `px-4` + the 20pt leading slot + its `mr-3` (12). A nested row's leading
- * adds the 12pt elbow and its `gap-1.5` (6) before the mark to both.
+ * The list's empty verdicts, in the page's precedence: the project's wilted
+ * flower (no sessions at all), the in-flight search's non-verdict, or the
+ * message — with Show older (rows exist behind the status filter) and Reset
+ * (a filter is active) where they apply. The messages are shared with the
+ * project drawer (lib/session/session-pages) so a failed fetch, or a first
+ * load paused offline, never reads as "No sessions yet" (COR-146).
  */
-const NESTED_LEAD = 12 + 6;
-const TRUNK_X_TOP_LEVEL = 16 + 10;
-const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
-
-/**
- * One `SettingsRow`: status mark · title · time (· sub-session count). No
- * chevron: the time holds the right edge. The session's sub-sessions follow
- * under it in the same tile (`SubsessionTree`), always.
- */
-const SessionRow = React.memo(function SessionRow({
-  session,
-  now,
-  nested = false,
-  needsYouCount,
-  starter,
-  childRows,
-  expanded = false,
-  onToggleChildren,
-  onOpen,
-  onActions,
-}: SessionRowProps) {
-  const childCount = childCountOf(session);
-  const title = sessionDisplayTitle(session);
-  const status = sessionDisplayStatus(session, needsYouCount);
-  const lastActivity = sessionLastActivityAt(session);
-  const subsessions = React.useMemo(() => directSubsessions(session), [session]);
-  const subsessionCount = subsessions.length;
-  const openSubsession = React.useCallback(
-    (childId: string) => onOpen(session, childId),
-    [onOpen, session]
-  );
-  const accessibilityLabel = [
-    title,
-    nested ? 'sub-agent session' : null,
-    sessionStatusLabel(status),
-    spokenRelative(lastActivity, now),
-    subsessionCount > 0 ? subsessionCountLabel(subsessionCount) : null,
-    starter ? `started by ${starter.label}` : null,
-  ]
-    .filter(Boolean)
-    .join(', ');
-
-  const row = (
-    <SettingsRow
-      leading={
-        nested ? (
-          <View className="flex-row items-center gap-1.5">
-            {/* Each row is its own tile, so no trunk can join the tiles: a
-                short elbow in the connector stroke (`SubsessionTree`) marks
-                the sub-agent instead of an icon. */}
-            <View
-              className="rounded-bl-md border-border"
-              style={{
-                width: 12,
-                height: 10,
-                marginTop: -10,
-                borderLeftWidth: CONNECTOR_STROKE,
-                borderBottomWidth: CONNECTOR_STROKE,
-              }}
-            />
-            <SessionStatusMark status={status} />
-          </View>
-        ) : (
-          <SessionStatusMark status={status} />
-        )
-      }
-      label={title}
-      value={shortRelative(lastActivity, now)}
-      labelAccessory={
-        starter || showSubsessionCountBadge(subsessionCount) ? (
-          <View className="flex-row items-center gap-2">
-            {starter ? <StarterLabel starter={starter} /> : null}
-            {showSubsessionCountBadge(subsessionCount) ? <SubsessionCountBadge count={subsessionCount} /> : null}
-          </View>
-        ) : undefined
-      }
-      right={
-        childCount > 0 && onToggleChildren ? (
-          <ExpandControl
-            count={childCount}
-            expanded={expanded}
-            onToggle={() => onToggleChildren(session)}
-            title={title}
-          />
-        ) : null
-      }
-      onPress={() => onOpen(session)}
-      onLongPress={() => onActions(session)}
-      longPressLabel="Session actions"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint="Opens the session"
-    />
-  );
-  if (subsessionCount === 0 && !(expanded && childRows)) return row;
-  return (
-    <View>
-      {row}
-      {expanded ? childRows : null}
-      {/* No thread is open while this page shows (useCoveringRoute), so no
-          sub-session row is highlighted. */}
-      {subsessionCount > 0 ? (
-      <View className="pb-2">
-        <SubsessionTree
-          parentId={session.session_id}
-          subsessions={subsessions}
-          parentTitle={title}
-          activeRuntimeId={null}
-          trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
-          textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
-          now={now}
-          onPressSubsession={openSubsession}
-        />
+function SessionsEmptyState({
+  projectEmpty,
+  loadFailed,
+  searchSettled,
+  filterActive,
+  moreBehindStatusFilter,
+  onShowOlder,
+  onReset,
+  mutedColor,
+  animate,
+  showLoader,
+}: {
+  projectEmpty: boolean;
+  loadFailed: boolean;
+  /** False while the server has not answered for the current search: no verdict. */
+  searchSettled: boolean;
+  filterActive: boolean;
+  moreBehindStatusFilter: boolean;
+  onShowOlder: () => void;
+  onReset: () => void;
+  mutedColor: string;
+  animate: boolean;
+  showLoader: boolean;
+}) {
+  const message = loadFailed
+    ? 'Unable to load sessions. Pull to refresh.'
+    : projectEmpty
+      ? 'No sessions yet'
+      : 'No matching sessions';
+  if (projectEmpty) {
+    return (
+      <View
+        className="flex-1 items-center justify-center px-8"
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={message}>
+        <PixelDeadFlower color={mutedColor} size={96} animate={animate} />
       </View>
+    );
+  }
+  if (!loadFailed && !searchSettled) {
+    return (
+      <View className="flex-1 items-center justify-center px-8" accessible accessibilityLabel="Searching sessions">
+        {showLoader ? <KortixLoader size="small" /> : null}
+      </View>
+    );
+  }
+  return (
+    <View className="flex-1 items-center justify-center gap-3 px-8">
+      <Text variant="muted" className="text-center">
+        {message}
+      </Text>
+      {moreBehindStatusFilter ? (
+        <Button variant="secondary" size="sm" className="rounded-full" onPress={onShowOlder}>
+          <Text>Show older sessions</Text>
+        </Button>
+      ) : null}
+      {!loadFailed && filterActive ? (
+        <Button variant="secondary" size="sm" className="rounded-full" onPress={onReset}>
+          <Text>Reset</Text>
+        </Button>
       ) : null}
     </View>
   );
-});
-
-// ── List items ───────────────────────────────────────────────────────────────
-
-/**
- * One list item: a group title, or one row with its place in its group
- * (`SettingsGroupItem` corners). `first` marks the first item of every group
- * after the first: the group gap goes above it.
- */
-export type SessionListItem =
-  | { kind: 'title'; key: string; title: string; first: boolean }
-  | { kind: 'row'; key: string; session: ProjectSession; index: number; count: number; first: boolean };
-
-/** The groups as one flat list, in order. Titles only when `showHeaders`. */
-export function sessionListItems(
-  sections: readonly { id: string; label: string; sessions: ProjectSession[] }[],
-  showHeaders: boolean
-): SessionListItem[] {
-  const items: SessionListItem[] = [];
-  sections.forEach((section, sectionIndex) => {
-    let first = sectionIndex > 0;
-    if (showHeaders) {
-      items.push({ kind: 'title', key: `title:${section.id}`, title: section.label, first });
-      first = false;
-    }
-    section.sessions.forEach((session, index) => {
-      items.push({
-        kind: 'row',
-        key: session.session_id,
-        session,
-        index,
-        count: section.sessions.length,
-        first: index === 0 && first,
-      });
-    });
-  });
-  return items;
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export interface ProjectSessionsPageProps {
-  /** Focus the search field on mount — the drawer's Search row. */
-  autoFocusSearch?: boolean;
-}
-
-export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessionsPageProps = {}) {
+export function ProjectSessionsPage({ autoFocusSearch = false }: { autoFocusSearch?: boolean } = {}) {
   const { projectId, openDrawer, newSession, openSessionActions, isDrawerOpen } = useProjectRoute();
   // Opens a row's session once; also replaces this page with the view when a
   // session opens without a row tap (drawer row, notification, deep link).
@@ -569,11 +439,6 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const loadFailed = rawListState === 'error';
   // The project has no sessions at all: only knowable with no filter on.
   const projectEmpty = !filterActive && rawListState === 'empty';
-  const emptyMessage = loadFailed
-    ? 'Unable to load sessions. Pull to refresh.'
-    : projectEmpty
-      ? 'No sessions yet'
-      : 'No matching sessions';
   // Rows exist on later pages but none of the loaded ones pass the status
   // filter: offer the next page instead of a verdict.
   const moreBehindStatusFilter = statusFilterActive && filtered.length === 0 && hasNextPage;
@@ -680,41 +545,18 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                 paddingBottom: listBottomInset,
               }}
               ListEmptyComponent={
-                projectEmpty ? (
-                  // The project has no sessions at all: the drawer's wilted
-                  // flower. Errors and empty filter results keep their text.
-                  <View
-                    className="flex-1 items-center justify-center px-8"
-                    accessible
-                    accessibilityRole="image"
-                    accessibilityLabel={emptyMessage}>
-                    <PixelDeadFlower color={mutedColor} size={96} animate={isFocused} />
-                  </View>
-                ) : !loadFailed && !searchSettled ? (
-                  // The server has not answered for this search yet: no verdict.
-                  <View
-                    className="flex-1 items-center justify-center px-8"
-                    accessible
-                    accessibilityLabel="Searching sessions">
-                    {showLoaders ? <KortixLoader size="small" /> : null}
-                  </View>
-                ) : (
-                  <View className="flex-1 items-center justify-center gap-3 px-8">
-                    <Text variant="muted" className="text-center">
-                      {emptyMessage}
-                    </Text>
-                    {moreBehindStatusFilter ? (
-                      <Button variant="secondary" size="sm" className="rounded-full" onPress={() => void fetchNextPage()}>
-                        <Text>Show older sessions</Text>
-                      </Button>
-                    ) : null}
-                    {!loadFailed && filterActive ? (
-                      <Button variant="secondary" size="sm" className="rounded-full" onPress={resetFilters}>
-                        <Text>Reset</Text>
-                      </Button>
-                    ) : null}
-                  </View>
-                )
+                <SessionsEmptyState
+                  projectEmpty={projectEmpty}
+                  loadFailed={loadFailed}
+                  searchSettled={searchSettled}
+                  filterActive={filterActive}
+                  moreBehindStatusFilter={moreBehindStatusFilter}
+                  onShowOlder={() => void fetchNextPage()}
+                  onReset={resetFilters}
+                  mutedColor={mutedColor}
+                  animate={isFocused}
+                  showLoader={showLoaders}
+                />
               }
               refreshControl={
                 <RefreshControl
@@ -744,32 +586,14 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
         </PinnedBar>
       )}
 
-      {/* Filter: which statuses show in the timeline. Empty selection = every
-          status. A basic, single group of toggleable rows — no date range or
-          sort, unlike web's fuller filter panel. */}
-      <KortixBottomSheetModal ref={filterSheetRef} title="Filter sessions" enableDynamicSizing enablePanDownToClose>
-        <BottomSheetScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 16) + 8 }}>
-          <SettingsGroup>
-            {SESSION_STATUS_FILTERS.map((status) => (
-              <SettingsRow
-                key={status}
-                leading={<SessionStatusMark status={status} />}
-                label={sessionStatusLabel(status)}
-                checked={statusFilter.has(status)}
-                right={null}
-                onPress={() => toggleStatusFilter(status)}
-              />
-            ))}
-          </SettingsGroup>
-          {statusFilterActive ? (
-            <Button variant="secondary" size="lg" className="mt-4 rounded-full" onPress={resetFilters}>
-              <Text>Reset</Text>
-            </Button>
-          ) : null}
-        </BottomSheetScrollView>
-      </KortixBottomSheetModal>
+      {/* The status filter sheet (`sessions-filter-sheet.tsx`): which statuses
+          show in the timeline. Empty selection = every status. */}
+      <SessionsFilterSheet
+        sheetRef={filterSheetRef}
+        statusFilter={statusFilter}
+        onToggleStatus={toggleStatusFilter}
+        onReset={resetFilters}
+      />
     </View>
   );
 }

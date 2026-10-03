@@ -62,14 +62,14 @@ const TABS: FloatingTabItem[] = [
 const AGENT_TAB = 0;
 const MODEL_TAB = 1;
 
-export interface ModelThinking {
+interface ModelThinking {
   /** The active model's levels. Empty hides the control. */
   levels: string[];
   selected: string | null;
   onSelect: (level: string | null) => void;
 }
 
-export interface AgentChoice {
+interface AgentChoice {
   /** The roster (`@kortix/sdk`); the tab lists its `isSelectableAgent` agents. */
   agents: Agent[];
   /** The agent the next message runs on; its row carries the check. */
@@ -79,7 +79,7 @@ export interface AgentChoice {
   onCreate?: () => void;
 }
 
-export interface ModelAutoContinue {
+interface ModelAutoContinue {
   /** The current mode's name, or "Off". */
   value: string;
   /** Opens the AutoContinue sheet. */

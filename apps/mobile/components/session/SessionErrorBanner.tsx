@@ -171,7 +171,7 @@ function TurnErrorDisplayImpl({ style, ...input }: TurnErrorDisplayProps) {
 export const TurnErrorDisplay = memo(TurnErrorDisplayImpl);
 TurnErrorDisplay.displayName = 'TurnErrorDisplay';
 
-export interface SessionErrorBannerProps {
+interface SessionErrorBannerProps {
   errorText: string;
   /** Unused since the web-parity rebuild; theme comes from the palette. Kept for call sites. */
   isDark?: boolean;

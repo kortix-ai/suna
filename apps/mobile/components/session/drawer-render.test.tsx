@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 // unless their own inputs changed. Real: the drawer, its rows, the list logic
 // and the stores. Every other import is a stub.
 
-const files = ['ProjectLeftDrawer.tsx', 'DrawerSessionRows.tsx'];
+const files = ['ProjectLeftDrawer.tsx', 'use-project-drawer-sessions.ts', 'DrawerBottomBar.tsx', 'DrawerSessionRows.tsx'];
 const source = files.map((file) => readFileSync(`${import.meta.dir}/${file}`, 'utf8')).join('\n');
 const host = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
 const Empty = () => null;
@@ -60,7 +60,6 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/contexts': { useAuthContext: () => ({ user: { id: 'me' } }) },
   '@/hooks/useProfileEditor': { useProfileEditor: () => profile },
   '@/hooks/useActivePlanName': { useActivePlanName: () => null },
-  '@/components/session/use-refetch-on-open': { useRefetchOnOpen: () => {} },
   '@/lib/utils/index': { cn: (...classes: unknown[]) => classes.filter(Boolean).join(' ') },
   '@/lib/utils/theme': {
     THEME: { light: { mutedForeground: 'm', foreground: 'f', chromeBackground: 'c' }, dark: { mutedForeground: 'm', foreground: 'f', chromeBackground: 'c' } },
@@ -74,6 +73,10 @@ const real = new Set([
   'react',
   '@kortix/sdk',
   './DrawerSessionRows',
+  './use-project-drawer-sessions',
+  './DrawerBottomBar',
+  // Real: the open refetch is characterized below (it must not be a stub).
+  '@/components/session/use-refetch-on-open',
   '@/lib/session/session-list',
   '@/lib/session/session-tree',
   '@/lib/session/session-pages',
@@ -209,5 +212,42 @@ describe('ProjectLeftDrawer renders', () => {
       .map((node: any) => node.props.accessibilityLabel);
     expect(selected).toHaveLength(1);
     expect(selected[0]).toStartWith('Child 6, sub-session of ');
+  });
+
+  test('opening refetches the sessions once the slide ends; a close first cancels it', async () => {
+    const refetched: string[] = [];
+    for (const section of ['me', 'others', 'automated'] as const) {
+      paged[section].refetch = async () => {
+        refetched.push(section);
+      };
+    }
+    const props = { projectId: 'proj', ...handlers, open: false };
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, props));
+    });
+    // Closed: no refetch.
+    expect(refetched).toEqual([]);
+    await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: true })));
+    // The refetch waits out the drawer's 420ms slide (DRAWER_REFETCH_DELAY_MS).
+    expect(refetched).toEqual([]);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    // Mine and Shared always; the collapsed Automated section is skipped.
+    expect(refetched).toEqual(['me', 'others']);
+    // A re-render while open (a poll, a sheet) does not re-arm it.
+    await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: true })));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(refetched).toEqual(['me', 'others']);
+    // A close before the slide ends cancels the pending refetch.
+    await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: false })));
+    await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: true })));
+    await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: false })));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(refetched).toEqual(['me', 'others']);
   });
 });

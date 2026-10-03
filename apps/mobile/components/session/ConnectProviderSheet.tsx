@@ -46,7 +46,7 @@ import {
 import { HandoffSheetBody } from './connector-handshake';
 import { useHandoffDismiss } from './handoff-sheet';
 
-export interface ConnectProviderSheetProps {
+interface ConnectProviderSheetProps {
   projectId: string;
   /** Refetches the project's model catalog; resolves to the model count the
    *  project offers after the refetch. */

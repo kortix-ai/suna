@@ -147,12 +147,7 @@ export function SessionConnecting({
     return (
       <View style={{ flex: 1 }} className="bg-background">
         <View style={{ flex: 1 }} />
-        <View style={{ paddingBottom: insets.bottom }}>
-          {statusLabel ? <WakingStatus label={statusLabel} /> : null}
-          <View className="px-4 pb-3 pt-1">
-            <WakingComposer />
-          </View>
-        </View>
+        <WakingDock label={statusLabel} />
       </View>
     );
   }
@@ -204,18 +199,10 @@ export function SessionConnecting({
         </View>
       </View>
 
-      {/* The thread's composer, where `SessionPage` puts it (`px-4 pb-3 pt-1`
-          above the safe area). Disabled: there is no runtime to send to yet.
-          None under a failure: nothing can be sent. */}
-      {error ? (
-        <View style={{ height: insets.bottom }} />
-      ) : (
-        <View style={{ paddingBottom: insets.bottom }}>
-          <View className="px-4 pb-3 pt-1">
-            <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
-          </View>
-        </View>
-      )}
+      {/* The thread's composer, where `SessionPage` puts it (`WakingDock`).
+          Disabled: there is no runtime to send to yet. None under a failure:
+          nothing can be sent. */}
+      {error ? <View style={{ height: insets.bottom }} /> : <WakingDock />}
     </View>
   );
 }
@@ -223,6 +210,30 @@ export function SessionConnecting({
 /** The composer while the computer wakes: disabled, there is no runtime to send to yet. */
 function WakingComposer() {
   return <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />;
+}
+
+/**
+ * The waking dock: the safe-area pad, the status card (`label`) saying what
+ * the computer is doing, and the thread's composer slot where `SessionPage`
+ * puts its composer over the safe area. Every waking branch ends in one; the
+ * composer is disabled — there is no runtime to send to yet. A child replaces
+ * the composer when the slot holds something else (a boot failure).
+ */
+function WakingDock({
+  label,
+  children = <WakingComposer />,
+}: {
+  /** What the computer is doing, for the status card above the composer. */
+  label?: string | null;
+  children?: React.ReactNode;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ paddingBottom: insets.bottom }}>
+      {label ? <WakingStatus label={label} /> : null}
+      <View className="px-4 pb-3 pt-1">{children}</View>
+    </View>
+  );
 }
 
 /**
@@ -319,20 +330,13 @@ function SavedThread({
         pointerEvents="none"
       />
 
-      <View style={{ paddingBottom: insets.bottom }}>
-        {error ? (
-          <View className="px-4 pb-3 pt-1">
-            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} sessionId={sessionId} />
-          </View>
-        ) : (
-          <>
-            {statusLabel ? <WakingStatus label={statusLabel} /> : null}
-            <View className="px-4 pb-3 pt-1">
-              <WakingComposer />
-            </View>
-          </>
-        )}
-      </View>
+      {error ? (
+        <WakingDock>
+          <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} sessionId={sessionId} />
+        </WakingDock>
+      ) : (
+        <WakingDock label={statusLabel} />
+      )}
 
       <ToolFilePreviewHost />
     </View>

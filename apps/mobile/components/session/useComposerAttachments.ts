@@ -28,6 +28,7 @@ import { toUploadFile } from '@/lib/session/attachment-file';
 import type { AttachedFile } from '@/lib/session/attachments';
 import {
   SEND_UPLOAD_WAIT_MS,
+  buildComposerUploads,
   composerUploadState,
   stillReadingError,
   uploadErrorMessage,
@@ -35,7 +36,7 @@ import {
 import { assertUploadedFileParts } from '@/lib/session/prompt-parts';
 import type { ComposerAttachmentUpload } from './composer-attachment-tiles';
 
-export interface UseComposerAttachments {
+interface UseComposerAttachments {
   files: AttachedFile[];
   add: (picked: AttachedFile[]) => void;
   remove: (index: number) => void;
@@ -109,33 +110,16 @@ export function useComposerAttachments(
 
   // Rebuilt only when the file list or a phase changes, so each entry (and its
   // `onRetry`) keeps one identity across progress ticks and keystrokes.
-  const uploads = React.useMemo(() => {
-    const snapshot = controller.getSnapshot();
-    const result: Record<number, ComposerAttachmentUpload> = {};
-    files.forEach((file, index) => {
-      const id = file.uploadId;
-      const item = id ? snapshot.attachments.find((entry) => entry.id === id) : undefined;
-      const state = composerUploadState(item);
-      if (!state) return;
-      if (state.failed) {
-        result[index] = { ...state, onRetry: () => id && controller.retry(id) };
-      } else if (id) {
-        result[index] = {
-          ...state,
-          live: {
-            subscribe: controller.subscribe,
-            getProgress: () =>
-              composerUploadState(controller.getSnapshot().attachments.find((entry) => entry.id === id))?.progress,
-          },
-        };
-      } else {
-        result[index] = state;
-      }
-    });
-    return result;
+  const uploads = React.useMemo(
+    () =>
+      buildComposerUploads(files, controller.getSnapshot, {
+        subscribe: controller.subscribe,
+        retry: controller.retry,
+      }),
     // `phaseKey` is the trigger: it changes when an upload starts, ends or fails.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files, phaseKey, controller]);
+    [files, phaseKey, controller],
+  );
 
   const takeForSend = React.useCallback(async () => {
     const ids = files.map((f) => f.uploadId);

@@ -46,7 +46,7 @@ export interface AttachSheetRef extends SheetRef {
   closeThen: (action: () => void) => void;
 }
 
-export interface AttachSheetProps {
+interface AttachSheetProps {
   onPick: (files: AttachedFile[]) => void;
   /** More blocks under the tiles. */
   children?: React.ReactNode;

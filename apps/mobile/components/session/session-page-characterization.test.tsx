@@ -1596,3 +1596,44 @@ describe('SessionConnecting saved thread', () => {
     expect(seen('restart')).toHaveLength(1);
   });
 });
+
+// ── The waking view's empty branch (characterization for the composer-dock
+// refactor: the safe-area pad, the status card and the dock stay as they are) ──
+
+describe('SessionConnecting empty waking view', () => {
+  const renderEmpty = async (props: Record<string, unknown> = {}) => {
+    await act(async () => {
+      tree = create(
+        React.createElement(SessionConnecting, {
+          empty: true,
+          onCancel: () => {},
+          ...props,
+        } as any),
+      );
+    });
+  };
+
+  test('the status card and the disabled composer fill the page', async () => {
+    await renderEmpty({ statusLabel: 'Starting the computer' });
+    // The card: what the computer is doing, on the composer card's surface,
+    // above the composer, announced politely.
+    const card = viewProps.find((props) => props.accessibilityLiveRegion === 'polite');
+    expect(card?.className).toBe('px-4 pb-2');
+    expect(
+      tree!.root.findAll((node: any) => node.type === RNText && node.props.children === 'Starting the computer'),
+    ).toHaveLength(1);
+    // The composer: the thread's dock inset (`px-4 pb-3 pt-1` over the safe
+    // area), disabled — there is no runtime to send to yet.
+    expect(wakingComposerProps.disabled).toBe(true);
+    expect(wakingComposerProps.value).toBe('');
+    expect(viewProps.some((props) => props.className === 'px-4 pb-3 pt-1')).toBe(true);
+  });
+
+  test('no status label yet: no card, the composer still disabled', async () => {
+    await renderEmpty({});
+    expect(viewProps.some((props) => props.accessibilityLiveRegion === 'polite')).toBe(false);
+    expect(wakingComposerProps.disabled).toBe(true);
+    expect(wakingComposerProps.value).toBe('');
+    expect(viewProps.some((props) => props.className === 'px-4 pb-3 pt-1')).toBe(true);
+  });
+});

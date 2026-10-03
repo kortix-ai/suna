@@ -27,7 +27,7 @@ import { useReviewItems } from '@/lib/review/use-review';
 import { changeRequestStatusLabel, sessionChangeRequests } from '@/lib/session/session-change-requests';
 import { THEME } from '@/lib/utils/theme';
 
-export interface SessionChangeRequestsProps {
+interface SessionChangeRequestsProps {
   projectId: string;
   /** The Kortix project session (`origin_session_id`), not the runtime session id. */
   projectSessionId: string;

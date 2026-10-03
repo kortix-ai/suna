@@ -7,7 +7,7 @@
  * - Tracks inserted mentions for sending
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { Agent } from '@/lib/session/runtime-data';
 import type { Session } from '@/lib/session/types';
 import { useMentionFileSearch } from './use-mention-file-search';
@@ -52,23 +52,14 @@ export function useMentions({
 }: UseMentionsOptions) {
   // ── State (mirrors frontend session-chat-input.tsx) ─────────────────────
   const [mentionQuery, setMentionQuery] = useState<{ query: string; triggerPos: number } | null>(null);
-  const [mentionIndex, setMentionIndex] = useState(0);
   const [mentions, setMentions] = useState<TrackedMention[]>([]);
   const { results: fileResults, loading: fileSearchLoading, clear: clearFileSearch } = useMentionFileSearch(mentionQuery, sandboxUrl);
 
   const isOpen = mentionQuery !== null;
-  const query = mentionQuery?.query ?? '';
 
   // ── Build mention items (matches frontend mentionItems useMemo) ─────────
 
   const items = useMemo(() => mentionItems(mentionQuery, agents, sessions, currentSessionId, fileResults), [mentionQuery, agents, sessions, currentSessionId, fileResults]);
-
-  // Clamp index when items change
-  useEffect(() => {
-    if (items.length > 0) {
-      setMentionIndex((i) => Math.min(i, items.length - 1));
-    }
-  }, [items.length]);
 
   // ── Text change handler — @ detection (matches frontend handleInput) ────
   // On React Native we don't get cursor position from onChangeText.
@@ -78,7 +69,6 @@ export function useMentions({
     (text: string, cursorPos: number) => {
       const detected = detectMentionTrigger(text, cursorPos, mentions);
       setMentionQuery(detected);
-      if (detected) setMentionIndex(0);
 
       // Prune tracked mentions whose @label text was deleted
       setMentions((prev) => pruneMentions(text, prev));
@@ -109,7 +99,6 @@ export function useMentions({
         },
       ]);
       setMentionQuery(null);
-      setMentionIndex(0);
       clearFileSearch();
 
       return newText;
@@ -131,17 +120,8 @@ export function useMentions({
 
   // ── Navigation ──────────────────────────────────────────────────────────
 
-  const moveUp = useCallback(() => {
-    setMentionIndex((i) => Math.max(0, i - 1));
-  }, []);
-
-  const moveDown = useCallback(() => {
-    setMentionIndex((i) => Math.min(items.length - 1, i + 1));
-  }, [items.length]);
-
   const dismiss = useCallback(() => {
     setMentionQuery(null);
-    setMentionIndex(0);
   }, []);
 
   // ── Reset on send ───────────────────────────────────────────────────────
@@ -149,22 +129,17 @@ export function useMentions({
   const reset = useCallback(() => {
     setMentions([]);
     setMentionQuery(null);
-    setMentionIndex(0);
     clearFileSearch();
   }, []);
 
   return {
     isOpen,
-    query,
     items,
-    selectedIndex: mentionIndex,
     mentions,
     fileSearchLoading,
     handleTextChange,
     selectMention,
     addFileMention,
-    moveUp,
-    moveDown,
     dismiss,
     reset,
   };

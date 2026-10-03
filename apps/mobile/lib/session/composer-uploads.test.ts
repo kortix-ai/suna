@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import type { PromptAttachmentItem, PromptAttachmentSnapshot } from '@kortix/sdk';
 
+import type { AttachedFile } from './attachments';
 import {
   SEND_UPLOAD_WAIT_MS,
   STILL_READING_MESSAGE,
+  buildComposerUploads,
   composerUploadState,
   stillReadingError,
   uploadErrorMessage,
@@ -71,4 +74,55 @@ test('a file still being read keeps its own message', () => {
 
 test('SEND_UPLOAD_WAIT_MS is 120s', () => {
   expect(SEND_UPLOAD_WAIT_MS).toBe(120_000);
+});
+
+describe('buildComposerUploads', () => {
+  const retried: string[] = [];
+  const sources = {
+    subscribe: (listener: () => void) => () => listener === undefined,
+    retry: (id: string) => retried.push(id),
+  };
+  const file = (uploadId?: string): AttachedFile => ({
+    uri: 'file:///a.png',
+    name: 'a.png',
+    mimeType: 'image/png',
+    isImage: true,
+    uploadId,
+  });
+  const item = (over: Partial<PromptAttachmentItem>): PromptAttachmentItem => ({
+    id: 'u1',
+    filename: 'a.png',
+    mime: 'image/png',
+    size: 100,
+    status: 'uploading',
+    receivedBytes: 0,
+    ...over,
+  });
+  const snapshot = (attachments: PromptAttachmentItem[]): PromptAttachmentSnapshot => ({ attachments });
+
+  test('a failed upload carries onRetry for its id; running carries the live source', () => {
+    let snaps = snapshot([item({ status: 'error' })]);
+    const failed = buildComposerUploads([file('u1')], () => snaps, sources);
+    expect(failed[0]).toEqual({ failed: true, onRetry: expect.any(Function) });
+    failed[0]?.onRetry?.();
+    expect(retried).toEqual(['u1']);
+
+    snaps = snapshot([item({ receivedBytes: 40 })]);
+    const running = buildComposerUploads([file('u1')], () => snaps, sources);
+    expect(running[0]).toMatchObject({ progress: 40 });
+    expect(running[0]?.live?.subscribe).toBe(sources.subscribe);
+
+    // The live source reads the CURRENT snapshot, not the one at build time.
+    snaps = snapshot([item({ receivedBytes: 80 })]);
+    expect(running[0]?.live?.getProgress()).toBe(80);
+  });
+
+  test('a ready upload is absent, and a file still being read shows 0% without a live source', () => {
+    const ready = buildComposerUploads([file('u1')], () => snapshot([item({ status: 'ready', receivedBytes: 100 })]), sources);
+    expect(ready).toEqual({});
+
+    const unread = buildComposerUploads([file()], () => snapshot([]), sources);
+    expect(unread).toEqual({ 0: { progress: 0 } });
+    expect(unread[0]?.live).toBeUndefined();
+  });
 });
