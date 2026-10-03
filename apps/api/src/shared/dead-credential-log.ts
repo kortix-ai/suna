@@ -14,6 +14,11 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the window map only drives best-effort log suppression. A
+// replica cannot see a sibling's counts, so at worst every replica logs the
+// first line of a window (3 first lines, never more); responses, the emitted
+// message text and exact refusal accounting are unchanged either way, and
+// the auth audit stays the source of truth.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
