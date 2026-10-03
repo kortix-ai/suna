@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import { findSessionAttachments, type MessageWithParts, type Part } from '@kortix/sdk';
+import { findSessionAttachments, unwrapError, type MessageWithParts, type Part } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -130,12 +130,10 @@ export function printMessage(msg: MessageWithParts): void {
       process.stdout.write(`  ${line}\n`);
     }
   }
-  if (
-    msg.info.role === 'assistant' &&
-    (msg.info as { error?: { message?: string } | null }).error
-  ) {
-    const e = (msg.info as { error?: { message?: string } | null }).error;
-    process.stdout.write(`  ${C.red}error: ${e?.message ?? 'unknown'}${C.reset}\n`);
+  if (msg.info.role === 'assistant' && msg.info.error) {
+    const error = msg.info.error;
+    const name = typeof error.name === 'string' && error.name ? `${error.name}: ` : '';
+    process.stdout.write(`  ${C.red}error: ${name}${unwrapError(error)}${C.reset}\n`);
   }
 }
 
