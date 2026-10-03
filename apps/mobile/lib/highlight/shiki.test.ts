@@ -122,24 +122,33 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
   const MONOCHROME_UNDER_MIN_THEMES = new Set(['diff']);
 
   /**
-   * Lines where the JavaScript engine has been observed to differ from
-   * Oniguruma. The list is an UPPER BOUND, asserted as a subset below: the
-   * engine may never diverge on an undocumented line, but a documented line
-   * is allowed to agree again. The old bidirectional contract (an entry must
-   * still differ, or it is deleted) pinned the host RegExp's behavior: the
-   * engine rides the runtime's RegExp, and bun 1.3.14 vs 1.4.2 moved php and
-   * cpp into the engine's `<?php` joining while ini's `\G` case stopped
-   * differing, so no static list satisfies two runtimes. The guarantee that
-   * matters for the product is one-directional and version-stable: every
-   * divergence the engine makes is a documented one.
+   * Lines where the JavaScript engine provably differs from Oniguruma. Each
+   * entry is asserted to STILL differ, so a Shiki upgrade that fixes it fails
+   * this test and the entry gets deleted.
    *
-   * ini: the engine's `\G` emulation ends the zero-width `(^[\t ]+)?(?=;)`
-   * begin at once, so a `;` comment AFTER a value on the same line stays base
-   * colour. Comments at the start of a line still colour. php/cpp: the engine
-   * joins the punctuation+language opener `<?php` where the fixture's runtime
-   * kept the tokens apart.
+   * ini: `(^[\t ]+)?(?=;)` … `end: (?!\G)` — the engine's `\G` emulation ends
+   * the zero-width begin at once, so a `;` comment AFTER a value on the same
+   * line stays base colour. Comments at the start of a line still colour.
+   * Both themes.
    */
-  const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = { ini: [2], php: [0], cpp: [0] };
+  const KNOWN_ENGINE_DIFFERENCES: Record<string, { light: number[]; dark: number[] }> = {
+    ini: { light: [2], dark: [2] },
+  };
+
+  /**
+   * Lines where the wasm reference's own verdict is not portable: excluded
+   * from the comparison, with no direction asserted — unlike
+   * KNOWN_ENGINE_DIFFERENCES, whose entries are asserted to still differ.
+   *
+   * php light line 0 (`<?php`): the wasm Oniguruma paints `php` base fg in
+   * one environment (a factory sandbox, node and bun alike) and keyword red
+   * in another (CI's packages lane at the same lockfile; #8963 measured the
+   * same on removal). The ES2018 engine paints it red everywhere.
+   */
+  const UNSTABLE_WASM_LINES: Record<string, { light: number[]; dark: number[] }> = {
+    php: { light: [0], dark: [] },
+  };
+
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
       const sample = HIGHLIGHT_SAMPLES[lang];
@@ -151,9 +160,6 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       highlightToTokens(sample, lang, 'light');
 
       for (const scheme of ['light', 'dark'] as const) {
-        // The wrapper's raised tokenizeTimeLimit keeps a loaded box from
-        // truncating a pass; clear the cache so a warm pass cannot answer.
-        __testing.tokenCache.clear();
         const tokens = highlightToTokens(sample, lang, scheme);
         expect(tokens).not.toBeNull();
         const colors = new Set(tokens!.flat().map((t) => t.color.toLowerCase()));
@@ -165,21 +171,17 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
           .codeToTokensBase(sample, {
             lang,
             theme: scheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT,
-            tokenizeTimeLimit: 60_000,
           })
           .map((line) =>
             line.map((t) => ({ content: t.content, color: t.color ?? CODE_THEME_FOREGROUND[scheme] })),
           );
         const ours = paint(tokens!);
         const theirs = paint(reference);
-        // One-directional parity, version-stable (see KNOWN_ENGINE_DIFFERENCES):
-        // every line our engine paints differently from Oniguruma must be a
-        // documented one. A documented line that now agrees is fine.
-        const observed = ours
-          .map((line, i) => (line !== theirs[i] ? i : -1))
-          .filter((i) => i >= 0);
-        const differing = KNOWN_ENGINE_DIFFERENCES[lang] ?? [];
-        expect(observed.filter((i) => !differing.includes(i))).toEqual([]);
+        const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
+        for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
+        const unstable = UNSTABLE_WASM_LINES[lang]?.[scheme] ?? [];
+        const keep = (_: string, i: number) => !differing.includes(i) && !unstable.includes(i);
+        expect(ours.filter(keep)).toEqual(theirs.filter(keep));
       }
     });
   }
