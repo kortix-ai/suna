@@ -119,7 +119,6 @@ function startServer(): string {
       if (p === '/model-defaults' && req.method === 'GET') {
         return Response.json({
           platformDefault: 'glm-5.3-flash',
-          accountDefault: null,
           projectDefault: null,
           agentDefaults: agentModelPins,
           resolvedForCaller: 'glm-5.3-flash',

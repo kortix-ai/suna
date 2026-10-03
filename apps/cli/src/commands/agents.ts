@@ -13,7 +13,6 @@ import { C, help, pad, status } from '../style.ts';
 // Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/models.ts).
 interface ModelDefaults {
   platformDefault: string | null;
-  accountDefault: string | null;
   projectDefault: string | null;
   agentDefaults: Record<string, string>;
   resolvedForCaller: string | null;
@@ -201,11 +200,11 @@ export async function runAgents(argv: string[]): Promise<number> {
           return 0;
         }
         const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
+          d.projectDefault ?? d.platformDefault ?? 'unavailable';
         const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(
-          `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
+          `  ${C.dim}Default (project → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
         );
         if (entries.length === 0) {
           process.stdout.write(
