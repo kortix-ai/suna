@@ -38,6 +38,12 @@ afterAll(restoreTestConfigRoot)
 
 const roots: string[] = []
 
+// A repo-less project target: /workspace is a real checkout on a Kortix
+// sandbox (and absent on CI), so tests that pin the no-repo path point at an
+// empty directory instead.
+const noRepoTarget = mkdtempSync(join(tmpdir(), 'kortix-no-repo-'))
+roots.push(noRepoTarget)
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -159,7 +165,7 @@ describe('auth', () => {
 
   it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
     // No repo here, so the repo work answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
+    const res = await app({ projectTarget: noRepoTarget }).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
     expect(body.error).toBe('refresh failed')
@@ -170,7 +176,7 @@ describe('auth', () => {
     // Only the destructive flag needs the direct call: a user pulling their own
     // workspace keeps working without it. No repo here, so the repo work
     // answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh', {
+    const res = await app({ projectTarget: noRepoTarget }).request('/kortix/refresh', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
     })

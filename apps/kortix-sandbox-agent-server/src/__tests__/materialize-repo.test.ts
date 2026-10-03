@@ -76,14 +76,19 @@ function createDetachedWarmCheckout(prefix: string): {
 
 const tempDirs: string[] = []
 
+// A Kortix host ships a real image scaffold at /opt/kortix/scaffold.git and CI
+// has none, so the suite's reset points at an absent path and every test that
+// wants the scaffold fast path installs its own (as the scaffold tests do).
+const NO_SCAFFOLD = join(mkdtempSync(join(tmpdir(), 'kortix-no-scaffold-')), 'absent.git')
+
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(NO_SCAFFOLD)
 })
 
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(NO_SCAFFOLD)
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 

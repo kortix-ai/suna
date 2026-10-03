@@ -961,6 +961,13 @@ describe('pi harness', () => {
   })
 
   test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
+    // A hosted sandbox ships a real managed-skills dir; pin it to an empty one
+    // so only the two project skills below exist (same pattern as the
+    // managed-overlay test above).
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-empty-'))
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
     const r = await boot({ script: [{ text: 'ok' }], start: false })
     const skill = (root: string, name: string, description: string) => {
       const dir = join(r.workspace, root, name)
@@ -977,6 +984,10 @@ describe('pi harness', () => {
       ['deploy', 'Ship to prod'],
       ['review', 'Review a change'],
     ])
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+    }
   })
 
   test.each([
