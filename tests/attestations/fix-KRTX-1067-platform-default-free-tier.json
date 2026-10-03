@@ -1,0 +1,41 @@
+{
+  "source_hash": "db76849707ab8ebb3d2ee523d2e676c9b7b96b16c33c34580dc9635c548f1956",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
+    "apps/api/src/__tests__/unit-channel-model-access.test.ts",
+    "apps/api/src/__tests__/unit-channel-vision-model.test.ts",
+    "apps/api/src/__tests__/unit-choose-default-model.test.ts",
+    "apps/api/src/billing/services/plan-catalog.ts",
+    "apps/api/src/llm-gateway/hooks.test.ts",
+    "apps/api/src/llm-gateway/hooks.ts",
+    "apps/api/src/llm-gateway/internal-routes.test.ts",
+    "apps/api/src/llm-gateway/internal-routes.ts",
+    "apps/api/src/llm-gateway/models/catalog-models.test.ts",
+    "apps/api/src/llm-gateway/models/catalog-models.ts",
+    "apps/api/src/llm-gateway/models/served-managed-models.ts",
+    "apps/api/src/llm-gateway/resolution/effective.test.ts",
+    "apps/api/src/llm-gateway/resolution/effective.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.ts",
+    "apps/api/src/projects/lib/session-create.ts",
+    "apps/api/src/projects/lib/sessions.create-characterization.test.ts",
+    "apps/api/src/projects/routes/models.ts",
+    "apps/api/src/projects/routes/session-open-bundle.test.ts",
+    "apps/api/src/projects/routes/session-open-bundle.ts",
+    "apps/api/src/projects/session-title-generate.ts",
+    "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
+    "packages/sdk/src/core/models/composer-model.ts",
+    "packages/sdk/src/core/models/composer-models.test.ts",
+    "packages/sdk/src/core/models/model-visibility.ts",
+    "packages/sdk/src/react/use-model-defaults.test.ts"
+  ],
+  "diff_hash": "a4739608c1f4e54c14b1119f4b8ea4e5e3215ae84bb25f3285a4acd0474b8890",
+  "head": "630c2cca4129c2788e21954646d96cf2ed821815",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:27:45.159Z"
+}
