@@ -989,9 +989,9 @@ async function liveSyncSandbox(sessionId: string) {
  * The daemon picks it up on its next poll (a few seconds).
  */
 async function applyDriveToSyncedSandbox(
-  box: { sandboxId: string; metadata: unknown },
+  box: { sandboxId: string; externalId: string | null; provider: string; metadata: unknown },
   input: Omit<Parameters<typeof planSessionDrives>[0], 'slots'> & { driveId: string },
-): Promise<{ live: boolean }> {
+): Promise<{ live: boolean; flushed?: boolean }> {
   const current = recordedDriveMounts(box.metadata);
   // Synced boxes keep the same per-session drive count as mounted ones.
   const slots = await driveSlotsFor({ externalId: null, metadata: box.metadata }, false);
@@ -1010,8 +1010,29 @@ async function applyDriveToSyncedSandbox(
       kept = [...kept, toRecorded({ ...w, mountPath })];
     }
   }
+  // A writable copy of this drive is leaving the box or turning read-only:
+  // push what the box has not sent yet while the record still allows it. If
+  // the push does not complete, the daemon keeps the copy aside rather than
+  // delete it (drive-sync/index.ts), so nothing is lost either way.
+  const losesWrite = current.some(
+    (m) =>
+      m.driveId === input.driveId &&
+      !m.readOnly &&
+      !want.some((w) => !w.readOnly && (w.subdir ?? '') === (m.subdir ?? '')),
+  );
+  let flushed: boolean | undefined;
+  if (losesWrite && box.externalId) {
+    const { flushDriveSyncBeforeStop } = await import('../projects/reaping/stop-box');
+    flushed = await flushDriveSyncBeforeStop({
+      sandboxId: box.sandboxId,
+      externalId: box.externalId,
+      provider: box.provider,
+      metadata: box.metadata,
+      driveId: input.driveId,
+    });
+  }
   await writeRecordedMounts(box.sandboxId, kept);
-  return { live: true };
+  return { live: true, ...(flushed === undefined ? {} : { flushed }) };
 }
 
 function freeMountPath(base: string, used: Set<string>): string {

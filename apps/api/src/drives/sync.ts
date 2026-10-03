@@ -51,3 +51,35 @@ export function syncMountAllows(
     (m) => m.driveId === driveId && pathWithin(path, m.subdir) && (need === 'read' || !m.readOnly),
   );
 }
+
+/**
+ * The version token the box compares: "size:mtime" of the file, or "absent".
+ * Storage's listing carries only size and mtime, so the box can only know this.
+ */
+export function syncVersionToken(stat: { size: number; mtime: number } | null): string {
+  return stat ? `${Number(stat.size)}:${Number(stat.mtime)}` : 'absent';
+}
+
+const pathLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Run `fn` alone for this drive path within this API process. Storage has no
+ * conditional write, so a sync write checks the drive's current version and
+ * writes under this lock: two sync writers to one path through one API
+ * process can no longer both pass the check. Not covered: a write through
+ * another API replica, the web app's file routes, or a Platinum session's
+ * mount landing between the check and the write. Those race exactly as a
+ * merge of two mounts does, and the drive's conflict scanner reports them.
+ */
+export async function withSyncPathLock<T>(driveId: string, path: string, fn: () => Promise<T>): Promise<T> {
+  const key = `${driveId}\0${path}`;
+  const prev = pathLocks.get(key) ?? Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  pathLocks.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (pathLocks.get(key) === tail) pathLocks.delete(key);
+  }
+}

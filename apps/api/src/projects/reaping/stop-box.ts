@@ -120,23 +120,28 @@ export async function abortLiveTurnBeforeStop(input: {
 const DRIVE_SYNC_FLUSH_TIMEOUT_MS = 30_000;
 
 /**
- * Drive sync: before a box off Platinum powers down, ask its daemon to push
- * the drive changes it has not sent yet. Best effort, like the abort above;
- * the daemon also pushes on SIGTERM, and a resumed box pushes what is left.
+ * Drive sync: before a box off Platinum powers down (or before one of its
+ * drives leaves the session or turns read-only), ask its daemon to push the
+ * drive changes it has not sent yet. `driveId` limits the push to one drive.
+ * True only when the daemon said everything went up. Never throws: the daemon
+ * also pushes on SIGTERM, and keeps a drive it could not push aside instead
+ * of deleting it.
  */
 export async function flushDriveSyncBeforeStop(input: {
   sandboxId: string;
   externalId: string;
   provider: string;
   metadata?: unknown;
-}): Promise<void> {
+  driveId?: string;
+}): Promise<boolean> {
   const { isDriveSyncBox } = await import('../../drives/sync');
-  if (!isDriveSyncBox({ provider: input.provider, metadata: input.metadata })) return;
+  if (!isDriveSyncBox({ provider: input.provider, metadata: input.metadata })) return true;
   try {
     const serviceKey = await resolveServiceKey(input.externalId);
-    if (!serviceKey) return;
+    if (!serviceKey) return false;
     const ingress = await resolveSandboxIngress(input.externalId, { port: DAEMON_PORT, transport: 'http' });
-    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/drive-sync/flush`, {
+    const query = input.driveId ? `?driveId=${encodeURIComponent(input.driveId)}` : '';
+    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/drive-sync/flush${query}`, {
       method: 'POST',
       headers: {
         ...ingress.headers,
@@ -148,9 +153,14 @@ export async function flushDriveSyncBeforeStop(input: {
       },
       signal: AbortSignal.timeout(DRIVE_SYNC_FLUSH_TIMEOUT_MS),
     });
-    if (!res.ok) console.warn(`[stop] drive sync flush declined for sandbox ${input.sandboxId}: ${res.status}`);
+    if (res.status !== 200) {
+      console.warn(`[stop] drive sync flush incomplete for sandbox ${input.sandboxId}: ${res.status}`);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn(`[stop] drive sync flush failed for sandbox ${input.sandboxId}:`, err instanceof Error ? err.message : err);
+    return false;
   }
 }
 

@@ -35,3 +35,31 @@ describe('drive sync authorization', () => {
     expect(isDriveSyncBox({ provider: 'platinum', metadata: { driveSync: true } })).toBe(false);
   });
 });
+
+describe('drive sync conditional write', () => {
+  test('two writers based on the same version: under the path lock only the first writes', async () => {
+    const { syncVersionToken, withSyncPathLock } = await import('./sync');
+    let file: { size: number; mtime: number } | null = { size: 4, mtime: 100 };
+    const base = syncVersionToken(file);
+    const writes: string[] = [];
+    // check, then a storage round-trip, then write: the window the lock closes.
+    const conditional = (who: string) =>
+      withSyncPathLock(DRIVE, '/a.md', async () => {
+        if (syncVersionToken(file) !== base) return 'conflict';
+        await new Promise((r) => setTimeout(r, 20));
+        file = { size: 9, mtime: 200 + writes.length };
+        writes.push(who);
+        return 'written';
+      });
+    const results = await Promise.all([conditional('box-1'), conditional('box-2')]);
+    expect(results).toEqual(['written', 'conflict']);
+    expect(writes).toEqual(['box-1']);
+    expect(syncVersionToken(null)).toBe('absent');
+  });
+
+  test('a failed write releases the lock for the next writer', async () => {
+    const { withSyncPathLock } = await import('./sync');
+    await expect(withSyncPathLock(DRIVE, '/b.md', async () => { throw new Error('storage down'); })).rejects.toThrow('storage down');
+    expect(await withSyncPathLock(DRIVE, '/b.md', async () => 'ok')).toBe('ok');
+  });
+});

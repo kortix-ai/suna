@@ -13,7 +13,7 @@ import {
   sessionDriveNotes,
   writeDriveVolume,
 } from '../../drives/service';
-import { isDriveSyncBox, syncMountAllows } from '../../drives/sync';
+import { isDriveSyncBox, syncMountAllows, syncVersionToken, withSyncPathLock } from '../../drives/sync';
 import {
   DriveStorageError,
   commitVolumeUpload,
@@ -210,9 +210,12 @@ projectsApp.put(`${base}/:driveId/files/content`, async (c: Ctx) => {
   const body = new Uint8Array(await c.req.arrayBuffer());
   if (body.byteLength > MAX_PUT_BYTES) return refuse(c, 413, 'Use the block upload for files this large');
   const written = await storage(c, () =>
-    writeDriveVolume(got.drive, (volume) => writeVolumeFile(volume, got.path, body, { overwrite: true })),
+    conditionalWrite(got.drive, got.path, c.req.query('expect'), () =>
+      writeDriveVolume(got.drive, (volume) => writeVolumeFile(volume, got.path, body, { overwrite: true })),
+    ),
   );
   if (written instanceof Response) return written;
+  if (written === REMOTE_CHANGED) return remoteChanged(c);
   noteDriveWrite(got.drive.driveId);
   return c.json(written);
 });
@@ -251,11 +254,57 @@ projectsApp.put(`${base}/:driveId/files/upload/:uploadId/blocks/:sha`, async (c:
 projectsApp.post(`${base}/:driveId/files/upload/:uploadId/commit`, async (c: Ctx) => {
   const drive = await anyWritable(c);
   if (drive instanceof Response) return drive;
-  const r = await storage(c, () => commitVolumeUpload(drive.platinumVolumeName, param(c, 'uploadId')));
+  // `path` + `expect`: the file the plan writes and the version it was based on.
+  const target = c.req.query('path');
+  let path: string | null = null;
+  if (target !== undefined) {
+    const got = await driveFor(c, 'write', target);
+    if (got instanceof Response) return got;
+    path = got.path;
+  }
+  const commit = () => commitVolumeUpload(drive.platinumVolumeName, param(c, 'uploadId'));
+  const r = await storage(c, () =>
+    path ? conditionalWrite(drive, path, c.req.query('expect'), commit) : commit(),
+  );
   if (r instanceof Response) return r;
+  if (r === REMOTE_CHANGED) return remoteChanged(c);
   noteDriveWrite(drive.driveId);
   return c.json(r as Record<string, unknown>);
 });
+
+const REMOTE_CHANGED = Symbol('remote_changed');
+
+function remoteChanged(c: Ctx): Response {
+  return c.json({ error: 'The file changed on the drive since this box last read it', code: 'remote_changed' }, 409);
+}
+
+/**
+ * The write, only when the drive's file is still the version the box based
+ * its change on (`expect`: "size:mtime" or "absent"). Checked and written
+ * under a per-path lock (drives/sync.ts withSyncPathLock, which documents
+ * what it cannot cover). Without `expect` the write is unconditional.
+ */
+async function conditionalWrite<T>(
+  drive: DriveRow,
+  path: string,
+  expect: string | undefined,
+  write: () => Promise<T>,
+): Promise<T | typeof REMOTE_CHANGED> {
+  if (!expect) return write();
+  return withSyncPathLock(drive.driveId, path, async () => {
+    const current = await readDriveVolume(
+      drive,
+      (volume) =>
+        statVolumeFile(volume, path).catch((err) => {
+          if (err instanceof DriveStorageError && err.status === 404) return null;
+          throw err;
+        }),
+      () => null,
+    );
+    if (syncVersionToken(current) !== expect) return REMOTE_CHANGED;
+    return write();
+  });
+}
 
 /** The drive, when the session writes any part of it (the block and commit calls of a checked plan). */
 async function anyWritable(c: Ctx): Promise<DriveRow | Response> {
