@@ -1591,7 +1591,8 @@
       "failed": "Oznake nije moguće sačuvati",
       "tooLong": "Oznaka ima najviše 64 znaka.",
       "tooMany": "Sesija ima najviše 20 oznaka."
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -20547,6 +20548,316 @@
       "codeLabel": "Kod",
       "continue": "Nastavi",
       "codePlaceholder": "ABCD-1234"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} h {minutes} min",
+      "minutes": "{minutes} min"
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "Vremenska linija",
+        "ask": "Pitaj",
+        "ranges": "Rasponi",
+        "devices": "Uređaji",
+        "people": "Ljudi",
+        "settings": "Podešavanja"
+      }
+    },
+    "timeline": {
+      "person": "Osoba",
+      "you": "Ti",
+      "device": "Uređaj",
+      "allDevices": "Svi uređaji",
+      "unnamedDevice": "Uređaj bez imena",
+      "dayPicker": "Izaberi dan",
+      "recordedDays": "Snimljeni dani",
+      "noDay": "Nema snimljenih dana",
+      "today": "Danas",
+      "yesterday": "Juče",
+      "aMember": "član",
+      "viewingMember": "Gledaš vremensku liniju člana {member}",
+      "viewingMemberAudit": "Svaki pregled Capture podataka drugog člana beleži se u audit logu projekta.",
+      "auditNotice": "Ko upravlja ovim projektom može da otvori tvoju vremensku liniju. Svaki takav pregled beleži se u audit logu projekta.",
+      "loadFailed": "Vremenska linija nije mogla da se učita.",
+      "tryAgain": "Pokušaj ponovo",
+      "empty": "Tvoji snimljeni dani pojaviće se ovde",
+      "emptyHint": "Poveži računar pomoću aplikacije Kortix Capture da započneš vremensku liniju.",
+      "emptyMember": "Ova osoba još nema snimljenih dana",
+      "connectDevice": "Poveži uređaj",
+      "layers": "Slojevi",
+      "layer": {
+        "screen": "Ekran",
+        "actions": "Radnje",
+        "audio": "Zvuk",
+        "ranges": "Rasponi"
+      },
+      "previousFrame": "Prethodni kadar",
+      "nextFrame": "Sledeći kadar",
+      "saveRange": "Sačuvaj raspon",
+      "trackLabel": "Trenutak na vremenskoj liniji",
+      "openRange": "Otvori raspon {range}",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "Nepoznata aplikacija",
+      "search": {
+        "label": "Pretraži vremensku liniju",
+        "placeholder": "Pretraži šta si video, radio ili čuo",
+        "results": "Rezultati pretrage",
+        "none": "Ništa na ovoj vremenskoj liniji ne odgovara pretrazi.",
+        "kind": {
+          "screen": "Ekran",
+          "actions": "Radnja",
+          "audio": "Zvuk"
+        }
+      },
+      "frame": {
+        "label": "Snimak ekrana aplikacije {app}",
+        "none": "Nema kadra ekrana blizu ovog trenutka.",
+        "encrypted": "Uređaj je šifrovao ovaj snimak. Kortix ne može da ga prikaže.",
+        "noVideo": "Video ovog trenutka nije u Capture skladištu."
+      },
+      "details": {
+        "label": "Detalji trenutka",
+        "noScreen": "Nema aktivnosti na ekranu",
+        "onScreen": "Na ekranu",
+        "actions": "Radnje oko ovog trenutka",
+        "noActions": "Nema radnji u roku od dva minuta.",
+        "audio": "Zvuk oko ovog trenutka",
+        "noAudio": "Nema zvuka u roku od dva minuta.",
+        "partOf": "Deo"
+      }
+    },
+    "saveRange": {
+      "title": "Sačuvaj raspon",
+      "description": "Sačuvani raspon dobija korake, transkript i rezime. Obrada počinje kada sačuvaš.",
+      "name": "Naziv",
+      "namePlaceholder": "Izvršavanje kontrolne liste za izdanje",
+      "from": "Od",
+      "to": "Do",
+      "endBeforeStart": "Kraj mora biti posle početka.",
+      "cancel": "Otkaži",
+      "submit": "Sačuvaj raspon",
+      "saved": "Raspon je sačuvan",
+      "failed": "Raspon nije mogao da se sačuva."
+    },
+    "ranges": {
+      "title": "Rasponi",
+      "description": "Delovi vremenske linije sa koracima, transkriptom i rezimeom. Kortix otkriva po jedan za svaku sesiju aktivnosti; svoje čuvaš sam.",
+      "sourceLabel": "Izvor",
+      "source": {
+        "all": "Svi",
+        "saved": "Sačuvani",
+        "detected": "Otkriveni"
+      },
+      "periodLabel": "Period",
+      "period": {
+        "week": "7 dana",
+        "month": "30 dana"
+      },
+      "status": {
+        "open": "Snimanje",
+        "closed": "U redu čekanja",
+        "processing": "Obrada",
+        "processed": "Obrađen",
+        "failed": "Neuspešno"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "Svi uređaji",
+      "loadFailed": "Rasponi nisu mogli da se učitaju.",
+      "tryAgain": "Pokušaj ponovo",
+      "empty": "Rasponi će se pojaviti ovde",
+      "emptyHint": "Kortix otkriva raspon za svaku sesiju aktivnosti. Sačuvaj svoje sa vremenske linije."
+    },
+    "range": {
+      "backToRanges": "Rasponi",
+      "openInTimeline": "Otvori na vremenskoj liniji",
+      "processAgain": "Obradi ponovo",
+      "queuedToast": "Raspon je u redu čekanja",
+      "reprocessFailed": "Raspon nije mogao da se stavi u red čekanja.",
+      "tab": {
+        "steps": "Koraci",
+        "transcript": "Transkript",
+        "summary": "Rezime"
+      },
+      "processing": "Obrada u toku. Koraci, transkript i rezime pojaviće se ovde kada se pipeline-ovi završe.",
+      "queued": "U redu čekanja. Obrada počinje u roku od minut.",
+      "failed": "Ovaj raspon nije mogao da se obradi.",
+      "noSteps": "Nema koraka u ovom rasponu.",
+      "noTranscript": "Nema transkripta za ovaj raspon.",
+      "noSummary": "Nema rezimea za ovaj raspon.",
+      "timeByApp": "Vreme po aplikaciji",
+      "noScreen": "Nema aktivnosti na ekranu u ovom rasponu.",
+      "unknownApp": "Nepoznata aplikacija",
+      "notFound": "Ovaj raspon više ne postoji.",
+      "notFoundHint": "Link je možda pogrešan, ili raspon pripada drugoj osobi."
+    },
+    "devices": {
+      "title": "Uređaji",
+      "description": "Svaki računar koji snima u ovaj projekat, sa statusom uživo. Uređaj se smatra van mreže posle 120 sekundi bez statusa.",
+      "connect": "Poveži uređaj",
+      "scopeLabel": "Čiji uređaji",
+      "scopeMine": "Moji uređaji",
+      "scopeProject": "Ceo projekat",
+      "column": {
+        "device": "Uređaj",
+        "owner": "Vlasnik",
+        "status": "Status",
+        "layers": "Slojevi",
+        "sync": "Sinhronizacija",
+        "lastFrame": "Poslednji kadar",
+        "version": "Verzija",
+        "actions": "Radnje"
+      },
+      "status": {
+        "recording": "Snima",
+        "paused": "Pauziran",
+        "permission": "Potrebna dozvola",
+        "notRecording": "Ne snima",
+        "offline": "Van mreže",
+        "unknown": "Nepoznato"
+      },
+      "detail": {
+        "permission": "Nedostaje: {permissions}",
+        "pausedUntil": "Do {time}",
+        "lastSeen": "Poslednji status {time}"
+      },
+      "permission": {
+        "screen_recording": "Snimanje ekrana",
+        "accessibility": "Pristupačnost",
+        "microphone": "Mikrofon"
+      },
+      "layer": {
+        "screen": "Ekran",
+        "actions": "Radnje",
+        "audio": "Zvuk"
+      },
+      "sync": {
+        "upToDate": "Ažurno",
+        "pending": "{count, plural, one {# stavka u redu čekanja} few {# stavke u redu čekanja} other {# stavki u redu čekanja}}",
+        "failed": "Otpremanje ne uspeva",
+        "unknown": "Nepoznato"
+      },
+      "never": "Još nijedan",
+      "unknownVersion": "Nepoznata",
+      "unnamed": "Uređaj bez imena",
+      "you": "Ti",
+      "member": "Član",
+      "actionsFor": "Radnje za {name}",
+      "syncNow": "Sinhronizuj sada",
+      "synced": "{count, plural, =0 {Uređaj je sinhronizovan, nema ničeg novog} one {Uređaj je sinhronizovan, # stavka u redu čekanja} few {Uređaj je sinhronizovan, # stavke u redu čekanja} other {Uređaj je sinhronizovan, # stavki u redu čekanja}}",
+      "syncFailed": "Uređaj nije mogao da se sinhronizuje",
+      "revoke": "Opozovi uređaj",
+      "revokeTitle": "Opozvati ovaj uređaj?",
+      "revokeDescription": "{name} odmah prestaje da otprema. Da bi ponovo snimao, prijavi ga ponovo iz aplikacije.",
+      "revoked": "Uređaj je opozvan",
+      "revokeFailed": "Uređaj nije mogao da se opozove",
+      "loadFailed": "Uređaji nisu mogli da se učitaju.",
+      "tryAgain": "Pokušaj ponovo",
+      "empty": "Uređaji koje povežeš pojaviće se ovde",
+      "footnote": "Jedan red po računaru. Ponovna instalacija ili ažuriranje aplikacije zadržava isti red."
+    },
+    "connect": {
+      "title": "Poveži uređaj",
+      "description": "Instaliraj aplikaciju koja snima, pa je prijavi u ovaj projekat.",
+      "desktopTitle": "Kortix desktop aplikacija",
+      "desktopHint": "Desktop aplikacija uključuje Kortix Capture.",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Kortix Capture engine",
+      "engineHint": "Samo snimač, za računar bez desktop aplikacije.",
+      "engineLink": "Otvori izdanja",
+      "stepsTitle": "Prijava",
+      "step1": "Otvori aplikaciju i izaberi Prijavi se preko Kortixa. Otvara se pregledač.",
+      "step2": "Proveri da kod u pregledaču odgovara kodu u aplikaciji.",
+      "step3": "Izaberi {project}. Uređaj se pojavljuje ovde pod tvojim imenom u roku od minut.",
+      "close": "Zatvori"
+    },
+    "people": {
+      "title": "Ljudi",
+      "description": "Po članu: aktivno vreme, korišćene aplikacije, rasponi i uređaji.",
+      "periodLabel": "Period",
+      "period": {
+        "today": "Danas",
+        "week": "7 dana",
+        "month": "30 dana"
+      },
+      "auditTitle": "Samo ljudi koji upravljaju ovim projektom vide ovu stranicu",
+      "auditBody": "Otvaranje ove stranice ili vremenske linije člana upisuje stavku u audit log projekta. Članovi na svojoj vremenskoj liniji vide da menadžeri mogu da je pregledaju.",
+      "column": {
+        "member": "Član",
+        "active": "Aktivno vreme",
+        "apps": "Najčešće aplikacije",
+        "ranges": "Rasponi",
+        "devices": "Uređaji",
+        "open": "Otvori"
+      },
+      "role": {
+        "manager": "Menadžer",
+        "member": "Član",
+        "viewer": "Posmatrač",
+        "none": "Više nije član"
+      },
+      "you": "{email} (ti)",
+      "formerMember": "Bivši član",
+      "noActivity": "Nema aktivnosti",
+      "unknownApp": "Nepoznata aplikacija",
+      "openTimeline": "Otvori vremensku liniju",
+      "openTimelineOf": "Otvori vremensku liniju člana {member}",
+      "loadFailed": "Pregled ljudi nije mogao da se učita.",
+      "tryAgain": "Pokušaj ponovo",
+      "empty": "Članovi će se pojaviti ovde"
+    },
+    "settings": {
+      "title": "Podešavanja",
+      "description": "Capture politika koju svaki uređaj u ovom projektu čita iz Capture skladišta.",
+      "layersTitle": "Slojevi",
+      "layer": {
+        "screen": "Ekran",
+        "screenHint": "Ekran, aplikacija i prozor u prvom planu, i tekst na ekranu.",
+        "actions": "Radnje",
+        "actionsHint": "Klikovi, kucanje i prečice, sa snimkom ekrana za svaki klik.",
+        "audio": "Zvuk",
+        "audioHint": "Mikrofon i zvuk sistema, sa transkriptom."
+      },
+      "privacyTitle": "Privatnost",
+      "masking": "Sakrij lične podatke",
+      "maskingHint": "Uređaji sakrivaju lične podatke u onome što snimaju, pre nego što napuste računar.",
+      "pause": "Pauziraj snimanje",
+      "pauseHint": "Svaki uređaj u ovom projektu zaustavlja svaki sloj dok ovo ne isključiš.",
+      "retentionTitle": "Čuvanje",
+      "localHours": "Na uređaju (sati)",
+      "localHoursHint": "Koliko dugo uređaj čuva medije posle otpremanja. 0 ih čuva bez ograničenja.",
+      "remoteDays": "U Kortixu (dani)",
+      "remoteDaysHint": "Koliko dugo Kortix čuva indeksirane stavke. 0 ih čuva bez ograničenja.",
+      "noticeTitle": "Obaveštenje",
+      "noticePlaceholder": "Snimanje je uključeno za ovaj projekat.",
+      "noticeHint": "Uređaji prikazuju ovaj tekst u meniju i prozoru podešavanja aplikacije.",
+      "lastChanged": "Poslednja izmena {time}",
+      "defaultPolicy": "Primenjuje se podrazumevana politika.",
+      "discard": "Odbaci izmene",
+      "save": "Sačuvaj politiku",
+      "saved": "Capture politika je sačuvana",
+      "saveFailed": "Capture politika nije mogla da se sačuva",
+      "loadFailed": "Capture politika nije mogla da se učita.",
+      "tryAgain": "Pokušaj ponovo"
+    },
+    "ask": {
+      "title": "Pitaj",
+      "description": "Pitaj o onome što si video, radio i čuo. Agent odgovara u novoj privatnoj sesiji i povezuje svaki trenutak koji koristi.",
+      "label": "Pitanje",
+      "placeholder": "Na čemu sam radio juče popodne?",
+      "submit": "Pitaj",
+      "scope": "Agent čita samo tvoju vremensku liniju, kroz sesiju koju pokreće za tebe.",
+      "suggestion": {
+        "yesterday": "Na čemu sam radio juče?",
+        "lastOpened": "Kada sam poslednji put otvorio kontrolnu listu za izdanje?",
+        "byApp": "Sažmi današnji dan po aplikaciji.",
+        "said": "Šta je rečeno na današnjem standup-u?"
+      },
+      "instructions": "Odgovori na osnovu moje Kortix Capture vremenske linije. Pretraži je pomoću `kortix capture search`, pročitaj dan pomoću `kortix capture timeline` i otvori ekran pomoću `kortix capture frame`. Navedi svaki trenutak koji koristiš kao Markdown link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Navedi raspon kao [njegov naslov]({timelineUrl}/ranges/RANGE_ID). Moja vremenska zona je {tz}. Odgovori na jeziku mog pitanja."
     }
   }
 }

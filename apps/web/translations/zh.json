@@ -1591,7 +1591,8 @@
       "failed": "无法保存标签",
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "仪表板",
@@ -20547,6 +20548,316 @@
       "codeLabel": "代码",
       "continue": "继续",
       "codePlaceholder": "ABCD-1234"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} 小时 {minutes} 分钟",
+      "minutes": "{minutes} 分钟"
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "时间线",
+        "ask": "提问",
+        "ranges": "片段",
+        "devices": "设备",
+        "people": "成员",
+        "settings": "设置"
+      }
+    },
+    "timeline": {
+      "person": "成员",
+      "you": "你",
+      "device": "设备",
+      "allDevices": "所有设备",
+      "unnamedDevice": "未命名设备",
+      "dayPicker": "选择日期",
+      "recordedDays": "有记录的日期",
+      "noDay": "没有有记录的日期",
+      "today": "今天",
+      "yesterday": "昨天",
+      "aMember": "一位成员",
+      "viewingMember": "你正在查看 {member} 的时间线",
+      "viewingMemberAudit": "每次查看其他成员的 Capture 数据，都会记录在项目的审计日志中。",
+      "auditNotice": "管理此项目的人可以打开你的时间线。每次查看都会记录在项目的审计日志中。",
+      "loadFailed": "无法加载时间线。",
+      "tryAgain": "重试",
+      "empty": "你有记录的日期会显示在这里",
+      "emptyHint": "用 Kortix Capture 应用连接一台电脑，开始创建时间线。",
+      "emptyMember": "此成员还没有有记录的日期",
+      "connectDevice": "连接设备",
+      "layers": "图层",
+      "layer": {
+        "screen": "屏幕",
+        "actions": "操作",
+        "audio": "音频",
+        "ranges": "片段"
+      },
+      "previousFrame": "上一帧",
+      "nextFrame": "下一帧",
+      "saveRange": "保存片段",
+      "trackLabel": "时间线上的时刻",
+      "openRange": "打开片段 {range}",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "未知应用",
+      "search": {
+        "label": "搜索时间线",
+        "placeholder": "搜索你看到、做过或听到的内容",
+        "results": "搜索结果",
+        "none": "此时间线上没有与搜索匹配的内容。",
+        "kind": {
+          "screen": "屏幕",
+          "actions": "操作",
+          "audio": "音频"
+        }
+      },
+      "frame": {
+        "label": "{app} 的屏幕录制",
+        "none": "此时刻附近没有屏幕帧。",
+        "encrypted": "设备已加密此录制。Kortix 无法显示。",
+        "noVideo": "此时刻的视频不在 Capture 存储中。"
+      },
+      "details": {
+        "label": "时刻详情",
+        "noScreen": "没有屏幕活动",
+        "onScreen": "屏幕上",
+        "actions": "此时刻前后的操作",
+        "noActions": "两分钟内没有操作。",
+        "audio": "此时刻前后的音频",
+        "noAudio": "两分钟内没有音频。",
+        "partOf": "属于"
+      }
+    },
+    "saveRange": {
+      "title": "保存片段",
+      "description": "保存的片段会生成步骤、转写和摘要。保存时开始处理。",
+      "name": "名称",
+      "namePlaceholder": "发布检查清单执行",
+      "from": "开始",
+      "to": "结束",
+      "endBeforeStart": "结束时间必须晚于开始时间。",
+      "cancel": "取消",
+      "submit": "保存片段",
+      "saved": "片段已保存",
+      "failed": "无法保存片段。"
+    },
+    "ranges": {
+      "title": "片段",
+      "description": "时间线上带有步骤、转写和摘要的一段。Kortix 会为每个活动会话检测一个；你可以保存自己的片段。",
+      "sourceLabel": "来源",
+      "source": {
+        "all": "全部",
+        "saved": "已保存",
+        "detected": "已检测"
+      },
+      "periodLabel": "时间段",
+      "period": {
+        "week": "7 天",
+        "month": "30 天"
+      },
+      "status": {
+        "open": "录制中",
+        "closed": "排队中",
+        "processing": "处理中",
+        "processed": "已处理",
+        "failed": "失败"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "所有设备",
+      "loadFailed": "无法加载片段。",
+      "tryAgain": "重试",
+      "empty": "片段会显示在这里",
+      "emptyHint": "Kortix 会为每个活动会话检测一个片段。你可以从时间线保存自己的片段。"
+    },
+    "range": {
+      "backToRanges": "片段",
+      "openInTimeline": "在时间线中打开",
+      "processAgain": "重新处理",
+      "queuedToast": "片段已加入队列",
+      "reprocessFailed": "无法将片段加入队列。",
+      "tab": {
+        "steps": "步骤",
+        "transcript": "转写",
+        "summary": "摘要"
+      },
+      "processing": "处理中。流水线完成后，步骤、转写和摘要会显示在这里。",
+      "queued": "排队中。一分钟内开始处理。",
+      "failed": "无法处理此片段。",
+      "noSteps": "此片段中没有步骤。",
+      "noTranscript": "此片段没有转写。",
+      "noSummary": "此片段没有摘要。",
+      "timeByApp": "各应用用时",
+      "noScreen": "此片段中没有屏幕活动。",
+      "unknownApp": "未知应用",
+      "notFound": "此片段已不存在。",
+      "notFoundHint": "链接可能有误，或该片段属于其他人。"
+    },
+    "devices": {
+      "title": "设备",
+      "description": "向此项目录制的每台电脑及其实时状态。设备超过 120 秒没有状态即视为离线。",
+      "connect": "连接设备",
+      "scopeLabel": "谁的设备",
+      "scopeMine": "我的设备",
+      "scopeProject": "整个项目",
+      "column": {
+        "device": "设备",
+        "owner": "所有者",
+        "status": "状态",
+        "layers": "图层",
+        "sync": "同步",
+        "lastFrame": "最后一帧",
+        "version": "版本",
+        "actions": "操作"
+      },
+      "status": {
+        "recording": "录制中",
+        "paused": "已暂停",
+        "permission": "需要权限",
+        "notRecording": "未录制",
+        "offline": "离线",
+        "unknown": "未知"
+      },
+      "detail": {
+        "permission": "缺少：{permissions}",
+        "pausedUntil": "直到 {time}",
+        "lastSeen": "最后状态 {time}"
+      },
+      "permission": {
+        "screen_recording": "屏幕录制",
+        "accessibility": "辅助功能",
+        "microphone": "麦克风"
+      },
+      "layer": {
+        "screen": "屏幕",
+        "actions": "操作",
+        "audio": "音频"
+      },
+      "sync": {
+        "upToDate": "已是最新",
+        "pending": "{count, plural, other {# 项排队中}}",
+        "failed": "上传失败",
+        "unknown": "未知"
+      },
+      "never": "暂无",
+      "unknownVersion": "未知",
+      "unnamed": "未命名设备",
+      "you": "你",
+      "member": "一位成员",
+      "actionsFor": "{name} 的操作",
+      "syncNow": "立即同步",
+      "synced": "{count, plural, =0 {设备已同步，没有新内容} other {设备已同步，# 项排队中}}",
+      "syncFailed": "无法同步设备",
+      "revoke": "撤销设备",
+      "revokeTitle": "撤销此设备？",
+      "revokeDescription": "{name} 会立即停止上传。要再次录制，请在应用中重新登录。",
+      "revoked": "设备已撤销",
+      "revokeFailed": "无法撤销设备",
+      "loadFailed": "无法加载设备。",
+      "tryAgain": "重试",
+      "empty": "你连接的设备会显示在这里",
+      "footnote": "每台电脑一行。重新安装或更新应用会保留同一行。"
+    },
+    "connect": {
+      "title": "连接设备",
+      "description": "安装一个用于录制的应用，然后登录到此项目。",
+      "desktopTitle": "Kortix 桌面应用",
+      "desktopHint": "桌面应用包含 Kortix Capture。",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Kortix Capture 引擎",
+      "engineHint": "单独的录制器，适用于没有桌面应用的电脑。",
+      "engineLink": "打开发布页",
+      "stepsTitle": "登录",
+      "step1": "打开应用，选择使用 Kortix 登录。浏览器会打开。",
+      "step2": "检查浏览器中的代码与应用中的代码一致。",
+      "step3": "选择 {project}。一分钟内，设备会以你的名字显示在这里。",
+      "close": "关闭"
+    },
+    "people": {
+      "title": "成员",
+      "description": "按成员显示：活跃时间、使用的应用、片段和设备。",
+      "periodLabel": "时间段",
+      "period": {
+        "today": "今天",
+        "week": "7 天",
+        "month": "30 天"
+      },
+      "auditTitle": "只有管理此项目的人能看到此页面",
+      "auditBody": "打开此页面或某位成员的时间线，会在项目的审计日志中写入一条记录。成员可在自己的时间线上看到管理者能够查看它。",
+      "column": {
+        "member": "成员",
+        "active": "活跃时间",
+        "apps": "常用应用",
+        "ranges": "片段",
+        "devices": "设备",
+        "open": "打开"
+      },
+      "role": {
+        "manager": "管理者",
+        "member": "成员",
+        "viewer": "查看者",
+        "none": "已不是成员"
+      },
+      "you": "{email}（你）",
+      "formerMember": "前成员",
+      "noActivity": "没有活动",
+      "unknownApp": "未知应用",
+      "openTimeline": "打开时间线",
+      "openTimelineOf": "打开 {member} 的时间线",
+      "loadFailed": "无法加载成员概览。",
+      "tryAgain": "重试",
+      "empty": "成员会显示在这里"
+    },
+    "settings": {
+      "title": "设置",
+      "description": "此项目中每台设备从 Capture 存储读取的 Capture 策略。",
+      "layersTitle": "图层",
+      "layer": {
+        "screen": "屏幕",
+        "screenHint": "屏幕、最前面的应用和窗口，以及屏幕上的文字。",
+        "actions": "操作",
+        "actionsHint": "点击、输入和快捷键，每次点击附带一张截图。",
+        "audio": "音频",
+        "audioHint": "麦克风和系统音频，附带转写。"
+      },
+      "privacyTitle": "隐私",
+      "masking": "遮盖个人数据",
+      "maskingHint": "设备会在录制内容离开电脑之前，遮盖其中的个人数据。",
+      "pause": "暂停录制",
+      "pauseHint": "在你关闭此选项之前，此项目中的每台设备都会停止所有图层。",
+      "retentionTitle": "保留",
+      "localHours": "在设备上（小时）",
+      "localHoursHint": "设备在上传后保留媒体的时长。0 表示不限期保留。",
+      "remoteDays": "在 Kortix 中（天）",
+      "remoteDaysHint": "Kortix 保留已索引项目的时长。0 表示不限期保留。",
+      "noticeTitle": "通知",
+      "noticePlaceholder": "此项目已开启录制。",
+      "noticeHint": "设备会在应用的菜单和设置窗口中显示此文字。",
+      "lastChanged": "最后修改于 {time}",
+      "defaultPolicy": "当前使用默认策略。",
+      "discard": "放弃更改",
+      "save": "保存策略",
+      "saved": "Capture 策略已保存",
+      "saveFailed": "无法保存 Capture 策略",
+      "loadFailed": "无法加载 Capture 策略。",
+      "tryAgain": "重试"
+    },
+    "ask": {
+      "title": "提问",
+      "description": "询问你看到、做过和听到的内容。智能体会在新的私有会话中回答，并链接它用到的每个时刻。",
+      "label": "问题",
+      "placeholder": "我昨天下午做了什么？",
+      "submit": "提问",
+      "scope": "智能体只通过为你运行的会话读取你的时间线。",
+      "suggestion": {
+        "yesterday": "我昨天做了什么？",
+        "lastOpened": "我上次打开发布检查清单是什么时候？",
+        "byApp": "按应用总结今天。",
+        "said": "今天的站会上说了什么？"
+      },
+      "instructions": "根据我的 Kortix Capture 时间线回答。用 `kortix capture search` 搜索，用 `kortix capture timeline` 读取某一天，用 `kortix capture frame` 打开屏幕。把用到的每个时刻引用为 Markdown 链接：[14:32]({timelineUrl}?at=ISO-8601-TIME)。把片段引用为 [其标题]({timelineUrl}/ranges/RANGE_ID)。我的时区是 {tz}。用我提问所用的语言回答。"
     }
   }
 }

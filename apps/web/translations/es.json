@@ -1591,7 +1591,8 @@
       "failed": "No se pudieron guardar las etiquetas",
       "tooLong": "Una etiqueta tiene como máximo 64 caracteres.",
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "Panel",
@@ -20547,6 +20548,316 @@
       "codeLabel": "Código",
       "continue": "Continuar",
       "codePlaceholder": "ABCD-1234"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} h {minutes} min",
+      "minutes": "{minutes} min"
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "Línea de tiempo",
+        "ask": "Preguntar",
+        "ranges": "Rangos",
+        "devices": "Dispositivos",
+        "people": "Personas",
+        "settings": "Configuración"
+      }
+    },
+    "timeline": {
+      "person": "Persona",
+      "you": "Tú",
+      "device": "Dispositivo",
+      "allDevices": "Todos los dispositivos",
+      "unnamedDevice": "Dispositivo sin nombre",
+      "dayPicker": "Elige un día",
+      "recordedDays": "Días grabados",
+      "noDay": "No hay días grabados",
+      "today": "Hoy",
+      "yesterday": "Ayer",
+      "aMember": "un miembro",
+      "viewingMember": "Estás viendo la línea de tiempo de {member}",
+      "viewingMemberAudit": "Cada vista de los datos de Capture de otro miembro se registra en el registro de auditoría del proyecto.",
+      "auditNotice": "Quienes gestionan este proyecto pueden abrir tu línea de tiempo. Cada vista se registra en el registro de auditoría del proyecto.",
+      "loadFailed": "No se pudo cargar la línea de tiempo.",
+      "tryAgain": "Reintentar",
+      "empty": "Tus días grabados aparecerán aquí",
+      "emptyHint": "Conecta un ordenador con la app Kortix Capture para empezar una línea de tiempo.",
+      "emptyMember": "Esta persona aún no tiene días grabados",
+      "connectDevice": "Conectar un dispositivo",
+      "layers": "Capas",
+      "layer": {
+        "screen": "Pantalla",
+        "actions": "Acciones",
+        "audio": "Audio",
+        "ranges": "Rangos"
+      },
+      "previousFrame": "Fotograma anterior",
+      "nextFrame": "Fotograma siguiente",
+      "saveRange": "Guardar rango",
+      "trackLabel": "Momento en la línea de tiempo",
+      "openRange": "Abrir rango {range}",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "App desconocida",
+      "search": {
+        "label": "Buscar en la línea de tiempo",
+        "placeholder": "Busca lo que viste, hiciste u oíste",
+        "results": "Resultados de búsqueda",
+        "none": "Nada en esta línea de tiempo coincide con la búsqueda.",
+        "kind": {
+          "screen": "Pantalla",
+          "actions": "Acción",
+          "audio": "Audio"
+        }
+      },
+      "frame": {
+        "label": "Grabación de pantalla de {app}",
+        "none": "No hay fotograma de pantalla cerca de este momento.",
+        "encrypted": "El dispositivo cifró esta grabación. Kortix no puede mostrarla.",
+        "noVideo": "El vídeo de este momento no está en el almacén de Capture."
+      },
+      "details": {
+        "label": "Detalles del momento",
+        "noScreen": "Sin actividad en pantalla",
+        "onScreen": "En pantalla",
+        "actions": "Acciones en torno a este momento",
+        "noActions": "No hay acciones en un margen de dos minutos.",
+        "audio": "Audio en torno a este momento",
+        "noAudio": "No hay audio en un margen de dos minutos.",
+        "partOf": "Parte de"
+      }
+    },
+    "saveRange": {
+      "title": "Guardar rango",
+      "description": "Un rango guardado obtiene sus pasos, transcripción y resumen. El procesamiento empieza al guardar.",
+      "name": "Nombre",
+      "namePlaceholder": "Ejecución de la lista de verificación de lanzamiento",
+      "from": "Desde",
+      "to": "Hasta",
+      "endBeforeStart": "El final debe ser posterior al inicio.",
+      "cancel": "Cancelar",
+      "submit": "Guardar rango",
+      "saved": "Rango guardado",
+      "failed": "No se pudo guardar el rango."
+    },
+    "ranges": {
+      "title": "Rangos",
+      "description": "Tramos de una línea de tiempo con pasos, transcripción y resumen. Kortix detecta uno por cada sesión de actividad; tú guardas los tuyos.",
+      "sourceLabel": "Origen",
+      "source": {
+        "all": "Todos",
+        "saved": "Guardados",
+        "detected": "Detectados"
+      },
+      "periodLabel": "Periodo",
+      "period": {
+        "week": "7 días",
+        "month": "30 días"
+      },
+      "status": {
+        "open": "Grabando",
+        "closed": "En cola",
+        "processing": "Procesando",
+        "processed": "Procesado",
+        "failed": "Con error"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "Todos los dispositivos",
+      "loadFailed": "No se pudieron cargar los rangos.",
+      "tryAgain": "Reintentar",
+      "empty": "Los rangos aparecerán aquí",
+      "emptyHint": "Kortix detecta un rango por cada sesión de actividad. Guarda los tuyos desde la línea de tiempo."
+    },
+    "range": {
+      "backToRanges": "Rangos",
+      "openInTimeline": "Abrir en la línea de tiempo",
+      "processAgain": "Procesar de nuevo",
+      "queuedToast": "Rango en cola",
+      "reprocessFailed": "No se pudo poner el rango en cola.",
+      "tab": {
+        "steps": "Pasos",
+        "transcript": "Transcripción",
+        "summary": "Resumen"
+      },
+      "processing": "Procesando. Los pasos, la transcripción y el resumen aparecen aquí cuando terminen las canalizaciones.",
+      "queued": "En cola. El procesamiento empieza en menos de un minuto.",
+      "failed": "No se pudo procesar este rango.",
+      "noSteps": "No hay pasos en este rango.",
+      "noTranscript": "No hay transcripción para este rango.",
+      "noSummary": "No hay resumen para este rango.",
+      "timeByApp": "Tiempo por app",
+      "noScreen": "No hay actividad en pantalla en este rango.",
+      "unknownApp": "App desconocida",
+      "notFound": "Este rango ya no existe.",
+      "notFoundHint": "Puede que el enlace sea incorrecto o que el rango pertenezca a otra persona."
+    },
+    "devices": {
+      "title": "Dispositivos",
+      "description": "Cada ordenador que graba en este proyecto, con su estado en vivo. Un dispositivo se considera sin conexión tras 120 segundos sin estado.",
+      "connect": "Conectar un dispositivo",
+      "scopeLabel": "De quién",
+      "scopeMine": "Mis dispositivos",
+      "scopeProject": "Todo el proyecto",
+      "column": {
+        "device": "Dispositivo",
+        "owner": "Propietario",
+        "status": "Estado",
+        "layers": "Capas",
+        "sync": "Sincronización",
+        "lastFrame": "Último fotograma",
+        "version": "Versión",
+        "actions": "Acciones"
+      },
+      "status": {
+        "recording": "Grabando",
+        "paused": "En pausa",
+        "permission": "Necesita permiso",
+        "notRecording": "No graba",
+        "offline": "Sin conexión",
+        "unknown": "Desconocido"
+      },
+      "detail": {
+        "permission": "Falta: {permissions}",
+        "pausedUntil": "Hasta {time}",
+        "lastSeen": "Último estado {time}"
+      },
+      "permission": {
+        "screen_recording": "Grabación de pantalla",
+        "accessibility": "Accesibilidad",
+        "microphone": "Micrófono"
+      },
+      "layer": {
+        "screen": "Pantalla",
+        "actions": "Acciones",
+        "audio": "Audio"
+      },
+      "sync": {
+        "upToDate": "Al día",
+        "pending": "{count, plural, one {# elemento en cola} other {# elementos en cola}}",
+        "failed": "Falla la subida",
+        "unknown": "Desconocido"
+      },
+      "never": "Aún ninguno",
+      "unknownVersion": "Desconocida",
+      "unnamed": "Dispositivo sin nombre",
+      "you": "Tú",
+      "member": "Un miembro",
+      "actionsFor": "Acciones para {name}",
+      "syncNow": "Sincronizar ahora",
+      "synced": "{count, plural, =0 {Dispositivo sincronizado, nada nuevo} one {Dispositivo sincronizado, # elemento en cola} other {Dispositivo sincronizado, # elementos en cola}}",
+      "syncFailed": "No se pudo sincronizar el dispositivo",
+      "revoke": "Revocar dispositivo",
+      "revokeTitle": "¿Revocar este dispositivo?",
+      "revokeDescription": "{name} deja de subir datos al instante. Para volver a grabar, inicia sesión de nuevo en la app.",
+      "revoked": "Dispositivo revocado",
+      "revokeFailed": "No se pudo revocar el dispositivo",
+      "loadFailed": "No se pudieron cargar los dispositivos.",
+      "tryAgain": "Reintentar",
+      "empty": "Los dispositivos que conectes aparecerán aquí",
+      "footnote": "Una fila por ordenador. Reinstalar o actualizar la app conserva la misma fila."
+    },
+    "connect": {
+      "title": "Conectar un dispositivo",
+      "description": "Instala una app que grabe y luego inicia sesión en este proyecto.",
+      "desktopTitle": "App de escritorio de Kortix",
+      "desktopHint": "La app de escritorio incluye Kortix Capture.",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Motor de Kortix Capture",
+      "engineHint": "El grabador por sí solo, para un ordenador sin la app de escritorio.",
+      "engineLink": "Abrir las versiones",
+      "stepsTitle": "Iniciar sesión",
+      "step1": "Abre la app y elige Iniciar sesión con Kortix. Se abre tu navegador.",
+      "step2": "Comprueba que el código del navegador coincide con el de la app.",
+      "step3": "Elige {project}. El dispositivo aparece aquí con tu nombre en menos de un minuto.",
+      "close": "Cerrar"
+    },
+    "people": {
+      "title": "Personas",
+      "description": "Por miembro: tiempo activo, apps usadas, rangos y dispositivos.",
+      "periodLabel": "Periodo",
+      "period": {
+        "today": "Hoy",
+        "week": "7 días",
+        "month": "30 días"
+      },
+      "auditTitle": "Solo quienes gestionan este proyecto ven esta página",
+      "auditBody": "Abrir esta página o la línea de tiempo de un miembro escribe una entrada en el registro de auditoría del proyecto. Los miembros ven en su propia línea de tiempo que los gestores pueden verla.",
+      "column": {
+        "member": "Miembro",
+        "active": "Tiempo activo",
+        "apps": "Apps principales",
+        "ranges": "Rangos",
+        "devices": "Dispositivos",
+        "open": "Abrir"
+      },
+      "role": {
+        "manager": "Gestor",
+        "member": "Miembro",
+        "viewer": "Lector",
+        "none": "Ya no es miembro"
+      },
+      "you": "{email} (tú)",
+      "formerMember": "Antiguo miembro",
+      "noActivity": "Sin actividad",
+      "unknownApp": "App desconocida",
+      "openTimeline": "Abrir línea de tiempo",
+      "openTimelineOf": "Abrir la línea de tiempo de {member}",
+      "loadFailed": "No se pudo cargar el resumen de personas.",
+      "tryAgain": "Reintentar",
+      "empty": "Los miembros aparecerán aquí"
+    },
+    "settings": {
+      "title": "Configuración",
+      "description": "La política de Capture que cada dispositivo de este proyecto lee del almacén de Capture.",
+      "layersTitle": "Capas",
+      "layer": {
+        "screen": "Pantalla",
+        "screenHint": "La pantalla, la app y la ventana en primer plano, y el texto en pantalla.",
+        "actions": "Acciones",
+        "actionsHint": "Clics, escritura y atajos, con una captura por clic.",
+        "audio": "Audio",
+        "audioHint": "Micrófono y audio del sistema, con transcripción."
+      },
+      "privacyTitle": "Privacidad",
+      "masking": "Ocultar datos personales",
+      "maskingHint": "Los dispositivos ocultan los datos personales en lo que graban, antes de que salga del ordenador.",
+      "pause": "Pausar la grabación",
+      "pauseHint": "Todos los dispositivos de este proyecto detienen todas las capas hasta que lo desactives.",
+      "retentionTitle": "Retención",
+      "localHours": "En el dispositivo (horas)",
+      "localHoursHint": "Cuánto tiempo conserva un dispositivo el contenido tras subirlo. 0 lo conserva sin límite.",
+      "remoteDays": "En Kortix (días)",
+      "remoteDaysHint": "Cuánto tiempo conserva Kortix los elementos indexados. 0 los conserva sin límite.",
+      "noticeTitle": "Aviso",
+      "noticePlaceholder": "La grabación está activada en este proyecto.",
+      "noticeHint": "Los dispositivos muestran este texto en el menú y en la ventana de configuración de la app.",
+      "lastChanged": "Último cambio {time}",
+      "defaultPolicy": "Se aplica la política predeterminada.",
+      "discard": "Descartar cambios",
+      "save": "Guardar política",
+      "saved": "Política de Capture guardada",
+      "saveFailed": "No se pudo guardar la política de Capture",
+      "loadFailed": "No se pudo cargar la política de Capture.",
+      "tryAgain": "Reintentar"
+    },
+    "ask": {
+      "title": "Preguntar",
+      "description": "Pregunta sobre lo que viste, hiciste y oíste. Un agente responde en una sesión privada nueva y enlaza cada momento que usa.",
+      "label": "Pregunta",
+      "placeholder": "¿En qué trabajé ayer por la tarde?",
+      "submit": "Preguntar",
+      "scope": "El agente lee solo tu línea de tiempo, a través de la sesión que ejecuta para ti.",
+      "suggestion": {
+        "yesterday": "¿En qué trabajé ayer?",
+        "lastOpened": "¿Cuándo abrí por última vez la lista de verificación de lanzamiento?",
+        "byApp": "Resume hoy por app.",
+        "said": "¿Qué se dijo en la reunión diaria de hoy?"
+      },
+      "instructions": "Responde a partir de mi línea de tiempo de Kortix Capture. Búscala con `kortix capture search`, lee un día con `kortix capture timeline` y abre una pantalla con `kortix capture frame`. Cita cada momento que uses como enlace Markdown: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cita un rango como [su título]({timelineUrl}/ranges/RANGE_ID). Mi zona horaria es {tz}. Responde en el idioma de mi pregunta."
     }
   }
 }

@@ -1591,7 +1591,8 @@
       "failed": "Impossibile salvare le etichette",
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
-    }
+    },
+    "capture": "Capture"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -20547,6 +20548,316 @@
       "codeLabel": "Codice",
       "continue": "Continua",
       "codePlaceholder": "ABCD-1234"
+    },
+    "duration": {
+      "hoursMinutes": "{hours} h {minutes} min",
+      "minutes": "{minutes} min"
+    },
+    "shell": {
+      "title": "Capture",
+      "tabs": {
+        "timeline": "Timeline",
+        "ask": "Chiedi",
+        "ranges": "Intervalli",
+        "devices": "Dispositivi",
+        "people": "Persone",
+        "settings": "Impostazioni"
+      }
+    },
+    "timeline": {
+      "person": "Persona",
+      "you": "Tu",
+      "device": "Dispositivo",
+      "allDevices": "Tutti i dispositivi",
+      "unnamedDevice": "Dispositivo senza nome",
+      "dayPicker": "Scegli un giorno",
+      "recordedDays": "Giorni registrati",
+      "noDay": "Nessun giorno registrato",
+      "today": "Oggi",
+      "yesterday": "Ieri",
+      "aMember": "un membro",
+      "viewingMember": "Stai guardando la timeline di {member}",
+      "viewingMemberAudit": "Ogni visualizzazione dei dati Capture di un altro membro viene registrata nel log di audit del progetto.",
+      "auditNotice": "Chi gestisce questo progetto può aprire la tua timeline. Ogni visualizzazione viene registrata nel log di audit del progetto.",
+      "loadFailed": "Impossibile caricare la timeline.",
+      "tryAgain": "Riprova",
+      "empty": "I tuoi giorni registrati compariranno qui",
+      "emptyHint": "Collega un computer con l'app Kortix Capture per avviare una timeline.",
+      "emptyMember": "Questa persona non ha ancora giorni registrati",
+      "connectDevice": "Collega un dispositivo",
+      "layers": "Livelli",
+      "layer": {
+        "screen": "Schermo",
+        "actions": "Azioni",
+        "audio": "Audio",
+        "ranges": "Intervalli"
+      },
+      "previousFrame": "Fotogramma precedente",
+      "nextFrame": "Fotogramma successivo",
+      "saveRange": "Salva intervallo",
+      "trackLabel": "Momento sulla timeline",
+      "openRange": "Apri intervallo {range}",
+      "rangeSpan": "{from}–{to}",
+      "unknownApp": "App sconosciuta",
+      "search": {
+        "label": "Cerca nella timeline",
+        "placeholder": "Cerca ciò che hai visto, fatto o sentito",
+        "results": "Risultati della ricerca",
+        "none": "Nulla in questa timeline corrisponde alla ricerca.",
+        "kind": {
+          "screen": "Schermo",
+          "actions": "Azione",
+          "audio": "Audio"
+        }
+      },
+      "frame": {
+        "label": "Registrazione dello schermo di {app}",
+        "none": "Nessun fotogramma dello schermo vicino a questo momento.",
+        "encrypted": "Il dispositivo ha cifrato questa registrazione. Kortix non può mostrarla.",
+        "noVideo": "Il video di questo momento non è nell'archivio Capture."
+      },
+      "details": {
+        "label": "Dettagli del momento",
+        "noScreen": "Nessuna attività sullo schermo",
+        "onScreen": "Sullo schermo",
+        "actions": "Azioni intorno a questo momento",
+        "noActions": "Nessuna azione entro due minuti.",
+        "audio": "Audio intorno a questo momento",
+        "noAudio": "Nessun audio entro due minuti.",
+        "partOf": "Parte di"
+      }
+    },
+    "saveRange": {
+      "title": "Salva intervallo",
+      "description": "Un intervallo salvato ottiene i suoi passaggi, la trascrizione e il riepilogo. L'elaborazione parte al salvataggio.",
+      "name": "Nome",
+      "namePlaceholder": "Esecuzione della checklist di rilascio",
+      "from": "Da",
+      "to": "A",
+      "endBeforeStart": "La fine deve essere dopo l'inizio.",
+      "cancel": "Annulla",
+      "submit": "Salva intervallo",
+      "saved": "Intervallo salvato",
+      "failed": "Impossibile salvare l'intervallo."
+    },
+    "ranges": {
+      "title": "Intervalli",
+      "description": "Tratti di una timeline con passaggi, trascrizione e riepilogo. Kortix ne rileva uno per ogni sessione di attività; i tuoi li salvi tu.",
+      "sourceLabel": "Origine",
+      "source": {
+        "all": "Tutti",
+        "saved": "Salvati",
+        "detected": "Rilevati"
+      },
+      "periodLabel": "Periodo",
+      "period": {
+        "week": "7 giorni",
+        "month": "30 giorni"
+      },
+      "status": {
+        "open": "In registrazione",
+        "closed": "In coda",
+        "processing": "In elaborazione",
+        "processed": "Elaborato",
+        "failed": "Non riuscito"
+      },
+      "span": "{from}–{to}",
+      "allDevices": "Tutti i dispositivi",
+      "loadFailed": "Impossibile caricare gli intervalli.",
+      "tryAgain": "Riprova",
+      "empty": "Gli intervalli compariranno qui",
+      "emptyHint": "Kortix rileva un intervallo per ogni sessione di attività. Salva i tuoi dalla timeline."
+    },
+    "range": {
+      "backToRanges": "Intervalli",
+      "openInTimeline": "Apri nella timeline",
+      "processAgain": "Elabora di nuovo",
+      "queuedToast": "Intervallo in coda",
+      "reprocessFailed": "Impossibile mettere in coda l'intervallo.",
+      "tab": {
+        "steps": "Passaggi",
+        "transcript": "Trascrizione",
+        "summary": "Riepilogo"
+      },
+      "processing": "Elaborazione in corso. I passaggi, la trascrizione e il riepilogo compaiono qui al termine delle pipeline.",
+      "queued": "In coda. L'elaborazione parte entro un minuto.",
+      "failed": "Impossibile elaborare questo intervallo.",
+      "noSteps": "Nessun passaggio in questo intervallo.",
+      "noTranscript": "Nessuna trascrizione per questo intervallo.",
+      "noSummary": "Nessun riepilogo per questo intervallo.",
+      "timeByApp": "Tempo per app",
+      "noScreen": "Nessuna attività sullo schermo in questo intervallo.",
+      "unknownApp": "App sconosciuta",
+      "notFound": "Questo intervallo non esiste più.",
+      "notFoundHint": "Il link potrebbe essere errato, oppure l'intervallo appartiene a un'altra persona."
+    },
+    "devices": {
+      "title": "Dispositivi",
+      "description": "Ogni computer che registra in questo progetto, con il suo stato in tempo reale. Un dispositivo risulta offline dopo 120 secondi senza stato.",
+      "connect": "Collega un dispositivo",
+      "scopeLabel": "Di chi",
+      "scopeMine": "I miei dispositivi",
+      "scopeProject": "Intero progetto",
+      "column": {
+        "device": "Dispositivo",
+        "owner": "Proprietario",
+        "status": "Stato",
+        "layers": "Livelli",
+        "sync": "Sincronizzazione",
+        "lastFrame": "Ultimo fotogramma",
+        "version": "Versione",
+        "actions": "Azioni"
+      },
+      "status": {
+        "recording": "In registrazione",
+        "paused": "In pausa",
+        "permission": "Serve un'autorizzazione",
+        "notRecording": "Non registra",
+        "offline": "Offline",
+        "unknown": "Sconosciuto"
+      },
+      "detail": {
+        "permission": "Mancano: {permissions}",
+        "pausedUntil": "Fino alle {time}",
+        "lastSeen": "Ultimo stato {time}"
+      },
+      "permission": {
+        "screen_recording": "Registrazione schermo",
+        "accessibility": "Accessibilità",
+        "microphone": "Microfono"
+      },
+      "layer": {
+        "screen": "Schermo",
+        "actions": "Azioni",
+        "audio": "Audio"
+      },
+      "sync": {
+        "upToDate": "Aggiornato",
+        "pending": "{count, plural, one {# elemento in coda} other {# elementi in coda}}",
+        "failed": "Caricamento in errore",
+        "unknown": "Sconosciuto"
+      },
+      "never": "Ancora nessuno",
+      "unknownVersion": "Sconosciuta",
+      "unnamed": "Dispositivo senza nome",
+      "you": "Tu",
+      "member": "Un membro",
+      "actionsFor": "Azioni per {name}",
+      "syncNow": "Sincronizza ora",
+      "synced": "{count, plural, =0 {Dispositivo sincronizzato, nulla di nuovo} one {Dispositivo sincronizzato, # elemento in coda} other {Dispositivo sincronizzato, # elementi in coda}}",
+      "syncFailed": "Impossibile sincronizzare il dispositivo",
+      "revoke": "Revoca dispositivo",
+      "revokeTitle": "Revocare questo dispositivo?",
+      "revokeDescription": "{name} smette subito di caricare. Per registrare di nuovo, accedi di nuovo dall'app.",
+      "revoked": "Dispositivo revocato",
+      "revokeFailed": "Impossibile revocare il dispositivo",
+      "loadFailed": "Impossibile caricare i dispositivi.",
+      "tryAgain": "Riprova",
+      "empty": "I dispositivi che colleghi compariranno qui",
+      "footnote": "Una riga per computer. Reinstallare o aggiornare l'app mantiene la stessa riga."
+    },
+    "connect": {
+      "title": "Collega un dispositivo",
+      "description": "Installa un'app che registra, poi accedi a questo progetto.",
+      "desktopTitle": "App desktop di Kortix",
+      "desktopHint": "L'app desktop include Kortix Capture.",
+      "os": {
+        "macos": "macOS",
+        "windows": "Windows",
+        "linux": "Linux"
+      },
+      "engineTitle": "Motore di Kortix Capture",
+      "engineHint": "Il registratore da solo, per un computer senza l'app desktop.",
+      "engineLink": "Apri le release",
+      "stepsTitle": "Accedi",
+      "step1": "Apri l'app e scegli Accedi con Kortix. Si apre il browser.",
+      "step2": "Controlla che il codice nel browser corrisponda a quello nell'app.",
+      "step3": "Scegli {project}. Il dispositivo compare qui con il tuo nome entro un minuto.",
+      "close": "Chiudi"
+    },
+    "people": {
+      "title": "Persone",
+      "description": "Per membro: tempo attivo, app usate, intervalli e dispositivi.",
+      "periodLabel": "Periodo",
+      "period": {
+        "today": "Oggi",
+        "week": "7 giorni",
+        "month": "30 giorni"
+      },
+      "auditTitle": "Solo chi gestisce questo progetto vede questa pagina",
+      "auditBody": "Aprire questa pagina o la timeline di un membro scrive una voce nel log di audit del progetto. I membri vedono nella propria timeline che i gestori possono consultarla.",
+      "column": {
+        "member": "Membro",
+        "active": "Tempo attivo",
+        "apps": "App principali",
+        "ranges": "Intervalli",
+        "devices": "Dispositivi",
+        "open": "Apri"
+      },
+      "role": {
+        "manager": "Gestore",
+        "member": "Membro",
+        "viewer": "Lettore",
+        "none": "Non più membro"
+      },
+      "you": "{email} (tu)",
+      "formerMember": "Ex membro",
+      "noActivity": "Nessuna attività",
+      "unknownApp": "App sconosciuta",
+      "openTimeline": "Apri timeline",
+      "openTimelineOf": "Apri la timeline di {member}",
+      "loadFailed": "Impossibile caricare il riepilogo delle persone.",
+      "tryAgain": "Riprova",
+      "empty": "I membri compariranno qui"
+    },
+    "settings": {
+      "title": "Impostazioni",
+      "description": "La policy Capture che ogni dispositivo di questo progetto legge dall'archivio Capture.",
+      "layersTitle": "Livelli",
+      "layer": {
+        "screen": "Schermo",
+        "screenHint": "Lo schermo, l'app e la finestra in primo piano, e il testo sullo schermo.",
+        "actions": "Azioni",
+        "actionsHint": "Clic, digitazione e scorciatoie, con uno screenshot per clic.",
+        "audio": "Audio",
+        "audioHint": "Microfono e audio di sistema, con trascrizione."
+      },
+      "privacyTitle": "Privacy",
+      "masking": "Maschera i dati personali",
+      "maskingHint": "I dispositivi mascherano i dati personali in ciò che registrano, prima che lasci il computer.",
+      "pause": "Metti in pausa la registrazione",
+      "pauseHint": "Ogni dispositivo di questo progetto ferma ogni livello finché non disattivi l'opzione.",
+      "retentionTitle": "Conservazione",
+      "localHours": "Sul dispositivo (ore)",
+      "localHoursHint": "Per quanto tempo un dispositivo conserva i contenuti dopo il caricamento. 0 li conserva senza limite.",
+      "remoteDays": "In Kortix (giorni)",
+      "remoteDaysHint": "Per quanto tempo Kortix conserva gli elementi indicizzati. 0 li conserva senza limite.",
+      "noticeTitle": "Avviso",
+      "noticePlaceholder": "La registrazione è attiva per questo progetto.",
+      "noticeHint": "I dispositivi mostrano questo testo nel menu e nella finestra delle impostazioni dell'app.",
+      "lastChanged": "Ultima modifica {time}",
+      "defaultPolicy": "Si applica la policy predefinita.",
+      "discard": "Annulla modifiche",
+      "save": "Salva policy",
+      "saved": "Policy Capture salvata",
+      "saveFailed": "Impossibile salvare la policy Capture",
+      "loadFailed": "Impossibile caricare la policy Capture.",
+      "tryAgain": "Riprova"
+    },
+    "ask": {
+      "title": "Chiedi",
+      "description": "Chiedi di ciò che hai visto, fatto e sentito. Un agente risponde in una nuova sessione privata e collega ogni momento che usa.",
+      "label": "Domanda",
+      "placeholder": "A cosa ho lavorato ieri pomeriggio?",
+      "submit": "Chiedi",
+      "scope": "L'agente legge solo la tua timeline, tramite la sessione che esegue per te.",
+      "suggestion": {
+        "yesterday": "A cosa ho lavorato ieri?",
+        "lastOpened": "Quando ho aperto l'ultima volta la checklist di rilascio?",
+        "byApp": "Riassumi oggi per app.",
+        "said": "Cosa è stato detto nello standup di oggi?"
+      },
+      "instructions": "Rispondi dalla mia timeline di Kortix Capture. Cercala con `kortix capture search`, leggi un giorno con `kortix capture timeline` e apri uno schermo con `kortix capture frame`. Cita ogni momento che usi come link Markdown: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cita un intervallo come [il suo titolo]({timelineUrl}/ranges/RANGE_ID). Il mio fuso orario è {tz}. Rispondi nella lingua della mia domanda."
     }
   }
 }
