@@ -25,11 +25,6 @@ async function materializeRuntime(agentBundle = INPUT.agentBundle) {
 }
 
 
-/** The env a production runner would provide: exactly the baked manifest identity.
- *  Without pinning, any test in the same bun worker that promotes the platform's
- *  agent-env.sh values into process.env (they share one process.env) flips the
- *  runtime's identity check mid-suite. */
-
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
