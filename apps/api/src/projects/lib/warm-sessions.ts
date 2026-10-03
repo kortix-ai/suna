@@ -4,9 +4,9 @@
  * A warm session is NOT a species of session. It is an ORDINARY session the
  * user created and has not typed into yet. The browser fires the same create the
  * New Session button fires, a few seconds earlier, while the user is looking at
- * the project. Everything the create path enforces — billing, the
- * concurrent-session cap, connector requirements, agent resolution, sandbox
- * provisioning — applies unchanged, because it IS the create path.
+ * the project. Everything the create path enforces — billing, connector
+ * requirements, agent resolution, sandbox provisioning — applies unchanged,
+ * because it IS the create path.
  *
  * That leaves exactly one thing to model: an unused session must not appear in
  * the sidebar, or every project visit would litter it with empty sessions the
@@ -28,7 +28,7 @@
  * server-stamped requested location deduplicates in-flight warming but is
  * never proof of actual placement. Incompatible boxes are abandoned, not moved.
  * There is no advisory lock or unique index; a race between two tabs can cost
- * one extra box, bounded by the reserved concurrent-session slot.
+ * one extra box per racing tab, which bills and idles out like any session.
  *
  * Deliberately dependency-free — `session-inventory.ts` is a pure module that
  * must stay importable without the database and config graph.
