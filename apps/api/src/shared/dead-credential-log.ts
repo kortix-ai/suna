@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the suppression estimate counts this replica's own warn lines
+// only — a per-process budget is the documented behavior ("per process per
+// hour" above), and exact refusal accounting lives in the auth audits, not in
+// shared state.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
