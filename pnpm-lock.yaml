@@ -1617,6 +1617,10 @@ importers:
         version: 4.1.8
 
   tests:
+    dependencies:
+      '@kortix/api-contract':
+        specifier: workspace:*
+        version: link:../packages/api-contract
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.10.2

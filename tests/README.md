@@ -352,6 +352,11 @@ A flow must cover the complete observable sequence. Include authentication,
 setup, action, read-back proof, failure paths, and cleanup when those steps are
 part of the product contract.
 
+When `@kortix/api-contract` has a schema for a route's response, parse the real
+body with it: `r.status(200).body().schema(ProjectSchema)`. A body that drifts
+from the contract then fails `pnpm test` and names each failing path. The
+session fixture checks every session create the same way.
+
 ### One flow body, every harness
 
 A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
