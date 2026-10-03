@@ -24,6 +24,7 @@ import {
   accountMemberships,
   projects,
   projectMembers,
+  projectAccessRequests,
   projectSessions,
   projectSessionConnectorBindings,
   projectGroupGrants,
@@ -129,6 +130,24 @@ describe('kortix enums', () => {
 
   test('project_access_request_status enum has the expected values', () => {
     expect(projectAccessRequestStatusEnum.enumValues).toEqual(['pending', 'approved', 'rejected']);
+  });
+
+  test('does not re-add the project_access_requests index no read path uses', () => {
+    // Dropped by 20261003055348255_drop_project_access_requests_status_index:
+    // prod idx_scan is 0 (Supabase advisor unused_index) and every production
+    // query filters project_id (+ requester_user_id) AND status = 'pending',
+    // served by the kept partial unique index. Each extra index is an index
+    // write on every request row. The kept set must keep the partial unique
+    // index (the dedup backstop) and the project/account/requester indexes.
+    expect(indexNames(projectAccessRequests)).not.toContain('idx_project_access_requests_status');
+    expect(indexNames(projectAccessRequests)).toEqual(
+      expect.arrayContaining([
+        'idx_project_access_requests_project',
+        'idx_project_access_requests_account',
+        'idx_project_access_requests_requester',
+        'idx_project_access_requests_pending_unique',
+      ]),
+    );
   });
 
   test('api_key_status enum has the expected values', () => {

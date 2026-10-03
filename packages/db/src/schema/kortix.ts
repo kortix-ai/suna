@@ -747,7 +747,6 @@ export const projectAccessRequests = kortixSchema.table(
     index('idx_project_access_requests_project').on(table.projectId),
     index('idx_project_access_requests_account').on(table.accountId),
     index('idx_project_access_requests_requester').on(table.requesterUserId),
-    index('idx_project_access_requests_status').on(table.status),
     uniqueIndex('idx_project_access_requests_pending_unique')
       .on(table.projectId, table.requesterUserId)
       .where(sql`${table.status} = 'pending'`),
