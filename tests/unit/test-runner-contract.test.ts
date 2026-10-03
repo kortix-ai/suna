@@ -136,7 +136,12 @@ describe('local test runner contract', () => {
     expect(cliTestScript).toContain(
       'bun test --timeout "${KORTIX_TEST_TIMEOUT_MS:-15000}" --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    expect(agentPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
+    // The package-quality lane passes KORTIX_TEST_TIMEOUT_MS=30000 so a lane
+    // under load does not fail a slow fs test on bun's 5 s default; the direct
+    // run keeps a 15 s budget.
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap
