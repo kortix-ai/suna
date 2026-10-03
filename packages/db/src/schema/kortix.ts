@@ -2064,7 +2064,7 @@ export const teamsPendingUploads = kortixSchema.table(
   //
   // `idx_teams_pending_uploads_expiry` (expires_at, btree) was dropped
   // 2026-10-02 (migration
-  // 20261003104622434_drop_teams_pending_uploads_expiry_index): the Supabase
+  // 20261003143316196_drop_teams_pending_uploads_expiry_index): the Supabase
   // `unused_index` advisor flagged it and prod confirms it has never been
   // used -- idx_scan = 0 with stats_reset null (never reset since database
   // creation), the table has never held a row (n_tup_ins = 0), and the only
