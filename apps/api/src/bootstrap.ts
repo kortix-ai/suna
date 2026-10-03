@@ -41,6 +41,10 @@ import { kickStartupPreBuild } from './snapshots/builder';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startTunnelService, stopTunnelService } from './tunnel';
 import { startBillingRotation, stopBillingRotation } from './billing/rotation-schedule';
+import {
+  startAccountDeletionSchedule,
+  stopAccountDeletionSchedule,
+} from './billing/account-deletion-schedule';
 import { startSlackTurnGc, stopSlackTurnGc } from './channels/slack/turn';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './channels/teams/turn';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './channels/teams-auth';
@@ -232,6 +236,10 @@ async function startSingletonWorkers() {
   // Close Slack/Teams live cards whose run ended without a reply.
   startSlackTurnGc();
   startTeamsTurnGc();
+  // Execute scheduled account deletions past their 14-day grace. The only
+  // processor of the managed table — its SQL never reached `kortix` before
+  // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
+  startAccountDeletionSchedule();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -256,6 +264,7 @@ async function stopSingletonWorkers() {
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
+  await stopAccountDeletionSchedule();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
