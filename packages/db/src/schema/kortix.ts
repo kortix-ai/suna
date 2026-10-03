@@ -2131,6 +2131,27 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // The runtime wake-fence reconcile (apps/api/src/projects/session-lifecycle/
+    // runtime-wake-maintenance.ts) reads stopped boxes with an open fence: an
+    // expired wake lease or a live late-start cleanup window, plus an
+    // external_id. Both fence branches require the `runtimeWakeId` or
+    // `runtimeWakeCleanupUntilAt` metadata key, so this partial index holds
+    // only rows a wake ever fenced — a few hundred out of ~58k
+    // stopped-with-external rows (prod 2026-10-03: 502). The `?|` predicate
+    // is what makes the plan stable: Postgres cannot estimate key presence
+    // from a `->>'…' IS NOT NULL` clause (it estimates ~100 % of rows, which
+    // leaves the index vs Seq Scan on a ~2 % cost margin), while `?|`
+    // estimates at ~0.8 % of the table. The statement carries the same `?|`
+    // clause, so the predicate matches clause-for-clause in every plan mode.
+    // `status` is a leading key, not a partial predicate: the app binds it as
+    // a parameter, and a partial-index predicate cannot reference a
+    // parameter. Built by
+    // 20261003204822592_session_sandboxes_wake_fence_index.concurrent.ts.
+    index('idx_session_sandboxes_wake_fences')
+      .on(table.status)
+      .where(
+        sql`${table.externalId} is not null and ${table.metadata} ?| array['runtimeWakeId', 'runtimeWakeCleanupUntilAt']`,
+      ),
   ],
 );
 
