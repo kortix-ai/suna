@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
+import { LOCAL_GATEWAY_INTERNAL_TOKEN } from '../src/core/local-profile';
 
 const root = resolve(import.meta.dirname, '../..');
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
@@ -45,11 +46,20 @@ describe('local test runner contract', () => {
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
   });
 
-  it('generates an unpredictable internal gateway token for each local stack', () => {
+  it('spawns both local-stack halves with one fixed shared internal gateway token', () => {
     const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
 
-    expect(source).toContain('const gatewayToken = `ke2e-local-${crypto.randomUUID()}`;');
-    expect(source).not.toContain('"ke2e-local-gateway-internal-token"');
+    // The API and gateway halves are reused independently across calls, and
+    // the API verifies the gateway's bearer with timingSafeEqual, so a fresh
+    // per-call token 401s against the surviving half. Both spawn envs must
+    // carry the same fixed shared constant — the invariant the worktree
+    // launcher already pins (scripts/worktree/lib/ports.ts). The profile is
+    // loopback-only, so a source-visible constant adds no exposure.
+    expect(source.match(/GATEWAY_INTERNAL_TOKEN: LOCAL_GATEWAY_INTERNAL_TOKEN/g) ?? []).toHaveLength(2);
+    expect(source).toContain('GATEWAY_API_TOKEN: LOCAL_GATEWAY_INTERNAL_TOKEN');
+    expect(source).not.toContain('crypto.randomUUID');
+    // The API logs a boot warning for an entry below its 24-char floor.
+    expect(LOCAL_GATEWAY_INTERNAL_TOKEN.length).toBeGreaterThanOrEqual(24);
   });
 
   it('snapshots fixture counts into results before teardown starts', () => {

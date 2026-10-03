@@ -134,3 +134,13 @@ export const LOCAL_AUTH_EMAIL_HOOK_SECRET =
  * local stack.
  */
 export const LOCAL_STRIPE_WEBHOOK_SECRET = 'whsec_local_flow_runner_disabled';
+
+/**
+ * Internal control-plane bearer token shared by the local API and the
+ * standalone gateway (`GATEWAY_INTERNAL_TOKEN` in both spawn envs). Fixed (not
+ * random) so a half-reused stack — one half still running from a previous
+ * `ensureLocalStack` call — accepts the other half's bearer, which the API
+ * verifies with timingSafeEqual. Loopback-only profile, so the constant
+ * authorizes nothing outside 127.0.0.1.
+ */
+export const LOCAL_GATEWAY_INTERNAL_TOKEN = 'local-flow-runner-gateway-internal-token';
