@@ -79,7 +79,33 @@ export interface RuntimeClientConfig {
   baseUrl: string;
   /** The fetch to send with; `authenticatedFetch` for a proxied runtime. */
   fetch?: typeof fetch;
+  /** How the live event stream's bytes arrive. Default: a streaming `fetch` body. */
+  eventTransport?: RuntimeEventTransport;
 }
+
+/** One server-sent message, as the wire carried it. */
+export interface RuntimeEventMessage {
+  /** The `data:` lines, joined with newlines. Absent on an id-only or retry-only message. */
+  data?: string;
+  /** The `id:` field: the reconnect sends it back as `Last-Event-ID`. */
+  id?: string;
+  /** The `retry:` field in ms: the next reconnect delay. */
+  retry?: number;
+}
+
+/**
+ * One connection of the live event stream: how the bytes arrive, and nothing
+ * else. It yields each message, returns when the server ends the stream, and
+ * throws when the connection fails (with `status` when the server answered a
+ * non-2xx status). Reconnect, backoff, resume, heartbeat and coalescing stay in
+ * the SDK. A host whose `fetch` cannot stream a response body supplies one
+ * through `configureKortix({ eventStreamTransport })`.
+ */
+export type RuntimeEventTransport = (request: {
+  url: string;
+  headers: Headers;
+  signal: AbortSignal;
+}) => AsyncIterable<RuntimeEventMessage>;
 
 /** Options of the live event stream (`global.event`). */
 export interface RuntimeEventStreamOptions {
@@ -473,13 +499,62 @@ async function send(config: RuntimeClientConfig, request: Request): Promise<Reco
 
 // ─── Event stream ────────────────────────────────────────────────────────────
 
+/** The default transport: a streaming `fetch` body, split into SSE messages. */
+export function fetchEventTransport(fetchFn: typeof fetch = globalThis.fetch): RuntimeEventTransport {
+  return async function* ({ url, headers, signal }) {
+    const response = await fetchFn(new Request(url, { method: 'GET', headers, signal, redirect: 'follow' }));
+    if (!response.ok) {
+      throw Object.assign(new Error(`SSE failed: ${response.status} ${response.statusText}`), {
+        status: response.status,
+      });
+    }
+    if (!response.body) throw new Error('No body in SSE response');
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    const cancel = () => {
+      try {
+        void reader.cancel();
+      } catch {
+        // already released
+      }
+    };
+    signal.addEventListener('abort', cancel);
+    try {
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer = (buffer + value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop() ?? '';
+        for (const chunk of chunks) {
+          const message: RuntimeEventMessage = {};
+          const data: string[] = [];
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('data:')) data.push(line.replace(/^data:\s*/, ''));
+            else if (line.startsWith('id:')) message.id = line.replace(/^id:\s*/, '');
+            else if (line.startsWith('retry:')) {
+              const parsed = Number.parseInt(line.replace(/^retry:\s*/, ''), 10);
+              if (!Number.isNaN(parsed)) message.retry = parsed;
+            }
+          }
+          if (data.length) message.data = data.join('\n');
+          yield message;
+        }
+      }
+    } finally {
+      signal.removeEventListener('abort', cancel);
+      reader.releaseLock();
+    }
+  };
+}
+
 /** Server-sent events from `url`, parsed as JSON where they are JSON. */
 async function* eventStream(
   config: RuntimeClientConfig,
   url: string,
   options: RuntimeEventStreamOptions,
 ): AsyncGenerator<Event | string, void, unknown> {
-  const fetchFn = config.fetch ?? globalThis.fetch;
+  const transport = config.eventTransport ?? fetchEventTransport(config.fetch ?? globalThis.fetch);
   const signal = options.signal ?? new AbortController().signal;
   let retryDelay = options.sseDefaultRetryDelay ?? 3000;
   let lastEventId: string | undefined;
@@ -487,48 +562,16 @@ async function* eventStream(
     try {
       const headers = new Headers(options.headers);
       if (lastEventId !== undefined) headers.set('Last-Event-ID', lastEventId);
-      const response = await fetchFn(new Request(url, { method: 'GET', headers, signal, redirect: 'follow' }));
-      if (!response.ok) throw new Error(`SSE failed: ${response.status} ${response.statusText}`);
-      if (!response.body) throw new Error('No body in SSE response');
-      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-      const cancel = () => {
+      // `href` percent-encodes the URL, as `new Request(url)` does for the default transport.
+      for await (const message of transport({ url: new URL(url).href, headers, signal })) {
+        if (message.id !== undefined) lastEventId = message.id;
+        if (message.retry !== undefined) retryDelay = message.retry;
+        if (message.data === undefined) continue;
         try {
-          void reader.cancel();
+          yield JSON.parse(message.data) as Event;
         } catch {
-          // already released
+          yield message.data;
         }
-      };
-      signal.addEventListener('abort', cancel);
-      try {
-        let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer = (buffer + value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-          const chunks = buffer.split('\n\n');
-          buffer = chunks.pop() ?? '';
-          for (const chunk of chunks) {
-            const data: string[] = [];
-            for (const line of chunk.split('\n')) {
-              if (line.startsWith('data:')) data.push(line.replace(/^data:\s*/, ''));
-              else if (line.startsWith('id:')) lastEventId = line.replace(/^id:\s*/, '');
-              else if (line.startsWith('retry:')) {
-                const parsed = Number.parseInt(line.replace(/^retry:\s*/, ''), 10);
-                if (!Number.isNaN(parsed)) retryDelay = parsed;
-              }
-            }
-            if (!data.length) continue;
-            const raw = data.join('\n');
-            try {
-              yield JSON.parse(raw) as Event;
-            } catch {
-              yield raw;
-            }
-          }
-        }
-      } finally {
-        signal.removeEventListener('abort', cancel);
-        reader.releaseLock();
       }
       return;
     } catch (error) {

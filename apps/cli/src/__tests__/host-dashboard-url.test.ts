@@ -143,6 +143,22 @@ describe('Host.dashboard_url — persists through the config file round trip', (
     expect(host?.dashboard_url).toBe('http://localhost:13737');
   });
 
+  test('switching API targets clears the previous deployment dashboard', () => {
+    upsertHost('target', {
+      url: 'https://api.kortix.com', token: '', user_id: '', user_email: '',
+      account_id: '', logged_in_at: '', dashboard_url: 'https://kortix.com',
+    }, true);
+    saveAuthForHost('target', {
+      api_base: 'https://dev-api.kortix.com', token: 'kortix_pat_synthetic',
+      user_id: 'synthetic-user', user_email: 'synthetic@example.test',
+      account_id: '', logged_in_at: '',
+    }, true);
+    const saved = getHost('target');
+    expect(saved?.dashboard_url).toBeUndefined();
+    expect(saved?.url).toBe('https://dev-api.kortix.com');
+    expect(webDashboardUrl(saved?.url || '', saved?.dashboard_url)).toBe('https://dev.kortix.com');
+  });
+
   test('a host with no dashboard_url (e.g. cloud, manually-added hosts) omits the field rather than defaulting to empty string', () => {
     writeFileSync(
       process.env.KORTIX_CONFIG_FILE!,

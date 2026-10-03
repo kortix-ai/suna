@@ -246,6 +246,30 @@ describe('service mode never gives up (R2)', () => {
     expect(statuses).toContain('rejected');
   });
 
+  test('a removed computer says so, and names the one command that pairs it again', async () => {
+    FakeRelay.sockets = [];
+    globalThis.WebSocket = closingWebSocket(4001, 'authentication failed') as unknown as typeof WebSocket;
+    const Socket = globalThis.WebSocket as unknown as { created: number };
+    Socket.created = 0;
+    const agent = new TunnelAgent(loadConfig(TEST_CONFIG), new CapabilityRegistry(), {}, { persistent: true, rejectedRetryMs: 60 });
+    const output: string[] = [];
+    const originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      agent.connect();
+      await until(() => Socket.created >= 2);
+    } finally {
+      agent.disconnect();
+      process.stdout.write = originalWrite;
+    }
+    const text = output.join('');
+    expect(text).toContain('This computer is no longer connected to Kortix');
+    expect(text).toContain('npx @kortix/agent-tunnel@latest connect --reauth');
+  });
+
   test('a re-pair while `rejected` reconnects at once, without waiting out the re-probe', async () => {
     globalThis.WebSocket = closingWebSocket(4001, 'authentication failed') as unknown as typeof WebSocket;
     const Socket = globalThis.WebSocket as unknown as { created: number };

@@ -4,7 +4,7 @@ commit: ed74e34af4
 ---
 # Bun's fetch has a hidden 300 s idle timeout — every model hop opts out
 
-*Incident (2026-08-25 22:04Z, SampleCo session 9c27242e):* a turn on
+*Incident (2026-08-25 22:04Z, a SampleCo session):* a turn on
 `codex/gpt-5.6-sol` at reasoning effort `max` died after 273.8 s with
 `{"message":"The operation timed out.","code":"upstream_timeout"}`. Nothing in
 this repo sets a 300 s timer; the gateway's own budgets are 90 s / 5 min for

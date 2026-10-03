@@ -98,7 +98,7 @@ describe('reviewDetailRows', () => {
 describe('changeRequestWebUrl', () => {
   test('the session page with ?cr= when the session is known, else the review page', () => {
     expect(changeRequestWebUrl('p1', change())).toBe('https://kortix.com/projects/p1/sessions/ps-1?cr=abc');
-    expect(changeRequestWebUrl('p1', change({ sessionId: undefined }))).toBe('https://kortix.com/projects/p1/customize/review');
+    expect(changeRequestWebUrl('p1', change({ sessionId: undefined }))).toBe('https://kortix.com/projects/p1/review');
   });
 });
 

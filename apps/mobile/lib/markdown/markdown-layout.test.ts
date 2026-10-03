@@ -163,3 +163,61 @@ describe('inlineCodeAnchor', () => {
     expect(inlineCodeAnchor('ios', { fontSize: 15 }).translateY).toBeCloseTo(-(3.69 - 2.76) + hang, 2);
   });
 });
+
+describe('classifyBlock reads only the first and last lines', () => {
+  // The implementation before the line scan: split every line, drop blank ones.
+  const HEADING = /^ {0,3}(#{1,6})(?:[ \t]|$)/;
+  const FENCE_LINE = /^ {0,3}(?:`{3,}|~{3,})/;
+  const LIST_ITEM = /^ {0,3}(?:[*+-]|\d{1,9}[.)])(?:[ \t]|$)/;
+  const BLOCKQUOTE = /^ {0,3}>/;
+  const TABLE_ROW = /^ {0,3}\|/;
+  const RULE = /^ {0,3}(?:-{3,}|\*{3,}|_{3,})[ \t]*$/;
+  const INDENTED = /^(?: {4}|\t)/;
+  const MATH_LINE = /^ {0,3}\${2,}[^$]*$/;
+  function kindOfLine(line: string): string {
+    const heading = HEADING.exec(line);
+    if (heading) return `heading${heading[1].length}`;
+    if (FENCE_LINE.test(line) || INDENTED.test(line)) return 'code';
+    if (MATH_LINE.test(line)) return 'math';
+    if (RULE.test(line)) return 'hr';
+    if (LIST_ITEM.test(line)) return 'list';
+    if (BLOCKQUOTE.test(line)) return 'blockquote';
+    if (TABLE_ROW.test(line)) return 'table';
+    return 'paragraph';
+  }
+  function splitClassify(block: string) {
+    const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
+    if (lines.length === 0) return { first: 'paragraph', last: 'paragraph' };
+    const first = kindOfLine(lines[0]);
+    if (lines.length === 1) return { first, last: first };
+    const lastLine = lines[lines.length - 1];
+    let last = kindOfLine(lastLine);
+    if (last === 'code' && !FENCE_LINE.test(lastLine) && (first === 'list' || first === 'blockquote')) last = first;
+    if (last === 'paragraph' && (first === 'list' || first === 'blockquote' || first === 'code' || first === 'math')) {
+      last = first;
+    }
+    return { first, last };
+  }
+
+  test('gives the split result for random blocks', () => {
+    const pieces = [
+      'text', '# h', '###### h6', '- item', '1. one', '> q', '| a |', '---', '***', '```', '~~~', '    code', '\tcode',
+      '$$', '$$ x', ' ', '\t', '\n', '\r\n', '\r', '\n\n', '\r\r\n', '  ', 'x\r', '---\r',
+    ];
+    let seed = 4242;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let i = 0; i < 20_000; i += 1) {
+      let block = '';
+      const count = 1 + random(8);
+      for (let j = 0; j < count; j += 1) block += pieces[random(pieces.length)];
+      const expected = splitClassify(block);
+      const actual = classifyBlock(block);
+      if (actual.first !== expected.first || actual.last !== expected.last) {
+        throw new Error(`classifyBlock(${JSON.stringify(block)}) = ${JSON.stringify(actual)}, split gives ${JSON.stringify(expected)}`);
+      }
+    }
+  });
+});

@@ -260,3 +260,58 @@ describe('nearestDashRow', () => {
     expect(Math.abs(dashes[row].index - 50)).toBe(bestDist);
   });
 });
+
+// The rail previewed a Slack or Teams turn as its raw prompt (2026-10-02):
+// `Workspace: T0…`, `Channel: C0…`, the working instructions, and every Slack
+// mention deleted as if it were an HTML tag. It previews what the message card
+// shows: who wrote it, then their words.
+describe('a channel turn', () => {
+  const text = (lines: string[]) => turnWithParts([{ type: 'text', text: lines.join('\n') }]);
+  const HOW_TO_WORK = ['How to work:', '- Post progress with `slack step`.'];
+
+  test('a Slack message previews its sender and words, with Slack markup rendered', () => {
+    const turn = text([
+      "You're answering a message on Slack as a teammate.",
+      '',
+      'Workspace:  T0TEST',
+      'Channel:    #general (C0TEST1)',
+      'User:       Sam Rivera (U0TEST1)',
+      'Thread ts:  1.1',
+      '',
+      'Message:',
+      '<@U0BOT|Kortix> what changed? cc <#C0TEST2|launch-plan>',
+      '',
+      ...HOW_TO_WORK,
+    ]);
+    expect(extractUserText(turn)).toBe('Sam Rivera: @Kortix what changed? cc #launch-plan');
+  });
+
+  test('a Slack follow-up previews the same way', () => {
+    const turn = text([
+      'New message from Sam Rivera (U0TEST1) in Slack channel #general (C0TEST1), thread 1.1:',
+      'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
+      'slack send --channel C0TEST1 --thread 1.1 --text "<answer>"',
+      '',
+      'and the one before that?',
+      '',
+      ...HOW_TO_WORK,
+    ]);
+    expect(extractUserText(turn)).toBe('Sam Rivera: and the one before that?');
+  });
+
+  test('a Teams message previews its sender and words', () => {
+    const turn = text([
+      "You're answering a message on Microsoft Teams as a teammate.",
+      '',
+      'Tenant:        00000000-0000-4000-8000-00000000a11c',
+      'Conversation:  a:1TESTCONVERSATIONID',
+      'User:          Jordan Lee',
+      '',
+      'Message:',
+      'Summarize the README',
+      '',
+      ...HOW_TO_WORK,
+    ]);
+    expect(extractUserText(turn)).toBe('Jordan Lee: Summarize the README');
+  });
+});

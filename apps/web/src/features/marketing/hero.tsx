@@ -1,16 +1,12 @@
 'use client';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { Claude } from '@/features/icon/icons/claude';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
 import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
-import { useAuth } from '@/features/providers/auth-provider';
-import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { useTranslations } from '@/i18n/use-translations';
-import { type ReactNode, useCallback } from 'react';
+import { type ReactNode } from 'react';
 
 /** `heroEyebrow.rivals[].icon` selects a logo by name at runtime, so it can't be
  *  statically resolved to a single import — this explicit map is the smallest set
@@ -50,15 +46,8 @@ export function RivalEyebrow({
 }
 
 const Hero = () => {
-  const { user } = useAuth();
-  const openDemo = useRequestDemo();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { hero, heroEyebrow } = getLocalizedLandingContent(tI18nComplete);
-
-  const handleLaunch = useCallback(() => {
-    trackCtaSignup();
-    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
-  }, [user]);
 
   /* The measure and the gutter belong on the same element, which is the rule the
      navbar already follows (`mx-auto w-full max-w-7xl px-6`). Splitting them —
@@ -118,44 +107,7 @@ const Hero = () => {
               {hero.sub}
             </p>
 
-            {/* The two CTAs split the full width on a phone and shrink to their
-                labels from sm up. Left at their intrinsic width they came to 139
-                and 123 of the 346 available, which is both a small target and an
-                odd ragged pair under a full-bleed headline.
 
-                h-12 on phones only. This theme sets --spacing to 0.23rem, so the
-                shared size="lg" resolves to 36.8px, under the 44px touch target
-                every mobile platform asks for; h-12 is 44.2px. The override is
-                local because sm and up keeps the 36.8px the rest of the site is
-                drawn to. */}
-            {/* Hero CTAs (Request demo / Get started) hidden on request. The
-                navbar still carries both at every scroll position, so the page
-                keeps its calls to action.
-
-                To restore: uncomment the block AND re-add the two imports it
-                needs, which were dropped so the file stays lint-clean while it
-                is dead —
-                  import { Button } from '@/components/ui/marketing/button';
-                  import { ArrowRightIcon } from '@phosphor-icons/react';
-                `openDemo` and `handleLaunch` above are kept for the same
-                restore, and are otherwise unused. The wrapper keeps its
-                `kx-hero-text [--kx-enter:210ms]` band so restoring it puts the
-                pair back in the staged reveal at its old slot, between the sub
-                (150ms) and the frame (290ms). */}
-            {/* <div className="kx-hero-text flex w-full shrink-0 flex-wrap gap-3 [--kx-enter:210ms] sm:w-auto">
-              <Button
-                size="lg"
-                variant="secondary"
-                onClick={() => openDemo()}
-                className="h-12 flex-1 sm:h-10 sm:flex-none"
-              >
-                {hero.ctaSecondary}
-              </Button>
-              <Button size="lg" onClick={handleLaunch} className="h-12 flex-1 sm:h-10 sm:flex-none">
-                {hero.ctaPrimary}
-                <ArrowRightIcon className="size-4" />
-              </Button>
-            </div> */}
           </div>
         </div>
 

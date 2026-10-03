@@ -30,6 +30,7 @@ const connectorsSource = read('connectors-view.tsx');
 const teamsPanelSource = read('teams-channel-panel.tsx');
 const connectCardSource = read('component/slack-connect-card.tsx');
 const wizardSource = read('component/slack-byo-wizard.tsx');
+const wizardStepsSource = read('component/byo-wizard-steps.tsx');
 const coverSource = read('component/slack-connect-cover.tsx');
 const blogCoverSource = read('../../../../components/blog/blog-cover.tsx');
 const channelRowSource = read('component/channel-row.tsx');
@@ -54,6 +55,7 @@ const MODULES: Array<[name: string, source: string]> = [
   ['channels-view', channelsSource],
   ['slack-connect-card', connectCardSource],
   ['slack-byo-wizard', wizardSource],
+  ['byo-wizard-steps', wizardStepsSource],
   ['slack-connect-cover', coverSource],
   ['channel-row', channelRowSource],
   ['manifest-copy-block', copyBlockSource],
@@ -94,11 +96,13 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
     expect(channelsSource).not.toMatch(/function SlackChannelRow[\s\S]{0,600}<TableCell/);
   });
 
-  test('the bindings table survives — that one has real data to compare', () => {
-    expect(channelsSource).toContain('function ChannelBindingsSection');
-    expect(channelsSource).toContain('<Table>');
-    expect(channelsSource).toContain("raw('textce4683e7013a')");
-    expect(channelsSource).toContain("raw('text11b39c93777e')");
+  // One table of every Slack and Teams conversation under the connection rows
+  // grew with every channel and DM (2026-10-02). The bindings moved into a
+  // dialog with a tab per platform, opened from each platform's row.
+  test('the bindings live in one dialog, not in a table on the page', () => {
+    expect(channelsSource).toContain('function ChannelBindingsDialog');
+    expect(channelsSource).not.toContain('function ChannelBindingsSection');
+    expect(channelsSource).not.toContain('<Table>');
   });
 
   test('the duplicate header CTA is gone — the hero owns the only "Add to Slack"', () => {
@@ -191,8 +195,10 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 
 describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   test('three steps driven by the shared Stepper, inside a Modal', () => {
-    expect(wizardSource).toContain("from '@/components/ui/stepper'");
-    expect(wizardSource).toContain('<Stepper');
+    expect(wizardSource).toContain("from './byo-wizard-steps'");
+    expect(wizardSource).toContain('<ByoWizardSteps steps={steps} step={step} onStepChange={setStep}>');
+    expect(wizardStepsSource).toContain("from '@/components/ui/stepper'");
+    expect(wizardStepsSource).toContain('<Stepper');
     expect(wizardSource).toContain('ModalContent');
     expect(wizardSource).toMatch(/const STEPS = \[[\s\S]*?step: 3/);
   });
@@ -368,7 +374,7 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
     // The `teams` flag graduated: no gate before the Teams row or panel.
     expect(channelsSource).not.toContain("useFeatureFlag(projectId, 'teams')");
-    expect(channelsSource).toMatch(/\n\s*<TeamsChannelRow projectId=\{projectId\} canWrite=\{canWrite\} \/>/);
+    expect(channelsSource).toMatch(/\n\s*<TeamsChannelRow\s+projectId=\{projectId\}\s+canWrite=\{canWrite\}/);
     expect(channelsSource).toMatch(/\n\s*<TeamsChannelPanel projectId=\{projectId\} \/>/);
     // The old summary-query read (one hop shallower than every sibling) stays gone.
     expect(channelsSource).not.toContain('?.experimental?.');
@@ -381,12 +387,39 @@ describe('Channels view — Email and Teams are entity rows', () => {
 });
 
 describe('Channels view — per-channel binding management (spec §2.5)', () => {
-  test('the bindings table renders once ANY channel is connected — Slack via its nudge, Teams on its own', () => {
-    expect(channelsSource).toMatch(/install \? <SlackFollowUp/);
-    expect(channelsSource).toMatch(/function SlackFollowUp[\s\S]*?<ChannelBindingsSection/);
-    // A Teams-only project used to have no way to see or edit its bindings.
-    expect(channelsSource).toMatch(/!install && teamsInstall \? \([\s\S]*?<ChannelBindingsSection/);
+  test("each connected platform's row opens the dialog on its own tab, a Teams-only project too", () => {
+    expect(channelsSource).toMatch(/<SlackChannelRow[\s\S]*?onOpenChannels=/);
+    expect(channelsSource).toMatch(/<TeamsChannelRow[\s\S]*?onOpenChannels=/);
+    expect(channelsSource).toContain('<ChannelBindingsDialog');
+    // "N channels", pluralized by the catalog.
+    expect(channelsSource).toMatch(/tI18nComplete\('text[0-9a-f]{12}', \{ count/);
     expect(channelsSource).toContain('useTeamsInstall(');
+  });
+
+  const dialogSource = () =>
+    channelsSource.slice(
+      channelsSource.indexOf('function ChannelBindingsDialog'),
+      channelsSource.indexOf('function ChannelSettingsModalContent'),
+    );
+
+  test('the dialog has a tab per platform and searches within the open tab', () => {
+    const dialog = dialogSource();
+    expect(dialog).toContain('bindingTabs(');
+    expect(dialog).toContain('<TabsListCompact');
+    expect(dialog).toContain('<TabsTriggerCompact');
+    expect(dialog).toContain('BINDING_SEARCH_MIN');
+  });
+
+  test('a channel opens its settings inside the same dialog, with Back: never a second modal', () => {
+    const dialog = dialogSource();
+    expect(dialog.match(/<Modal\b/g)).toHaveLength(1);
+    expect(dialog).toContain('<ChannelSettingsModalContent');
+    expect(dialog).toContain('onBack=');
+    expect(channelsSource).toContain("raw('text76900f1bfd16')"); // Back
+    // A finished save returns to the list too; there is no Cancel/Close way out.
+    const settings = channelsSource.slice(channelsSource.indexOf('function ChannelSettingsModalContent'));
+    expect(settings).toMatch(/onSuccess: \(\) => \{[^}]*\bonBack\(\);\s*\}/);
+    expect(settings).not.toContain('onDone');
   });
 
   test('a binding row names its platform and, for Teams, its scope instead of the tenant GUID', () => {
@@ -394,6 +427,42 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain('bindingScopeLabel(binding.channelType');
     expect(channelsSource).toContain("'text895ce927db2e'");
     expect(channelsSource).toContain("'text28c7d3f8b75d'");
+  });
+
+  // Every thread of a Teams channel is its own binding, and all of them read
+  // `Team › Channel` (on dev: three rows of one channel, 2026-10-02).
+  test('a Teams channel thread reads its session title under the name; threads of one channel sort by it', () => {
+    expect(channelsSource).toMatch(/if \(binding\.threadTitle\) return tI18nComplete\('text5097881a690f', \{ title: binding\.threadTitle \}\)/);
+    expect(channelsSource).toMatch(/a\.name\.localeCompare\(b\.name, undefined, \{ numeric: true \}\) \|\|\s*a\.scope\.localeCompare\(b\.scope/);
+  });
+
+  test('a Teams thread with no name reads Channel thread, even without a stored kind: its id says it', () => {
+    expect(channelsSource).toMatch(
+      /binding\.channelType === 'channel' \|\| binding\.channelId\.includes\(';messageid='\)\) return tI18nComplete\.raw\('text5cb103d6008c'\)/,
+    );
+  });
+
+  // Every Slack row on dev read `C0…` over `T0…` (2026-10-02): no Slack name
+  // lookup had ever succeeded. A Slack row now reads like a Teams row.
+  test('a Slack row shows #channel, a person, or a group DM, over its kind, not its workspace id', () => {
+    expect(channelsSource).toContain('slackBindingName(binding, tI18nComplete)');
+    expect(channelsSource).toContain('slackScopeLabel(binding, tI18nComplete)');
+    // The `#name` / person / group-DM rule is `slackConversationName`, shared
+    // with the session's `slack send` card (channel-message.test.ts).
+    expect(channelsSource).toContain('slackConversationName(binding)');
+    expect(channelsSource).toMatch(/binding\.platform === 'slack'\) return slackScopeLabel\(binding, tI18nComplete\)/);
+    for (const key of [
+      'text87f9f3ba9b60', // Private channel
+      'textcd3e16057d09', // Direct message
+      'textcbe7c5d45160', // Group DM
+      'textf5738ddc651d', // Unavailable channel
+    ]) {
+      expect(channelsSource).toContain(key);
+    }
+  });
+
+  test('a deleted Slack channel says so and still shows its id', () => {
+    expect(channelsSource).toContain('binding.channelUnavailable');
   });
 
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {
@@ -426,9 +495,19 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("value: 'owner_approval'");
   });
 
-  test('read-only members see static values instead of editable controls', () => {
-    expect(channelsSource).toContain('canManage');
-    expect(channelsSource).toContain('disabled={!canManage');
+  test('read-only members see the settings with every control disabled and no Save', () => {
+    expect(channelsSource.match(/\sdisabled=\{!canWrite\}/g)).toHaveLength(3);
+    expect(channelsSource).toMatch(/\{canWrite \? \(\s*<Button type="submit"/);
+  });
+
+  // ~30 conversations × 3 live pickers was ~90 controls and a clipped column.
+  test('the list is read-only; a row opens one settings view with one Save', () => {
+    const dialog = dialogSource();
+    expect(dialog).not.toContain('<AgentSelector');
+    expect(dialog).not.toContain('<ModelSelector');
+    expect(dialog).not.toContain('<Select');
+    expect(dialog).toContain('<ChannelSettingsModalContent');
+    expect(channelsSource.match(/update\.mutate\(/g)).toHaveLength(1);
   });
 });
 

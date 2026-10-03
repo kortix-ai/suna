@@ -80,8 +80,6 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
-  /** 'me' = conversations the viewer was asked into (`metadata.participants`). */
-  participant?: 'me' | null;
 }
 
 type SessionTable = typeof projectSessions;
@@ -143,9 +141,6 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
-  if (filter.participant === 'me') {
-    conditions.push(sql`${t.metadata}->'participants' @> ${JSON.stringify([viewerId])}::jsonb`);
-  }
   if (filter.labels?.length) {
     const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
     conditions.push(
@@ -249,13 +244,12 @@ export async function loadProjectSessionInventory(input: {
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.participant
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
             filter.q ?? null,
             ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
-            ...(filter.participant ? [`participant:${filter.participant}`] : []),
           ])
         : undefined,
   };
@@ -275,32 +269,78 @@ export async function loadProjectSessionInventory(input: {
     SESSION_PAGE_MAX_LIMIT,
   );
 
+  // The visibility fold drops rows (soft-deleted, warm-unprompted, another
+  // member's private session), so a chunk of exactly `limit` rows would
+  // under-fill the page. Over-read, then keep pulling chunks until the page is
+  // full or the list ends.
+  const chunkSize = Math.min(Math.max(limit * 3, 60), 500);
+
+  let cursor = decodeSessionCursor(input.cursor, cursorScope);
+
+  // `async`: calling it starts the read. Awaiting it later only collects it.
+  const readChunk = async (after: typeof cursor) =>
+    db
+      .select()
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.accountId, input.accountId),
+          filterSql,
+          // Keyset: strictly after the cursor row in `(sort_at DESC,
+          // session_id DESC)`. Ordinary projects use the updated_at index;
+          // opted-in imports use their historical conversation activity.
+          after
+            ? or(
+                lt(sortAt, after.updatedAt.toISOString()),
+                and(
+                  eq(sortAt, after.updatedAt.toISOString()),
+                  lt(projectSessions.sessionId, after.sessionId),
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(sortAt), desc(projectSessions.sessionId))
+      .limit(chunkSize);
+
   // Step 1 — everything that depends only on the CALLER runs together with the
   // first row chunk. Both are needed before a single row can be folded.
+  //
+  // Manager standing must be derived exactly as the lifecycle routes derive
+  // it (loadVisibleSession): a session-bound agent credential never inherits
+  // the launching user's `manage` role. Computing it from the role alone made
+  // every list row report `can_manage_lifecycle: true` to a credential whose
+  // DELETE would then 403 — the two answers must come from one predicate.
+  const standingRead = viewerManagerStanding(
+    input.effectiveRole,
+    input.boundCredentialSessionId,
+    input.probeManageCapability,
+  );
+  // The manager-only scope is refused before any row is read: an unauthorized
+  // caller must not cost a page scan. Its reads start when the verdict allows
+  // them, not after the share subject.
+  // Oversight widens only the manager inventory; see selectSessionRowsForViewer.
+  const managerInventory = input.scope === 'project';
+  const firstChunkRead = managerInventory
+    ? standingRead.then((allowed) => (allowed ? readChunk(cursor) : []))
+    : readChunk(cursor);
+  const oversightRead =
+    managerInventory && input.boundCredentialSessionId === null
+      ? standingRead.then(
+          (allowed) => allowed && hasAccountSessionOversight(input.userId, input.accountId),
+        )
+      : Promise.resolve(false);
+  // Both are awaited after the caller reads. A rejection surfaces there, in
+  // the original order, and must not be unhandled before.
+  firstChunkRead.catch(() => undefined);
+  oversightRead.catch(() => undefined);
   const [subject, canManageProject] = await Promise.all([
     resolveShareSubject(input.userId),
-    // Manager standing must be derived exactly as the lifecycle routes derive
-    // it (loadVisibleSession): a session-bound agent credential never inherits
-    // the launching user's `manage` role. Computing it from the role alone made
-    // every list row report `can_manage_lifecycle: true` to a credential whose
-    // DELETE would then 403 — the two answers must come from one predicate.
-    viewerManagerStanding(
-      input.effectiveRole,
-      input.boundCredentialSessionId,
-      input.probeManageCapability,
-    ),
+    standingRead,
   ]);
 
-  // The manager-only scope is refused before any row is read: an unauthorized
-  // caller must not cost a page scan.
-  // Oversight widens only the manager inventory; see selectSessionRowsForViewer.
-  const accountSessionOversight =
-    input.scope === 'project' &&
-    canManageProject &&
-    input.boundCredentialSessionId === null &&
-    (await hasAccountSessionOversight(input.userId, input.accountId));
-
-  if (input.scope === 'project' && !canManageProject) {
+  if (managerInventory && !canManageProject) {
     return {
       authorized: false,
       items: [],
@@ -316,11 +356,7 @@ export async function loadProjectSessionInventory(input: {
     };
   }
 
-  // The visibility fold drops rows (soft-deleted, warm-unprompted, another
-  // member's private session), so a chunk of exactly `limit` rows would
-  // under-fill the page. Over-read, then keep pulling chunks until the page is
-  // full or the list ends.
-  const chunkSize = Math.min(Math.max(limit * 3, 60), 500);
+  const accountSessionOversight = await oversightRead;
 
   const items: SessionInventoryItem[] = [];
   const scannedRows: ProjectSessionRow[] = [];
@@ -328,7 +364,6 @@ export async function loadProjectSessionInventory(input: {
   const ownerIdentities = new Map<string, SessionOwnerIdentity>();
   const runtimeStatusBySession = new Map<string, RuntimeStatus>();
 
-  let cursor = decodeSessionCursor(input.cursor, cursorScope);
   let nextCursor: string | null = null;
   let exhausted = false;
 
@@ -392,30 +427,7 @@ export async function loadProjectSessionInventory(input: {
   };
 
   for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {
-    const chunk = await db
-      .select()
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.projectId, input.projectId),
-          eq(projectSessions.accountId, input.accountId),
-          filterSql,
-          // Keyset: strictly after the cursor row in `(sort_at DESC,
-          // session_id DESC)`. Ordinary projects use the updated_at index;
-          // opted-in imports use their historical conversation activity.
-          cursor
-            ? or(
-                lt(sortAt, cursor.updatedAt.toISOString()),
-                and(
-                  eq(sortAt, cursor.updatedAt.toISOString()),
-                  lt(projectSessions.sessionId, cursor.sessionId),
-                ),
-              )
-            : undefined,
-        ),
-      )
-      .orderBy(desc(sortAt), desc(projectSessions.sessionId))
-      .limit(chunkSize);
+    const chunk = await (pass === 0 ? firstChunkRead : readChunk(cursor));
 
     if (chunk.length === 0) {
       exhausted = true;
@@ -464,7 +476,7 @@ export async function loadProjectSessionInventory(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.participant;
+  const appendAncestors = !filter.parent && !filter.labels?.length;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(

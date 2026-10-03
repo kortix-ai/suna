@@ -122,7 +122,7 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
         if (stage !== 'attached' || !context.session) return;
         process.stderr.write(
           `${status.ok(`Connecting to ${C.bold}${attachSessionLabel(context.session)}${C.reset}`)} ` +
-            `${C.dim}(OpenCode ${context.opencodeSessionId}, local ${context.proxyUrl})${C.reset}\n`,
+            `${C.dim}(OpenCode ${context.runtimeSessionId}, local ${context.proxyUrl})${C.reset}\n`,
         );
       },
     });

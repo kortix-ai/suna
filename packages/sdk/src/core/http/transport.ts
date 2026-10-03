@@ -6,7 +6,8 @@
  *     send, so a retry after a 401 replay starts from the fresh token. There
  *     is no token option: the 401 replay asks `getToken()` again, so a
  *     caller-resolved token would be swapped for the host's identity;
- *   - the header policy: bearer, admin read bypass, act-as;
+ *   - the header policy: bearer, `X-Kortix-Client-Version`, admin read bypass,
+ *     act-as;
  *   - the default deadline, composed with the caller's signal;
  *   - the one 401 replay with a fresh token, from a copy of the request taken
  *     BEFORE the first send (a `Request` body is consumed by the first send).
@@ -99,16 +100,39 @@ function callerHeaders(input: RequestInfo | URL, init: RequestInit): Record<stri
 
 /**
  * The caller's headers plus the platform policy. A caller's own
- * `Authorization` wins. Admin bypass and act-as replace
- * the caller's value, so a call site cannot drop them; the admin console is
- * never impersonated (see `shouldAttachImpersonation`).
+ * `Authorization` or `X-Kortix-Client-Version` wins. Admin bypass and act-as
+ * replace the caller's value, so a call site cannot drop them; the admin
+ * console is never impersonated (see `shouldAttachImpersonation`).
  */
 function withPlatformHeaders(url: string, base: Record<string, string>, token: string): Record<string, string> {
   const headers = { ...base };
+  const clientVersion = platformConfig().clientVersion?.trim();
+  if (clientVersion && !hasHeader(headers, 'x-kortix-client-version')) {
+    setHeader(headers, 'X-Kortix-Client-Version', clientVersion);
+  }
   if (adminBypassEnabled) setHeader(headers, 'x-kortix-admin-bypass', '1');
   for (const [name, value] of Object.entries(impersonationHeaders(url))) setHeader(headers, name, value);
   if (!hasHeader(headers, 'authorization')) setHeader(headers, 'Authorization', `Bearer ${token}`);
   return headers;
+}
+
+/**
+ * `send()`'s token and header policy for a request the configured `fetch` does
+ * not carry: one connection of the live event stream on a host with its own
+ * `eventStreamTransport`. Throws `AuthError` without a token. `rejected()`
+ * reports that the server answered 401, so the next connection asks the host
+ * for a fresh token.
+ */
+export async function platformRequestHeaders(
+  url: string,
+  base?: HeadersInit,
+): Promise<{ headers: Headers; rejected: () => void }> {
+  const token = await currentToken();
+  if (!token) throw new AuthError();
+  return {
+    headers: new Headers(withPlatformHeaders(url, callerHeaders(url, { headers: base }), token)),
+    rejected: () => platformConfig().getToken.invalidate?.(token),
+  };
 }
 
 // ── Send ────────────────────────────────────────────────────────────────────

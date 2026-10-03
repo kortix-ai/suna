@@ -54,7 +54,7 @@ function ssoIdFromProviderTag(value: unknown): string | null {
  *
  * Real Supabase SAML tokens carry the id INSIDE `app_metadata.provider` (and
  * `app_metadata.providers[]`) as the string `"sso:<uuid>"`, e.g.
- * `provider: "sso:464651b7-6157-46b1-afaa-5bbd7fa37599"`. We also accept a bare
+ * `provider: "sso:<sso_provider_id>"`. We also accept a bare
  * `sso_provider_id`/`provider_id` for forward-compat and simpler test fixtures.
  *
  * The previous implementation read ONLY the bare fields, which no real Supabase

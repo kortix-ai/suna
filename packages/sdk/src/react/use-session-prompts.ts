@@ -14,6 +14,7 @@ import {
   holdSessionPrompts,
   listSessionPrompts,
   retrySessionPrompt,
+  editSessionPrompt,
 } from '../core/rest/projects-client/sessions';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
@@ -177,6 +178,16 @@ export function applyInboxObservation(
  */
 export function releaseHeldPrompts(prompts: readonly SessionPrompt[]): SessionPrompt[] {
   return prompts.map((prompt) => (prompt.reason === 'held' ? { ...prompt, reason: null } : prompt));
+}
+
+/** The rows with ONE row's text replaced — `edit`'s optimistic write, so the
+ *  queue shows the new words on the click instead of after the PATCH. */
+export function withEditedPromptText(
+  prompts: readonly SessionPrompt[],
+  promptId: string,
+  text: string,
+): SessionPrompt[] {
+  return prompts.map((prompt) => (prompt.prompt_id === promptId ? { ...prompt, text } : prompt));
 }
 
 /**
@@ -438,6 +449,9 @@ export interface UseSessionPromptsResult {
   remove: (promptId: string) => Promise<RemovedSessionPrompt>;
   /** Run THIS prompt next — the primitive behind both retry and "send now". */
   retry: (promptId: string) => Promise<SessionPrompt>;
+  /** Replace a waiting row's text in place. Sends nothing, keeps its place
+   *  and any hold. Throws 409 for a row already on the wire. */
+  edit: (promptId: string, text: string) => Promise<SessionPrompt>;
   /** Hold, or release, the whole queue. The Stop button holds; any new send,
    *  and `retry`, release. */
   hold: (held: boolean) => Promise<{ prompts: SessionPrompt[] }>;
@@ -575,6 +589,19 @@ export function useSessionPrompts(
     onError: () => {},
     onSettled: invalidate,
   });
+  const editMutation = useMutation({
+    onMutate: async ({ promptId, text }: { promptId: string; text: string }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        withEditedPromptText(prev ?? [], promptId, text),
+      );
+    },
+    mutationFn: ({ promptId, text }: { promptId: string; text: string }) =>
+      editSessionPrompt(projectId!, sessionId!, promptId, text),
+    // A refusal leaves the old text on the server; the settle read shows it.
+    onError: () => {},
+    onSettled: invalidate,
+  });
   const holdMutation = useMutation({
     // Releasing answers on the click: the paused state leaves the screen now,
     // not one GET later (`releaseHeldPrompts`).
@@ -608,6 +635,7 @@ export function useSessionPrompts(
     enqueue: enqueueMutation.mutateAsync,
     remove: removeMutation.mutateAsync,
     retry: retryMutation.mutateAsync,
+    edit: (promptId: string, text: string) => editMutation.mutateAsync({ promptId, text }),
     hold: holdMutation.mutateAsync,
     refetch,
   };

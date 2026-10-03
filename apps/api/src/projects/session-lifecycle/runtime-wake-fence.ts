@@ -346,16 +346,20 @@ export const RUNTIME_START_FAILURE_KEYS = [
   'runtimeStartRetryAfterAt',
 ] as const;
 
+/** The start call gave up or lost its connection: the provider may still be starting the box. */
+const AMBIGUOUS_START_ERROR_NAMES = new Set([
+  'TimeoutError', // shared/with-timeout, AbortSignal.timeout, Platinum's call budget
+  'AbortError',
+  'DaytonaTimeoutError',
+  'DaytonaConnectionError',
+]);
+const AMBIGUOUS_START_ERROR_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ConnectionClosed']);
+
 export function isAmbiguousRuntimeStartError(error: unknown): boolean {
-  const name = error instanceof Error ? error.name.toLowerCase() : '';
-  const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const err = error as { name?: unknown; code?: unknown } | null | undefined;
   return (
-    name.includes('timeout') ||
-    message.includes('timed out') ||
-    message.includes('timeout') ||
-    message.includes('aborted') ||
-    message.includes('connection reset')
+    AMBIGUOUS_START_ERROR_NAMES.has(String(err?.name)) ||
+    AMBIGUOUS_START_ERROR_CODES.has(String(err?.code))
   );
 }
 

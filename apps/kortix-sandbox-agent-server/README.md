@@ -19,7 +19,7 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
 
 - _(default)_ **session** — everything under "Scope" below.
 - **`monitor`** — the box supervises the project's monitor processes instead
-  of opencode (`src/services/monitor/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
+  of a session harness (`src/services/monitor/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
   injected by the API — the daemon never parses `kortix.yaml` itself), spawns
   one process per enabled monitor (`poll` on an interval / `stream`
   long-running, restart budget + backoff), captures stdout line-by-line
@@ -27,19 +27,26 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
   `POST /projects/:id/monitors/ingest` with the box's sandbox token and
   `KORTIX_MONITOR_BOX_EPOCH`. Lifecycle events (`exited`,
   `restart_budget_exhausted`, `silent`) are synthesized into the same stream.
-  Opencode never starts; its routes 503 honestly. `GET /kortix/health`
+  No harness starts; its routes 503 honestly. `GET /kortix/health`
   reports `workload: "monitor"` — the API's reconciler uses that field to
   detect (and recycle) a box whose baked agent binary predates monitor mode.
 
 **Scope:**
 
-1. Process supervisor for `opencode serve`.
-2. Reverse proxy that fronts opencode's HTTP + SSE surface on
-   `KORTIX_SERVICE_PORT` (default `8000`).
-3. Managed Kortix system-skill injection into OpenCode's native discovery
-   directory.
-4. Small Kortix-namespaced control surface: `GET /kortix/health` and
-   `POST /kortix/refresh`.
+1. Runs the session harness `KORTIX_HARNESS` selects: OpenCode (unset or
+   `opencode`, the default today) as a supervised `opencode serve` child
+   process, or pi (`pi`) inside the daemon process. pi replaces OpenCode;
+   OpenCode support is temporary. See [the harness README](src/harness/README.md).
+2. Serves the session runtime's HTTP + SSE surface on `KORTIX_SERVICE_PORT`
+   (default `8000`): a reverse proxy to opencode, or pi's own handlers. The
+   routes, the transcript (`kortix.transcript.v1`) and the events are the
+   same on both harnesses.
+3. Managed Kortix system skills for the harness: injected into OpenCode's
+   native discovery directory; read by pi from the image's overlay directory,
+   with nothing written into the working tree.
+4. Kortix-namespaced control surface under `/kortix/*`: `GET /kortix/health`,
+   `POST /kortix/refresh`, the Runtime API (`/kortix/runtime/*`) and the
+   routes [ARCHITECTURE.md](ARCHITECTURE.md) lists.
 5. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
    HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
    assets resolve cleanly through the sandbox proxy. Ported from main's
@@ -70,7 +77,7 @@ import rules, and where new code goes; `bun run lint` enforces them.
 1. Read env vars (`src/lib/config/config.ts`).
 2. Start the static web server on `0.0.0.0:KORTIX_STATIC_PORT` (in-process).
    It only reads files off disk, so it comes up first and stays up regardless
-   of repo/opencode state — previews work while the agent is still booting.
+   of repo/harness state — previews work while the agent is still booting.
    Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
 3. The sandbox entrypoint downloads and verifies the compiled `server.mjs` when
    compiled boot is enabled. `prefer` executes it with baked-agent fallback.
@@ -104,15 +111,22 @@ import rules, and where new code goes; `bun run lint` enforces them.
    (`opencode serve --port <internal> --hostname 127.0.0.1`).
    If the binary isn't found we keep going and report `opencode: 'starting'`.
 8. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
+
+   Steps 5 to 7 are the OpenCode harness. With `KORTIX_HARNESS=pi` the daemon
+   starts pi in its own process instead: no child process, no internal port and
+   no `OPENCODE_CONFIG_DIR`. pi reads the managed skills from the image's
+   overlay directory and the project's `skills/`
+   ([harness README](src/harness/README.md), "The pi harness").
 9. Trap signals; on shutdown, drain proxy + static web + kill child processes.
 
 ## Routes
 
 | Path                   | Purpose                                                               |
 | ---------------------- | --------------------------------------------------------------------- |
-| `GET /kortix/health`   | Daemon liveness + opencode state + repo info (always 200 from daemon) |
-| `POST /kortix/refresh` | Signed-context protected repo fast-forward + opencode restart.        |
-| `/*`                   | Reverse-proxied to opencode. 503 while `opencode !== 'ok'`.           |
+| `GET /kortix/health`   | Daemon liveness + harness state + repo info (always 200 from daemon)  |
+| `POST /kortix/refresh` | Signed-context protected repo fast-forward + harness reload.          |
+| `/kortix/runtime/*`    | The Runtime API: the Kortix contract clients build on (transcript, turn verbs, agents). Same routes on both harnesses. |
+| `/*`                   | The harness's own routes: reverse-proxied to opencode, or answered by pi. 503 with `code: "runtime_not_ready"` while the runtime is not ready. |
 
 ### `GET /kortix/health` response shape
 
@@ -177,8 +191,8 @@ import rules, and where new code goes; `bun run lint` enforces them.
 
 Requires a valid `X-Kortix-User-Context` signed with `KORTIX_TOKEN`. On success,
 the daemon fetches origin, runs `git pull --ff-only` for the session branch, and
-restarts opencode so project config changes are picked up without recreating the
-sandbox. Missing/invalid context returns `401`; no materialized repo or a
+reloads the harness so project config changes are picked up without recreating the
+sandbox: OpenCode restarts (`?restart=0` skips it), pi re-reads its skills in place. Missing/invalid context returns `401`; no materialized repo or a
 non-fast-forward conflict returns `409`.
 
 ## What lives elsewhere
@@ -189,13 +203,14 @@ non-fast-forward conflict returns `409`.
 - **Secrets** — cloud API decides which secrets a sandbox needs and sets them
   as plain environment variables at create-time (via Daytona env injection).
   The daemon does not read them and has no `/kortix/secrets` route.
-- **User preferences** — deferred. The frontend talks directly to opencode's
-  own preference surface when it needs one.
+- **User preferences** — deferred. On OpenCode the frontend reads the runtime's
+  own config document (`session.config`); pi has none.
 
 ## Env vars
 
 ```
 KORTIX_SERVICE_PORT=8000
+KORTIX_HARNESS=                           # unset or "opencode" (default) | "pi" (src/harness/harness.ts)
 KORTIX_OPENCODE_INTERNAL_PORT=4096
 KORTIX_STATIC_PORT=3211
 KORTIX_WORKSPACE=/workspace

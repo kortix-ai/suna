@@ -1,3 +1,4 @@
+import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
 import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../runtime-request';
@@ -46,8 +47,10 @@ import {
   markSandboxUsed,
   resolveSandboxIngress,
   routeSandboxIngress,
+  type SandboxRecord,
   wakeSandbox,
 } from '../backend';
+import { takePrefetchedSandbox } from '../prefetch';
 import {
   recordSseStreamEnd,
   shouldBypassIngressCache,
@@ -450,6 +453,24 @@ export function isProxiedBaseReset(
   return new URLSearchParams(queryString).get('base') === '1';
 }
 
+/**
+ * The daemon's 503 while the session runtime cannot take a request: it names
+ * its boot phase in `X-Kortix-Boot-Phase` and answers `code: runtime_not_ready`
+ * (both harnesses).
+ */
+function isDaemonRuntimeNotReady(headers: Headers, bodyText: string): boolean {
+  if (headers.has(BOOT_PHASE_HEADER)) return true;
+  try {
+    if ((JSON.parse(bodyText) as { code?: unknown }).code === RUNTIME_NOT_READY_CODE) return true;
+  } catch {
+    // not JSON
+  }
+  // legacy: a daemon built before the code and the header sends only this
+  // text (pi and OpenCode's boot steps, then OpenCode's process gate). Delete
+  // once no box runs such a daemon.
+  return /sandbox runtime not ready|opencode not ready/.test(bodyText);
+}
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -474,7 +495,13 @@ export async function forwardToSandbox(
   // alone on that origin. Two things become both safe and necessary there —
   // forwarding the app's cookies (see appCookieHeader) and leaving same-origin
   // responses free of injected CORS headers.
-  opts: { originMode?: boolean } = {},
+  //
+  // `record`: the sandbox row, when the caller read it moments ago: the
+  // server-side prompt delivery (the active box it just picked as its target)
+  // and the HTTP route (the row read while this request authenticated). The
+  // turn-begin write below re-checks the box's status in the database, so a
+  // row that went stale in between cannot deliver a turn.
+  opts: { originMode?: boolean; record?: SandboxRecord } = {},
 ): Promise<Response> {
   let requestBody = body;
 
@@ -482,7 +509,7 @@ export async function forwardToSandbox(
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
   const ptl = new ProvisionTimeline(sandboxId, 'proxy');
-  let record = await loadSandbox(sandboxId);
+  let record = opts.record?.externalId === sandboxId ? opts.record : await loadSandbox(sandboxId);
   ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
@@ -494,7 +521,11 @@ export async function forwardToSandbox(
     access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
-    !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+    !(await canAccessPreviewSandbox({
+      previewSandboxId: sandboxId,
+      userId,
+      sandbox: { sandboxId: record.sandboxId, accountId: record.accountId, projectId: record.projectId },
+    }))
   ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
@@ -1335,11 +1366,11 @@ export async function forwardToSandbox(
           .clone()
           .text()
           .catch(() => '');
-        if (bodyText.includes('opencode not ready')) {
+        if (isDaemonRuntimeNotReady(upstream.headers, bodyText)) {
           void markSandboxUsed(sandboxId);
-          // opencode explicitly rejected the request as not-ready, so it did NOT
+          // The daemon rejected the request as not-ready, so the runtime did NOT
           // enqueue the prompt. Release the dedupe claim so the client's retry
-          // (once opencode is up) actually delivers instead of short-circuiting
+          // (once the runtime is up) actually delivers instead of short-circuiting
           // to a bogus 200 "duplicate" that would drop the message.
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           await abandonTurnLifecycle();
@@ -1390,6 +1421,8 @@ export async function forwardToSandbox(
 
       if (upstream.status === 400) {
         const bodyText = await upstream.text();
+        // legacy allowlist: Daytona's edge marks a stopped or archived box only
+        // with this 400 text, no code. Delete when Daytona types the answer.
         const isSandboxDown =
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');
@@ -1930,6 +1963,8 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
+    // The row the proxy app started reading while auth ran (index.ts).
+    { record: await takePrefetchedSandbox(c, sandboxId) },
   );
 });
 

@@ -86,10 +86,26 @@ is one conversation for its whole life, so it keeps one session until you send
 new session with that message. The previous session stays in Kortix, with its
 full history, and the confirmation links to it.
 
+## Conversation names
+
+Teams sends ids, such as `19:…@thread.tacv2;messageid=…`. The Channels page and
+`kortix channels bindings` show the names people read in Teams:
+
+| Conversation | Name | Under the name |
+|---|---|---|
+| A channel post | `Team › Channel` | The title of its session, which tells two posts in one channel apart |
+| A group chat | The chat's title | Group chat |
+| A personal chat | The person | Personal chat |
+
+A channel message carries the team's id but not its name, so Kortix reads the
+team and channel names from Teams and stores them. A post in a team's General
+channel is named the next time the Channels page lists it. A post in another
+channel is named by its next message. Until then it reads **Channel thread**.
+
 ## Who may join a session
 
-Each conversation has a join policy, set with `/policy` in Teams or from the
-bindings table on the Channels page:
+Each conversation has a join policy, set with `/policy` in Teams or on the
+Channels page, where **N channels** on the Teams row lists every conversation:
 
 - **open** (default) — any linked project member may join a session started here.
 - **approval** — the session owner gets an Approve / Deny card for each new person.

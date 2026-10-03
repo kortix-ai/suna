@@ -324,8 +324,8 @@ Validation rules on `POST /`:
 
 - `kortix-cli.md` (next to this file) — full CLI surface for `kortix
   cr`.
-- `../opencode/overview.md` — where OpenCode primitives live, all of
-  which are CR-shipped.
+- `../opencode/overview.md` and `../pi/overview.md` — where each harness's
+  files live, all of which are CR-shipped.
 - `../../SKILL.md` — `<change-requests>` section, agent mandate.
 - `packages/db/src/schema/kortix.ts` — schema source (`changeRequests`
   table + `changeRequestStatusEnum`).

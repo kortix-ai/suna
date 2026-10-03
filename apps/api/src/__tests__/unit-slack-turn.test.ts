@@ -51,6 +51,16 @@ mock.module('../channels/slack/interactivity', () => ({
   respondViaUrl: async () => {},
 }));
 
+// Slack names U0TEST2; it cannot name U0TEST3.
+const nameLookups: Array<{ token: string; teamId: string; ids: string[] }> = [];
+mock.module('../channels/slack/labels', () => ({
+  slackUserNames: async (token: string, teamId: string, ids: string[]) => {
+    nameLookups.push({ token, teamId, ids });
+    return new Map(ids.filter((id) => id === 'U0TEST2').map((id) => [id, 'Alex Kim']));
+  },
+  slackMessageLabels: async ({ event }: { event: { text?: string } }) => ({ channel: null, user: null, text: event.text ?? '' }),
+}));
+
 mock.module('../channels/slack/app', () => ({
   STREAM_TTL_MS: 15 * 60 * 1000,
   ASK_TTL_MS: 15 * 60 * 1000,
@@ -150,6 +160,7 @@ beforeEach(() => {
   dbResults = [];
   dbWrites = [];
   appendStreamResult = { ok: true };
+  nameLookups.length = 0;
 });
 
 describe('finalizeTurn (chat.update only — no streaming)', () => {
@@ -499,5 +510,46 @@ describe('relayProvisioningFailure', () => {
     expect(ok).toBe(false);
     expect(calls('updateBlocks').length).toBe(0);
     expect(calls('postMessage').length).toBe(0);
+  });
+});
+
+// A `<@U…>` in a step printed as raw markup on the plan (2026-10-02); as a live
+// mention it would notify that person on every repaint. The relay writes the
+// person's name as text, and a channel reference renders as Slack's channel
+// element. No mention markup reaches Slack from a step.
+describe('relayTurnStep: mentions in a step', () => {
+  test('title, detail and the previous output carry names as text; a channel renders natively', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn → plan message already exists
+      [], // saveTurn upsert
+    ];
+
+    const ok = await relayTurnStep('sess-1', 'Asking <@U0TEST2>', {
+      detail: 'waiting on <@U0TEST2> in <#C0OPS|ops>, cc <!here>',
+      outputForPrev: 'found by <@U0TEST3>',
+    });
+
+    expect(ok).toBe(true);
+    expect(nameLookups).toEqual([{ token: 'xoxb-test', teamId: 'T1', ids: ['U0TEST2', 'U0TEST3'] }]);
+    const blocks = calls('updateBlocks')[0]!.args[4] as Array<{ tasks: Array<Record<string, any>> }>;
+    const [prev, step] = blocks[0]!.tasks;
+    expect(step!.title).toBe('Asking @Alex Kim');
+    expect(step!.details.elements[0].elements).toEqual([
+      { type: 'text', text: 'waiting on @Alex Kim in ' },
+      { type: 'channel', channel_id: 'C0OPS' },
+      { type: 'text', text: ', cc @here' },
+    ]);
+    expect(prev!.output.elements[0].elements).toEqual([{ type: 'text', text: 'found by @U0TEST3' }]);
+    const sent = JSON.stringify(blocks);
+    expect(sent).not.toContain('<@');
+    expect(sent).not.toContain('<!');
+    expect(sent).not.toContain('"type":"user"');
+    expect(sent).not.toContain('"type":"broadcast"');
+  });
+
+  test('a step with no mentions asks Slack nothing', async () => {
+    dbResults = [[streamRow()], []];
+    await relayTurnStep('sess-1', 'Reading the logs', { detail: 'from <https://example.test|the dashboard>' });
+    expect(nameLookups).toEqual([]);
   });
 });

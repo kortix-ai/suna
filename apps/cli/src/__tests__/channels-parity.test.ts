@@ -342,7 +342,8 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(calls).toEqual([
       { method: 'GET', path: `/v1/projects/${PROJECT}/channels/bindings`, query: '', body: null },
     ]);
-    expect(r.stdout).toMatch(/bind_1\s+eng\s+slack\s+default \(project\)\s+auto \(platform\)\s+owner_approval/);
+    // A Slack channel reads `#eng`, as the Channels page shows it.
+    expect(r.stdout).toMatch(/bind_1\s+#eng\s+slack\s+default \(project\)\s+auto \(platform\)\s+owner_approval/);
     expect(r.stdout).toContain('project default agent: default');
 
     const j = await runCli(['channels', 'bindings', 'ls', '--project', PROJECT, '--json'], config);

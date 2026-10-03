@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Host } from '@kortix/cli/src/api/config.ts';
+import type { Host } from '@kortix/shared/host-config';
 import type { ValidateTokenResult } from '@kortix/sdk';
 
 import {

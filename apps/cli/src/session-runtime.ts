@@ -57,7 +57,7 @@ export interface SessionRuntime {
   /** SDK-resolved runtime URL used by the local `opencode attach` adapter. */
   runtimeUrl: string;
   /** Canonical OpenCode session id resolved by `/start`. */
-  opencodeSessionId: string;
+  runtimeSessionId: string;
 }
 
 export interface WaitForSessionReadyOptions {
@@ -178,7 +178,7 @@ export async function resolveSessionRuntime(
     auth,
     handle,
     runtimeUrl: ready.runtimeUrl,
-    opencodeSessionId: ready.runtimeSessionId,
+    runtimeSessionId: ready.runtimeSessionId,
   };
 }
 

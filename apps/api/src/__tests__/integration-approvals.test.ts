@@ -259,7 +259,7 @@ const patPost = (path: string, body: unknown) =>
   });
 
 describe('approvals inbox + resolution', () => {
-  test('session reconstruction includes integrity-linked events with partial request context', async () => {
+  test('session reconstruction returns rows without account or project context, in insertion order', async () => {
     if (!ctx) return;
     await db.insert(projects).values({
       projectId: CHAIN_PROJECT,
@@ -340,9 +340,10 @@ describe('approvals inbox + resolution', () => {
     expect(projected.map((event) => event.event_id)).toEqual(
       inserted.map((event) => event.eventId),
     );
-    expect(projected[1]?.integrity_previous_hash).toBe(projected[0]?.integrity_hash);
-    expect(projected[2]?.integrity_previous_hash).toBe(projected[1]?.integrity_hash);
-    expect(projected[3]?.integrity_previous_hash).toBe(projected[2]?.integrity_hash);
+    // No chain any more: new rows carry no sequence and no hashes, and the log order is
+    // the (time-ordered) event_id.
+    expect(projected.every((event) => event.integrity_hash === null)).toBe(true);
+    expect(projected.every((event) => event.integrity_previous_hash === null)).toBe(true);
   });
 
   test('pending → inbox → approve → resolved (leaves inbox) → re-approve 409 → audit shows approver', async () => {

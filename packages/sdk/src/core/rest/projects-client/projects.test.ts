@@ -976,7 +976,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pi_harness',
     'agent_principal',
     'us_region',
-    'human_messaging',
     'warm_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());

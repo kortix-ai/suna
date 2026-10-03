@@ -30,3 +30,11 @@ if (!hasRuntime()) {
 // dev runs load it from the repo. Build it when missing; fail loudly when that
 // is impossible, so a package never ships without it.
 require('../src/computer').ensureDevAgentCli();
+
+// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js).
+require('./fetch-cua-driver')
+  .fetchCuaDriver()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

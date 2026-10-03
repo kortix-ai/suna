@@ -27,7 +27,7 @@ import {
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
-import { db } from '../shared/db';
+import { db, withDbTransaction } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
@@ -50,6 +50,7 @@ const setupLinksPublicApp = new Hono();
 // client IP so a flood of garbage tokens (each a distinct, never-colliding key)
 // can't allocate unbounded rate-limit buckets or dodge the limit entirely.
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
+// replica-local: limit × API replicas (shared/rate-limit.ts).
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
 function createSetupLinkRateLimitMiddleware() {
@@ -138,10 +139,16 @@ setupLinksPublicApp.get('/secret/:token', async (c) => {
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'secret') return c.json({ error: 'Wrong link type' }, 400);
 
+  const [project] = await db.select({ name: projects.name, status: projects.status })
+    .from(projects).where(eq(projects.projectId, resolved.projectId)).limit(1);
+  if (!project || project.status === 'archived') {
+    return c.json({ error: 'This link is unavailable' }, 404);
+  }
+
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
     kind: 'secret',
-    project_name: await projectName(resolved.projectId),
+    project_name: project.name,
     requester: requester ? { label: requester.label } : null,
     fields: resolved.payload.fields.map((f) => ({
       name: f.name,
@@ -167,48 +174,62 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
 
   const values = (body?.values ?? {}) as Record<string, unknown>;
   const allowed = new Set(resolved.payload.fields.map((f) => f.name));
-  // "Only the person who asked" — the one audience a link holder may choose.
-  // It can only narrow: the default is everyone in the project.
-  const requester = body?.only_requester === true ? await linkRequester(resolved.projectId, resolved.payload.uid) : null;
-  if (body?.only_requester === true && !requester) {
-    return c.json({ error: 'This link cannot keep the values to one person' }, 400);
-  }
-  const accountId = requester ? await projectAccount(resolved.projectId) : null;
-
-  const saved: string[] = [];
-  for (const [rawName, rawValue] of Object.entries(values)) {
-    const name = rawName.toUpperCase();
-    // Value-only: silently ignore anything the token didn't ask for, and never
-    // let a leaked token write to a key it doesn't name.
-    if (!allowed.has(name) || !isValidSecretName(name)) continue;
-    const value = typeof rawValue === 'string' ? rawValue : '';
-    if (!value) continue;
-    const audience =
-      requester && accountId
-        ? { accountId, projectId: resolved.projectId, principals: [{ principal_type: 'user' as const, principal_id: requester.id }], grantedBy: requester.id }
-        : null;
-    // Audience first, under the id a NEW row will get (secret-audience.ts).
-    const pendingId = audience ? randomUUID() : undefined;
-    if (audience && pendingId) await setSecretAudience({ ...audience, secretId: pendingId, pending: true });
-    const secretId = await writeSharedProjectSecret({
-      projectId: resolved.projectId,
-      name,
-      value,
-      scope: resolved.payload.scope,
-      createdBy: resolved.payload.uid,
-      ...(pendingId ? { secretId: pendingId } : {}),
-    });
-    if (audience && pendingId && secretId !== pendingId) {
-      // The key already existed: drop the pending grants, narrow the row itself.
-      await clearSecretAudience({ accountId: audience.accountId, projectId: audience.projectId, secretId: pendingId });
-      await setSecretAudience({ ...audience, secretId });
+  const payload = resolved.payload;
+  const result = await withDbTransaction(async () => {
+    // The archive UPDATE takes the same row lock: either all values commit
+    // before deletion, or this submission sees archived and writes nothing.
+    const [project] = await db.select({ status: projects.status }).from(projects)
+      .where(eq(projects.projectId, resolved.projectId)).limit(1).for('update');
+    if (!project || project.status === 'archived') {
+      return c.json({ error: 'This link is unavailable' }, 404);
     }
-    saved.push(name);
-  }
+    // "Only the person who asked" — the one audience a link holder may choose.
+    // It can only narrow: the default is everyone in the project.
+    const requester = body?.only_requester === true ? await linkRequester(resolved.projectId, payload.uid) : null;
+    if (body?.only_requester === true && !requester) {
+      return c.json({ error: 'This link cannot keep the values to one person' }, 400);
+    }
+    const accountId = requester ? await projectAccount(resolved.projectId) : null;
 
-  if (saved.length === 0) {
-    return c.json({ error: 'No values provided for the requested keys' }, 400);
-  }
+    const saved: string[] = [];
+    for (const [rawName, rawValue] of Object.entries(values)) {
+      const name = rawName.toUpperCase();
+      // Value-only: silently ignore anything the token didn't ask for, and never
+      // let a leaked token write to a key it doesn't name.
+      if (!allowed.has(name) || !isValidSecretName(name)) continue;
+      const value = typeof rawValue === 'string' ? rawValue : '';
+      if (!value) continue;
+      const audience =
+        requester && accountId
+          ? { accountId, projectId: resolved.projectId, principals: [{ principal_type: 'user' as const, principal_id: requester.id }], grantedBy: requester.id }
+          : null;
+      // Audience first, under the id a NEW row will get (secret-audience.ts).
+      const pendingId = audience ? randomUUID() : undefined;
+      if (audience && pendingId) await setSecretAudience({ ...audience, secretId: pendingId, pending: true });
+      const secretId = await writeSharedProjectSecret({
+        projectId: resolved.projectId,
+        name,
+        value,
+        scope: payload.scope,
+        createdBy: payload.uid,
+        ...(pendingId ? { secretId: pendingId } : {}),
+      });
+      if (audience && pendingId && secretId !== pendingId) {
+        // The key already existed: drop the pending grants, narrow the row itself.
+        await clearSecretAudience({ accountId: audience.accountId, projectId: audience.projectId, secretId: pendingId });
+        await setSecretAudience({ ...audience, secretId });
+      }
+      saved.push(name);
+    }
+
+    if (saved.length === 0) {
+      return c.json({ error: 'No values provided for the requested keys' }, 400);
+    }
+
+    return saved;
+  });
+  if (result instanceof Response) return result;
+  const saved = result;
 
   // Live-propagate so an active session sees the new value without a restart.
   void propagateProjectSecretsToActiveSandboxes(resolved.projectId);

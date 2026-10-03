@@ -89,7 +89,7 @@ export function changeRequestWebUrl(projectId: string, item: ReviewItem): string
   if (item.sessionId && crId) {
     return `${KORTIX_WEB_URL}/projects/${projectId}/sessions/${item.sessionId}?cr=${crId}`;
   }
-  return `${KORTIX_WEB_URL}/projects/${projectId}/customize/review`;
+  return `${KORTIX_WEB_URL}/projects/${projectId}/review`;
 }
 
 /** A file row's name and folder. */

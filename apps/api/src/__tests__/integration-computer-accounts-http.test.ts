@@ -54,7 +54,11 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
-import { createConnectionsRouter } from '../tunnel/routes/connections';
+import {
+  createConnectionsRouter,
+  retireStaleUnidentifiedRegistrations,
+  retireSupersededRegistrations,
+} from '../tunnel/routes/connections';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { generateTunnelToken, hashSecretKey } from '../shared/crypto';
@@ -1134,6 +1138,25 @@ describe('one machine, one registration', () => {
     expect(carol).toEqual({ ownerUserId: CAROL, name: 'Carol MacBook' });
   });
 
+  test('the approval page names the machine the approver already registered, and only theirs', async () => {
+    const info = async (userId: string, code: string) => {
+      const response = await request('GET', `/v1/tunnel/device-auth/${code}/info`, tokens[userId]!);
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { registered: unknown }).registered;
+    };
+    const known = await startPairing({ machineHostname: 'carol-mac.local', machine_id: HARDWARE });
+    expect(await info(CAROL, known.deviceCode)).toEqual({
+      tunnelId: carolTunnel,
+      name: 'Carol MacBook',
+      capabilities: ['filesystem'],
+      isLive: false,
+    });
+    // Alice never paired this hardware; an agent without an id matches nothing.
+    expect(await info(ALICE, known.deviceCode)).toBeNull();
+    const anonymous = await startPairing({ machineHostname: 'carol-mac.local' });
+    expect(await info(CAROL, anonymous.deviceCode)).toBeNull();
+  });
+
   test('Share works like any account: the owner picks who, and the computer stays one account', async () => {
     const response = await request(
       'POST',
@@ -1178,6 +1201,76 @@ describe('one machine, one registration', () => {
     expect(active).toHaveLength(1);
     expect(active[0]).toMatchObject({ owner_type: 'member' });
     expect(active[0]!.connection_id).not.toBe(carolConnection);
+  });
+
+  test('one registration per machine: an offline older registration of the same hardware is removed with its accounts', async () => {
+    const SAME = 'e'.repeat(64);
+    // Two registrations made before machine ids, whose agents later reported the same hardware.
+    const older = await pairCarol({}, { name: 'Carol Old A' });
+    const newer = await pairCarol({}, { name: 'Carol Old B' });
+    await db
+      .update(tunnelConnections)
+      .set({ machineInfo: sql`${tunnelConnections.machineInfo} || ${JSON.stringify({ machineId: SAME })}::jsonb` })
+      .where(inArray(tunnelConnections.tunnelId, [older.tunnelId, newer.tunnelId]));
+
+    // Pairing the hardware again reuses the newest and retires the other.
+    const again = await pairCarol({ machine_id: SAME });
+    expect(again.tunnelId).toBe(newer.tunnelId);
+    const left = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.ownerUserId, CAROL), sql`${tunnelConnections.machineInfo}->>'machineId' = ${SAME}`));
+    expect(left.map((row) => row.tunnelId)).toEqual([newer.tunnelId]);
+    expect(await computerConnection(older.connectionId)).toMatchObject({ status: 'revoked' });
+  });
+
+  test('a live duplicate is never cut off: only offline ones are retired', async () => {
+    const SAME = 'f'.repeat(64);
+    const a = await pairCarol({ machine_id: SAME });
+    const b = await pairCarol({}, { name: 'Carol Second Agent' });
+    await db
+      .update(tunnelConnections)
+      .set({
+        status: 'online',
+        lastHeartbeatAt: new Date(),
+        ...relayOwnerPatch(),
+        machineInfo: sql`${tunnelConnections.machineInfo} || ${JSON.stringify({ machineId: SAME })}::jsonb`,
+      })
+      .where(eq(tunnelConnections.tunnelId, b.tunnelId));
+    // `a` is offline: `b` reporting the hardware retires it. `b` is live: `a` cannot retire it.
+    expect(await retireSupersededRegistrations(a.tunnelId, SAME)).toEqual([]);
+    expect(await retireSupersededRegistrations(b.tunnelId, SAME)).toEqual([a.tunnelId]);
+    // Another person's registration of the same hardware is never touched.
+    const bob = await startPairing({ machineHostname: 'carol-mac.local', machine_id: SAME });
+    const bobMachine = (await (await approve(BOB, bob.deviceCode, { capabilities: ['shell'] })).json()) as { tunnelId: string };
+    expect(await retireSupersededRegistrations(b.tunnelId, SAME)).toEqual([]);
+    const [bobRow] = await db.select({ tunnelId: tunnelConnections.tunnelId }).from(tunnelConnections).where(eq(tunnelConnections.tunnelId, bobMachine.tunnelId));
+    expect(bobRow?.tunnelId).toBe(bobMachine.tunnelId);
+  });
+
+  test('a registration without a hardware id that has been silent for 30 days is removed with its accounts', async () => {
+    const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60_000);
+    const silent = await pairCarol({}, { name: 'Carol Silent' });
+    const recent = await pairCarol({}, { name: 'Carol Recent' });
+    const identified = await pairCarol({ machine_id: '9'.repeat(64) }, { name: 'Carol Identified' });
+    const age = (tunnelId: string, heartbeatDays: number) =>
+      db
+        .update(tunnelConnections)
+        .set({ createdAt: daysAgo(90), updatedAt: daysAgo(heartbeatDays), lastHeartbeatAt: daysAgo(heartbeatDays) })
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+    await age(silent.tunnelId, 31);
+    await age(recent.tunnelId, 29);
+    await age(identified.tunnelId, 60);
+
+    expect(await retireStaleUnidentifiedRegistrations()).toEqual([silent.tunnelId]);
+    const left = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(inArray(tunnelConnections.tunnelId, [silent.tunnelId, recent.tunnelId, identified.tunnelId]));
+    expect(left.map((row) => row.tunnelId).sort()).toEqual([recent.tunnelId, identified.tunnelId].sort());
+    expect(await computerConnection(silent.connectionId)).toMatchObject({ status: 'revoked' });
+    // A second run finds nothing more.
+    expect(await retireStaleUnidentifiedRegistrations()).toEqual([]);
   });
 
   test('only the owner, as a human, may share a computer', async () => {

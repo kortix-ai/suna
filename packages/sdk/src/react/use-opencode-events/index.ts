@@ -16,6 +16,7 @@ import {
 import { useServerStore } from '../../browser/stores/server-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { logger } from '../../core/http/logger';
+import { onHostSignal } from '../../core/session/host-signals';
 import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { openEventStream } from '../../core/stream/event-stream';
 import { useKortixRouteProjectId } from '../route-project';
@@ -25,8 +26,11 @@ import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { resolveClientEvictionUrl } from './helpers';
 import { hydrateCore } from './hydrate-core';
+import { emitRuntimeStreamSignal, shouldReconnectOnHostSignal } from './runtime-stream-signals';
 import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
+
+export { subscribeRuntimeStream, type RuntimeStreamSignal } from './runtime-stream-signals';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -75,6 +79,17 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
     [],
   );
   useEffect(() => revival.stop, [revival]);
+  // A host without DOM events (React Native) reports foreground, online and a
+  // manual retry. A fresh generation reconnects and re-reads the transcripts.
+  useEffect(
+    () =>
+      onHostSignal((signal) => {
+        const lastEvidenceAt = useSandboxConnectionStore.getState().lastRuntimeEvidenceAt;
+        if (!shouldReconnectOnHostSignal(signal, lastEvidenceAt, Date.now())) return;
+        setStreamGeneration((generation) => generation + 1);
+      }),
+    [],
+  );
 
   const {
     normalizeDiagnosticPaths,
@@ -210,6 +225,7 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
           consecutiveFailures: info.consecutiveFailures,
         });
         revival.park();
+        emitRuntimeStreamSignal({ type: 'parked' });
       },
       onEvent: (event) => {
         // Every delivered frame is live proof the runtime is reachable — it
@@ -218,13 +234,16 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
         noteRuntimeEvidence();
         noteSessionSyncEvent(event);
         handleEvent(event);
+        emitRuntimeStreamSignal({ type: 'event', event });
       },
+      onConnectionChange: (state) => emitRuntimeStreamSignal({ type: state }),
       onGapRehydrate: () => hydrate({ rehydrateMessages: true }),
     });
 
     return () => {
       revival.stop();
       handle.close();
+      emitRuntimeStreamSignal({ type: 'closed' });
     };
     // NOTE: urlVersion is intentionally excluded from deps. We only reconnect
     // when the resolved activeServerUrl actually changes, which avoids

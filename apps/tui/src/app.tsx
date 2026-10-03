@@ -538,7 +538,7 @@ export function App({
         />
       ) : null}
 
-      {overlay === 'help' ? <HelpOverlay onClose={() => setOverlay(null)} /> : null}
+      {overlay === 'help' ? <HelpOverlay onClose={() => setOverlay(null)} capabilities={capabilities} /> : null}
 
       {overlay === 'switcher' ? (
         <Switcher

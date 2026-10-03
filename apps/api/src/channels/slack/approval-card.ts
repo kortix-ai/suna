@@ -62,16 +62,37 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function renderValue(value: unknown): string {
-  if (value === '[redacted]') return '_hidden credential_';
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return escapeMrkdwn(clip(text ?? '', VALUE_MAX)).replace(/\n/g, ' ');
+const SLACK_CHANNEL_ID = /^C[A-Z0-9]{8,}$/;
+const SLACK_USER_ID = /^[UW][A-Z0-9]{8,}$/;
+
+/** The parameter values that are exactly a Slack user id: the card names them. */
+export function slackUserIdsIn(argsPreview: Record<string, unknown> | null): string[] {
+  return Object.values(argsPreview ?? {}).filter((v): v is string => typeof v === 'string' && SLACK_USER_ID.test(v));
 }
 
-function parameterLines(argsPreview: Record<string, unknown> | null): string {
+/**
+ * A Slack id keeps its exact value and gains a name. A `<#C…>` link renders
+ * as the channel for each viewer by their own access: a private channel stays
+ * hidden from a non-member. A user gets the looked-up name as text, because a
+ * `<@U…>` mention in the posted card would notify them.
+ */
+function renderValue(value: unknown, names?: ReadonlyMap<string, string>): string {
+  if (value === '[redacted]') return '_hidden credential_';
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  const shown = escapeMrkdwn(clip(text ?? '', VALUE_MAX)).replace(/\n/g, ' ');
+  if (typeof value !== 'string') return shown;
+  if (SLACK_CHANNEL_ID.test(value)) return `${shown} (<#${value}>)`;
+  const name = SLACK_USER_ID.test(value) ? names?.get(value) : undefined;
+  return name ? `${shown} (${escapeMrkdwn(name)})` : shown;
+}
+
+function parameterLines(argsPreview: Record<string, unknown> | null, names?: ReadonlyMap<string, string>): string {
   const entries = Object.entries(argsPreview ?? {});
   if (entries.length === 0) return '_No parameters recorded._';
-  return clip(entries.map(([key, value]) => `\`${escapeMrkdwn(key)}\`  ${renderValue(value)}`).join('\n'), SECTION_MAX);
+  return clip(
+    entries.map(([key, value]) => `\`${escapeMrkdwn(key)}\`  ${renderValue(value, names)}`).join('\n'),
+    SECTION_MAX,
+  );
 }
 
 function quote(text: string): string {
@@ -81,8 +102,11 @@ function quote(text: string): string {
     .join('\n');
 }
 
-/** The card as posted: header, the agent's description, parameters, buttons. */
-export function buildApprovalCardBlocks(card: ApprovalCardInput): unknown[] {
+/**
+ * The card as posted: header, the agent's description, parameters, buttons.
+ * `names` holds display names for the Slack user ids among the parameters.
+ */
+export function buildApprovalCardBlocks(card: ApprovalCardInput, names?: ReadonlyMap<string, string>): unknown[] {
   const risk = card.risk ? ` · _${escapeMrkdwn(card.risk)}_` : '';
   const blocks: unknown[] = [
     {
@@ -104,7 +128,7 @@ export function buildApprovalCardBlocks(card: ApprovalCardInput): unknown[] {
   }
   blocks.push({
     type: 'section',
-    text: { type: 'mrkdwn', text: `*Parameters the connector will receive*\n${parameterLines(card.argsPreview)}` },
+    text: { type: 'mrkdwn', text: `*Parameters the connector will receive*\n${parameterLines(card.argsPreview, names)}` },
   });
   const buttons: unknown[] = [];
   if (card.approvable) {
