@@ -2131,6 +2131,19 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // Runtime-wake candidates (20261003182500002, KRTX-1304): only ~600 of
+    // 65k prod rows carry either key, but the wake reconciliation scanned the
+    // whole table per pass (mean 1.5-3.9 s). The predicate mirrors the OR
+    // block of `reconcileRuntimeWakeFences` verbatim minus the parameterized
+    // pieces (`status = $1`, the `<= $now` lease comparisons) so the planner
+    // can prove the implication under generic plans; paired expression
+    // statistics (20261003182500001) make it choose the index. If the query's
+    // OR block changes shape, update both.
+    index('idx_session_sandboxes_wake_fence')
+      .on(table.externalId)
+      .where(
+        sql`${table.externalId} is not null and (${table.metadata}->>'runtimeWakeId' is not null or ${table.metadata}->>'runtimeWakeCleanupUntilAt' ~ '^\\d{4}-\\d{2}-\\d{2}T')`,
+      ),
   ],
 );
 
