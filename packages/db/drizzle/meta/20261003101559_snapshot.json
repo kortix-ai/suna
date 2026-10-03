@@ -1,5 +1,5 @@
 {
-  "id": "eeaa24c7-4078-4062-8aa7-431fca13075f",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -5498,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",
@@ -15340,7 +15340,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "project_user_provider_connections_connection": {
+          "name": "project_user_provider_connections_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "project_user_provider_connections_project_id_projects_project_id_fk": {
           "name": "project_user_provider_connections_project_id_projects_project_id_fk",

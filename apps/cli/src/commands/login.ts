@@ -5,6 +5,7 @@ import {
   authFileLocation,
   loadAuthForHost,
   saveAuthForHost,
+  sameApiBase,
 } from '../api/auth.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
@@ -21,7 +22,7 @@ import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
-import { webDashboardUrl } from '../web-url.ts';
+import { deriveFrontendFromApiBase } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
 
 const HELP = help`Usage: kortix login [options]
@@ -124,7 +125,8 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     return 0;
   }
 
-  const token = opts.token ?? (await browserLogin(apiBase, existing?.dashboard_url));
+  const dashboardUrl = existing && sameApiBase(apiBase, existing.url) ? existing.dashboard_url : undefined;
+  const token = opts.token ?? (await browserLogin(apiBase, dashboardUrl));
   if (!token) return 1;
 
   if (!token.startsWith('kortix_pat_')) {
@@ -270,7 +272,8 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
     return null;
   }
 
-  const dashUrl = webDashboardUrl(apiBase, dashboardUrl);
+  // Login targets the selected host, not the deployment running this shell.
+  const dashUrl = dashboardUrl?.trim().replace(/\/+$/, '') || deriveFrontendFromApiBase(apiBase);
   const deviceLabel = encodeURIComponent(safeHostname());
   const url =
     `${dashUrl}/cli/authorize` +

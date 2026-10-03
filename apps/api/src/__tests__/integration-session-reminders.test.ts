@@ -53,10 +53,17 @@ async function seedSession(metadata: Record<string, unknown> = {}): Promise<stri
   return sessionId;
 }
 
-async function seedReminder(sessionId: string, body: Record<string, unknown>, now: Date) {
+async function seedReminder(sessionId: string, body: Record<string, unknown>, now: Date, promptAuthorUserId?: string) {
   const draft = parseReminderDraft(body, now);
   if ('error' in draft) throw new Error(draft.error);
-  const spec = reminderSpec({ id: `reminder.${crypto.randomUUID().slice(0, 12).replace('-', '')}`, sessionId, agent: 'kortix', draft, now });
+  const spec = reminderSpec({
+    id: `reminder.${crypto.randomUUID().slice(0, 12).replace('-', '')}`,
+    sessionId,
+    agent: 'kortix',
+    draft,
+    now,
+    promptAuthorUserId,
+  });
   const row = await insertSessionReminder({ projectId: PROJECT, spec, createdBy: OWNER, firstFireAt: draft.firstFireAt, now });
   return { spec, row };
 }
@@ -163,6 +170,22 @@ describe('session reminders on the trigger tables', () => {
     expect(JSON.stringify(command?.payload)).toContain(`[REMINDER ${spec.slug}`);
     expect(JSON.stringify(command?.payload)).toContain('Did the email arrive?');
     expect(JSON.stringify(command?.payload)).not.toContain('ignored for reminders');
+    // Set by the session's agent: the fire leaves the token's identity as is.
+    expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBeUndefined();
+  });
+
+  test("a person's reminder fires as that person's deferred prompt: queued as them, bound at delivery", async () => {
+    const now = new Date();
+    const sessionId = await seedSession();
+    const author = crypto.randomUUID();
+    const { spec } = await seedReminder(sessionId, { prompt: 'Ping me', in: '1h' }, now, author);
+
+    const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    expect(result).toMatchObject({ status: 'queued', sessionId });
+    const [command] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
+    expect(command?.actorUserId).toBe(author);
+    expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBe(true);
   });
 
   test('a fire into a deleted session queues nothing and pauses the reminder', async () => {
