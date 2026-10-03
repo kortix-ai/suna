@@ -154,12 +154,15 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  // One sanctioned skip per lane: db-suites without Docker, packages on a
+  // Kortix sandbox image (its own test pins both — evaluate the shape, never a
+  // pass, and --strict refuses both on a main push).
+  const sanctioned = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
+  const ok = (l) => lanes[l] === 'pass' || (sanctioned[l] && lanes[l] === sanctioned[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  if (lanes['db-suites'] === 'skipped-no-db') {
-    return { code: strict ? 3 : 0, reason: 'green, db-suites skipped-no-db' };
-  }
+  const skips = [...required].filter((l) => lanes[l] !== 'pass');
+  if (skips.length) return { code: strict ? 3 : 0, reason: `green, sanctioned skips: ${skips.join(',')}` };
   return { code: 0, reason: 'green' };
 }
 
