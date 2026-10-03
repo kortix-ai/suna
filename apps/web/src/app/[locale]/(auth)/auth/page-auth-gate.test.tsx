@@ -83,7 +83,7 @@ test('the sign-in submit waits for the auth bootstrap to settle', async () => {
     await submitEntry(root);
     expect(sendEmailCalls).toBe(0);
   } finally {
-    if (root) await act(async () => root.unmount());
+    if (root) await act(async () => root?.unmount());
   }
 
   // Bootstrap settled (here: no session to validate, so it answers at once).
@@ -98,7 +98,7 @@ test('the sign-in submit waits for the auth bootstrap to settle', async () => {
     await submitEntry(root);
     expect(sendEmailCalls).toBe(1);
   } finally {
-    if (root) await act(async () => root.unmount());
+    if (root) await act(async () => root?.unmount());
   }
 });
 
@@ -115,7 +115,7 @@ test('the submit button is disabled while the bootstrap runs, enabled after', as
     const submit = root.root.findByProps({ type: 'submit' });
     expect(submit.props.disabled).toBe(true);
   } finally {
-    if (root) await act(async () => root.unmount());
+    if (root) await act(async () => root?.unmount());
   }
 
   authState = { user: null, session: null, isLoading: false, supabase: {} };
@@ -129,6 +129,6 @@ test('the submit button is disabled while the bootstrap runs, enabled after', as
     const submit = root.root.findByProps({ type: 'submit' });
     expect(submit.props.disabled).toBe(false);
   } finally {
-    if (root) await act(async () => root.unmount());
+    if (root) await act(async () => root?.unmount());
   }
 });

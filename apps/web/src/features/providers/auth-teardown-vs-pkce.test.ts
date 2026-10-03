@@ -35,25 +35,25 @@ function base64Url(value: string): string {
 
 function makeHarness() {
   const jar = new Map<string, JarCookie>();
-  let userVerdict: number = 403;
   let userDelayMs = 0;
   let challenge: string | null = null;
 
-  async function fakeGotrue(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-    const url = new URL(String(input));
-    if (url.pathname.endsWith('/user')) {
-      if (userDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, userDelayMs));
-      return Response.json(
-        { code: 403, error_code: 'session_not_found', msg: 'Session not found' },
-        { status: userVerdict },
-      );
-    }
-    if (url.pathname.endsWith('/otp')) {
-      challenge = JSON.parse(String(init?.body)).code_challenge as string;
-      return Response.json({}, { status: 200 });
-    }
-    if (url.pathname.endsWith('/token')) {
-      const body = JSON.parse(String(init?.body));
+  const fakeGotrue: typeof fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/user')) {
+        if (userDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, userDelayMs));
+        return Response.json(
+          { code: 403, error_code: 'session_not_found', msg: 'Session not found' },
+          { status: 403 },
+        );
+      }
+      if (url.pathname.endsWith('/otp')) {
+        challenge = JSON.parse(String(init?.body)).code_challenge;
+        return Response.json({}, { status: 200 });
+      }
+      if (url.pathname.endsWith('/token')) {
+        const body = JSON.parse(String(init?.body));
       const hashed = await crypto.subtle.digest(
         'SHA-256',
         new TextEncoder().encode(String(body.code_verifier)),
@@ -88,14 +88,16 @@ function makeHarness() {
       );
     }
     return Response.json({ msg: 'not found' }, { status: 404 });
-  }
+    },
+    { preconnect: () => {} },
+  );
 
   const makeClient = () =>
     createServerClient(GOTRUE_URL, 'anon-key', {
       cookieOptions: { name: STORAGE_KEY, path: '/', sameSite: 'lax' },
       cookies: {
         getAll: () => [...jar.values()],
-        setAll: (list: Array<{ name: string; value: string; options?: Record<string, unknown> }>) => {
+        setAll: (list) => {
           for (const cookie of list) {
             if (cookie.value) jar.set(cookie.name, cookie);
             else jar.delete(cookie.name);
@@ -136,7 +138,7 @@ function makeHarness() {
 
 describe('a dead-session teardown versus a pending magic-link flow', () => {
   test('teardown resolving after the sign-in request deletes the fresh verifier — the link then fails as expired', async () => {
-    const { jar, makeClient, seedDeletedSession, verifierCookieNames, settleStorage, setUserDelay } =
+    const { makeClient, seedDeletedSession, verifierCookieNames, settleStorage, setUserDelay } =
       makeHarness();
     seedDeletedSession();
     const client = makeClient();
@@ -169,8 +171,7 @@ describe('a dead-session teardown versus a pending magic-link flow', () => {
     const { data, error } = await client.auth.exchangeCodeForSession('auth-code');
     expect(data.session).toBeNull();
     expect(error).not.toBeNull();
-    expect((error as { status?: number }).status).toBe(400);
-    expect(jar.size >= 0).toBe(true);
+    expect(error?.status).toBe(400);
   });
 
   test('the bootstrap settles first — the fresh link exchanges and creates a session', async () => {
