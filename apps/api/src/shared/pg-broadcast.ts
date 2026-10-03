@@ -49,7 +49,7 @@ export const TUNNEL_FORWARD_CHANNEL = 'kortix_tunnel_rpc_forward';
 
 /**
  * A third channel: "this lifecycle command left `running`". A database trigger
- * (migration 20261002234612570) sends it for every writer, so the payload is
+ * (migration 20261003101600100) sends it for every writer, so the payload is
  * one command id. Waiters in this process wake on it; see
  * `waitForLifecycleCommandSettle`.
  */

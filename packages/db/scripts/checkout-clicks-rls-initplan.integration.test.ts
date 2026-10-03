@@ -130,8 +130,9 @@ describe.skipIf(!databaseUrl)('checkout_clicks RLS initplan migration — real P
     await legacyFixture();
 
     const [policy] = await policies();
-    expect(policy?.qual).toContain('auth.uid()');
-    expect(policy?.qual).not.toMatch(/select\s+auth\.uid/i);
+    // pg_policies omits `auth.` when the session search_path includes auth.
+    expect(policy?.qual).toMatch(/\buid\(\)/);
+    expect(policy?.qual).not.toMatch(/select\s+(auth\.)?uid/i);
     expect(await probePlan(OWN_USER)).not.toContain('InitPlan');
   });
 
@@ -144,8 +145,8 @@ describe.skipIf(!databaseUrl)('checkout_clicks RLS initplan migration — real P
     expect(policy?.cmd).toBe('ALL');
     expect(policy?.permissive).toBe('PERMISSIVE');
     expect(policy?.roles).toBe('{public}');
-    expect(String(policy?.qual)).toMatch(/select\s+auth\.uid\(\)/i);
-    expect(String(policy?.with_check)).toMatch(/select\s+auth\.uid\(\)/i);
+    expect(String(policy?.qual)).toMatch(/select\s+(auth\.)?uid\(\)/i);
+    expect(String(policy?.with_check)).toMatch(/select\s+(auth\.)?uid\(\)/i);
 
     const plan = await probePlan(OWN_USER);
     expect(plan).toContain('InitPlan');
