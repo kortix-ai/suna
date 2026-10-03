@@ -157,6 +157,12 @@ export async function startApp(
     if (m) baseUrl = m[1];
   }
 
+  // Dial the loopback IP, not the `localhost` name: the name needs a readable
+  // /etc/hosts, which a factory worker sandbox does not ship (the same
+  // condition tests/unit/vitest.config.ts pins a literal IP for). Next binds
+  // 0.0.0.0, so 127.0.0.1 reaches the same server every environment.
+  baseUrl = baseUrl!.replace('://localhost:', '://127.0.0.1:');
+
   // The URL line can print a beat before the listener actually accepts
   // connections — poll until a real HTTP round-trip succeeds.
   const readyDeadline = Date.now() + timeoutMs;
