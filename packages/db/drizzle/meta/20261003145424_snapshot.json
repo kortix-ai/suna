@@ -1,5 +1,5 @@
 {
-  "id": "044f4caa-8f7c-4b5a-8b4b-910a541324d6",
+  "id": "fa283177-4bf6-4777-aa5c-a4c6a91339a5",
   "prevId": "cd2a1664-63fe-43ce-bd84-580f61a86e6a",
   "version": "7",
   "dialect": "postgresql",
@@ -11073,21 +11073,6 @@
           "columns": [
             {
               "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_oauth_auth_requests_client": {
-          "name": "idx_oauth_auth_requests_client",
-          "columns": [
-            {
-              "expression": "client_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

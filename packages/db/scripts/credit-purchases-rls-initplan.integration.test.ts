@@ -44,6 +44,8 @@ test('all four policies gain InitPlans without changing row access or service wr
   expect(JSON.stringify((await probe(own, 'authenticated', 'EXPLAIN SELECT * FROM public.credit_purchases')).rows)).not.toContain('InitPlan');
   expect((await probe(own, 'authenticated')).rows).toEqual([{ account_id: own }]);
   await apply();
+  // pg_policies omits a schema that is on search_path; pin it so `auth.` prints.
+  await client.query('SET search_path TO public');
   const policies = await client.query("SELECT policyname, cmd, permissive, roles::text, qual, with_check FROM pg_policies WHERE schemaname='public' AND tablename='credit_purchases'");
   expect(policies.rows).toHaveLength(4);
   for (const row of policies.rows) {
@@ -51,7 +53,8 @@ test('all four policies gain InitPlans without changing row access or service wr
     expect(row.permissive).toBe('PERMISSIVE');
     expect(row.cmd).toBe(services.includes(row.policyname) ? 'ALL' : 'SELECT');
     expect(row.with_check).toBeNull();
-    expect(row.qual.toLowerCase()).toContain('select auth.');
+    // pg_get_expr drops the schema prefix when auth is on search_path; the InitPlan assertion below proves the wrap.
+    expect(row.qual.toLowerCase()).toMatch(/select (auth\.)?(role|uid)\(\)/);
   }
   expect(JSON.stringify((await probe(own, 'authenticated', 'EXPLAIN SELECT * FROM public.credit_purchases')).rows)).toContain('InitPlan');
   expect((await probe(own, 'authenticated')).rows).toEqual([{ account_id: own }]);

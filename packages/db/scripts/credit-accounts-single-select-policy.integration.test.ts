@@ -7,7 +7,7 @@ const suite = url ? test : test.skip;
 const client = new pg.Client({ connectionString: url });
 const migrationPath = resolve(
   import.meta.dir,
-  "../migrations/20261003052133098_credit_accounts_single_select_policy.sql",
+  "../migrations/20261003145424807_credit_accounts_single_select_policy.sql",
 );
 const owner = "00000000-0000-4000-a000-000000000001";
 const other = "00000000-0000-4000-a000-000000000002";
