@@ -974,7 +974,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pi_worker',
     'pooled_provider_secrets',
     'pi_harness',
-    'agent_principal',
     'us_region',
     'warm_sessions',
     'capture',
@@ -1005,6 +1004,12 @@ test('agent_tunnel graduated: computers need no flag, the key still typechecks',
   // A paired computer is an account of the `computer` connector, gated only by
   // the platform's TUNNEL_ENABLED. The API no longer serves `agent_tunnel`.
   const graduated: FeatureFlagKey = 'agent_tunnel';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('agent_principal graduated: every governed agent authorizes as itself, the key still typechecks', () => {
+  // There is one authorization path. The API no longer serves `agent_principal`.
+  const graduated: FeatureFlagKey = 'agent_principal';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 

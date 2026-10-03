@@ -147,7 +147,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       pooled_provider_secrets: false,
       pi_harness: false,
       config_releases: true,
-      agent_principal: false,
       us_region: false,
       capture: false,
     },
@@ -727,7 +726,6 @@ describe('envelopes', () => {
       'pooled_provider_secrets',
       'pi_harness',
       'config_releases',
-      'agent_principal',
       'us_region',
       'capture',
     ]);

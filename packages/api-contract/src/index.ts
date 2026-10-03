@@ -64,7 +64,6 @@ export const FeatureFlagMapSchema = z.object({
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
-  agent_principal: z.boolean(),
   us_region: z.boolean(),
   capture: z.boolean(),
 });

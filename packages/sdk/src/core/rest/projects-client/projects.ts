@@ -61,6 +61,7 @@ export type FeatureFlagKey =
   | 'pooled_provider_secrets'
   | 'pi_harness'
   | 'config_releases'
+  /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
   | 'agent_principal'
   | 'us_region'
   | 'capture'
@@ -87,7 +88,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',
-  'agent_principal',
   'us_region',
   'capture',
 ] as const;

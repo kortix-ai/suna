@@ -1159,10 +1159,6 @@
           "name": "Harness Pi (en el sandbox)",
           "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
         },
-        "agent_principal": {
-          "name": "Agentes como principales",
-          "description": "Los agentes actúan como sí mismos: con sus permisos de Kortix, limitados por su rol. Quien ejecuta un agente solo aporta sus propias cuentas."
-        },
         "config_releases": {
           "name": "Versiones de configuración",
           "description": "Ejecuta las sesiones con la configuración de agente actual de la rama base, servida en solo lectura, para que un agente, skill o herramienta fusionado llegue a cada sesión en curso. Desactivado, cada sesión lee su propia carpeta de configuración del workspace."
@@ -19200,6 +19196,8 @@
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
       "text39207bf34111": "Habilidades relacionadas",
       "text73112526c03a": "El turno del agente falló. No se informó ningún motivo.",
+      "text85b7a59cdbd5": "Agente de la plataforma",
+      "textd9c0c74b514b": "Meta es un agente de la plataforma que coordina tu trabajo. Su configuración es fija: puedes iniciar una sesión con él, pero no se puede configurar aquí.",
       "texta6d6b4ec7eac": "Inició el inicio de sesión de un dispositivo de Capture",
       "text0eab78d793bb": "Consultó el inicio de sesión de un dispositivo de Capture",
       "texte52ffa7bb9da": "Emitió credenciales de almacenamiento de Capture",
@@ -20244,9 +20242,7 @@
     "openWithoutGrant": "No requiere concesión",
     "grantNote": "El agente también necesita project.app.read en sus permisos de Kortix.",
     "emptyTitle": "Aún no hay Apps",
-    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija.",
-    "flagOffHint": "Agente como principal está desactivado en este proyecto, así que la concesión se guarda pero todavía no controla ninguna App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Las Apps desplegadas en este proyecto aparecen aquí para que el agente las elija."
   },
   "connectorsAppReturn": {
     "done": "Listo. Volver a la app de Kortix"

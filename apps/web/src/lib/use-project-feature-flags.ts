@@ -41,7 +41,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const configReleases = useFeatureFlag(projectId, 'config_releases');
-  const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const capture = useFeatureFlag(projectId, 'capture');
 
@@ -61,7 +60,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       pi_harness: piHarness.enabled,
       config_releases: configReleases.enabled,
-      agent_principal: agentPrincipal.enabled,
       us_region: usRegion.enabled,
       capture: capture.enabled,
     },

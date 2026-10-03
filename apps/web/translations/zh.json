@@ -1159,10 +1159,6 @@
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
         },
-        "agent_principal": {
-          "name": "代理作为主体",
-          "description": "代理以自身身份执行操作：使用其 Kortix 权限，并受其角色上限约束。运行代理的人只会提供自己的账户。"
-        },
         "config_releases": {
           "name": "配置发布",
           "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"
@@ -19200,6 +19196,8 @@
       "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。",
       "text39207bf34111": "相关技能",
       "text73112526c03a": "智能体这一轮运行失败，未报告原因。",
+      "text85b7a59cdbd5": "平台智能体",
+      "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。",
       "texta6d6b4ec7eac": "开始了 Capture 设备登录",
       "text0eab78d793bb": "轮询了 Capture 设备登录",
       "texte52ffa7bb9da": "签发了 Capture 存储凭据",
@@ -20244,9 +20242,7 @@
     "openWithoutGrant": "无需授权",
     "grantNote": "智能体的 Kortix 权限还需要包含 project.app.read。",
     "emptyTitle": "尚无应用",
-    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。",
-    "flagOffHint": "本项目未开启智能体主体，因此该授权会被保存，但尚未对任何应用生效。",
-    "featureFlags": "功能开关"
+    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。"
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"
