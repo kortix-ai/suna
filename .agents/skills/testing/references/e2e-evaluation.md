@@ -245,6 +245,16 @@ During the browser lane, the frontend received `SIGKILL`. The root process later
 The cause of the process kills is unknown. This is an incomplete full gate, not a completed browser result.
 Only orphan API and gateway processes proven to belong to this worktree were stopped afterward.
 
+A second full attempt started on `99e35ca1cd` and also exited 137 during the browser stage.
+Before termination, REST/CLI passed 499 of 513 flows, database suites passed 175 of 186 files, and runner units passed 728 of 743 tests.
+The SDK and worktree lanes also failed; route coverage passed.
+Nine of 83 selected browser tests completed successfully. The browser and package stages remain incomplete.
+macOS power logs confirmed repeated deep-idle sleep and wake events during this run.
+Several failures exceeded wall-clock deadlines; other assertion failures remain unclassified.
+A keep-awake process attached after the core failures does not change their results.
+The cause of exit 137 remains unknown. Both owned app listeners were absent after termination.
+These runs provide no passing broad gate and no valid performance comparison.
+
 The user confirmed ChatGPT sign-in. `e2e models openai` lists `gpt-6-luna`.
 The first subscription-backed journey passed every UI, request, transcript, and reload assertion, then failed repository cleanup after an upstream timeout.
 Its agent step took 15.69 seconds, four model calls, and approximately 19,300 tokens.
