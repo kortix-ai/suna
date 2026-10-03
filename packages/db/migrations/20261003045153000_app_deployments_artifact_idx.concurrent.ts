@@ -13,7 +13,8 @@
 // lock_timeout is 180s, not the 2-5s house value: CREATE INDEX CONCURRENTLY
 // waits for every transaction that began before it, and lock_timeout governs
 // that wait (learnings: 2026-08-19). The one lock it holds
-// (ShareUpdateExclusive) blocks no user. IF NOT EXISTS keeps a re-run safe; an
+// (ShareUpdateExclusive) permits normal reads and writes, but conflicts with
+// some DDL. IF NOT EXISTS skips an existing index name; an
 // INVALID leftover from a failed build must be dropped by hand first (see
 // packages/db/MIGRATIONS.md).
 
