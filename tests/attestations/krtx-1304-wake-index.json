@@ -1,0 +1,20 @@
+{
+  "source_hash": "f66839f6a53be0388e06eca3b6f868878f94f011f854a8861f7363e13e0c62ec",
+  "diff_files": [
+    "apps/api/src/projects/session-lifecycle/runtime-wake-maintenance.ts",
+    "packages/db/drizzle/meta/20261003212059_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003204822592_session_sandboxes_wake_fence_index.concurrent.ts",
+    "packages/db/scripts/session-sandboxes-wake-fence-index.integration.test.ts",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "6de5331d7795a401116ba595227f853cf7ac5f39179660b5455ecba9bfabf3de",
+  "head": "3327668a62700f471cfffcc0f372ce7674be628e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:10:02.148Z"
+}
