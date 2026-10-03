@@ -31,7 +31,7 @@ export async function runWhoami(argv: string[]): Promise<number> {
   return performWhoami(flags);
 }
 
-export interface PerformWhoamiOptions {
+interface PerformWhoamiOptions {
   /** Probe a specific host (default: active). */
   host?: string;
   /** Machine-readable JSON output. */

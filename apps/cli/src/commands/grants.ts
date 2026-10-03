@@ -1,10 +1,12 @@
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { UUID_RE } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
@@ -48,8 +50,6 @@ interface AccessMember {
   email: string | null;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const HELP = help`Usage: kortix grants <subcommand> [options]
 
 Assign project resources to people — the inheritance PYRAMID. Secrets and
@@ -80,11 +80,6 @@ Examples:
   kortix grants assign support-bot --to 8f3c… --group
   kortix grants revoke 2f1a…
 `;
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}
 
 /** Resolve a member's user-id from an email via the project access list. */
 async function resolveMemberId(

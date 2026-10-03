@@ -26,7 +26,7 @@ import {
   takeFlagValue,
   fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 
 /** One entry of GET /projects/:id/model-picker `models` (GatewayCatalogModel). */
 interface PickerModel {
@@ -325,6 +325,3 @@ function row(label: string, value: string | null): void {
   );
 }
 
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}

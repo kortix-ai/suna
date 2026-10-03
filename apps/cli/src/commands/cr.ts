@@ -1,4 +1,5 @@
 import { splitHelp } from '../command-argv.ts';
+import { UUID_RE } from '../iam.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -126,14 +127,9 @@ export async function runCr(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function looksLikeUuid(s: string): boolean {
-  return UUID_RE.test(s);
-}
 
 function displayBranch(name: string): string {
-  return looksLikeUuid(name) ? `${name.slice(0, 8)}…` : name;
+  return UUID_RE.test(name) ? `${name.slice(0, 8)}…` : name;
 }
 
 function statusBadge(s: ChangeRequestStatus): string {
@@ -167,7 +163,7 @@ async function resolveCr(
     process.stderr.write(`${status.err('Pass a CR number or uuid.')}\n`);
     return null;
   }
-  if (looksLikeUuid(ref)) {
+  if (UUID_RE.test(ref)) {
     try {
       const resp = await ctx.client.get<ChangeRequestDetailResponse>(
         `/projects/${ctx.projectId}/change-requests/${ref}`,

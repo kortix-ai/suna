@@ -11,7 +11,7 @@ import {
   missing,
   fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 
 // ── Response shapes (mirror apps/api/src/projects git endpoints) ────────────
 
@@ -359,9 +359,6 @@ function printCommitList(commits: CommitSummary[], hasMore: boolean): void {
   );
 }
 
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;

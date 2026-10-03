@@ -14,7 +14,7 @@ import {
   removeArrayBlock,
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 import { runSandboxBuildLocal } from './sandboxes-local.ts';
 
 // ── Shapes (mirror apps/api/src/projects sandbox-template + snapshot routes) ─
@@ -426,9 +426,6 @@ function stateCell(state: string, ready: boolean): string {
   return `${color}${pad(state, 11)}${C.reset}`;
 }
 
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
 
 // ── Sandbox provider pin ────────────────────────────────────────────────────
 

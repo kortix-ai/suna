@@ -241,6 +241,17 @@ describe('resolveModelDefault', () => {
       ),
     ).toBeUndefined();
   });
+
+  test('a null platform default resolves to nothing, not a crash', () => {
+    // The API answers `platformDefault: null` when the gateway has no platform
+    // fallback configured; the wire type says `string | null` to match it.
+    expect(
+      resolveModelDefault(
+        { ...data, projectDefault: null, platformDefault: null } as ModelDefaultsResponse,
+        undefined,
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe('resolveComposerModel', () => {

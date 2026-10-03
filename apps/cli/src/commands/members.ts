@@ -225,7 +225,7 @@ async function membersLs(
 // ── members invite ─────────────────────────────────────────────────────────
 
 /** `--project <id>:<role>` → the `project_grants` entry the API expects. */
-export function parseProjectGrant(
+function parseProjectGrant(
   raw: string,
 ): { project_id: string; role: string } | { error: string } {
   const idx = raw.lastIndexOf(':');

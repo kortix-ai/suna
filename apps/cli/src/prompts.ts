@@ -64,6 +64,56 @@ export async function promptSecret(label: string): Promise<string> {
 }
 
 /**
+ * Read a secret with input echo suppressed on a TTY. Falls back to a normal
+ * echoed read when stdin is not a TTY (piped input can't be muted) — callers
+ * that must refuse piped secrets should check `process.stdin.isTTY` first.
+ * Unlike `promptSecret` the label is used verbatim: callers already end it
+ * in ": ". Returns the raw value, not trimmed.
+ */
+export async function readSecret(label: string): Promise<string> {
+  if (process.stdin.isTTY !== true) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      return await new Promise<string>((resolve) => rl.question(label, (answer) => resolve(answer)));
+    } finally {
+      rl.close();
+    }
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  let muted = false;
+  // Same mute strategy as `promptSecret`: let the question through, then
+  // mute every keystroke echo until the answer arrives.
+  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = function (
+    this: { output: NodeJS.WritableStream },
+    str: string,
+  ) {
+    if (!muted) this.output.write(str);
+  };
+  try {
+    const value = await new Promise<string>((resolve) => {
+      rl.question(label, (answer) => resolve(answer));
+      muted = true; // question() writes the prompt synchronously above
+    });
+    process.stdout.write('\n'); // the muted Enter never printed a newline
+    return value;
+  } finally {
+    rl.close();
+  }
+}
+
+/** Read a plain (non-secret) value with normal echoed input — e.g. a region,
+ *  which isn't sensitive and is easier to verify visibly. */
+export async function readVisible(label: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(label, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
  * Yes/no confirmation. Returns the boolean answer; treats blank input
  * as `defaultValue`. Accepts y/yes/n/no (case-insensitive).
  *

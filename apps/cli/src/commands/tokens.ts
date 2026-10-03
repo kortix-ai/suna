@@ -7,6 +7,7 @@ import {
   takeFlagBool,
   takeFlagValue,
   fail,
+  resolveSpanInstant,
 } from '../command-helpers.ts';
 import { iamBase } from '../iam.ts';
 import { confirm } from '../prompts.ts';
@@ -32,14 +33,6 @@ import { C, help, pad, status, visibleWidth } from '../style.ts';
 // Note `kortix token` (singular) is a different, unrelated command: it prints
 // the ACTIVE token's context (`whoami --token-only`).
 
-const RELATIVE_SPAN = /^(\d+)\s*(h|d|w|y)$/i;
-const SPAN_MS: Record<string, number> = {
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-  y: 31_536_000_000,
-};
-
 /**
  * Resolve `--expires` to the ISO-8601 instant the API stores.
  *
@@ -48,17 +41,7 @@ const SPAN_MS: Record<string, number> = {
  * API only speaks ISO. Resolved here so `--json` shows the instant really sent.
  */
 export function resolveExpiry(input: string, now: Date = new Date()): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  const relative = RELATIVE_SPAN.exec(value);
-  if (relative) {
-    const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() + amount * SPAN_MS[unit]!).toISOString();
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return resolveSpanInstant(input, now, 1);
 }
 
 interface AccountToken {

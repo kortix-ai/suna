@@ -528,13 +528,13 @@ function strip(id: string, prefix: string): string | null {
   return id.startsWith(prefix) ? id.slice(prefix.length) : null;
 }
 
-export function adaptedSource(id: string): 'cr' | 'call' | null {
+function adaptedSource(id: string): 'cr' | 'call' | null {
   if (id.startsWith(CR_PREFIX)) return 'cr';
   if (id.startsWith(CALL_PREFIX)) return 'call';
   return null;
 }
 
-export interface BulkPlan {
+interface BulkPlan {
   /** Ids the bulk endpoint can act on. */
   native: string[];
   /** Connector approvals — each needs its own parameter review. */
@@ -543,7 +543,7 @@ export interface BulkPlan {
   unsupported: string[];
 }
 
-export function planBulk(ids: Iterable<string>): BulkPlan {
+function planBulk(ids: Iterable<string>): BulkPlan {
   const native: string[] = [];
   const resolvable: string[] = [];
   const unsupported: string[] = [];

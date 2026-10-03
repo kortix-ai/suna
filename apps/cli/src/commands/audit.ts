@@ -4,7 +4,7 @@ import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
+import { emitJson, resolveSpanInstant, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
 
@@ -108,14 +108,6 @@ interface AuditWebhook {
   test?: { ok: boolean; status?: number; error?: string };
 }
 
-const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w)$/i;
-const SPAN_MS: Record<string, number> = {
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-};
-
 /**
  * Accept `24h` / `7d` as well as ISO-8601.
  *
@@ -124,17 +116,7 @@ const SPAN_MS: Record<string, number> = {
  * is unambiguous and shows up in `--json` output as the instant it really used.
  */
 export function resolveInstant(input: string, now: Date = new Date()): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  const relative = RELATIVE_SPAN.exec(value);
-  if (relative) {
-    const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() - amount * SPAN_MS[unit]!).toISOString();
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return resolveSpanInstant(input, now, -1);
 }
 
 /** Query string shared by `ls` and `export`, so the two can never drift. */
@@ -291,26 +273,6 @@ function printEvents(events: AuditEvent[]): void {
       `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(truncate(auditEventTitle(e.action), EVENT_MAX), eventW)}   ${C.faded}${pad(truncate(e.action, ACTION_MAX), actionW)}${C.reset}   ${outcomeCell(e.outcome)}   ${resource}\n`,
     );
   }
-}
-
-/**
- * Read an export response body as text.
- *
- * The shared HTTP client parses `application/json`, passes `text/*` through,
- * and returns a **Blob** for everything else. The CSV export is `text/csv` so
- * it arrives as a string; the JSONL export is `application/x-ndjson`, which
- * matches neither branch and arrives as a Blob. `JSON.stringify` on a Blob
- * yields `"{}"` — which is exactly what `--format jsonl` printed before this:
- * an empty object where the export should be.
- *
- * Handled here rather than in the SDK because widening that content-type check
- * changes what every other caller receives. The SDK bug is real and worth
- * fixing separately.
- */
-export async function exportBodyText(body: unknown): Promise<string> {
-  if (typeof body === 'string') return body;
-  if (body instanceof Blob) return await body.text();
-  return JSON.stringify(body);
 }
 
 async function collectAuditPages(

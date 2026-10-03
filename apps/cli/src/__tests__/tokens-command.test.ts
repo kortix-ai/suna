@@ -140,6 +140,9 @@ describe('resolveExpiry', () => {
     expect(resolveExpiry('12h', now)).toBe('2026-08-01T12:00:00.000Z');
     expect(resolveExpiry('2w', now)).toBe('2026-08-15T00:00:00.000Z');
     expect(resolveExpiry('1y', now)).toBe('2027-08-01T00:00:00.000Z');
+    // The span grammar is shared with audit's --since, so the full unit set
+    // (m,h,d,w,y) works on both sides.
+    expect(resolveExpiry('45m', now)).toBe('2026-08-01T00:45:00.000Z');
   });
 
   test('passes an ISO instant through, and rejects nonsense', () => {
