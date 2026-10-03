@@ -100,6 +100,14 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
       expect(child.exitCode).toBeNull();
       const again = await fetch(`http://127.0.0.1:${port}/health`);
       expect(again.ok).toBe(true);
+      // A malformed /turn body must answer 400, not kill the worker: the old
+      // ordering wrote the SSE headers before parsing, so the thrown parse
+      // surfaced as an unhandled rejection that killed this plain-node
+      // process and left the client holding a 200 stream without end.
+      const bad = await fetch(`http://127.0.0.1:${port}/turn`, { method: 'POST', body: '{oops' });
+      expect(bad.status).toBe(400);
+      expect(child.exitCode).toBeNull();
+      expect((await fetch(`http://127.0.0.1:${port}/health`)).ok).toBe(true);
     } finally {
       child.kill('SIGKILL');
     }
