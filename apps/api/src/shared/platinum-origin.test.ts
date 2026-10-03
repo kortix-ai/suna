@@ -31,6 +31,9 @@ const US = 'https://us-east.api.platinum.dev';
 const GLOBAL = 'https://api.platinum.dev';
 
 type Call = { url: string; method: string; auth: string | null };
+// Compare the parsed origin, never a URL prefix: a prefix also matches `https://host.evil`.
+const onOrigin = (call: Call, origin: string): boolean => new URL(call.url).origin === origin;
+
 type Reply = { status?: number; body?: unknown; headers?: Record<string, string> } | Error;
 
 const originalFetch = globalThis.fetch;
@@ -74,7 +77,7 @@ afterEach(() => {
 
 test('a forwarded answer names the owner, and the next call for that id goes straight to it', async () => {
   respond = (call) =>
-    call.url.startsWith(GLOBAL)
+    onOrigin(call, GLOBAL)
       ? { body: { id: 'sbx_us', state: 'running' }, headers: { 'x-pt-served-by': US } }
       : { body: { result: { exit_code: 0 } } };
 
@@ -162,14 +165,14 @@ test('an unreachable owner is forgotten and the call is sent once via the global
   respond = (call) => {
     if (call.url === `${GLOBAL}/v1/sandboxes/sbx_us`)
       return { body: { id: 'sbx_us', api_url: US } };
-    if (call.url.startsWith(US)) return networkError('ConnectionRefused');
+    if (onOrigin(call, US)) return networkError('ConnectionRefused');
     return { body: { result: { exit_code: 0 } } };
   };
   await platinumJson('/v1/sandboxes/sbx_us');
   calls = [];
   // The global origin answers this one without naming the owner again.
   respond = (call) =>
-    call.url.startsWith(US)
+    onOrigin(call, US)
       ? networkError('ConnectionRefused')
       : { body: { result: { exit_code: 0 } } };
 
@@ -189,7 +192,7 @@ test('a write that may have reached the owner is not sent twice; a read is', asy
   await platinumJson('/v1/sandboxes/sbx_us');
   calls = [];
   respond = (call) =>
-    call.url.startsWith(US) ? networkError('ECONNRESET') : { body: { id: 'sbx_us', api_url: US } };
+    onOrigin(call, US) ? networkError('ECONNRESET') : { body: { id: 'sbx_us', api_url: US } };
 
   await expect(
     platinumJson('/v1/sandboxes/sbx_us/exec', { method: 'POST', body: '{}' }),
@@ -330,7 +333,7 @@ test('a regional create whose connection never opened retries once via global an
   let first = true;
   respond = (call) => {
     if (call.method === 'GET') return { body: { id: 'sbx_seen', region: 'us-east', api_url: US } };
-    if (call.url.startsWith(US) && first) {
+    if (onOrigin(call, US) && first) {
       first = false;
       return networkError('ConnectionRefused');
     }
