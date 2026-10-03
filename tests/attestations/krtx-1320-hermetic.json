@@ -1,5 +1,5 @@
 {
-  "source_hash": "889ea30dd4d400abcbbae2973c0ab81ed9a5f2832df11c8670c79e7f22f1c918",
+  "source_hash": "3df8b5d13fd92f76704167969cb73c57cb7192b73d45e92e9d3d972a9a1d5bb7",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
@@ -10,20 +10,19 @@
     "apps/kortix-sandbox-agent-server/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
-    "apps/mobile/lib/highlight/shiki.test.ts",
     "apps/whitelabel-demo/tests/e2e/harness.ts",
     "packages/agent-tunnel/src/client/cli.test.ts",
     "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
     "scripts/hermetic-test-env.sh",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "c007024532d1d6d76715b358e37a93bdafb72ff9b479f6371ee3307e34542c02",
-  "head": "26da6272216a832c7f4b6e2e10bac7d5d776c1d1",
+  "diff_hash": "b6b5c076788143ae8da4c05156f24da85d47857e3f0475794addedc05452c074",
+  "head": "97b248ca2b3ddbb3d776531acffd99a91f2862ce",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T19:58:43.586Z"
+  "at": "2026-10-03T20:15:42.198Z"
 }
