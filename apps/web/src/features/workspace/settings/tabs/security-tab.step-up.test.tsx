@@ -65,16 +65,15 @@ mock.module('@/lib/supabase/client', () => ({
   }),
 }));
 
-let mutations: Array<{ mutationFn: (arg?: unknown) => Promise<unknown> }> = [];
 // Spread the real module and override only the hooks this file drives: the
 // real mfa-step-up module is also loaded here (requestMfaStepUp) and imports
 // the rest of the react-query surface by name.
 mock.module('@tanstack/react-query', () => ({
   ...realReactQuery,
-  useMutation: (options: { mutationFn: (arg?: unknown) => Promise<unknown> }) => {
-    mutations.push(options);
-    return { mutate: (arg?: unknown) => void options.mutationFn(arg), isPending: false };
-  },
+  useMutation: (options: { mutationFn: (arg?: unknown) => Promise<unknown> }) => ({
+    mutate: (arg?: unknown) => void options.mutationFn(arg),
+    isPending: false,
+  }),
   useQueryClient: () => ({ invalidateQueries: () => {} }),
 }));
 
@@ -196,7 +195,6 @@ beforeEach(() => {
   };
   confirmRemoveCalls.length = 0;
   signOutCalls.length = 0;
-  mutations = [];
   events.length = 0;
   window.addEventListener('kortix:mfa-required', record('required'));
   window.addEventListener('kortix:mfa-verified', record('verified'));

@@ -184,7 +184,7 @@ async function settle(): Promise<void> {
 
 async function mount(
   element: React.ReactElement,
-): Promise<{ root: NonNullable<ReturnType<typeof create>>; client: QueryClient }> {
+): Promise<NonNullable<ReturnType<typeof create>>> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
@@ -192,7 +192,7 @@ async function mount(
   });
   await settle();
   if (!root) throw new Error('mount produced no root');
-  return { root, client };
+  return root;
 }
 
 const APP = createElement('p', null, 'APP CONTENT');
@@ -201,9 +201,6 @@ const verifiedTotpAal = () => {
   session = { access_token: 't' };
   user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
   aal = { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null };
-};
-const aal2 = () => {
-  aal = { data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null };
 };
 
 beforeEach(() => {
@@ -221,7 +218,7 @@ beforeEach(() => {
 describe('MfaGate', () => {
   test('an aal1 session with a verified TOTP factor gets the challenge instead of the app', async () => {
     verifiedTotpAal();
-    const { root } = await mount(createElement(MfaGate, null, APP));
+    const root = await mount(createElement(MfaGate, null, APP));
 
     expect(serialize(root)).not.toContain('APP CONTENT');
     expect(input(root)).toBeDefined();
@@ -232,7 +229,7 @@ describe('MfaGate', () => {
 
   test('the sign-out escape hatch signs the session out', async () => {
     verifiedTotpAal();
-    const { root } = await mount(createElement(MfaGate, null, APP));
+    const root = await mount(createElement(MfaGate, null, APP));
     const signOut = buttons(root).find((b) => textOf(b.props?.children) === 'Sign out');
     if (!signOut) throw new Error('no Sign out button');
     await act(async () => {
@@ -243,7 +240,7 @@ describe('MfaGate', () => {
 
   test('entering the code challenges the TOTP factor, then the app renders', async () => {
     verifiedTotpAal();
-    const { root } = await mount(createElement(MfaGate, null, APP));
+    const root = await mount(createElement(MfaGate, null, APP));
 
     const code = input(root);
     if (!code) throw new Error('no code input');
@@ -272,7 +269,7 @@ describe('MfaGate', () => {
     session = { access_token: 't' };
     user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
     aal = { data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null };
-    const { root } = await mount(createElement(MfaGate, null, APP));
+    const root = await mount(createElement(MfaGate, null, APP));
 
     expect(serialize(root)).toContain('APP CONTENT');
     expect(input(root)).toBeUndefined();
@@ -282,7 +279,7 @@ describe('MfaGate', () => {
     session = { access_token: 't' };
     user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'unverified' }] };
     aal = { data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null };
-    const { root } = await mount(createElement(MfaGate, null, APP));
+    const root = await mount(createElement(MfaGate, null, APP));
 
     expect(serialize(root)).toContain('APP CONTENT');
     expect(input(root)).toBeUndefined();
@@ -292,7 +289,7 @@ describe('MfaGate', () => {
     session = { access_token: 't' };
     user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-phone', factor_type: 'phone', status: 'verified' }] };
     aal = { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null };
-    const { root } = await mount(createElement(MfaGate, null, APP));
+    const root = await mount(createElement(MfaGate, null, APP));
 
     expect(serialize(root)).toContain('APP CONTENT');
   });
@@ -304,7 +301,7 @@ describe('MfaStepUpProvider', () => {
     session = { access_token: 't' };
     user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
     aal = { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null };
-    const { root } = await mount(createElement(MfaStepUpProvider, null, APP));
+    const root = await mount(createElement(MfaStepUpProvider, null, APP));
 
     expect(serialize(root)).toContain('APP CONTENT');
     expect(input(root)).toBeUndefined();
@@ -323,7 +320,7 @@ describe('MfaStepUpProvider', () => {
     session = { access_token: 't' };
     user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
     aal = { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null };
-    const { root } = await mount(createElement(MfaStepUpProvider, null, APP));
+    const root = await mount(createElement(MfaStepUpProvider, null, APP));
     await act(async () => {
       window.dispatchEvent(new CustomEvent('kortix:mfa-required'));
     });
