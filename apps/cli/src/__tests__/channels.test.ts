@@ -131,6 +131,12 @@ function mockApi() {
     if (url.includes('/channels/slack/connect') && method === 'POST') {
       return json(INSTALLATION);
     }
+    if (url.includes('/channels/email/mode')) {
+      return json({ enabled: true, managed_available: true });
+    }
+    if (url.includes('/channels/email/installation')) {
+      return json(null);
+    }
     // Teams endpoints
     // Mirrors the real GET /channels/teams/mode payload: `enabled` is the
     // project's `teams` experiment, `available` is whether bot credentials
@@ -502,6 +508,41 @@ describe('kortix channels --platform teams', () => {
 
 // Every Slack binding on dev listed as a bare `C0…` id (2026-10-02): no Slack
 // name lookup had ever succeeded. The CLI reads names the way the web does.
+describe('flag-first channels dispatch', () => {
+  test('dispatches --json bindings to bindings, not Slack status', async () => {
+    expect(await runChannels(['--json', 'bindings'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ projectDefaultAgent: null, bindings: [] });
+    expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(false);
+  });
+
+  test('removes platform values before selecting connect', async () => {
+    expect(await runChannels(['--platform', 'teams', 'connect'])).toBe(0);
+    expect(stdout).toContain(TEAMS_CONSENT_URL);
+    expect(requests.some((r) => r.url.includes('/channels/teams/mode'))).toBe(true);
+    expect(requests.some((r) => r.url.includes('/channels/teams/installation'))).toBe(false);
+  });
+
+  test('preserves the nested email status action', async () => {
+    expect(await runChannels(['--json', 'email', 'status'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({
+      connected: false, mode: { enabled: true, managed_available: true }, installation: null,
+    });
+    expect(requests.some((r) => r.url.includes('/channels/email/mode'))).toBe(true);
+  });
+
+  test('keeps flag-only invocations on status', async () => {
+    expect(await runChannels(['--json', '--platform', 'teams'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ connected: false, installation: null });
+    expect(requests.some((r) => r.url.includes('/channels/teams/installation'))).toBe(true);
+  });
+
+  test('rejects an unknown positional subcommand after flags', async () => {
+    expect(await runChannels(['--json', 'unknown'])).toBe(2);
+    expect(stderr).toContain('unknown subcommand "unknown"');
+    expect(requests).toEqual([]);
+  });
+});
+
 describe('kortix channels bindings', () => {
   const binding = (over: Record<string, unknown>) => ({
     bindingId: 'bnd-0',

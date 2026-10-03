@@ -1,0 +1,20 @@
+{
+  "source_hash": "202893816d938491477dfd560164d9fde9918cc369f4e81827505216bb50c90d",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-platinum-snapshot-size.test.ts",
+    "apps/cli/src/__tests__/channels.test.ts",
+    "apps/cli/src/commands/channels.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts"
+  ],
+  "diff_hash": "d71c4e9ebd73b86ea1a3a2ac02bdb2b3c2c387210ed5ef1c4f00cb7e40bc8a82",
+  "head": "2aedee007be988d9203f27efebe7dfc3e11514aa",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:57:22.207Z"
+}
