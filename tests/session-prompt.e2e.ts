@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, test } from '@e2e-dev/web';
 import { expect, unique } from 'e2e';
-import { runDatabaseSql } from './e2e/helpers/database';
+import type { AccountSummary } from './e2e/helpers/accounts';
+import { queryDatabaseRows, runDatabaseSql } from './e2e/helpers/database';
 import { requireEnvValue } from './e2e/helpers/env';
 import { createApiJsonClient } from './e2e/helpers/http';
+import { fundAccount } from './e2e/helpers/manifest-project';
 import { createAuthUser, signIn } from './e2e/helpers/session-auth';
 import { waitForSessionReady } from './e2e/helpers/session-ready';
 import { resolveLocalTopology } from './src/core/local-stack';
@@ -36,65 +38,114 @@ test(
     const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY');
     const user = await createAuthUser(email, authOptions);
     let token = '';
+    let accountId = '';
     let projectId = '';
     let sessionId = '';
     cleanup = async () => {
       const errors: unknown[] = [];
-      // Purge only the managed repository created above. Attempt every cleanup even if one fails.
-      if (projectId && sessionId) {
-        await api(token, 'DELETE', `/projects/${projectId}/sessions/${sessionId}`).catch((error) =>
-          errors.push(error),
-        );
-      }
+      // Unmount the UI before deletion so it cannot create another default session.
+      await browser.goto('about:blank').catch((error) => errors.push(error));
       if (projectId) {
-        await api(token, 'DELETE', `/projects/${projectId}?purge=true`).catch((error) =>
-          errors.push(error),
+        const sessions = await api<Array<{ session_id: string }>>(
+          token,
+          'GET',
+          `/projects/${projectId}/sessions`,
+        ).catch((error) => {
+          errors.push(error);
+          return [];
+        });
+        const ids = new Set(sessions.map((session) => session.session_id));
+        if (sessionId) ids.add(sessionId);
+        for (const id of ids) {
+          await api(
+            token,
+            'DELETE',
+            `/projects/${projectId}/sessions/${id}`,
+            undefined,
+            [200, 404],
+          ).catch((error) => errors.push(error));
+        }
+        await expect
+          .poll(
+            async () => {
+              const sandboxes = await queryDatabaseRows<{
+                external_id: string | null;
+                status: string;
+                metadata: Record<string, unknown> | null;
+              }>(
+                'SELECT external_id, status, metadata FROM kortix.session_sandboxes WHERE project_id=$1',
+                [projectId],
+                databaseUrl,
+              );
+              return sandboxes.every(
+                (sandbox) =>
+                  !sandbox.external_id ||
+                  (sandbox.status === 'archived' &&
+                    Boolean(sandbox.metadata?.providerRemovedAt) &&
+                    !sandbox.metadata?.providerRemovalPendingAt),
+              );
+            },
+            { timeout: 90_000, interval: 1_000 },
+          )
+          .toBe(true)
+          .catch((error) => errors.push(error));
+        if (errors.length)
+          throw new AggregateError(
+            errors,
+            `Synthetic session cleanup failed: ${errors.map((error) => (error instanceof Error ? error.message : String(error))).join('; ')}`,
+          );
+        // Retry only the same managed project after a transient upstream cleanup failure.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const removed = await api<{ repo_deleted: boolean }>(
+              token,
+              'DELETE',
+              `/projects/${projectId}?purge=true`,
+            );
+            expect(removed.repo_deleted).toBe(true);
+            break;
+          } catch (error) {
+            if (attempt === 2) errors.push(error);
+            else await new Promise((resolve) => setTimeout(resolve, 2_000));
+          }
+        }
+      }
+      // Keep removal intent and repository identity available when external cleanup fails.
+      if (errors.length)
+        throw new AggregateError(
+          errors,
+          `Synthetic resource cleanup failed: ${errors.map((error) => (error instanceof Error ? error.message : String(error))).join('; ')}`,
+        );
+      if (accountId) {
+        await runDatabaseSql(
+          'DELETE FROM kortix.accounts WHERE account_id=$1',
+          [accountId],
+          databaseUrl,
         );
       }
-      await runDatabaseSql(
-        'DELETE FROM kortix.accounts WHERE account_id=$1',
-        [user.id],
-        databaseUrl,
-      ).catch((error) => errors.push(error));
-      await fetch(`${supabaseUrl}/auth/v1/admin/users/${user.id}`, {
+      const deleted = await fetch(`${supabaseUrl}/auth/v1/admin/users/${user.id}`, {
         method: 'DELETE',
-        headers: {
-          apikey: serviceRoleKey,
-          Authorization: `Bearer ${serviceRoleKey}`,
-        },
-      })
-        .then((deleted) => {
-          if (!deleted.ok)
-            errors.push(new Error(`synthetic auth cleanup returned ${deleted.status}`));
-        })
-        .catch((error) => errors.push(error));
-      if (errors.length) throw new AggregateError(errors, 'Synthetic session cleanup failed');
+        headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+      });
+      if (!deleted.ok) throw new Error(`synthetic auth cleanup returned ${deleted.status}`);
     };
     const session = await signIn(email, authOptions);
     token = session.access_token;
-    const accounts = await api<Array<{ account_id: string; personal_account: boolean }>>(
-      token,
-      'GET',
-      '/accounts',
+    const accounts = await api<AccountSummary[]>(token, 'GET', '/accounts');
+    expect(Array.isArray(accounts)).toBe(true);
+    const ownedAccount = accounts.find(
+      (account) =>
+        account.personal_account || account.is_primary_owner || account.account_role === 'owner',
     );
-    expect(accounts.find((account) => account.personal_account)?.account_id).toBe(user.id);
-    await runDatabaseSql(
-      `
-      INSERT INTO kortix.credit_accounts
-        (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-      VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
-      ON CONFLICT (account_id) DO UPDATE SET balance=1000, balance_precise=1000,
-        non_expiring_credits=1000, non_expiring_credits_precise=1000, tier='tier_2_20'
-    `,
-      [user.id],
-      databaseUrl,
-    );
+    accountId = ownedAccount?.account_id ?? '';
+    expect(accountId).not.toBe('');
+    await fundAccount(databaseUrl, accountId);
     const project = await api<{ project_id: string }>(
       token,
       'POST',
       '/projects/provision',
       {
-        account_id: user.id,
+        account_id: accountId,
         name: `Agentic ${randomUUID()}`,
         seed_starter: true,
       },

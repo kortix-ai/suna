@@ -36,7 +36,9 @@ Do not let a model redefine the expected result to make a test pass.
 The pilot uses one live session prompt.
 It observes the real request, checks one submission, waits for an assistant reply, verifies both messages in the durable transcript, and reloads the page.
 It creates only synthetic data and removes its session, managed repository, account, and auth user.
-Cleanup runs in `afterEach` with a separate two-minute budget, including after a test timeout.
+Cleanup runs in `afterEach` with a separate five-minute budget, including after a test timeout.
+It unmounts the UI, deletes every session in this synthetic project, and waits for confirmed cloud removal before deleting account records.
+Repository purge allows three bounded attempts against the same managed project. A cleanup failure preserves the records needed for recovery and fails the test.
 Its cloud sandbox and application inference are separate from the ChatGPT model that operates the browser.
 Both have external availability and resource costs.
 
@@ -234,4 +236,21 @@ The same 100-millisecond URL scan guard also failed on unchanged base `7703291a9
 These results do not establish a green repository gate or a benefit from replacing the framework.
 The pilot does not change these API handlers, migrations, or SDK implementations.
 
-The live session journey, fresh/replay comparison, seeded false-pass checks, and subscription model execution remain unverified until user sign-in confirmation.
+The first `--full` retry completed its REST/CLI and database lanes without failures: 513 flows and 186 suites containing 1,712 tests, with one quarantine.
+The SDK lane passed. The runner-unit citation search again exceeded its five-second limit; its focused rerun passed.
+During the browser lane, the frontend received `SIGKILL`. The root process later exited 137 before finishing the browser or package stages.
+The cause of the process kills is unknown. This is an incomplete full gate, not a completed browser result.
+Only orphan API and gateway processes proven to belong to this worktree were stopped afterward.
+
+The user confirmed ChatGPT sign-in. `e2e models openai` lists `gpt-6-luna`.
+The first subscription-backed journey passed every UI, request, transcript, and reload assertion, then failed repository cleanup after an upstream timeout.
+Its agent step took 15.69 seconds, four model calls, and approximately 19,300 tokens.
+The report's 18% cached-token figure describes provider token caching; `--no-cache` disabled action replay for that run.
+Private recovery confirmed deletion of its synthetic repository and both cloud sessions.
+The cleanup now enumerates every project session, confirms cloud removal, retries repository purge, and retains recovery records on failure.
+Its first corrected rerun stopped before execution because Docker was unavailable. Docker and local Auth are running again.
+`pnpm test -- --agentic-only tests/session-prompt.e2e.ts --no-cache` then passed the complete corrected journey and cleanup.
+It reported one passed test, zero skipped, and zero flaky results; root duration was 86.3 seconds.
+Target startup took 33.40 seconds, and the test including teardown took 47.26 seconds.
+The browser agent used three model calls and approximately 14,800 tokens.
+The cache comparison, deterministic baseline, and seeded false-pass checks remain pending.
