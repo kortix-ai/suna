@@ -5245,8 +5245,10 @@ export const permissions = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_permissions_scope_area').on(table.scopeType, table.area)],
 );
+// No secondary index: every read is a full-catalog select (~70 rows, memoized
+// in iam/catalog.ts), so a (scope_type, area) index never served a scan. Dropped
+// by `20261003055626684_drop_permissions_unused_scope_area_index.concurrent.ts`.
 
 /**
  * What "no object grant exists for this object at all" means, per OBJECT TYPE.
