@@ -63,6 +63,7 @@ export type FeatureFlagKey =
   | 'config_releases'
   | 'agent_principal'
   | 'us_region'
+  | 'capture'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -88,6 +89,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'config_releases',
   'agent_principal',
   'us_region',
+  'capture',
 ] as const;
 
 /**

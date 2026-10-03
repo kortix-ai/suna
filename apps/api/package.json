@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1131.0",
+    "@aws-sdk/client-sqs": "^3.1131.0",
+    "@aws-sdk/client-sts": "^3.1131.0",
     "@aws-sdk/credential-provider-node": "3.972.62",
     "@aws-sdk/s3-request-presigner": "^3.1131.0",
     "@composio/client": "0.1.0-alpha.76",

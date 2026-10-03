@@ -1182,6 +1182,10 @@
         "us_region": {
           "name": "US-Region",
           "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Mitglieder können die Kortix-Capture-Desktop-App bei diesem Projekt anmelden. Bildschirm, Aktionen und erlaubtes Audio werden zu einer durchsuchbaren Zeitleiste, die nur sie selbst und Projektmanager lesen können. Agenten in den eigenen Sitzungen eines Mitglieds können dessen Zeitleiste durchsuchen."
         }
       }
     },

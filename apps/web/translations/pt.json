@@ -1182,6 +1182,10 @@
         "us_region": {
           "name": "Região dos EUA",
           "description": "Execute as novas sessões deste projeto na região Leste dos EUA. Uma sessão em andamento mantém a região até reiniciar."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Permite que os membros conectem o app de desktop Kortix Capture a este projeto. A tela, as ações e o áudio permitido viram uma linha do tempo pesquisável que só eles e os gerentes do projeto podem ler. Agentes nas sessões do próprio membro podem pesquisar a linha do tempo dele."
         }
       }
     },

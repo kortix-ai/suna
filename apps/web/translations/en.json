@@ -1008,6 +1008,10 @@
         "us_region": {
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Let members sign in the Kortix Capture desktop app to this project. Their screen, actions and allowed audio become a searchable timeline that only they and project managers can read. Agents in a member's own sessions can search that member's timeline."
         }
       }
     },

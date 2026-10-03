@@ -43,6 +43,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const configReleases = useFeatureFlag(projectId, 'config_releases');
   const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
   const usRegion = useFeatureFlag(projectId, 'us_region');
+  const capture = useFeatureFlag(projectId, 'capture');
 
   return {
     flags: {
@@ -62,8 +63,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       config_releases: configReleases.enabled,
       agent_principal: agentPrincipal.enabled,
       us_region: usRegion.enabled,
+      capture: capture.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: usRegion.isLoading,
+    isLoading: capture.isLoading,
   };
 }

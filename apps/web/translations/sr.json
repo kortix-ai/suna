@@ -1182,6 +1182,10 @@
         "us_region": {
           "name": "Регион САД",
           "description": "Покрените нове сесије овог пројекта у региону Исток САД. Сесија која је у току задржава свој регион до поновног покретања."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Omogućava članovima da prijave Kortix Capture desktop aplikaciju na ovaj projekat. Njihov ekran, radnje i dozvoljeni zvuk postaju vremenska linija koju mogu pretraživati samo oni i menadžeri projekta. Agenti u sopstvenim sesijama člana mogu pretraživati njegovu vremensku liniju."
         }
       }
     },

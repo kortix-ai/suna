@@ -1182,6 +1182,10 @@
         "us_region": {
           "name": "Regione USA",
           "description": "Esegui le nuove sessioni di questo progetto nella regione USA Est. Una sessione in corso mantiene la sua regione fino al riavvio."
+        },
+        "capture": {
+          "name": "Capture",
+          "description": "Consente ai membri di collegare l'app desktop Kortix Capture a questo progetto. Schermo, azioni e audio consentito diventano una timeline ricercabile che possono leggere solo loro e i responsabili del progetto. Gli agenti nelle sessioni di un membro possono cercare nella sua timeline."
         }
       }
     },
