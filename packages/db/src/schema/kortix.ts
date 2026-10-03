@@ -3148,11 +3148,7 @@ export const oauthAccessTokens = kortixSchema.table(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex('idx_oauth_access_token_hash').on(table.tokenHash),
-    index('idx_oauth_access_tokens_client').on(table.clientId),
-    index('idx_oauth_access_tokens_user').on(table.userId),
-  ],
+  (table) => [uniqueIndex('idx_oauth_access_token_hash').on(table.tokenHash)],
 );
 
 export const oauthRefreshTokens = kortixSchema.table(
