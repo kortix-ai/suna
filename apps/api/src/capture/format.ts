@@ -7,6 +7,7 @@
  * than CAPTURE_SCHEMA is rejected.
  */
 import { z } from 'zod';
+import { isUuid } from '../shared/validate';
 
 export const CAPTURE_SCHEMA = 2;
 
@@ -15,16 +16,14 @@ export function projectPrefix(accountId: string, projectId: string): string {
   return `orgs/${accountId}/projects/${projectId}`;
 }
 
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-const KEY_RE = new RegExp(`^orgs/(${UUID})/projects/(${UUID})/(${UUID})/(.+)$`);
-
 /** Split an object key of the Kortix layout. Null for any other key. */
 export function parseCaptureKey(
   key: string,
 ): { accountId: string; projectId: string; deviceId: string; rest: string } | null {
-  const match = KEY_RE.exec(key);
-  if (!match) return null;
-  return { accountId: match[1]!, projectId: match[2]!, deviceId: match[3]!, rest: match[4]! };
+  const [orgs, accountId, projects, projectId, deviceId, ...rest] = key.split('/');
+  if (orgs !== 'orgs' || projects !== 'projects' || rest.length === 0 || !rest.every(Boolean)) return null;
+  if (!isUuid(accountId) || !isUuid(projectId) || !isUuid(deviceId)) return null;
+  return { accountId, projectId, deviceId, rest: rest.join('/') };
 }
 
 // ─── Manifests ───────────────────────────────────────────────────────────────
