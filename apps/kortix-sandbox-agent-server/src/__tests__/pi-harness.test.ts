@@ -246,10 +246,17 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
+/** The image bakes managed skills and a host env file this box really has; a
+ *  rig that reads the machine is not a test, so point both at absent paths. */
+const absentBoxState = join(tmpdir(), 'pi-harness-absent-box-state')
+const realManagedSkillsDir = process.env.KORTIX_MANAGED_SKILLS_DIR
+const realPtEnvFile = process.env.KORTIX_PT_ENV_FILE
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
+  process.env.KORTIX_MANAGED_SKILLS_DIR = absentBoxState
+  process.env.KORTIX_PT_ENV_FILE = absentBoxState
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -259,6 +266,10 @@ afterEach(async () => {
   resetKortixEventBusForTests()
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
+  if (realManagedSkillsDir === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  else process.env.KORTIX_MANAGED_SKILLS_DIR = realManagedSkillsDir
+  if (realPtEnvFile === undefined) delete process.env.KORTIX_PT_ENV_FILE
+  else process.env.KORTIX_PT_ENV_FILE = realPtEnvFile
   rmSync(homeDir, { recursive: true, force: true })
 })
 
