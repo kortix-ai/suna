@@ -37,6 +37,7 @@ import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTyp
 import { useColorScheme } from 'nativewind';
 import { buildStaticFileLocalUrl, wsFavicon } from '@kortix/sdk';
 import { safeHttpUrl } from '@kortix/shared';
+import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
@@ -57,7 +58,7 @@ import {
 } from '@/lib/icons';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { isLocalSandboxFilePath, languageFromPath, parseFrontmatter } from '@/lib/session/tool-part-accessors';
-import { isShowBinaryPath, parseShowAspectRatio, showContentBranch, showDomain } from '@/lib/session/tools/web-show';
+import { isShowBinaryPath, parseShowAspectRatio, resolveShowType, showContentBranch, showDomain } from '@/lib/session/tools/web-show';
 import { webSpace } from '@/lib/session/user-message';
 import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 import { THEME } from '@/lib/utils/theme';
@@ -362,6 +363,7 @@ export function ShowContentRenderer({
   toolbarActions,
 }: ShowContentProps) {
   const palette = useTurnPalette();
+  const { colorScheme } = useColorScheme();
   const { enabled: navigationEnabled, openFile, openExternal } = useToolNavigation();
   const { sandboxUrl } = useSandboxContext();
   const branch = useMemo(() => showContentBranch({ type, path, url, content }), [type, path, url, content]);
@@ -562,7 +564,9 @@ export function ShowContentRenderer({
               paddingBottom: TURN_SPACE.cardPad + TEXT_END_SPACE,
             }}
           >
-            {isMarkdownFile ? (
+            {resolveShowType(type, path) === 'mermaid' ? (
+              <MermaidBlock chart={textFile.data} language="mermaid" isDark={colorScheme === 'dark'} />
+            ) : isMarkdownFile ? (
               <MarkdownBody content={textFile.data} />
             ) : (
               <HighlightedCode code={textFile.data} language={languageFromPath(path)} />
@@ -571,6 +575,12 @@ export function ShowContentRenderer({
         </ViewerFrame>
       );
     }
+    case 'mermaid':
+      return framed(
+        <TextScroll fill={fill}>
+          <MermaidBlock chart={content} language="mermaid" isDark={colorScheme === 'dark'} />
+        </TextScroll>,
+      );
     case 'code':
       return (
         <TextScroll fill={fill}>
