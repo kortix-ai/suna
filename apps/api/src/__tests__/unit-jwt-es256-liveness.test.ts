@@ -19,10 +19,12 @@ const jwk = { ...(await crypto.subtle.exportKey('jwk', keys.publicKey)), kid: KI
 
 // Serve the test JWKS before `jwt-verify` loads it on import.
 const realFetch = globalThis.fetch;
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
-  String(input).endsWith('/.well-known/jwks.json')
-    ? Response.json({ keys: [jwk] })
-    : realFetch(input, init)) as typeof fetch;
+let jwksFetches = 0;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (!String(input).endsWith('/.well-known/jwks.json')) return realFetch(input, init);
+  jwksFetches += 1;
+  return Response.json({ keys: [jwk] });
+}) as typeof fetch;
 
 type Verify = typeof import('../shared/jwt-verify').verifySupabaseJwt;
 type Liveness = typeof import('../shared/jwt-liveness');
@@ -42,8 +44,8 @@ afterEach(() => liveness.__setJwtLivenessLoaderForTests(null));
 const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const inAnHour = () => Math.floor(Date.now() / 1000) + 3600;
 
-async function sign(payload: Record<string, unknown>): Promise<string> {
-  const head = `${b64({ alg: 'ES256', typ: 'JWT', kid: KID })}.${b64(payload)}`;
+async function sign(payload: Record<string, unknown>, kid = KID): Promise<string> {
+  const head = `${b64({ alg: 'ES256', typ: 'JWT', kid })}.${b64(payload)}`;
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(head));
   return `${head}.${Buffer.from(sig).toString('base64url')}`;
 }
@@ -58,6 +60,16 @@ function loader(answer: () => Promise<{ id: string; email: string } | null>) {
 }
 
 describe('ES256 tokens', () => {
+  test('forged unknown kids refetch the JWKS at most once a minute', async () => {
+    const before = jwksFetches;
+    for (const kid of ['forged-kid-1', 'forged-kid-2', 'forged-kid-3']) {
+      const result = await verifySupabaseJwt(await sign({ sub: USER, exp: inAnHour() }, kid));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('no-key-for-kid');
+    }
+    expect(jwksFetches - before).toBe(1);
+  });
+
   test('a live token verifies, and GoTrue is asked once per TTL', async () => {
     const calls = loader(async () => ({ id: USER, email: 'synthetic@example.test' }));
     const token = await sign({ sub: USER, exp: inAnHour() });

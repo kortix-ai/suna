@@ -25,6 +25,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
+import { BOOT_PHASE_HEADER } from '@kortix/api-contract/runtime-relay';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import {
@@ -127,8 +128,7 @@ export type ListResult =
       detail?: string;
     };
 
-/** The daemon names its boot phase on every 503 — see the daemon's boot-phase.ts. */
-export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
+export { BOOT_PHASE_HEADER };
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
 export async function listSandboxOpencodeSessions(
