@@ -1,0 +1,33 @@
+{
+  "source_hash": "c2607a7b2e661a2233eb7b44a52b8b609e9b18b43537aa2173dd9986454a56e3",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-02T175952Z-check-the-eas-environment-an-ota-update-bakes-in-eas-update.md",
+    ".github/workflows/mobile-ota.yml",
+    "apps/mobile/.gitignore",
+    "apps/mobile/BUILD_GUIDE.md",
+    "apps/mobile/android/app/build.gradle",
+    "apps/mobile/app.json",
+    "apps/mobile/eas.json",
+    "apps/mobile/ios/Kortix.xcodeproj/project.xcworkspace/contents.xcworkspacedata",
+    "apps/mobile/ios/Kortix.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist",
+    "apps/mobile/package.json",
+    "apps/mobile/scripts/ota-publish.mjs",
+    "apps/mobile/scripts/ota-publish.test.ts",
+    "apps/mobile/scripts/set-version.mjs",
+    "apps/mobile/scripts/set-version.test.ts",
+    "apps/mobile/scripts/start-android.sh",
+    "apps/web/public/.well-known/assetlinks.json",
+    "apps/web/public/manifest.json",
+    "scripts/check-blocked-terms.test.mjs"
+  ],
+  "diff_hash": "503a623c000032121efdd94ff23716d574ebe82d7287110d535b0145abd9db08",
+  "head": "ffdd5a65338afcc84e340bb29c199107f05a0355",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-03T19:46:23.676Z"
+}
