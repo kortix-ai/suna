@@ -19203,8 +19203,7 @@
       "text9e52157faaab": "Sim. A mesma CLI do Kortix roda em cada sandbox, já autenticada, então os agentes usam exatamente os mesmos comandos que você.",
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
       "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
-      "text39207bf34111": "Habilidades relacionadas",
-      "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado."
+      "text39207bf34111": "Habilidades relacionadas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -19256,6 +19255,9 @@
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
+    },
+    "featuresSessionSessionChat": {
+      "turnFailedNoReason": "A vez do agente falhou. Nenhum motivo foi relatado."
     }
   },
   "projectOnboarding": {

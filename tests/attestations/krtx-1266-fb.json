@@ -1,0 +1,43 @@
+{
+  "source_hash": "f0631780e8224abced2cf25a2962d35a4d363559a1d1a4c877d54e3711db0d28",
+  "diff_files": [
+    "apps/api/bunfig.toml",
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/api/src/__tests__/preload-clean-sandbox-env.ts",
+    "apps/api/src/git-proxy/compiled-pi-runtime.test.ts",
+    "apps/api/src/sandbox-proxy/routes/forward-preflight-concurrency.test.ts",
+    "apps/cli/bunfig.toml",
+    "apps/cli/src/__tests__/preload-clean-sandbox-env.ts",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
+    "apps/mobile/lib/highlight/reference-child.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/mobile/lib/session/session-list.test.ts",
+    "apps/mobile/lib/session/session-list.ts",
+    "apps/web/src/components/projects/session-label.ts",
+    "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
+    "packages/shared/package.json",
+    "packages/shared/src/chat-mention.ts",
+    "packages/shared/src/host-config/test-sandbox-env.ts",
+    "packages/shared/src/index.ts"
+  ],
+  "diff_hash": "9c907ab71e87281c992048a96311822b86ba56bd6bd714201105b71482fa481a",
+  "head": "91f82c849497268fc0a13b3fefe9697cd9537fd3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T20:19:44.008Z"
+}

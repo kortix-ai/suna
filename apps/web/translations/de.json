@@ -19203,8 +19203,7 @@
       "text9e52157faaab": "Ja. Dieselbe Kortix CLI läuft vorab authentifiziert in jeder Sandbox, sodass Agenten genau dieselben Befehle verwenden wie du.",
       "text48b78a9ab65b": "Wie bleiben Läufe isoliert?",
       "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
-      "text39207bf34111": "Ähnliche Fähigkeiten",
-      "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet."
+      "text39207bf34111": "Ähnliche Fähigkeiten"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -19256,6 +19255,9 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
+    },
+    "featuresSessionSessionChat": {
+      "turnFailedNoReason": "Agent-Durchlauf fehlgeschlagen. Es wurde kein Grund gemeldet."
     }
   },
   "projectOnboarding": {
