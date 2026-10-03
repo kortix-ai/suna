@@ -4804,10 +4804,6 @@ export const accessRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_access_requests_email').on(table.email),
-    index('idx_access_requests_status').on(table.status),
-  ],
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────
