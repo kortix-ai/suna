@@ -1,5 +1,5 @@
 {
-  "source_hash": "49642f1728f71bf58b88b807520bd90260272beda3eb3595844fd89aa81821a2",
+  "source_hash": "fdc93159ea509374b9de28588b957f12f8a1185757cc13af91a067a45333b1c9",
   "diff_files": [
     ".agents/skills/worktree/SKILL.md",
     ".agents/skills/worktree/references/capture-local-store.md",
@@ -188,16 +188,17 @@
     "tests/package.json",
     "tests/spec/end-to-end.md",
     "tests/spec/routes.generated.json",
+    "tests/src/core/local-runner.ts",
     "tests/src/core/local-stack.ts",
     "tests/src/fixtures/capture.ts",
     "tests/src/flows/capture.flow.ts",
     "tests/unit/desktop-build-bun.test.ts"
   ],
-  "diff_hash": "7a3ba29f966cd12379dd7e4e126a4e58e5ee482003744e199574036b453ac921",
-  "head": "ce70ed367406423409c0f25cdfcd978b2a6db196",
+  "diff_hash": "f57fb9cc66a87f124716424511d7ed5d515f8b8e1acadcfedf2fdeb4fd4a137e",
+  "head": "87c1e4af82b3306a8475787d4573c7998f4d0d26",
   "passed": true,
   "lanes": {
     "browser": "pass"
   },
-  "at": "2026-10-03T23:37:42.546Z"
+  "at": "2026-10-03T23:58:46.887Z"
 }
