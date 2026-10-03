@@ -20,7 +20,6 @@ import * as realDbModule from '../shared/db';
 
 import {
   type SeededProject,
-  localTestDatabaseUrl,
   removeSeeded,
   seedProject,
 } from './helpers/integration-fixtures';
