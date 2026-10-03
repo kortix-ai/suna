@@ -1,5 +1,5 @@
 {
-  "id": "2cb0a600-6281-450e-94a9-d450424e92e3",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -5498,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",
@@ -18713,23 +18713,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "idx_session_presence_leases_session_id": {
-          "name": "idx_session_presence_leases_session_id",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "session_presence_session_fk": {
           "name": "session_presence_session_fk",

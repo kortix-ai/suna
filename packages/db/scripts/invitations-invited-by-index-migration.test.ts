@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 
 /**
- * Runtime contract of 20261002212633785_invitations_invited_by_index.concurrent.ts
+ * Runtime contract of 20261003002832969_invitations_invited_by_index.concurrent.ts
  * with node-pg-migrate's single-transaction batch runner — proven against the
  * REAL runner with a recording client, no database:
  *
