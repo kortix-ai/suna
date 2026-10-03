@@ -12,6 +12,8 @@
  * action and in the audio transcript, so a search can prove all three layers.
  */
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { readLocalSupabaseEnvironment, resolveLocalTopology } from "../core/local-stack";
 
 export interface CaptureObject {
   key: string;
@@ -261,4 +263,38 @@ export async function uploadCaptureObjects(target: S3Target, objects: CaptureObj
 /** A fresh synthetic machine key (sha256 hex), as the desktop app sends it. */
 export function syntheticMachineKey(seed: string): string {
   return sha256(text(`kortix-capture/machine/v1\nfixture-${seed}`));
+}
+
+/**
+ * The local profile's capture store: Supabase Storage's S3 endpoint, bucket
+ * `kortix-capture`, with the S3 protocol key pair — the "static credentials"
+ * provider of the format. It has no STS, so a flow writes with these keys.
+ */
+export async function localCaptureStore(): Promise<S3Target> {
+  const sb = await readLocalSupabaseEnvironment(resolveLocalTopology(resolve(import.meta.dir, "../../..")));
+  if (!sb.API_URL || !sb.S3_PROTOCOL_ACCESS_KEY_ID || !sb.S3_PROTOCOL_ACCESS_KEY_SECRET) {
+    throw new Error("local Supabase reports no S3 protocol endpoint or keys");
+  }
+  return {
+    endpoint: `${sb.API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
+    bucket: "kortix-capture",
+    region: "local",
+    accessKeyId: sb.S3_PROTOCOL_ACCESS_KEY_ID,
+    secretAccessKey: sb.S3_PROTOCOL_ACCESS_KEY_SECRET,
+  };
+}
+
+/** Read one object back from a store (the flows read `policy.json` as a device would). */
+export async function readCaptureObject(target: S3Target, key: string): Promise<string | null> {
+  const client = new Bun.S3Client({
+    endpoint: target.endpoint,
+    bucket: target.bucket,
+    region: target.region,
+    accessKeyId: target.accessKeyId,
+    secretAccessKey: target.secretAccessKey,
+    sessionToken: target.sessionToken,
+    virtualHostedStyle: false,
+  });
+  const file = client.file(key);
+  return (await file.exists()) ? file.text() : null;
 }

@@ -193,7 +193,7 @@ export async function applyRetention(limitPerProject = 200): Promise<number> {
     if (!days) continue;
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const old = await db
-      .select({ chunkId: timelineChunks.chunkId, manifestKey: timelineChunks.manifestKey, manifest: timelineChunks.manifest, startAt: timelineChunks.startAt })
+      .select({ chunkId: timelineChunks.chunkId, manifestKey: timelineChunks.manifestKey, manifest: timelineChunks.manifest, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
       .from(timelineChunks)
       .where(and(eq(timelineChunks.projectId, projectId), lt(timelineChunks.endAt, cutoff)))
       .limit(limitPerProject);
@@ -208,11 +208,13 @@ export async function applyRetention(limitPerProject = 200): Promise<number> {
     // Objects first: a row without its object is harmless; an object without a row is invisible forever.
     await captureStore.remove(keys);
     const ids = old.map((chunk) => chunk.chunkId);
+    // Bounds on `ts` let Postgres prune the monthly partitions; a day of slack covers device clock skew.
     const floor = new Date(Math.min(...old.map((chunk) => chunk.startAt.getTime())) - 86_400_000);
+    const ceil = new Date(Math.max(...old.map((chunk) => Math.max(chunk.startAt.getTime(), chunk.endAt.getTime()))) + 86_400_000);
     await db.transaction(async (tx) => {
       for (const table of ['timeline_frames', 'timeline_actions', 'timeline_audio']) {
         await tx.execute(
-          sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND ts >= ${floor.toISOString()}::timestamptz AND ts < ${cutoff.toISOString()}::timestamptz`,
+          sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND ts >= ${floor.toISOString()}::timestamptz AND ts < ${ceil.toISOString()}::timestamptz`,
         );
       }
       await tx.delete(timelineChunks).where(inArray(timelineChunks.chunkId, ids));
