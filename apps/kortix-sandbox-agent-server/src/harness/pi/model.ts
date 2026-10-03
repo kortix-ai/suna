@@ -25,9 +25,9 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 
-/** Staged unconditionally by apps/api's snapshot build-context. */
-/** The image-baked model catalog. `KORTIX_BAKED_LLM_CATALOG_PATH` overrides the
- *  image path; see the open-code harness for the reason. */
+/** Staged unconditionally by apps/api's snapshot build-context. A host that
+ *  really bakes one (every Kortix sandbox image) can hide it from the test
+ *  suite through KORTIX_BAKED_LLM_CATALOG_PATH. */
 export const BAKED_LLM_CATALOG_PATH =
   process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
 export const KORTIX_PROVIDER_ID = 'kortix'

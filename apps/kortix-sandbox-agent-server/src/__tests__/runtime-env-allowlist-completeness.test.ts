@@ -93,8 +93,8 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   'KORTIX_COMPILED_RUNTIME_FORMAT',
   // Static project identity baked at seed — see the comment beside its read.
   'KORTIX_PROJECT_ID',
-  // The image's baked-catalog path; read once at module load to a const, so it
-  // can never be a live push.
+  // Test-isolation override for the image-baked catalog path (host
+  // /opt/kortix/llm-catalog.json). Never set by the API on any box.
   'KORTIX_BAKED_LLM_CATALOG_PATH',
 ])
 

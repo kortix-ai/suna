@@ -13,7 +13,6 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
-// The host-written env file; KORTIX_PT_ENV_PATH overrides it for tests.
 const PT_ENV_PATH = process.env.KORTIX_PT_ENV_PATH || '/etc/pt-env'
 
 function wantedSessionBranch(): string {
