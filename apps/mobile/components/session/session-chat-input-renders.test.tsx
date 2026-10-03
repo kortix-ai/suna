@@ -18,6 +18,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 const source = readFileSync(import.meta.dir + '/SessionChatInput.tsx', 'utf8');
 const Empty = () => null;
+let suggestions: { items: { label: string; kind: string }[] } | undefined;
 const sheetRenders: Record<string, number> = {};
 const sheetProps: Record<string, any> = {};
 function memoSheet(name: string) {
@@ -41,6 +42,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   'react-native': { View: ({ children }: any) => children ?? null, Pressable: ({ children }: any) => children ?? null, TextInput: Empty, StyleSheet: { create: (s: any) => s, hairlineWidth: 1 } },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   '@/components/kortix/composer': { Composer: (props: any) => { composer = props; return null; }, COMPOSER_CONTROL_HIT_SLOP: 4 },
+  './MentionSuggestions': { MentionSuggestions: (props: typeof suggestions) => { suggestions = props; return null; } },
   './AttachSheet': { AttachSheet: memoSheet('AttachSheet') },
   './SessionFilesSheet': { SessionFilesSheet: memoSheet('SessionFilesSheet') },
   './ModelPickerSheet': { ModelPickerSheet: memoSheet('ModelPickerSheet') },
@@ -89,7 +91,7 @@ mock.module('./use-mention-file-search', () => moduleMocks['./use-mention-file-s
 let SessionChatInput: typeof import('./SessionChatInput').SessionChatInput;
 let tree: ReactTestRenderer | undefined;
 const onSend = (...args: any[]) => sent.push(args);
-const commands = [{ name: 'review', description: 'Review', source: 'skill' }] as any[];
+const commands = [{ name: 'review', description: 'Review', source: 'skill' }, { name: 'build', description: 'Build', source: 'skill' }] as any[];
 
 beforeAll(async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -99,6 +101,7 @@ beforeEach(() => {
   for (const key of Object.keys(sheetRenders)) delete sheetRenders[key];
   sent.length = 0;
   composer = undefined;
+  suggestions = undefined;
 });
 afterEach(async () => {
   if (tree) await act(async () => tree?.unmount());
@@ -107,7 +110,7 @@ afterEach(async () => {
 
 async function mount() {
   await act(async () => {
-    tree = create(<SessionChatInput onSend={onSend} commands={commands} currentSessionId="s1" sandboxUrl="https://sandbox.test" />);
+    tree = create(<SessionChatInput onSend={onSend} commands={commands} agents={[{ name: 'reviewer', mode: 'primary', permission: [], options: {} }, { name: 'builder', mode: 'primary', permission: [], options: {} }]} currentSessionId="s1" sandboxUrl="https://sandbox.test" />);
   });
 }
 async function type(text: string) {
@@ -137,3 +140,25 @@ test('Recent files appends to the text as typed, and Send sends the text as type
   expect(sent[0][0]).toBe('hello world');
   expect(composer.value).toBe('');
 });
+
+for (const trigger of ['@', '#']) {
+  test(`${trigger} suggestions follow the caret before trailing text and close elsewhere`, async () => {
+    await mount();
+    await type(`hello ${trigger} trailing`);
+    await act(async () => composer.onSelectionChange({ nativeEvent: { selection: { start: 7, end: 7 } } }));
+    expect(suggestions?.items.map((item) => item.label)).toEqual(trigger === '@' ? ['reviewer', 'builder'] : ['review', 'build']);
+    await type(`hello ${trigger}rev trailing`);
+    await act(async () => composer.onSelectionChange({ nativeEvent: { selection: { start: 10, end: 10 } } }));
+    expect(suggestions?.items.map((item) => item.label)).toEqual([trigger === '@' ? 'reviewer' : 'review']);
+    expect(suggestions?.items[0].kind).toBe(trigger === '@' ? 'agent' : 'skill');
+    await act(async () => composer.onSelectionChange({ nativeEvent: { selection: { start: 15, end: 15 } } }));
+    expect(tree?.root.findAllByType(moduleMocks['./MentionSuggestions'].MentionSuggestions)).toHaveLength(0);
+  });
+
+  test(`${trigger} suggestions keep end-of-text typing behavior`, async () => {
+    await mount();
+    await type(`hello ${trigger}rev`);
+    await act(async () => composer.onSelectionChange({ nativeEvent: { selection: { start: 10, end: 10 } } }));
+    expect(suggestions?.items.map((item) => item.label)).toEqual([trigger === '@' ? 'reviewer' : 'review']);
+  });
+}
