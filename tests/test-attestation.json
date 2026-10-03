@@ -1,18 +1,23 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "08b37677348c30cbd0e71398d749ff67c64666badc5498b7a0feebee757c78e4",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "packages/db/drizzle/meta/20261003151721_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003150053416_audit_events_actor_aggregate_index.concurrent.ts",
+    "packages/db/scripts/audit-events-actor-index.integration.test.ts",
+    "packages/db/scripts/audit-events-partitioned.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "5e8451c5d2e40252288ef3868dcf893ecd2cc836c6727b0cda50fa3a264cd126",
+  "head": "db4e2e9bd668129e562f5963e12024a8ebdf8385",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T15:47:53.585Z"
 }
