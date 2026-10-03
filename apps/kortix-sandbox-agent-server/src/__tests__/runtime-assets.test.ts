@@ -116,6 +116,13 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Point the chunk-index sources at absent paths. The defaults are the real
+    // box's agent locations (`/opt/kortix`, `/usr/local/bin/kortix-agent`); on
+    // a Kortix runtime box those are a real ~110 MB binary, and indexing it
+    // through this fixture's 8-byte chunk size hangs the test (KRTX-1113
+    // attestation run). A dev box has neither, so this changes nothing there.
+    agentStateDir: join(ws.root, 'absent-agent-state'),
+    agentBakedPath: join(ws.root, 'absent-agent-bin'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

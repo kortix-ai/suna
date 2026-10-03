@@ -82,8 +82,11 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
 
   beforeAll(async () => {
     // Strict: an Oniguruma pattern the JS engine cannot translate throws here
-    // instead of silently skipping a scope.
-    await ensureHighlighter({ forgiving: false });
+    // instead of silently skipping a scope. tokenizeTimeLimit 0: the 500 ms
+    // per-line budget is wall-clock and truncated a line under GC/JIT load,
+    // which made the parity checks below scheduler-sensitive (KRTX-1113
+    // attestation run).
+    await ensureHighlighter({ forgiving: false, tokenizeTimeLimit: 0 });
     // Reference: the WebAssembly Oniguruma engine web runs.
     oniguruma = await createHighlighterCore({
       themes: [minLight, minDark],
@@ -154,6 +157,12 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
           .codeToTokensBase(sample, {
             lang,
             theme: scheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT,
+            // Both engines run unlimited here: the 500 ms per-line budget is
+            // WALL-CLOCK, so a GC or JIT pause inside one line truncates that
+            // line and turned the parity check into a coin flip on a loaded
+            // box. The app's production budget is unchanged (see
+            // HighlighterOptions.tokenizeTimeLimit).
+            tokenizeTimeLimit: 0,
           })
           .map((line) =>
             line.map((t) => ({ content: t.content, color: t.color ?? CODE_THEME_FOREGROUND[scheme] })),

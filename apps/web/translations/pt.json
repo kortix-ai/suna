@@ -19204,7 +19204,8 @@
       "textd4586396b9ba": "Os agentes podem usar a CLI por conta própria?",
       "text9e52157faaab": "Sim. A mesma CLI do Kortix roda em cada sandbox, já autenticada, então os agentes usam exatamente os mesmos comandos que você.",
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
-      "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções."
+      "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
+      "text86d46af64354": "A execução do agente falhou. Nenhum motivo foi relatado."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

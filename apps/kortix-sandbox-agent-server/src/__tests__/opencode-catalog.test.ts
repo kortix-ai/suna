@@ -71,15 +71,23 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
   return (JSON.parse(raw!) as ProviderConfig).provider.kortix.models
 }
 
+// This runtime box has a real baked catalog at /opt/kortix/llm-catalog.json;
+// a dev box has none. Point the baked-path override at an absent file so the
+// "no catalog on disk" cases below are judged, not the box (KRTX-1113
+// attestation run). Restored after every test.
+const realBakedCatalogPath = process.env.KORTIX_LLM_CATALOG_BAKED_PATH
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  process.env.KORTIX_LLM_CATALOG_BAKED_PATH = join(tmpdir(), `kortix-absent-baked-catalog-${process.pid}`)
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  if (realBakedCatalogPath === undefined) delete process.env.KORTIX_LLM_CATALOG_BAKED_PATH
+  else process.env.KORTIX_LLM_CATALOG_BAKED_PATH = realBakedCatalogPath
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

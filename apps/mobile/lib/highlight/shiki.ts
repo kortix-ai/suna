@@ -132,6 +132,15 @@ export interface HighlighterOptions {
    * block; the test runs strict so an untranslatable pattern fails loudly.
    */
   forgiving?: boolean;
+  /**
+   * Shiki's per-line tokenize time budget in ms (@shikijs/primitive
+   * `tokenizeTimeLimit`, default 500). Production keeps the default: a line
+   * that stalls leaves its rest uncoloured instead of holding the JS thread.
+   * The parity test pins 0 (unlimited) because the budget is WALL-CLOCK — a
+   * GC or JIT pause inside one line truncates it, which turned the php parity
+   * check into a coin flip on a loaded box (KRTX-1113 attestation run).
+   */
+  tokenizeTimeLimit?: number;
 }
 
 let highlighter: HighlighterCore | null = null;
@@ -299,6 +308,7 @@ export function highlightToTokens(
       lang,
       theme: codeThemeFor(scheme),
       tokenizeMaxLineLength: MAX_LINE_LENGTH,
+      tokenizeTimeLimit: highlighterOptions.tokenizeTimeLimit,
     });
     lines = toCodeLines(raw, CODE_THEME_FOREGROUND[scheme]);
   } catch {
@@ -365,6 +375,7 @@ export function highlightToTokensAsync(
             theme,
             grammarState: state,
             tokenizeMaxLineLength: MAX_LINE_LENGTH,
+            tokenizeTimeLimit: highlighterOptions.tokenizeTimeLimit,
           });
           state = core.getLastGrammarState(raw);
           lines.push(...toCodeLines(raw, fallback));

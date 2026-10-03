@@ -6,6 +6,18 @@ import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-asse
 import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
 
 /**
+ * The host-written session env file (`/etc/pt-env` in the VM image).
+ * `KORTIX_PT_ENV_PATH` overrides it — for tests on a box that has a real one,
+ * whose session state (KORTIX_BRANCH_NAME, KORTIX_PROJECT_AUTO_CLONE) must not
+ * leak into a rig that builds its own env (KRTX-1113 attestation run).
+ */
+function ptEnvText(): string {
+  try {
+    return readFileSync(process.env.KORTIX_PT_ENV_PATH?.trim() || '/etc/pt-env', 'utf8')
+  } catch { return '' }
+}
+
+/**
  * The branch this VM's session is supposed to be on, read from the host-
  * written env file rather than process.env: warm-seed forks resume a process
  * whose env predates the session (adoption reloads it ~250ms later), but
@@ -14,10 +26,8 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
 function wantedSessionBranch(): string {
-  try {
-    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
-    if (m?.[1]) return m[1]
-  } catch { /* no env file (local dev) */ }
+  const m = ptEnvText().match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+  if (m?.[1]) return m[1]
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
 }
 
@@ -32,11 +42,7 @@ function wantedSessionBranch(): string {
  */
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
-  try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
-  } catch {
-    return false
-  }
+  return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(ptEnvText())
 }
 
 /**

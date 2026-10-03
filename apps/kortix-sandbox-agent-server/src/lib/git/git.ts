@@ -1159,10 +1159,15 @@ async function tryScaffoldDeltaFetch(
     // through the proxy; measured 4.1–6.5 s vs 3.6 s for a depth-1 clone,
     // 2026-08-27). The repo becomes shallow; scheduleHistoryBackfill restores
     // history off the critical path exactly as for a clone.
+    // KORTIX_CLONE_DEPTH=0 means a full history NOW (the clone path at line
+    // ~890 honors it); the scaffold path must too, or the operator's 0 is
+    // silently a depth-1 fetch on every image that ships the scaffold
+    // (caught by the clone-depth test on a box with the real scaffold).
+    const depthArgs = cfg.cloneDepth > 0 ? ['--depth', String(cfg.cloneDepth)] : []
     const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
-      'fetch', '-q', '--depth', '1', '--no-tags', 'origin', base,
+      'fetch', '-q', ...depthArgs, '--no-tags', 'origin', base,
     ], { timeoutMs: 35_000 })
     if (fetched.code !== 0) throw new Error(`fetch: ${fetched.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'FETCH_HEAD'])
