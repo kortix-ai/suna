@@ -1,5 +1,5 @@
 {
-  "id": "ac31cfa6-9ea5-4b1a-b596-ff9eac058b7a",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -1495,48 +1495,6 @@
             },
             {
               "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_secret_grants_secret_account": {
-          "name": "idx_account_secret_grants_secret_account",
-          "columns": [
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_secret_grants_user_account": {
-          "name": "idx_account_secret_grants_user_account",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5540,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",

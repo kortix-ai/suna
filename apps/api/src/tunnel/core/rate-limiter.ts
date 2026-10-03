@@ -11,6 +11,7 @@ interface RateLimitConfig {
 }
 
 class TunnelRateLimiter {
+  // replica-local: limit × API replicas; stops runaway clients, not a quota.
   private buckets = new Map<string, Bucket>();
   private readonly maxBuckets = 10_000;
 
