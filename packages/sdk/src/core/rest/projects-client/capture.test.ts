@@ -6,6 +6,7 @@ import {
   denyCaptureDeviceGrant,
   getCaptureAssetUrl,
   getCaptureChunkMedia,
+  getCaptureDays,
   getCaptureDeviceGrant,
   getCaptureFrame,
   getCapturePeople,
@@ -87,6 +88,17 @@ test('timeline: a day, a window, and its items; the query names the subject and 
   expect(last().url).toBe(`${P}/timeline/items?day=2026-10-03`);
 });
 
+test('recorded days: grouped in the caller’s time zone, for a member or one device', async () => {
+  nextBody = { user_id: 'u1', tz: 'Europe/Berlin', days: [{ day: '2026-10-03', start_at: 'a', end_at: 'b', screen_seconds: 600 }] };
+  const result = await getCaptureDays('p1', { tz: 'Europe/Berlin' });
+  expect(last()).toMatchObject({ method: 'GET', url: `${P}/days?tz=Europe%2FBerlin` });
+  expect(result.days[0]?.screen_seconds).toBe(600);
+  await getCaptureDays('p1', { userId: 'u2', deviceId: 'd1' });
+  expect(last().url).toBe(`${P}/days?user_id=u2&device_id=d1`);
+  await getCaptureDays('p1');
+  expect(last().url).toBe(`${P}/days`);
+});
+
 test('search: query, kinds, app and limit are sent; hits come back newest first', async () => {
   nextBody = { user_id: 'u1', q: 'invoice', hits: [{ kind: 'screen', id: 'f1', snippet: 'Invoice 1042' }] };
   const result = await searchCapture('p1', { q: 'invoice 1042', kinds: ['screen', 'audio'], app: 'Mail', limit: 5 });
@@ -144,6 +156,8 @@ test('the facade binds capture to a project and exposes the sign-in approval at 
   expect(last().url).toBe(`${P}/devices?scope=project`);
   await kortix.project('p1').capture.timeline.get({ day: '2026-10-03' });
   expect(last().url).toBe(`${P}/timeline?day=2026-10-03`);
+  await kortix.project('p1').capture.timeline.days({ tz: 'UTC' });
+  expect(last().url).toBe(`${P}/days?tz=UTC`);
   await kortix.project('p1').capture.devices.sync('d1');
   expect(last().url).toBe(`${P}/devices/d1/sync`);
   await kortix.project('p1').capture.ranges.process('r1');

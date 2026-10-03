@@ -407,6 +407,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|audit",
   "GET|v1|projects|:projectId|branches",
   "GET|v1|projects|:projectId|capture|chunks|:chunkId|media",
+  "GET|v1|projects|:projectId|capture|days",
   "GET|v1|projects|:projectId|capture|devices",
   "DELETE|v1|projects|:projectId|capture|devices|:deviceId",
   "GET|v1|projects|:projectId|capture|devices|:deviceId|assets|:name",

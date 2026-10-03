@@ -170,6 +170,32 @@ export interface CaptureTimelineItems {
   audio: CaptureAudioLine[];
 }
 
+/** Who and which device, grouped by the day in `tz` (an IANA zone; default UTC). */
+export interface CaptureDaysQuery {
+  tz?: string;
+  /** Another member (managers only, audited). Default: the caller. */
+  userId?: string;
+  deviceId?: string;
+}
+
+/** One local day with recorded items. */
+export interface CaptureDay {
+  /** `YYYY-MM-DD` in the query's time zone. */
+  day: string;
+  /** The first and the last recorded moment of the day (ISO). */
+  start_at: string;
+  end_at: string;
+  /** Seconds of screen recording, summed over the day's screen chunks. */
+  screen_seconds: number;
+}
+
+export interface CaptureDays {
+  user_id: string;
+  tz: string;
+  /** Newest first, at most 366. */
+  days: CaptureDay[];
+}
+
 export type CaptureSearchKind = 'screen' | 'actions' | 'audio';
 
 export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day'> {
@@ -353,6 +379,15 @@ export async function getCaptureTimeline(projectId: string, query: CaptureWindow
 export async function getCaptureTimelineItems(projectId: string, query: CaptureWindowQuery = {}) {
   return unwrap(
     await backendApi.get<CaptureTimelineItems>(`${base(projectId)}/timeline/items${captureQuery(windowParams(query))}`),
+  );
+}
+
+/** The days with recorded items, newest first: the day picker of a timeline. */
+export async function getCaptureDays(projectId: string, query: CaptureDaysQuery = {}) {
+  return unwrap(
+    await backendApi.get<CaptureDays>(
+      `${base(projectId)}/days${captureQuery({ tz: query.tz, user_id: query.userId, device_id: query.deviceId })}`,
+    ),
   );
 }
 

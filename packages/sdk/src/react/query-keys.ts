@@ -385,6 +385,21 @@ export const qk = {
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
 
+    /** Kortix Capture: the prefix of every capture key of the project. */
+    capture: (id: string) => [...qk.project.scope(id), 'capture'] as const,
+    /** `listCaptureDevices` — mine, a member's, or the project's (`scope`). */
+    captureDevices: (id: string, scope: string, userId: string | null) =>
+      [...qk.project.capture(id), 'devices', scope, userId] as const,
+    /** Everything read off one person's timeline: days, runs, items, search,
+     *  frames, ranges. A saved range or a sync invalidates this prefix. */
+    captureTimeline: (id: string) => [...qk.project.capture(id), 'timeline'] as const,
+    captureTimelineRead: (id: string, kind: string, query: unknown) =>
+      [...qk.project.captureTimeline(id), kind, query] as const,
+    /** `getCaptureRange` — one range with its outputs. */
+    captureRange: (id: string, rangeId: string) => [...qk.project.capture(id), 'range', rangeId] as const,
+    capturePolicy: (id: string) => [...qk.project.capture(id), 'policy'] as const,
+    capturePeople: (id: string, query: unknown) => [...qk.project.capture(id), 'people', query] as const,
+
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */

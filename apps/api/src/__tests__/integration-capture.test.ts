@@ -43,6 +43,7 @@ const { ingestManifest, extendDetectedRange } = await import('../capture/ingest'
 const { processRange, applyIdleWindows, computeIdleWindows, normalizeSegments } = await import('../capture/processing');
 const { applyRetention, closeQuietRanges, pollDevice } = await import('../capture/workers');
 const { writeProjectPolicy } = await import('../capture/policy');
+const { recordedDays } = await import('../capture/reads');
 const { DEFAULT_POLICY, projectPrefix } = await import('../capture/format');
 const { buildCaptureDay } = await import('../../../../tests/src/fixtures/capture');
 
@@ -115,6 +116,22 @@ describe('ingestion', () => {
     // Idempotent: a second ingest of every key indexes nothing new.
     for (const key of day.manifestKeys) expect((await ingestManifest(key)).status).toBe('duplicate');
     expect(await count('timeline_frames')).toBe(day.expected.frames);
+  });
+
+  test('recorded days: one row per local day, newest first, with its first and last moment and screen time', async () => {
+    const [first, second] = day.sessions;
+    const localDay = (ms: number, tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(ms));
+    for (const tz of ['UTC', 'Pacific/Kiritimati']) {
+      const days = await recordedDays(PROJECT, MEMBER, { tz });
+      // The fixture's day may cross midnight in either zone: compare against the zone's own dates.
+      expect(days.map((d) => d.day)).toEqual([...new Set([localDay(second!.endMs, tz), localDay(first!.startMs, tz)])]);
+      expect(days[0]!.end_at).toBe(new Date(second!.endMs).toISOString());
+      expect(days.at(-1)!.start_at).toBe(new Date(first!.startMs).toISOString());
+      // Six five-minute screen chunks, each 299 s long; audio and actions items do not count.
+      expect(days.reduce((sum, d) => sum + d.screen_seconds, 0)).toBe(6 * 299);
+    }
+    expect(await recordedDays(PROJECT, crypto.randomUUID(), { tz: 'UTC' })).toEqual([]);
+    expect(await recordedDays(PROJECT, MEMBER, { tz: 'UTC', deviceId: crypto.randomUUID() })).toEqual([]);
   });
 
   test('two sessions 40 minutes apart are two detected ranges; activity bridging them merges them into one', async () => {
