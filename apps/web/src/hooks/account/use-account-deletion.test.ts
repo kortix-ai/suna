@@ -5,9 +5,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const deleted = { success: true, message: 'Deleted' };
 const scheduled = { success: true, message: 'Scheduled', deletion_scheduled_for: '2030-01-01', can_cancel: true };
-const deleteAccountImmediately = mock(async () => deleted);
-const requestAccountDeletion = mock(async (_reason?: string) => scheduled);
-const cancelAccountDeletion = mock(async () => ({ success: true, message: 'Cancelled' }));
+const deleteAccountImmediately = mock(async (_accountId?: string) => deleted);
+const requestAccountDeletion = mock(async (_reason?: string, _accountId?: string) => scheduled);
+const cancelAccountDeletion = mock(async (_accountId?: string) => ({ success: true, message: 'Cancelled' }));
 const performSignOut = mock(async () => {});
 const successToast = mock((_message: string) => {});
 const errorToast = mock((_message: string) => {});
@@ -79,7 +79,7 @@ test('scheduled deletion and cancellation still update status without sign-out',
   const cancel = await mount(useCancelAccountDeletion);
   try {
     await request.mutation.mutateAsync('Synthetic reason');
-    expect(requestAccountDeletion).toHaveBeenCalledWith('Synthetic reason');
+    expect(requestAccountDeletion).toHaveBeenCalledWith('Synthetic reason', undefined);
     expect(request.client.getQueryData(ACCOUNT_DELETION_QUERY_KEY)).toEqual({ has_pending_deletion: true, deletion_scheduled_for: '2030-01-01', requested_at: expect.any(String), can_cancel: true, supported: true });
     await cancel.mutation.mutateAsync();
     expect(cancelAccountDeletion).toHaveBeenCalledTimes(1);
@@ -88,4 +88,41 @@ test('scheduled deletion and cancellation still update status without sign-out',
     expect(successToast).toHaveBeenCalledWith('Cancelled');
     expect(performSignOut).not.toHaveBeenCalled();
   } finally { await request.close(); await cancel.close(); }
+});
+
+// The account hub scopes every call by the account it is open on: the SDK
+// receives the id, and the status cache lands under the scoped key so the
+// surface that mounted the hook reads its own account's state.
+test('a scoped hook targets that account and caches under its own key', async () => {
+  const request = await mount(() => useRequestAccountDeletion('acc-team'));
+  const cancel = await mount(() => useCancelAccountDeletion('acc-team'));
+  try {
+    await request.mutation.mutateAsync('Scoped reason');
+    expect(requestAccountDeletion).toHaveBeenCalledWith('Scoped reason', 'acc-team');
+    expect(request.client.getQueryData(['account', 'deletion-status', 'acc-team'])).toEqual({ has_pending_deletion: true, deletion_scheduled_for: '2030-01-01', requested_at: expect.any(String), can_cancel: true, supported: true });
+    // The scoped entry never bleeds into the caller's own account's cache.
+    expect(request.client.getQueryData(ACCOUNT_DELETION_QUERY_KEY)).toBeUndefined();
+
+    await cancel.mutation.mutateAsync();
+    expect(cancelAccountDeletion).toHaveBeenCalledWith('acc-team');
+    expect(cancel.client.getQueryData(['account', 'deletion-status', 'acc-team'])).toEqual({ has_pending_deletion: false, deletion_scheduled_for: null, requested_at: null, can_cancel: false, supported: true });
+  } finally { await request.close(); await cancel.close(); }
+});
+
+test('deleting an account the caller does not own the identity of keeps them signed in', async () => {
+  deleteAccountImmediately.mockResolvedValue({ success: true, message: 'Deleted', identity_deleted: false });
+  const mounted = await mount(() => useDeleteAccountImmediately('acc-team'));
+  try {
+    await mounted.mutation.mutateAsync();
+    expect(deleteAccountImmediately).toHaveBeenCalledWith('acc-team');
+    expect(performSignOut).not.toHaveBeenCalled();
+  } finally { await mounted.close(); }
+});
+
+test('a response without identity_deleted still signs out (legacy server)', async () => {
+  const mounted = await mount(() => useDeleteAccountImmediately('acc-team'));
+  try {
+    await mounted.mutation.mutateAsync();
+    expect(performSignOut).toHaveBeenCalledTimes(1);
+  } finally { await mounted.close(); }
 });

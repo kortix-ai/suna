@@ -36,6 +36,14 @@ export interface DeleteImmediatelyResponse {
 
 export const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
 
+/** Cache key of one account's deletion status. Omit `accountId` for the
+ *  caller's own (primary) account — the Profile tab's case — and every
+ *  surface shares that one entry. The account hub scopes by the account it
+ *  is open on. */
+export function accountDeletionStatusKey(accountId?: string) {
+  return accountId ? [...ACCOUNT_DELETION_QUERY_KEY, accountId] : ACCOUNT_DELETION_QUERY_KEY;
+}
+
 const UNSUPPORTED_STATUS: AccountDeletionStatus = {
   has_pending_deletion: false,
   deletion_scheduled_for: null,
@@ -44,11 +52,11 @@ const UNSUPPORTED_STATUS: AccountDeletionStatus = {
   supported: false,
 };
 
-export function useAccountDeletionStatus() {
+export function useAccountDeletionStatus(accountId?: string) {
   return useQuery<AccountDeletionStatus>({
-    queryKey: ACCOUNT_DELETION_QUERY_KEY,
+    queryKey: accountDeletionStatusKey(accountId),
     queryFn: async () => {
-      const status = await getAccountDeletionStatus();
+      const status = await getAccountDeletionStatus(accountId);
       return status ? { ...status, supported: true } : UNSUPPORTED_STATUS;
     },
     staleTime: 30000,
@@ -56,16 +64,16 @@ export function useAccountDeletionStatus() {
   });
 }
 
-export function useRequestAccountDeletion() {
+export function useRequestAccountDeletion(accountId?: string) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (reason?: string) => requestAccountDeletion(reason),
+    mutationFn: (reason?: string) => requestAccountDeletion(reason, accountId),
     onSuccess: (data) => {
       successToast(data.message);
 
-      queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
+      queryClient.setQueryData<AccountDeletionStatus>(accountDeletionStatusKey(accountId), {
         has_pending_deletion: true,
         deletion_scheduled_for: data.deletion_scheduled_for ?? null,
         requested_at: new Date().toISOString(),
@@ -79,16 +87,16 @@ export function useRequestAccountDeletion() {
   });
 }
 
-export function useCancelAccountDeletion() {
+export function useCancelAccountDeletion(accountId?: string) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: cancelAccountDeletion,
+    mutationFn: () => cancelAccountDeletion(accountId),
     onSuccess: (data) => {
       successToast(data.message);
 
-      queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
+      queryClient.setQueryData<AccountDeletionStatus>(accountDeletionStatusKey(accountId), {
         has_pending_deletion: false,
         deletion_scheduled_for: null,
         requested_at: null,
@@ -102,13 +110,17 @@ export function useCancelAccountDeletion() {
   });
 }
 
-export function useDeleteAccountImmediately() {
+export function useDeleteAccountImmediately(accountId?: string) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return useMutation({
-    mutationFn: deleteAccountImmediately,
+    mutationFn: () => deleteAccountImmediately(accountId),
     onSuccess: async (data) => {
       successToast(data.message);
+      // Deleting an account that is not the caller's own keeps them signed
+      // in — the server says so. Absent field = a server that always deleted
+      // the identity (every response before scoping existed).
+      if (data.identity_deleted === false) return;
       await performSignOut();
     },
     onError: (error: Error) => {

@@ -4,6 +4,8 @@ import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
+import { resolveAccountId } from '../../shared/resolve-account';
+import { impersonatedAccountFor } from '../../shared/impersonation';
 import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
@@ -95,20 +97,44 @@ export async function cancelAccountDeletion(accountId: string) {
  * the route should always pass it — without it a user's team-account sandboxes
  * survive the deletion. See `reclaimableAccountIds`.
  */
+/**
+ * Delete one account right now.
+ *
+ * `userId` (the route always passes it) decides WHAT gets deleted:
+ *
+ * - The caller's own primary account (`resolveAccountId(userId)`) — the
+ *   "delete my account" case every client took before the account hub grew a
+ *   scoped button: owner-wide sandbox sweep, billing teardown, and the auth
+ *   identity deleted with the account, which is what signs the user out.
+ * - Any other account (the account hub's danger zone passes `?account_id=`)
+ *   — tear down THAT account only: its sandboxes, subscription and credits.
+ *   The caller survives with their identity and their other accounts, so the
+ *   response says `identity_deleted: false` and clients must not sign out.
+ *
+ * Without `userId`, the pending request's own requester decides, exactly as
+ * before (the scheduled path never deletes an identity; see
+ * `processScheduledDeletions`).
+ */
 export async function deleteAccountImmediately(accountId: string, userId?: string) {
   const request = await getActiveDeletionRequest(accountId);
-  await performDeletion(accountId, userId ?? request?.userId);
   const deletingUserId = userId ?? request?.userId;
-  if (deletingUserId) {
-    const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId);
+  const impersonated = impersonatedAccountFor(deletingUserId);
+  const primaryId = deletingUserId && !impersonated ? await resolveAccountId(deletingUserId) : null;
+  // Only the caller's own account takes the identity with it. An operator
+  // impersonating a customer resolves to the SAME account id from both
+  // sides, so the impersonation check is what keeps their identity alive.
+  const deletesIdentity = !!deletingUserId && !impersonated && accountId === primaryId;
+  await performDeletion(accountId, deletesIdentity ? deletingUserId : undefined);
+  if (deletesIdentity) {
+    const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId!);
     if (error) throw error;
-    forgetUserJwtLiveness(deletingUserId);
+    forgetUserJwtLiveness(deletingUserId!);
   }
   if (request) {
     await markDeletionCompleted(request.id);
   }
 
-  return { success: true, message: 'Account deleted' };
+  return { success: true, message: 'Account deleted', identity_deleted: deletesIdentity };
 }
 
 export async function processScheduledDeletions(): Promise<{

@@ -20,7 +20,9 @@
  *   disabled-looking text box invites a click that does nothing; a value that
  *   is not editable should not be dressed as a field.
  * - Delete account is red TEXT, not a filled destructive button. The
- *   `ConfirmDialog` behind it is unchanged — only the trigger's weight is.
+ *   confirmation dialog behind it is unchanged — only the trigger's weight is.
+ *   The dialog itself is shared with the account hub's danger zone
+ *   (`components/account/delete-account-dialogs.tsx`).
  * - The unavailable case (no account deletion on this deployment) shows muted
  *   text on the right instead of swapping the row out for a paragraph.
  *
@@ -56,32 +58,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  CancelAccountDeletionDialog,
+  DeleteAccountDialog,
+  formatDeletionDate,
+} from '@/components/account/delete-account-dialogs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  useAccountDeletionStatus,
-  useCancelAccountDeletion,
-  useDeleteAccountImmediately,
-  useRequestAccountDeletion,
-} from '@/hooks/account/use-account-deletion';
+import { useAccountDeletionStatus } from '@/hooks/account/use-account-deletion';
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
@@ -106,8 +97,6 @@ function getInitials(name: string): string {
   );
 }
 
-type DeletionType = 'grace-period' | 'immediate';
-
 export interface ProfileTabCopy {
   profilePicture: string;
   profilePictureDescription: string;
@@ -129,25 +118,6 @@ export interface ProfileTabCopy {
   deletionDescription: string;
   unavailable: string;
   keepMyAccount: string;
-  deleteDialogTitle: string;
-  immediateWarning: string;
-  gracePeriodWarning: string;
-  whenDeleted: string;
-  agentsDeleted: string;
-  threadsDeleted: string;
-  credentialsDeleted: string;
-  subscriptionCancelled: string;
-  billingHistoryRemoved: string;
-  chooseWhen: string;
-  gracePeriodLabel: string;
-  gracePeriodDescription: string;
-  immediateLabel: string;
-  immediateDescription: string;
-  typeDeleteToConfirm: string;
-  keepAccount: string;
-  processing: string;
-  keepAccountTitle: string;
-  keepAccountDescription: string;
 }
 
 export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
@@ -181,29 +151,6 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
     'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.',
   unavailable: 'Unavailable',
   keepMyAccount: 'Keep my account',
-  deleteDialogTitle: 'Delete your account?',
-  immediateWarning:
-    'This deletes your account right away. There is no grace period and no way to undo it.',
-  gracePeriodWarning:
-    'Your account is scheduled for deletion after a 30-day grace period, during which you can cancel.',
-  whenDeleted: 'When your account is deleted:',
-  agentsDeleted: 'Every agent you own is deleted',
-  threadsDeleted: 'Every thread and message is deleted',
-  credentialsDeleted: 'Every credential and secret is removed',
-  subscriptionCancelled: 'Your subscription is cancelled',
-  billingHistoryRemoved: 'Your billing history is removed',
-  chooseWhen: 'Choose when',
-  gracePeriodLabel: '30-day grace period',
-  gracePeriodDescription:
-    'Deletion happens automatically after 30 days. Cancel any time before then.',
-  immediateLabel: 'Delete immediately',
-  immediateDescription: 'Your account and its data are deleted right away. This cannot be undone.',
-  typeDeleteToConfirm: 'Type "delete" to confirm',
-  keepAccount: 'Keep account',
-  processing: 'Processing…',
-  keepAccountTitle: 'Keep your account?',
-  keepAccountDescription:
-    'This cancels the scheduled deletion. Your account and its data stay exactly as they are.',
 };
 
 export interface ProfileTabViewProps {
@@ -237,20 +184,8 @@ export interface ProfileTabViewProps {
   accountDeletionSupported?: boolean;
   hasPendingDeletion?: boolean;
   deletionScheduledForLabel?: string | null;
-  showDeleteDialog?: boolean;
   onOpenDeleteDialog?: () => void;
-  onCloseDeleteDialog?: () => void;
-  deletionType?: DeletionType;
-  onDeletionTypeChange?: (value: DeletionType) => void;
-  deleteConfirmText?: string;
-  onDeleteConfirmTextChange?: (value: string) => void;
-  onConfirmDelete?: () => void;
-  isDeletingAccount?: boolean;
-  showCancelDeletionDialog?: boolean;
   onOpenCancelDeletionDialog?: () => void;
-  onCloseCancelDeletionDialog?: () => void;
-  onConfirmCancelDeletion?: () => void;
-  isCancelingDeletion?: boolean;
   copy?: Partial<Omit<ProfileTabCopy, 'organizations'>> & {
     organizations?: Partial<AccountMembershipsCopy>;
   };
@@ -284,20 +219,8 @@ export function ProfileTabView({
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
-  showDeleteDialog = false,
   onOpenDeleteDialog = () => {},
-  onCloseDeleteDialog = () => {},
-  deletionType = 'grace-period',
-  onDeletionTypeChange = () => {},
-  deleteConfirmText = '',
-  onDeleteConfirmTextChange = () => {},
-  onConfirmDelete = () => {},
-  isDeletingAccount = false,
-  showCancelDeletionDialog = false,
   onOpenCancelDeletionDialog = () => {},
-  onCloseCancelDeletionDialog = () => {},
-  onConfirmCancelDeletion = () => {},
-  isCancelingDeletion = false,
   copy: copyOverrides = {},
 }: ProfileTabViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -435,7 +358,6 @@ export function ProfileTabView({
                 variant="secondary"
                 size="sm"
                 onClick={onOpenCancelDeletionDialog}
-                disabled={isCancelingDeletion}
               >
                 {copy.keepMyAccount}
               </Button>
@@ -443,7 +365,8 @@ export function ProfileTabView({
               /* Red text, not a filled button: the weight belongs to the
                  confirmation inside the modal, not to the affordance that
                  opens it. Same trigger as `general-tab.tsx`'s Delete
-                 workspace. */
+                 workspace. The modal itself is the shared
+                 `DeleteAccountDialog` — the container mounts it. */
               <Button
                 variant="ghost"
                 size="sm"
@@ -455,97 +378,6 @@ export function ProfileTabView({
             )}
           </SettingsRow>
         </SettingsRowGroup>
-
-        {accountDeletionSupported && (
-          <>
-            <Modal open={showDeleteDialog} onOpenChange={(open) => !open && onCloseDeleteDialog()}>
-              <ModalContent className="lg:max-w-md" variant="base">
-                <ModalHeader>
-                  <ModalTitle>{copy.deleteDialogTitle}</ModalTitle>
-                </ModalHeader>
-                <ModalBody className="space-y-4">
-                  <InfoBanner tone="warning">
-                    {deletionType === 'immediate' ? copy.immediateWarning : copy.gracePeriodWarning}
-                  </InfoBanner>
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">{copy.whenDeleted}</p>
-                    <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
-                      <li>{copy.agentsDeleted}</li>
-                      <li>{copy.threadsDeleted}</li>
-                      <li>{copy.credentialsDeleted}</li>
-                      <li>{copy.subscriptionCancelled}</li>
-                      <li>{copy.billingHistoryRemoved}</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-3">
-                    <Label className="text-sm">{copy.chooseWhen}</Label>
-                    <RadioGroup
-                      value={deletionType}
-                      onValueChange={(value) => onDeletionTypeChange(value as DeletionType)}
-                    >
-                      <RadioGroupItem
-                        value="grace-period"
-                        id="profile-grace-period"
-                        label={copy.gracePeriodLabel}
-                        description={copy.gracePeriodDescription}
-                        size="lg"
-                        variant="outline"
-                      />
-                      <RadioGroupItem
-                        value="immediate"
-                        id="profile-immediate"
-                        label={copy.immediateLabel}
-                        description={copy.immediateDescription}
-                        size="lg"
-                        variant="outline"
-                      />
-                    </RadioGroup>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="profile-delete-confirm" className="text-sm">
-                      {copy.typeDeleteToConfirm}
-                    </Label>
-                    <Input
-                      type="text"
-                      id="profile-delete-confirm"
-                      value={deleteConfirmText}
-                      onChange={(e) => onDeleteConfirmTextChange(e.target.value)}
-                      placeholder={tI18nComplete.raw('text6197595503f0')}
-                      autoComplete="off"
-                    />
-                  </div>
-                </ModalBody>
-                <ModalFooter className="w-full sm:justify-between">
-                  <Button
-                    variant="outline-ghost"
-                    onClick={onCloseDeleteDialog}
-                    className="w-full sm:w-auto"
-                  >
-                    {copy.keepAccount}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={onConfirmDelete}
-                    disabled={isDeletingAccount || deleteConfirmText !== 'delete'}
-                    className="w-full sm:w-auto"
-                  >
-                    {isDeletingAccount ? copy.processing : copy.deleteAccount}
-                  </Button>
-                </ModalFooter>
-              </ModalContent>
-            </Modal>
-
-            <ConfirmDialog
-              open={showCancelDeletionDialog}
-              onOpenChange={(open) => !open && onCloseCancelDeletionDialog()}
-              title={copy.keepAccountTitle}
-              description={copy.keepAccountDescription}
-              confirmLabel={copy.keepMyAccount}
-              onConfirm={onConfirmCancelDeletion}
-              isPending={isCancelingDeletion}
-            />
-          </>
-        )}
       </section>
     </div>
   );
@@ -589,25 +421,6 @@ export function ProfileTab() {
       deletionDescription: t('deletionDescription'),
       unavailable: t('unavailable'),
       keepMyAccount: t('keepMyAccount'),
-      deleteDialogTitle: t('deleteDialogTitle'),
-      immediateWarning: t('immediateWarning'),
-      gracePeriodWarning: t('gracePeriodWarning'),
-      whenDeleted: t('whenDeleted'),
-      agentsDeleted: t('agentsDeleted'),
-      threadsDeleted: t('threadsDeleted'),
-      credentialsDeleted: t('credentialsDeleted'),
-      subscriptionCancelled: t('subscriptionCancelled'),
-      billingHistoryRemoved: t('billingHistoryRemoved'),
-      chooseWhen: t('chooseWhen'),
-      gracePeriodLabel: t('gracePeriodLabel'),
-      gracePeriodDescription: t('gracePeriodDescription'),
-      immediateLabel: t('immediateLabel'),
-      immediateDescription: t('immediateDescription'),
-      typeDeleteToConfirm: t('typeDeleteToConfirm'),
-      keepAccount: t('keepAccount'),
-      processing: t('processing'),
-      keepAccountTitle: t('keepAccountTitle'),
-      keepAccountDescription: t('keepAccountDescription'),
     }),
     [t],
   );
@@ -740,56 +553,21 @@ export function ProfileTab() {
   const { accounts, isLoading: accountsLoading } = useAccountMemberships();
 
   // --- Delete account ---------------------------------------------------
+  // The row is state + trigger only; the dialogs themselves (and every
+  // mutation behind them) are the shared `DeleteAccountDialog` /
+  // `CancelAccountDeletionDialog`, mounted below the view.
   const { data: deletionStatus, isLoading: isCheckingDeletionStatus } = useAccountDeletionStatus();
-  const requestDeletion = useRequestAccountDeletion();
-  const cancelDeletion = useCancelAccountDeletion();
-  const deleteImmediately = useDeleteAccountImmediately();
   const accountDeletionSupported =
     isBillingEnabled() && (deletionStatus?.supported ?? !isCheckingDeletionStatus);
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [deletionType, setDeletionType] = useState<DeletionType>('grace-period');
 
-  const closeDeleteDialog = () => {
-    setShowDeleteDialog(false);
-    setDeleteConfirmText('');
-    setDeletionType('grace-period');
-  };
-
-  const handleConfirmDelete = async () => {
-    try {
-      if (deletionType === 'immediate') {
-        await deleteImmediately.mutateAsync();
-      } else {
-        await requestDeletion.mutateAsync('User requested deletion');
-      }
-      closeDeleteDialog();
-    } catch {
-      // Mutation onError already shows the user-facing message.
-    }
-  };
-
-  const handleConfirmCancelDeletion = async () => {
-    try {
-      await cancelDeletion.mutateAsync();
-      setShowCancelDeletionDialog(false);
-    } catch {
-      // Mutation onError already shows the user-facing message.
-    }
-  };
-
-  const formatDate = (dateString: string | null | undefined): string | null => {
-    if (!dateString) return null;
-    return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }).format(new Date(dateString));
-  };
+  const formatDate = (dateString: string | null | undefined): string | null =>
+    formatDeletionDate(dateString, locale);
 
   return (
+    <>
     <ProfileTabView
       userName={profileQuery.data?.name ?? ''}
       avatarUrl={profileQuery.data?.avatarUrl ?? ''}
@@ -814,21 +592,22 @@ export function ProfileTab() {
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}
-      showDeleteDialog={showDeleteDialog}
       onOpenDeleteDialog={() => setShowDeleteDialog(true)}
-      onCloseDeleteDialog={closeDeleteDialog}
-      deletionType={deletionType}
-      onDeletionTypeChange={setDeletionType}
-      deleteConfirmText={deleteConfirmText}
-      onDeleteConfirmTextChange={setDeleteConfirmText}
-      onConfirmDelete={handleConfirmDelete}
-      isDeletingAccount={requestDeletion.isPending || deleteImmediately.isPending}
-      showCancelDeletionDialog={showCancelDeletionDialog}
       onOpenCancelDeletionDialog={() => setShowCancelDeletionDialog(true)}
-      onCloseCancelDeletionDialog={() => setShowCancelDeletionDialog(false)}
-      onConfirmCancelDeletion={handleConfirmCancelDeletion}
-      isCancelingDeletion={cancelDeletion.isPending}
       copy={copy}
     />
+
+      {/* The dialogs are portals — their DOM position is irrelevant, so the
+          hook-free view above stays the only thing under
+          `renderToStaticMarkup`. */}
+      <DeleteAccountDialog
+        open={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+      />
+      <CancelAccountDeletionDialog
+        open={showCancelDeletionDialog}
+        onClose={() => setShowCancelDeletionDialog(false)}
+      />
+    </>
   );
 }

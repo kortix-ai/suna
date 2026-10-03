@@ -464,7 +464,10 @@ cleanup() {
 # a flat, light runtime and is prod-accurate. The agent just runs `pnpm dev`.
 run_sandbox_dev() {
   echo "[dev] Kortix sandbox detected → full local stack (Supabase + API + web), self-contained."
-  export PATH="/opt/supabase:/usr/local/bin:$PATH"
+  # The repo pins a compatible supabase CLI in package.json (CI runs
+  # `pnpm exec supabase …`); the image's /opt/supabase copy is older and
+  # rejects newer supabase/config.toml keys — prefer the pinned CLI.
+  export PATH="$ROOT_DIR/node_modules/.bin:/opt/supabase:/usr/local/bin:$PATH"
   export KORTIX_LOCAL_DEV=1 ENV_MODE=local
 
   # Docker daemon — Supabase runs as containers. Start it if boot didn't.

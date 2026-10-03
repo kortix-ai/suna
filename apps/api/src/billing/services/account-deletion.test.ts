@@ -31,6 +31,10 @@ let scheduledRequests: Array<{ id: string; accountId: string; userId: string }> 
 let completedRequests: string[] = [];
 let deletedUsers: string[] = [];
 let deleteUserError: Error | null = null;
+// The caller's primary account and the impersonation target, as
+// `shared/resolve-account` / `shared/impersonation` would resolve them.
+let primaryAccountId = 'acct-1';
+let impersonatedAccountId: string | null = null;
 const { config } = await import('../../config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
 const liveness = await import('../../shared/jwt-liveness');
@@ -142,6 +146,14 @@ mock.module('../repositories/account-deletion', () => ({
   getScheduledDeletions: async () => scheduledRequests,
 }));
 
+mock.module('../../shared/resolve-account', () => ({
+  resolveAccountId: async () => primaryAccountId,
+}));
+
+mock.module('../../shared/impersonation', () => ({
+  impersonatedAccountFor: () => impersonatedAccountId,
+}));
+
 const { deleteAccountImmediately, reclaimableAccountIds, processScheduledDeletions } = await import('./account-deletion');
 
 /**
@@ -178,6 +190,8 @@ beforeEach(() => {
   scheduledRequests = [];
   completedRequests = [];
   deleteUserError = null;
+  primaryAccountId = 'acct-1';
+  impersonatedAccountId = null;
   liveness.__setJwtLivenessLoaderForTests(null);
 });
 
@@ -358,6 +372,57 @@ describe('deleteAccountImmediately — session settle', () => {
     const result = await deleteAccountImmediately('acct-1');
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('deleteAccountImmediately — identity scope', () => {
+  test('deleting a team account spares the identity and sweeps only that account', async () => {
+    // The caller's primary account is acct-1; they also own acct-2 and
+    // acct-3. Deleting team account acct-9 must tear down acct-9 only —
+    // not the caller's identity, not their other accounts' sandboxes.
+    primaryAccountId = 'acct-1';
+    ownedAccountRows = [{ accountId: 'acct-2' }, { accountId: 'acct-3' }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+
+    const result = await deleteAccountImmediately('acct-9', 'user-1');
+
+    expect(result).toMatchObject({ success: true, identity_deleted: false });
+    expect(deletedUsers).toEqual([]);
+    const values = whereParams(sandboxWhereArg);
+    expect(values).toContain('acct-9');
+    expect(values).not.toContain('acct-1');
+    expect(values).not.toContain('acct-2');
+    expect(values).not.toContain('acct-3');
+  });
+
+  test('the primary account keeps the full user deletion: identity + owner-wide sweep', async () => {
+    primaryAccountId = 'acct-1';
+    ownedAccountRows = [{ accountId: 'acct-2' }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+
+    const result = await deleteAccountImmediately('acct-1', 'user-1');
+
+    expect(result).toMatchObject({ success: true, identity_deleted: true });
+    expect(deletedUsers).toEqual(['user-1']);
+    const values = whereParams(sandboxWhereArg);
+    expect(values).toContain('acct-1');
+    expect(values).toContain('acct-2');
+  });
+
+  test('an impersonated deletion never deletes the operator identity', async () => {
+    // An operator acting as a customer account resolves to that account from
+    // BOTH the scope and their own primary resolution — without the
+    // impersonation guard the comparison would read "my own account" and
+    // delete the OPERATOR's auth user.
+    impersonatedAccountId = 'acct-9';
+    ownedAccountRows = [{ accountId: 'acct-2' }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+
+    const result = await deleteAccountImmediately('acct-9', 'user-1');
+
+    expect(result).toMatchObject({ success: true, identity_deleted: false });
+    expect(deletedUsers).toEqual([]);
+    expect(whereParams(sandboxWhereArg)).toContain('acct-9');
   });
 });
 

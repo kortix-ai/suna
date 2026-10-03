@@ -20,7 +20,11 @@
  * (`accountTab`, …) through one translation. Never `useSearchParams()`.
  */
 
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
+
+import { CancelAccountDeletionDialog, DeleteAccountDialog, formatDeletionDate } from '@/components/account/delete-account-dialogs';
+import { useAccountDeletionStatus } from '@/hooks/account/use-account-deletion';
+import { isBillingEnabled } from '@/lib/config';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
@@ -606,7 +610,7 @@ export function AccountHubContent() {
 
               {canDeleteAccount ? (
                 <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
-                  <DangerZoneCard />
+                  <DangerZoneCard accountId={account.account_id} />
                 </SettingsGroup>
               ) : null}
             </div>
@@ -934,8 +938,34 @@ function GeneralCard({
   );
 }
 
-function DangerZoneCard() {
+function DangerZoneCard({ accountId }: { accountId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.profile');
+  const locale = useLocale();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { data: deletionStatus, isLoading: isCheckingDeletionStatus } = useAccountDeletionStatus(accountId);
+  // Same gate as the Profile tab: billing off (self-host) means this
+  // deployment has no deletion routes at all.
+  const accountDeletionSupported =
+    isBillingEnabled() && (deletionStatus?.supported ?? !isCheckingDeletionStatus);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+
+  const hasPendingDeletion = deletionStatus?.has_pending_deletion ?? false;
+  const scheduledLabel = deletionStatus?.has_pending_deletion
+    ? formatDeletionDate(deletionStatus.deletion_scheduled_for, locale)
+    : null;
+  const description = !accountDeletionSupported
+    ? t('deletionUnavailable')
+    : hasPendingDeletion
+      ? `${
+          scheduledLabel
+            ? t('scheduledForDeletionOn', { date: scheduledLabel })
+            : t('scheduledForDeletion')
+        } ${t('cancelBeforeDeletion')}`
+      : tI18nComplete.raw('textdc32ee18ad99');
+
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
       <div className="flex items-center justify-between gap-4">
@@ -943,20 +973,46 @@ function DangerZoneCard() {
           <p className="text-foreground text-sm font-medium">
             {tI18nComplete.raw('texta2e20a335700')}
           </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tI18nComplete.raw('textdc32ee18ad99')}
-          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled
-          title={tI18nComplete.raw('text4f7d64017689')}
-          className="shrink-0"
-        >
-          {tI18nComplete.raw('text4f7d64017689')}
-        </Button>
+        {!accountDeletionSupported ? (
+          <span className="text-muted-foreground shrink-0 text-sm">{t('unavailable')}</span>
+        ) : hasPendingDeletion ? (
+          <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setShowCancelDialog(true)}>
+            {t('keepMyAccount')}
+          </Button>
+        ) : (
+          /* Same weight rule as the Profile tab's trigger: red text, the
+             confirmation inside the dialog carries the destructiveness. */
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            {tI18nComplete.raw('texta2e20a335700')}
+          </Button>
+        )}
       </div>
+      <DeleteAccountDialog
+        open={showDeleteDialog}
+        accountId={accountId}
+        onClose={() => setShowDeleteDialog(false)}
+        onDeleted={(result) => {
+          // A deletion that kept the caller signed in leaves them standing on
+          // a dead account's settings. Their own deletion signs them out
+          // inside the hook instead.
+          if (result.identity_deleted === false) {
+            queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
+            router.push('/dashboard');
+          }
+        }}
+      />
+      <CancelAccountDeletionDialog
+        open={showCancelDialog}
+        accountId={accountId}
+        onClose={() => setShowCancelDialog(false)}
+      />
     </div>
   );
 }

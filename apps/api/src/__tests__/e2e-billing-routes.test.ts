@@ -39,6 +39,11 @@ let mockDeletionCancelResult: any = null;
 let mockDeletionDeleteResult: any = null;
 let mockDeletionError: Error | null = null;
 let mockAccountDeleteAllowed = true;
+// Every deletion service call the routes made, so a test can assert WHICH
+// account each route resolved (the explicit `account_id` scope vs the
+// caller's primary default) and which surface it read it from.
+let mockDeletionCalls: Array<{ fn: string; accountId: string }> = [];
+let mockScopedCalls: Array<{ source: 'query' | 'body'; accountId: string | undefined }> = [];
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -55,7 +60,27 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
-  resolveScopedAccountId: async () => TEST_USER_ID,
+  // Mimics the real resolver's contract: read `account_id` from the declared
+  // surface, fall back to the caller's primary account, refuse a
+  // non-member's explicit target. `not-a-member` is the sentinel a test uses
+  // to exercise the 403 path.
+  resolveScopedAccountId: async (c: { req: { query(k: string): string | undefined; json(): Promise<any> } }, source: 'query' | 'body') => {
+    let requested: string | undefined;
+    if (source === 'query') {
+      requested = c.req.query('account_id');
+    } else {
+      try {
+        requested = (await c.req.json())?.account_id;
+      } catch {
+        // No JSON body or malformed — fall through to the default.
+      }
+    }
+    mockScopedCalls.push({ source, accountId: requested });
+    if (requested === 'not-a-member') {
+      throw new HTTPException(403, { message: 'Not a member of the requested account' });
+    }
+    return requested ?? TEST_USER_ID;
+  },
 }));
 
 // `assertAuthorized` now takes the structured Actor as its FIRST argument, so
@@ -131,10 +156,12 @@ mock.module('../billing/repositories/transactions', () => ({
 // Account deletion service mock
 mock.module('../billing/services/account-deletion', () => ({
   getAccountDeletionStatus: async (accountId: string) => {
+    mockDeletionCalls.push({ fn: 'status', accountId });
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionStatus;
   },
   requestAccountDeletion: async (accountId: string, userId: string, reason?: string) => {
+    mockDeletionCalls.push({ fn: 'request', accountId });
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionRequestResult || {
       id: 'del_test_001',
@@ -146,10 +173,12 @@ mock.module('../billing/services/account-deletion', () => ({
     };
   },
   cancelAccountDeletion: async (accountId: string) => {
+    mockDeletionCalls.push({ fn: 'cancel', accountId });
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionCancelResult || { success: true, message: 'Account deletion cancelled' };
   },
   deleteAccountImmediately: async (accountId: string) => {
+    mockDeletionCalls.push({ fn: 'delete-immediately', accountId });
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionDeleteResult || { success: true, message: 'Account deleted' };
   },
@@ -258,6 +287,8 @@ beforeEach(() => {
   mockDeletionDeleteResult = null;
   mockDeletionError = null;
   mockAccountDeleteAllowed = true;
+  mockDeletionCalls = [];
+  mockScopedCalls = [];
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -597,5 +628,78 @@ describe('Billing: account deletion', () => {
       headers: { Authorization: 'Bearer test_token' },
     });
     expect(res.status).toBe(403);
+  });
+
+  // The account hub's danger zone targets the account it is open on, which is
+  // not always the caller's primary one. Each route must read the scope from
+  // the surface its client writes it to, hand it to the service, and refuse a
+  // non-member. No param = the legacy default (the caller's primary account).
+  describe('account_id scoping', () => {
+    test('GET deletion-status reads ?account_id= and passes it to the service', async () => {
+      const app = createBillingTestApp();
+      const res = await app.request('/v1/billing/account/deletion-status?account_id=acct-team', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer test_token' },
+      });
+      expect(res.status).toBe(200);
+      expect(mockScopedCalls).toEqual([{ source: 'query', accountId: 'acct-team' }]);
+      expect(mockDeletionCalls).toEqual([{ fn: 'status', accountId: 'acct-team' }]);
+    });
+
+    test('POST request-deletion reads body.account_id and passes it to the service', async () => {
+      const app = createBillingTestApp();
+      const res = await app.request('/v1/billing/account/request-deletion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+        body: JSON.stringify({ reason: 'Testing', account_id: 'acct-team' }),
+      });
+      expect(res.status).toBe(200);
+      expect(mockScopedCalls).toEqual([{ source: 'body', accountId: 'acct-team' }]);
+      expect(mockDeletionCalls).toEqual([{ fn: 'request', accountId: 'acct-team' }]);
+    });
+
+    test('POST cancel-deletion reads body.account_id and passes it to the service', async () => {
+      const app = createBillingTestApp();
+      const res = await app.request('/v1/billing/account/cancel-deletion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+        body: JSON.stringify({ account_id: 'acct-team' }),
+      });
+      expect(res.status).toBe(200);
+      expect(mockScopedCalls).toEqual([{ source: 'body', accountId: 'acct-team' }]);
+      expect(mockDeletionCalls).toEqual([{ fn: 'cancel', accountId: 'acct-team' }]);
+    });
+
+    test('DELETE delete-immediately reads ?account_id= and passes it to the service', async () => {
+      const app = createBillingTestApp();
+      const res = await app.request('/v1/billing/account/delete-immediately?account_id=acct-team', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer test_token' },
+      });
+      expect(res.status).toBe(200);
+      expect(mockScopedCalls).toEqual([{ source: 'query', accountId: 'acct-team' }]);
+      expect(mockDeletionCalls).toEqual([{ fn: 'delete-immediately', accountId: 'acct-team' }]);
+    });
+
+    test('no account_id keeps the legacy default: the caller primary account', async () => {
+      const app = createBillingTestApp();
+      await app.request('/v1/billing/account/request-deletion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+        body: JSON.stringify({}),
+      });
+      expect(mockScopedCalls).toEqual([{ source: 'body', accountId: undefined }]);
+      expect(mockDeletionCalls).toEqual([{ fn: 'request', accountId: TEST_USER_ID }]);
+    });
+
+    test('a non-member explicit account_id is refused before any service call', async () => {
+      const app = createBillingTestApp();
+      const res = await app.request('/v1/billing/account/delete-immediately?account_id=not-a-member', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer test_token' },
+      });
+      expect(res.status).toBe(403);
+      expect(mockDeletionCalls).toEqual([]);
+    });
   });
 });
