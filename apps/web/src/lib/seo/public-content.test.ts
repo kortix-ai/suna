@@ -48,14 +48,19 @@ afterEach(() => {
 });
 
 describe('public SEO/AEO content coverage', () => {
-  test('publishes the QM comparison as canonical agent-readable Markdown', () => {
-    const resolved = resolvePublicMarkdown(['blog', 'kortix-vs-qm.md']);
-    expect(resolved?.record.htmlPath).toBe('/blog/kortix-vs-qm');
-    expect(resolved?.markdown).toContain('# Kortix vs QM: two open agent platforms');
-    expect(resolved?.markdown).toContain('| Dimension | QM | Kortix |');
-    expect(resolved?.markdown).toContain('https://github.com/yc-software/qm');
-    expect(resolved?.markdown).toContain('npm exec qm -- check --live');
-    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/blog/kortix-vs-qm.md');
+  test('leaves blog posts to the blog app and points crawlers at its indexes', () => {
+    // The blog is its own app served at /blog (next.config.ts rewrite), with
+    // its own sitemap, llms.txt and Markdown twins. None of it is listed here.
+    const records = getPublicContentRecords({ includeUseCases: true });
+    expect(records.filter((record) => record.htmlPath.startsWith('/blog'))).toEqual([]);
+    expect(resolvePublicMarkdown(['blog', 'kortix-vs-qm.md'])).toBeNull();
+    expect(sitemap().filter((entry) => new URL(entry.url).pathname.startsWith('/blog'))).toEqual(
+      [],
+    );
+    expect(renderLlmsTxt()).toContain(`Blog index: ${absoluteUrl('/blog/llms.txt')}`);
+    expect(renderRobotsTxt('kortix.com')).toContain(
+      `Sitemap: ${CANONICAL_ORIGIN}/blog/sitemap.xml`,
+    );
   });
 
   test('uses one non-www canonical origin and no hardcoded canonical tag', () => {
@@ -99,7 +104,7 @@ describe('public SEO/AEO content coverage', () => {
 
   test('serves Markdown inline as crawlable UTF-8 Markdown', async () => {
     const record = getPublicContentRecords({ includeUseCases: true }).find(
-      (item) => item.kind === 'blog' && item.markdownPath,
+      (item) => item.kind === 'docs' && item.markdownPath,
     );
     expect(record).toBeDefined();
     const resolved = resolvePublicMarkdown(
@@ -293,7 +298,7 @@ describe('bounded public agent index', () => {
 
   test('orders the index recency-first so freshest content leads each kind', async () => {
     const response = getAgentIndex(
-      new Request('https://kortix.com/api/ai?kind=blog&limit=999', {
+      new Request('https://kortix.com/api/ai?kind=use-case&limit=999', {
         headers: { 'x-real-ip': '192.0.2.4' },
       }),
     );
@@ -303,7 +308,7 @@ describe('bounded public agent index', () => {
       .map((item: any) => item.last_modified)
       .filter((value: any) => typeof value === 'string');
     expect(dates.length).toBeGreaterThan(1);
-    // Blog records are recency-desc by last_modified.
+    // Use-case records are recency-desc by last_modified.
     for (let index = 1; index < dates.length; index += 1) {
       expect(dates[index - 1] >= dates[index]).toBe(true);
     }
@@ -356,7 +361,7 @@ describe('bounded public agent index', () => {
     }
 
     // The recency-first sort should now surface docs and marketing records
-    // among the dated set, not just blog + use-case. Sample the max page size
+    // among the dated set, not just use-cases. Sample the max page size
     // (50): a docs-wide refresh can legitimately stamp every docs page with
     // the same day, filling a 25-item page with docs alone.
     const unfiltered = getAgentIndex(
