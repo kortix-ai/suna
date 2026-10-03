@@ -32,6 +32,7 @@ import {
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSnapshotNames, PREDECESSOR_PRUNE_PROTECT_MS } from './builder-log';
 import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
+import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
 
@@ -162,6 +163,8 @@ export async function ensureSandboxImage(
      * API version still serves the current one. Default true.
      */
     publish?: boolean;
+    /** Internal: this call already waited once for another replica's build. */
+    peerBuildAwaited?: boolean;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
   const template = await resolveTemplateBySlug(project, opts.slug);
@@ -314,20 +317,45 @@ export async function ensureSandboxImage(
   // provider's build and, when that one fails, fail the session with it.
   // An unpublished build must never satisfy a caller that expects the row to
   // be published, so publication is part of the key too.
+  //
+  // Across replicas, a claim row (build-claim.ts) names the one that builds.
+  // The others wait for it to finish and then re-read provider truth, which
+  // the branches above handle (active, building, failed).
   const buildKey = `${buildProvider}:${identity.snapshotName}${publish ? '' : ':unpublished'}`;
-  const existing = inflightBuilds.get(buildKey);
-  if (existing) return existing;
-
-  const buildPromise = runInlineBuild(project, template, identity, {
-    state,
-    accountId: opts.accountId,
-    source: opts.source ?? 'session-start',
-    buildProvider,
-    publish,
-  }).finally(() => inflightBuilds.delete(buildKey));
-  inflightBuilds.set(buildKey, buildPromise);
-  return buildPromise;
+  let pending = inflightBuilds.get(buildKey);
+  if (!pending) {
+    pending = (async (): Promise<EnsureSandboxImageResult | typeof BUILT_BY_PEER> => {
+      if (!(await claimSnapshotBuild(buildKey))) {
+        if (opts.peerBuildAwaited) {
+          throw new SnapshotBuildError(
+            `Sandbox image ${identity.snapshotName} is being built by another API replica on ${buildProvider}`,
+          );
+        }
+        await waitForSnapshotBuildRelease(buildKey);
+        return BUILT_BY_PEER;
+      }
+      try {
+        return await runInlineBuild(project, template, identity, {
+          state,
+          accountId: opts.accountId,
+          source: opts.source ?? 'session-start',
+          buildProvider,
+          publish,
+        });
+      } finally {
+        await releaseSnapshotBuild(buildKey).catch((err) =>
+          console.warn(`[snapshots] build claim release failed for ${buildKey} (expires on its own):`, err),
+        );
+      }
+    })().finally(() => inflightBuilds.delete(buildKey));
+    inflightBuilds.set(buildKey, pending);
+  }
+  const result = await pending;
+  return result === BUILT_BY_PEER ? ensureSandboxImage(project, { ...opts, peerBuildAwaited: true }) : result;
 }
+
+/** Another replica held the build claim and has finished; re-read provider truth. */
+const BUILT_BY_PEER = Symbol('built-by-peer');
 /**
  * Do the actual provider build for a resolved (template, identity) pair and
  * record the result on the template row + build log. Always called behind the
@@ -455,13 +483,15 @@ async function runInlineBuild(
  * In-flight inline builds, keyed by target snapshot name. Shared across every
  * build source so concurrent triggers collapse onto one build + one log row.
  */
-const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+// replica-local: collapses this process's callers; build-claim.ts is the cross-replica guard.
+const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult | typeof BUILT_BY_PEER>>();
 /**
  * In-flight background rebuilds, keyed by provider + target snapshot name. A
  * burst of sessions booting off the same drifted identity must kick exactly
  * one build on EACH provider; same-name builds on different providers are
  * independent and must never suppress each other.
  */
+// replica-local: a second replica's kick lands on the build claim in ensureSandboxImage.
 const inflightBackgroundBuilds = new Set<string>();
 
 export function backgroundBuildKey(provider: string, snapshotName: string): string {

@@ -116,6 +116,7 @@ export function deliveryKeyIdentifiesOneSubmission(key: string): boolean {
 export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;
 
+// replica-local: a retry on another replica is caught by the daemon, which dedupes admitted prompts.
 const seen = new Map<string, number>(); // key -> expiresAt (ms epoch)
 
 // Map preserves insertion order, so the oldest entries live at the front: trim

@@ -616,7 +616,7 @@ function redirectTarget(redirectUri: string): string {
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;
 }
 
-// ponytail: per-instance bucket; a shared store if registration spam spans instances.
+// replica-local: per-instance bucket; a shared store if registration spam spans instances.
 const registerLimiter = new TokenBucketRateLimiter('oauth_register');
 const REGISTER_POLICY = { limit: 30, windowMs: 60 * 60 * 1000 };
 
