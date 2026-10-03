@@ -2,7 +2,6 @@ import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
 import { config } from '../../config';
 
 // Run alone: Bun module mocks are process-global.
-let atCap = false;
 let billing: Record<string, unknown> = { ok: true };
 let inserted: Record<string, unknown> | undefined;
 /** The billing entitlement under test. False = free tier (KRTX-1067). */
@@ -11,9 +10,6 @@ let mayUseManagedModels = true;
 mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => billing }));
 mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => mayUseManagedModels }));
 mock.module('../../shared/audit', () => ({ recordAuditEvent: async () => {} }));
-mock.module('../../shared/account-limits', () => ({
-  resolveAccountSessionLimit: async () => ({ tier: 'starter', limit: 1, source: 'tier' }),
-}));
 mock.module('../agents', () => ({
   loadProjectAgents: async () => ({ defaultAgent: 'default' }),
   repositoryAccessFromLoadedAgents: () => false,
@@ -27,7 +23,6 @@ mock.module('./session-connector-bindings', () => ({
 }));
 mock.module('../../shared/db', () => ({
   db: {
-    select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ activeCount: atCap ? 1 : 0 }] }) }) }),
     transaction: async (fn: (tx: unknown) => unknown) => fn({
       insert: () => ({ values: (value: Record<string, unknown>) => {
         inserted = value;
@@ -68,7 +63,6 @@ const project = {
 const originalKortixUrl = config.KORTIX_URL;
 const originalDefaultModel = config.LLM_GATEWAY_DEFAULT_MODEL;
 beforeEach(() => {
-  atCap = false;
   billing = { ok: true };
   inserted = undefined;
   mayUseManagedModels = true;
@@ -82,12 +76,11 @@ afterAll(() => {
   config.LLM_GATEWAY_DEFAULT_MODEL = originalDefaultModel;
 });
 
-test('cap 429 takes precedence over simultaneous billing 402 without inserting', async () => {
-  atCap = true;
+test('billing 402 is the only create gate and inserts nothing', async () => {
   billing = { ok: false, message: 'Payment required', reason: 'insufficient_balance' };
   const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
-  expect(result.error?.status).toBe(429);
-  expect(result.error?.body.code).toBe('concurrent_session_limit');
+  expect(result.error?.status).toBe(402);
+  expect(result.error?.body.code).not.toBe('concurrent_session_limit');
   expect(inserted).toBeUndefined();
 });
 
