@@ -30,7 +30,6 @@ const spawned: Array<{ projectId: string; event: Record<string, unknown> }> = []
 mock.module('../channels/slack/dispatch', () => ({
   ...actualDispatch,
   dispatchSlackEvent: async () => {},
-  pendingPickers: new Map(),
   spawnAgentTurn: async (projectId: string, _envelope: unknown, event: Record<string, unknown>) => {
     spawned.push({ projectId, event });
   },

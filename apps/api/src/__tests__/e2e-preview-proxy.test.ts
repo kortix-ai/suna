@@ -1132,7 +1132,10 @@ describe('Preview proxy: forwarding', () => {
       {
         status: 0,
         body: '',
-        error: new Error('Unable to connect. Is the computer able to access the url?'),
+        // Bun's real shape for a refused connection: a TypeError with a code.
+        error: Object.assign(new TypeError('Unable to connect. Is the computer able to access the url?'), {
+          code: 'ConnectionRefused',
+        }),
       },
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
       { status: 204, body: '' },
