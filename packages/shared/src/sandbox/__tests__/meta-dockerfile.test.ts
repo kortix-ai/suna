@@ -31,7 +31,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('multi-agent ORCHESTRATOR.');
+    expect(dockerfile).toContain('# Meta\n');
     expect(dockerfile).toContain('NEVER do project work in this sandbox.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
