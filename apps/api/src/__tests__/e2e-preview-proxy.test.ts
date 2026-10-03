@@ -1007,8 +1007,9 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // A concrete agent is forwarded when it matches the session's agent or
-  // resolves the legacy default sentinel. Switching concrete agents is refused.
+  // A concrete agent is forwarded when it matches the session's agent, when the
+  // session runs the legacy default sentinel, or — since KRTX-1290 — when the
+  // switch to it is authorized (the IAM gate above is held open here).
   test.each([
     ['the agent the session runs', 'reviewer', 'reviewer'],
     ['a concrete agent in a default session', 'default', 'kortix'],
@@ -1036,8 +1037,12 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  test('refuses a different concrete agent before forwarding prompt_async', async () => {
+  test('forwards an authorized switch to a different concrete agent (KRTX-1290)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -1045,9 +1050,15 @@ describe('Preview proxy: forwarding', () => {
       body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
-    expect(mockFetchCalls).toEqual([]);
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+    expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
+      agent: 'researcher',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {
@@ -1121,7 +1132,10 @@ describe('Preview proxy: forwarding', () => {
       {
         status: 0,
         body: '',
-        error: new Error('Unable to connect. Is the computer able to access the url?'),
+        // Bun's real shape for a refused connection: a TypeError with a code.
+        error: Object.assign(new TypeError('Unable to connect. Is the computer able to access the url?'), {
+          code: 'ConnectionRefused',
+        }),
       },
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
       { status: 204, body: '' },

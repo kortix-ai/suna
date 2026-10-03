@@ -212,13 +212,6 @@ export interface PurchaseCreditsRequest {
   package_id?: string;
 }
 
-export interface TokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  model: string;
-  thread_id?: string;
-}
-
 // =============================================================================
 // API Helper
 // =============================================================================
@@ -371,13 +364,6 @@ export const billingApi = {
     });
   },
 
-  async deductTokenUsage(usage: TokenUsage): Promise<{ success: boolean }> {
-    return fetchApi('/billing/deduct-token-usage', {
-      method: 'POST',
-      body: JSON.stringify(usage),
-    });
-  },
-
   async syncSubscription(): Promise<{ success: boolean; message: string }> {
     return fetchApi('/billing/sync-subscription', {
       method: 'POST',
@@ -390,27 +376,6 @@ export const billingApi = {
 
   async getTransactions(limit: number, offset: number): Promise<any> {
     return fetchApi(`/billing/transactions?limit=${limit}&offset=${offset}`);
-  },
-
-  async getTrialStatus(): Promise<any> {
-    return fetchApi('/billing/trial/status');
-  },
-
-  async startTrial(request: {
-    success_url: string;
-    cancel_url: string;
-  }): Promise<{ checkout_url: string; session_id: string }> {
-    return fetchApi('/billing/trial/start', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async cancelTrial(): Promise<{ success: boolean; message: string }> {
-    return fetchApi('/billing/trial/cancel', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
   },
 };
 
