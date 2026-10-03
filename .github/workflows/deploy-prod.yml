@@ -670,6 +670,7 @@ jobs:
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
             KORTIX_DESKTOP_SENTRY_DSN?
+            CAPTURE_RELEASES_TOKEN?
 
       # Never hard-fail on missing certs — a release should always ship an
       # installer. Sign (+ notarize on macOS) when the platform's secrets are
@@ -706,10 +707,6 @@ jobs:
           fi
 
       - name: Ensure Electron runtime
-        # Also stages the pinned Kortix Capture engine from the private
-        # kortix-ai/capture releases (apps/desktop-electron/capture-engine.lock.json).
-        env:
-          KORTIX_CAPTURE_GITHUB_TOKEN: ${{ secrets.CAPTURE_RELEASES_TOKEN }}
         run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
       # electron-builder signs (+ notarizes on macOS) when CSC_*/APPLE_API_*

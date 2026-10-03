@@ -10,8 +10,9 @@
 //   node scripts/fetch-capture-engine.js           stage for this OS (ensure-runtime.js runs it)
 //   node scripts/fetch-capture-engine.js pin <tag> write the lock from a published release
 //
-// Token: KORTIX_CAPTURE_GITHUB_TOKEN, else GH_TOKEN / GITHUB_TOKEN, with read
-// access to kortix-ai/capture contents (locally: GH_TOKEN="$(gh auth token)").
+// Token: KORTIX_CAPTURE_GITHUB_TOKEN, else CAPTURE_RELEASES_TOKEN (CI reads it
+// from AWS Secrets Manager, kortix-ci-env), else GH_TOKEN / GITHUB_TOKEN, with
+// read access to kortix-ai/capture contents (locally: GH_TOKEN="$(gh auth token)").
 // KORTIX_CAPTURE_ENGINE_DIR=<dir> stages a local engine build instead.
 // An unpinned lock (version null) or a platform the release lacks stages
 // nothing: that build ships without Capture and the app hides it.
@@ -30,7 +31,7 @@ const VENDOR = path.join(ROOT, 'vendor', 'capture');
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 
 function token(env = process.env) {
-  return env.KORTIX_CAPTURE_GITHUB_TOKEN || env.GH_TOKEN || env.GITHUB_TOKEN || '';
+  return env.KORTIX_CAPTURE_GITHUB_TOKEN || env.CAPTURE_RELEASES_TOKEN || env.GH_TOKEN || env.GITHUB_TOKEN || '';
 }
 
 /** Lock keys whose files land in this platform's stage (macOS: both arches, merged). */

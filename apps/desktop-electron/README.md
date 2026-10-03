@@ -273,11 +273,14 @@ available.
 | ONNX runtime (local privacy masking) | `libonnxruntime.1.23.2.dylib` | `onnxruntime.dll` | — |
 
 - **Token.** The repository is private. Set `KORTIX_CAPTURE_GITHUB_TOKEN` (or
-  `GH_TOKEN` / `GITHUB_TOKEN`) to a token with read access to the contents of
-  `kortix-ai/capture`. CI passes the repository secret
-  `CAPTURE_RELEASES_TOKEN`. Locally: `GH_TOKEN="$(gh auth token)"`. A pinned
-  lock without a token fails the build: a build never ships without Capture by
-  accident.
+  `CAPTURE_RELEASES_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) to a token with read
+  access to the contents of `kortix-ai/capture`. Locally:
+  `GH_TOKEN="$(gh auth token)"`. CI reads `CAPTURE_RELEASES_TOKEN` from AWS
+  Secrets Manager (`kortix-ci-env`, the `aws-env` step of the macOS and Linux
+  desktop jobs in `desktop.yml` and `deploy-prod.yml`). Store that key before
+  you pin a release. The Windows jobs skip the `aws-env` step today, so pin
+  `win32-x64` only after that step runs on Windows too. A pinned lock without
+  a token fails the build: a build never ships without Capture by accident.
 - **Unpinned.** `"version": null`, or a platform the release lacks, stages an
   empty directory. That build ships without Capture and the web app hides it.
 - **Local engine build.** `KORTIX_CAPTURE_ENGINE_DIR=<dir>` stages that
