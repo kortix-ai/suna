@@ -1,5 +1,5 @@
 {
-  "source_hash": "cbf87122f8205f6108513bc325f9b34fa7e6d782492c70b9d8f721ef1ef2d04b",
+  "source_hash": "cde334fb1ed1471a3db454ea8cc6ce0661443d2f3721c8691d05ad180092a707",
   "diff_files": [
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
     "apps/cli/src/__tests__/access-assignments.test.ts",
@@ -13,17 +13,15 @@
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
     "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
-    "apps/llm-gateway/package.json",
-    "apps/mobile/lib/highlight/shiki.test.ts",
     "packages/db/migrations/20261003010107485_basejump_accounts_fk_covering_indexes.concurrent.ts"
   ],
-  "diff_hash": "725fa7044d98c68d95313ff8d9ed0778ff5f80458be6d17be2f78092107398d8",
-  "head": "274131b7187779597f12f83cfcf1217b59f487e7",
+  "diff_hash": "77004484fe8948bff66ce1ad5b5a6492909bd3db9439835f2d07db88af47275a",
+  "head": "4dd3aa0f15652f0deeb346acae81a0c4b643c55a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:20:29.025Z"
+  "at": "2026-10-03T20:34:32.560Z"
 }
