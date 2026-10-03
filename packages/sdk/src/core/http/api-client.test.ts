@@ -1320,7 +1320,7 @@ describe('makeRequest prefers the human-readable body field over the machine `re
         'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.',
       code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
       session_id: 'ad4b63ac-c5f3-4eaa-a5ea-960dfece7af9',
-      external_id: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+      external_id: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
       reason: 'runtime_identity_unavailable',
     });
     try {

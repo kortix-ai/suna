@@ -103,10 +103,10 @@ describe('isSandboxResumable — a preserved-unavailable identity is never resum
     expect(
       isSandboxResumable({
         status: 'stopped',
-        external_id: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+        external_id: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
         metadata: {
           runtimeIdentityState: 'unavailable',
-          preservedExternalId: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+          preservedExternalId: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
           runtimeUnavailableReason: 'runtime_removed',
         },
       }),
