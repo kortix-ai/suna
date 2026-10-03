@@ -237,7 +237,7 @@ describe('mfaChallengeRequired', () => {
     expect(mfaChallengeRequired(undefined)).toBe(false);
   });
 
-  test('the aal2 answer of a no-session account never enforces', () => {
+  test('the no-session safe defaults never enforce', () => {
     // getAAL returns these exact safe defaults before a session exists.
     expect(
       mfaChallengeRequired({
