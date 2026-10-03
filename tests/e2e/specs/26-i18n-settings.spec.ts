@@ -56,7 +56,6 @@ const publicSurfaceRoutes = [
   "/agent-computer",
   "/agents-and-skills",
   "/automations",
-  "/blog",
   "/careers",
   "/channels",
   "/changelog",
@@ -475,7 +474,7 @@ test.describe("26 — Settings localization", () => {
         authOptions,
       );
       await expect(page.getByRole("combobox").first()).toBeVisible();
-      expect(publicSurfaceRoutes).toHaveLength(24);
+      expect(publicSurfaceRoutes).toHaveLength(23);
       expect(productSurfaceRoutes(projectId, accountId)).toHaveLength(18);
 
       for (const locale of locales) {
