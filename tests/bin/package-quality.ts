@@ -154,6 +154,8 @@ await rejectFocusedTests();
 await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
+  // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
+  run(['pnpm', '--filter', 'kortix-api', 'lint']),
 ]);
 await runAll([
   ...['llm-catalog', 'sdk'].map((directory) =>

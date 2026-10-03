@@ -34,6 +34,17 @@ import { shouldLoadProjectModelPicker } from './provider-load-plan';
 
 export { GATEWAY_PROVIDER_IDS };
 
+/**
+ * A 4xx answer (401 dead token, 403 denied, 404 missing route) is permanent
+ * for this request: retrying it replays the failure and warns on the API every
+ * attempt (prod: 11 `GET /projects/:id/model-picker` warn lines in 65 s from
+ * `retry: 10`). Only transport failures and 5xx deserve the boot-race backoff.
+ */
+function isClientError(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return typeof status === 'number' && status >= 400 && status < 500;
+}
+
 export function useRuntimeProviders() {
   const queryClient = useQueryClient();
   const runtimeReady = useRuntimeReady();
@@ -83,8 +94,8 @@ export function useRuntimeProviders() {
     }),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
-    retry: (failureCount) =>
-      (!projectModeKnown || projectGatewayEnabled) && failureCount < 10,
+    retry: (failureCount, error) =>
+      (!projectModeKnown || projectGatewayEnabled) && !isClientError(error) && failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
 
@@ -145,7 +156,7 @@ export function useRuntimeProviders() {
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep
     // retrying with capped exponential backoff until real models appear.
-    retry: (failureCount) => failureCount < 10,
+    retry: (failureCount, error) => !isClientError(error) && failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
   // Native mode, BEFORE the session runtime exists (project home, cold

@@ -238,7 +238,7 @@ keys need `token.create` / `token.revoke` (owner and admin).
 | `kortix tokens apps rm <client-id> [-y\|--yes] [--json]` | Revoke a connected app: its tokens stop working at once, and it must ask you again. |
 | `kortix tokens service-accounts ls [--json]` | List service accounts. |
 | `kortix tokens service-accounts new <name> [--description <t>] [--expires <when>]` | Create one. The bearer prints once. |
-| `kortix tokens service-accounts disable <id>` | Disable a service account. Reversible only by deleting and re-creating. |
+| `kortix tokens service-accounts disable <id>` | Disable a service account: it can no longer authorize; delete and re-create to return. |
 | `kortix tokens service-accounts rm <id> [-y\|--yes]` | Delete a service account permanently. |
 
 A personal API key acts as you and dies with your membership. A service
