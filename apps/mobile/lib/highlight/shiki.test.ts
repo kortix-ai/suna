@@ -122,15 +122,23 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
   const MONOCHROME_UNDER_MIN_THEMES = new Set(['diff']);
 
   /**
-   * Lines where the JavaScript engine provably differs from Oniguruma. Each
-   * entry is asserted to STILL differ, so a Shiki upgrade that fixes it fails
-   * this test and the entry gets deleted.
+   * Lines where the JavaScript engine provably differs from Oniguruma, per
+   * theme (the engine compiles theme-embedded grammar regexes, so the same
+   * construct can tokenize differently in light vs dark). Each entry is
+   * asserted to STILL differ in that theme, so a Shiki upgrade that fixes it
+   * fails this test and the entry gets deleted.
    *
    * ini: `(^[\t ]+)?(?=;)` … `end: (?!\G)` — the engine's `\G` emulation ends
    * the zero-width begin at once, so a `;` comment AFTER a value on the same
    * line stays base colour. Comments at the start of a line still colour.
    */
-  const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = { ini: [2] };
+  const KNOWN_ENGINE_DIFFERENCES: Record<string, Partial<Record<'light' | 'dark', number[]>>> = {
+    ini: { light: [2], dark: [2] },
+    // php: the LIGHT theme keeps the `<?php` open tag as ONE token where
+    // Oniguruma (and the dark theme) split it into `<?` + `php` — same
+    // colours either way.
+    php: { light: [0] },
+  };
 
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
@@ -160,7 +168,7 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
           );
         const ours = paint(tokens!);
         const theirs = paint(reference);
-        const differing = KNOWN_ENGINE_DIFFERENCES[lang] ?? [];
+        const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
         for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
         const keep = (_: string, i: number) => !differing.includes(i);
         expect(ours.filter(keep)).toEqual(theirs.filter(keep));
