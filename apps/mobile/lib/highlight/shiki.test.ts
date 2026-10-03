@@ -147,8 +147,14 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       await oniguruma.loadLanguage((await LANGUAGE_LOADERS[lang]()).default);
       // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
-      // crossed that limit and failed the parity check below.
-      highlightToTokens(sample, lang, 'light');
+      // crossed that limit and failed the parity check below. One pass was
+      // still not enough when the runner was busy with a concurrent package
+      // suite (the compiled-regex/JIT warm-up itself got starved), so warm
+      // BOTH themes and give each two passes before anything is asserted.
+      for (let warm = 0; warm < 2; warm++) {
+        highlightToTokens(sample, lang, 'light');
+        highlightToTokens(sample, lang, 'dark');
+      }
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
