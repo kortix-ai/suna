@@ -44,6 +44,8 @@ test('all four policies gain InitPlans without changing row access or service wr
   expect(JSON.stringify((await probe(own, 'authenticated', 'EXPLAIN SELECT * FROM public.credit_purchases')).rows)).not.toContain('InitPlan');
   expect((await probe(own, 'authenticated')).rows).toEqual([{ account_id: own }]);
   await apply();
+  // pg_policies omits a schema that is on search_path; pin it so `auth.` prints.
+  await client.query('SET search_path TO public');
   const policies = await client.query("SELECT policyname, cmd, permissive, roles::text, qual, with_check FROM pg_policies WHERE schemaname='public' AND tablename='credit_purchases'");
   expect(policies.rows).toHaveLength(4);
   for (const row of policies.rows) {
