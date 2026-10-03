@@ -5,7 +5,9 @@
       "args": [
         "exec",
         "e2e",
-        "mcp"
+        "mcp",
+        "--max-sessions",
+        "1"
       ],
       "env": {
         "E2E_TELEMETRY_DISABLED": "1"

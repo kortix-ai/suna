@@ -1,9 +1,11 @@
 import { web } from '@e2e-dev/web';
 import type { E2EConfig } from 'e2e';
 import { chatgpt } from 'e2e/oauth/chatgpt';
+import { assertAgenticListenerOwnership } from './tests/src/core/agentic-ownership';
 import { resolveLocalTopology } from './tests/src/core/local-stack';
 
 const topology = resolveLocalTopology(process.cwd());
+assertAgenticListenerOwnership(topology);
 
 export default {
   workers: 1,

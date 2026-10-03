@@ -9,6 +9,9 @@ description: Agentic end-to-end tests with e2e, the e2e runner. Covers scaffoldi
 
 Use `pnpm test -- --agentic-only [files...]` for this opt-in pilot. The wrapper
 checks local listener ownership and rejects skipped or flaky selected tests.
+MCP is for inspecting the app and finding locators; run tests through the root
+wrapper. The config also checks listener ownership before MCP can start the app.
+The MCP server allows one session.
 Keep the existing testing and release gates. Do not add a pull-request CI
 workflow or a second root test script. Use synthetic local data only. Keep
 reports, traces, videos, and caches gitignored.

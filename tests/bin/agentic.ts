@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { readFile, rm } from 'node:fs/promises';
-import { portInUse } from '../../scripts/worktree/lib/exec';
+import { assertAgenticListenerOwnership } from '../src/core/agentic-ownership';
 import { ensureLocalSupabase, resolveLocalTopology } from '../src/core/local-stack';
 
 const topology = resolveLocalTopology(process.cwd());
@@ -8,24 +8,7 @@ const args = process.argv.slice(2);
 if (args.some((arg) => arg === '--output' || arg.startsWith('--output='))) {
   throw new Error('agentic tests require the configured .e2e report directory');
 }
-for (const port of [
-  topology.marker?.ports.web ?? 3000,
-  topology.marker?.ports.api ?? 8008,
-  topology.marker?.ports.gateway ?? 8090,
-]) {
-  const listener = portInUse(port);
-  if (!listener.pid) continue;
-  const cwd = Bun.spawnSync(['lsof', '-a', '-p', listener.pid, '-d', 'cwd', '-Fn'])
-    .stdout.toString()
-    .split('\n')
-    .find((line) => line.startsWith('n'))
-    ?.slice(1);
-  if (!cwd || (cwd !== topology.root && !cwd.startsWith(`${topology.root}/`))) {
-    throw new Error(
-      `port ${port} belongs to another checkout; reassign this worktree before starting tests`,
-    );
-  }
-}
+assertAgenticListenerOwnership(topology);
 const localSupabase = await ensureLocalSupabase(topology, { autoStart: true });
 const supabase = localSupabase.environment;
 await rm('.e2e/report.json', { force: true });

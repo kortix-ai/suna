@@ -105,6 +105,10 @@ Do not run an agent through a real customer workspace.
 
 The CLI enables telemetry by default. [Telemetry](https://e2e.tester.army/docs/telemetry).
 The wrapper and generated MCP entries set `E2E_TELEMETRY_DISABLED=1`.
+MCP allows one interactive session and can inspect the app, find locators, and record exploratory interactions.
+It does not execute the test suite. Run tests through the root wrapper for fixture credentials and strict result checks.
+Both the wrapper and config verify listener ownership because MCP can start the declared application command.
+[MCP workflow](https://e2e.tester.army/docs/mcp).
 Earlier scaffold/guide commands occurred before this wrapper existed.
 No claim is made that the entire initialization session had telemetry disabled.
 
@@ -168,7 +172,7 @@ Do not delete another session's Docker resources.
 Capture Supabase startup output in ignored `output/` because it can print credentials.
 Independent auth/storage/work-queue state prevents another local API from claiming this session's work.
 Do not stop another session's stack to make the test pass.
-The wrapper rejects foreign web/API listeners before startup.
+The wrapper and config reject foreign web/API/gateway listeners before startup.
 The target reads this worktree's web port and starts its stack with `pnpm worktree start <name>`.
 It allows 10 minutes for a cold startup.
 

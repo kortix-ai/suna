@@ -10,4 +10,4 @@ incident_date: 2026-10-03
 
 **Incident:** On 2026-10-03, a newly allocated worktree used an app-port block already owned by another worktree. The first target startup reached the occupied-port check. The run stopped before killing the foreign process. This worktree then received a free port block. No foreign process was stopped.
 
-**Enforcement:** `tests/bin/agentic.ts` resolves each web/API listener's PID and working directory. It fails before invoking e2e when the directory is outside the current checkout. The worktree allocator itself still needs a separate collision fix.
+**Enforcement:** `tests/src/core/agentic-ownership.ts` checks every web/API/gateway listener's PID and working directory. Both `tests/bin/agentic.ts` and `e2e.config.ts` call it. A foreign listener fails before CLI or MCP application startup. The worktree allocator itself still needs a separate collision fix.
