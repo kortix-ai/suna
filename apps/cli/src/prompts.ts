@@ -80,6 +80,21 @@ export async function readSecret(label: string): Promise<string> {
 }
 
 /**
+ * Read a plain (non-secret) value with normal echoed input — e.g. a region,
+ * which isn't sensitive and is easier to verify visibly. No TTY requirement:
+ * the caller decides when an interactive read is safe.
+ */
+export async function readVisible(label: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(label, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
  * Yes/no confirmation. Returns the boolean answer; treats blank input
  * as `defaultValue`. Accepts y/yes/n/no (case-insensitive).
  *

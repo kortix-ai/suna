@@ -19,7 +19,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { prompt, readSecret } from '../prompts.ts';
+import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
@@ -357,7 +357,7 @@ async function providersSet(
     }
     let region = regionFlag;
     if (!region && process.stdin.isTTY) {
-      region = await prompt(`Enter ${regionVar} (e.g. us-east-1)`);
+      region = await readVisible(`Enter ${regionVar} (e.g. us-east-1): `);
     }
     if (!region) {
       process.stderr.write(
