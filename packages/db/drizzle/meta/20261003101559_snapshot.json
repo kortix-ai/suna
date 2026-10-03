@@ -1,5 +1,5 @@
 {
-  "id": "a4d25c09-8b30-4c84-9244-d1fc78cc4e45",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -5498,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",
@@ -20049,7 +20049,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_teams_pending_uploads_expiry": {
+          "name": "idx_teams_pending_uploads_expiry",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
