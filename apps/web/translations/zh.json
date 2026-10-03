@@ -2369,6 +2369,17 @@
         "updateFailed": "无法更新密码",
         "unexpected": "发生意外错误"
       }
+    },
+    "mfaChallenge": {
+      "title": "输入您的验证码",
+      "description": "您的账户使用身份验证器应用作为第二重因素。请输入其中的 6 位验证码以继续。",
+      "verify": "验证",
+      "verifying": "验证中…",
+      "invalidCode": "验证码不匹配。请输入应用中当前的验证码。",
+      "loadFailed": "无法加载您的身份验证器应用",
+      "retry": "重试",
+      "signOut": "退出登录",
+      "loading": "加载中…"
     }
   },
   "onboarding": {

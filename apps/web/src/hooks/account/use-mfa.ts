@@ -140,6 +140,9 @@ export function useMfa() {
     setRemoveFactorTarget,
     confirmRemoveFactor: () =>
       removeFactorTarget && removeFactorMutation.mutate(removeFactorTarget),
+    /** Remove by id — the step-up flow holds the id itself (its dialog
+     *  replaces the confirm that would have set the target). */
+    removeFactor: (factorId: string) => removeFactorMutation.mutate(factorId),
     isRemovingFactor: removeFactorMutation.isPending,
   };
 }

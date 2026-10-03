@@ -2369,6 +2369,17 @@
         "updateFailed": "Impossible de mettre à jour le mot de passe",
         "unexpected": "Une erreur inattendue s’est produite"
       }
+    },
+    "mfaChallenge": {
+      "title": "Saisissez votre code de vérification",
+      "description": "Votre compte utilise une application d’authentification comme second facteur. Saisissez le code à 6 chiffres pour continuer.",
+      "verify": "Vérifier",
+      "verifying": "Vérification…",
+      "invalidCode": "Ce code ne correspond pas. Essayez le code actuel de votre application.",
+      "loadFailed": "Impossible de charger vos applications d’authentification",
+      "retry": "Réessayer",
+      "signOut": "Se déconnecter",
+      "loading": "Chargement…"
     }
   },
   "onboarding": {

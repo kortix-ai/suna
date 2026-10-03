@@ -2369,6 +2369,17 @@
         "updateFailed": "Could not update password",
         "unexpected": "An unexpected error occurred"
       }
+    },
+    "mfaChallenge": {
+      "title": "Enter your verification code",
+      "description": "Your account uses an authenticator app as a second factor. Enter the 6-digit code from it to continue.",
+      "verify": "Verify",
+      "verifying": "Verifying…",
+      "invalidCode": "That code didn’t match. Try the current one from your app.",
+      "loadFailed": "Couldn’t load your authenticator apps",
+      "retry": "Retry",
+      "signOut": "Sign out",
+      "loading": "Loading…"
     }
   },
   "onboarding": {

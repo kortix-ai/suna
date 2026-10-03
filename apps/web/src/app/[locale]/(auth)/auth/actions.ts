@@ -1,5 +1,13 @@
 'use server';
 
+import { getTranslations } from '@/i18n/get-translations';
+import type { UiTranslator } from '@/i18n/translator';
+import {
+  MFA_PENDING_COOKIE,
+  hasVerifiedTotpFactor,
+  mfaChallengePath,
+  mfaPendingCookieOptions,
+} from '@/lib/auth/mfa-challenge';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
   resolveNewAccountReturnUrl,
@@ -18,8 +26,6 @@ import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landi
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';
-import { getTranslations } from '@/i18n/get-translations';
-import type { UiTranslator } from '@/i18n/translator';
 import { cookies, headers } from 'next/headers';
 
 /**
@@ -385,9 +391,21 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
 
+  // A verified authenticator-app factor holds the session at the challenge:
+  // the password proved the first factor, not the second. The resolved
+  // destination rides along as the challenge's returnUrl, and the pending
+  // cookie arms the middleware gate behind it.
+  const owesChallenge = hasVerifiedTotpFactor(data.user);
+  const destination = owesChallenge
+    ? mfaChallengePath(`${redirectUrl.pathname}${redirectUrl.search}`)
+    : `${redirectUrl.pathname}${redirectUrl.search}`;
+  if (owesChallenge) {
+    (await cookies()).set(MFA_PENDING_COOKIE, '1', mfaPendingCookieOptions());
+  }
+
   return {
     success: true,
-    redirectTo: `${redirectUrl.pathname}${redirectUrl.search}`,
+    redirectTo: destination,
     accessToken: data.session?.access_token || null,
     refreshToken: data.session?.refresh_token || null,
     mobileHandoffUrl: buildMobileSessionHandoffUrl({
@@ -523,9 +541,16 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     : requestedReturnUrl;
   await clearAuthBounceCookie();
 
+  // Same challenge as the sign-in action: an existing account that signed in
+  // with the right password still owes its second factor.
+  const owesChallenge = hasVerifiedTotpFactor(signInData.user);
+  if (owesChallenge) {
+    (await cookies()).set(MFA_PENDING_COOKIE, '1', mfaPendingCookieOptions());
+  }
+
   return {
     success: true,
-    redirectTo,
+    redirectTo: owesChallenge ? mfaChallengePath(redirectTo) : redirectTo,
     accessToken: signInData.session?.access_token || null,
     refreshToken: signInData.session?.refresh_token || null,
     mobileHandoffUrl: buildMobileSessionHandoffUrl({

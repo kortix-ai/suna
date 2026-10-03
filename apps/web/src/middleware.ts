@@ -1,9 +1,14 @@
 import { defaultLocale, locales } from '@/i18n/catalog.mjs';
 import { isNonPagePath, localizedPathname, unverifiedSessionLocale } from '@/i18n/routing';
 import {
+  MFA_PENDING_COOKIE,
+  mfaChallengePath,
+  middlewareOwesTotpChallenge,
+} from '@/lib/auth/mfa-challenge';
+import {
+  ENVIRONMENT_ACCESS_COOKIE,
   authorizeEnvironment,
   deriveEnvironmentAccessCookie,
-  ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
@@ -12,13 +17,13 @@ import {
   AUTH_BOUNCE_COOKIE,
   AUTH_BOUNCE_MAX_AGE,
   LAST_PROJECT_COOKIE,
-  parseLastProjectOwner,
   PROJECT_LANDING_PATH,
+  parseLastProjectOwner,
   resolveDefaultLandingPath,
   serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
+import { type MiddlewareUser, resolveMiddlewareIdentity } from '@/lib/supabase/middleware-identity';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -208,9 +213,11 @@ export async function middleware(request: NextRequest) {
   // dynamic keys so the standalone container uses ECS runtime values instead of
   // build-time replacements. The gate fails closed when enabled without a secret.
   const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
-    string | undefined;
+    | string
+    | undefined;
   const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
-    string | undefined;
+    | string
+    | undefined;
   const authorization = request.headers.get('authorization');
   const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
   const expectedAccessCookie =
@@ -485,8 +492,7 @@ export async function middleware(request: NextRequest) {
   // it rewrites under the locale (/en/de/projects) and renders not-found, as
   // it always did.
   const cookieLocale = (): Locale =>
-    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
-    defaultLocale;
+    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ?? defaultLocale;
   const rewriteToLocale = (locale: Locale, base?: NextResponse) => {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-locale', locale);
@@ -664,6 +670,27 @@ export async function middleware(request: NextRequest) {
       }
       user = null;
     }
+  }
+
+  // A session that still owes its second factor never sees the app. The
+  // sign-in completions redirect to the challenge already; this closes the
+  // typed-URL / bookmark path while the challenge is pending (the pure gate
+  // lives in lib/auth/mfa-challenge.ts). Public marketing pages stay public:
+  // they are open to anonymous visitors, so a pending session gains nothing
+  // by seeing them.
+  if (
+    middlewareOwesTotpChallenge({
+      aal: user?.aal,
+      pendingCookie: request.cookies.get(MFA_PENDING_COOKIE)?.value,
+      isPublicRoute,
+      pathname,
+    })
+  ) {
+    const challengeUrl = new URL(
+      mfaChallengePath(`${pathname}${request.nextUrl.search || ''}`),
+      request.url,
+    );
+    return finalizeEnvironmentAccess(redirectPreservingSession(challengeUrl));
   }
 
   // The default destination is a PROJECT, not the projects list. When the

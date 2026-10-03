@@ -21,6 +21,10 @@
 export interface MiddlewareUser {
   id: string;
   user_metadata?: { locale?: string };
+  /** The JWT's `aal` claim — 'aal1' until this session has verified its
+   *  second factor, 'aal2' after. The TOTP gate keys on it; undefined means
+   *  the level could not be read and the gate stays out of the way. */
+  aal?: string;
 }
 
 export interface MiddlewareIdentity {
@@ -43,6 +47,26 @@ export interface MiddlewareAuth {
     data: { user: MiddlewareUser | null };
     error: unknown;
   }>;
+  /** Local session read (no network). The get-user fallback reads the
+   *  refreshed token's `aal` claim from it. */
+  getSession: () => Promise<{
+    data: { session: { access_token?: string } | null } | null;
+  }>;
+}
+
+/** The `aal` claim of an unverified JWT payload decode. The token was
+ *  already validated by whichever auth call produced it; this only reads the
+ *  claim. Unparsable input yields undefined, never a level. */
+function decodeTokenAal(token?: string): string | undefined {
+  if (!token) return undefined;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return undefined;
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof json.aal === 'string' ? json.aal : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function asError(value: unknown): Error | null {
@@ -59,8 +83,9 @@ export async function resolveMiddlewareIdentity(auth: MiddlewareAuth): Promise<M
       if (typeof sub === 'string' && sub.length > 0) {
         // Signature verified locally. No network was involved.
         const metadata = data?.claims?.user_metadata as MiddlewareUser['user_metadata'];
+        const aal = typeof data?.claims?.aal === 'string' ? data.claims.aal : undefined;
         return {
-          user: metadata ? { id: sub, user_metadata: metadata } : { id: sub },
+          user: { id: sub, aal, ...(metadata ? { user_metadata: metadata } : {}) },
           authError: null,
           source: 'claims',
         };
@@ -79,8 +104,15 @@ export async function resolveMiddlewareIdentity(auth: MiddlewareAuth): Promise<M
   }
 
   try {
-    const { data, error } = await auth.getUser();
-    return { user: data.user ?? null, authError: asError(error), source: 'get-user' };
+    const [{ data, error }, session] = await Promise.all([auth.getUser(), auth.getSession()]);
+    const user = data.user ?? null;
+    return {
+      user: user
+        ? { ...user, aal: user.aal ?? decodeTokenAal(session?.data?.session?.access_token) }
+        : null,
+      authError: asError(error),
+      source: 'get-user',
+    };
   } catch (error) {
     return { user: null, authError: asError(error), source: 'get-user' };
   }

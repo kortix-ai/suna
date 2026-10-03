@@ -8,6 +8,12 @@ import { useTranslations } from '@/i18n/use-translations';
 // that event and walks the user through a TOTP challenge, upgrading the
 // Supabase session to aal2 so the retried action passes the IAM gate.
 //
+// Callers can also request the dialog PROACTIVELY with `requestMfaStepUp`
+// (a caller-supplied description, a specific factor, and the action to run
+// once the code verifies) — the security tab does this before Remove factor
+// and Sign out other devices. A request without a detail behaves exactly as
+// the bare event always did.
+//
 // Members with NO enrolled factor get pointed at Settings → Security instead
 // of a dead-end code prompt.
 
@@ -16,7 +22,7 @@ import {
   ShieldWarningIcon as ShieldWarning,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -38,14 +44,45 @@ import { supabaseMFAService } from '@/lib/supabase/mfa';
 export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
 export const MFA_VERIFIED_EVENT = 'kortix:mfa-verified';
 
+/** What a caller asks of the step-up dialog, dispatched as the event's
+ *  `detail`. Every field is optional: the SDK's api-client dispatches a bare
+ *  event for the account-wide "Require MFA" denial, and a caller that needs
+ *  the dialog PROACTIVELY (a destructive action re-asking for the code —
+ *  see the security tab) supplies the rest.
+ *
+ *  `onVerified` runs once the code verifies — the caller's action.
+ *  `onCancelled` runs when the dialog closes without a verify. Neither
+ *  changes the bare-event flow: an absent detail behaves exactly as before.
+ */
+export interface MfaStepUpRequest {
+  /** Dialog body copy for the caller's context (e.g. the destructive-action
+   *  warning). Default copy when absent. */
+  description?: string;
+  /** Challenge THIS verified factor; default is the first verified one. */
+  factorId?: string;
+  onVerified?: () => void;
+  onCancelled?: () => void;
+}
+
+/** Ask the global step-up dialog for a fresh TOTP verification. */
+export function requestMfaStepUp(request: MfaStepUpRequest): void {
+  window.dispatchEvent(new CustomEvent<MfaStepUpRequest>(MFA_REQUIRED_EVENT, { detail: request }));
+}
+
 export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
+  // The request that opened the dialog. A ref, not state: the event handler
+  // sets it together with `open`, and the render that follows reads it once.
+  const requestRef = useRef<MfaStepUpRequest | null>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const onRequired = () => setOpen(true);
+    const onRequired = (event: Event) => {
+      requestRef.current = (event as CustomEvent<MfaStepUpRequest>).detail ?? null;
+      setOpen(true);
+    };
     window.addEventListener(MFA_REQUIRED_EVENT, onRequired);
     return () => window.removeEventListener(MFA_REQUIRED_EVENT, onRequired);
   }, []);
@@ -58,7 +95,10 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
   });
 
   const verified = (factorsQuery.data?.factors ?? []).filter((f) => f.status === 'verified');
-  const factor = verified[0] ?? null;
+  const requested = requestRef.current?.factorId;
+  const factor =
+    (requested ? verified.find((f) => f.id === requested) : null) ?? verified[0] ?? null;
+  const description = requestRef.current?.description ?? tI18nComplete.raw('text3ba20a470a12');
 
   const verify = useMutation({
     mutationFn: async () => {
@@ -80,6 +120,12 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
       // manual reload. (Mutations still need a manual retry; react-query dedupes
       // the refetch storm.)
       queryClient.invalidateQueries();
+      // The request is spent before its action runs, so a caller whose action
+      // asks for another step-up opens a fresh dialog instead of mutating a
+      // spent one.
+      const request = requestRef.current;
+      requestRef.current = null;
+      request?.onVerified?.();
       window.dispatchEvent(new CustomEvent(MFA_VERIFIED_EVENT));
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texte7307911656c')),
@@ -92,7 +138,14 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) setCode('');
+          if (!next) {
+            // A user-initiated close (Escape, overlay, Cancel) releases the
+            // caller: the action it held must not run on a later verification.
+            // A success close already cleared the ref in onSuccess.
+            requestRef.current?.onCancelled?.();
+            requestRef.current = null;
+            setCode('');
+          }
         }}
       >
         <DialogContent className="sm:max-w-md">
@@ -101,7 +154,7 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
               <ShieldCheck className="text-kortix-green size-4" />
               {tI18nComplete.raw('text4d8f4755ac09')}
             </DialogTitle>
-            <DialogDescription>{tI18nComplete.raw('text3ba20a470a12')}</DialogDescription>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
 
           {factorsQuery.isLoading ? (

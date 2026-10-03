@@ -22,6 +22,7 @@
  * while this tab is active, so opening the panel never fires its queries.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   KeyIcon as KeyRound,
   PlusIcon as Plus,
@@ -32,7 +33,7 @@ import {
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,7 +46,9 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
+import { pickVerifiedTotpFactor } from '@/lib/auth/mfa-challenge';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
@@ -132,6 +135,16 @@ export interface SecurityTabViewProps {
   // Other devices
   onSignOutOtherDevices?: () => void;
   isSigningOutOtherDevices?: boolean;
+
+  // Step-up: when the account has a verified TOTP factor, removing a factor
+  // and signing out other devices re-ask for the 6-digit code first — the
+  // global step-up dialog runs it (`requestMfaStepUp` in the container). A
+  // bare confirm is not proof of possession; without a factor nothing
+  // changes.
+  stepUpRequired?: boolean;
+  /** `factorId` rides along for the remove flow — the factor the challenge
+   *  will drop once the code verifies. */
+  onRequestStepUp?: (target: 'remove-factor' | 'sign-out-others', factorId?: string) => void;
   copy?: Partial<SecurityTabCopy>;
 }
 
@@ -231,6 +244,8 @@ export function SecurityTabView({
   onCancelEnroll = () => {},
   onSignOutOtherDevices = () => {},
   isSigningOutOtherDevices = false,
+  stepUpRequired = false,
+  onRequestStepUp = () => {},
   copy: copyOverrides = {},
 }: SecurityTabViewProps) {
   const copy = { ...DEFAULT_SECURITY_TAB_COPY, ...copyOverrides };
@@ -286,7 +301,14 @@ export function SecurityTabView({
             </div>
           ) : factorsError ? null : (
             factors.map((f) => (
-              <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} copy={copy} />
+              <FactorRow
+                key={f.id}
+                factor={f}
+                onRemove={(id) =>
+                  stepUpRequired ? onRequestStepUp('remove-factor', id) : onRequestRemoveFactor(id)
+                }
+                copy={copy}
+              />
             ))
           )}
         </SettingsRowGroup>
@@ -375,7 +397,7 @@ export function SecurityTabView({
         ) : null}
 
         <ConfirmDialog
-          open={removeFactorTarget !== null}
+          open={removeFactorTarget !== null && !stepUpRequired}
           onOpenChange={(open) => !open && onCancelRemoveFactor()}
           title={copy.removeFactorTitle}
           description={copy.removeFactorDescription}
@@ -397,7 +419,9 @@ export function SecurityTabView({
             <Button
               size="sm"
               variant="secondary"
-              onClick={onSignOutOtherDevices}
+              onClick={() =>
+                stepUpRequired ? onRequestStepUp('sign-out-others') : onSignOutOtherDevices()
+              }
               disabled={isSigningOutOtherDevices}
             >
               {isSigningOutOtherDevices ? <Loading className="size-3.5 shrink-0" /> : null}
@@ -457,9 +481,30 @@ export function SecurityTab() {
       if (error) throw error;
     },
     onSuccess: () => successToast(t('signedOutOtherDevices')),
-    onError: (error: Error) =>
-      errorToast(error.message || t('signOutOtherDevicesFailed')),
+    onError: (error: Error) => errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
+
+  // Step-up: with a verified TOTP factor enrolled, removing a factor and
+  // signing out other devices re-ask for the code first. A stolen or
+  // unattended aal2 session can otherwise unprotect the account in two
+  // clicks. The global step-up dialog (`mfa-step-up.tsx`) runs the challenge
+  // — the same dialog the account-wide "Require MFA" denial uses — with the
+  // action handed over as the verified callback. Without a factor the
+  // actions behave exactly as before.
+  const stepUpFactor = pickVerifiedTotpFactor(mfa.factors);
+
+  const requestStepUp = (target: 'remove-factor' | 'sign-out-others', factorId?: string) => {
+    requestMfaStepUp({
+      // The remove flow's org-MFA lockout warning rides in the challenge;
+      // the sign-out flow keeps the default copy.
+      description: target === 'remove-factor' ? copy.removeFactorDescription : undefined,
+      factorId: stepUpFactor?.id,
+      onVerified: () => {
+        if (target === 'remove-factor' && factorId) mfa.removeFactor(factorId);
+        else signOutOthers.mutate();
+      },
+    });
+  };
 
   return (
     <SecurityTabView
@@ -483,6 +528,8 @@ export function SecurityTab() {
       onCancelEnroll={mfa.cancelEnroll}
       onSignOutOtherDevices={() => signOutOthers.mutate()}
       isSigningOutOtherDevices={signOutOthers.isPending}
+      stepUpRequired={stepUpFactor !== null}
+      onRequestStepUp={requestStepUp}
       copy={copy}
     />
   );

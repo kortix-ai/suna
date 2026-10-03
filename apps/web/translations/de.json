@@ -2369,6 +2369,17 @@
         "updateFailed": "Passwort konnte nicht aktualisiert werden",
         "unexpected": "Ein unerwarteter Fehler ist aufgetreten"
       }
+    },
+    "mfaChallenge": {
+      "title": "Gib deinen Bestätigungscode ein",
+      "description": "Dein Konto nutzt eine Authenticator-App als zweiten Faktor. Gib den 6-stelligen Code daraus ein, um fortzufahren.",
+      "verify": "Bestätigen",
+      "verifying": "Wird bestätigt…",
+      "invalidCode": "Dieser Code stimmt nicht überein. Versuche den aktuellen Code aus deiner App.",
+      "loadFailed": "Authenticator-Apps konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "signOut": "Abmelden",
+      "loading": "Wird geladen…"
     }
   },
   "onboarding": {

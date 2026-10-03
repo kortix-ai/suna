@@ -1,6 +1,12 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import {
+  MFA_PENDING_COOKIE,
+  hasVerifiedTotpFactor,
+  mfaChallengePath,
+  mfaPendingCookieOptions,
+} from '@/lib/auth/mfa-challenge';
+import {
   isInviteReturnUrl,
   resolveAuthRedirectBaseUrl,
   resolveNewAccountReturnUrl,
@@ -144,7 +150,7 @@ export async function GET(request: NextRequest) {
           // Redirect to auth page with expired state to show resend form
           const expiredUrl = new URL(`${baseUrl}/auth`);
           expiredUrl.searchParams.set('expired', 'true');
-              if (next) expiredUrl.searchParams.set('returnUrl', next);
+          if (next) expiredUrl.searchParams.set('returnUrl', next);
 
           return NextResponse.redirect(expiredUrl);
         }
@@ -153,6 +159,7 @@ export async function GET(request: NextRequest) {
       }
 
       let finalDestination = next;
+      let owesTotpChallenge = false;
       let shouldClearReferralCookie = false;
       let authEvent = 'login';
       let authMethod = 'email';
@@ -276,6 +283,15 @@ export async function GET(request: NextRequest) {
           );
           if (lastProjectPath) finalDestination = lastProjectPath;
         }
+
+        // A verified authenticator-app factor holds the session at the
+        // challenge: the magic link / OAuth code proved the mailbox, not the
+        // second factor. The resolved destination rides along as the
+        // challenge's returnUrl.
+        owesTotpChallenge = hasVerifiedTotpFactor(data.user);
+        if (owesTotpChallenge) {
+          finalDestination = mfaChallengePath(finalDestination);
+        }
       }
 
       // Web redirect - include auth event params for client-side tracking
@@ -283,6 +299,13 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
       const response = NextResponse.redirect(redirectUrl);
+
+      // The challenge flag is set exactly when the redirect lands on the
+      // challenge: the middleware then holds every app path behind it until
+      // the code verifies (or the factor disappears).
+      if (owesTotpChallenge) {
+        response.cookies.set(MFA_PENDING_COOKIE, '1', mfaPendingCookieOptions());
+      }
 
       // The bounce is spent: its attribution has been used to resolve this
       // destination and must not survive to demote the next sign-in.

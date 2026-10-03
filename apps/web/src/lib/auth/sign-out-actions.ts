@@ -1,5 +1,6 @@
 'use server';
 
+import { MFA_PENDING_COOKIE } from '@/lib/auth/mfa-challenge';
 import { getEnv } from '@/lib/env-config';
 import { MAINTENANCE_BYPASS_COOKIE } from '@/lib/maintenance-bypass';
 import { AUTH_BOUNCE_COOKIE } from '@/lib/onboarding/landing-destination';
@@ -126,4 +127,8 @@ export async function finalizeServerSignOut(): Promise<void> {
 
   await clearAuthBounceCookie();
   await clearMaintenanceBypassCookie();
+  // A challenge pending when the session ended must not hold the NEXT
+  // account on this browser: the flag is browser-scoped, and the challenge
+  // page self-heals a stale flag only after one wasted bounce.
+  (await cookies()).delete(MFA_PENDING_COOKIE);
 }

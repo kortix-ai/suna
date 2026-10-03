@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveMiddlewareIdentity, type MiddlewareAuth } from './middleware-identity';
+import { type MiddlewareAuth, resolveMiddlewareIdentity } from './middleware-identity';
 
 /** Build a fake auth surface and record which calls the resolver actually made. */
 function fakeAuth(overrides: Partial<MiddlewareAuth>) {
@@ -14,6 +14,10 @@ function fakeAuth(overrides: Partial<MiddlewareAuth>) {
       calls.push('getUser');
       return { data: { user: null }, error: null };
     },
+    getSession: async () => {
+      calls.push('getSession');
+      return { data: { session: null } };
+    },
     ...overrides,
   };
   // Re-wrap the overrides so they are recorded too.
@@ -25,6 +29,10 @@ function fakeAuth(overrides: Partial<MiddlewareAuth>) {
     getUser: async () => {
       calls.push('getUser');
       return auth.getUser();
+    },
+    getSession: async () => {
+      calls.push('getSession');
+      return auth.getSession();
     },
   };
   return { auth: recorded, calls };
@@ -138,5 +146,48 @@ describe('resolveMiddlewareIdentity', () => {
     expect(identity.user).toBeNull();
     expect(identity.authError?.message).toBe('network down');
     expect(identity.source).toBe('get-user');
+  });
+
+  test("the claims path carries the token's aal level", async () => {
+    const { auth } = fakeAuth({
+      getClaims: async () => ({
+        data: { claims: { sub: 'user-123', aal: 'aal1' } },
+        error: null,
+      }),
+    });
+
+    const identity = await resolveMiddlewareIdentity(auth);
+
+    expect(identity.user?.aal).toBe('aal1');
+  });
+
+  test('the get-user fallback reads aal from the refreshed session token', async () => {
+    // Header.payload.signature; the payload is {"aal":"aal1"} base64url.
+    const payload = btoa(JSON.stringify({ aal: 'aal1' }))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    const { auth } = fakeAuth({
+      getClaims: async () => ({ data: null, error: new Error('symmetric keys') }),
+      getUser: async () => ({ data: { user: { id: 'user-fallback' } }, error: null }),
+      getSession: async () => ({ data: { session: { access_token: `x.${payload}.y` } } }),
+    });
+
+    const identity = await resolveMiddlewareIdentity(auth);
+
+    expect(identity.user?.aal).toBe('aal1');
+  });
+
+  test('an unparsable session token yields no aal instead of throwing', async () => {
+    const { auth } = fakeAuth({
+      getClaims: async () => ({ data: null, error: new Error('symmetric keys') }),
+      getUser: async () => ({ data: { user: { id: 'user-fallback' } }, error: null }),
+      getSession: async () => ({ data: { session: { access_token: 'not-a-jwt' } } }),
+    });
+
+    const identity = await resolveMiddlewareIdentity(auth);
+
+    expect(identity.user?.aal).toBeUndefined();
+    expect(identity.user?.id).toBe('user-fallback');
   });
 });

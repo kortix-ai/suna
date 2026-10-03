@@ -2369,6 +2369,17 @@
         "updateFailed": "No se pudo actualizar la contraseña",
         "unexpected": "Ocurrió un error inesperado"
       }
+    },
+    "mfaChallenge": {
+      "title": "Introduce tu código de verificación",
+      "description": "Tu cuenta usa una aplicación de autenticación como segundo factor. Introduce el código de 6 dígitos para continuar.",
+      "verify": "Verificar",
+      "verifying": "Verificando…",
+      "invalidCode": "Ese código no coincide. Prueba con el código actual de tu aplicación.",
+      "loadFailed": "No se pudieron cargar tus aplicaciones de autenticación",
+      "retry": "Reintentar",
+      "signOut": "Cerrar sesión",
+      "loading": "Cargando…"
     }
   },
   "onboarding": {
