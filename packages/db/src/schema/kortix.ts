@@ -3074,7 +3074,6 @@ export const oauthAuthorizationRequests = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_oauth_auth_requests_hash').on(table.requestIdHash),
-    index('idx_oauth_auth_requests_expires').on(table.expiresAt),
     // Explicit name: drizzle's default exceeds Postgres's 63-byte identifier cap.
     foreignKey({
       columns: [table.clientId],
