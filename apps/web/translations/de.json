@@ -1980,7 +1980,12 @@
       "topupWalletHint": "Lade dein Guthaben auf, damit deine Agenten weiterarbeiten.",
       "addCredits": "Credits hinzufügen",
       "billingPortal": "Abrechnungsportal",
-      "portalDescription": "Verwalte dein Abonnement, Zahlungsmethoden und Rechnungen."
+      "portalDescription": "Verwalte dein Abonnement, Zahlungsmethoden und Rechnungen.",
+      "cancelSubscription": "Abonnement kündigen",
+      "cancelSubscriptionDescription": "Dein Plan bleibt bis zum Ende der aktuellen Abrechnungsperiode aktiv und endet dann. Du kannst ihn bis dahin fortsetzen.",
+      "cancelSubscriptionTitle": "Abonnement kündigen?",
+      "keepSubscription": "Abonnement behalten",
+      "resumeSubscription": "Abonnement fortsetzen"
     },
     "topup": {
       "minimum": "Der Mindestbetrag beträgt {amount}.",

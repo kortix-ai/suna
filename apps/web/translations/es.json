@@ -1980,7 +1980,12 @@
       "topupWalletHint": "Recarga el saldo para que tus agentes sigan funcionando.",
       "addCredits": "Añadir créditos",
       "billingPortal": "Portal de facturación",
-      "portalDescription": "Gestiona tu suscripción, métodos de pago y facturas."
+      "portalDescription": "Gestiona tu suscripción, métodos de pago y facturas.",
+      "cancelSubscription": "Cancelar suscripción",
+      "cancelSubscriptionDescription": "Tu plan sigue activo hasta el final del período de facturación actual y luego finaliza. Puedes reanudarlo hasta entonces.",
+      "cancelSubscriptionTitle": "¿Cancelar suscripción?",
+      "keepSubscription": "Conservar suscripción",
+      "resumeSubscription": "Reanudar suscripción"
     },
     "topup": {
       "minimum": "La recarga mínima es de {amount}.",

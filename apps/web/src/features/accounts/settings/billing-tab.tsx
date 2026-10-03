@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -16,7 +17,9 @@ import {
   accountStateKeys,
   accountStateSelectors,
   invalidateAccountState,
+  useCancelSubscription,
   useCreatePortalSession,
+  useReactivateSubscription,
 } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { useBillingAccountId } from '@/stores/billing-account-context';
@@ -25,7 +28,7 @@ import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * `showWallet` — whether this pane leads with the WALLET or with the PLAN.
@@ -85,6 +88,9 @@ export function BillingTab({
   });
 
   const createPortalSessionMutation = useCreatePortalSession();
+  const cancelSubscriptionMutation = useCancelSubscription();
+  const reactivateSubscriptionMutation = useReactivateSubscription();
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const totalCredits = accountStateSelectors.totalCredits(accountState);
 
   const prevIsActiveRef = useRef(false);
@@ -126,6 +132,23 @@ export function BillingTab({
   const hasActiveSubscription = Boolean(subscription?.subscription_id);
   const subscribedToTeam = isPerSeat && hasActiveSubscription;
   const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
+
+  // The cancel control mirrors the server's own guard: a Stripe subscription
+  // the webhook has not yet marked cancelling, outside an active commitment
+  // (`commitment.can_cancel` is the same predicate cancelSubscription
+  // enforces). A commitment hides the control instead of inviting a 400.
+  // A subscription already winding down offers Resume instead.
+  const isStripeSubscription = subscription?.provider === 'stripe';
+  const canCancelSubscription =
+    hasActiveSubscription &&
+    isStripeSubscription &&
+    subscription?.cancel_at_period_end !== true &&
+    subscription?.commitment?.can_cancel !== false;
+  const canResumeSubscription =
+    hasActiveSubscription &&
+    isStripeSubscription &&
+    subscription?.cancel_at_period_end === true &&
+    (subscription?.status === 'active' || subscription?.status === 'trialing');
 
   return (
     <div className="space-y-8">
@@ -220,20 +243,55 @@ export function BillingTab({
               <div className="bg-popover rounded-md border px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-muted-foreground min-w-0 text-xs">{t('portalDescription')}</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 gap-1.5"
-                    onClick={handleManageSubscription}
-                    disabled={createPortalSessionMutation.isPending}
-                  >
-                    {createPortalSessionMutation.isPending ? (
-                      <Loading className="size-4 shrink-0" />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {canResumeSubscription ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => reactivateSubscriptionMutation.mutate()}
+                        disabled={reactivateSubscriptionMutation.isPending}
+                      >
+                        {reactivateSubscriptionMutation.isPending ? (
+                          <Loading className="size-4 shrink-0" />
+                        ) : null}
+                        {t('resumeSubscription')}
+                      </Button>
                     ) : null}
-                    {t('manageBilling')}
-                  </Button>
+                    {canCancelSubscription ? (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setConfirmCancelOpen(true)}
+                      >
+                        {t('cancelSubscription')}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 gap-1.5"
+                      onClick={handleManageSubscription}
+                      disabled={createPortalSessionMutation.isPending}
+                    >
+                      {createPortalSessionMutation.isPending ? (
+                        <Loading className="size-4 shrink-0" />
+                      ) : null}
+                      {t('manageBilling')}
+                    </Button>
+                  </div>
                 </div>
               </div>
+              <ConfirmDialog
+                open={confirmCancelOpen}
+                onOpenChange={setConfirmCancelOpen}
+                title={t('cancelSubscriptionTitle')}
+                description={t('cancelSubscriptionDescription')}
+                confirmLabel={t('cancelSubscription')}
+                cancelLabel={t('keepSubscription')}
+                confirmVariant="destructive"
+                isPending={cancelSubscriptionMutation.isPending}
+                onConfirm={() => cancelSubscriptionMutation.mutate()}
+              />
             </section>
           ) : null}
         </>
