@@ -156,6 +156,7 @@ export const projectKeys = {
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
   slackMode: (projectId: string | null | undefined) => ['slack-mode', projectId] as const,
   triggers: (projectId: string | null | undefined) => ['project-triggers', projectId] as const,
+  apps: (projectId: string | null | undefined) => ['project-apps', projectId] as const,
   changeRequests: (projectId: string | null | undefined, status: string) =>
     ['change-requests', projectId, status] as const,
   changeRequest: (projectId: string | null | undefined, crId: string | null | undefined) =>

@@ -264,13 +264,29 @@ test('a prompt naming an agent the project does not declare is delivered as the 
   ]);
 });
 
-test('a running session refuses an agent switch before grant remint or forwarding', async () => {
-  undeclaredAgents.add('foreign-agent');
+// KRTX-1290. A started session keeps agent switching: it is an AUTHORIZATION
+// question, not an immutability one. An authorized caller who names a declared
+// agent the session was not created with re-scopes the box env and the token
+// grant, then runs that agent; an unauthorized caller is refused before either
+// side effect.
+test('a running session runs a different declared agent once authorized', async () => {
+  const response = await prompt('nda-turnaround');
+
+  expect(response.status).toBe(200);
+  expect(authorizeCalls).toHaveLength(1);
+  expect(remintCalls).toEqual([{ requestedAgent: 'nda-turnaround' }]);
+  expect(upstreamCalls).toBe(1);
+  expect(upstreamBodies.at(-1)).toMatchObject({ agent: 'nda-turnaround' });
+});
+
+test('a running session refuses an agent the caller may not run before grant remint or forwarding', async () => {
+  authorizeAllowed = false;
 
   const response = await prompt('nda-turnaround');
 
-  expect(response.status).toBe(409);
-  expect(await response.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
   expect(remintCalls).toEqual([]);
+  expect(envSyncCalls).toEqual([]);
   expect(upstreamCalls).toBe(0);
 });

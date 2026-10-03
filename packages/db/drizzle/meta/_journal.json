@@ -810,8 +810,15 @@
     {
       "idx": 115,
       "version": "7",
-      "when": 1791030872173,
-      "tag": "20261003123432_project_session_public_shares_account_index",
+      "when": 1791027817427,
+      "tag": "20261003114337_drop_unused_access_requests_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791039264700,
+      "tag": "20261003145424_drop_duplicate_account_memberships_index_snapshot",
       "breakpoints": true
     }
   ]

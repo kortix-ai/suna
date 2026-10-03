@@ -1,4 +1,4 @@
-// Migration: project_session_public_shares_account_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
+// Migration: public_credit_usage_message_id_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // This file exists ONLY because CREATE/DROP INDEX CONCURRENTLY (and a
 // handful of other operations: REINDEX CONCURRENTLY, DETACH PARTITION
@@ -41,11 +41,24 @@
 //     covered by the mixed-version guard, same as a plain .sql migration --
 //     add `// mixed-version-safe: <justification>` above `up` if this drops
 //     something old code might still read (see MIGRATIONS.md).
+//
+// What this indexes: the legacy `public.credit_usage` table (pre-baseline
+// basejump-era schema, kept in place by 20260706120000000_retire_basejump).
+// Its FK `credit_usage_message_id_fkey` (message_id -> messages.message_id,
+// ON DELETE SET NULL) has no covering index, so every DELETE on `messages`
+// must seq-scan `public.credit_usage` to null the references — the exact
+// shape Supabase's `unindexed_foreign_keys` lint flags (KRTX-1123). The two
+// sibling FKs are already covered (`idx_credit_usage_account_id` guards
+// credit_usage_user_id_fkey, `idx_credit_usage_thread_id` guards
+// credit_usage_thread_id_fkey); this FK is the only uncovered one. Fresh databases never create
+// this table (the baseline only builds `kortix.credit_usage`, and
+// drizzle/0000_bootstrap.sql does not build the legacy one), so `up` guards
+// on the table's existence and does nothing on a fresh environment.
 
 export const shorthands = undefined;
 
 /** @param {import('node-pg-migrate').MigrationBuilder} pgm */
-export const up = (pgm) => {
+export const up = async (pgm) => {
   pgm.noTransaction();
   // IMPORTANT: separate pgm.sql() calls, NOT one multi-statement string.
   // Postgres's simple query protocol treats a single query string containing
@@ -53,18 +66,37 @@ export const up = (pgm) => {
   // silently defeats pgm.noTransaction() (CONCURRENTLY still fails with
   // "cannot run inside a transaction block") even though noTransaction() IS
   // working correctly at the node-pg-migrate level. One statement per call.
+  //
+  // The legacy table exists only on environments that predate the Kortix
+  // baseline (prod, dev). A `DO $$ ... IF NOT EXISTS ... $$` guard cannot
+  // wrap a CONCURRENTLY build (DO is itself a transaction), so ask the
+  // catalog first and queue nothing on a fresh environment.
+  const { rowCount } = await pgm.db.query(
+    `select 1
+       from pg_catalog.pg_class c
+       join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relname = 'credit_usage' and c.relkind = 'r'`,
+  );
+  if ((rowCount ?? 0) === 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      '[public_credit_usage_message_id_index] public.credit_usage absent (fresh environment) -- nothing to index',
+    );
+    return;
+  }
   pgm.sql(`set lock_timeout = '180s'`);
   pgm.sql(`set statement_timeout = '30min'`);
-  // Covers project_session_public_shares_account_id_fkey (Supabase advisor
-  // unindexed_foreign_keys, KRTX-1105): accounts.account_id ON DELETE CASCADE
-  // must find this table's rows per deleted account, and any account-scoped
-  // read shares the need. token_hash (unique), session_id and project_id are
-  // already indexed; account_id was the one FK column no index led with, so
-  // every account delete seq-scanned the table. Single-column btree on the FK
-  // column, matching the sibling indexes _session/_project.
+  // Mirrors the indexes the pre-baseline schema already keeps on this
+  // table's other FK columns (idx_credit_usage_account_id,
+  // idx_credit_usage_thread_id) and the covering index Supabase's
+  // 0001_unindexed_foreign_keys lint looks for: its check requires an index
+  // whose leading columns are the FK's columns. Read-only against prod
+  // 2026-10-02 before this change: public.credit_usage holds 0 rows and
+  // public.messages 56.9M, so the build is trivial but the FK delete path
+  // stays a seq scan until this index exists.
   pgm.sql(`
-    create index concurrently if not exists idx_project_session_public_shares_account
-      on kortix.project_session_public_shares using btree (account_id)
+    create index concurrently if not exists idx_credit_usage_message_id
+      on public.credit_usage (message_id)
   `);
 };
 

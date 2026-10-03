@@ -1914,7 +1914,6 @@
     "messageInput": "Campo messaggio",
     "attachFiles": "Allega file",
     "selectAgent": "Seleziona agente",
-    "agentLockedHint": "Non è possibile cambiare agente in una sessione già avviata.",
     "noModel": "Nessun modello",
     "thinkingEffort": "Livello di ragionamento",
     "sessionOverrides": "Override della sessione",
@@ -19203,7 +19202,9 @@
       "textd4586396b9ba": "Gli agenti possono usare la CLI da soli?",
       "text9e52157faaab": "Sì. La stessa CLI di Kortix gira in ogni sandbox, già autenticata, così gli agenti usano esattamente i tuoi stessi comandi.",
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
-      "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni."
+      "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
+      "text39207bf34111": "Competenze correlate",
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
