@@ -121,6 +121,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     // EXECUTED before it replaces a working one, so every case that is not about
     // that check says "it ran". See `ExecProbe` in ../runtime-assets.ts.
     execProbe: async () => 0,
+    // Hermetic chunk store: a Kortix worker sandbox's real baked agent and
+    // agent.current are ~110 MB each, and these fixtures chunk at 8 bytes —
+    // indexing the machine's own binaries byte-pair by byte-pair takes
+    // minutes. Point both at paths inside the temp workspace.
+    agentStateDir: ws.root,
+    agentBakedPath: join(ws.root, 'opt', 'missing-agent'),
     ...extra,
   })
 }

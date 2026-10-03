@@ -13,9 +13,14 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
+/** The host-written env file. Tests point KORTIX_PT_ENV_FILE elsewhere so a
+ *  Kortix worker sandbox's own snapshot (/etc/pt-env carries the session's
+ *  auto-clone and branch) cannot decide a rig's repo gate. */
+const PT_ENV_FILE = process.env.KORTIX_PT_ENV_FILE ?? '/etc/pt-env'
+
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(PT_ENV_FILE, 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -33,7 +38,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(PT_ENV_FILE, 'utf8'))
   } catch {
     return false
   }
