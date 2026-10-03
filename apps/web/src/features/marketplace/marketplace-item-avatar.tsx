@@ -75,7 +75,9 @@ export type MarketplaceItemAvatarItem = Pick<
  * Identity tile for a single marketplace ITEM (skill, agent, command, or
  * bundle). Picks a deterministic
  * icon from the item's name and pins the source avatar as a corner badge for
- * provenance. All deterministic — no flash, no layout shift.
+ * provenance. The badge's cutout ring takes the card's fill (and its hover
+ * fill), so it reads as a gap, not an outline. All deterministic — no flash,
+ * no layout shift.
  */
 export function MarketplaceItemAvatar({
   item,
@@ -100,7 +102,7 @@ export function MarketplaceItemAvatar({
     >
       <EntityAvatar label={seed} icon={Icon} size={SIZE_TO_ENTITY[size]} />
       {showSource && hasSource && (
-        <span className="ring-background absolute -right-1 -bottom-1 inline-flex rounded-sm ring-2">
+        <span className="ring-card group-hover:ring-muted absolute -right-1 -bottom-1 inline-flex rounded-sm ring-1 transition-colors duration-(--duration-normal)">
           <MarketplaceAvatar
             id={item.marketplaceId}
             owner={item.owner}
