@@ -1,30 +1,16 @@
 {
-  "source_hash": "0563ac9e50a0c6778df546e333302d7e4a61319ea60a3a99debc16a65c3d5509",
+  "source_hash": "737d62034a3d26a2933496f9d8f6031329c912f2ccbcb068b842e691703ac519",
   "diff_files": [
-    "apps/cli/src/__tests__/no-inline-arg-errors.test.ts",
-    "apps/cli/src/__tests__/validate-argv.blackbox.test.ts",
-    "apps/cli/src/commands/validate.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets-download.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts",
-    "apps/mobile/lib/highlight/shiki.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "packages/db/migrations/20261003165439303_public_credit_usage_policy_roles.sql",
+    "packages/db/scripts/public-credit-usage-policy-roles.integration.test.ts"
   ],
-  "diff_hash": "a306818837089f3e2a69766f50aa4a1c4685da459efbb7e249df7964161a0953",
-  "head": "e8661f93352cfd2a167a31718f173719042645a8",
-  "passed": true,
+  "diff_hash": "aaebb9f233604ef4f096e5594e48d269e82cf2ee0f24e1a2de2d5029bf17714c",
+  "head": "b49ed92e40bf77f9f53e1f9ef25ba0c8766b5828",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T16:18:07.380Z"
+  "at": "2026-10-03T18:23:06.058Z"
 }
