@@ -1,0 +1,5 @@
+# bun's config for the CLI test suite: load scripts/test-env.ts before every
+# test file, so the suite is hermetic (a Kortix worker sandbox's injected
+# platform env must not leak into CLI output or gates). See that file.
+[test]
+preload = ["./scripts/test-env.ts"]
