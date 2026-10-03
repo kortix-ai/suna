@@ -20493,5 +20493,30 @@
     "people": "Personas en esta sesión: {names}",
     "peopleMore": "Personas en esta sesión: {names} y {count} más",
     "more": "{count} más pueden abrir esta sesión"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Iniciar sesión en Kortix Capture",
+      "description": "Comprueba que este código coincide con el de la app y elige el proyecto en el que graba.",
+      "approvingAs": "Iniciando sesión como {email}",
+      "projectLabel": "Proyecto",
+      "noProjects": "Ninguno de tus proyectos tiene Capture activado. Quien gestiona un proyecto puede activarlo en Configuración → Feature flags.",
+      "notice": "La app graba tu pantalla y tus acciones, y el audio cuando el proyecto lo permite. Tú y quienes gestionan el proyecto podéis leerlo. Cada lectura de un responsable queda registrada.",
+      "approve": "Iniciar sesión en la app",
+      "deny": "Rechazar inicio de sesión",
+      "approvedTitle": "Kortix Capture ha iniciado sesión",
+      "approvedDescription": "La app ahora graba en {project}. Puedes cerrar esta pestaña.",
+      "approvedDescriptionNoProject": "La app ha iniciado sesión. Puedes cerrar esta pestaña.",
+      "deniedTitle": "Inicio de sesión rechazado",
+      "deniedDescription": "La app no ha iniciado sesión. Puedes cerrar esta pestaña.",
+      "expiredTitle": "Este código ha caducado",
+      "expiredDescription": "Vuelve a iniciar sesión desde la app Kortix Capture.",
+      "invalidTitle": "Código no encontrado",
+      "invalidDescription": "El código puede ser incorrecto o ya usado. Comprueba el código en la app e inténtalo de nuevo.",
+      "enterCodeTitle": "Introduce el código de Kortix Capture",
+      "enterCodeDescription": "La app muestra un código de ocho caracteres.",
+      "codeLabel": "Código",
+      "continue": "Continuar"
+    }
   }
 }

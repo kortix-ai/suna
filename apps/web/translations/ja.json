@@ -20493,5 +20493,30 @@
     "people": "このセッションの参加者: {names}",
     "peopleMore": "このセッションの参加者: {names} ほか{count}人",
     "more": "ほか{count}人がこのセッションを開けます"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Kortix Capture にサインイン",
+      "description": "このコードがアプリのコードと一致することを確認し、記録先のプロジェクトを選択します。",
+      "approvingAs": "{email} としてサインイン",
+      "projectLabel": "プロジェクト",
+      "noProjects": "Capture が有効なプロジェクトがありません。プロジェクトの管理者は 設定 → 機能フラグ で有効にできます。",
+      "notice": "アプリは画面と操作を記録し、プロジェクトが許可する場合は音声も記録します。閲覧できるのはあなたとプロジェクトの管理者だけです。管理者による閲覧はすべて記録されます。",
+      "approve": "アプリにサインイン",
+      "deny": "サインインを拒否",
+      "approvedTitle": "Kortix Capture にサインインしました",
+      "approvedDescription": "アプリは {project} に記録しています。このタブは閉じてかまいません。",
+      "approvedDescriptionNoProject": "アプリはサインインしました。このタブは閉じてかまいません。",
+      "deniedTitle": "サインインを拒否しました",
+      "deniedDescription": "アプリはサインインしていません。このタブは閉じてかまいません。",
+      "expiredTitle": "このコードは期限切れです",
+      "expiredDescription": "Kortix Capture アプリでもう一度サインインを開始してください。",
+      "invalidTitle": "コードが見つかりません",
+      "invalidDescription": "コードが間違っているか、すでに使用されています。アプリのコードを確認して、もう一度お試しください。",
+      "enterCodeTitle": "Kortix Capture のコードを入力",
+      "enterCodeDescription": "アプリに 8 文字のコードが表示されます。",
+      "codeLabel": "コード",
+      "continue": "続行"
+    }
   }
 }

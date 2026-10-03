@@ -20493,5 +20493,30 @@
     "people": "Personen in dieser Sitzung: {names}",
     "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
     "more": "{count} weitere können diese Sitzung öffnen"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Kortix Capture anmelden",
+      "description": "Prüfe, dass dieser Code dem in der App entspricht, und wähle dann das Projekt, in das sie aufzeichnet.",
+      "approvingAs": "Anmeldung als {email}",
+      "projectLabel": "Projekt",
+      "noProjects": "Keines deiner Projekte hat Capture aktiviert. Wer ein Projekt verwaltet, kann es unter Einstellungen → Feature-Flags aktivieren.",
+      "notice": "Die App zeichnet deinen Bildschirm und deine Aktionen auf, und Audio, wenn das Projekt es erlaubt. Du und die Personen, die das Projekt verwalten, können es lesen. Jeder Zugriff durch einen Manager wird protokolliert.",
+      "approve": "App anmelden",
+      "deny": "Anmeldung ablehnen",
+      "approvedTitle": "Kortix Capture ist angemeldet",
+      "approvedDescription": "Die App zeichnet jetzt in {project} auf. Du kannst diesen Tab schließen.",
+      "approvedDescriptionNoProject": "Die App ist angemeldet. Du kannst diesen Tab schließen.",
+      "deniedTitle": "Anmeldung abgelehnt",
+      "deniedDescription": "Die App ist nicht angemeldet. Du kannst diesen Tab schließen.",
+      "expiredTitle": "Dieser Code ist abgelaufen",
+      "expiredDescription": "Starte die Anmeldung in der Kortix-Capture-App erneut.",
+      "invalidTitle": "Code nicht gefunden",
+      "invalidDescription": "Der Code ist eventuell falsch oder schon verwendet. Prüfe den Code in der App und versuche es erneut.",
+      "enterCodeTitle": "Code aus Kortix Capture eingeben",
+      "enterCodeDescription": "Die App zeigt einen achtstelligen Code.",
+      "codeLabel": "Code",
+      "continue": "Weiter"
+    }
   }
 }

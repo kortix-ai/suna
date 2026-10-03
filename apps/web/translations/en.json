@@ -20493,5 +20493,30 @@
     "people": "People in this session: {names}",
     "peopleMore": "People in this session: {names} and {count} more",
     "more": "{count} more can open this session"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Sign in Kortix Capture",
+      "description": "Check that this code matches the one in the app, then pick the project it records into.",
+      "approvingAs": "Signing in as {email}",
+      "projectLabel": "Project",
+      "noProjects": "None of your projects has Capture on. Anyone who manages a project can turn it on in Settings → Feature flags.",
+      "notice": "The app records your screen and your actions, and audio when the project allows it. You and the people who manage the project can read it. Every read by a manager is logged.",
+      "approve": "Sign in app",
+      "deny": "Deny sign-in",
+      "approvedTitle": "Kortix Capture is signed in",
+      "approvedDescription": "The app now records into {project}. You can close this tab.",
+      "approvedDescriptionNoProject": "The app is signed in. You can close this tab.",
+      "deniedTitle": "Sign-in denied",
+      "deniedDescription": "The app is not signed in. You can close this tab.",
+      "expiredTitle": "This code expired",
+      "expiredDescription": "Start the sign-in again in the Kortix Capture app.",
+      "invalidTitle": "Code not found",
+      "invalidDescription": "The code may be wrong or used already. Check the code in the app and try again.",
+      "enterCodeTitle": "Enter the code from Kortix Capture",
+      "enterCodeDescription": "The app shows an eight-character code.",
+      "codeLabel": "Code",
+      "continue": "Continue"
+    }
   }
 }

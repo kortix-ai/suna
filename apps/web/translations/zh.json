@@ -20493,5 +20493,30 @@
     "people": "此会话中的成员：{names}",
     "peopleMore": "此会话中的成员：{names}，另有 {count} 人",
     "more": "另有 {count} 人可以打开此会话"
+  },
+  "capture": {
+    "authorize": {
+      "title": "登录 Kortix Capture",
+      "description": "确认此代码与应用中的代码一致，然后选择它记录到的项目。",
+      "approvingAs": "以 {email} 登录",
+      "projectLabel": "项目",
+      "noProjects": "你的项目都没有开启 Capture。项目管理者可以在 设置 → 功能开关 中开启。",
+      "notice": "应用会记录你的屏幕和操作，项目允许时也会记录音频。只有你和项目管理者可以查看。管理者的每次查看都会被记录。",
+      "approve": "登录应用",
+      "deny": "拒绝登录",
+      "approvedTitle": "Kortix Capture 已登录",
+      "approvedDescription": "应用现在记录到 {project}。你可以关闭此标签页。",
+      "approvedDescriptionNoProject": "应用已登录。你可以关闭此标签页。",
+      "deniedTitle": "已拒绝登录",
+      "deniedDescription": "应用未登录。你可以关闭此标签页。",
+      "expiredTitle": "此代码已过期",
+      "expiredDescription": "请在 Kortix Capture 应用中重新开始登录。",
+      "invalidTitle": "未找到代码",
+      "invalidDescription": "代码可能有误或已被使用。请检查应用中的代码后重试。",
+      "enterCodeTitle": "输入 Kortix Capture 中的代码",
+      "enterCodeDescription": "应用会显示一个八位代码。",
+      "codeLabel": "代码",
+      "continue": "继续"
+    }
   }
 }

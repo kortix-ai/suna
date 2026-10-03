@@ -20493,5 +20493,30 @@
     "people": "Persone in questa sessione: {names}",
     "peopleMore": "Persone in questa sessione: {names} e altre {count}",
     "more": "Altri {count} possono aprire questa sessione"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Accedi a Kortix Capture",
+      "description": "Verifica che questo codice corrisponda a quello nell'app, poi scegli il progetto in cui registra.",
+      "approvingAs": "Accesso come {email}",
+      "projectLabel": "Progetto",
+      "noProjects": "Nessuno dei tuoi progetti ha Capture attivo. Chi gestisce un progetto può attivarlo in Impostazioni → Feature flag.",
+      "notice": "L'app registra lo schermo e le tue azioni, e l'audio quando il progetto lo consente. Tu e chi gestisce il progetto potete leggerlo. Ogni lettura di un responsabile viene registrata.",
+      "approve": "Accedi all'app",
+      "deny": "Rifiuta accesso",
+      "approvedTitle": "Kortix Capture ha effettuato l'accesso",
+      "approvedDescription": "L'app ora registra in {project}. Puoi chiudere questa scheda.",
+      "approvedDescriptionNoProject": "L'app ha effettuato l'accesso. Puoi chiudere questa scheda.",
+      "deniedTitle": "Accesso rifiutato",
+      "deniedDescription": "L'app non ha effettuato l'accesso. Puoi chiudere questa scheda.",
+      "expiredTitle": "Questo codice è scaduto",
+      "expiredDescription": "Riavvia l'accesso nell'app Kortix Capture.",
+      "invalidTitle": "Codice non trovato",
+      "invalidDescription": "Il codice potrebbe essere errato o già usato. Controlla il codice nell'app e riprova.",
+      "enterCodeTitle": "Inserisci il codice di Kortix Capture",
+      "enterCodeDescription": "L'app mostra un codice di otto caratteri.",
+      "codeLabel": "Codice",
+      "continue": "Continua"
+    }
   }
 }

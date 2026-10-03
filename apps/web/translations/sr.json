@@ -20493,5 +20493,30 @@
     "people": "Особе у овој сесији: {names}",
     "peopleMore": "Особе у овој сесији: {names} и још {count}",
     "more": "Još {count} može da otvori ovu sesiju"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Prijavi Kortix Capture",
+      "description": "Proveri da li se ovaj kod poklapa sa kodom u aplikaciji, pa izaberi projekat u koji snima.",
+      "approvingAs": "Prijava kao {email}",
+      "projectLabel": "Projekat",
+      "noProjects": "Nijedan tvoj projekat nema uključen Capture. Ko upravlja projektom može da ga uključi u Podešavanja → Feature flags.",
+      "notice": "Aplikacija snima tvoj ekran i tvoje radnje, i zvuk kada projekat to dozvoli. Ti i osobe koje upravljaju projektom možete to da čitate. Svako čitanje od strane menadžera se beleži.",
+      "approve": "Prijavi aplikaciju",
+      "deny": "Odbij prijavu",
+      "approvedTitle": "Kortix Capture je prijavljen",
+      "approvedDescription": "Aplikacija sada snima u {project}. Možeš da zatvoriš ovu karticu.",
+      "approvedDescriptionNoProject": "Aplikacija je prijavljena. Možeš da zatvoriš ovu karticu.",
+      "deniedTitle": "Prijava odbijena",
+      "deniedDescription": "Aplikacija nije prijavljena. Možeš da zatvoriš ovu karticu.",
+      "expiredTitle": "Ovaj kod je istekao",
+      "expiredDescription": "Ponovo pokreni prijavu u aplikaciji Kortix Capture.",
+      "invalidTitle": "Kod nije pronađen",
+      "invalidDescription": "Kod je možda pogrešan ili već iskorišćen. Proveri kod u aplikaciji i pokušaj ponovo.",
+      "enterCodeTitle": "Unesi kod iz Kortix Capture",
+      "enterCodeDescription": "Aplikacija prikazuje kod od osam znakova.",
+      "codeLabel": "Kod",
+      "continue": "Nastavi"
+    }
   }
 }

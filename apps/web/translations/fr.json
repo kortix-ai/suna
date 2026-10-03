@@ -20493,5 +20493,30 @@
     "people": "Personnes dans cette session : {names}",
     "peopleMore": "Personnes dans cette session : {names} et {count} de plus",
     "more": "{count} autres peuvent ouvrir cette session"
+  },
+  "capture": {
+    "authorize": {
+      "title": "Connecter Kortix Capture",
+      "description": "Vérifiez que ce code correspond à celui de l'application, puis choisissez le projet dans lequel elle enregistre.",
+      "approvingAs": "Connexion en tant que {email}",
+      "projectLabel": "Projet",
+      "noProjects": "Aucun de vos projets n'a Capture activé. Toute personne qui gère un projet peut l'activer dans Paramètres → Feature flags.",
+      "notice": "L'application enregistre votre écran et vos actions, et l'audio quand le projet l'autorise. Vous et les personnes qui gèrent le projet pouvez le lire. Chaque lecture par un responsable est journalisée.",
+      "approve": "Connecter l'application",
+      "deny": "Refuser la connexion",
+      "approvedTitle": "Kortix Capture est connecté",
+      "approvedDescription": "L'application enregistre maintenant dans {project}. Vous pouvez fermer cet onglet.",
+      "approvedDescriptionNoProject": "L'application est connectée. Vous pouvez fermer cet onglet.",
+      "deniedTitle": "Connexion refusée",
+      "deniedDescription": "L'application n'est pas connectée. Vous pouvez fermer cet onglet.",
+      "expiredTitle": "Ce code a expiré",
+      "expiredDescription": "Relancez la connexion dans l'application Kortix Capture.",
+      "invalidTitle": "Code introuvable",
+      "invalidDescription": "Le code est peut-être faux ou déjà utilisé. Vérifiez le code dans l'application et réessayez.",
+      "enterCodeTitle": "Saisissez le code de Kortix Capture",
+      "enterCodeDescription": "L'application affiche un code de huit caractères.",
+      "codeLabel": "Code",
+      "continue": "Continuer"
+    }
   }
 }

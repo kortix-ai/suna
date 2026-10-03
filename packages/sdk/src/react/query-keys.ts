@@ -70,6 +70,10 @@ function normalizeSessionListFilters(filters?: SessionListFilters) {
 }
 
 export const qk = {
+  /** Kortix Capture, not project-scoped: a device sign-in grant, keyed by its user code. */
+  capture: {
+    deviceGrant: (userCode: string) => ['capture', 'device-grant', userCode] as const,
+  },
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
    *

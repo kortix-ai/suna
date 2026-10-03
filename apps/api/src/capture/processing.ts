@@ -194,6 +194,7 @@ export interface Usage {
   prompt_tokens: number;
   completion_tokens: number;
   cost_usd: number;
+  duration_ms?: number;
 }
 
 const emptyUsage = (): Usage => ({ requests: 0, prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 });
@@ -234,7 +235,9 @@ function gatewayCaller(authorization: string, model: string): Caller {
         const res = await fetch(url, {
           method: 'POST',
           headers: { authorization, 'content-type': 'application/json' },
-          body: JSON.stringify({ model, stream: false, temperature: 0.2, max_tokens: 16_000, messages: [{ role: 'user', content }] }),
+          // Low reasoning effort: these are extraction tasks, and a reasoning model at the
+          // default effort spent 12k+ hidden tokens and over 300 s on one annotation pass.
+          body: JSON.stringify({ model, stream: false, temperature: 0.2, max_tokens: 16_000, reasoning_effort: 'low', messages: [{ role: 'user', content }] }),
           signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
         });
         const data = (await res.json().catch(() => null)) as any;
@@ -758,6 +761,7 @@ type Kind = 'segmentation' | 'transcript' | 'annotation';
 
 async function record(rangeId: string, kind: Kind, model: string, run: (usage: Usage) => Promise<Record<string, unknown>>) {
   const usage = emptyUsage();
+  const started = Date.now();
   await db
     .insert(rangeOutputs)
     .values({ rangeId, kind, status: 'running', model })
@@ -766,13 +770,13 @@ async function record(rangeId: string, kind: Kind, model: string, run: (usage: U
     const output = await run(usage);
     await db
       .update(rangeOutputs)
-      .set({ status: 'done', output, usage: { ...usage }, updatedAt: sql`now()` })
+      .set({ status: 'done', output, usage: { ...usage, duration_ms: Date.now() - started }, updatedAt: sql`now()` })
       .where(and(eq(rangeOutputs.rangeId, rangeId), eq(rangeOutputs.kind, kind)));
     return output;
   } catch (error) {
     await db
       .update(rangeOutputs)
-      .set({ status: 'failed', error: String(error).slice(0, 2000), usage: { ...usage }, updatedAt: sql`now()` })
+      .set({ status: 'failed', error: String(error).slice(0, 2000), usage: { ...usage, duration_ms: Date.now() - started }, updatedAt: sql`now()` })
       .where(and(eq(rangeOutputs.rangeId, rangeId), eq(rangeOutputs.kind, kind)));
     logger.warn('[capture] range pipeline failed', { rangeId, kind, error: String(error) });
     return null;
