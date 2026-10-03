@@ -15,7 +15,6 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
     extraEnvVars: command.extraEnvVars,
     visibility: command.visibility,
     mayManageSystemConnections: command.mayManageSystemConnections,
-    enforceAccountCap: command.enforceAccountCap,
     postCreate: command.postCreate,
     authType: command.authType,
     apiKeyType: command.apiKeyType,

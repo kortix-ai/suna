@@ -754,13 +754,13 @@ await kortix.session(projectId, warm.session.session_id).send("Build me a widget
 
 `ensureWarm()` creates, or returns, one unused session for the current user. It
 is the same create `sessions.create()` runs, with the project's defaults: same
-billing gate, same concurrent-session cap, same connector requirements. The only
+billing gate, same connector requirements. The only
 difference is `metadata.warm`, which hides the session from
 `sessions.list()` until its first prompt lands.
 
-Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the account has
-no concurrent-session headroom to spare or the project cannot be warmed right
-now — fall through to `sessions.create()`, which reports the real reason.
+Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the project
+cannot be warmed right now — fall through to `sessions.create()`, which reports
+the real reason.
 
 The warm session carries the project's DEFAULT agent and sandbox. If the user
 picks a different one, abandon it and call `sessions.create()`: an unused warm
