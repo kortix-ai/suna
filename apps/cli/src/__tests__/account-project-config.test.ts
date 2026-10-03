@@ -24,6 +24,9 @@ const ENV_KEYS = [
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
   'KORTIX_AUTH_FILE',
+  // A managed sandbox exports the running session's id into every process it
+  // starts; the breadcrumb asserts the no-session state ("open one: …").
+  'KORTIX_SESSION_ID',
 ] as const;
 
 let saved: Record<string, string | undefined>;

@@ -41,7 +41,14 @@ async function runProviderCase(input: {
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_CONFIG_FILE: join(directory, 'config.json'),
+      // The goldens name the no-env-token default host; the platform's session
+      // env (API URL, token, session id) would render `host env` and a session
+      // suffix instead.
       KORTIX_TOKEN: undefined,
+      KORTIX_API_URL: undefined,
+      KORTIX_FRONTEND_URL: undefined,
+      KORTIX_PROJECT_ID: undefined,
+      KORTIX_SESSION_ID: undefined,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },
@@ -134,6 +141,10 @@ describe('kortix connectors add provider matrix', () => {
         KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_CONFIG_FILE: join(directory, 'config.json'),
         KORTIX_TOKEN: undefined,
+        KORTIX_API_URL: undefined,
+        KORTIX_FRONTEND_URL: undefined,
+        KORTIX_PROJECT_ID: undefined,
+        KORTIX_SESSION_ID: undefined,
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       },

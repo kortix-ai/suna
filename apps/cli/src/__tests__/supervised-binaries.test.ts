@@ -34,6 +34,10 @@ import { getUpdateNotice, resolveUpdateStatus } from '../update-check.ts';
 
 let dir = '';
 const originalEnv = { ...process.env };
+// Managed-sandbox hermeticity: the platform exports KORTIX_SUPERVISED=1 into
+// every process it starts. This suite owns that signal — the restore snapshot
+// must not carry it, or every non-supervised branch below inherits it.
+delete originalEnv.KORTIX_SUPERVISED;
 const originalFetch = globalThis.fetch;
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
@@ -62,6 +66,7 @@ beforeEach(() => {
   delete process.env.KORTIX_SKIP_UPDATE_CHECK;
   delete process.env.KORTIX_OPENCODE_BIN;
   delete process.env.CI;
+  delete process.env.KORTIX_SUPERVISED;
   // The update notifier bails on a non-TTY stdout, which is what `bun test`
   // gives us. Force it on: the point of these tests is that the supervised
   // gate holds on a REAL terminal, which the Session PTY is.

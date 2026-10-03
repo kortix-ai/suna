@@ -22,6 +22,10 @@ import {
 
 let dir = '';
 const originalEnv = { ...process.env };
+// Managed-sandbox hermeticity: the platform exports KORTIX_SUPERVISED=1 into
+// every process it starts, which would make resolveUpdateStatus return null
+// through the supervised branch. This suite owns the signal.
+delete originalEnv.KORTIX_SUPERVISED;
 const originalFetch = globalThis.fetch;
 let served: string | null = 'v9.9.9';
 
@@ -37,6 +41,7 @@ beforeEach(() => {
   delete process.env.KORTIX_NO_UPDATE_CHECK;
   delete process.env.KORTIX_SKIP_UPDATE_CHECK;
   delete process.env.CI;
+  delete process.env.KORTIX_SUPERVISED;
   // isDisabled() bails on a non-TTY stdout, which is exactly what `bun test`
   // gives us — force it on so the resolution logic is reachable.
   Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });

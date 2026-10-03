@@ -51,6 +51,10 @@ async function runCli(args: string[]): Promise<CliResult> {
     'KORTIX_FRONTEND_URL',
     'KORTIX_PROJECT_ID',
     'BASH_ENV',
+    // A managed sandbox exports the running session's id into every process
+    // it starts; the status line would append `· session <id>` and no golden
+    // fixture could match. The goldens describe the no-session state.
+    'KORTIX_SESSION_ID',
   ]) {
     delete env[key];
   }
