@@ -40,6 +40,10 @@ async function workspace() {
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'opt', 'runtime-assets-state.json'),
     configDir: join(dir, 'config'),
+    // A Kortix host has a real 110 MB agent binary at the baked path, which a
+    // Kortix sandbox would hash chunk-by-chunk for minutes; CI has none. Point
+    // the option inside the temp workspace so every reconcile sees CI's world.
+    agentBakedPath: join(dir, 'bin', 'absent-kortix-agent'),
   }
 }
 
@@ -116,6 +120,7 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    agentBakedPath: ws.agentBakedPath,
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
