@@ -83,7 +83,10 @@ Subcommands:
     --viewer off|identity|api       What the App is told about its viewer. api = a token
                                     that acts as them on the Kortix API (their role caps it).
   access-link <id|slug>             Create a short-lived authenticated browser URL.
-  delete <id|slug>                  Delete the App and its runtimes. --yes.
+  delete <id|slug>                  Delete the App, its runtimes, and every deployment
+                                    image it built. --yes.
+    --deployment <id|vN>            Delete only this deployment and its image. The live
+                                    deployment cannot be deleted: roll back first.
 
 Global options:
   --project <id>     Operate on this project id.
@@ -188,6 +191,20 @@ async function context(options: ContextOptions): Promise<{
 
 async function scoped<T>(ctx: NonNullable<Awaited<ReturnType<typeof context>>>, fn: () => Promise<T>) {
   return withKortixScope(ctx.auth, fn);
+}
+
+/**
+ * The deployment a user named: its full id, or its version as `v3` or `3` —
+ * the form `kortix apps show` prints. Deleted deployments are never listed.
+ */
+export function resolveDeploymentTarget(deployments: AppDeployment[], target: string): AppDeployment {
+  const version = /^v?(\d+)$/i.exec(target.trim());
+  const match = deployments.find((deployment) =>
+    deployment.deployment_id === target
+    || (version !== null && deployment.version === Number(version[1])));
+  if (match) return match;
+  const known = deployments.map((deployment) => `v${deployment.version}`).join(', ');
+  throw new Error(`Deployment ${target} not found${known ? ` (deployments: ${known})` : ''}`);
 }
 
 async function resolveApp(apps: AppsHandle, target: string): Promise<App> {
@@ -715,7 +732,8 @@ async function showCommand(rest: string[], options: ContextOptions, json: boolea
   else {
     process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  ${result.app.url}\n`);
     for (const deployment of result.deployments) {
-      process.stdout.write(`  v${deployment.version}  ${deployment.status}  ${deployment.deployment_id}\n`);
+      const live = deployment.deployment_id === result.app.active_deployment_id ? `  ${C.bold}live${C.reset}` : '';
+      process.stdout.write(`  v${deployment.version}  ${deployment.status}  ${deployment.deployment_id}${live}\n`);
     }
     process.stdout.write('\n');
   }
@@ -841,19 +859,55 @@ async function accessLinkCommand(
   return 0;
 }
 
+function imageLines(released: number, pending: number): string {
+  const lines: string[] = [];
+  if (released > 0) lines.push(`  freed ${released} deployment image${released === 1 ? '' : 's'}`);
+  if (pending > 0) {
+    lines.push(`  ${pending} deployment image${pending === 1 ? '' : 's'} not released yet; Kortix retries automatically`);
+  }
+  return lines.map((line) => `${C.dim}${line}${C.reset}\n`).join('');
+}
+
 async function deleteCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
   const yes = takeFlagBool(rest, ['--yes', '-y']);
+  const deploymentTarget = takeFlagValue(rest, ['--deployment']);
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('delete needs an App id or slug');
-  if (!yes) return fail('delete is destructive; pass --yes');
+  if (!yes) return fail(`${deploymentTarget ? 'deleting a deployment' : 'delete'} is destructive; pass --yes`);
   const ctx = await context(options);
   if (!ctx) return 1;
+
+  if (deploymentTarget) {
+    const result = await scoped(ctx, async () => {
+      const app = await resolveApp(ctx.apps, target);
+      const deployment = resolveDeploymentTarget(await ctx.apps.deployments.list(app.app_id), deploymentTarget);
+      const deleted = await ctx.apps.deployments.remove(app.app_id, deployment.deployment_id);
+      return { ...deleted, app_id: app.app_id, slug: app.slug, version: deployment.version };
+    });
+    if (json) emitJson(result);
+    else {
+      process.stdout.write(`\n  ${status.ok(`deleted v${result.version} of ${result.slug}`)}\n`);
+      process.stdout.write(imageLines(result.image === 'released' ? 1 : 0, result.image === 'pending' ? 1 : 0));
+      process.stdout.write('\n');
+    }
+    return 0;
+  }
+
   const result = await scoped(ctx, async () => {
     const app = await resolveApp(ctx.apps, target);
-    await ctx.apps.remove(app.app_id);
-    return { ok: true, app_id: app.app_id, slug: app.slug };
+    const deleted = await ctx.apps.remove(app.app_id);
+    return {
+      ok: true,
+      app_id: app.app_id,
+      slug: app.slug,
+      images: deleted.images ?? { released: 0, pending: 0 },
+    };
   });
   if (json) emitJson(result);
-  else process.stdout.write(`\n  ${status.ok(`deleted ${result.slug}`)}\n\n`);
+  else {
+    process.stdout.write(`\n  ${status.ok(`deleted ${result.slug}`)}\n`);
+    process.stdout.write(imageLines(result.images.released, result.images.pending));
+    process.stdout.write('\n');
+  }
   return 0;
 }

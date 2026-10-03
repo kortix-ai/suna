@@ -333,6 +333,18 @@ describe('requestedPromptManagedModelId', () => {
   // /session/:id/command — verified against `SessionCommandData`: `model` is
   // a flat STRING ref ("kortix/<id>" or a native "provider/model"), not an
   // object. `COMMAND_BODY` above carries a native anthropic ref.
+  // POST /kortix/runtime/sessions/:id/prompt — the body `postPrompt`
+  // (session-lifecycle/runtime-client.ts) relays every inbox prompt as. Without
+  // this branch no relayed turn reaches the model-catalog lane at all.
+  test('reads the Kortix prompt route body (flat kortix/<provider>/<model> string)', () => {
+    const body = encode({
+      message_id: 'msg_0fdcfe9b0000mSIdTv1hWHxxEe',
+      parts: [{ type: 'text', text: 'hi' }],
+      model: 'kortix/codex/gpt-6.1-sol',
+    });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('codex/gpt-6.1-sol');
+  });
+
   test("reads a /command body's flat kortix/<id> model string", () => {
     const body = encode({ command: 'webapp', arguments: 'x', model: 'kortix/kimi-k3' });
     expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');

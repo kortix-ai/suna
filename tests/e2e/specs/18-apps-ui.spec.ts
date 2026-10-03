@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -50,6 +50,8 @@ test.describe('18 — Kortix Apps UI', () => {
     const session = await signIn(email, authOptions);
     const env = loadEnv();
     let projectId: string | null = null;
+    let groupId: string | null = null;
+    let accountId: string | null = null;
     const pageErrors: string[] = [];
     const appsServerErrors: string[] = [];
     const appsCreateRequests: string[] = [];
@@ -78,6 +80,10 @@ test.describe('18 — Kortix Apps UI', () => {
       );
       expect(account).toBeTruthy();
       if (!account) throw new Error('test user has no personal account');
+      accountId = account.account_id;
+      await setDatabaseEnterpriseDemo(env, accountId, true);
+      const group = await api<{ group_id: string }>(session.access_token, 'POST', `/accounts/${accountId}/iam/groups`, { name: `Apps subjects ${runId}` }, 201);
+      groupId = group.group_id;
 
       const project = await createDatabaseProject(env, {
         accountId: account.account_id,
@@ -240,6 +246,34 @@ test.describe('18 — Kortix Apps UI', () => {
       // Never deployed, so it must not claim to be running.
       await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
 
+      // Density updates the mounted subscriber, survives remount, and accepts
+      // other-tab events before a local selection takes precedence.
+      const comfortable = page.getByRole('button', { name: 'Comfortable — up to 3 per row' });
+      const compact = page.getByRole('button', { name: 'Compact — up to 4 per row' });
+      await expect(comfortable).toHaveAttribute('aria-pressed', 'true');
+      await page.evaluate(() => {
+        localStorage.setItem('kortix.apps.grid-columns', '4');
+        window.dispatchEvent(new StorageEvent('storage', { key: 'kortix.apps.grid-columns' }));
+      });
+      await expect(compact).toHaveAttribute('aria-pressed', 'true');
+      await comfortable.click();
+      await expect(comfortable).toHaveAttribute('aria-pressed', 'true');
+      expect(await page.evaluate(() => localStorage.getItem('kortix.apps.grid-columns'))).toBe('3');
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(comfortable).toHaveAttribute('aria-pressed', 'true');
+      // Block writes in this document only. The selected density still wins,
+      // even though persistence failed.
+      await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key, value) {
+          if (key === 'kortix.apps.grid-columns') throw new DOMException('Blocked', 'SecurityError');
+          return original.call(this, key, value);
+        };
+      });
+      await compact.click();
+      await expect(compact).toHaveAttribute('aria-pressed', 'true');
+      expect(await page.evaluate(() => localStorage.getItem('kortix.apps.grid-columns'))).toBe('3');
+
       // Opening an App happens IN PLACE — no new tab, no navigation.
       await seededCard.click();
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
@@ -268,6 +302,83 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toBe(`kortix apps deploy . --app ${seeded.app_id}`);
+
+      // Versions is independent of either exclusive overlay.
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Who can open this' }).click();
+      const accessModal = page.getByRole('dialog', { name: 'App access', exact: true });
+      await expect(accessModal).toBeVisible();
+      await expect(page.getByRole('alertdialog', { name: 'Delete App', exact: true })).toHaveCount(0);
+      await accessModal.getByRole('radio', { name: /Public/ }).click();
+      // Hold the actual mutation so pending UI is observable, then fail it.
+      let releaseAccess: () => void = () => {};
+      const accessGate = new Promise<void>((resolve) => { releaseAccess = resolve; });
+      const accessPath = `**/projects/${project.id}/apps/${seeded.app_id}/access`;
+      await page.route(accessPath, async (route) => {
+        if (route.request().method() !== 'PATCH') return route.continue();
+        expect(route.request().postDataJSON()).toEqual({ mode: 'public' });
+        await accessGate;
+        await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Characterized access failure' }) });
+      });
+      await accessModal.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(accessModal.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+      await expect(accessModal.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+      releaseAccess();
+      await expect(page.getByText('Characterized access failure', { exact: true })).toBeVisible();
+      await expect(accessModal.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+      await expect(accessModal).toBeVisible();
+      await page.unroute(accessPath);
+      const savedAccess = page.waitForResponse((response) => response.url().endsWith(`/apps/${seeded.app_id}/access`) && response.request().method() === 'PATCH');
+      await accessModal.getByRole('button', { name: 'Save', exact: true }).click();
+      expect((await savedAccess).status()).toBe(200);
+      await expect(page.getByText('App access updated', { exact: true })).toBeVisible();
+      await expect(accessModal).toBeHidden();
+      await expect(appModal.getByText('No deployments yet.')).toBeVisible();
+      for (const scenario of [
+        { mode: 'restricted', label: 'Select members', scope: 'api', scopeLabel: 'Acts as them in Kortix', password: '' },
+        { mode: 'password', label: 'Password', scope: 'identity', scopeLabel: '', password: 'SyntheticPassword123!' },
+        { mode: 'project', label: 'Whole team', scope: 'off', scopeLabel: 'Shares nothing', password: '' },
+      ]) {
+        // Existing project owner is a real subject; preload its selection to
+        // characterize payload preservation without depending on picker search.
+        await api(session.access_token, 'PATCH', `/projects/${project.id}/apps/${seeded.app_id}/access`, {
+          mode: 'restricted', member_ids: [user.id], group_ids: [group.group_id], viewer_token_scope: 'identity',
+        });
+        await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await seededCard.click();
+        await appModal.getByRole('button', { name: 'More actions' }).click();
+        await page.getByRole('menuitem', { name: 'Who can open this' }).click();
+        await accessModal.getByRole('radio', { name: new RegExp(`^${scenario.label}`) }).click();
+        if (scenario.password) {
+          await expect(accessModal.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+          await accessModal.locator('#app-access-password').fill(scenario.password);
+        } else await accessModal.getByRole('radio', { name: new RegExp(`^${scenario.scopeLabel}`) }).click();
+        const payload = page.waitForRequest((request) => request.method() === 'PATCH' && request.url().endsWith(`/apps/${seeded.app_id}/access`));
+        await accessModal.getByRole('button', { name: 'Save', exact: true }).click();
+        expect((await payload).postDataJSON()).toEqual({
+          mode: scenario.mode,
+          ...(scenario.mode === 'restricted' ? { member_ids: [user.id], group_ids: [group.group_id] } : {}),
+          ...(scenario.password ? { password: scenario.password } : { viewer_token_scope: scenario.scope }),
+        });
+        await expect(accessModal).toBeHidden();
+        await expect(appModal).toBeVisible();
+        await expect(appModal.getByText('No deployments yet.')).toBeHidden();
+      }
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
+      await expect(appModal.getByText('No deployments yet.')).toBeVisible();
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Delete App', exact: true }).click();
+      const deleteModal = page.getByRole('alertdialog', { name: 'Delete App', exact: true });
+      await expect(deleteModal).toBeVisible();
+      await expect(accessModal).toHaveCount(0);
+      await deleteModal.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(deleteModal).toBeHidden();
+      await expect(appModal.getByText('No deployments yet.')).toBeVisible();
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Hide earlier versions' }).click();
+      await expect(appModal.getByText('No deployments yet.')).toBeHidden();
 
       await appModal.getByRole('button', { name: 'Close' }).click();
       await expect(appModal).toBeHidden();
@@ -302,11 +413,140 @@ test.describe('18 — Kortix Apps UI', () => {
         fullPage: true,
       });
 
+      // Exercise deployed-only controls with deterministic network fixtures;
+      // no cloud runtime is provisioned by this browser characterization.
+      // `/v1/` keeps the glob on the API: `**/projects/<id>/apps` also matches
+      // the Apps PAGE URL, so the reload below got the fixture JSON as its document.
+      const appApi = `**/v1/projects/${project.id}/apps`;
+      const liveApp = { ...seeded, active_deployment_id: 'deployment-current', desired_state: 'running' };
+      let activeDeployment = 'deployment-current';
+      await page.route(appApi, (route) => route.request().method() === 'GET'
+        ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment }] } }) : route.continue());
+      await page.route(`${appApi}/${seeded.app_id}/deployments`, (route) => route.fulfill({ json: {
+        deployments: [2, 1].map((version) => ({ deployment_id: version === 2 ? 'deployment-current' : 'deployment-old', app_id: seeded.app_id, version, status: 'ready', created_at: '2026-01-01T00:00:00Z' })),
+      } }));
+      const previewUrl = new URL('/synthetic-app-preview', page.url()).href;
+      await page.route(previewUrl, () => {});
+      await page.route(`${appApi}/${seeded.app_id}/access-session`, (route) => route.fulfill({ json: { url: previewUrl, expires_at: '2099-01-01T00:00:00Z' } }));
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const thumbnail = seededCard.getByTestId('app-live-preview');
+      await expect(thumbnail).toBeVisible();
+      const scaleMatchesTile = () => thumbnail.evaluate((frame) => {
+        const tile = frame.parentElement;
+        if (!tile) throw new Error('preview has no tile');
+        return Math.abs(new DOMMatrix(getComputedStyle(frame).transform).a - tile.getBoundingClientRect().width / 1280) < 0.001;
+      });
+      await expect.poll(scaleMatchesTile).toBe(true);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await expect.poll(scaleMatchesTile).toBe(true);
+      await seededCard.click();
+      const modalFrame = appModal.getByTestId('app-live-preview');
+      // No `error` step: an iframe never fires `error` for a failed load, and
+      // React 19 attaches only `load` to an iframe, so the failed overlay (unit
+      // tested in app-preview.test.tsx) cannot be reached from a browser.
+      await expect(appModal.getByText('Loading preview', { exact: true })).toBeVisible();
+      await modalFrame.dispatchEvent('load');
+      await expect(appModal.getByText('Loading preview', { exact: true })).toBeHidden();
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
+      for (const action of ['stop', 'start', 'rollback'] as const) {
+        const control = action === 'rollback' ? appModal.getByRole('button', { name: 'Restore', exact: true })
+          : appModal.getByRole('button', { name: action === 'stop' ? 'Put this App to sleep' : 'Wake this App up' });
+        const path = `${appApi}/${seeded.app_id}/${action}`;
+        for (const failed of [true, false]) {
+          let release: () => void = () => {};
+          const gate = new Promise<void>((resolve) => { release = resolve; });
+          await page.route(path, async (route) => {
+            expect(route.request().postDataJSON()).toEqual(action === 'rollback' ? { deployment_id: 'deployment-old' } : {});
+            await gate;
+            if (failed) return route.fulfill({ status: 400, json: { error: `${action} characterization failure` } });
+            if (action === 'rollback') activeDeployment = 'deployment-old';
+            else liveApp.desired_state = action === 'stop' ? 'stopped' : 'running';
+            await route.fulfill({ json: liveApp });
+          });
+          await control.click();
+          await expect(control).toBeDisabled();
+          release();
+          // A failed mutation reaches the global handler, which prefixes the
+          // message ("Failed to perform action: ..."), so match by substring.
+          await expect((failed ? page.getByText(`${action} characterization failure`)
+            : page.getByText(action === 'rollback' ? 'Rolled back to version 1' : `Seed App ${action === 'stop' ? 'suspended' : 'is ready'}`, { exact: true })).first()).toBeVisible();
+          await page.unroute(path);
+          await expect(appModal).toBeVisible();
+          await expect(appModal.getByText('v2', { exact: true })).toBeVisible();
+          if (failed) await expect(control).toBeEnabled();
+        }
+      }
+      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      // Deny only Apps write/deploy probes, leaving project navigation intact.
+      await page.route('**/effective?*', async (route) => {
+        if (route.request().method() === 'OPTIONS') return route.fallback();
+        const response = await route.fetch();
+        const body = await response.json();
+        if (['project.app.write', 'project.app.deploy'].includes(new URL(route.request().url()).searchParams.get('action') ?? '')) body.allowed = false;
+        await route.fulfill({ response, json: body });
+      });
+      await page.route('**/effective:batch', async (route) => {
+        if (route.request().method() === 'OPTIONS') return route.fallback();
+        const response = await route.fetch();
+        const body = await response.json();
+        body.results = body.results.map((result: { action: string; allowed: boolean }) => ['project.app.write', 'project.app.deploy'].includes(result.action) ? { ...result, allowed: false } : result);
+        await route.fulfill({ response, json: body });
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await seededCard.click();
+      await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);
+      await expect(appModal.getByRole('button', { name: 'Wake this App up' })).toHaveCount(0);
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await expect(page.getByRole('menuitem', { name: 'Who can open this' })).toHaveCount(0);
+      await expect(page.getByRole('menuitem', { name: 'Delete App', exact: true })).toHaveCount(0);
+      await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
+      await expect(appModal.getByText('v2', { exact: true })).toBeVisible();
+      await expect(appModal.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
+      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.unroute('**/effective?*');
+      await page.unroute('**/effective:batch');
+      await page.unroute(appApi);
+      await page.unroute(`${appApi}/${seeded.app_id}/deployments`);
+      await page.unroute(`${appApi}/${seeded.app_id}/access-session`);
+      await page.unroute(previewUrl);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      // Delete failure keeps the confirmation and parent open; success closes
+      // both and removes the card from the refetched index.
+      await seededCard.click();
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Delete App', exact: true }).click();
+      let releaseDelete: () => void = () => {};
+      const deleteGate = new Promise<void>((resolve) => { releaseDelete = resolve; });
+      const appPath = `**/v1/projects/${project.id}/apps/${seeded.app_id}`;
+      await page.route(appPath, async (route) => {
+        if (route.request().method() !== 'DELETE') return route.continue();
+        await deleteGate;
+        await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Characterized delete failure' }) });
+      });
+      await deleteModal.getByRole('button', { name: 'Delete', exact: true }).click();
+      await expect(deleteModal.getByRole('button', { name: 'Delete…', exact: true })).toBeDisabled();
+      await expect(deleteModal.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+      releaseDelete();
+      await expect(page.getByText('Characterized delete failure').first()).toBeVisible();
+      await expect(deleteModal.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled();
+      await expect(deleteModal).toBeVisible();
+      await page.unroute(appPath);
+      const deleted = page.waitForResponse((response) => response.url().endsWith(`/apps/${seeded.app_id}`) && response.request().method() === 'DELETE');
+      await deleteModal.getByRole('button', { name: 'Delete', exact: true }).click();
+      expect((await deleted).status()).toBe(200);
+      await expect(page.getByText('Seed App deleted', { exact: true })).toBeVisible();
+      await expect(deleteModal).toBeHidden();
+      await expect(appModal).toBeHidden();
+      await expect(seededCard).toHaveCount(0);
+
       expect(pageErrors).toEqual([]);
       expect(appsServerErrors).toEqual([]);
       expect(appsCreateRequests).toEqual([]);
     } finally {
       if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
+      if (groupId && accountId) await api(session.access_token, 'DELETE', `/accounts/${accountId}/iam/groups/${groupId}`).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

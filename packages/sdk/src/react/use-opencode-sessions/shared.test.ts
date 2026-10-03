@@ -59,6 +59,27 @@ describe('unwrap', () => {
       'Server returned 503',
     );
   });
+
+  test('carries the response status on the thrown error so retry guards can classify it', () => {
+    // Runtime routes never throw for an HTTP error — they resolve
+    // `{ error, response }` and this unwrap throws. The status must survive:
+    // useRuntimeProviders' 4xx retry guard reads it.
+    try {
+      unwrap({ error: { detail: 'Invalid or expired token' }, response: new Response(null, { status: 401 }) });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { status?: number }).status).toBe(401);
+    }
+  });
+
+  test('throws without a status when the response carried none (transport failure)', () => {
+    try {
+      unwrap({ error: { message: 'socket hung up' } });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { status?: number }).status).toBeUndefined();
+    }
+  });
 });
 
 // ============================================================================

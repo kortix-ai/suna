@@ -541,10 +541,10 @@ async function settlePendingInboundEmissions(): Promise<void> {
 /**
  * How long a READ route's flush barrier may wait.
  *
- * A read route awaits `flushAuditEvents()` for read-your-writes. The queue's
- * per-session serialize waits without a timeout (see audit-session-serial.ts)
- * and each snapshot chains onto the in-flight one, so under the per-session
- * write convoy the barrier can wait far past the request deadline: prod,
+ * A read route awaits `flushAuditEvents()` for read-your-writes. Each snapshot
+ * chains onto the in-flight one, so while the audit pool's INSERT is slow (cold
+ * cache IO, up to the 10 s statement timeout) the barrier can wait far past the
+ * request deadline: prod,
  * 2026-09-28 — `GET /v1/accounts/:id/audit` answered 16× 503 "25s deadline" +
  * 3× 57014 statement timeouts in one minute while its workspace's audit ingest
  * was contended (KRTX-631). Read routes therefore pass this bound: a healthy
@@ -827,6 +827,9 @@ function anonymousSummaryEvent(summary: AnonymousAuditSummary): AuditEventInput 
   };
 }
 
+/** Route-label action of `POST /v1/projects/:p/sessions/:s/audit/events` (packages/shared audit-route-labels). */
+const AUDIT_INGEST_ACTION = 'audit.session.ingest';
+
 /**
  * Write the one row for an inbound request. Idempotent per scope, and never
  * throws: an audit failure must not fail the request it describes.
@@ -843,6 +846,11 @@ export async function emitInboundAuditRow(scope: InboundAuditScope, status: numb
     // failed or refused request keeps its own row, with the status.
     const standIns = [input.action, ...(routeLabel(scope)?.events ?? [])];
     if (status < 400 && standIns.some((action) => scope.recordedActions.has(action))) return;
+    // The sandbox relay's own delivery of audit events is not an action: the
+    // events it carries are the record. A row per batch (one per 10 s per busy
+    // session) only added load on the table it writes to. A refused or failed
+    // batch (status >= 400) keeps its row.
+    if (status < 400 && input.action === AUDIT_INGEST_ACTION) return;
     // A deployed app's public traffic is the customer's end users, not a
     // principal acting on the account. A signed-in viewer is still audited.
     if (scope.entrypoint === 'app_origin' && input.actorType === 'anonymous') return;

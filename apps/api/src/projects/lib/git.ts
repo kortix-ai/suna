@@ -804,6 +804,9 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     accountId: project.accountId,
     name: PROJECT_GIT_AUTH_SECRET_NAME,
     consumer: 'git_proxy',
+    // An optional legacy fallback checked on every git request: its absence is
+    // the normal case, not an access attempt, so it writes no missing row.
+    probe: true,
   });
   if (legacyToken) {
     return {

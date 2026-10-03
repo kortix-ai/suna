@@ -212,6 +212,15 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       agent_name: 'audit-agent',
     });
 
+    // The reconciliation INSERT names no event_id: every row it wrote carries the
+    // database's UUIDv7 default (version nibble 7).
+    const versions = await client!.query<{ version: string; count: number }>(
+      `SELECT substring(event_id::text from 15 for 1) AS version, count(*)::int AS count
+         FROM kortix.audit_events WHERE account_id = $1 GROUP BY 1`,
+      [ACCOUNT],
+    );
+    expect(versions.rows).toEqual([{ version: '7', count: 8 }]);
+
     const repeat = await reconcileAuditEvents(ACCOUNT, 3);
     expect(repeat).toEqual({ inserted: 0, complete: true, by_source: {} });
 

@@ -10,7 +10,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { LocalTime } from '@/components/ui/local-time';
 import { menuRow } from '@/components/ui/menu-recipe';
 import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
-import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionHoverStore } from '@/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
@@ -124,7 +124,7 @@ function ChangeRequestRow({
   // Every change opens in the Review Center inbox, the same place the footer
   // Review pill leads.
   const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
-  const href = `${capabilityTabHref(projectId, 'review')}?id=${encodeURIComponent(reviewItemId)}`;
+  const href = `${reviewHref(projectId)}?id=${encodeURIComponent(reviewItemId)}`;
   return (
     <HoverPrefetchLink href={href} onClick={onDismiss} className={className}>
       {content}

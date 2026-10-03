@@ -71,6 +71,7 @@ async function askGoTrue(token: string): Promise<LiveUser | null> {
 }
 
 let loader: Loader = askGoTrue;
+let invalidationVersion = 0;
 
 function keyFor(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -88,7 +89,13 @@ function ttlMs(): number {
  */
 export async function confirmJwtLive(token: string, expSeconds: number | undefined): Promise<LiveUser | null> {
   const ttl = ttlMs();
-  if (ttl === 0) return loader(token);
+  if (ttl === 0) {
+    for (;;) {
+      const version = invalidationVersion;
+      const user = await loader(token);
+      if (version === invalidationVersion) return user;
+    }
+  }
 
   const key = keyFor(token);
   const now = Date.now();
@@ -101,8 +108,11 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const request = loader(token)
-    .then((user) => {
+  const request = (async () => {
+    for (;;) {
+      const version = invalidationVersion;
+      const user = await loader(token);
+      if (version !== invalidationVersion) continue;
       if (user) {
         const tokenExpiry = typeof expSeconds === 'number' ? expSeconds * 1000 : Number.POSITIVE_INFINITY;
         const expiresAt = Math.min(Date.now() + ttl, tokenExpiry);
@@ -115,10 +125,10 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
         }
       }
       return user;
-    })
-    .finally(() => {
-      inflight.delete(key);
-    });
+    }
+  })().finally(() => {
+    if (inflight.get(key) === request) inflight.delete(key);
+  });
   inflight.set(key, request);
   return request;
 }
@@ -126,6 +136,15 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
 /** Drop the cached confirmation for `token` (sign-out on this replica). */
 export function forgetJwtLiveness(token: string): void {
   cache.delete(keyFor(token));
+}
+
+/** Drop every token for a deleted user on this replica. TTL 0 is required across replicas. */
+export function forgetUserJwtLiveness(userId: string): void {
+  invalidationVersion++;
+  for (const [key, entry] of cache) {
+    if (entry.user.id === userId) cache.delete(key);
+  }
+  inflight.clear();
 }
 
 /** Test seam: replace the GoTrue loader and clear all state. */

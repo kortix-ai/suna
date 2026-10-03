@@ -34,7 +34,6 @@ import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { isShowContentUnavailable, isShowPayloadEmpty, parseLocalhostUrl, type ShowLoadStatus } from '@kortix/sdk';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -58,6 +57,7 @@ import { THEME } from '@/lib/utils/theme';
 import {
   BoundActivateContext,
   InlineServicePreview,
+  RunningLoader,
   ServicePreviewActions,
   ServicePreviewViewport,
   ToolIconSlot,
@@ -218,7 +218,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     body = fill ? (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap3, paddingHorizontal: webSpace(5), paddingVertical: webSpace(4) }}>
-          <KortixLoader customSize={TURN_SPACE.icon} />
+          <RunningLoader size={TURN_SPACE.icon} />
           <TextShimmer duration={1} spread={2} style={TURN_TYPE.sm}>
             Preparing output...
           </TextShimmer>
@@ -364,7 +364,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
           ) : (
             <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2, paddingHorizontal: webSpace(1) }}>
               {running && !type && !items ? (
-                <KortixLoader customSize={TURN_SPACE.icon} />
+                <RunningLoader size={TURN_SPACE.icon} />
               ) : (
                 <ToolIconSlot icon={headerIcon} size={TURN_SPACE.icon} color={palette.foreground} />
               )}

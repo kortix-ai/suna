@@ -106,17 +106,26 @@ function resolveRule(config: PermissionRuleConfig | undefined, tool: string, arg
   return config['*']
 }
 
-/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs. */
-const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = { write: 'edit' }
+/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; the search and scrape tools reach the web. */
+const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
+  write: 'edit',
+  web_search: 'websearch',
+  image_search: 'websearch',
+  scrape_webpage: 'webfetch',
+}
 
-/** The capability a permission rule names for this tool (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own. */
-export function toolCapability(tool: string): string {
+/**
+ * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
+ * `memory` writes files under `memory/`: every command but `view` is an `edit`, so `edit: deny` stops it as it stops `write`.
+ */
+export function toolCapability(tool: string, args?: unknown): string {
+  if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'
   return TOOL_CAPABILITY[tool] ?? tool
 }
 
 /** One call's rule under `policy`: the tool's entry, else its capability's, else `*`. `undefined` means the policy says nothing. */
 export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
-  return resolveRule(policy[tool] ?? policy[toolCapability(tool)] ?? policy['*'], tool, args)
+  return resolveRule(policy[tool] ?? policy[toolCapability(tool, args)] ?? policy['*'], tool, args)
 }
 
 /**
@@ -148,7 +157,7 @@ export class PermissionBroker {
     // A deny outranks an earlier "always": approving `ls` must not unlock the
     // `rm -rf *` the same pattern map denies.
     if (resolved === 'deny') return 'deny'
-    if (this.alwaysAllowed.has(toolCapability(tool))) return 'allow'
+    if (this.alwaysAllowed.has(toolCapability(tool, args))) return 'allow'
     return resolved ?? 'allow'
   }
 
@@ -158,7 +167,7 @@ export class PermissionBroker {
       id: `perm_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
       sessionID: this.sessionID,
       // The capability, so "always" covers every tool that shares it (`write` and `edit`).
-      permission: toolCapability(input.tool),
+      permission: toolCapability(input.tool, input.args),
       patterns: [permissionSubject(input.tool, input.args) ?? '*'],
       metadata: input.args && typeof input.args === 'object' ? (input.args as Record<string, unknown>) : {},
       always: ['*'],

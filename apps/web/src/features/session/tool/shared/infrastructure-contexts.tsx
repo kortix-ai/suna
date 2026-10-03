@@ -4,6 +4,7 @@ import { createContext, useContext } from 'react';
 import { type ToolOutcome } from './tool-outcome';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { type ToolPart } from '@/ui';
+import { toolKind } from '@kortix/sdk';
 
 export const ToolRunningContext = createContext(false);
 
@@ -99,9 +100,9 @@ export function shouldShowToolPartInActionsPanel(part: Pick<ToolPart, 'tool' | '
   if (isEmptyShowPart(part)) return false;
   // A skill row opens its SKILL.md in the detail panel, so it has no Actions
   // row of its own. (It used to raise a side sheet; that sheet is gone.)
-  if (part.tool === 'skill') return false;
+  if (toolKind(part.tool) === 'skill') return false;
   // File reads stay out of the Actions panel.
-  if (part.tool === 'read') return false;
+  if (toolKind(part.tool) === 'read') return false;
   return true;
 }
 

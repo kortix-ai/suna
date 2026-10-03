@@ -41,7 +41,11 @@ export function approvalArgsPreview(action: SessionAuditAction): Record<string, 
 }
 
 /** One-line "where is this going?" rendering for a collapsed row. */
-export function approvalArgsSummary(action: SessionAuditAction): string | null {
+export function approvalArgsSummary(
+  action: SessionAuditAction,
+  /** Bound Slack conversation ids → names: the summary reads the name. */
+  channelNames?: ReadonlyMap<string, string>,
+): string | null {
   const preview = approvalArgsPreview(action);
   if (!preview) return null;
 
@@ -58,7 +62,7 @@ export function approvalArgsSummary(action: SessionAuditAction): string | null {
     if (value === null || value === undefined || value === '[redacted]') continue;
     const rendered = Array.isArray(value) ? value.join(', ') : String(value);
     if (!rendered) continue;
-    parts.push(`${key}: ${rendered}`);
+    parts.push(`${key}: ${(typeof value === 'string' && channelNames?.get(value)) || rendered}`);
     if (parts.length === SUMMARY_FIELDS) break;
   }
   return parts.length > 0 ? parts.join(' · ') : null;

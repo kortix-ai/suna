@@ -58,9 +58,8 @@ export function personalResourceOwner(input: {
  *
  * `agentPrincipal` = the credential is an agent session under the
  * agent-principal model (flag ON, governed grant). `onBehalfOfUserId` prefers
- * the fresh per-request value from the auth middleware (`fresh`), because the
- * actor's copy rides a 15 s token-binding memo and a clear must take effect on
- * the next request.
+ * the per-request value from the auth middleware (`fresh`); the actor's copy is
+ * the same read when the request seeded it, and null for an out-of-band actor.
  */
 export function actorPersonalScope(
   actor: Actor | null | undefined,
@@ -113,32 +112,35 @@ export async function resolveSessionPersonalOwner(input: {
   }
   if (!flag) return legacy;
   try {
-    const [session] = await db
-      .select({
-        accountId: projectSessions.accountId,
-        visibility: projectSessions.visibility,
-        createdBy: projectSessions.createdBy,
-      })
-      .from(projectSessions)
-      .where(and(eq(projectSessions.sessionId, input.sessionId), eq(projectSessions.projectId, input.projectId)))
-      .limit(1);
+    // Both reads take the session id alone: they go out together.
+    const [[session], [token]] = await Promise.all([
+      db
+        .select({
+          accountId: projectSessions.accountId,
+          visibility: projectSessions.visibility,
+          createdBy: projectSessions.createdBy,
+        })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, input.sessionId), eq(projectSessions.projectId, input.projectId)))
+        .limit(1),
+      db
+        .select({
+          agentGrant: accountTokens.agentGrant,
+          onBehalfOfUserId: accountTokens.onBehalfOfUserId,
+        })
+        .from(accountTokens)
+        .where(
+          and(
+            eq(accountTokens.sessionId, input.sessionId),
+            eq(accountTokens.status, 'active'),
+            isNull(accountTokens.revokedAt),
+            isNotNull(accountTokens.serviceAccountId),
+          ),
+        )
+        .limit(1),
+    ]);
     if (!session) return null;
     const visibility = input.visibility ?? session.visibility;
-    const [token] = await db
-      .select({
-        agentGrant: accountTokens.agentGrant,
-        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
-      })
-      .from(accountTokens)
-      .where(
-        and(
-          eq(accountTokens.sessionId, input.sessionId),
-          eq(accountTokens.status, 'active'),
-          isNull(accountTokens.revokedAt),
-          isNotNull(accountTokens.serviceAccountId),
-        ),
-      )
-      .limit(1);
     // Strict: a token with NO on_behalf_of either predates the column (minted
     // before 2026-09-22, never re-minted) or was cleared by a foreign prompt.
     // Every clear stamps ON_BEHALF_OF_CLEARED_KEY, which the mint rule below

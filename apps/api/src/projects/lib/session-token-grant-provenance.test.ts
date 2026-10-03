@@ -79,8 +79,7 @@ mock.module('../git/mirror', () => ({
   },
 }));
 
-const { reconcileStoredSessionAgentGrant, remintDecisionFor, resetGrantRefreshCooldownForTest } =
-  await import('./session-token-grant');
+const { reconcileStoredSessionAgentGrant, remintDecisionFor } = await import('./session-token-grant');
 
 const denyAll = (overrides: Partial<AgentGrant>): AgentGrant => ({
   agent: 'kortix',
@@ -100,7 +99,6 @@ beforeEach(() => {
   ancestorCalls = [];
   selectCount = 0;
   storedForTest = storedGrant;
-  resetGrantRefreshCooldownForTest();
 });
 
 test('same manifest blob, different grant, second read agrees with STORED → the glitched read is dropped', async () => {
@@ -175,21 +173,18 @@ test('equal grants with new provenance are written once so the next comparison h
   expect(writtenGrant).toEqual(resolvedGrant);
 });
 
-test('forced mirror refresh is bounded by the cooldown on the gateway path', async () => {
-  const seen: boolean[] = [];
+test('the gateway path reads with the tip proof and breaks a same-blob tie with a strict read', async () => {
+  const seen: unknown[] = [];
   mock.module('./secret-grant', () => ({
     ...realSecretGrant,
-    resolveSessionAgentGrant: async (input: { forceRefresh?: boolean }) => {
-      seen.push(input.forceRefresh === true);
-      return storedGrant;
+    resolveSessionAgentGrant: async (input: { forceRefresh?: unknown }) => {
+      seen.push(input.forceRefresh);
+      return seen.length === 1 ? denyAll({ manifestRevision: BLOB_NEW, manifestCommit: COMMIT_NEW }) : storedGrant;
     },
   }));
   const fresh = await import('./session-token-grant');
-  fresh.resetGrantRefreshCooldownForTest();
-  await fresh.reconcileStoredSessionAgentGrant({ projectId: 'p-cool', sessionId: 's1' });
-  selectCount = 0;
-  await fresh.reconcileStoredSessionAgentGrant({ projectId: 'p-cool', sessionId: 's1' });
-  expect(seen).toEqual([true, false]);
+  await fresh.reconcileStoredSessionAgentGrant({ projectId: 'p-proof', sessionId: 's1' });
+  expect(seen).toEqual(['tip-proof', true]);
 });
 
 test('pure policy: same blob → keep; stale read → keep; new commit → write; equal → skip', () => {

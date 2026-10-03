@@ -1,6 +1,6 @@
 import type { ParsedManifest } from '../triggers';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
-import type { GitBackedProject } from '../git';
+import type { GitBackedProject, MirrorRefresh } from '../git';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   resolveGrantSet,
@@ -170,7 +170,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  */
 export async function loadProjectAgents(
   project: GitBackedProject,
-  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
 ): Promise<LoadedAgents> {
   const { readManifest, synthesizeBlankManifest } = await import('../triggers');
   let manifest: ParsedManifest | null;

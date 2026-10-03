@@ -166,7 +166,6 @@ describe('writeAgentEnvFile', () => {
         KORTIX_API_URL: 'https://api.example.test/v1',
         KORTIX_FRONTEND_URL: 'https://app.example.test',
         KORTIX_DEFAULT_BRANCH: 'trunk',
-        KORTIX_FEATURES: 'none',
         // daemon-internal — MUST NOT leak into the agent shell
         KORTIX_LLM_API_KEY: 'internal-llm-key',
         KORTIX_WARM_SEED: '1',
@@ -182,7 +181,6 @@ describe('writeAgentEnvFile', () => {
     expect(body).toContain("export KORTIX_API_URL='https://api.example.test/v1'")
     expect(body).toContain("export KORTIX_FRONTEND_URL='https://app.example.test'")
     expect(body).toContain("export KORTIX_DEFAULT_BRANCH='trunk'")
-    expect(body).toContain("export KORTIX_FEATURES='none'") // CLI hides flagged commands from it
     // daemon-internal stays filtered (not the agent's business)
     expect(body).not.toContain('KORTIX_WARM_SEED')
     expect(body).not.toContain('KORTIX_LLM_PROXY_URL')

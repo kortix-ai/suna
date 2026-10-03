@@ -9,7 +9,7 @@ import {
   type WorkspaceSearchEntry,
   rankWorkspaceSearchEntry,
   normalizeSearchQuery,
-} from './workspace-search-core';
+} from '@kortix/sdk/workspace-search';
 import { searchWorkspaceFilePaths } from './workspace-search-service';
 
 // Re-export core types for consumers

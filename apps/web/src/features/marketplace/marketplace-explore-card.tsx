@@ -1,7 +1,7 @@
 'use client';
 
-import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,13 @@ import { cn } from '@/lib/utils';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import { useMarketplaceSurface } from './marketplace-surface';
 
+/**
+ * The one marketplace card — skills, projects, a project's contents and the
+ * "Related" grid all render this, so every tile on every marketplace surface
+ * shares one box: a filled `bg-card` tile (one boundary, no hairline), a
+ * 40px identity tile, a one-line title + one-line description, and a trailing
+ * chevron that darkens on hover. Nothing moves on hover; only the fill steps up.
+ */
 export function MarketplaceExploreCard({
   item,
   showSource = true,
@@ -27,17 +34,16 @@ export function MarketplaceExploreCard({
   const installed = surface.variant === 'project' && surface.installedNames.has(item.name);
 
   const className = cn(
-    'group bg-popover flex w-full items-center gap-3.5 rounded-md border px-4 py-3 text-left',
-    navigable &&
-      'hover:bg-muted/70 transition-[background-color,transform] duration-150 active:scale-[0.99]',
+    'group bg-card flex w-full min-w-0 items-center gap-3 rounded-md px-4 py-2.5 text-left',
+    navigable && 'hover:bg-muted transition-colors duration-(--duration-normal)',
   );
 
   const inner = (
     <>
       <MarketplaceItemAvatar item={item} size="md" showSource={showSource} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 space-y-0.5">
         <div className="flex items-center gap-2">
-          <span className="text-foreground truncate text-sm font-medium">{item.title}</span>
+          <span className="text-foreground truncate text-base">{item.title}</span>
           {installed ? (
             <Badge variant="success" size="sm" className="shrink-0">
               {tI18nComplete.raw('textf8b32f4e92bd')}
@@ -45,14 +51,12 @@ export function MarketplaceExploreCard({
           ) : null}
         </div>
         {item.description ? (
-          <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs leading-relaxed text-pretty">
-            {item.description}
-          </p>
+          <p className="text-muted-foreground truncate text-sm">{item.description}</p>
         ) : null}
       </div>
       {navigable ? (
         <ChevronRight
-          className="text-muted-foreground/50 size-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
+          className="text-muted-foreground group-hover:text-foreground size-3 shrink-0 transition-colors duration-(--duration-normal)"
           aria-hidden
         />
       ) : null}

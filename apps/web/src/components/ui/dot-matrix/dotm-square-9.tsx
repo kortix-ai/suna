@@ -1,10 +1,9 @@
 'use client';
 
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
-export type DotmSquare9Props = DotMatrixCommonProps;
 
 /**
  * Dots 1–6 in Unicode / ISO braille numbering (matches U+2800 + mask):

@@ -125,7 +125,7 @@ describe('reminderPromptText', () => {
 });
 
 describe('reminder delivery and on_behalf_of', () => {
-  test('a reminder fire never clears on_behalf_of; other trigger fires still do', () => {
+  test("an agent-set reminder's fire leaves on_behalf_of as is; other trigger fires clear it", () => {
     const rule = (source: string) =>
       channelPrompterForOnBehalfOf({ source, userId: null, slackRequiresUserIdentity: true, teamsRequiresUserIdentity: true });
     expect(rule('trigger:reminder')).toBeUndefined();

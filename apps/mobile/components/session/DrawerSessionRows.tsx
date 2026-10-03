@@ -1,18 +1,34 @@
 import React, { useCallback, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { UsersIcon } from '@/lib/icons';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { CONNECTOR_RUN, CONNECTOR_STROKE, SubsessionCountBadge, SubsessionTree, subsessionCountLabel } from '@/components/session/SessionSubsessionTree';
 import { ExpandControl, StarterLabel } from '@/components/session/SessionTreeParts';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { directSubsessions } from '@kortix/sdk';
 import { sessionDisplayStatus, sessionDisplayTitle, sessionStatusLabel } from '@/lib/session/session-list';
-import { childCountOf, type SessionStarter } from '@/lib/session/session-tree';
+import { childCountOf, sessionStarter, type SessionStarter } from '@/lib/session/session-tree';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
-import type { AskedYouRow } from '@/lib/session/asked-you';
 import { cn } from '@/lib/utils/index';
+
+/**
+ * `sessionStarter`, cached per session row: a memoized row gets the same
+ * object while its row is unchanged, so it skips the list's re-renders.
+ */
+export function useSessionStarterOf(viewerId: string | null): (session: ProjectSession) => SessionStarter {
+  const cache = useMemo(() => new WeakMap<ProjectSession, SessionStarter>(), [viewerId]);
+  return useCallback(
+    (session: ProjectSession) => {
+      let starter = cache.get(session);
+      if (!starter) {
+        starter = sessionStarter(session, viewerId);
+        cache.set(session, starter);
+      }
+      return starter;
+    },
+    [cache, viewerId]
+  );
+}
 
 // ─── Session row ─────────────────────────────────────────────────────────────
 
@@ -31,7 +47,6 @@ function ProjectSessionListItem({
   nested = false,
   subsessionCount = 0,
   needsYou,
-  askedYou,
   starter,
   childCount = 0,
   expanded = false,
@@ -50,26 +65,21 @@ function ProjectSessionListItem({
   /** What the session waits on (the Needs you group): a `needs-you` mark and a
    *  one-line reason under the title. */
   needsYou?: SessionNeedsYou;
-  /** A conversation with people (Asked you group): the people glyph, "from <asker>"
-   *  under the title, and the `needs-you` mark while it waits on the viewer. */
-  askedYou?: Pick<AskedYouRow, 'waiting' | 'from'>;
   /** The session on screen: `bg-accent` at rest and the `selected` state. */
   active: boolean;
   /** A sub-agent session, rendered indented under its coordinator with an
    *  elbow into its status mark. */
   nested?: boolean;
-  /** Direct OpenCode sub-sessions: a count badge after the title when > 0. */
+  /** Direct runtime sub-sessions: a count badge after the title when > 0. */
   subsessionCount?: number;
   onPress: (s: ProjectSession) => void;
   /** Opens the session actions sheet (Rename, Share, Restart, Stop, Delete). */
   onLongPress: (s: ProjectSession) => void;
 }) {
   const title = sessionDisplayTitle(item);
-  const status = sessionDisplayStatus(item, askedYou?.waiting ? 1 : (needsYou?.count ?? 0));
+  const status = sessionDisplayStatus(item, needsYou?.count ?? 0);
   const statusLabel = [
     sessionStatusLabel(status),
-    askedYou ? 'conversation with people' : null,
-    askedYou?.from,
     needsYou?.reason,
     subsessionCount > 0 ? subsessionCountLabel(subsessionCount) : null,
     starter ? `started by ${starter.label}` : null,
@@ -109,14 +119,10 @@ function ProjectSessionListItem({
         />
       )}
       <SessionStatusMark status={status} />
-      {needsYou || starter || askedYou?.from ? (
+      {needsYou || starter ? (
         <View className="min-w-0 flex-1">
           <Text numberOfLines={1}>{title}</Text>
-          {askedYou?.from ? (
-            <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
-              {askedYou.from}
-            </Text>
-          ) : needsYou ? (
+          {needsYou ? (
             <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
               {needsYou.reason}
             </Text>
@@ -129,7 +135,6 @@ function ProjectSessionListItem({
           {title}
         </Text>
       )}
-      {askedYou ? <Icon as={UsersIcon} size={14} className="text-muted-foreground" /> : null}
       <SubsessionCountBadge count={subsessionCount} />
       {childCount > 0 && onToggleChildren ? (
         <ExpandControl count={childCount} expanded={expanded} onToggle={onToggleChildren} title={title} />
@@ -149,20 +154,20 @@ const TRUNK_X_TOP_LEVEL = 16 + 10;
 const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 
 /**
- * A session row plus its direct OpenCode sub-sessions under it, always
+ * A session row plus its direct runtime sub-sessions under it, always
  * (web's `renderSessionNode` shows them for the open session only; the
  * owner wants them on every row, 2026-09-26). The row keeps its `bg-accent`
  * only while the thread shows its root; while a sub-session shows, that
- * sub-session's row carries it instead.
+ * sub-session's row carries it instead. Memoized: the drawer re-renders on
+ * each open, close, and poll, and an unchanged row skips it.
  */
-export function DrawerSessionNode({
+export const DrawerSessionNode = React.memo(function DrawerSessionNode({
   session,
   shown,
-  activeOpenCodeId,
+  activeRuntimeId,
   nested = false,
   trunkBelow = false,
   needsYou,
-  askedYou,
   starter,
   expanded = false,
   onToggleChildren,
@@ -177,22 +182,25 @@ export function DrawerSessionNode({
   onToggleChildren?: (session: ProjectSession) => void;
   /** This is the project session on screen (thread or connecting). */
   shown: boolean;
-  /** The OpenCode id the thread shows; null while no thread is on screen. */
-  activeOpenCodeId: string | null;
+  /** The runtime session id the thread shows; null while no thread is on screen. */
+  activeRuntimeId: string | null;
   nested?: boolean;
   /** A later sibling sub-agent follows: the trunk runs through this whole node. */
   trunkBelow?: boolean;
   needsYou?: SessionNeedsYou;
-  askedYou?: Pick<AskedYouRow, 'waiting' | 'from'>;
   onPress: (s: ProjectSession) => void;
   onLongPress: (s: ProjectSession) => void;
   onPressSubsession: (parent: ProjectSession, childId: string) => void;
 }) {
   const subsessions = useMemo(() => directSubsessions(session), [session]);
-  const subsessionActive = shown && subsessions.some((child) => child.id === activeOpenCodeId);
+  const subsessionActive = shown && subsessions.some((child) => child.id === activeRuntimeId);
   const handlePressSubsession = useCallback(
     (childId: string) => onPressSubsession(session, childId),
     [onPressSubsession, session]
+  );
+  const handleToggleChildren = useCallback(
+    () => onToggleChildren?.(session),
+    [onToggleChildren, session]
   );
   return (
     <View>
@@ -214,25 +222,24 @@ export function DrawerSessionNode({
         nested={nested}
         subsessionCount={subsessions.length}
         needsYou={needsYou}
-        askedYou={askedYou}
         starter={starter}
         childCount={childCountOf(session)}
         expanded={expanded}
-        onToggleChildren={onToggleChildren ? () => onToggleChildren(session) : undefined}
+        onToggleChildren={onToggleChildren ? handleToggleChildren : undefined}
         onPress={onPress}
         onLongPress={onLongPress}
       />
       {subsessions.length > 0 ? (
         <SubsessionTree
+          parentId={session.session_id}
           subsessions={subsessions}
           parentTitle={sessionDisplayTitle(session)}
-          activeOpenCodeId={shown ? activeOpenCodeId : null}
+          activeRuntimeId={shown ? activeRuntimeId : null}
           trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
-          showTime={false}
           onPressSubsession={handlePressSubsession}
         />
       ) : null}
     </View>
   );
-}
+});

@@ -64,7 +64,7 @@ import {
   shouldShowToolPart,
   unwrapError,
 } from '@/ui';
-import { groupShowSegments, isAbortError } from '@kortix/sdk';
+import { groupShowSegments, isAbortError, isCompactionPart, isPatchPart, isQuestionTool, isSnapshotPart, toolKind } from '@kortix/sdk';
 
 const NOOP_PERMISSION_REPLY = async () => {};
 
@@ -74,9 +74,9 @@ function turnErrorText(turn: Turn): string | undefined {
   if (msgError) return msgError;
   for (const msg of turn.assistantMessages) {
     for (const part of msg.parts) {
-      if (part.type !== 'tool') continue;
+      if (!isToolPart(part)) continue;
       const tool = part as ToolPart;
-      if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
+      if (isQuestionTool(tool.tool) && tool.state.status === 'error' && 'error' in tool.state) {
         return tool.state.error.replace(/^Error:\s*/, '');
       }
     }
@@ -121,9 +121,9 @@ export function FixtureTurn({
   const hasSteps = useMemo(
     () =>
       allParts.some(({ part }) => {
-        if (part.type === 'compaction' || part.type === 'snapshot' || part.type === 'patch') return true;
+        if (isCompactionPart(part) || isSnapshotPart(part) || isPatchPart(part)) return true;
         if (isToolPart(part)) {
-          if (isPlanWriteTool(part.tool) || part.tool === 'task' || part.tool === 'question') return false;
+          if (isPlanWriteTool(part.tool) || toolKind(part.tool) === 'task' || isQuestionTool(part.tool)) return false;
           return shouldShowToolPart(part);
         }
         return false;
@@ -204,7 +204,7 @@ export function FixtureTurn({
     const parts: (typeof allParts)[number]['part'][] = [];
     for (const { part } of allParts) {
       if (isToolPart(part) && isPlanWriteTool(part.tool)) continue;
-      if (isToolPart(part) && part.tool === 'question') {
+      if (isToolPart(part) && isQuestionTool(part.tool)) {
         const answers = (part.state as { metadata?: { answers?: unknown[] } }).metadata?.answers;
         if (pendingQuestionCallIds.has(part.callID) || !answers?.length) continue;
       }

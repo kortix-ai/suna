@@ -327,6 +327,27 @@ withDb('compute metering on PostgreSQL', () => {
       ]);
     });
 
+    test('pause settles one compute_debit that names the session that ran the box', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+      const id = await startComputeSession({ sandboxId, accountId, sessionId: 'sess-ledger-ref', spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
+      await backdate(sandboxId, iso(start));
+
+      await pauseComputeSession(sandboxId, new Date(start + 300_000));
+
+      const end = iso(start + 300_000);
+      expect(await ledgerOf(accountId)).toEqual([
+        {
+          type: 'usage',
+          amount: -0.016776,
+          description: 'Sandbox compute · sess-ledger-ref · 2vCPU/4GB/20GB · 300s',
+          idempotencyKey: `compute:${id}:${end}`,
+          metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),
+        },
+      ]);
+    });
+
     test('end finalizes the window and settles it', async () => {
       const accountId = await account({ billingModel: 'per_seat' });
       const sandboxId = await sandbox(accountId);

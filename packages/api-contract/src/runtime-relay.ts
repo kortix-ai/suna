@@ -103,6 +103,17 @@ export function normalizeRuntimeRelayBody<T extends Record<string, unknown>>(
 }
 
 /**
+ * `code` on the daemon's 503 while the session runtime cannot take a request:
+ * the repo is not on disk, the workspace is installing, or the harness is still
+ * starting. A client renders it as "starting" and retries. The `error` text
+ * beside it differs per harness and predates the code.
+ */
+export const RUNTIME_NOT_READY_CODE = 'runtime_not_ready' as const;
+
+/** The daemon names its boot phase in this header on every not-ready 503. */
+export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
+
+/**
  * What the session runtime supports, as `GET /kortix/health` lists it in
  * `capabilities` beside the host's own entries (`file.import`, ...). A client
  * hides a control whose capability is absent.

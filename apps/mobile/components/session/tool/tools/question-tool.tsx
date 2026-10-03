@@ -26,7 +26,7 @@ import { useColorScheme } from 'nativewind';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { usePendingQuestions } from '@/lib/session/session-store';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   parseQuestionsInput,
@@ -97,11 +97,8 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
   const { chain } = useToolRowVariant();
   const input = partInput(part);
   const output = partOutput(part);
-  const pendingForCall = useSyncStore((s) =>
-    hasActiveQuestion === undefined && sessionId
-      ? (s.questions[sessionId] ?? []).some((q) => q.tool?.callID === part.callID)
-      : false,
-  );
+  const pendingQuestions = usePendingQuestions(hasActiveQuestion === undefined ? sessionId : undefined);
+  const pendingForCall = pendingQuestions.some((q) => q.tool?.callID === part.callID);
   const active = hasActiveQuestion ?? pendingForCall;
 
   const questions = useMemo(() => parseQuestionsInput(input.questions), [input.questions]);

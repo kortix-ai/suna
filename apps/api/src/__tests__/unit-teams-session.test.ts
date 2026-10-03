@@ -17,8 +17,8 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
  */
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
-const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
-const CONVERSATION_ID = 'a:1FQyR2jW1pEUK';
+const TENANT_ID = '00000000-0000-4000-8000-00000000a11c';
+const CONVERSATION_ID = 'a:1SyntheticChat';
 
 const calls: string[] = [];
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
@@ -238,7 +238,7 @@ const activity = {
   text: 'List the files in this repo',
   serviceUrl: 'https://smba.trafficmanager.net/emea/',
   conversation: { id: CONVERSATION_ID, tenantId: TENANT_ID },
-  from: { id: '29:abc', name: 'Ivan Bagaric', aadObjectId: 'aad-user-1' },
+  from: { id: '29:abc', name: 'Jordan Lee', aadObjectId: 'aad-user-1' },
   recipient: { id: '28:bot' },
 };
 
@@ -526,7 +526,7 @@ describe('binding names', () => {
       conversationId: CONVERSATION_ID,
       activity: { ...activity, conversation: { ...activity.conversation, conversationType: 'personal' } },
     });
-    expect(bindings[0]).toMatchObject({ channelName: 'Ivan Bagaric', channelType: 'personal' });
+    expect(bindings[0]).toMatchObject({ channelName: 'Jordan Lee', channelType: 'personal' });
   });
 });
 
