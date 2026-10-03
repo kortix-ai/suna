@@ -19256,6 +19256,9 @@
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
       "grant": "{names} {count, plural, one {ne fait pas} other {ne font pas}} partie des secrets de l'agent {agent}. Ouvrez Personnaliser → Agents → {agent} → Secrets et {count, plural, one {activez-le} other {activez-les}}.",
       "allowlist": "{names} {count, plural, one {est} other {sont}} hors des secrets de cette session. Démarrez une nouvelle session pour {count, plural, one {l'utiliser} other {les utiliser}}."
+    },
+    "featuresSessionSessionChat": {
+      "turnFailedNoReason": "Le tour de l’agent a échoué. Aucune raison n’a été signalée."
     }
   },
   "projectOnboarding": {

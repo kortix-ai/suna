@@ -19256,6 +19256,9 @@
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
+    },
+    "featuresSessionSessionChat": {
+      "turnFailedNoReason": "A vez do agente falhou. Nenhum motivo foi relatado."
     }
   },
   "projectOnboarding": {

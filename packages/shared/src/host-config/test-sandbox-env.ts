@@ -8,7 +8,7 @@
  * they never configured. Test preloads call `scrubHostSandboxEnv()` once per
  * test process; a test that needs one of these values sets it explicitly.
  */
-export const HOST_SANDBOX_ENV_KEYS = [
+const HOST_SANDBOX_ENV_KEYS = [
   // The agent-env.sh contract (packages/shared host-config/sandbox-env.ts).
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
@@ -48,8 +48,8 @@ export const HOST_SANDBOX_ENV_KEYS = [
   'KORTIX_PROJECT_AUTO_CLONE',
   'KORTIX_REPOSITORY_ACCESS',
   'KORTIX_CLONE_FILTER',
-] as const;
+];
 
-export function scrubHostSandboxEnv(env: NodeJS.ProcessEnv = process.env): void {
-  for (const key of HOST_SANDBOX_ENV_KEYS) delete env[key];
+export function scrubHostSandboxEnv(): void {
+  for (const key of HOST_SANDBOX_ENV_KEYS) delete process.env[key];
 }

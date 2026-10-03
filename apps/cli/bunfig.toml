@@ -1,9 +1,5 @@
 [test]
-# A hosted Kortix sandbox injects the live session's credentials and ids into
-# every process (KORTIX_TOKEN, KORTIX_API_URL, KORTIX_FRONTEND_URL,
-# KORTIX_PROJECT_ID, KORTIX_SESSION_ID, KORTIX_SUPERVISED). CI and a developer
-# laptop never carry them, so tests that spawn the CLI or render host notices
-# would see a different world here than in CI. Scrub them once per test
-# process; a test that needs one sets it explicitly (the spawned-CLI helpers
-# build their own env, mirroring apps/kortix-sandbox-agent-server's preload).
+# A hosted Kortix sandbox injects the live session's env (KORTIX_TOKEN,
+# KORTIX_SESSION_ID, …); CI and a laptop never carry it. See
+# packages/shared/src/host-config/test-sandbox-env.ts.
 preload = ["./src/__tests__/preload-clean-sandbox-env.ts"]

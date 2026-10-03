@@ -832,11 +832,8 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
 // dockerfile-layer.ts `COPY ${catalogPath} /opt/kortix/llm-catalog.json`). Present
 // on every modern image; used as the fast, always-available fallback so a slow or
 // down gateway never collapses the picker to the ~13-model minimal set.
-/**
- * The image-baked model catalog. `KORTIX_BAKED_LLM_CATALOG_PATH` overrides the
- * image path (a self-host image may stage it elsewhere; tests point it at an
- * absent file to pin the no-catalog fallback).
- */
+// The image-baked model catalog; KORTIX_BAKED_LLM_CATALOG_PATH overrides it
+// (see harness/pi/model.ts).
 export const BAKED_LLM_CATALOG_PATH =
   process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
 

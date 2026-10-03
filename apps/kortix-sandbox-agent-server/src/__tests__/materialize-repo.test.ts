@@ -79,7 +79,7 @@ const tempDirs: string[] = []
 // A Kortix host ships a real image scaffold at /opt/kortix/scaffold.git and CI
 // has none, so the suite's reset points at an absent path and every test that
 // wants the scaffold fast path installs its own (as the scaffold tests do).
-const NO_SCAFFOLD = join(mkdtempSync(join(tmpdir(), 'kortix-no-scaffold-')), 'absent.git')
+const NO_SCAFFOLD = join(tmpdir(), 'kortix-no-scaffold-absent.git')
 
 beforeEach(() => {
   __setScaffoldRepoPathForTests(NO_SCAFFOLD)
