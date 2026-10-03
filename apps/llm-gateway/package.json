@@ -13,7 +13,7 @@
   "dependencies": {
     "@kortix/llm-gateway": "workspace:*",
     "@kortix/shared": "workspace:*",
-    "hono": "^4.6.0",
+    "hono": "^4.13.7",
     "langfuse": "^3.38.20"
   },
   "devDependencies": {
