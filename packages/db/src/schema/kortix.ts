@@ -4114,7 +4114,6 @@ export const appAccessGrants = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('app_access_grants_app_idx').on(table.appId),
     uniqueIndex('app_access_grants_unique').on(
       table.appId,
       table.principalType,
