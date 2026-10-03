@@ -68,6 +68,25 @@ Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
 Browser runs use two Playwright workers, locally and in each CI shard.
 
+A green `pnpm test` writes `tests/test-attestation.json`; commit it. Format:
+`{source_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
+`source_hash` is the sha256 of every file the commit would contain except the
+attestation, so committing it does not change the hash. Lanes: `core` (sdk, runner units, route coverage, worktree units), `packages`
+(package quality), `db-suites` (API/CLI flows + DB suites; both need Docker:
+local Supabase, GoTrue, per-suite Postgres containers), and `browser` when
+run. Plain `pnpm test` runs all but `browser`. A lane is written only when all
+its runner lanes ran in that run or one failed. A filtered or sharded run
+(`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
+lane-only mode updates only the lanes it fully covers, on unchanged source.
+`pnpm test:verify` (`tests/verify-attestation.mjs`) recomputes the hash:
+exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
+every other lane must be `pass`, and `db-suites` alone may be `skipped-no-db`
+(no Docker; never a pass). `--strict` exits `3` for that skip. No in-sandbox
+Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
+records the skip and the merge gate holds DB PRs.
+The `.githooks/pre-push` hook enforces this on every branch push except
+`scratch/*`. Never push with `--no-verify`.
+
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release
 work.
@@ -107,7 +126,7 @@ Before a `main` merge, run the narrowest relevant command first, then
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| anything | `Tests` core + packages lanes | `pnpm test` (core) and `pnpm test -- --packages-only` |
+| anything | `pnpm test:verify` (merge gate); `Tests` lanes on `staging`/`prod` PRs | `pnpm test` (core) and `pnpm test -- --packages-only` |
 | browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
 | `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |

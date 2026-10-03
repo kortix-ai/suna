@@ -54,6 +54,9 @@ Run the narrowest relevant test first, then `pnpm test` (the **testing** skill).
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
+`pnpm test` writes `tests/test-attestation.json`: commit it. The pre-push hook and the
+merge gate run `pnpm test:verify` against the pushed head and reject a stale or red
+attestation. Never push with `--no-verify`.
 
 Done when the commands you will list under "How was this tested?" passed, with output
 captured.

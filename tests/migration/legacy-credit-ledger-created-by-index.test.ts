@@ -85,7 +85,7 @@ const LEGACY_TABLE_SQL = `
   create schema if not exists auth;
   create table if not exists auth.users (id uuid primary key);
   create table public.credit_ledger (
-    id uuid primary key,
+    id uuid primary key default gen_random_uuid(),
     account_id uuid not null,
     amount numeric(12,4) default 0 not null,
     balance_after numeric(12,4) default 0 not null,

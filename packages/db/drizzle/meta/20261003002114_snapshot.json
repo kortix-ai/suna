@@ -1,5 +1,5 @@
 {
-  "id": "d4db8d35-37fc-4025-982c-c4d211718aa8",
+  "id": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "prevId": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "version": "7",
   "dialect": "postgresql",
@@ -1688,6 +1688,21 @@
             },
             {
               "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_secret_resources_project_id": {
+          "name": "idx_account_secret_resources_project_id",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -10057,23 +10072,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "idx_role_permissions_action": {
-          "name": "idx_role_permissions_action",
-          "columns": [
-            {
-              "expression": "action",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "role_permissions_role_id_roles_role_id_fk": {
           "name": "role_permissions_role_id_roles_role_id_fk",
