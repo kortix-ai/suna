@@ -1,18 +1,29 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "77ac99a145436bb577a39358f8236e8facb5ffc44480f8e58669a093ba38d432",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/api/src/llm-gateway/internal-routes.test.ts",
+    "apps/api/src/llm-gateway/internal-routes.ts",
+    "apps/api/src/llm-gateway/models/catalog-models.test.ts",
+    "apps/api/src/llm-gateway/models/catalog-models.ts",
+    "apps/api/src/llm-gateway/resolution/choose-default-model.ts",
+    "apps/api/src/llm-gateway/resolution/effective.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.ts",
+    "apps/api/src/projects/routes/models.ts",
+    "apps/api/src/projects/routes/session-open-bundle.ts",
+    "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
+    "apps/web/src/features/workspace/customize/sections/view/gateway/gateway-routing.test.ts",
+    "packages/sdk/src/core/models/composer-model.ts",
+    "packages/sdk/src/core/models/composer-models.test.ts",
+    "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
-  "passed": true,
+  "diff_hash": "1abe4adff10de1cdedcf6f1bcf8c6a82ba4443592ad1582ca54207b39f35be3d",
+  "head": "9cc2d838ad216a65336709b5840f5f318653ff3c",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T16:05:55.951Z"
 }
