@@ -9,10 +9,11 @@
  * `--text-file` body lives on the sandbox disk and is not in the command, so
  * that shape is left to the ordinary command card.
  *
- * Pure and dependency-free; pinned by `channel-send.test.ts`.
+ * Pure; pinned by `channel-send.test.ts`.
  */
 
 import type { ChannelPlatform } from '@/features/session/turn/channel-message';
+import { slackPlainText } from '@kortix/shared';
 
 export interface ChannelSend {
   platform: ChannelPlatform;
@@ -34,8 +35,12 @@ const CLI_PLATFORM: Record<string, ChannelPlatform> = {
  * Split a POSIX shell command line into words, honouring single quotes,
  * double quotes (with `\"` and `\\` escapes), `$'…'` ANSI-C strings (the
  * common escapes) and backslash-escaped spaces. Good enough for the one-line
- * invocations the agent writes; anything with pipes, subshells or heredocs is
- * refused by the caller before this runs.
+ * invocations the agent writes.
+ *
+ * Null for a line that is not one plain command: an unterminated quote, an
+ * operator outside quotes (`|;&<>()` or a backtick), or a command
+ * substitution (`$(`, a backtick) inside double quotes. Inside quotes the
+ * other characters are text: every Slack mention is `<@U…|Name>`.
  */
 export function splitShellWords(line: string): string[] | null {
   const words: string[] = [];
@@ -92,6 +97,7 @@ export function splitShellWords(line: string): string[] | null {
           i += 1;
           break;
         }
+        if (c === '`' || (c === '$' && line[i + 1] === '(')) return null;
         if (c === '\\' && i + 1 < n && '"\\$`'.includes(line[i + 1])) {
           cur += line[i + 1];
           i += 2;
@@ -107,6 +113,7 @@ export function splitShellWords(line: string): string[] | null {
       i += 2;
       continue;
     }
+    if (SHELL_OPERATORS.includes(ch) || (ch === '$' && line[i + 1] === '(')) return null;
     cur += ch;
     i += 1;
   }
@@ -114,12 +121,14 @@ export function splitShellWords(line: string): string[] | null {
   return words;
 }
 
-const UNSAFE = /[|;&<>`()]|\$\(/;
+/** Characters that compose commands when the shell reads them unquoted. */
+const SHELL_OPERATORS = '|;&<>()`';
 
 export function parseChannelSendCommand(command: string): ChannelSend | null {
   const line = command.trim();
-  // One invocation, nothing composed around it.
-  if (!line || line.includes('\n') || UNSAFE.test(line.replace(/\$'(?:[^'\\]|\\.)*'/g, ''))) return null;
+  // One invocation, nothing composed around it: `splitShellWords` refuses an
+  // operator the shell would act on.
+  if (!line || line.includes('\n')) return null;
   const words = splitShellWords(line);
   if (!words || words.length < 2) return null;
 
@@ -176,4 +185,10 @@ export function parseChannelSendCommand(command: string): ChannelSend | null {
   if (textFile && text === null) return null;
   if (text === null && file === null) return null;
   return { platform, text: text?.trim() ? text.trim() : null, file, channel };
+}
+
+/** The reply as the channel shows it, Slack markup rendered; null for a bare file send. */
+export function channelSendText(send: ChannelSend): string | null {
+  if (!send.text) return null;
+  return send.platform === 'Slack' ? slackPlainText(send.text) : send.text;
 }

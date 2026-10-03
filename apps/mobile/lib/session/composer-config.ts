@@ -10,7 +10,7 @@
  */
 
 import { selectableProjectAgents, type ProjectConfigSummary } from '@kortix/sdk';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent } from '@/lib/session/runtime-data';
 
 export interface PickerOption {
   /** Unique row id: the gateway wire id (home) or `providerID/modelID` (thread). */

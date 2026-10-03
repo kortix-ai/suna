@@ -1368,9 +1368,8 @@ export function CommandPalette() {
    *    keep answering for the account you just left.
    * 3. Navigate.
    *
-   * The already-active workspace never reaches here: `rootWorkspaceResults`
-   * drops it, and the dedicated page renders it as a checked, non-selectable
-   * row.
+   * Selecting the active workspace also opens its home page, including when
+   * the user is currently viewing a session or settings inside it.
    */
   const handleSelectWorkspace = useCallback(
     (workspace: KortixProject) => {
@@ -1502,10 +1501,8 @@ export function CommandPalette() {
    * selecting a row buried in Navigation. Removing the `projectId` clause is
    * the single change that makes ⌘K → name → Enter work.
    *
-   * `rootWorkspaceResults` drops the active workspace (it matches its own name
-   * best and selecting it re-navigates to the page you are on) and caps the
-   * rest, so workspaces take a slice of the mixed root page rather than owning
-   * it.
+   * `rootWorkspaceResults` includes the active workspace and caps matches,
+   * so workspaces take a slice of the mixed root page rather than owning it.
    */
   const rootWorkspaceRows = useMemo(
     () => (hasQuery ? rootWorkspaceResults(workspaceRows, query) : []),
@@ -2940,9 +2937,8 @@ export function CommandPalette() {
                 One account gets a single "Workspaces" heading instead — a lone
                 account heading over the only list is noise, not structure.
 
-                Unlike the root results this KEEPS the workspace you are in, as
-                a checked row. A directory that omits where you are makes you
-                doubt the directory. */}
+                Like the root results this includes the workspace you are in,
+                marked here with a check. */}
             {page === 'workspaces' &&
               (workspacePageRows.length > 0 ? (
                 workspacePageGroups.map((group) => (

@@ -47,10 +47,10 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { PanelWidthButton } from './viewer-actions';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {
@@ -740,8 +740,7 @@ export function DetailLayer({
 
 /** Tools that re-send their ENTIRE state on every call rather than a delta. */
 function isSnapshotTool(tool: string): boolean {
-  const n = normalizeName(tool);
-  return n === 'todo_write' || n === 'todowrite';
+  return isPlanWriteTool(tool);
 }
 
 /**

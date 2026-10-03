@@ -9,7 +9,7 @@ import {
   serializeManifestObject,
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
-import { type GitBackedProject, readManifestFromRepo } from './git';
+import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from './git';
 import type { ParsedManifest } from './trigger-types';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -42,8 +42,9 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by `extractAgents` in `./agents.ts`, the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and remains refused.
+ * v3 retains the agents map and adds YAML-only behavior.
  */
-export const MAX_SCHEMA_VERSION = 2;
+export const MAX_SCHEMA_VERSION = 3;
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
 
@@ -60,7 +61,7 @@ export const MAX_SCHEMA_VERSION = 2;
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
 ): Promise<ParsedManifest | null> {
   let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {
@@ -158,6 +159,10 @@ export function synthesizeBlankManifest(project: {
           secrets: 'all',
           kortix_permissions: 'all',
           skills: 'all',
+          // Nobody declared this agent, so it keeps the project checkout a
+          // declared agent must opt into (KRTX-165). Without it a blank
+          // project's first session boots with no repo and fails to compile.
+          repository_access: true,
         },
       },
     },

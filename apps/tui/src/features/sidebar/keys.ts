@@ -68,7 +68,7 @@ export const SIDEBAR_KEYS: readonly Binding[] = [
     id: 'sidebar.attach',
     scope: 'sidebar',
     chords: [{ key: 'a' }],
-    description: 'Attach the selected session in the stock opencode TUI.',
+    description: 'Attach the selected OpenCode session in the stock opencode TUI.',
   },
   {
     id: 'sidebar.new',

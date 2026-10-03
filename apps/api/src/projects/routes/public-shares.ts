@@ -12,6 +12,7 @@ import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/s
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -133,6 +134,22 @@ projectsApp.openapi(
         {
           error: 'Sessions using a personal connection cannot be shared publicly',
           code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
+        },
+        409,
+      );
+    }
+
+    const held = await sessionPersonOnlyPlaintextSecrets({
+      accountId: visible.row.accountId,
+      projectId,
+      sessionId,
+    });
+    if (held.length > 0) {
+      return c.json(
+        {
+          error: `This session holds ${held.join(', ')}, shared only with you, and cannot be shared publicly. Start a new session to share.`,
+          code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+          secrets: held,
         },
         409,
       );

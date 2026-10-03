@@ -69,7 +69,6 @@ import {
 } from '@/lib/session/session-sandbox';
 import { ProjectHome } from '@/components/session/ProjectHome';
 import {
-  projectSessionForOpenCodeId,
   resolveSessionTitle,
   sessionDisplayTitle,
   subsessionTitle,
@@ -93,15 +92,12 @@ import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import {
   countReviewItemsBySegment,
-  SESSION_NOTICE,
-  sessionConnectionLabel,
+  runtimeSessionsOf,
   sessionParentId,
 } from '@kortix/sdk';
-import { queuePromptWhileWaking } from '@/lib/session/connecting-send';
-import { loadSavedCopy } from '@/lib/session/saved-copy';
-import * as Crypto from 'expo-crypto';
+import { KortixProjectProvider } from '@kortix/sdk/react';
+import { useSavedCopy } from '@/hooks/useSavedCopy';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { useSyncStore } from '@/lib/opencode/sync-store';
 import { getSandboxUrl } from '@/lib/platform/client';
 import type { SandboxProviderName } from '@/lib/platform/client';
 
@@ -145,6 +141,13 @@ const Pages = {
 
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
+
+/**
+ * What the waking view says. The composer there is disabled, so it promises
+ * no send (the SDK's `SESSION_NOTICE.waking` says messages queue; web keeps
+ * its live send button, mobile does not).
+ */
+const WAKING_NOTICE = "Waking this session's computer. You can send messages when it's ready.";
 
 export function ProjectScreen() {
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
@@ -258,8 +261,10 @@ export function ProjectScreen() {
   // session) is off.
   const activeSubsession = useMemo(
     () =>
-      activeProjectSession && activeSessionId && activeSessionId !== activeProjectSession.opencode_session_id
-        ? ((activeProjectSession.opencode_sessions ?? []).find((item) => item.id === activeSessionId) ?? null)
+      activeProjectSession &&
+      activeSessionId &&
+      activeSessionId !== (activeProjectSession.runtime_session_id ?? activeProjectSession.opencode_session_id)
+        ? (runtimeSessionsOf(activeProjectSession).find((item) => item.id === activeSessionId) ?? null)
         : null,
     [activeProjectSession, activeSessionId]
   );
@@ -303,6 +308,24 @@ export function ProjectScreen() {
     refreshSessionLists, firstPromptRef, navigateToSession, setConnectError,
     erroredSessionRef, freshSessionIdRef, setConnectingProjectSessionId, showUpgradeForError,
   });
+  // `handleCreateAgent` changes with the create mutation and toast objects. The
+  // thread gets a stable wrapper that calls the latest one, so a memoized
+  // SessionPage skips parent re-renders.
+  const createAgentRef = useRef(handleCreateAgent);
+  createAgentRef.current = handleCreateAgent;
+  const createAgent = useCallback(() => createAgentRef.current(), []);
+  // The thread's "···" and title tap act on the open thread's project session.
+  // Stable: they read the latest row through a ref.
+  const activeProjectSessionRef = useRef(activeProjectSession);
+  activeProjectSessionRef.current = activeProjectSession;
+  const openActiveSessionActions = useCallback(() => {
+    const session = activeProjectSessionRef.current;
+    if (session) openSessionActions(session);
+  }, [openSessionActions]);
+  const renameActiveSession = useCallback(() => {
+    const session = activeProjectSessionRef.current;
+    if (session) openSessionActions(session, 'rename');
+  }, [openSessionActions]);
   // Left drawer open state (ProjectLeftDrawer).
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Stable handlers, so a memoized SessionPage skips parent re-renders.
@@ -324,11 +347,11 @@ export function ProjectScreen() {
   });
   const shownSessionIdRef = useRef(shownSessionId);
   shownSessionIdRef.current = shownSessionId;
-  // The OpenCode id the thread on screen shows (null under a tool page or
+  // The runtime session id the thread on screen shows (null under a tool page or
   // while connecting): which drawer sub-session row is highlighted.
-  const shownOpenCodeId = shownSessionId && !activePageId ? activeSessionId : null;
-  const shownOpenCodeIdRef = useRef(shownOpenCodeId);
-  shownOpenCodeIdRef.current = shownOpenCodeId;
+  const shownRuntimeId = shownSessionId && !activePageId ? activeSessionId : null;
+  const shownRuntimeIdRef = useRef(shownRuntimeId);
+  shownRuntimeIdRef.current = shownRuntimeId;
 
   // Push (components/notifications/PushNotificationsBridge): the session on
   // screen suppresses its own notification banner while this project is on top.
@@ -350,9 +373,9 @@ export function ProjectScreen() {
   }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
 
   // A drawer row (the drawer has already closed itself) that targets one
-  // OpenCode session of `ps`: its root (a session row) or a sub-session (a
+  // runtime session of `ps`: its root (a session row) or a sub-session (a
   // row under it). Another session opens through the connect path. On the
-  // session on screen, another OpenCode session of it only swaps the thread's
+  // session on screen, another runtime session of it only swaps the thread's
   // active id — the same sandbox, no reconnect (the task tool's View does the
   // same) — and the one already showing does nothing more: reopening it would
   // unmount the thread, show Connecting, and rerun the connect loop. While
@@ -360,36 +383,40 @@ export function ProjectScreen() {
   // (`queue`). A sub-session row of another session opens that session and
   // then shows the sub-session (`handleOpenProjectSession` focus).
   const openThreadFromDrawer = useCallback(
-    (ps: ProjectSession, targetOpenCodeId: string | null) => {
+    (ps: ProjectSession, targetRuntimeId: string | null) => {
       const move = drawerThreadMove({
         rowSessionId: ps.session_id,
-        targetOpenCodeId,
+        targetRuntimeId,
         shownSessionId: shownSessionIdRef.current,
-        activeOpenCodeId: shownOpenCodeIdRef.current,
+        activeRuntimeId: shownRuntimeIdRef.current,
       });
       if (move === 'open') {
         // A sub-session row: open its parent, then show the sub-session.
-        const focus = targetOpenCodeId && targetOpenCodeId !== ps.opencode_session_id ? targetOpenCodeId : undefined;
+        const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+        const focus = targetRuntimeId && targetRuntimeId !== rootId ? targetRuntimeId : undefined;
         handleOpenProjectSession(ps, focus);
         return;
       }
       haptics.tap();
-      if (move === 'focus' && targetOpenCodeId) navigateToSession(targetOpenCodeId);
+      if (move === 'focus' && targetRuntimeId) navigateToSession(targetRuntimeId);
       // Still connecting: the thread opens on the target when it connects.
-      if (move === 'queue' && targetOpenCodeId) {
-        pendingThreadFocusRef.current = { sessionId: ps.session_id, openCodeId: targetOpenCodeId };
+      if (move === 'queue' && targetRuntimeId) {
+        pendingThreadFocusRef.current = { sessionId: ps.session_id, runtimeId: targetRuntimeId };
       }
     },
     [handleOpenProjectSession, navigateToSession]
   );
   const openSessionFromDrawer = useCallback(
-    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.opencode_session_id ?? null),
+    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.runtime_session_id ?? ps.opencode_session_id ?? null),
     [openThreadFromDrawer]
   );
   const openSubsessionFromDrawer = useCallback(
     (ps: ProjectSession, childId: string) => openThreadFromDrawer(ps, childId),
     [openThreadFromDrawer]
   );
+
+  // The open session's parent: that parent's children start open in the drawer.
+  const activeParentSessionId = activeProjectSession ? sessionParentId(activeProjectSession) : null;
 
   // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
   // The drawer's gear button is gone (COR-123/COR-160 Task 4): the project
@@ -399,8 +426,8 @@ export function ProjectScreen() {
       <ProjectLeftDrawer
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
-        activeOpenCodeSessionId={shownOpenCodeId}
-        activeParentSessionId={activeProjectSession ? sessionParentId(activeProjectSession) : null}
+        activeRuntimeSessionId={shownRuntimeId}
+        activeParentSessionId={activeParentSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
@@ -417,9 +444,11 @@ export function ProjectScreen() {
     [
       projectId,
       shownSessionId,
-      shownOpenCodeId,
+      shownRuntimeId,
+      activeParentSessionId,
       drawerOpen,
       reviewNeedsYouCount,
+      needsYouSessions,
       returnHome,
       openSessionFromDrawer,
       openSubsessionFromDrawer,
@@ -428,18 +457,6 @@ export function ProjectScreen() {
       openSwitcher,
       closeDrawer,
     ]
-  );
-
-  // Tool pages keep PageHeader: its hamburger opens the drawer. The "···"
-  // that opened the project sheet is removed (COR-123/COR-160 Task 3): the
-  // project sheet (`CustomizeSheet`) is deleted, so no page passes
-  // `onOpenRightDrawer` any more and `PageHeader` shows no "···".
-  const pageChrome = useMemo(
-    () => ({
-      onOpenDrawer: openDrawer,
-      isDrawerOpen: drawerOpen,
-    }),
-    [openDrawer, drawerOpen]
   );
 
   // ── Route content ──
@@ -472,9 +489,28 @@ export function ProjectScreen() {
     }
   }, [renderedOpenedThread, keptOpenedThread]);
 
+  // The drawer state reaches the view only where it shows: a tool page's
+  // hamburger X and the connecting view's loader. The thread does not read
+  // it, so a drawer toggle keeps the thread's element and does not re-render
+  // SessionPage.
+  const threadShown = !activePageId && !!activeSessionId && threadReady;
+  const viewDrawerOpen = threadShown ? false : drawerOpen;
+
+  // Tool pages keep PageHeader: its hamburger opens the drawer. The "···"
+  // that opened the project sheet is removed (COR-123/COR-160 Task 3): the
+  // project sheet (`CustomizeSheet`) is deleted, so no page passes
+  // `onOpenRightDrawer` any more and `PageHeader` shows no "···".
+  const pageChrome = useMemo(
+    () => ({
+      onOpenDrawer: openDrawer,
+      isDrawerOpen: viewDrawerOpen,
+    }),
+    [openDrawer, viewDrawerOpen]
+  );
+
   // While the computer wakes, the connecting view shows the session's saved
-  // copy (lib/session/saved-copy.ts): the one this device kept, then the
-  // server's, painted into the sync store under the session's OpenCode root.
+  // copy (hooks/useSavedCopy.ts): the one this device kept, then the server's,
+  // painted into the SDK's session store under the session's runtime root.
   // `SessionPage` then opens on the same messages and its first runtime read
   // settles them. Only while the connecting view is on screen. A sub-agent's
   // thread reads its own saved window (`child`).
@@ -482,61 +518,53 @@ export function ProjectScreen() {
   const savedCopyTarget = !showingConnecting
     ? null
     : connectingProjectSessionId
-      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null, child: false }
+      ? {
+          sessionId: connectingProjectSessionId,
+          rootId: connectingRow?.runtime_session_id ?? connectingRow?.opencode_session_id ?? null,
+          child: false,
+        }
       : activeProjectSession && activeSessionId
         ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId, child: !!activeSubsession }
         : null;
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
   const savedCopyChild = savedCopyTarget?.child ?? false;
-  // The root a saved copy proved empty (`SavedCopyOutcome.empty`): the view
-  // opens on its composer instead of a loader.
-  const [emptyProvenFor, setEmptyProvenFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-    let current = true;
-    void loadSavedCopy({
-      projectId,
-      sessionId: savedCopySessionId,
-      rootId: savedCopyRootId,
-      child: savedCopyChild,
-    }).then((outcome) => {
-      if (current && outcome.empty) setEmptyProvenFor(savedCopyRootId);
-    });
-    return () => {
-      current = false;
-    };
-  }, [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]);
-  const savedCopyMessages = useSyncStore((state) =>
-    savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  // `empty`: the saved copy proved the root empty (`SavedCopyRead.empty`), so
+  // the view opens on its composer instead of a loader.
+  const savedCopyHookTarget = useMemo(
+    () =>
+      projectId && savedCopySessionId && savedCopyRootId
+        ? { projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId, child: savedCopyChild }
+        : null,
+    [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]
   );
-  const connectingEmpty = !!savedCopyRootId && emptyProvenFor === savedCopyRootId && !connectingFirstPrompt;
-  // A message typed while the computer wakes queues through the prompt inbox
-  // (lib/session/connecting-send.ts), as the web does: never to a sub-agent,
-  // never over a failure, and only where the thread is on screen.
-  const canQueueWhileWaking =
-    !!projectId &&
-    !!savedCopySessionId &&
-    !!savedCopyRootId &&
-    !savedCopyChild &&
-    !connectError &&
-    (connectingEmpty || (savedCopyMessages?.length ?? 0) > 0);
-  const handleWakingSend = useCallback(
-    (text: string) => {
-      if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-      void queuePromptWhileWaking({
-        projectId,
-        projectSessionId: savedCopySessionId,
-        rootId: savedCopyRootId,
-        text,
-        randomUUID: Crypto.randomUUID,
-      });
-    },
-    [projectId, savedCopySessionId, savedCopyRootId]
-  );
+  const savedCopy = useSavedCopy(savedCopyHookTarget);
+  const savedCopyMessages = savedCopy.messages;
+  const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
+  // The thread's and the connecting view's props, read before the memo below:
+  // `openedProjectSessionIdsRef` is a ref, so the memo must depend on its value.
+  const openedProjectSessionId = activeSessionId ? openedProjectSessionIdsRef.current[activeSessionId] : undefined;
+  const threadProjectSessionId = activeProjectSession?.session_id ?? openedProjectSessionId;
+  const connectingViewProjectSessionId =
+    activeProjectSession?.session_id ?? connectingProjectSessionId ?? openedProjectSessionId ?? undefined;
+  const canOpenSessionActions = !!activeProjectSession;
+  const canRenameSession = !!activeProjectSession && !activeSubsession;
+  const threadTitle = activeSubsession
+    ? subsessionTitle(activeSubsession)
+    : activeProjectSession
+      ? sessionDisplayTitle(activeProjectSession)
+      : undefined;
+  // The row's agent binds the root thread only; a sub-session runs its own.
+  // `'default'` is the server's spelling of "no agent bound" (web's session page).
+  const boundAgentName =
+    !activeSubsession && activeProjectSession?.agent_name !== 'default'
+      ? activeProjectSession?.agent_name
+      : null;
 
   // The open page, thread, or connecting session: the view route's content.
-  const viewContent = isHome ? null : (
+  // Memoized on its real inputs: a stable element lets React skip the view
+  // route when only the drawer, a poll, or a sheet changed.
+  const viewContent = useMemo(() => isHome ? null : (
         <View className="flex-1 bg-background">
           {activePageId ? (
           /* Tool page — the SAME page component the legacy screen renders. Its
@@ -572,38 +600,17 @@ export function ProjectScreen() {
           <SessionPage
             sessionId={activeSessionId}
             projectId={projectId}
-            projectSessionId={
-              activeProjectSession?.session_id ?? openedProjectSessionIdsRef.current[activeSessionId]
-            }
+            projectSessionId={threadProjectSessionId}
             onBack={handleBack}
             onOpenDrawer={openDrawer}
-            onOpenRightDrawer={
-              activeProjectSession ? () => openSessionActions(activeProjectSession) : undefined
-            }
-            onRenamePress={
-              activeProjectSession && !activeSubsession
-                ? () => openSessionActions(activeProjectSession, 'rename')
-                : undefined
-            }
-            sessionTitle={
-              activeSubsession
-                ? subsessionTitle(activeSubsession)
-                : activeProjectSession
-                  ? sessionDisplayTitle(activeProjectSession)
-                  : undefined
-            }
+            onOpenRightDrawer={canOpenSessionActions ? openActiveSessionActions : undefined}
+            onRenamePress={canRenameSession ? renameActiveSession : undefined}
+            sessionTitle={threadTitle}
             subAgentRelation={activeSubAgentRelation}
             subAgents={activeSubAgents}
             onOpenProjectSession={handleOpenProjectSession}
-            onCreateAgent={handleCreateAgent}
-            // The row's agent binds the root thread only; a sub-session runs its own.
-            // `'default'` is the server's spelling of "no agent bound" (web's session page).
-            boundAgentName={
-              !activeSubsession && activeProjectSession?.agent_name !== 'default'
-                ? activeProjectSession?.agent_name
-                : null
-            }
-            isDrawerOpen={drawerOpen}
+            onCreateAgent={createAgent}
+            boundAgentName={boundAgentName}
           />
         ) : activeSessionId || connectingProjectSessionId ? (
           /* Connecting — a project session is provisioning (or errored), or
@@ -624,19 +631,52 @@ export function ProjectScreen() {
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}
-              showLoader={!drawerOpen}
+              showLoader={!viewDrawerOpen}
               messages={savedCopyMessages}
-              statusLabel={
-                canQueueWhileWaking ? SESSION_NOTICE.waking : (sessionConnectionLabel('waking')?.label ?? null)
-              }
+              statusLabel={WAKING_NOTICE}
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
-              onSend={canQueueWhileWaking ? handleWakingSend : undefined}
+              projectId={projectId}
+              projectSessionId={connectingViewProjectSessionId}
             />
           </View>
         ) : null}
         </View>
-  );
+  ), [
+    isHome,
+    activePageId,
+    projectId,
+    pageChrome,
+    handleOpenSessionById,
+    handlePageBack,
+    activeSessionId,
+    threadReady,
+    threadProjectSessionId,
+    handleBack,
+    openDrawer,
+    canOpenSessionActions,
+    openActiveSessionActions,
+    canRenameSession,
+    renameActiveSession,
+    threadTitle,
+    activeSubAgentRelation,
+    activeSubAgents,
+    handleOpenProjectSession,
+    createAgent,
+    boundAgentName,
+    connectingProjectSessionId,
+    connectingTitle,
+    connectingFirstPrompt,
+    connectError,
+    handleCancelConnect,
+    handleRestartSession,
+    restartingSession,
+    viewDrawerOpen,
+    savedCopyMessages,
+    savedCopyRootId,
+    connectingEmpty,
+    connectingViewProjectSessionId,
+  ]);
 
   // A sub-page's content (the `page` route): Go back in place of the
   // hamburger, and no drawer. Project Settings opens its Customize rows as
@@ -662,35 +702,67 @@ export function ProjectScreen() {
   );
 
   // Project home — Kortix symbol, composer.
-  const homeContent = (
-    <View className="flex-1 bg-background">
-      <ProjectHome
-        projectId={projectId}
-        sending={isDashboardSending}
-        onSubmitNewSession={handleDashboardSend}
-        onOpenDrawer={openDrawer}
-        takeInitialDraft={takeInitialDraft}
-      />
-    </View>
+  // Memoized: a stable element lets React skip home when only `drawerOpen`
+  // or a poll changed.
+  // `handleDashboardSend` changes with the create mutation and toast objects,
+  // so home gets a stable wrapper that calls the latest one.
+  const dashboardSendRef = useRef(handleDashboardSend);
+  dashboardSendRef.current = handleDashboardSend;
+  const submitNewSession = useCallback<typeof handleDashboardSend>(
+    (submit) => dashboardSendRef.current(submit),
+    []
+  );
+  const homeContent = useMemo(
+    () => (
+      <View className="flex-1 bg-background">
+        <ProjectHome
+          projectId={projectId}
+          sending={isDashboardSending}
+          onSubmitNewSession={submitNewSession}
+          onOpenDrawer={openDrawer}
+          takeInitialDraft={takeInitialDraft}
+        />
+      </View>
+    ),
+    [projectId, isDashboardSending, submitNewSession, openDrawer, takeInitialDraft]
   );
 
-  const projectRoute: ProjectRouteValue = {
-    home: homeContent,
-    view: viewContent,
-    isHome,
-    homeKey,
-    goHome,
-    newSession: returnHome,
-    onViewCovered: handleViewCovered,
-    projectId,
-    // Stable: a useCallback whose only dependency is a zustand store action.
-    openProjectSession: handleOpenProjectSession,
-    openDrawer,
-    isDrawerOpen: drawerOpen,
-    openSessionActions,
-    openSubPage,
-    renderSubPage,
-  };
+  // Memoized: a new value re-renders every project route that reads it.
+  const projectRoute = useMemo<ProjectRouteValue>(
+    () => ({
+      home: homeContent,
+      view: viewContent,
+      isHome,
+      homeKey,
+      goHome,
+      newSession: returnHome,
+      onViewCovered: handleViewCovered,
+      projectId,
+      // Stable: a useCallback whose only dependency is a zustand store action.
+      openProjectSession: handleOpenProjectSession,
+      openDrawer,
+      isDrawerOpen: drawerOpen,
+      openSessionActions,
+      openSubPage,
+      renderSubPage,
+    }),
+    [
+      homeContent,
+      viewContent,
+      isHome,
+      homeKey,
+      goHome,
+      returnHome,
+      handleViewCovered,
+      projectId,
+      handleOpenProjectSession,
+      openDrawer,
+      drawerOpen,
+      openSessionActions,
+      openSubPage,
+      renderSubPage,
+    ]
+  );
 
   // ── Render ──
 
@@ -730,15 +802,29 @@ export function ProjectScreen() {
         openSpringConfig={DRAWER_OPEN}
         closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
+        {/* The SDK's project scope: its runtime hooks read this project's model
+            mode from it (`useRuntimeProviders`). */}
+        <KortixProjectProvider projectId={projectId}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the
               left edge belongs to the drawer on every project route, except
-              a sub-page (page), where it goes back. */}
+              a sub-page (page), where it goes back.
+              `freezeOnBlur`: a covered screen does not re-render. On the New
+              Architecture the stack freezes only screens two or more below the
+              top; the screen under the top stays live for the back gesture.
+              React Freeze suspends a frozen screen's rendering. Its state and
+              its passive effects (listeners, timers, subscriptions) stay
+              mounted; its layout effects are cleaned up while it is hidden
+              and run again when it shows. Its stores keep updating, and it
+              renders the latest state when it shows again. No screen here
+              drives visible state from a timer or a focus listener while
+              covered: each route acts only while focused. */}
           <Stack
             screenOptions={{
               headerShown: false,
               gestureEnabled: false,
               fullScreenGestureEnabled: false,
+              freezeOnBlur: true,
             }}
             // The focused route is the top of the stack.
             screenListeners={({ route, navigation: routeNavigation }) => ({
@@ -756,6 +842,7 @@ export function ProjectScreen() {
             <Stack.Screen name={PROJECT_PAGE_ROUTE} options={{ gestureEnabled: true }} />
           </Stack>
         </ProjectRouteProvider>
+        </KortixProjectProvider>
       </Drawer>
 
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the

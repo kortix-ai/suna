@@ -155,7 +155,7 @@ export async function viewerManagerStanding(
  * inventory), so any route that loads a session by id and then acts on it must
  * ask this first — `/start` and `/restart` used to skip it, answer
  * `stage: "stopped"` / 202 on a deleted session, and leave the UI looping on a
- * Restart button that could never work (sampleco session b04a9911, 2026-08-24).
+ * Restart button that could never work (a SampleCo session, 2026-08-24).
  */
 export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -304,6 +304,17 @@ async function sessionReadAccess(
         visibility: row.visibility,
       });
     }
+  }
+  // An agent session always opens itself and the sessions it spawned. A trigger
+  // run's `created_by` is the agent's service account, never the token's user, so
+  // the ownership rule above refuses it its own row (404 on `kortix reminders`).
+  if (
+    !visible &&
+    loaded.actor &&
+    isAgentPrincipalActor(loaded.actor) &&
+    agentSessionStanding(boundCredentialSessionId, row, false).isOwner
+  ) {
+    visible = true;
   }
   if (!visible) {
     // A platform-admin bypass already verified for the parent project (see

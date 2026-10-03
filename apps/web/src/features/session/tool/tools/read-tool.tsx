@@ -24,6 +24,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { FileIcon, FolderIcon as Folder, ReadCvLogoIcon } from '@phosphor-icons/react';
+import { inputPath } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
@@ -36,7 +37,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const metadata = partMetadata(part);
   const output = partOutput(part);
   const status = partStatus(part);
-  const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
+  const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
   // Field selector, not the whole store: destructuring `useFilePreviewStore()`

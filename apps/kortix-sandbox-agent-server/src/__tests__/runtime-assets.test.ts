@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -9,6 +9,7 @@ import {
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
   runningRuntimeAssets,
+  __resetVerifiedDigestsForTests,
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
@@ -382,7 +383,11 @@ describe('reconcileRuntimeAssets', () => {
   test('the digest cache is keyed on size and mtime: a stale mtime forces a real hash and a download', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
-    const stats = await stat(ws.cliPath)
+    // Stat through a handle, not the path: the code under test replaces this
+    // file before the read below, which a path stat-then-read reads as a race.
+    const handle = await open(ws.cliPath)
+    const stats = await handle.stat()
+    await handle.close()
     // The cache claims the on-disk binary IS the manifest build, but for an
     // mtime the file no longer has.
     await Bun.write(
@@ -488,6 +493,49 @@ describe('bakeRuntimeAssetsState', () => {
     expect(running.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
     expect(running.harness).toBe('opencode')
     expect(running.harness_version).toBe('1.18.23')
+  })
+
+  test('a binary replaced after the bake reports the bytes now on disk, not the baked digest', async () => {
+    // The Platinum agent-swap fast path patches the agent binary into the
+    // predecessor's rootfs and keeps its state file. Before this, a fresh box
+    // reported the predecessor's agent digest until its first reconcile, and
+    // session open relaunched a daemon that already ran the right bytes.
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    __resetVerifiedDigestsForTests()
+
+    await Bun.write(agentPath, 'SWAPPED-IN-AGENT-BYTES')
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBe(sha('SWAPPED-IN-AGENT-BYTES'))
+    expect(running.agent_path).toBe(agentPath)
+    // The CLI was not touched: the baked digest is still the truth.
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+  })
+
+  test('a baked digest whose file is gone cannot prove anything', async () => {
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    await rm(agentPath)
+
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBeNull()
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
   })
 
   test('a missing baked asset fails the image build instead of shipping a lie', async () => {

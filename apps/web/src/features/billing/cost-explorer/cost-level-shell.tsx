@@ -68,7 +68,7 @@ export function CostLevelShell({
       <CostSummaryTiles summary={summary} isLoading={isSummaryLoading} extraTiles={extraTiles} />
 
       {showChart !== false ? (
-        <CostChart series={summary?.series ?? []} isLoading={isSummaryLoading} />
+        <CostChart series={summary?.series ?? []} isLoading={isSummaryLoading || !summary} />
       ) : null}
 
       <CostModelList models={summary?.models ?? []} />

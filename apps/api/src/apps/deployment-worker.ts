@@ -26,6 +26,7 @@ import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
+import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
 
 export const APP_RUNTIME_VERSION =
   process.env.KORTIX_APP_RUNTIME_VERSION
@@ -434,7 +435,7 @@ export async function driveAppDeployment(
       throw error;
     }
 
-    const snapshotName = `kortix-app-${claimed.deploymentId.replaceAll('-', '')}`;
+    const snapshotName = appDeploymentSnapshotName(claimed.deploymentId);
     await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
       sourceKind: normalized.sourceKind,
       runtimeSpec: normalized.runtimeSpec,
@@ -464,6 +465,14 @@ export async function driveAppDeployment(
       },
     });
     await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
+
+    // A build takes minutes; the App can be deleted meanwhile. Never start a
+    // runtime (and its compute meter) for a deleted App. Its image is
+    // reclaimed by project maintenance (`reclaimAppDeploymentImages`).
+    const [stillLive] = await db.select({ appId: apps.appId }).from(apps)
+      .where(and(eq(apps.appId, context.app.appId), isNull(apps.deletedAt)))
+      .limit(1);
+    if (!stillLive) throw new PermanentAppDeploymentError('App was deleted during the build', 'not_found');
 
     await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning');
     const [existingRuntime] = await db

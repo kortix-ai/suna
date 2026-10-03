@@ -3,7 +3,7 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
@@ -65,6 +65,8 @@ import {
   listConnectors,
   listPipedreamApps,
   listProjectAccess,
+  getSessionParticipants,
+  getSessionMessageAuthors,
   listProjectBranches,
   listProjectFiles,
   listProjectPolicies,
@@ -107,7 +109,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { useOpenCodeProviders } from '@/lib/opencode/hooks/use-opencode-data';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -141,6 +143,12 @@ export const projectKeys = {
   sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
     ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
+  /** Under `projectSessions`, so a sharing save (which invalidates that key) refetches it. */
+  sessionParticipants: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'participants', sessionId] as const,
+  /** Who wrote each message; under `projectSessions` like `sessionParticipants`. */
+  sessionMessageAuthors: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'message-authors', sessionId] as const,
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
@@ -392,6 +400,59 @@ export function useProjectAccess(projectId: string | null) {
   });
 }
 
+/**
+ * Who can open a session. Mirrors the SDK's `useSessionParticipants`
+ * (`@kortix/sdk/react`, which mobile does not import).
+ */
+export function useSessionParticipants(projectId: string | null | undefined, sessionId: string | null | undefined) {
+  return useQuery({
+    queryKey: projectKeys.sessionParticipants(projectId, sessionId),
+    queryFn: () => getSessionParticipants(projectId!, sessionId!),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 30_000,
+  });
+}
+
+/** When to ask again for an author that is not recorded yet: 2 s, 5 s, 12 s. */
+const AUTHOR_RETRY_DELAYS_MS = [2000, 5000, 12000];
+
+/**
+ * Who wrote each message of a session (`GET .../message-authors`). The ledger
+ * records a delivered prompt's id a moment after the runtime shows it, and a
+ * prompt someone else just queued is newer than the cached answer. So while
+ * any of `wantedMessageIds` (the transcript's user messages and the queued
+ * prompts) has no author, it asks again on `AUTHOR_RETRY_DELAYS_MS`, per set
+ * of missing ids. A message that never gets an author (a slash command) stops
+ * after the last delay.
+ */
+export function useSessionMessageAuthors(
+  projectId: string | null | undefined,
+  sessionId: string | null | undefined,
+  wantedMessageIds: readonly string[] = [],
+) {
+  const query = useQuery({
+    queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
+    queryFn: () => getSessionMessageAuthors(projectId!, sessionId!),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 30_000,
+  });
+  const { data, refetch } = query;
+  const missing = data ? wantedMessageIds.filter((id) => id && !data.authors[id]).sort().join(',') : '';
+  const attempts = useRef<{ key: string; count: number }>({ key: '', count: 0 });
+  useEffect(() => {
+    if (!missing) return;
+    if (attempts.current.key !== missing) attempts.current = { key: missing, count: 0 };
+    const delay = AUTHOR_RETRY_DELAYS_MS[attempts.current.count];
+    if (delay === undefined) return;
+    const timer = setTimeout(() => {
+      attempts.current.count += 1;
+      void refetch();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [missing, data, refetch]);
+  return query;
+}
+
 // ── Members (web parity: customize/sections/members-view) ─────────────────────
 
 export function usePendingProjectInvites(projectId: string | null, enabled: boolean) {
@@ -514,6 +575,20 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
 }
 
 /**
+ * `query` plus `sessions`. A spread (`{ ...query, sessions }`) reads every
+ * field of TanStack's tracked result, which turns off its tracked-field
+ * renders: the consumer then re-rendered on every fetch start and end
+ * (`isFetching`), also when it never reads it (`useReviewItems` documents
+ * the same bug). The proxy passes each read through, so only the fields a
+ * consumer reads subscribe it.
+ */
+function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T & { sessions: ProjectSession[] } {
+  return new Proxy(query, {
+    get: (target, key) => (key === 'sessions' ? sessions : Reflect.get(target, key)),
+  }) as T & { sessions: ProjectSession[] };
+}
+
+/**
  * A project's sessions a page at a time, newest activity first — the list the
  * project drawer and the Sessions page scroll. `useProjectSessions` above is
  * one page (the first 50): it serves lookups, not browsing.
@@ -548,7 +623,7 @@ export function useProjectSessionsPaged(
     },
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return { ...query, sessions };
+  return withSessions(query, sessions);
 }
 
 /** Rows a parent shows per "Show more". */
@@ -578,7 +653,7 @@ export function useSessionChildren(
     staleTime: 10_000,
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return { ...query, sessions };
+  return withSessions(query, sessions);
 }
 
 export function useCreateProjectSession(projectId: string | null) {
@@ -762,7 +837,7 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
 }
 
 /** Gateway model catalog for a trigger's "Model" override picker (web parity:
- *  useOpenCodeProviders() + flattenModels() in gateway mode). Sandbox-free —
+ *  useRuntimeProviders() + flattenModels() in gateway mode). Sandbox-free —
  *  reads the project's server-side catalog directly. `gatewayDisabled` is
  *  true when the project hasn't turned the LLM gateway on; treat that as "no
  *  override available" rather than an error. */
@@ -786,7 +861,7 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
 
 /** The native-mode picker sources that need no sandbox: the runtime catalog
  *  and the project's secret NAMES. `project.secret.read` is manager-tier, so a
- *  member's read 403s: that is "no keys visible" (web: `useOpenCodeProviders`). */
+ *  member's read 403s: that is "no keys visible" (web: `useRuntimeProviders`). */
 async function fetchNativeModelCatalog(projectId: string) {
   const [llmCatalogProviders, secrets] = await Promise.all([
     getProjectLlmCatalogProviders(projectId),
@@ -801,13 +876,14 @@ async function fetchNativeModelCatalog(projectId: string) {
  * (`pickerProviderList` → `flattenModels`):
  * - LLM gateway on (`/detail` `experimental.llm_gateway`): `/model-picker`;
  * - gateway off: `/llm-catalog/providers` and the project's secret names,
- *   merged with the thread sandbox's `/provider` list once it answers.
+ *   merged with the bound session runtime's provider list once it answers
+ *   (`useRuntimeProviders`, which reads the project from `KortixProjectProvider`).
  * `modelDefaults` (`/model-defaults`) exists only with the gateway on; the
  * route answers 404 `llm_gateway_disabled` otherwise.
  * `isLoading`: the project mode, the list, or the default is not known yet.
  * Consumers hide the chip instead of flashing a wrong list.
  */
-export function useComposerModels(projectId: string | null, sandboxUrl?: string) {
+export function useComposerModels(projectId: string | null) {
   const detail = useProjectDetail(projectId);
   const modeKnown = !projectId || detail.isSuccess;
   const gatewayEnabled = detail.data?.project?.experimental?.llm_gateway === true;
@@ -828,7 +904,9 @@ export function useComposerModels(projectId: string | null, sandboxUrl?: string)
     staleTime: 60_000,
     retry: false,
   });
-  const runtime = useOpenCodeProviders(modeKnown && !gatewayEnabled ? sandboxUrl : undefined);
+  // The SDK's provider list for this project. Gateway on: it reads no runtime.
+  // Gateway off: the catalog merged with the runtime's own list.
+  const runtime = useRuntimeProviders();
   const defaults = useQuery({
     queryKey: projectKeys.modelDefaults(projectId),
     queryFn: () => getModelDefaults(projectId!),
@@ -844,7 +922,7 @@ export function useComposerModels(projectId: string | null, sandboxUrl?: string)
       modelPicker: picker.data,
       llmCatalogProviders: nativeData?.llmCatalogProviders,
       secretNames: new Set(nativeData?.secretNames ?? []),
-      runtimeProviders: runtime.data,
+      runtimeProviders: gatewayEnabled ? undefined : runtime.data,
     }),
     [gatewayEnabled, picker.data, nativeData, runtime.data],
   );

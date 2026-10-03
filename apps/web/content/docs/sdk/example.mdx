@@ -11,7 +11,6 @@ and needs no build step beyond TypeScript. Use
 
 ```ts
 import { ApiError, classifyTurn, createKortix, narrowChatEvent } from '@kortix/sdk';
-import type { MessageWithParts } from '@kortix/sdk';
 
 async function main() {
   // 1. One client, one auth seam. getToken returns your API key
@@ -72,10 +71,8 @@ async function main() {
   // 8. Render the transcript. classifyTurn() turns the wire part variants
   //    into one union, so a renderer can switch on part.kind and
   //    TypeScript proves no case is missed.
-  const result = await session.runtime.session.messages({
-    sessionID: runtimeSessionId,
-  });
-  for (const message of (result.data ?? []) as MessageWithParts[]) {
+  const { messages } = await session.messages();
+  for (const message of messages) {
     for (const part of classifyTurn(message).parts) {
       if (part.kind === 'text') console.log(`\n[${message.info.role}] ${part.text}`);
     }

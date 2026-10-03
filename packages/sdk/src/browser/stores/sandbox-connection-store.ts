@@ -141,6 +141,23 @@ export function setRuntimeCapabilities(capabilities: readonly string[] | null) {
 	if (!same) useSandboxConnectionStore.setState({ runtimeCapabilities: capabilities });
 }
 
+/**
+ * `/start` answered `ready`: the API reached the daemon, so the runtime is
+ * proven healthy server-side. Claim it, seed connected + healthy, and record
+ * what it serves when the answer lists it (`SessionStartResult.capabilities`).
+ * Without the list the capabilities stay unknown until the health probe
+ * answers, and every capability is assumed until then.
+ */
+export function seedConnectionFromReadyStart(
+	serverUrl: string,
+	capabilities?: readonly string[] | null,
+) {
+	resetForServerSwitch(serverUrl);
+	setSandboxStatus("connected");
+	setRuntimeHealth(true);
+	if (capabilities) setRuntimeCapabilities(capabilities);
+}
+
 export function requestRuntimeReconnect() {
 	useSandboxConnectionStore.setState((state) => ({
 		// A manual retry is a fresh look: whatever we concluded about the box

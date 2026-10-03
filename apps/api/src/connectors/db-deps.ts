@@ -25,11 +25,13 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
+import { slackUserNames } from '../channels/slack/labels';
 import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsInstall,
@@ -51,7 +53,10 @@ import {
   type ConnectorConnectOwner,
 } from '../projects/lib/connection-access';
 import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
-import { getProjectSecretValueForConsumer } from '../projects/secrets';
+import {
+  getProjectSecretConsumerConfigurationStatus,
+  getProjectSecretValueForConsumer,
+} from '../projects/secrets';
 import {
   canonicalConnectorAlias,
   listEntitledConnectorConnections,
@@ -94,6 +99,7 @@ import {
 } from './connection-identity';
 import type { ConnectorAuth } from './call';
 import { connectorEgressFetch } from './egress';
+import { CredentialNotSharedError } from './gateway';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import {
   type ConnectorDraft,
@@ -734,7 +740,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           : null;
       if (storedCredential !== null) return storedCredential;
       if (!connector.authSecret) return null;
-      return getProjectSecretValueForConsumer({
+      const value = await getProjectSecretValueForConsumer({
         projectId: principal.projectId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
@@ -742,11 +748,29 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         name: connector.authSecret,
         consumer: 'connector',
       });
+      if (value !== null) return value;
+      // A configured secret that resolved to nothing for this caller is one
+      // narrowed to an audience they are outside of.
+      const status = await getProjectSecretConsumerConfigurationStatus({
+        projectId: principal.projectId,
+        name: connector.authSecret,
+        consumer: 'connector',
+      });
+      if (status === 'configured') throw new CredentialNotSharedError(connector.authSecret);
+      return null;
     },
     // Session metadata is user-writable, so it is not a trusted routing source
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
     bindSlackThread: (input) => bindSlackThreadToSession(input),
+    // ponytail: 25 distinct authors per read; a longer thread keeps ids past it.
+    nameSlackUsers: async ({ projectId, token, userIds }) =>
+      slackUserNames(
+        token,
+        (await loadSlackTeamIdForProject(projectId).catch(() => null)) ?? `project:${projectId}`,
+        userIds,
+        25,
+      ),
     gateChannelRead: (input) => gateChannelRead(input),
     gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,

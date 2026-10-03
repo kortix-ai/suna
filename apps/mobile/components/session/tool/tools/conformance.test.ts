@@ -109,8 +109,12 @@ export function webRegisteredNames(): string[] {
 
 // ─── Child probe: import the mobile registry with native modules stubbed ─────
 
-/** Pure-JS packages the renderer graph loads for real. */
-const REAL_PACKAGES = /^(react|react\/.+|zustand|zustand\/.+|@kortix\/sdk|@kortix\/sdk\/.+|@kortix\/shared\/tools|class-variance-authority|clsx|tailwind-merge)$/;
+/**
+ * Pure-JS packages the renderer graph loads for real. `@tanstack/react-query`
+ * with them: `@kortix/sdk/react` (real) imports names from it that no mobile
+ * file names, so a stub built from the mobile imports would miss them.
+ */
+const REAL_PACKAGES = /^(react|react\/.+|zustand|zustand\/.+|@tanstack\/react-query|@kortix\/sdk|@kortix\/sdk\/.+|@kortix\/shared\/tools|class-variance-authority|clsx|tailwind-merge)$/;
 const CODE_FILE = /\.(tsx?|jsx?|mjs|cjs)$/;
 const IMPORT_RE =
   /\b(?:import|export)\s+(?:type\s+)?([\w*{}\s,$]*?)\s*from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)|\bimport\s+['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g;

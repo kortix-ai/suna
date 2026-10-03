@@ -22,6 +22,7 @@ import {
   transitionSandbox,
   transitionSession,
 } from '../../projects/session-lifecycle/status-transitions';
+import { signalSessionRuntimeActive } from '../../projects/session-lifecycle/runtime-active-signal';
 import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -356,8 +357,12 @@ export async function provisionSessionSandbox(opts: {
    * Extra env vars injected into the sandbox at provider create-time. These
    * land in the Daytona snapshot's environment so its boot script can read
    * them (e.g. `KORTIX_PROJECT_REPO_URL`, `KORTIX_PROJECT_BRANCH`).
+   *
+   * A promise is awaited only where the provider input is built, so the env
+   * build overlaps the image check, the row insert and the token mint. None of
+   * the three reads it.
    */
-  extraEnvVars?: Record<string, string>;
+  extraEnvVars?: Record<string, string> | Promise<Record<string, string>>;
   /**
    * Project + ref the session boots against. The boot path resolves the
    * commit SHA for `baseRef` and asks the snapshot builder for the matching
@@ -392,6 +397,10 @@ export async function provisionSessionSandbox(opts: {
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
   // `let`, not `const`: provider failover (one-shot, admin-gated) reassigns
   // these in the provision loop's catch when the primary fails at birth.
+  // Observed here so an env build that fails early is not an unhandled
+  // rejection before the await below.
+  const extraEnvRead = Promise.resolve(opts.extraEnvVars ?? {});
+  extraEnvRead.catch(() => undefined);
   let providerName = opts.provider || (await selectProvider());
   let provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
@@ -449,7 +458,11 @@ export async function provisionSessionSandbox(opts: {
   // path.
   let firstImagePromise: Promise<FirstImage> | null = (async () => {
     const gitProject = await resolveGitProject();
+    // Parallel branch: note() keeps the main path's deltas truthful. These two
+    // marks split what used to show up as one opaque `image-cached` wait.
+    tl.note('image:git-project');
     const image = await resolveImage(gitProject, providerName);
+    tl.note('image:resolved');
     return { ...image, gitProject };
   })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
@@ -563,6 +576,12 @@ export async function provisionSessionSandbox(opts: {
   // booted free accounts without the gateway; OpenCode recovered on the first
   // prompt's env-sync, but pi has no native path and never started.
 
+  const extraEnvVars = await extraEnvRead.catch(async (error) => {
+    // The row exists and no box ever will: close it. The caller fails the session.
+    await transitionSandbox('failProvisioning', sandbox.sandboxId).catch(() => null);
+    throw error;
+  });
+
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
     userId,
@@ -575,7 +594,7 @@ export async function provisionSessionSandbox(opts: {
     serverType,
     location,
     envVars: {
-      ...(opts.extraEnvVars ?? {}),
+      ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
       // executor and Git credentials stay server-side. The route being called
       // determines what this token may do.
@@ -649,6 +668,7 @@ export async function provisionSessionSandbox(opts: {
       // one mechanism serves daytona, e2b and platinum alike: the guest gets a HANDLE
       // and the broker route substitutes the real value server-side.
       await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+      tl.note('network-boundary');
 
       // Stateless image resolution: ask Daytona if it has the image; build if not.
       // No DB lookup, no degraded fallback — the snapshot is either there or we
@@ -996,6 +1016,8 @@ export async function provisionSessionSandbox(opts: {
       }).catch(() => {});
 
       tl.mark('row-active');
+      // A first prompt waiting for this box re-opens the session now.
+      signalSessionRuntimeActive(sandbox.sandboxId);
       tl.log({ provider: providerName, attempts });
 
       const okTl = tl.summary();

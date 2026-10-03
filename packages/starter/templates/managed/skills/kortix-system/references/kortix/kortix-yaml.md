@@ -9,8 +9,8 @@ The platform parser is permissive: it never throws on a bad entry.
 Instead, bad triggers go into an `errors` list returned alongside the
 good ones, so a single typo doesn't break the whole file.
 
-This page documents `kortix_version: 2`, which uses OpenCode REST and a
-governance-only `agents:` name-to-block map.
+This page documents `kortix_version: 2`: a governance-only `agents:`
+name-to-block map, and a session harness (`runtime:`), OpenCode or pi.
 
 The authoritative structural spec is the public JSON Schema:
 `https://kortix.com/schema/kortix.v2.schema.json`, or
@@ -59,6 +59,9 @@ sandbox:
       name: ML
       dockerfile: Dockerfile.ml
 
+# The harness a session boots: "opencode" (the default) or "pi".
+runtime: opencode
+
 # Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
 # Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
 # when omitted. The agent daemon launches opencode with
@@ -66,6 +69,17 @@ sandbox:
 # Kortix-side launchability and grants live in the `agents:` map below.
 opencode:
   config_dir: harnesses/opencode
+
+# Files only pi reads: extensions/, prompts/, skills/, settings.json.
+# Defaults to "harnesses/pi", then the legacy ".kortix/pi", when omitted.
+pi:
+  config_dir: harnesses/pi
+
+# pi packages (https://pi.dev/packages) every pi session of the project loads.
+harnesses:
+  pi:
+    packages:
+      - npm:pi-web-access@0.30.0
 
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
@@ -131,8 +145,8 @@ agents:
 ## `agents:` in version 2
 
 Per-agent **governance overlay**. Agent behavior (prompt, mode, model,
-tools, permissions) stays in the agent's `.md` frontmatter and body;
-OpenCode-only settings stay in `opencode.jsonc`. The manifest's `agents:`
+tools, permissions) stays in the agent's `.md` frontmatter and body, which
+both harnesses read; OpenCode-only settings stay in `opencode.jsonc`. The manifest's `agents:`
 map declares which agents Kortix should treat as platform-launchable and
 what server-side authority each one receives. Keyed by the agent's name.
 `file` names the agent's `.md`. Without `file`, Kortix reads
@@ -188,11 +202,11 @@ permission) − the HUMAN_ONLY set. The launcher's role is not an input; the
 launcher only needs "may run this agent".
 
 **Discovery direction:** declaring `agents:` is server-side, declarative
-agent discovery — it is not a rule that every native OpenCode agent file
+agent discovery — it is not a rule that every agent file
 must be registered. Unregistered files can exist for local experiments
 or runtime internals. Kortix product UI (chat input, triggers, channels)
 fetches the server-side registered agent list rather than querying
-sandbox OpenCode directly. Model pickers similarly come from the
+the sandbox runtime directly. Model pickers similarly come from the
 server/LLM-gateway catalog rather than a sandbox-local provider list.
 
 ## `connectors:`
@@ -346,7 +360,7 @@ self-describing at a glance.
 | ---------------------- | ------------------------------------------------------------------- |
 | Trigger sweep          | `triggers:`                                                          |
 | Sandbox builder        | `sandbox:`                                                           |
-| Sandbox runtime        | v2 `opencode:`                                                   |
+| Sandbox runtime        | v2 `runtime:`, `opencode:`, `pi:`, `harnesses:`                      |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
 | Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/apps/kortix_permissions scope) |
@@ -501,6 +515,69 @@ skills in `skills/`.
 providers, model/provider settings, permissions, and default runtime behavior.
 Do not duplicate those details in `kortix.yaml`; use `agents:` only for the
 Kortix-side decision of which agents are launchable/authorized by the platform.
+
+## `runtime:` in version 2
+
+The harness a session boots inside its sandbox. **Optional.** Root-only.
+
+| Value | Harness |
+| --- | --- |
+| `opencode` (default) | OpenCode, as a process the sandbox daemon starts. |
+| `pi` | pi, inside the sandbox daemon process. |
+
+Kortix reads the key when a session starts, restarts or resumes, in this
+order: the project's `llm_gateway` flag off → OpenCode; the project's
+`pi_harness` flag on → pi; `runtime: pi` → pi; anything else → OpenCode. pi
+calls models only through the LLM gateway. Any other value fails
+`kortix validate`. `../pi/overview.md` lists what pi supports.
+
+## `pi:` in version 2
+
+Where the pi config lives. **Optional**, with a default.
+
+| Key          | Default                         | Notes |
+| ------------ | ------------------------------- | ----- |
+| `config_dir` | `harnesses/pi`, then `.kortix/pi` | Repo-relative dir. An absolute path or a `..` segment is ignored. |
+
+pi reads `extensions/`, `prompts/`, `skills/` and `settings.json` from that
+folder (`../pi/overview.md`). An OpenCode session does not read it.
+
+## `harnesses:` in version 2
+
+Per-harness packages. **Optional.**
+
+```yaml
+harnesses:
+  pi:
+    packages:
+      - npm:pi-web-access@0.30.0            # the pi.dev install line, with an exact version
+      - source: npm:pi-mcp-adapter@2.36.0
+        extensions: ["extensions/*.ts"]     # load only these files of the package
+        skills: []                          # load none of its skills
+      - ./harnesses/pi/audit.ts             # an extension file in this repository
+agents:
+  researcher:
+    harnesses:
+      pi:
+        packages: [npm:@juicesharp/rpiv-todo@2.11.0]   # this agent only
+  reviewer:
+    harnesses:
+      pi:
+        exclude: [pi-web-access]                       # this agent does not load it
+```
+
+| Key | Where | Notes |
+| --- | --- | --- |
+| `harnesses.pi.packages` | top level | pi packages every pi session loads. At most 20 entries. |
+| `agents.<name>.harnesses.pi.packages` | agent | Packages for this agent, added to the top-level list. An entry for a package the top level also lists replaces it for this agent. |
+| `agents.<name>.harnesses.pi.exclude` | agent | Top-level packages this agent does not load: a package name (`pi-web-access`, `@scope/name`) or a `./` path as the top level writes it. Never a version. |
+| `harnesses.opencode.plugins` | top level and agent | File names in the OpenCode `plugins/` directory an agent loads. An agent drops one with `exclude`. With no selection, OpenCode discovers every plugin. |
+
+A `packages` entry is `npm:<name>@<x.y.z>` (an exact version), a `./<path>`
+in this repository, or `{ source, extensions, skills, prompts, themes }` with
+pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
+version range, a missing version or a Git source fails validation. Kortix
+builds each distinct package list once, when the change request merges.
 
 ## `triggers:`
 

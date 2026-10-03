@@ -5,7 +5,7 @@
  * - body: file content → `ToolCodeCard` highlighted by extension; directory
  *   entries → a result card (`space-y-0.5 px-2 py-1.5`, `Folder` / `File`
  *   `size-3 text-muted-foreground/40`, mono `text-xs text-muted-foreground/80`);
- *   stale pending → "Waiting for file content..." shimmer; an error output →
+ *   stale pending → "Waiting for file content..." as still text; an error output →
  *   `ToolOutputFallback`;
  * - under the row (inline surface): the instruction files the read loaded,
  *   `mt-1 space-y-0.5 pl-2`, a success-toned `+` and the display path in mono
@@ -14,8 +14,7 @@
 
 import { useContext, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
-import { getFilename, isErrorOutput, parseReadOutput } from '@kortix/sdk';
-import { TextShimmer } from '@/components/kortix/text-shimmer';
+import { inputPath, getFilename, isErrorOutput, parseReadOutput } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { FileIcon, FolderIcon, ReadCvLogoIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -51,7 +50,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const metadata = partMetadata(part);
   const output = partOutput(part);
   const status = partStatus(part);
-  const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
+  const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
 
@@ -101,7 +100,10 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           </ToolResultCard>
         ) : kind === 'stale' ? (
           <ToolResultCard bodyStyle={{ paddingHorizontal: webSpace(2), paddingVertical: webSpace(1.5) }}>
-            <TextShimmer style={TURN_TYPE.xs}>{SEARCH_TEXT.waitingForFileContent}</TextShimmer>
+            {/* A stale part is DONE waiting — the run it belonged to is over. */}
+            <Text variant="muted" style={[TURN_TYPE.xs, { color: palette.muted60 }]}>
+              {SEARCH_TEXT.waitingForFileContent}
+            </Text>
           </ToolResultCard>
         ) : kind === 'error' ? (
           <ToolOutputFallback output={output} toolName="read" />

@@ -8,7 +8,8 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 
-import { dispatch, type PermissionRequest } from '@/harness/open-code/events'
+import type { RuntimePermissionRequest as PermissionRequest } from '@kortix/api-contract/transcript'
+import { dispatch } from '@/harness/open-code/events'
 import { relayPermission } from '@/harness/shared/turn-relay'
 
 type Recorded = { method: string; path: string; auth: string | null; body: any }

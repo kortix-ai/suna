@@ -28,7 +28,12 @@ import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '
 import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
-import { createConnectionsRouter } from './routes/connections';
+import {
+  createConnectionsRouter,
+  retireStaleUnidentifiedRegistrations,
+  retireSupersededRegistrations,
+  UNIDENTIFIED_RETENTION_DAYS,
+} from './routes/connections';
 import { createRpcRouter } from './routes/rpc';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
@@ -384,6 +389,14 @@ function startTunnelService(): void {
         })
         .where(eq(tunnelConnections.tunnelId, tunnelId));
 
+      // The first heartbeat that names the hardware supersedes the owner's
+      // offline registrations of the same machine (one machine, one entry).
+      const machineId = typeof reported.machineId === 'string' ? reported.machineId : '';
+      const knownId = (connection.machineInfo as Record<string, unknown> | null)?.machineId;
+      if (/^[a-f0-9]{64}$/.test(machineId) && knownId !== machineId) {
+        await retireSupersededRegistrations(tunnelId, machineId);
+      }
+
       if (
         previousCapabilities.length !== capabilities.length ||
         capabilities.some((capability) => !previousCapabilities.includes(capability))
@@ -424,6 +437,13 @@ function startTunnelService(): void {
   cleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', async () => {
     try {
       tunnelRateLimiter.cleanup();
+
+      const retired = await retireStaleUnidentifiedRegistrations();
+      if (retired.length > 0) {
+        console.log(
+          `[tunnel-cleanup] removed ${retired.length} registration(s) without a hardware id, silent ${UNIDENTIFIED_RETENTION_DAYS}+ days`,
+        );
+      }
 
       // Expire pending device auth requests
       await db

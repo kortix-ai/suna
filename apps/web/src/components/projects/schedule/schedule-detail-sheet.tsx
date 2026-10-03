@@ -73,6 +73,7 @@ import {
   PlayIcon,
   TimerIcon,
   TrashIcon,
+  WarningCircleIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -152,6 +153,7 @@ export function ScheduleDetailSheet({
   onMutated: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tTriggers = useI18nTranslations('triggers');
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger!.slug, { enabled }),
     onSuccess: (_data, enabled) => {
@@ -298,6 +300,17 @@ export function ScheduleDetailSheet({
             `getComputedStyle(sheetBodyEl).flexGrow === '0'` and
             `.overflowY === 'visible'` before touching this again. */}
         <SheetBody className="flex-none items-stretch gap-0 space-y-4 !overflow-visible px-4 pt-0 pb-8">
+          {trigger.last_status === 'failed' ? (
+            <InfoBanner
+              tone="destructive"
+              icon={WarningCircleIcon}
+              title={tTriggers('runFailed.label')}
+              className="text-xs"
+            >
+              {trigger.last_error ? `${trigger.last_error} ` : ''}
+              {tTriggers('runFailed.nextRun')}
+            </InfoBanner>
+          ) : null}
           <WhatItDoesPanel
             projectId={projectId}
             trigger={trigger}

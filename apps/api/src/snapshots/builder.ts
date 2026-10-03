@@ -154,10 +154,19 @@ export async function ensureSandboxImage(
      * row's provider for non-session callers (pre-build/manual/background).
      */
     provider?: string;
+    /**
+     * False: make the provider hold this exact identity and change nothing
+     * else. The template row is not repointed, so `recordTemplateBuilt` does
+     * not reap the snapshot the row pointed at, and no predecessor is pruned.
+     * The Dev release gate builds the next image with this while the current
+     * API version still serves the current one. Default true.
+     */
+    publish?: boolean;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
   const template = await resolveTemplateBySlug(project, opts.slug);
   const buildProvider = opts.provider ?? template.provider;
+  const publish = opts.publish ?? true;
 
   const provider = getSandboxProvider(buildProvider);
   if (!provider.isConfigured()) {
@@ -193,7 +202,7 @@ export async function ensureSandboxImage(
   // count, and we rebuild on this provider.)
   let state = await provider.getSnapshotState(identity.snapshotName);
   if (state === 'active') {
-    await recordTemplateBuilt(template.templateId, {
+    if (publish) await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
@@ -261,7 +270,7 @@ export async function ensureSandboxImage(
   if (state === 'building') {
     state = await waitForProviderBuild(provider, identity.snapshotName);
     if (state === 'active') {
-      await recordTemplateBuilt(template.templateId, {
+      if (publish) await recordTemplateBuilt(template.templateId, {
         snapshotName: identity.snapshotName,
         contentHash: identity.contentHash,
         builtFromCommit: identity.builtFromCommit,
@@ -303,7 +312,9 @@ export async function ensureSandboxImage(
   // recorded provider while a session — or a failover — needs it on a DIFFERENT
   // provider). Keying on the name alone would dedupe the session onto the wrong
   // provider's build and, when that one fails, fail the session with it.
-  const buildKey = `${buildProvider}:${identity.snapshotName}`;
+  // An unpublished build must never satisfy a caller that expects the row to
+  // be published, so publication is part of the key too.
+  const buildKey = `${buildProvider}:${identity.snapshotName}${publish ? '' : ':unpublished'}`;
   const existing = inflightBuilds.get(buildKey);
   if (existing) return existing;
 
@@ -312,6 +323,7 @@ export async function ensureSandboxImage(
     accountId: opts.accountId,
     source: opts.source ?? 'session-start',
     buildProvider,
+    publish,
   }).finally(() => inflightBuilds.delete(buildKey));
   inflightBuilds.set(buildKey, buildPromise);
   return buildPromise;
@@ -325,7 +337,7 @@ async function runInlineBuild(
   project: GitBackedProject,
   template: ResolvedTemplate,
   identity: TemplateIdentity,
-  opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource; buildProvider?: string },
+  opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource; buildProvider?: string; publish: boolean },
 ): Promise<EnsureSandboxImageResult> {
   const provider = getSandboxProvider(opts.buildProvider ?? template.provider);
 
@@ -378,6 +390,16 @@ async function runInlineBuild(
       // answered). A cold boot avoids that entirely.
     });
     if (buildId) await closeBuildLogReady(buildId);
+    if (!opts.publish) {
+      return {
+        snapshotName: identity.snapshotName,
+        slug: template.slug,
+        contentHash: identity.contentHash,
+        built: true,
+        isDefault: !!template.isShared,
+        spec: templateImageSpec(template),
+      };
+    }
     await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
       contentHash: identity.contentHash,
@@ -422,7 +444,9 @@ async function runInlineBuild(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (buildId) await closeBuildLogFailed(buildId, message);
-    await recordTemplateFailed(template.templateId, message);
+    // An unpublished build leaves the row as the serving version wrote it: an
+    // `error` state would take its trust-the-row fast path away.
+    if (opts.publish) await recordTemplateFailed(template.templateId, message);
     throw new SnapshotBuildError(message, err);
   }
 }
@@ -492,13 +516,25 @@ const PLATFORM_PROJECT_SHELL: GitBackedProject = {
 };
 
 async function ensurePlatformDefaultImage(
-  opts: { source?: SnapshotBuildSource; provider: string },
+  opts: { source?: SnapshotBuildSource; provider: string; publish?: boolean },
 ): Promise<EnsureSandboxImageResult> {
   return ensureSandboxImage(PLATFORM_PROJECT_SHELL, {
     slug: DEFAULT_SANDBOX_SLUG,
     source: opts.source ?? 'startup',
     provider: opts.provider,
+    publish: opts.publish,
   });
+}
+
+/**
+ * Release gate: build the platform default image THIS code version computes on
+ * `provider`, before that version serves traffic. Unpublished: the API version
+ * still serving keeps its row, its snapshot and its trust-the-row fast path.
+ * The new version's first session (or its leader's startup pre-build) finds
+ * the image active and publishes it, exactly as after its own build today.
+ */
+export function buildPlatformDefaultImageForRelease(provider: string): Promise<EnsureSandboxImageResult> {
+  return ensurePlatformDefaultImage({ source: 'startup', provider, publish: false });
 }
 let startupPreBuildKicked = false;
 

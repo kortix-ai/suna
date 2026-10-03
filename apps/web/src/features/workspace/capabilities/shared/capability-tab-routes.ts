@@ -31,7 +31,7 @@
  * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
-  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'review' | 'config';
+  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'config';
   label: string;
 }
 
@@ -62,19 +62,20 @@ export interface CapabilityTab {
  * "Settings" tab, a sub-nav over General / Sandbox templates / Review /
  * Feature flags / Upgrades — was retired on 2026-09-02 (Jay). Its
  * configuration sections live in the Settings overlay's Workspace group
- * (`settings/rail.ts`, opened with Cmd+, or from the workspace switcher), and
- * Review — an inbox, not configuration — moved up onto this bar as its own
- * tab. `settings-tabs.ts` redirects every retired `/config?section=` link.
+ * (`settings/rail.ts`, opened with Cmd+, or from the workspace switcher).
+ * `settings-tabs.ts` redirects every retired `/config?section=` link.
  *
- * No tab is flag-gated. Review was until Review Center graduated out of the
- * flag system.
+ * Review is not a tab. It was one from 2026-09-02 until 2026-10-02, when it
+ * left Customize for its own full-height page (`reviewHref`): the inbox where
+ * a person approves what agents do is a primary surface, not configuration.
+ *
+ * No tab is flag-gated.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'triggers', label: 'Triggers' },
-  { key: 'review', label: 'Review' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
   { key: 'config', label: 'Settings' },
@@ -102,7 +103,6 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   skills: 'skills',
   connectors: 'connectors',
   triggers: 'triggers',
-  review: 'review',
   models: 'models',
   secrets: 'secrets',
   config: 'settings',
@@ -116,6 +116,14 @@ export function customizeHref(projectId: string): string {
 
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {
   return `${customizeHref(projectId)}/${CAPABILITY_SEGMENT[key]}`;
+}
+
+/**
+ * The Review Center: a project page of its own, outside Customize and its tab
+ * bar. `/projects/<id>/customize/review` redirects here.
+ */
+export function reviewHref(projectId: string): string {
+  return `/projects/${projectId}/review`;
 }
 
 /**

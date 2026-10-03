@@ -167,4 +167,10 @@ export interface QueuedContinueSessionPayload {
    *  `ContinueSessionCommand.bindTurnIdentity`. Absent on older rows, which
    *  keep the token's identity. */
   bindTurnIdentity?: boolean;
+  /** The Kortix session whose agent sent this prompt. Absent when a person
+   *  sent it. Set by the server from the caller's credential, never the body. */
+  authorSessionId?: string;
+  /** Deliver as OpenCode `noReply`: the message joins the transcript and no
+   *  turn starts. The first message of a conversation with people. */
+  noReply?: boolean;
 }

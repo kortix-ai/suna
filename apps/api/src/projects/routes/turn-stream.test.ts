@@ -115,8 +115,10 @@ mock.module('../../channels/teams/cards', () => ({
 }));
 
 const realTurnLedger = await import('../session-turn-ledger');
+const realTurnLifecycle = await import('../sandbox-turn-lifecycle');
 
 mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
   adoptRuntimeSandboxTurn: async () => adoptResult,
@@ -162,6 +164,15 @@ mock.module('../sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
 mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
+  },
+}));
+
+const triggerRunEnds: unknown[] = [];
+mock.module('../lib/trigger-run-outcome', () => ({
+  TRIGGER_REUSE_RETIRED_AT: 'trigger_reuse_retired_at',
+  recordTriggerRunEnd: async (end: unknown) => {
+    triggerRunEnds.push(end);
+    return 'failed';
   },
 }));
 
@@ -225,6 +236,7 @@ beforeEach(() => {
   adoptResult = 'adopted';
   causeResult = 'attached';
   order.length = 0;
+  triggerRunEnds.length = 0;
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -526,6 +538,46 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
         statusCode: 500,
         isRetryable: false,
         providerID: 'anthropic',
+      },
+    ]);
+  });
+
+  test('end forwards a valid error_code as the error code and drops an unknown one (W5 E11)', async () => {
+    await post({ session_id: SESSION_ID, kind: 'end', status: 'error', error_name: 'UnknownError', error_message: '402: pay', error_status: 402, error_code: 'credits' });
+    expect((relayEndArgs[2] as { code?: string }).code).toBe('credits');
+    relayEndArgs = [];
+    await post({ session_id: SESSION_ID, kind: 'end', status: 'error', error_name: 'UnknownError', error_message: 'x', error_code: 'bogus' });
+    expect((relayEndArgs[2] as { code?: string }).code).toBeUndefined();
+  });
+
+  // A trigger session's creator is a service account, so the turn-end push
+  // reaches nobody; the end is recorded on the trigger instead.
+  test('a turn end hands the run outcome to the trigger that created the session', async () => {
+    const metadata = { trigger_kind: 'git', trigger_slug: 'triage' };
+    sessionRow = session(metadata);
+    await post({
+      session_id: SESSION_ID,
+      kind: 'turn_end',
+      status: 'error',
+      error_name: 'APIError',
+      error_message: 'Payment Required: Insufficient credits.',
+    });
+    expect(triggerRunEnds).toEqual([
+      {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        sessionId: SESSION_ID,
+        metadata,
+        status: 'error',
+        error: {
+          name: 'APIError',
+          message: 'Payment Required: Insufficient credits.',
+          statusCode: undefined,
+          isRetryable: undefined,
+          providerID: undefined,
+        },
+        outcome: 'closed',
+        childSession: false,
       },
     ]);
   });

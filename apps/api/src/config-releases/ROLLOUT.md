@@ -1,10 +1,15 @@
 # Config releases: prod rollout
 
 Config releases make a session run the base branch's **current, built**
-OpenCode config, from a read-only release directory — never the session's own
-`/workspace` checkout. Full contract: `apps/api/src/config-releases/`,
-`apps/kortix-sandbox-agent-server/src/config-release/`,
-`apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`.
+config, from a read-only release directory — never the session's own
+`/workspace` checkout. A release is the OpenCode config dir, the root
+`skills/`, and the pi config dir as `pi/` (`builder.ts`, `composeReleaseTree`).
+Both session runtimes apply them: OpenCode swaps in a proven replacement
+process, pi reloads the release in place. Full contract:
+`apps/api/src/config-releases/`,
+`apps/kortix-sandbox-agent-server/src/services/config-release/`,
+`apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`,
+`apps/kortix-sandbox-agent-server/src/harness/pi/config-release.ts`.
 
 ## The lever
 
@@ -42,19 +47,20 @@ timeout). Keep the flag on internal projects only until CFG-12 is green.
    - `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT` is `0` (see "Retention").
    A missing bucket is a boot warning, not an error: every archive request
    then rebuilds from the Git mirror.
-2. **Enable one internal project.**
+2. **Enable one internal project per harness.**
    `PATCH /v1/projects/:projectId/features {feature:"config_releases",enabled:true}`
-   on a Kortix-internal project (not a customer's). Commit an
-   `.opencode`/agent config change to that project's base branch to trigger a
-   real build.
+   on a Kortix-internal OpenCode project and on one with `pi_harness` on (not a
+   customer's). Commit an agent or skill change to each project's base branch
+   to trigger a real build. The staging gate runs CFG-11/CFG-12 and their
+   `-pi` twins.
 3. **Watch that project, not the fleet.** Per session:
    - `GET /v1/projects/:projectId/sessions/:sessionId/config` — `release_id`,
      `desired_release_id`, `stale`. `stale: true` for longer than one
      reconnect/reload cycle means convergence did not run.
-   - The daemon's `/kortix/health` `config` block —
-     `outcome` (`applied` / `unchanged` / `declined` / `quarantined` /
-     `failed`), `proven`, `fallback_reason`, `source`
-     (`release` / `workspace` / `image-default`). `source: "workspace"` while
+   - The daemon's `/kortix/health` `config` block — `release_id`,
+     `desired_release_id`, `proven`, `fallback_reason`, `failed_release_id`,
+     `source` (`release` / `workspace` / `image-default`). The same block on
+     both harnesses; `harness.id` names the runtime. `source: "workspace"` while
      the flag is `enabled: true` is a bug — it should never happen once the
      flag is on.
    - API logs, prefix `[config-releases]`: `store put … failed` (archive write
@@ -87,11 +93,20 @@ unbootable.
 3. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
    directory — pre-release behavior.
 
+**The meta coordinator is the exception.** A session whose agent is `meta`
+(`meta_agent` flag) is never assigned the project's release. It gets the `meta`
+variant: the platform's own governance (`buildPlatformMetaOpenCodeConfig`) on
+the image default config dir, with no archive. Its release ID does not change
+when the base branch moves. Its box holds no project checkout and the meta
+image has no `bun`, so a config dir whose tools import a dependency can never
+load there. A failure a meta session reported never counts toward the project
+quarantine (`notFromMetaSession` in `quarantine.ts`).
+
 **Daemon side — where a box reads config from, per boot/converge:**
 1. The API's desired release, downloaded and verified against its manifest.
 2. The last release **this box** proved, if the desired release cannot be
-   verified or applied (a new OpenCode fails its proven check — the running
-   process is kept, nothing is torn down).
+   verified or applied (a new OpenCode fails its proven check, or pi refuses
+   the config — the running config is kept, nothing is torn down).
 3. The platform's image default, if this box has never proved any release.
 
 **Archive store side — cache, not source of truth:** a config archive miss or

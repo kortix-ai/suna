@@ -10,8 +10,8 @@ type State =
   | 'linked-no-access'
   | 'linked-pending';
 
-const workspaceId = process.env.SLACK_AUTH_WORKSPACE_ID || 'T07FUFNT3RV';
-const slackUserId = process.env.SLACK_AUTH_USER_ID || 'U07G2D722TY';
+const workspaceId = process.env.SLACK_AUTH_WORKSPACE_ID || '';
+const slackUserId = process.env.SLACK_AUTH_USER_ID || '';
 const accountId = process.env.SLACK_AUTH_FIXTURE_ACCOUNT_ID || '95788432-f5df-4ffe-af9e-0ed4e03cf96e';
 const projectId = process.env.SLACK_AUTH_FIXTURE_PROJECT_ID || 'b4a01f33-d46c-4a96-8a1d-0a265e48978f';
 const projectName = process.env.SLACK_AUTH_FIXTURE_PROJECT_NAME || 'Slack Auth No Access Project';
@@ -34,6 +34,8 @@ const sql = postgres(process.env.DATABASE_URL ?? '', { max: 1 });
 function needEnv() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
   if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required');
+  if (!workspaceId) throw new Error('SLACK_AUTH_WORKSPACE_ID is required (the Slack team id, T…)');
+  if (!slackUserId) throw new Error('SLACK_AUTH_USER_ID is required (your Slack user id, U…)');
 }
 
 async function ensureAuthUser(email: string): Promise<string> {
@@ -276,8 +278,8 @@ Usage:
   bun apps/api/scripts/slack-auth-fixtures.ts policy <channel_id> <project_open|owner_approval|owner_only>
   bun apps/api/scripts/slack-auth-fixtures.ts inventory
 
-Workspace: configured by SLACK_AUTH_WORKSPACE_ID or the fixture default
-Slack user: configured by SLACK_AUTH_USER_ID or the fixture default
+Workspace: SLACK_AUTH_WORKSPACE_ID (required)
+Slack user: SLACK_AUTH_USER_ID (required)
 Project: configured by SLACK_AUTH_FIXTURE_PROJECT_ID or the fixture default
 Fixture password: set by SLACK_AUTH_FIXTURE_PASSWORD or the local fixture default
 `);

@@ -38,11 +38,34 @@ import type { DesiredInvalidationTransport } from '../projects/lib/turn-start-co
 /** One channel, one event: "this project's base branch moved". */
 export const BASE_MOVE_CHANNEL = 'kortix_config_base_moved';
 
+/**
+ * A second channel on the SAME connection: "a tunnel RPC forward row changed"
+ * (`tunnel/core/cluster-forwarder.ts`). The payload is one id and nothing else:
+ * the target replica's instance id for a new row, the request id for a result.
+ * The writer sends it with `pg_notify` inside the statement that writes the
+ * row, on the request pool, so this module opens no connection for it.
+ */
+export const TUNNEL_FORWARD_CHANNEL = 'kortix_tunnel_rpc_forward';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
 let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
+let tunnelForwardHandler: ((payload: string) => void) | null = null;
+
+/** The forwarder registers once, at import. Kept across stop/start. */
+export function onTunnelForwardNotify(handler: (payload: string) => void): void {
+  tunnelForwardHandler = handler;
+}
+
+/**
+ * True once this process holds the LISTEN. False means no NOTIFY can arrive
+ * here, so a caller that waits on one must poll at its pre-NOTIFY rate.
+ */
+export function isPgBroadcastListening(): boolean {
+  return listener !== null;
+}
 
 /**
  * The transport the invalidation is wired to. Subscribing before
@@ -94,6 +117,14 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
     // postgres.js re-issues the LISTEN itself when the connection drops and
     // comes back, so a database restart does not need handling here.
     await sql.listen(BASE_MOVE_CHANNEL, deliver);
+    // `sql.listen` keeps one connection for every channel of this client.
+    await sql.listen(TUNNEL_FORWARD_CHANNEL, (payload) => {
+      try {
+        tunnelForwardHandler?.(payload);
+      } catch {
+        // A subscriber must not take the listener down.
+      }
+    });
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -101,7 +132,9 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       // is inside the write that moved the branch and must not wait.
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
-    console.log(`[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}`);
+    console.log(
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}`,
+    );
     return true;
   } catch (error) {
     // A transaction pooler multiplexes connections and cannot hold a LISTEN.

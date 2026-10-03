@@ -13,6 +13,7 @@ import {
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
   SSO_REQUIRED_MESSAGE,
+  authRateLimitCopy,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
 import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
@@ -20,6 +21,7 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, fetchAccountStateWithToken, submitAccessRequest } from '@kortix/sdk';
 import { getTranslations } from '@/i18n/get-translations';
+import type { UiTranslator } from '@/i18n/translator';
 import { cookies, headers } from 'next/headers';
 
 /**
@@ -29,6 +31,22 @@ import { cookies, headers } from 'next/headers';
  */
 async function readBouncedOwnerId(): Promise<string> {
   return parseAuthBounceOwner((await cookies()).get(AUTH_BOUNCE_COOKIE)?.value);
+}
+
+/**
+ * A GoTrue failure as the action result. Rate limits become human copy — a
+ * raw Supabase string is infrastructure text a visitor cannot act on — and the
+ * raw code stays in the server log only. Anything else keeps GoTrue's
+ * message, the pre-existing behavior.
+ */
+function authFailure(
+  error: { code?: string | null; message?: string | null },
+  fallback: string,
+  tI18nComplete: UiTranslator,
+) {
+  const human = authRateLimitCopy(error, tI18nComplete);
+  if (human) console.warn('[auth] rate limited', error.code);
+  return { message: human || error.message || fallback };
 }
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -137,7 +155,7 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
 }
 
 /**
- * Send the sign-in/sign-up email code — ONE action for both cases. GoTrue's
+ * Send the sign-in/sign-up email link — ONE action for both cases. GoTrue's
  * OTP with `shouldCreateUser: true` already treats new and existing addresses
  * identically, so the only gate is access control: a brand-new address while
  * signups are closed is turned away before any email goes out (previously the
@@ -177,9 +195,8 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   //  - an ATTRIBUTED bounce cannot be matched against a signer here, because no
   //    identity exists yet — the address has not been proven. Fail closed: a
   //    path bounced from a named session does not get minted into an email.
-  //    Nothing is lost in the common case; the same-browser code-entry path
-  //    (`verifyOtp`) still carries the full return URL from the form, and it
-  //    CAN compare identities.
+  //    The password path can compare identities after authentication; the
+  //    link must drop an attributed bounce before it leaves the browser.
   const returnUrl = shouldDemoteReturnUrl({
     bouncedOwnerId: await readBouncedOwnerId(),
     signedInUserId: null,
@@ -210,7 +227,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not send the code' };
+    return authFailure(error, 'Could not send the link', tI18nComplete);
   }
 
   return {
@@ -265,7 +282,7 @@ export async function forgotPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not send password reset email' };
+    return authFailure(error, 'Could not send password reset email', tI18nComplete);
   }
 
   return {
@@ -294,7 +311,7 @@ export async function resetPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not update password' };
+    return authFailure(error, 'Could not update password', tI18nComplete);
   }
 
   return {
@@ -344,7 +361,8 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
       (error.message?.toLowerCase().includes('invalid login credentials')
         ? 'invalid_credentials'
         : null);
-    return { message: error.message || 'Invalid email or password', code };
+    const failure = authFailure(error, 'Invalid email or password', tI18nComplete);
+    return { ...failure, code: authRateLimitCopy(error, tI18nComplete) ? null : code };
   }
 
   // Determine if new user (for analytics)
@@ -418,7 +436,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: tI18nComplete.raw('textb6eb82cd3300') };
   }
 
-  // Access control gate — same rule the email-code path enforces: a brand-new
+  // Access control gate — same rule the email-link path enforces: a brand-new
   // address while signups are closed never reaches GoTrue, and an SSO-enforced
   // domain never gets a password identity created. Existing accounts resolve
   // to 'signin' and pass straight through to the sign-in attempt.
@@ -452,7 +470,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       signUpError.status === 422);
 
   if (signUpError && !alreadyExists) {
-    return { message: signUpError.message || 'Could not create account' };
+    return authFailure(signUpError, 'Could not create account', tI18nComplete);
   }
 
   const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -461,6 +479,9 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   });
 
   if (signInError) {
+    if (authRateLimitCopy(signInError, tI18nComplete)) {
+      return authFailure(signInError, 'Could not sign in', tI18nComplete);
+    }
     if (
       signInError.message?.toLowerCase().includes('email_not_confirmed') ||
       signInError.message?.toLowerCase().includes('not confirmed')
@@ -555,7 +576,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Invalid or expired code' };
+    return authFailure(error, 'Invalid or expired code', tI18nComplete);
   }
 
   // Determine if new user (for analytics)

@@ -4,7 +4,6 @@ import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  commitSessionChangesRequest,
   createChangeRequest,
   fetchChangeRequest,
   fetchChangeRequestDiff,
@@ -21,7 +20,6 @@ import {
   type ChangeRequestMergePreview,
   type ChangeRequestMergeResponse,
   type ChangeRequestStatus,
-  type CommitSessionResult,
   type VersionDiffPreview,
 } from '../api/change-requests';
 import { useProjectContext } from '../context';
@@ -287,29 +285,6 @@ function useInvalidateAll(projectIdArg?: string) {
     // look again, so the chip appears on merge rather than on next focus.
     qc.invalidateQueries({ queryKey: ['session-config', projectId] });
   };
-}
-
-/**
- * Commit + push the session sandbox's pending changes to its branch.
- *
- * NOTE (2026-05-29): currently UNUSED. Built for a one-click fully-UI "Open
- * change request" flow; the shipped flow instead asks the agent to commit +
- * open the CR from a chat prompt. Kept for that future direction.
- */
-export function useCommitSessionChanges(options?: { projectId?: string }) {
-  const ctx = useProjectContext();
-  const qc = useQueryClient();
-  const projectId = options?.projectId ?? ctx?.projectId ?? '';
-  return useMutation<CommitSessionResult, Error, { sessionId: string; message?: string }>({
-    mutationFn: ({ sessionId, message }) =>
-      commitSessionChangesRequest(projectId, sessionId, { message }),
-    onSuccess: () => {
-      // The working tree was just committed — the git-status banner and the
-      // branch list (ahead/behind) are now stale.
-      qc.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
-      qc.invalidateQueries({ queryKey: branchKeys.list(projectId) });
-    },
-  });
 }
 
 export function useOpenChangeRequest(options?: { projectId?: string }) {

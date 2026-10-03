@@ -103,8 +103,8 @@ async function readOpenCodeHealth(
   const bootState: OpenCodeBootState = context.bootState
   const opencodeState = opencode.getState()
   const initialSessionReady =
-    !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-  const error = bootState.initialOpenCodeSessionError ?? bootState.auditRelayError ?? null
+    !bootState.initialRuntimeSessionRequired || !!bootState.initialRuntimeSessionId
+  const error = bootState.initialRuntimeSessionError ?? bootState.auditRelayError ?? null
   // PLAN-one-boot-path C3: a box is never reportable as ready unless it runs a
   // PROVEN config. `opencodeState === 'ok'` is not that proof — its liveness
   // probe only asks whether the session API answers, so a config whose tools or
@@ -144,8 +144,8 @@ async function readOpenCodeHealth(
       ready: runtimeReady,
       error,
       session: {
-        id: bootState.initialOpenCodeSessionId ?? null,
-        required: !!bootState.initialOpenCodeSessionRequired,
+        id: bootState.initialRuntimeSessionId ?? null,
+        required: !!bootState.initialRuntimeSessionRequired,
       },
       turn: turn
         ? {
@@ -217,12 +217,12 @@ async function readOpenCodeDiagnosticReport(
       internal_url: opencode.getInternalUrl(),
       binary: opencode.getBinaryPath(),
       port_pair: [cfg.opencodeInternalPort, cfg.opencodeStandbyPort],
-      session_id: bootState.initialOpenCodeSessionId ?? null,
+      session_id: bootState.initialRuntimeSessionId ?? null,
       log_file: opencodeLog,
     },
     boot: {
       repo_materialization_error: bootState.repoMaterializationError,
-      initial_session_error: bootState.initialOpenCodeSessionError ?? null,
+      initial_session_error: bootState.initialRuntimeSessionError ?? null,
       timeline: bootState.timeline,
     },
     resources: projectOpenCodeResourceSnapshot(resourcesNow),

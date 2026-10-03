@@ -1,0 +1,40 @@
+/* GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.
+   Roobert and Roobert Mono as variable fonts, served by the Kortix site.
+   OPEN (decisions.md, D8): the license for public redistribution of Roobert is not confirmed.
+   Use these URLs for Kortix-owned surfaces only until the license is confirmed. */
+
+@font-face {
+  font-family: 'Roobert';
+  src: url('https://kortix.com/fonts/roobert/RoobertUprightsVF.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on;
+}
+
+@font-face {
+  font-family: 'Roobert';
+  src: url('https://kortix.com/fonts/roobert/RoobertItalicsVF.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on;
+}
+
+@font-face {
+  font-family: 'Roobert Mono';
+  src: url('https://kortix.com/fonts/roobert/RoobertMonoUprightsVF.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on;
+}
+
+@font-face {
+  font-family: 'Roobert Mono';
+  src: url('https://kortix.com/fonts/roobert/RoobertMonoItalicsVF.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on;
+}

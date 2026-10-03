@@ -114,7 +114,12 @@ accessControlApp.openapi(
     },
   }),
   async (c) => {
-    const body = c.req.valid('json');
+    // Same guard as /check-email: an unsupported content type reaches the
+    // handler without parsed JSON, and `email.trim()` would answer 500.
+    const body = c.req.valid('json') as { email?: unknown; company?: string; useCase?: string } | undefined;
+    if (!body || typeof body.email !== 'string') {
+      return c.json({ error: true, message: 'Validation failed', status: 400 }, 400);
+    }
     await db.insert(accessRequests).values({
       email: body.email.trim().toLowerCase(),
       company: body.company || null,

@@ -7,6 +7,7 @@ import {
   buildApprovalReplyView,
   parseApprovalActionId,
   readApprovalReply,
+  slackUserIdsIn,
 } from '../channels/slack/approval-card';
 
 const EXEC = '0b0e7a52-6d1f-4a55-9f0e-3a3c3a1b2c4d';
@@ -129,5 +130,40 @@ describe('reply modal', () => {
       }),
     ).toEqual({ decision: 'approve', note: 'Send it.' });
     expect(readApprovalReply({})).toEqual({ decision: 'deny', note: '' });
+  });
+});
+
+// A Slack connector call showed `channel  C0…` and `user  U0…` on the card a
+// person approves (2026-10-02): nobody can judge a post to an id. The id stays
+// (it is the exact parameter); the name follows it.
+describe('Slack ids in the parameters', () => {
+  const args = { channel: 'C0TESTCHAN1', user: 'U0TESTUSER1', note: 'post in C0TESTCHAN1' };
+  const parameterLines = (blocks: unknown[]) =>
+    ((blocks as Array<{ text?: { text?: string } }>).find((b) => b.text?.text?.startsWith('*Parameters'))?.text?.text ?? '')
+      .split('\n')
+      .slice(1);
+
+  test("a channel id gains a channel link, which Slack renders by each viewer's own access", () => {
+    expect(parameterLines(buildApprovalCardBlocks({ ...card, argsPreview: args }))).toContain(
+      '`channel`  C0TESTCHAN1 (<#C0TESTCHAN1>)',
+    );
+  });
+
+  test('a user id gains the looked-up name as text, never a mention that pings them', () => {
+    const lines = parameterLines(buildApprovalCardBlocks({ ...card, argsPreview: args }, new Map([['U0TESTUSER1', 'Sam <Rivera>']])));
+    expect(lines).toContain('`user`  U0TESTUSER1 (Sam &lt;Rivera&gt;)');
+    expect(lines.join('\n')).not.toContain('<@');
+  });
+
+  test('an unnamed user and an id inside other text stay as written', () => {
+    const lines = parameterLines(buildApprovalCardBlocks({ ...card, argsPreview: args }));
+    expect(lines).toContain('`user`  U0TESTUSER1');
+    expect(lines).toContain('`note`  post in C0TESTCHAN1');
+  });
+
+  test('slackUserIdsIn lists the values that are exactly a user id', () => {
+    expect(slackUserIdsIn(args)).toEqual(['U0TESTUSER1']);
+    expect(slackUserIdsIn({ users: ['U0TESTUSER1'], n: 3 })).toEqual([]);
+    expect(slackUserIdsIn(null)).toEqual([]);
   });
 });

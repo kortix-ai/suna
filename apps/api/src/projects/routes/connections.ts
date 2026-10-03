@@ -210,6 +210,7 @@ projectsApp.openapi(
         actingPrincipalIsServiceAccount: actor.isServiceAccount,
         agentPrincipal: actor.agentPrincipal,
       }),
+      agentId: actor.agentPrincipal?.agentId ?? null,
     });
     const listed = rows.map((connection) => {
       const audience = audienceOf(connection.connectionId);

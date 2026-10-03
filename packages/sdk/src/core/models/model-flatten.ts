@@ -1,4 +1,5 @@
-import type { Model } from '@opencode-ai/sdk/v2/client';
+import type { Model } from '../runtime/runtime-types';
+import { modelKeyToWire } from './model-key';
 import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './provider-selection';
 
 /**
@@ -101,6 +102,14 @@ export interface FlatModel {
 }
 
 /**
+ * One entry of the model picker: a `FlatModel` plus `id`, the ref a pick
+ * stores and sends (the gateway wire id, or the native `provider/model`).
+ */
+export interface ModelOption extends FlatModel {
+  id: string;
+}
+
+/**
  * Whether `key` may be offered/resolved from `models` — present in the catalog
  * and not turned off by the server's per-project enablement (`enabled` above).
  * THE one predicate for "is this model selectable?"; a second, client-local
@@ -148,12 +157,12 @@ export function flattenModels(
      */
     providerMode?: 'gateway' | 'native';
   },
-): FlatModel[] {
+): ModelOption[] {
   if (!providers) return [];
   const providerMode = opts?.providerMode ?? 'gateway';
   const all = Array.isArray(providers.all) ? providers.all : [];
   const connected = Array.isArray(providers.connected) ? providers.connected : [];
-  const result: FlatModel[] = [];
+  const result: ModelOption[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
     if (providerMode === 'gateway' ? !GATEWAY_PROVIDER_IDS.has(p.id) : GATEWAY_PROVIDER_IDS.has(p.id))
@@ -187,6 +196,7 @@ export function flattenModels(
         };
       }
       result.push({
+        id: modelKeyToWire({ providerID: p.id, modelID }),
         providerID: p.id,
         // The gateway lists every model under one synthetic `kortix` provider;
         // a BYOK model names its real provider instead.

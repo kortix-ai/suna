@@ -1019,6 +1019,8 @@ export function canSaveSecretDelivery(input: {
   nextConsumer: SecretConsumer | null;
   enforcedPolicyValid: boolean;
   selectedConnectorCount?: number;
+  /** Who can use the value changed — saving that alone is a real edit. */
+  audienceChanged?: boolean;
 }): boolean {
   const hasValue = Boolean(input.value.trim());
   if (!input.isEdit && !input.key.trim()) return false;
@@ -1041,5 +1043,10 @@ export function canSaveSecretDelivery(input: {
     return false;
   }
   if (input.nextStrategy === 'broker') return true;
-  return !input.isEdit || hasValue || input.nextStrategy !== input.currentStrategy;
+  return (
+    !input.isEdit ||
+    hasValue ||
+    input.nextStrategy !== input.currentStrategy ||
+    input.audienceChanged === true
+  );
 }

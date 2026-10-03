@@ -15,11 +15,10 @@ import { homedir } from 'node:os'
 import type { Config } from '@/lib/config/config'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { harnessAssets, swapAssets, stagedAgentSha, agentUpdatesPinned, recentlyFullyConverged, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle } from './runtime-assets-swap-report'
-export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
+export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, __resetVerifiedDigestsForTests, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
 export type { AgentSwapDecision, AgentSwapOptions, RuntimeConvergenceReport, RunningRuntimeAssets } from './runtime-assets-swap-report'
 import type {
   HarnessAssetOutcome,
-  HarnessAssetsCompatibilityResult,
   HarnessAssetsService,
 } from './port'
 import { logger } from '@/lib/log/logger'
@@ -159,7 +158,7 @@ export type ReconcileOutcome = HarnessAssetOutcome
 /** The components a v2 manifest can describe. */
 export type RuntimeComponent = 'cli' | 'skills' | 'agent' | (string & {})
 
-export interface RuntimeAssetsResult extends HarnessAssetsCompatibilityResult {
+export interface RuntimeAssetsResult {
   cli: ReconcileOutcome
   skills: ReconcileOutcome
   /**
@@ -169,6 +168,8 @@ export interface RuntimeAssetsResult extends HarnessAssetsCompatibilityResult {
    * be" are different facts. It also keeps every existing caller's shape.
    */
   agent?: ReconcileOutcome
+  /** The selected harness's own components (`HarnessAssetsService.componentNames`). */
+  harness?: Partial<Record<string, ReconcileOutcome>>
   /** The manifest epoch this pass converged to; absent for a v1 manifest. */
   build?: number
   /** Why, when a half is `skipped` or `failed`. Logged, never thrown. */
@@ -313,13 +314,10 @@ export interface RuntimeAssetsState {
   agent_mtime_ms?: number
   /** Digest of the artifact currently staged at `agent.next`, if any. */
   staged_agent_sha256?: string
-  /**
-   * Written by the harness half through `Object.assign(nextState,
-   * harnessResult.state)` — declared here because `runningRuntimeAssets` reads
-   * it back, and an undeclared key that something reads is a key that gets
-   * renamed by accident.
-   */
-  opencode_version?: string
+  /** The harness the last pass or the image bake reported for (`HarnessAssetsService.harness`). */
+  harness?: string
+  /** That harness's release on disk (`HarnessAssetsResult.version`, `bakedVersion`). */
+  harness_version?: string
 }
 
 /**
@@ -796,6 +794,8 @@ export async function reconcileRuntimeAssets(
   const harnessResult = await assets.reconcile({ manifest, setActivity: setRuntimeAssetsActivity })
   Object.assign(nextState, harnessResult.state)
   Object.assign(reasons, harnessResult.reasons)
+  nextState.harness = assets.harness
+  if (harnessResult.version) nextState.harness_version = harnessResult.version
 
   // The epoch advances only after a pass that actually looked at this manifest.
   // It is recorded even when a half failed: `build` answers "which manifest did
@@ -809,7 +809,7 @@ export async function reconcileRuntimeAssets(
   await writeState(statePath, nextState)
   const result: RuntimeAssetsResult = { cli, skills }
   if (agent !== undefined) result.agent = agent
-  Object.assign(result, harnessResult.components)
+  if (Object.keys(harnessResult.components).length > 0) result.harness = harnessResult.components
   if (build !== undefined) result.build = build
   if (agentSwapPending) result.agentSwapPending = true
   if (Object.keys(reasons).length > 0) result.reasons = reasons

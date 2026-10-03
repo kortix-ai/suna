@@ -10,6 +10,8 @@ export interface OutboundActivity {
   type: 'message' | 'typing';
   text?: string;
   attachments?: Array<{ contentType: string; content?: unknown; name?: string; contentUrl?: string }>;
+  /** The one person a targeted message is for. */
+  recipient?: { id: string };
 }
 
 function joinUrl(base: string, path: string): string {
@@ -17,11 +19,11 @@ function joinUrl(base: string, path: string): string {
 }
 
 async function connectorFetch(
-  method: 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   url: string,
   body: unknown,
   projectId?: string,
-): Promise<{ ok: boolean; status: number; id: string | null; error?: string }> {
+): Promise<{ ok: boolean; status: number; id: string | null; json?: unknown; error?: string }> {
   // Defense-in-depth chokepoint: the bot connector token is attached below, so
   // the destination URL MUST be a validated Microsoft Bot Framework endpoint.
   // This blocks any caller (incl. a future one) from leaking the token to an
@@ -53,15 +55,17 @@ async function connectorFetch(
     });
     const text = await res.text();
     let id: string | null = null;
+    let json: unknown;
     try {
-      id = (JSON.parse(text) as { id?: string }).id ?? null;
+      json = JSON.parse(text);
+      id = (json as { id?: string } | null)?.id ?? null;
     } catch {
     }
     if (!res.ok) {
       console.warn('[teams-api] connector call failed', { method, status: res.status, body: text.slice(0, 200) });
       return { ok: false, status: res.status, id: null, error: text.slice(0, 200) };
     }
-    return { ok: true, status: res.status, id };
+    return { ok: true, status: res.status, id, json };
   } catch (err) {
     console.warn('[teams-api] connector call error', { method, err: (err as Error)?.message });
     return { ok: false, status: 0, id: null, error: (err as Error)?.message };
@@ -139,6 +143,76 @@ export function sendText(ref: TeamsConversationRef, text: string): Promise<strin
 
 export function sendCard(ref: TeamsConversationRef, card: unknown): Promise<string | null> {
   return sendActivity(ref, cardActivity(card));
+}
+
+/**
+ * A card in a channel or group chat that only `recipientId` (a `29:…` Teams
+ * user id of a member there) sees: a Teams targeted message, marked "Only you
+ * can see this message" — Slack's ephemeral. GA since 2026-07-30; Teams
+ * deletes it after 24 hours. Null when Teams refuses it (for example
+ * `403 BotNotInConversationRoster`, or a recipient who left), so every caller
+ * keeps a fallback.
+ */
+export async function sendTargetedCard(ref: TeamsConversationRef, recipientId: string, card: unknown): Promise<string | null> {
+  const url = joinUrl(
+    ref.serviceUrl,
+    `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities?isTargetedActivity=true`,
+  );
+  const r = await connectorFetch('POST', url, { ...cardActivity(card), recipient: { id: recipientId } }, ref.projectId);
+  return r.ok ? r.id : null;
+}
+
+/**
+ * The Teams user id (`29:…`) of the member of `ref`'s conversation whose
+ * Entra object id is `aadObjectId` — the id a targeted message needs, when
+ * only the object id was stored. Null when Teams does not know them there.
+ */
+export async function conversationMemberId(ref: TeamsConversationRef, aadObjectId: string): Promise<string | null> {
+  // A channel thread is `19:…@thread.tacv2;messageid=…`; its members are the channel's.
+  const conversationId = ref.conversationId.split(';')[0] ?? ref.conversationId;
+  const url = joinUrl(
+    ref.serviceUrl,
+    `v3/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(aadObjectId)}`,
+  );
+  const r = await connectorFetch('GET', url, undefined, ref.projectId);
+  return r.ok ? r.id : null;
+}
+
+/**
+ * A team by its id (`19:…@thread.tacv2`, the General channel's id). Null when
+ * the id is not a team the bot is in, or on any failure.
+ */
+export async function getTeamsTeam(
+  serviceUrl: string,
+  teamId: string,
+  projectId?: string,
+): Promise<{ id: string; name: string } | null> {
+  const r = await connectorFetch('GET', joinUrl(serviceUrl, `v3/teams/${encodeURIComponent(teamId)}`), undefined, projectId);
+  const team = r.ok ? (r.json as { id?: unknown; name?: unknown } | undefined) : undefined;
+  return typeof team?.id === 'string' && typeof team.name === 'string' && team.name.trim()
+    ? { id: team.id, name: team.name.trim() }
+    : null;
+}
+
+/** A team's channels. The General channel has no `name`. Null on any failure. */
+export async function listTeamsTeamChannels(
+  serviceUrl: string,
+  teamId: string,
+  projectId?: string,
+): Promise<Array<{ id: string; name: string | null }> | null> {
+  const r = await connectorFetch(
+    'GET',
+    joinUrl(serviceUrl, `v3/teams/${encodeURIComponent(teamId)}/conversations`),
+    undefined,
+    projectId,
+  );
+  const list = r.ok ? (r.json as { conversations?: unknown } | undefined)?.conversations : undefined;
+  if (!Array.isArray(list)) return null;
+  return list.flatMap((c: { id?: unknown; name?: unknown }) =>
+    typeof c?.id === 'string'
+      ? [{ id: c.id, name: typeof c.name === 'string' && c.name.trim() ? c.name.trim() : null }]
+      : [],
+  );
 }
 
 export function updateCard(ref: TeamsConversationRef, activityId: string, card: unknown): Promise<boolean> {

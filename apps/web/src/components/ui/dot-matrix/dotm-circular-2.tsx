@@ -2,11 +2,9 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase, isWithinCircularMask, rowMajorIndex } from '@/lib/dotmatrix-core';
-import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
+import { createDotm5x5Component, isWithinCircularMask, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmCircular2Props = DotMatrixCommonProps;
 
 const RING_PATH: readonly number[] = [
   rowMajorIndex(0, 1),
@@ -26,23 +24,8 @@ const RING_PATH: readonly number[] = [
 const LOOP_LEN = RING_PATH.length;
 const BASE_OPACITY = 0.08;
 
-export function DotmCircular2({
-  speed = 1.8,
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmCircular2Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-  const resolver: DotAnimationResolver = ({ index, row, col, phase }) => {
+function makeResolver(_cycle: number, reducedMotion: boolean): DotAnimationResolver {
+  return ({ index, row, col, phase }) => {
     if (!isWithinCircularMask(row, col)) {
       return { className: 'dmx-inactive' };
     }
@@ -61,20 +44,6 @@ export function DotmCircular2({
       style: { '--dmx-ring-order': onRing } as CSSProperties,
     };
   };
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern="full"
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmCircular2 = createDotm5x5Component('DotmCircular2', makeResolver, { speed: 1.8, lockedPattern: 'full' });

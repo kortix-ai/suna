@@ -119,6 +119,8 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** The owner's profile photo, for the starter mark. */
+    ownerAvatarUrl?: string | null;
     /** Display name of a member/service-account initiator that is not the owner. */
     initiatorName?: string | null;
     /** Whether created_by identifies a human, service account, or stale principal. */
@@ -197,6 +199,7 @@ export function serializeSession(
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
+    owner_avatar_url: ctx?.ownerAvatarUrl ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,

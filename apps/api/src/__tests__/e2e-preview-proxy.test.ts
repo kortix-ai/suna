@@ -204,6 +204,15 @@ mock.module('../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 
+// The turn-identity bind is one conditional UPDATE through `db.execute`, which
+// this file's `db` stub does not build. Its SQL is pinned by
+// integration-session-turn-identity.test.ts; here it only has to succeed.
+const realOnBehalfOf = await import('../projects/lib/on-behalf-of');
+mock.module('../projects/lib/on-behalf-of', () => ({
+  ...realOnBehalfOf,
+  bindSessionTurnIdentity: async () => true,
+}));
+
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
 // `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
@@ -1802,29 +1811,28 @@ describe('Preview proxy: SSE stall bypass', () => {
   });
 });
 
-// The daemon's /kortix/opencode/* namespace negotiates compression with the
-// client. `fetch` hands back DECODED bytes while keeping the upstream
-// `content-encoding` and compressed `content-length`; forwarding those with a
-// decoded body is a response no client can read.
+// The daemon's /kortix/runtime/* namespace negotiates compression with the
+// client. The proxy fetches upstream with `decompress: false`, so it holds the
+// raw compressed bytes: the daemon's `content-encoding` and `content-length`
+// must reach the client with them, or no client can read the body.
 describe('Preview proxy: upstream encoding on the daemon namespace', () => {
-  test('the client negotiation reaches the daemon, and the decoded body is relabelled', async () => {
+  test('the client negotiation reaches the daemon, and its encoded answer passes through labelled', async () => {
     mockFetchResponses = [
       {
         status: 200,
-        body: '{"state":"ok"}',
+        body: 'gzip-bytes!!',
         headers: { 'content-encoding': 'gzip', 'content-length': '12' },
       },
     ];
     const res = await createProxyTestApp().request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/opencode/state`,
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/runtime/messages/ses_root`,
       { headers: { Authorization: 'Bearer test', 'Accept-Encoding': 'gzip' } },
     );
 
     expect(mockFetchCalls[0]?.headers['accept-encoding']).toBe('gzip');
-    expect(res.headers.get('content-encoding')).toBeNull();
-    expect(res.headers.get('content-length')).toBeNull();
-    expect(res.headers.get('x-kortix-upstream-encoding')).toBe('gzip');
-    expect(res.headers.get('access-control-expose-headers')).toContain('x-kortix-upstream-encoding');
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    expect(res.headers.get('content-length')).toBe('12');
+    expect(res.headers.get('x-kortix-upstream-encoding')).toBeNull();
   });
 });
 

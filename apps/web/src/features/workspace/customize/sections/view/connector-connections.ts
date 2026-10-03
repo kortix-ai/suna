@@ -1,4 +1,4 @@
-import { connectionSharedWithEveryone, type Connection } from '@kortix/sdk';
+import { connectionSharedWithEveryone, type Connection, type ConnectionShare } from '@kortix/sdk';
 
 export type AccountVisibility =
   { kind: 'you' } | { kind: 'everyone' } | { kind: 'named'; names: string[]; more: number };
@@ -17,7 +17,22 @@ export function accountVisibility(
 ): AccountVisibility {
   if (connection.owner_type !== 'project') return { kind: 'you' };
   if (connectionSharedWithEveryone(connection)) return { kind: 'everyone' };
-  const shares = connection.shared_with ?? [];
+  return audienceVisibility(connection.shared_with ?? [], viewerId, limit);
+}
+
+/**
+ * The same statement for any audience list — a shared connector account's or
+ * a project secret value's (`shared_with`). Empty, or a grant to the project,
+ * is everyone.
+ */
+export function audienceVisibility(
+  shares: readonly ConnectionShare[],
+  viewerId: string | null | undefined,
+  limit = 1,
+): AccountVisibility {
+  if (shares.length === 0 || shares.some((share) => share.principal_type === 'project')) {
+    return { kind: 'everyone' };
+  }
   const [only] = shares;
   if (shares.length === 1 && only?.principal_type === 'member' && only.principal_id === viewerId) {
     return { kind: 'you' };
@@ -36,7 +51,8 @@ export type NewAccountAudience = 'private' | 'project' | 'members';
 export interface NewAccountDraft {
   label: string;
   audience: NewAccountAudience;
-  picked: { memberIds: string[]; groupIds: string[] };
+  /** `agentIds`: agents' service accounts — every session of the agent may use it. */
+  picked: { memberIds: string[]; groupIds: string[]; agentIds?: string[] };
 }
 
 /**
@@ -67,17 +83,19 @@ export function newAccountReady(
   if (!access.canManageConnections) return false;
   if (draft.audience === 'project') return true;
   return (
-    Boolean(access.accountId) && draft.picked.memberIds.length + draft.picked.groupIds.length > 0
+    Boolean(access.accountId) &&
+    draft.picked.memberIds.length + draft.picked.groupIds.length + (draft.picked.agentIds?.length ?? 0) > 0
   );
 }
 
 /** The grants that narrow a new shared account to the picked people and groups. */
 export function newAccountGrantees(
   picked: NewAccountDraft['picked'],
-): Array<{ type: 'user' | 'group'; id: string }> {
+): Array<{ type: 'user' | 'group' | 'service_account'; id: string }> {
   return [
     ...picked.memberIds.map((id) => ({ type: 'user' as const, id })),
     ...picked.groupIds.map((id) => ({ type: 'group' as const, id })),
+    ...(picked.agentIds ?? []).map((id) => ({ type: 'service_account' as const, id })),
   ];
 }
 

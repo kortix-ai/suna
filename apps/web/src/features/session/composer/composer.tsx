@@ -94,7 +94,6 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
-import { ComposerDictation } from './composer-dictation';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
@@ -302,6 +301,8 @@ export interface SessionChatInputProps {
    * "Show context" row.
    */
   onCompactClick?: () => void;
+  /** Its own full-width card above the composer stack — the queued messages. */
+  aboveSlot?: React.ReactNode;
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
@@ -358,6 +359,12 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
+  /**
+   * A labeled submit button replaces the icon send/stop control, busy or
+   * not. Set while the composer edits a queued message: its send saves the
+   * edit, so Stop is the wrong control there.
+   */
+  submitLabel?: string | null;
   questionCanAct?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;

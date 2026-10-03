@@ -10,6 +10,7 @@
  *
  * This module holds the pure parts so both paths agree on what a legal change is.
  */
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 
 /** Terminal states — there is no live agent to re-point, and a cold boot would
  *  re-read the row anyway, so a change here is meaningless rather than harmful. */
@@ -95,7 +96,8 @@ export function modelChangeNeedsLivePush(input: {
   next: string;
   status: string;
 }): boolean {
-  if (input.current === input.next) return false;
+  // `kortix/<id>` and `<id>` name one gateway model; a restart would only cost the turn.
+  if (input.current !== null && toWireModel(input.current) === toWireModel(input.next)) return false;
   return input.status === 'running';
 }
 

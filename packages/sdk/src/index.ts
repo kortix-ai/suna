@@ -177,6 +177,7 @@ export type {
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
   type RuntimeEvent,
@@ -481,7 +482,7 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ambiguity pins for names reachable both from our modules and from the
-// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// vendor type star (`export type * from './core/runtime/runtime-types'` inside
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
@@ -563,8 +564,8 @@ export {
   type ComposerAgentReason,
   type ComposerAgentResolution,
 } from './core/agents/composer-agents';
-export { flattenModels, isOfferedModel, type FlatModel } from './core/models/model-flatten';
-export type { ModelKey } from './core/models/model-key';
+export { flattenModels, isOfferedModel, type FlatModel, type ModelOption } from './core/models/model-flatten';
+export { modelRefToKey, type ModelKey } from './core/models/model-key';
 export {
   createModelVisibility,
   modelInDefaultView,

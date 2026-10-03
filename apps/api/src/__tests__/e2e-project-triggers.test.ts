@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { createHmac, randomUUID } from 'node:crypto';
+import { SQL, is } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -307,8 +308,8 @@ mock.module('../projects/lib/git', () => ({
 
 mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
+    lastProvisionEnv = await input.extraEnvVars;
     sandboxProvisionCalls += 1;
-    lastProvisionEnv = input.extraEnvVars;
   },
 }));
 
@@ -412,10 +413,13 @@ const triggerDbMock: any = {
               // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
               limit: (limit: number) => {
                 const limited = rows.slice(0, limit);
-                return {
+                const chain = {
                   offset: async (offset: number) => limited.slice(offset),
+                  // The lifecycle claim locks its picks: `.limit(n).for('update', …)`.
+                  for: () => chain,
                   then: (resolve: (rows: any[]) => unknown) => resolve(limited),
                 };
+                return chain;
               },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
@@ -567,10 +571,19 @@ const triggerDbMock: any = {
                 (r) => r.projectId === values.projectId && r.slug === values.slug,
               );
               const existing = idx >= 0 ? runtimeRows[idx] : undefined;
+              // keepRunFailure sends CASE fragments that Postgres evaluates
+              // against the existing row: a failed run keeps its status and
+              // reason; any other row takes the written values.
+              const plainSet = Object.fromEntries(Object.entries(set).filter(([, v]) => !is(v, SQL)));
+              const keptFailure =
+                existing?.runFailingSince != null
+                  ? { lastStatus: existing.lastStatus, lastError: existing.lastError }
+                  : {};
               const next = {
                 ...existing,
                 ...values,
-                ...set,
+                ...plainSet,
+                ...keptFailure,
                 projectId: values.projectId,
                 slug: values.slug,
                 lastFiredAt: (set.lastFiredAt ??
@@ -598,7 +611,14 @@ const triggerDbMock: any = {
         where: () => ({
           returning: async () => {
             if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              // The claim sets `attempts` and `result` with SQL expressions that
+              // Postgres evaluates against the row; apply the plain values.
+              const plain = Object.fromEntries(Object.entries(setValues).filter(([, v]) => !is(v, SQL)));
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({
+                ...row,
+                ...plain,
+                ...(is(setValues.attempts, SQL) ? { attempts: row.attempts + 1 } : {}),
+              }));
               return lifecycleCommandRows;
             }
             return [];

@@ -123,7 +123,7 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
   return {
     response_type: 'ephemeral',
     blocks: [
-      { type: 'header', text: { type: 'plain_text', text: '⚡  Kortix', emoji: true } },
+      { type: 'header', text: { type: 'plain_text', text: 'Kortix', emoji: true } },
       {
         type: 'section',
         text: {

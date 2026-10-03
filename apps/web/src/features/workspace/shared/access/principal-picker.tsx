@@ -43,7 +43,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { principalLabel } from './access-shared';
-import { useAgentIdentities } from './agent-principals';
+import { useProjectAgentIdentities } from './agent-principals';
 
 export type PrincipalKind = 'member' | 'group' | 'agent';
 
@@ -246,9 +246,10 @@ export function PrincipalPicker({
     staleTime: 60_000,
   });
 
-  // An agent is its service account, one per (project, agent). The route is
-  // admin-only (`policy.read`); a 403 simply lists no agents.
-  const agentIdentitiesQuery = useAgentIdentities(derivedAccountId, showAgents);
+  // An agent is its service account, one per (project, agent). The project
+  // route is readable by any project member, so whoever may change a secret or
+  // a connector account can pick an agent too.
+  const agentIdentitiesQuery = useProjectAgentIdentities(projectId, showAgents);
   const agents = useMemo(
     () =>
       showAgents

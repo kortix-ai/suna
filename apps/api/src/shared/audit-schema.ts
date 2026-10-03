@@ -28,7 +28,11 @@ export const AuditEventSchema = z
     message_id: z.string().nullable(),
     tool_call_id: z.string().nullable(),
     execution_id: z.string().nullable(),
-    session_sequence: z.number().int().nullable(),
+    session_sequence: z
+      .number()
+      .int()
+      .nullable()
+      .describe('Deprecated. Set only on rows written before 2026-10; null for newer rows.'),
     actor_user_id: z.string().uuid().nullable(),
     actor_type: AuditActorTypeSchema.nullable(),
     agent_id: z.string().nullable(),
@@ -65,8 +69,11 @@ export const AuditEventSchema = z
     output_sha256: z.string().nullable(),
     error_code: z.string().nullable(),
     error_message: z.string().nullable(),
-    integrity_previous_hash: z.string().nullable(),
-    integrity_hash: z.string().nullable(),
+    integrity_previous_hash: z
+      .string()
+      .nullable()
+      .describe('Deprecated. The hash chain left ingestion in 2026-10; null for newer rows.'),
+    integrity_hash: z.string().nullable().describe('Deprecated. Null for rows written since 2026-10.'),
     before: z.record(z.unknown()).nullable(),
     after: z.record(z.unknown()).nullable(),
     ip: z.string().nullable(),

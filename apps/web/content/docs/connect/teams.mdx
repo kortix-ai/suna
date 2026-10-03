@@ -8,19 +8,18 @@ a [session](/docs/work/sessions), and the agent replies right there with live
 progress. It follows the same session, identity, and credential rules as
 [Slack](/docs/connect/slack); this page covers what is specific to Teams.
 
-Teams is experimental — enable **Microsoft Teams** under
-[Settings → Feature flags](/docs/feature-flags) on the project first.
+Every project can connect Teams. There is no feature flag to turn on.
 
 ## Connect
 
-Two ways, both from **Settings → Channels**:
+Two ways, both from the project's **Connectors → Channels** page:
 
 - **One click (managed).** A Teams **tenant admin** clicks **Add to Teams**,
   signs in, and consents. Kortix publishes the app to your org's Teams catalog
   automatically — there is nothing to build or paste. The row then offers
   **Add to Teams** (a deep link into the Teams client) so anyone can add the
-  bot to a chat or channel. If a later version of the app changes, click
-  **Publish to your Teams catalog** again to push the update.
+  bot to a chat or channel. When Kortix ships a newer version of the app,
+  see [Update the app](#update-the-app).
 - **Bring your own bot.** Click **Use your own Microsoft Teams app** for a
   three-step wizard: register an Azure Bot, connect it to Kortix with its app
   id, client secret and tenant id, then download the generated app package and
@@ -35,9 +34,33 @@ The CLI mirrors the dashboard:
 
 ```bash
 kortix channels connect --platform teams      # prints the admin-consent URL
-kortix channels status --platform teams        # tenant + catalog + publish state
+kortix channels status --platform teams        # tenant, catalog, publish state, app version
 kortix channels disconnect --platform teams
 ```
+
+## Update the app
+
+Kortix adds permissions to its Teams app over time. App version 1.1.0 added
+`ChannelMessage.Read.Group`, which the agent needs to read a channel thread.
+Version 1.3.0 added `ChatMessage.Read.Chat`, so a group-chat reply continues
+a session without a mention. A team still on 1.0.0 refuses every thread read,
+and the refusal the agent receives names who fixes it.
+
+Two people update the app, in this order:
+
+1. **A Teams admin publishes the update.** When your org catalog has an older
+   version, the Channels page shows **Update the Kortix app in Teams**, and the
+   Teams row's button reads **Publish app update**. The admin clicks it and
+   signs in with Microsoft. `kortix channels status --platform teams` prints
+   both versions, and `kortix channels connect --platform teams` prints the
+   sign-in link.
+2. **A team owner updates the app in each team where Teams offers it.** In
+   Teams, open the team, then **⋯ → Manage team → Apps**, select **Update** on
+   the Kortix app, and accept it. Teams installs an update on its own unless it
+   adds a permission or a message action; those wait for a team owner.
+
+Kortix records the app version at each publish. An install published before
+Kortix recorded versions shows the notice until its next publish.
 
 ## Chats, channels, and mentions
 
@@ -47,16 +70,15 @@ kortix channels disconnect --platform teams
   **without** one, the way a Slack thread does. That needs the app's
   `ChannelMessage.Read.Group` (channels) and `ChatMessage.Read.Chat` (group
   chats) permissions, which the tenant admin consents to when the app is added.
-  If the app was added before these were requested, remove and re-add it to
-  pick up the new consent.
+  If the app was added before these were requested, a team owner updates it:
+  see [Update the app](#update-the-app).
 
 Each chat or channel conversation is its own session. The first message creates
 it; later messages continue it, even after the sandbox stops and resumes. A
 tenant connected to more than one project shows a **project picker** on the
 first unrouted message, and remembers the choice. In a channel only a message
 that mentions the bot gets the picker, and a command about the project, such as
-`/models`, asks which project first. Teams offers only projects that have the
-Teams feature flag on.
+`/models`, asks which project first.
 
 In a channel, every new post starts its own session. A personal or group chat
 is one conversation for its whole life, so it keeps one session until you send
@@ -64,10 +86,26 @@ is one conversation for its whole life, so it keeps one session until you send
 new session with that message. The previous session stays in Kortix, with its
 full history, and the confirmation links to it.
 
+## Conversation names
+
+Teams sends ids, such as `19:…@thread.tacv2;messageid=…`. The Channels page and
+`kortix channels bindings` show the names people read in Teams:
+
+| Conversation | Name | Under the name |
+|---|---|---|
+| A channel post | `Team › Channel` | The title of its session, which tells two posts in one channel apart |
+| A group chat | The chat's title | Group chat |
+| A personal chat | The person | Personal chat |
+
+A channel message carries the team's id but not its name, so Kortix reads the
+team and channel names from Teams and stores them. A post in a team's General
+channel is named the next time the Channels page lists it. A post in another
+channel is named by its next message. Until then it reads **Channel thread**.
+
 ## Who may join a session
 
-Each conversation has a join policy, set with `/policy` in Teams or from the
-bindings table on the Channels page:
+Each conversation has a join policy, set with `/policy` in Teams or on the
+Channels page, where **N channels** on the Teams row lists every conversation:
 
 - **open** (default) — any linked project member may join a session started here.
 - **approval** — the session owner gets an Approve / Deny card for each new person.
@@ -85,15 +123,17 @@ as them, with their own credentials, secrets, and connected apps. An unlinked
 sender, or one without access to the project, gets a card to connect or request
 access instead of a session.
 
-The sign-in link appears only in a one-to-one chat with the bot. It links the
-person it was issued for to whoever opens it, so in a channel or group chat,
-where everyone sees the card, the bot sends the link to your private chat with
-it and says so. Teams allows that only when you have added the app for
-yourself; otherwise the card asks you to open a private chat with the bot and
-send `/login` there. A message you sent in the channel while unlinked runs once
-you connect, if you do so within 10 minutes. When you finish connecting in the
-browser, your private chat with the bot confirms which Kortix account you are
-linked as.
+The sign-in link appears only where you alone can see it: in your one-to-one
+chat with the bot, or, in a channel or group chat, in a reply marked **Only you
+can see this message**. The link connects the person it was issued for to
+whoever opens it, so it never appears where others can see it. If Teams refuses
+that private reply, the bot sends the link to your private chat with it and
+says so in the conversation. Teams allows that only when you have added the app
+for yourself; otherwise the card asks you to open a private chat with the bot
+and send `/login` there. A message you sent in the channel while unlinked runs
+once you connect, if you do so within 10 minutes. When you finish connecting in
+the browser, your private chat with the bot confirms which Kortix account you
+are linked as.
 
 A sign-in link works once and expires after 10 minutes. A Teams account that is
 connected to one Kortix account cannot be connected to another: send `/logout`
@@ -104,6 +144,24 @@ connected with. A link made without it asks you to connect again.
 When someone without access asks for it, every account owner and admin gets
 the request in Kortix. Those who linked Teams also get it in their private chat
 with the bot, with a **Review in Kortix** button.
+
+## Private replies
+
+In a channel or group chat, what the bot says to one person is visible only to
+that person, marked **Only you can see this message**, as Slack's ephemeral
+messages are:
+
+- the replies to your commands;
+- the card to connect your account or to request access;
+- why your message did not run: the join policy, or an agent you may not use;
+- under **approval**, the owner's Approve / Deny card, and the decision to the
+  person who asked.
+
+The **Working on it…** card that everyone sees appears only when your message
+may run. Teams deletes a private reply after 24 hours. If Teams refuses a
+private reply, the bot posts the card for the whole conversation instead. The
+sign-in link is the exception: it then goes to your private chat with the bot,
+never to the conversation.
 
 ## Roles and permissions
 
@@ -281,8 +339,8 @@ it was asked about is not in its session. When it needs that context, the agent
 reads the thread it was mentioned in, or the channel's recent posts, through
 the `ChannelMessage.Read.Group` permission the app requests when it is added to
 a team. A team that added the app before that permission was requested must
-remove and re-add it. In a personal chat every message already reaches the
-session, so there is nothing earlier to read.
+update it: see [Update the app](#update-the-app). In a personal chat every
+message already reaches the session, so there is nothing earlier to read.
 
 Every project connected to the same Microsoft 365 tenant uses the same app, so
 Kortix keeps each read inside the project's own conversations. In a channel,
@@ -305,7 +363,7 @@ directory and are not limited.
 
 ## Limits
 
-Teams bots cannot add message reactions, send ephemeral (only-you) messages, or
-search messages — those Slack affordances have no Teams equivalent. The agent
-can read a channel only in a team the app was added to, and only by the rules
-in [Reading a channel](#reading-a-channel).
+Teams bots cannot add message reactions or search messages — those Slack
+affordances have no Teams equivalent. The agent can read a channel only in a
+team the app was added to, and only by the rules in
+[Reading a channel](#reading-a-channel).

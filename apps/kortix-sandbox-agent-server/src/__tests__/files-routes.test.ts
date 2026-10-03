@@ -139,7 +139,7 @@ describe('daemon file write routes', () => {
     expect(body).toMatchObject({
       daemon: 'ok',
       opencode: 'ok',
-      capabilities: ['file.import', 'file.append', 'config.release.v1', ...RUNTIME_CAPABILITIES],
+      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES],
     })
     // The config block and the legacy config_dir_sha field.
     expect(Object.keys(body.config as object).sort()).toEqual([

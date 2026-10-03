@@ -31,6 +31,8 @@ const REMINDER = {
   created_at: '2026-09-28T12:00:00.000Z',
 };
 
+const DONE = { ...REMINDER, id: 'reminder.done00000000', every: null, every_seconds: null, state: 'done', next_fire_at: null, last_fired_at: '2026-09-29T08:30:12.000Z', last_status: 'fired' };
+
 function startServer(): string {
   server = Bun.serve({
     port: 0,
@@ -50,7 +52,8 @@ function startServer(): string {
         }
         return Response.json(REMINDER, { status: 201 });
       }
-      if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER] });
+      if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE] });
+      if (url.pathname === `${BASE}/${DONE.id}` && req.method === 'PATCH') return Response.json(DONE);
       if (url.pathname === `${BASE}/${REMINDER.id}` && req.method === 'PATCH') {
         const enabled = (body as { enabled: boolean }).enabled;
         return Response.json({ ...REMINDER, state: enabled ? 'active' : 'paused' });
@@ -136,6 +139,9 @@ describe('kortix reminders — inside a session', () => {
     expect(ls.code).toBe(0);
     expect(ls.stdout).toContain('reminder.0123456789ab');
     expect(ls.stdout).toContain('Did the email arrive?');
+    // LAST FIRED: a fired reminder shows when, a never-fired one shows a dash.
+    expect(ls.stdout).toContain('LAST FIRED');
+    expect(ls.stdout).toContain('2026-09-29 08:30 UTC');
 
     const paused = await runCli(['reminders', 'pause', 'reminder.0123456789ab']);
     expect(paused.stdout).toContain('state   paused');
@@ -151,6 +157,15 @@ describe('kortix reminders — inside a session', () => {
       `PATCH ${BASE}/reminder.0123456789ab {"enabled":true}`,
       `DELETE ${BASE}/reminder.0123456789ab null`,
     ]);
+  }, 60_000);
+
+  test('resume of a fired one-shot says it stays done instead of claiming it resumed', async () => {
+    const r = await runCli(['reminders', 'resume', DONE.id]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('state   done');
+    expect(r.stdout).toContain('last    2026-09-29 08:30 UTC');
+    expect(r.stdout).not.toContain('Resumed');
+    expect(r.stdout).toContain('already fired and stays done');
   }, 60_000);
 
   test('an API validation error exits 1 with the server message', async () => {

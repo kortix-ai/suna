@@ -1,0 +1,186 @@
+import { createKortix, type Kortix } from '../core/client/kortix';
+import { runScoped } from '../platform/config-node';
+import type { KortixPlatformConfig } from '../core/http/config';
+
+
+const MAX_WRAP_DEPTH = 12;
+/**
+ * Forward one same-origin wrapper request to the Kortix backend.
+ *
+ * The SDK owns the forwarding contract. Hosts supply only the authenticated
+ * upstream token and the resolved upstream URL. The function removes host
+ * credentials, buffers request bodies for deterministic Content-Length
+ * handling, preserves streaming response bodies, and strips upstream-only
+ * response headers.
+ */
+export async function forwardKortixRequest(options: {
+  request: Request;
+  upstreamUrl: string;
+  token: string;
+  /** Custom `fetch` (tests, edge adapters). Defaults to the global. */
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}): Promise<Response> {
+  const { request, upstreamUrl, token } = options;
+  const fetchImpl = options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+  headers.delete('content-length');
+  headers.delete('cookie');
+  headers.set('authorization', `Bearer ${token}`);
+  headers.set('accept-encoding', 'identity');
+
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  const body = hasBody ? await request.arrayBuffer() : undefined;
+  /*
+   * `content-length` is NOT set back on.
+   *
+   * undici derives it from the body, and setting it explicitly made every
+   * bodied request through a wrapper proxy fail with
+   * `InvalidArgumentError: invalid content-length header` (UND_ERR_INVALID_ARG)
+   * — the throw is swallowed below and returned as a bare
+   * `502 Upstream request failed`, with the real cause nowhere in the response.
+   *
+   * That is not a corner: it is every POST, PUT and PATCH a wrapper forwards.
+   * A chat panel could list sessions and read config over GET and then failed
+   * the moment it tried to CREATE a session, which reads as "the agent is
+   * broken" rather than "the proxy cannot send a body".
+   */
+
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetchImpl(upstreamUrl, {
+      method: request.method,
+      headers,
+      redirect: 'manual',
+      ...(body ? { body } : {}),
+    });
+  } catch {
+    return Response.json({ error: 'Upstream request failed' }, { status: 502 });
+  }
+
+  const responseHeaders = new Headers(upstreamResponse.headers);
+  responseHeaders.delete('content-encoding');
+  responseHeaders.delete('content-length');
+  responseHeaders.delete('set-cookie');
+
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    headers: responseHeaders,
+  });
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Recursively wrap every function (including function-valued getters)
+ * reachable from `value` so calling it runs inside `runScoped(config, ...)`.
+ * Also wraps a wrapped function's OWN return value (sync, or the resolved
+ * value of a returned Promise) — this is what makes id-bound handles minted
+ * AT CALL TIME (`kortix.project(id)`, `kortix.session(pid, sid)`) come back
+ * fully scoped too, not just the static shape of `createKortix()`'s top-level
+ * return.
+ *
+ * Recurses into plain objects/arrays only — class instances and built-ins
+ * (`Error`/`Date`/`Map`/`Set`/`Blob`/`Response`/async iterables/…) pass
+ * through untouched, so this never mis-clones a vendor object whose
+ * correctness depends on its prototype/internal slots (e.g. the escape-hatch
+ * `OpencodeClient` from `.runtime`, or a `Response`/Blob returned by a file
+ * read). A depth cap + a per-branch `WeakSet` guards against accidental
+ * cycles or pathologically deep payloads.
+ */
+function wrapScoped<T>(value: T, config: KortixPlatformConfig, seen: WeakSet<object>, depth = 0): T {
+  if (depth > MAX_WRAP_DEPTH) return value;
+
+  if (typeof value === 'function') {
+    const fn = value as (...args: unknown[]) => unknown;
+    const wrapped = (...args: unknown[]): unknown => {
+      const result = runScoped(config, () => fn(...args));
+      if (result instanceof Promise) {
+        return result.then((resolved) => wrapScoped(resolved, config, new WeakSet(), 0));
+      }
+      return wrapScoped(result, config, new WeakSet(), 0);
+    };
+    return wrapped as unknown as T;
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+    return value.map((item) => wrapScoped(item, config, seen, depth + 1)) as unknown as T;
+  }
+
+  if (isPlainObject(value)) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value)) {
+      const desc = Object.getOwnPropertyDescriptor(value, key)!;
+      if (desc.get) {
+        Object.defineProperty(out, key, {
+          enumerable: true,
+          get: () => wrapScoped(desc.get!.call(value), config, new WeakSet(), 0),
+        });
+      } else {
+        out[key] = wrapScoped(desc.value, config, seen, depth + 1);
+      }
+    }
+    return out as T;
+  }
+
+  return value;
+}
+
+/**
+ * Same shape as `createKortix(config)`, but every method call — including
+ * calls reached through `.project(id)`/`.session(pid, sid)` handles minted at
+ * call time — automatically runs inside `runWithKortix(config, ...)`. This
+ * handle never writes to (or is affected by) the process-global config
+ * singleton other `createKortix()`/`configureKortix()` callers in the same
+ * process share. Safe to construct one per incoming request in a multi-tenant
+ * server:
+ *
+ *   import { createScopedKortix } from '@kortix/sdk/server';
+ *
+ *   app.get('/projects', async (req, res) => {
+ *     const kortix = createScopedKortix({ backendUrl, getToken: () => tokenFor(req) });
+ *     res.json(await kortix.projects.list());
+ *   });
+ *
+ * Two concurrent requests each calling `createScopedKortix` with a different
+ * token never see each other's config, even though both run in the same
+ * process — unlike two concurrent `createKortix()` calls, which share (and
+ * race on) the global singleton.
+ */
+/**
+ * The top-level `runtime()` escape hatch resolves the PROCESS-GLOBAL "active"
+ * runtime — whatever session most recently called `ensureReady()`. That's fine
+ * for a single-tenant host (a browser tab, a CLI), but on a scoped client it is
+ * a cross-tenant leak: in a multi-tenant server the "active" runtime is a
+ * DIFFERENT request's/end-user's sandbox, and `wrapScoped` only scopes the token,
+ * not this global URL resolution. A scoped client has no single ambient session,
+ * so there is no safe top-level runtime — reach a specific session's runtime via
+ * `kortix.session(projectId, sessionId).runtime` (await `.ensureReady()` first),
+ * which resolves that session's OWN sandbox and never the global.
+ */
+function scopedRuntimeUnavailable(): never {
+  throw new Error(
+    'kortix.runtime() is not available on a @kortix/sdk/server (scoped) client: it resolves the ' +
+      "process-global active runtime, which in a multi-tenant server is another request's sandbox. " +
+      "Reach a specific session's runtime via `const s = kortix.session(projectId, sessionId); " +
+      'await s.ensureReady(); s.runtime`.',
+  );
+}
+
+export function createScopedKortix(config: KortixPlatformConfig): Kortix {
+  const inner = createKortix(config, { global: false });
+  const scoped = wrapScoped(inner, config, new WeakSet());
+  // Neutralize the ambient top-level runtime() on the scoped surface (see
+  // scopedRuntimeUnavailable). The session-scoped `session(pid, sid).runtime`
+  // getter is untouched — it resolves its own sandbox, never the global.
+  scoped.runtime = scopedRuntimeUnavailable;
+  return scoped;
+}

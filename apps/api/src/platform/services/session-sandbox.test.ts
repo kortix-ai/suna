@@ -549,6 +549,45 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
   });
 
+  // Session create passes the env build as a promise. The image check, the
+  // row insert and the token mint do not read it, so they run while it builds.
+  test('an env build still in flight does not hold the token mint; its values reach the provider', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    let finishEnvBuild!: (env: Record<string, string>) => void;
+    const envBuild = new Promise<Record<string, string>>((resolve) => {
+      finishEnvBuild = resolve;
+    });
+
+    const provisioning = provisionSessionSandbox({ ...baseOpts(), extraEnvVars: envBuild });
+    await waitFor((resolve) => {
+      const poll = () => (accountTokenCreateCalls.length > 0 ? resolve() : setTimeout(poll, 5));
+      poll();
+    });
+    // The token is minted and no provider call has been made: the env is pending.
+    expect(providerCreateOpts).toHaveLength(0);
+
+    finishEnvBuild({ KORTIX_PROJECT_BRANCH: 'main' });
+    await provisioning;
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_PROJECT_BRANCH).toBe('main');
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+  });
+
+  test('an env build that fails closes the sandbox row and fails the provision', async () => {
+    await expect(
+      provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(new Error('env build failed')) }),
+    ).rejects.toThrow('env build failed');
+
+    expect(providerCreateOpts).toHaveLength(0);
+    expect(
+      updateCalls.some((call) => call.table === sessionSandboxes && call.updates.status === 'error'),
+    ).toBe(true);
+  });
+
   test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
     // The pi harness has no native-provider path: a box booted without
     // KORTIX_LLM_BASE_URL never starts pi, so its first prompt is never

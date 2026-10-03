@@ -1,3 +1,4 @@
+import { numberValue, isoValue, type NumericValue, type TemporalValue } from './cost-values';
 import {
   gatewayRequestLogs,
   projectSessions,
@@ -30,8 +31,6 @@ import {
   totalSpendSql,
 } from './llm-spend';
 
-type NumericValue = number | string | null | undefined;
-type TemporalValue = Date | string | null | undefined;
 type ProjectSessionStatus = typeof projectSessions.$inferSelect.status;
 
 export class InvalidSessionCostQueryError extends Error {
@@ -222,19 +221,8 @@ export const billedComputeSecondsExpression = sql<number>`
   )
 `;
 
-function numberValue(value: NumericValue): number {
-  const result = Number(value ?? 0);
-  return Number.isFinite(result) ? result : 0;
-}
-
 function sumCosts(left: number, right: number): number {
   return Number((left + right).toFixed(10));
-}
-
-function isoValue(value: TemporalValue): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function requiredIsoValue(value: TemporalValue): string {

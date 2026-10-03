@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * ACCURACY GATE for this page specifically — verified against the tree, not the
  * pitch. Re-check before editing a claim:
@@ -31,11 +31,12 @@ import type { UiTranslator } from '@/i18n/translator';
  *    `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. Channels fall
  *    under `connectors` because a connected channel IS a connector with
  *    `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
- *  - Depth is not a harness menu. OpenCode is the only shipped runtime; ACP and
- *    the other harnesses are behind `KORTIX_ACP_RUNTIME`, default false.
+ *  - Depth is not a harness menu. OpenCode is the default harness. pi is an
+ *    experimental, opt-in harness (`pi_harness` flag or `runtime: pi`) and is
+ *    not named here: brand decision D9 is open.
  *  - The scoping field is `permission`. It is NOT called `tools` —
  *    `packages/manifest-schema/src/index.v2.ts` raises a hard error on `tools`:
- *    "`tools` is deprecated upstream — use `permission` instead."
+ *    "`tools` is not an agent setting — use `permission` instead."
  *    Values are exactly `allow` | `ask` | `deny`.
  *  - Governance is deny-by-default. `packages/starter/templates/base/kortix.yaml`:
  *    "Omitted grants resolve to `none` in this schema version. Grant explicitly."

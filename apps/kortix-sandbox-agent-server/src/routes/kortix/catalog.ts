@@ -5,20 +5,15 @@ import { logger } from '@/lib/log/logger'
 import { authorizeControl } from './control-auth'
 
 /**
- * `/kortix/catalog` — the managed-model catalog's on-demand converge.
+ * `/kortix/catalog` — the model catalog's on-demand converge.
  *
- * `POST /converge` fetches the live managed lineup and, ONLY if the box's
- * booted provider map is missing something it serves, repairs the overlay
- * file and takes one verified OpenCode restart (idle-gated, never across a
- * running turn). The API's turn-start gate calls this AWAITED, and only when
- * the model THIS turn asked for is the one missing — see
- * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts) for the full
- * design and its non-blocking sibling call in `control.refresh()`.
- *
- * The request body is never read, same reasoning as `/kortix/config/converge`:
- * the daemon fetches the live lineup itself, so a caller that can reach this
- * route cannot choose what it converges to.
+ * `POST /converge` with a body `{ "model": "<wire id>" }` registers the one
+ * model a turn asks for, of any provider. The API's turn-start gate awaits it.
+ * Without a body it registers everything the project's listing serves. Both
+ * apply by one idle-gated config reload, never across a running turn. See
+ * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts).
  */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,255}$/
 export function createCatalogRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
 
@@ -29,7 +24,9 @@ export function createCatalogRouter(cfg: Config, control: HarnessControlOperatio
       return c.json({ error: 'managed-model catalog convergence is not supported by this runtime' }, 404)
     }
     try {
-      return c.json(await control.convergeCatalog())
+      const body = (await c.req.json().catch(() => null)) as { model?: unknown } | null
+      const model = typeof body?.model === 'string' && MODEL_ID.test(body.model) ? body.model : undefined
+      return c.json(await control.convergeCatalog(model ? { model } : undefined))
     } catch (err) {
       logger.error('[catalog] convergence failed', err)
       return c.json({ error: 'catalog convergence failed', message: (err as Error).message }, 500)

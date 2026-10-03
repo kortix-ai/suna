@@ -71,7 +71,10 @@ flow('TUN-6', {
       };
       const registry = new CapabilityRegistry();
       registry.register(createFilesystemCapability(config));
-      agent = new TunnelAgent(config, registry);
+      // `home`: the agent reads its owner's access.json there. Without it the
+      // flow read the developer's real ~/.agent-tunnel (an expired "ask" grant
+      // failed it with computer_access_pending and woke their desktop app).
+      agent = new TunnelAgent(config, registry, {}, { home: root });
       agent.connect();
       const deadline = Date.now() + 15000;
       while (true) {

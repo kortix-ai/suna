@@ -98,6 +98,7 @@ mock.module('@kortix/sdk/react', () => ({
   startSessionWithPrompt,
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionPrompts: () => ({ prompts: inboxPrompts, enqueue }),
   readStartStash: () => null,
   writeStartStash: () => {},

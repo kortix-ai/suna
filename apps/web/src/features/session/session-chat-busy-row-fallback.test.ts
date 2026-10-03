@@ -8,6 +8,12 @@ import { fileURLToPath } from 'node:url';
 // through `between()`, which FAILS on a missing anchor rather than yielding ''
 // and passing.
 const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
+// The turn card's own wiring moved to `session-chat/transcript.tsx` (KRTX-355,
+// phase 2 of the session-chat split); the assertions on it read that module.
+const turn = readFileSync(
+  fileURLToPath(new URL('./session-chat/transcript.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -79,7 +85,7 @@ describe('the waiting row has a fallback when no turn owns it', () => {
       /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.userMessage\.info\.id\s*\}/,
     );
     // …and the row draws it INSIDE the turn's viewport, after the turn.
-    const row = between(chat, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
+    const row = between(turn, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
     expect(row).toContain('<TurnViewport turnId={turnId} className={viewportClassName}>');
     expect(row).toContain(
       '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}',
@@ -98,8 +104,8 @@ describe('the waiting row has a fallback when no turn owns it', () => {
  */
 describe('the status phrase is gated at its source', () => {
   test('a turn with no assistant content produces no status at all', () => {
-    expect(chat).toContain('const hasAssistantContent = turn.assistantMessages.length > 0;');
-    expect(chat).toContain(
+    expect(turn).toContain('const hasAssistantContent = turn.assistantMessages.length > 0;');
+    expect(turn).toContain(
       '() => (hasAssistantContent ? getTurnStatus(allParts, childMessages) : \'\'),',
     );
   });
@@ -108,7 +114,7 @@ describe('the status phrase is gated at its source', () => {
     // This is what makes gating the SOURCE enough: `throttledStatus` never
     // becomes the fallback phrase, so neither `statusText` nor the elapsed
     // clock derived from it is ever emitted for a turn that has not started.
-    const throttle = between(chat, 'const newStatus = rawStatus;', 'const elapsed =');
+    const throttle = between(turn, 'const newStatus = rawStatus;', 'const elapsed =');
     expect(throttle).toContain('if (newStatus === throttledStatus || !newStatus) return;');
   });
 });
@@ -178,7 +184,7 @@ test('a confirmed working turn cannot retain a stale pending inbox presentation'
  * its own turn loop: no `session.idle` frame follows, the control plane's row
  * stays `active`, and `projectWorking` correctly keeps saying `working`. So the
  * shimmer and its clock ran while the agent was waiting for a reply — measured
- * on the local stack 2026-09-22 (session 8d807956): 12m22s on one unanswered
+ * on the local stack 2026-09-22 (one local session): 12m22s on one unanswered
  * 2-option question, the clock reading 7m55s in the screenshot.
  *
  * Source assertions because the permission half cannot be driven here at all:
@@ -209,23 +215,23 @@ describe('waiting on the user is not the agent working', () => {
 
   test('the turn card gets the same fact, and its indicator reads it', () => {
     expect(chat).toContain('awaitingUser={awaitingUserInput}');
-    const indicator = between(chat, '{showTurnBusyIndicator({', '}) && (');
+    const indicator = between(turn, '{showTurnBusyIndicator({', '}) && (');
     expect(indicator).toContain('awaitingUser,');
   });
 
   test('the elapsed clock measures the AGENT, so it stops and restarts from zero', () => {
     // On `working` it kept counting behind the hidden row and came back
     // reporting how long the reader took to answer.
-    expect(chat).toContain('const agentWorking = working && !awaitingUser;');
-    const label = between(chat, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(turn).toContain('const agentWorking = working && !awaitingUser;');
+    const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
     expect(label).toContain('agentWorking');
-    expect(chat).toContain('if (!agentWorking) return;');
+    expect(turn).toContain('if (!agentWorking) return;');
   });
 
   test('`working` itself is untouched — the turn IS still open', () => {
     // Every structural decision below still reads it: which steps render, and
     // where answered questions go.
-    expect(chat).toContain('const working = isWorkingTurn && sessionWorking;');
-    expect(chat).toContain('{!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (');
+    expect(turn).toContain('const working = isWorkingTurn && sessionWorking;');
+    expect(turn).toContain('{!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (');
   });
 });

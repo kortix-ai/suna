@@ -32,7 +32,7 @@ import { createCliRenderer } from '@opentui/core';
 import { type TestRendererSetup, createTestRenderer } from '@opentui/core/testing';
 import { createRoot } from '@opentui/react';
 
-import { configFilePath } from '@kortix/cli/src/api/config.ts';
+import { configFilePath } from '@kortix/shared/host-config';
 
 import { listHostEntries } from '../src/auth/hosts.ts';
 import { LoginScreen } from '../src/features/login/index.ts';

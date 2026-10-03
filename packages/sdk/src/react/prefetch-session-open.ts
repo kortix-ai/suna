@@ -2,7 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-import { openSessionBundle } from '../core/session/open-bundle';
+import { claimOpenBundle, openSessionBundle } from '../core/session/open-bundle';
 import { readProjectSessionRow } from '../core/session/project-session-read';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -60,5 +60,30 @@ export function prefetchSessionOpen(
         bundle: queryClient.getQueryData(queryKey) === undefined,
       }),
     staleTime: contract('inventory').staleTime,
+  });
+}
+
+/**
+ * Hand the session-open snapshot's `models` leg (= `GET .../model-defaults`)
+ * to the model-defaults query. `useModelDefaults` then answers when the
+ * snapshot lands: it does not wait for `/detail` to name the gateway flag, and
+ * it issues no `/model-defaults` request while the seed is fresh.
+ *
+ * Seeds only an empty entry, as every snapshot leg does: a read issued after a
+ * change asks the route. A leg that is not `known` (gateway off, a failed
+ * read) seeds nothing.
+ *
+ * Internal: not exported from any public entry point.
+ */
+export function seedModelDefaultsFromOpenBundle(
+  queryClient: QueryClient,
+  projectId: string,
+  sessionId: string,
+): void {
+  void claimOpenBundle(projectId, sessionId)?.then((bundle) => {
+    const key = ['model-defaults', projectId];
+    if (!bundle?.models?.known || queryClient.getQueryData(key) !== undefined) return;
+    const { known: _known, ...defaults } = bundle.models;
+    queryClient.setQueryData(key, defaults);
   });
 }

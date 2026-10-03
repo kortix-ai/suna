@@ -654,6 +654,12 @@ export async function ensureLocalStack(
           API_KEY_SECRET: "local-flow-runner-api-key-secret",
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
+          // Every access token is confirmed live with GoTrue. TTL 0 sends one
+          // GoTrue `/user` call per request; a full core run then exhausts
+          // GoTrue's ephemeral DB ports (see the learnings ledger, 2026-10-01).
+          // 2 s bounds that to one call per token per 2 s, and logout drops the
+          // cached verdict on this single replica at once.
+          SUPABASE_JWT_LIVENESS_TTL_MS: "2000",
           KORTIX_SKIP_ENSURE_SCHEMA: "1",
           // Config archives go through the API's one object store, pointed at
           // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
@@ -674,6 +680,12 @@ export async function ensureLocalStack(
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
+          // The App deploy route kicks its worker directly, so the general
+          // switch above does not cover it. Every provider here points at an
+          // unreachable address, so a running worker only races a doomed build:
+          // on Linux it fails in milliseconds, on macOS the upload hangs. Off,
+          // a local deployment stays `queued` and APP-7 is deterministic.
+          KORTIX_APPS_WORKER_ENABLED: "false",
           KORTIX_BILLING_INTERNAL_ENABLED: "true",
           ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
           PLATINUM_API_KEY: "local-test-provider-disabled",

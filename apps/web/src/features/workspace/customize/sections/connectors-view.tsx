@@ -15,12 +15,12 @@ import {
   MagnifyingGlassIcon as Search,
   ShareNetworkIcon,
   UsersIcon as Users,
-  UsersThreeIcon as UsersThree,
   XIcon as X,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
+import { Slack } from '@/features/icon/icons/slack';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
@@ -64,7 +64,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
+import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
@@ -165,9 +165,9 @@ import {
   newAccountLabelTaken,
   newAccountReady,
 } from './view/connector-connections';
+import { AudienceBadge } from './view/audience-badge';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
-const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 function SaveBar({
   dirty,
@@ -305,44 +305,19 @@ function ConnectionRow({
             </Badge>
           )}
           {/* Who may use this account, on every card: the list has one group. */}
-          <Hint
-            label={
-              visibility.kind === 'named'
-                ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
-                : visibility.kind === 'everyone'
-                  ? tSharing('everyoneMeta')
-                  : tSharing('onlyYouDescription')
-            }
-          >
-            <Badge variant="outline" size="xs" data-testid="account-visibility">
-              {visibility.kind === 'you' ? (
-                <Lock />
-              ) : visibility.kind === 'everyone' ? (
-                <UsersThree />
-              ) : (
-                <Users />
-              )}
-              {visibility.kind === 'you'
-                ? tSharing('onlyYou')
-                : visibility.kind === 'everyone'
-                  ? tSharing('visibilityEveryone')
-                  : visibility.more > 0
-                    ? tSharing('visibilityNamedMore', {
-                        names: visibility.names.join(', '),
-                        count: visibility.more,
-                      })
-                    : visibility.names.join(', ')}
-            </Badge>
-          </Hint>
+          <AudienceBadge visibility={visibility} labels={everyoneWithAccess} />
         </div>
         <InlineMeta>
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
-          {/* A computer account whose machine is not connected right now. */}
-          {active && connection.machine && !connection.machine.online
-            ? tComputers('offline')
-            : null}
+          {/* A computer account: whether its machine is connected right now. */}
+          {active && connection.machine ? (
+            <span className="inline-flex items-center gap-1.5">
+              <ComputerStateDot state={connection.machine.online ? 'online' : 'offline'} />
+              {tComputers(connection.machine.online ? 'online' : 'offline')}
+            </span>
+          ) : null}
           {/* WHO the account was authorized as. Hidden when the label already
               says it (finalize names a default-labelled account after it). */}
           {connection.connected_as && connection.connected_as !== connection.label
@@ -525,6 +500,8 @@ export function ConnectionsList({
     queryKey: ['connections', projectId],
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
+    // A computer goes online and offline on its own: keep its status current.
+    refetchInterval: isComputer ? 15_000 : false,
   });
   const refresh = () => {
     void connectionsQuery.refetch();
@@ -2245,22 +2222,12 @@ function ChannelCatalogue({
  * The real Slack logo — the single Slack mark used everywhere across the
  * connectors + channels surface (catalogue cards, channel cards, connect flow),
  * so Slack always reads as Slack and never as a generic glyph. Sized by
- * `className`; defaults to `size-4`.
+ * `className`; defaults to `size-4`. It is the built-in four-color `Slack`
+ * icon: this used to fetch Slack's favicon from Google on every view, a blank
+ * tile on an install without internet.
  */
 export function SlackLogo({ className }: { className?: string }) {
-  return (
-    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
-      <Image
-        src={SLACK_ICON_SRC}
-        alt=""
-        referrerPolicy="no-referrer"
-        fill
-        sizes="32px"
-        className="object-contain"
-        unoptimized
-      />
-    </span>
-  );
+  return <Slack className={cn('size-4 shrink-0', className)} />;
 }
 
 function SlackIconTile() {

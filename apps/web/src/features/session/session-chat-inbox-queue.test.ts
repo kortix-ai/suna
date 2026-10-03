@@ -43,7 +43,9 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // Every turn, not only the first: the selection (`sentAttachmentsForTurn`, tested in
     // `sent-attachment-previews.test.ts`) keeps the list through a re-minted echo, and falls
     // back to the queued row's names for a turn this tab did not send.
-    const turn = flat(between(chat, '<SessionTurn', 'sessionWorking={lastTurnWorking}'));
+    // The row is `TranscriptTurnRow` since the turn rendering moved to its own
+    // module (KRTX-355); the shell still passes the turn's props here.
+    const turn = flat(between(chat, '<TranscriptTurnRow', 'sessionWorking={lastTurnWorking}'));
     expect(turn).toContain(
       'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.userMessage.info.id, originId: optimisticOriginOf(sessionId, turn.userMessage.info.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.userMessage.info.id, )?.attachments, })}',
     );
@@ -437,23 +439,29 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 });
 
-describe('Up takes the queue back into the composer', () => {
-  test('only what the server actually removed comes back, in queue order, above the draft', () => {
+describe('Up and the pencil edit a queued entry in place', () => {
+  test('opening an edit sends no request: the row stays queued, the words arrive at once', () => {
     const takeBack = between(
       chat,
       'const handleTakeBackQueue = useCallback(',
-      '// ---- Triple-ESC to stop ----',
+      'const handleCancelQueueEdit = useCallback(',
     );
     expect(takeBack).toContain('row.takeBackEligible');
-    // Drafts are read BEFORE the removals: removing a row prunes its draft.
-    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
-      takeBack.indexOf('promptInbox.remove(row.id)'),
+    expect(takeBack).toContain(".setPrefill(sessionId, target.editText, undefined, 'replace')");
+    expect(takeBack).not.toContain('promptInbox.');
+    expect(takeBack).not.toContain('await ');
+  });
+
+  test('Submit while editing saves into the same row and never sends', () => {
+    const save = between(
+      chat,
+      'const handleSaveQueueEdit = useCallback(',
+      '// ---- Triple-ESC to stop ----',
     );
-    expect(takeBack).toContain('Promise.allSettled(');
-    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
-    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
-    // Anything that cannot come back losslessly goes back to the queue.
-    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+    expect(save).toContain('promptInbox.edit(edit.promptId, next)');
+    expect(save).not.toContain('promptInbox.enqueue');
+    expect(save).not.toContain('handleSend(');
+    expect(chat).toContain('await handleSaveQueueEdit(edit, text);');
   });
 
   test('the composer gets the key handler and the hint', () => {

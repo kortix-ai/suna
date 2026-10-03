@@ -3,7 +3,7 @@ import { act } from 'react';
 
 import { testRender } from '@opentui/react/test-utils';
 
-import type { Host } from '@kortix/cli/src/api/config.ts';
+import type { Host } from '@kortix/shared/host-config';
 
 import type { HostEntry, ResolvedHost } from '../../auth/hosts.ts';
 import { DEFAULT_API_URL, HostForm, maskToken } from './host-form.tsx';

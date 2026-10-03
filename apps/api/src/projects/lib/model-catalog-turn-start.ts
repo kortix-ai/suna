@@ -19,25 +19,30 @@
  * served that model the whole time. That is what this gate does, and it is
  * the ONLY one of the three lanes that is sometimes awaited on the send path.
  *
- * WHY IT COSTS A CURRENT BOX NOTHING. Gated on `isRuntimeManagedModelId`
- * first — a BYOK/custom-provider request never reaches the memo or the
- * network. For a managed-model request, the common case is a memo HIT
+ * WHY IT COSTS A CURRENT BOX NOTHING. A `codex/…` or BYOK id (2026-10-01:
+ * a fresh dev box lacked codex/gpt-6.1-sol, baked into its image 5 h before
+ * the model shipped to the picker) asks the box about that one id once per
+ * memo TTL — the daemon answers from its in-memory provider map with no
+ * network call when the model is there. For a managed-model request, the common case is a memo HIT
  * (`lastKnownManagedCatalog`, populated by the SAME health read
  * `turn-start-convergence.ts`'s config gate already makes when its own memo
  * is cold) confirming the model is present: one in-process map read, zero
  * network calls.
  *
  * WHAT IT NEVER DOES. `POST /kortix/catalog/converge` — the one call this
- * gate can make — is idle-gated and verified-swap based on the daemon side
- * (`convergeManagedModelCatalog` in the sandbox agent server), exactly like
- * `config-release.ts`: it never ends a running turn, and it takes ONE
- * attempt with a bounded timeout, never a retry ladder.
+ * gate can make — is idle-gated on the daemon side
+ * (`convergeManagedModelCatalog` in the sandbox agent server): it never ends
+ * a running turn, and it takes ONE attempt with a bounded timeout, never a
+ * retry ladder. The daemon registers the id and reloads OpenCode's config in
+ * place; it decides nothing about whether the gateway serves the model.
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { loadActiveSandbox } from './sandbox-runtime-refresh';
 import {
   lastKnownManagedCatalog,
+  modelConfirmation,
+  noteModelConfirmation,
   noteRunningCatalog,
 } from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
@@ -76,19 +81,25 @@ const defaultConvergeDeps: ModelCatalogConvergeDeps = {
 export async function convergeSandboxModelCatalog(
   sessionId: string,
   deps: ModelCatalogConvergeDeps = defaultConvergeDeps,
-): Promise<{ outcome: string; missing?: string[] } | null> {
+  model?: string,
+): Promise<{ outcome: string; missing?: string[]; modelPresent?: boolean } | null> {
   try {
     const sandbox = await deps.loadActiveSandbox(sessionId);
     if (!sandbox) return null;
     const ingress = await deps.resolveIngress(sandbox.externalId);
     const res = await deps.fetch(`${ingress.url.replace(/\/+$/, '')}/kortix/catalog/converge`, {
       method: 'POST',
-      headers: { ...ingress.headers, Authorization: `Bearer ${sandbox.serviceKey}` },
+      headers: {
+        ...ingress.headers,
+        Authorization: `Bearer ${sandbox.serviceKey}`,
+        ...(model ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(model ? { body: JSON.stringify({ model }) } : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const body = (await res.json().catch(() => null)) as
-      | { outcome?: unknown; missing?: unknown }
+      | { outcome?: unknown; missing?: unknown; model_present?: unknown }
       | null;
     if (!body || typeof body.outcome !== 'string') return null;
     return {
@@ -96,6 +107,7 @@ export async function convergeSandboxModelCatalog(
       missing: Array.isArray(body.missing)
         ? body.missing.filter((v): v is string => typeof v === 'string')
         : undefined,
+      ...(typeof body.model_present === 'boolean' ? { modelPresent: body.model_present } : {}),
     };
   } catch (error) {
     logger.warn('[projects] on-demand catalog converge could not reach the box', {
@@ -127,7 +139,8 @@ export type ModelCatalogTurnStartDecision =
  * whether the repair actually landed IN TIME for the request it is about to
  * forward, so it can refuse with a diagnosable error instead of proxying
  * into a guaranteed failure:
- *   - `'restarted'` — a fresh OpenCode is up with the model. Forward normally.
+ *   - `'reloaded'` / `'restarted'` — the running OpenCode registers the model
+ *     (config reloaded in place, or a verified swap). Forward normally.
  *   - `'unchanged'` / `'file-updated'` — nothing to swap, or the file is
  *     staged for the box's NEXT natural restart. Forward normally; if the
  *     model was genuinely absent this is `declined`/`no-gateway`, not these.
@@ -160,7 +173,14 @@ export interface ModelCatalogTurnStartDeps {
   /** One health GET, the same one the config/asset gates already make when
    *  cold. Fills the memo for THIS call and every later one within the TTL. */
   probe: (sessionId: string) => Promise<RunningCatalogLookup | undefined>;
-  convergeCatalog: (sessionId: string) => Promise<{ outcome: string } | null>;
+  /** `model` set = ask the box about that ONE id (any provider). */
+  convergeCatalog: (
+    sessionId: string,
+    model?: string,
+  ) => Promise<{ outcome: string; modelPresent?: boolean } | null>;
+  /** The memo for ids outside the managed lineup — see running-catalog.ts. */
+  modelConfirmation: (sessionId: string, model: string) => 'present' | 'legacy' | undefined;
+  noteModelConfirmation: (sessionId: string, model: string | null) => void;
 }
 
 interface RunningCatalogLookup {
@@ -181,8 +201,9 @@ export async function convergeModelCatalogBeforeTurnStart(
   deps: ModelCatalogTurnStartDeps,
 ): Promise<ModelCatalogTurnStartResult> {
   try {
-    if (!requestedManagedModelId || !deps.isManagedModelId(requestedManagedModelId)) {
-      return { decision: 'skipped' };
+    if (!requestedManagedModelId) return { decision: 'skipped' };
+    if (!deps.isManagedModelId(requestedManagedModelId)) {
+      return await convergeOneModel(sessionId, requestedManagedModelId, deps);
     }
     let known = deps.lastKnown(sessionId);
     if (known === undefined) known = await deps.probe(sessionId).catch(() => undefined);
@@ -201,6 +222,31 @@ export async function convergeModelCatalogBeforeTurnStart(
     });
     return { decision: 'unknown' };
   }
+}
+
+/**
+ * A `codex/…` or BYOK id: no health report lists those (a box registers
+ * thousands), so ask the box about this one id. A confirmed answer is
+ * remembered for the memo TTL; a daemon that ignores `model` (no
+ * `modelPresent` in its answer) is remembered as legacy and skipped, because
+ * its managed-only answer — even `no-gateway` — says nothing about this id.
+ */
+async function convergeOneModel(
+  sessionId: string,
+  model: string,
+  deps: ModelCatalogTurnStartDeps,
+): Promise<ModelCatalogTurnStartResult> {
+  const known = deps.modelConfirmation(sessionId, model);
+  if (known === 'present') return { decision: 'current' };
+  if (known === 'legacy') return { decision: 'skipped' };
+  const result = await deps.convergeCatalog(sessionId, model);
+  if (!result) return { decision: 'unknown' };
+  if (result.modelPresent === undefined) {
+    deps.noteModelConfirmation(sessionId, null);
+    return { decision: 'skipped' };
+  }
+  if (result.modelPresent) deps.noteModelConfirmation(sessionId, model);
+  return { decision: 'converged', daemonOutcome: result.outcome };
 }
 
 /**
@@ -224,6 +270,8 @@ export function defaultModelCatalogTurnStartDeps(
     isManagedModelId,
     lastKnown: lastKnownManagedCatalog,
     probe,
-    convergeCatalog: async (sessionId) => convergeSandboxModelCatalog(sessionId),
+    convergeCatalog: async (sessionId, model) => convergeSandboxModelCatalog(sessionId, undefined, model),
+    modelConfirmation,
+    noteModelConfirmation,
   };
 }

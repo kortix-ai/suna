@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test';
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message } from '../core/runtime/runtime-types';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';

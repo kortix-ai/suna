@@ -56,7 +56,7 @@ Output lands in the gitignored `output/film/<slug>/` at the repo root.
 ## Motion rules
 
 The film is a marketing surface with a time axis. Color, type, spacing, and
-radius follow `kortix-brand-guidelines` with no exception. Motion uses the
+radius follow `kortix-brand` with no exception. Motion uses the
 marketing column, stretched for a film:
 
 | Rule | Value |
@@ -76,8 +76,8 @@ marketing column, stretched for a film:
 
 ## The launch film — storyboard
 
-64 s, 32 bars, 11 beats. Every claim is a sanctioned line from the `comms`
-skill (§1, §3, §4). No invented metric. `Northwind` is the placeholder project.
+64 s, 32 bars, 11 beats. Every claim is a sanctioned line from the `kortix-brand`
+kit (`positioning.md`, `concepts.md`, `claims.md`). No invented metric. `Northwind` is the placeholder project.
 
 | # | Bars | Time | On screen | Motion | Sound |
 | --- | --- | --- | --- | --- | --- |
@@ -134,7 +134,7 @@ A film is verified when all of these hold:
    fallback font, no blank arrival.
 2. `ffprobe` reports the expected size, fps, frame count, and an audio stream.
 3. Cut frames land within ±1 frame of a bar line (`cues.json` against the grid).
-4. Every string on screen traces to `comms` §1–§4.
+4. Every string on screen traces to `kortix-brand` `positioning.md`, `concepts.md` or `claims.md`.
 
 ## Renderer notes — paid for once
 

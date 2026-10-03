@@ -30,7 +30,7 @@ import {
   type SessionReloadResult,
   sessionStartKey,
 } from '@kortix/sdk';
-import { clearRuntimeEnsureGuard, qk } from '@kortix/sdk/react';
+import { clearRuntimeEnsureGuard, qk, resetRuntimeQueries } from '@kortix/sdk/react';
 
 /**
  * How long a freshness answer is trusted before a window-focus refetch will
@@ -299,11 +299,11 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
         successToast(result.detail || tI18nComplete.raw('text4a920574ea10'));
       }
       if (!result.applied) return;
-      // A reload RESTARTS opencode. Refreshing only the config query would
+      // A reload RESTARTS the runtime. Refreshing only the config query would
       // leave the chat bound to a runtime that just went away — so invalidate
       // exactly what a restart does.
       clearRuntimeEnsureGuard();
-      queryClient.removeQueries({ queryKey: ['opencode'] });
+      resetRuntimeQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
         queryKey: qk.project.sessionSandbox(projectId, sessionId),

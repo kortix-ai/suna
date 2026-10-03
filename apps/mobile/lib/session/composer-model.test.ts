@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isModelUnavailable, opencodeModelRef, selectComposerModel } from './composer-model';
+import { isModelUnavailable, sessionModelRef, selectComposerModel } from './composer-model';
 
 describe('composer model pick', () => {
   test('picking the default clears the pick; any other model pins it', () => {
@@ -10,9 +10,9 @@ describe('composer model pick', () => {
   });
 
   test('opencode_model: the bare wire id under the gateway, provider/model off it', () => {
-    expect(opencodeModelRef({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-5' })).toBe('anthropic/claude-sonnet-5');
-    expect(opencodeModelRef({ providerID: 'kortix', modelID: 'kimi-k3' })).toBe('kimi-k3');
-    expect(opencodeModelRef({ providerID: 'anthropic', modelID: 'claude-sonnet-5' })).toBe('anthropic/claude-sonnet-5');
+    expect(sessionModelRef({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-5' })).toBe('anthropic/claude-sonnet-5');
+    expect(sessionModelRef({ providerID: 'kortix', modelID: 'kimi-k3' })).toBe('kimi-k3');
+    expect(sessionModelRef({ providerID: 'anthropic', modelID: 'claude-sonnet-5' })).toBe('anthropic/claude-sonnet-5');
   });
 });
 
