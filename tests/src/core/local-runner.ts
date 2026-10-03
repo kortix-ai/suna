@@ -1,6 +1,4 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
@@ -516,37 +514,22 @@ function dockerAvailable(): boolean {
   }
 }
 
-/** A Kortix sandbox image carries platform state the agent-server suites read
- *  (a git repo at /workspace, /opt/kortix/scaffold.git, /etc/pt-env, the /dev/shm
- *  env file), so its package-quality lane cannot attest a PR here even though the
- *  suites are hermetic on a laptop or a CI runner. The lane records the sanctioned
- *  skip `skipped-sandbox-image` (verify-attestation.mjs: never a pass, refused by
- *  `--strict` on a main push); the scheduled Tests run is the backstop. */
-function sandboxImage(): boolean {
-  return existsSync('/etc/pt-env') || existsSync('/opt/kortix/scaffold.git');
-}
-
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
   // A lane this box cannot run records its sanctioned skip instead of a result;
-  // verify-attestation.mjs never counts a skip as a pass.
+  // verify-attestation.mjs never counts a skip as a pass. The package-quality
+  // lane RUNS on a Kortix sandbox image: its suites are isolated from the
+  // image's platform state (preload-isolated-home.ts, test-box-env.sh, the
+  // localhost shim) and pass here — verified on KRTX-1076's branch.
   const skipped = new Map<string, string>();
   if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
     if (!dockerAvailable()) {
       for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name)))
         skipped.set(lane.name, 'skipped-no-db');
     }
-    if (sandboxImage()) {
-      for (const lane of plan.lanes.filter((l) => l.name === 'package-quality'))
-        skipped.set(lane.name, 'skipped-sandbox-image');
-    }
     if (skipped.size > 0) {
       for (const [name, value] of skipped) {
-        const why =
-          value === 'skipped-no-db'
-            ? 'Docker is not available'
-            : 'a Kortix sandbox image attests no packages lane';
-        console.log(`[test] SKIP ${name}: ${why} (${value}, not a pass)`);
+        console.log(`[test] SKIP ${name}: Docker is not available (${value}, not a pass)`);
       }
       plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));
       plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.has(l.name)));
