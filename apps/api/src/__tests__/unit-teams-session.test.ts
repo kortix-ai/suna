@@ -18,7 +18,7 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
 const TENANT_ID = '00000000-0000-4000-8000-00000000a11c';
-const CONVERSATION_ID = 'a:1FQyR2jW1pEUK';
+const CONVERSATION_ID = 'a:1SyntheticChat';
 
 const calls: string[] = [];
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
