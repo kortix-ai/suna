@@ -407,6 +407,73 @@ describe('kortix projects cli-tokens', () => {
     expect(calls.filter((c) => c.method === 'DELETE')).toEqual([]);
   });
 
+  test('ls explains the session tokens the API did not list (KRTX-1193)', async () => {
+    const config = writeConfig(startServer());
+    failWith[`GET /v1/projects/${PROJECT}/cli-token`] = {
+      status: 200,
+      body: {
+        items: [
+          {
+            token_id: 'tok_hand',
+            name: 'cli · Parity',
+            public_key: 'kortix_pk_1',
+            status: 'active',
+            expires_at: null,
+            last_used_at: null,
+            created_at: '2026-01-01T00:00:00.000Z',
+            revoked_at: null,
+          },
+        ],
+        session_tokens: 2,
+      },
+    };
+    const r = await runCli(['projects', 'cli-tokens', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('tok_hand');
+    expect(r.stdout).toContain('2 session tokens');
+    expect(r.stdout).toContain('KORTIX_TOKEN');
+  });
+
+  test('ls says what is not listed even when nothing else remains', async () => {
+    const config = writeConfig(startServer());
+    failWith[`GET /v1/projects/${PROJECT}/cli-token`] = {
+      status: 200,
+      body: {
+        items: [],
+        session_tokens: 1,
+      },
+    };
+    const r = await runCli(['projects', 'cli-tokens', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('No CLI tokens on this project.');
+    expect(r.stdout).toContain('1 session token');
+  });
+
+  test('ls without a session_tokens count (an older API) prints no note', async () => {
+    const config = writeConfig(startServer());
+    failWith[`GET /v1/projects/${PROJECT}/cli-token`] = {
+      status: 200,
+      body: {
+        items: [
+          {
+            token_id: 'tok_old',
+            name: 'cli · Parity',
+            public_key: 'kortix_pk_1',
+            status: 'active',
+            expires_at: null,
+            last_used_at: null,
+            created_at: '2026-01-01T00:00:00.000Z',
+            revoked_at: null,
+          },
+        ],
+      },
+    };
+    const r = await runCli(['projects', 'cli-tokens', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('tok_old');
+    expect(r.stdout).not.toContain('session token');
+  });
+
   test('a 403 (agent-session token) surfaces the server message and exits 1', async () => {
     const config = writeConfig(startServer());
     failWith[`POST /v1/projects/${PROJECT}/cli-token`] = {
