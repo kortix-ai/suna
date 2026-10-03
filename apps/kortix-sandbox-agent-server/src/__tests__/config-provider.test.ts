@@ -594,7 +594,10 @@ describe('materializeProject — prefer-s3', () => {
     api.archiveMode = 'stall'
     const started = Date.now()
     const result = await materializeProject(cfg, { deadlineMs: 1_500 })
-    expect(Date.now() - started).toBeLessThan(6_000)
+    // The assertion pins the deadline mechanism, not a wall-clock SLA: the
+    // 1.5 s stall budget must bound the S3 attempt. The fallback git work
+    // afterwards runs at filesystem speed (a slow /tmp measured 6.5 s total).
+    expect(Date.now() - started).toBeLessThan(15_000)
     expect(result.provider).toBe('git')
     expect(result.fallback?.reason).toBe('timeout')
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
