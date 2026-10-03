@@ -26,6 +26,7 @@ import {
   createDrive,
   detachDriveEverywhere,
   driveStats,
+  enforceDriveMounts,
   ensureDefaultPersonalDrive,
   getDrive,
   listDriveGrants,
@@ -482,6 +483,8 @@ drivesApp.openapi(
       }
     }
     const row = await setDriveGrant(drive.driveId, subject, access, userId);
+    // A downgrade to read takes write away from running sessions now.
+    if (access === 'read') await enforceDriveMounts({ driveIds: [drive.driveId] });
     const [json] = (await grantsJson(drive.driveId)).filter((g) => g.grantId === row.grantId);
     return c.json(json!);
   },
@@ -494,7 +497,8 @@ drivesApp.openapi(
     path: '/{driveId}/grants/{grantId}',
     tags: ['drives'],
     summary: 'Remove a grant',
-    description: 'Running sessions keep the drive until their next start.',
+    description:
+      'Sessions that no longer reach the drive lose it at once: running sandboxes unmount it (or remount it read-only when another grant still gives read), and later ones never mount it.',
     ...auth,
     request: { params: z.object({ driveId: z.string(), grantId: z.string() }) },
     responses: { 204: { description: 'Removed' }, ...errors(401, 403, 404) },
@@ -508,6 +512,7 @@ drivesApp.openapi(
       .where(and(eq(driveGrants.driveId, drive.driveId), eq(driveGrants.grantId, grantId)))
       .returning({ id: driveGrants.grantId });
     if (!rows.length) fail(404, 'Grant not found');
+    await enforceDriveMounts({ driveIds: [drive.driveId] });
     return c.body(null, 204);
   },
 );
@@ -519,6 +524,7 @@ drivesApp.openapi(
     path: '/{driveId}/grants',
     tags: ['drives'],
     summary: 'Remove the grant to one subject',
+    description: 'Like removing a grant by id: sessions that no longer reach the drive lose it at once.',
     ...auth,
     request: {
       params: DriveParams,
@@ -537,6 +543,7 @@ drivesApp.openapi(
     else if (projectId && isUuid(projectId)) subject = { type: 'project', projectId };
     else fail(400, 'Name the subject: projectId, userId, or projectId with agentName');
     if (!(await removeDriveGrant(drive.driveId, subject))) fail(404, 'Grant not found');
+    await enforceDriveMounts({ driveIds: [drive.driveId] });
     return c.body(null, 204);
   },
 );

@@ -949,6 +949,11 @@ export function registerMemberRoutes(): void {
         await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
+      if (newRole === 'member') {
+        // An owner or admin reached every company drive; as a member they reach
+        // only what is granted, and drives they attached by role leave now.
+        await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
+      }
 
       return c.json({
         user_id: targetUserId,

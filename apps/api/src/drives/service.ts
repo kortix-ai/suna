@@ -1166,6 +1166,137 @@ export async function detachPersonalDrives(sessionId: string): Promise<boolean> 
   return true;
 }
 
+const ENFORCE_CONCURRENCY = 4;
+
+/**
+ * Access to drives narrowed: a grant removed or lowered, a share removed, a
+ * member removed or demoted. Bring every session sandbox that mounts one of
+ * them back in line with what its session may have now, at once:
+ *
+ * - a running sandbox loses the drive, or has it remounted read-only, through
+ *   Platinum hot detach/attach;
+ * - a stopped sandbox has the mount ended (or, for a downgrade, taken out so
+ *   its resume mounts it read-only), so it never comes back with more access;
+ * - every later sandbox mounts the session's plan, which reads the grants.
+ *
+ * `driveIds` scopes it to those drives; `accountId` to every drive mounted in
+ * the account's sessions. Never throws; failures are logged loudly and
+ * counted, and the next resume reconciles again.
+ */
+export async function enforceDriveMounts(
+  scope: { driveIds: string[] } | { accountId: string },
+): Promise<{ sessions: number; failed: number }> {
+  const scoped = 'driveIds' in scope ? new Set(scope.driveIds) : null;
+  if (scoped && !scoped.size) return { sessions: 0, failed: 0 };
+  let rows: Array<{
+    sandboxId: string;
+    sessionId: string;
+    provider: string;
+    externalId: string | null;
+    status: string;
+    metadata: unknown;
+    accountId: string;
+    projectId: string;
+    createdBy: string | null;
+    agentName: string;
+  }>;
+  try {
+    rows = await db
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+        provider: sessionSandboxes.provider,
+        externalId: sessionSandboxes.externalId,
+        status: sessionSandboxes.status,
+        metadata: sessionSandboxes.metadata,
+        accountId: projectSessions.accountId,
+        projectId: projectSessions.projectId,
+        createdBy: projectSessions.createdBy,
+        agentName: projectSessions.agentName,
+      })
+      .from(sessionSandboxes)
+      .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+      .where(
+        scoped
+          ? or(
+              ...[...scoped].map(
+                (driveId) =>
+                  sql`${sessionSandboxes.metadata} -> ${DRIVE_MOUNTS_METADATA_KEY} @> ${JSON.stringify([{ driveId }])}::jsonb`,
+              ),
+            )
+          : and(
+              eq(projectSessions.accountId, (scope as { accountId: string }).accountId),
+              sql`jsonb_array_length(coalesce(${sessionSandboxes.metadata} -> ${DRIVE_MOUNTS_METADATA_KEY}, '[]'::jsonb)) > 0`,
+            ),
+      );
+  } catch (err) {
+    console.error('[drives] finding the sessions that mount a revoked drive failed:', err);
+    return { sessions: 0, failed: 1 };
+  }
+  let failed = 0;
+  const one = async (row: (typeof rows)[number]) => {
+    const base = {
+      accountId: row.accountId,
+      projectId: row.projectId,
+      sessionId: row.sessionId,
+      bootingUserId: row.createdBy,
+      agentName: row.agentName,
+    };
+    const mounts = recordedDriveMounts(row.metadata);
+    const ids = [...new Set(mounts.map((m) => m.driveId))].filter((id) => !scoped || scoped.has(id));
+    const live = row.provider === 'platinum' && !!row.externalId && row.status === 'active';
+    if (live) {
+      for (const driveId of ids) {
+        try {
+          await applyDriveToRunningSandbox({ ...base, driveId });
+        } catch (err) {
+          failed++;
+          console.error(
+            `[drives] REVOCATION: drive ${driveId} could not be brought in line in running session ${row.sessionId}; it reconciles on the next resume:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      return;
+    }
+    const plan = await planSessionDrives({ ...base, slots: await driveSlotsFor(row, false) });
+    let kept = mounts;
+    for (const m of mounts) {
+      if (!ids.includes(m.driveId)) continue;
+      const still = plan.mounts.some(
+        (w) => w.drive.driveId === m.driveId && (w.subdir ?? '') === (m.subdir ?? '') && (m.readOnly || !w.readOnly),
+      );
+      if (still) continue;
+      if (row.provider === 'platinum' && row.externalId) {
+        try {
+          await detachSandboxVolume(row.externalId, m.mountPath);
+        } catch (err) {
+          failed++;
+          console.error(
+            `[drives] REVOCATION: ending mount ${m.mountPath} of stopped session ${row.sessionId} failed:`,
+            err instanceof Error ? err.message : err,
+          );
+          continue;
+        }
+      }
+      kept = kept.filter((k) => k !== m);
+    }
+    if (kept.length !== mounts.length) await writeRecordedMounts(row.sandboxId, kept);
+  };
+  const queue = [...rows];
+  await Promise.all(
+    Array.from({ length: Math.min(ENFORCE_CONCURRENCY, queue.length) }, async () => {
+      for (let row = queue.shift(); row; row = queue.shift()) {
+        await one(row).catch((err) => {
+          failed++;
+          console.error(`[drives] REVOCATION: session ${row!.sessionId} failed:`, err);
+        });
+      }
+    }),
+  );
+  return { sessions: rows.length, failed };
+}
+
 /**
  * A member left or was removed: their personal drives in that account move to
  * an account owner, so the files stay reachable (and deletable) instead of
@@ -1216,5 +1347,8 @@ export async function releaseMemberDrives(accountId: string, userId: string): Pr
     }
   } catch (err) {
     console.error(`[drives] handing over the drives of a removed member of ${accountId} failed:`, err);
+  } finally {
+    // What they shared, attached or reached by role leaves running sessions now.
+    await enforceDriveMounts({ accountId });
   }
 }
