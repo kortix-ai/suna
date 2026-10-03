@@ -226,7 +226,7 @@ describe('canonical audit ledger', () => {
   });
 
   test('does not re-add the unused legacy_sandbox_migrations run index', () => {
-    // Dropped by 20261003055638934_drop_unused_legacy_sandbox_migrations_run_index
+    // Dropped by 20261003110603687_drop_unused_legacy_sandbox_migrations_run_index
     // (.concurrent.ts, DROP INDEX CONCURRENTLY). The runner that read rows by
     // run_id is gone; the only remaining read of the table is the ops group
     // count, which the status index serves. Supabase advisor unused_index,
