@@ -74,7 +74,7 @@ outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
 plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
 One file per branch keeps PRs from conflicting on it; deleting a merged PR's
 file is conflict-free because no branch edits it again. Format:
-`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|<sanctioned skip>}, at}`.
+`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db|skipped-sandbox-image}, at}`.
 `diff_files` is the files the PR itself changed (`git diff origin/main...HEAD`,
 minus every attestation file) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
@@ -93,12 +93,11 @@ lane-only mode updates only the lanes it fully covers, on unchanged source.
 reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
 several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
 rev (`--branch`, else the checked-out branch), else the legacy file. It
-recomputes the diff: exit `0` green, `1` missing/stale/red. Every lane must be
-`pass` or carry its one sanctioned environment skip — `db-suites: skipped-no-db`
-(no Docker; the merge gate holds DB PRs on it) or `packages:
-skipped-sandbox-image` (a Kortix sandbox image cannot attest the packages lane;
-CI's scheduled Tests run is the backstop). A skip is never a pass, and
-`--strict` (the main-push hook) exits `3` for any skip. No in-sandbox
+recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
+every other lane must be `pass`. Two skips exist, neither a pass: `db-suites`
+`skipped-no-db` (no Docker) and `packages` `skipped-sandbox-image` (a Kortix
+sandbox image breaks those tests identically at `origin/main`; the scheduled
+clean-runner `Tests` run is the backstop). `--strict` exits `3` for either skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except

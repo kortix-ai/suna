@@ -233,15 +233,14 @@ await runAll([
       '!@kortix/cli',
       '!kortixd',
       '!@kortix/db',
-      '!@kortix/whitelabel-demo',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],
     2,
   ),
 ]);
-// The whitelabel suite serves its Next BFF and its mock upstream from the test
-// process itself; any concurrent suite stalls its SSE transport (the first
-// event never arrives within any budget, while a control round-trip in the
-// same second succeeds). It runs alone, after every other lane has drained,
-// so nothing shares the box with it.
-await runWorkspaceTests(['@kortix/whitelabel-demo'], 1);
+// apps/kortix-worker sits outside the pnpm workspace (own bun.lock, supply-chain
+// cooldown), so the workspace fan-out above cannot reach it. Install its deps
+// the way the sandbox-agent job does in ci.yml, then run its tests here — no
+// lane ran them before this.
+await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
+await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });

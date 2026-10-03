@@ -18,7 +18,7 @@
     "typecheck": "bun tsc --noEmit",
     "lint": "eslint src",
     "test:architecture": "node --test scripts/check-architecture.mjs",
-    "test": "bun test --timeout 15000"
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",

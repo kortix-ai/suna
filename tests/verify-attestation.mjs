@@ -7,7 +7,7 @@
 // two branches that delete it merge clean.
 //
 //   node tests/verify-attestation.mjs verify [--rev <sha>] [--branch <name>] [--require a,b] [--strict]
-//   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db> ...
+//   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db|skipped-sandbox-image> ...
 //
 // verify reads the attestation the PR itself added or edited under
 // tests/attestations/ (`git diff origin/main...rev`). With none, it reads
@@ -24,11 +24,11 @@
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). db-suites alone may be "skipped-no-db";
-// that is never a pass. The merge gate holds a DB-touching PR on it.
+// suites), browser (only when run). Only two skips exist: db-suites
+// "skipped-no-db" and packages "skipped-sandbox-image"; neither is a pass.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
-// attestation whose db-suites was skipped exits 3 instead of 0.
+// attestation with a skipped lane exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -154,15 +154,18 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  // One sanctioned skip per lane: db-suites without Docker, packages on a
-  // Kortix sandbox image (its own test pins both — evaluate the shape, never a
-  // pass, and --strict refuses both on a main push).
-  const sanctioned = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
-  const ok = (l) => lanes[l] === 'pass' || (sanctioned[l] && lanes[l] === sanctioned[l]);
+  // The only allowed skips: db-suites without Postgres, and packages on a Kortix
+  // sandbox image (its platform state breaks agent-server tests identically at
+  // origin/main; the scheduled clean-runner Tests run is the backstop). Mirrors
+  // the company merge gate's G11 rule.
+  const SKIPS = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
+  const ok = (l) => lanes[l] === 'pass' || (l in SKIPS && lanes[l] === SKIPS[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  const skips = [...required].filter((l) => lanes[l] !== 'pass');
-  if (skips.length) return { code: strict ? 3 : 0, reason: `green, sanctioned skips: ${skips.join(',')}` };
+  const skipped = Object.keys(SKIPS).filter((l) => lanes[l] === SKIPS[l]);
+  if (skipped.length) {
+    return { code: strict ? 3 : 0, reason: `green, skipped: ${skipped.map((l) => `${l} ${SKIPS[l]}`).join(', ')}` };
+  }
   return { code: 0, reason: 'green' };
 }
 
