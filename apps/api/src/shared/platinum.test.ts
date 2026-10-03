@@ -44,7 +44,9 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  // A literal loopback IP: the resolved name of `localhost` is environment
+  // (hosts-file/DNS) dependent, and the contract under test is the timeout.
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -61,7 +63,7 @@ test('platinumJson respects an explicit caller-provided signal instead of the de
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 

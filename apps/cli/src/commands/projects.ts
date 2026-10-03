@@ -63,7 +63,8 @@ Subcommands:
                        instead of the active one.
   unset                Clear the global default project. --host <name> clears
                        that host's instead.
-  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
+  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json).
+                       --host <name> uses that logged-in host's credential.
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
@@ -178,8 +179,17 @@ export async function runProjects(argv: string[]): Promise<number> {
       }
       return projectsUnset(hostArg);
     }
-    case 'link':
-      return projectsLink(rest[0]);
+    case 'link': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
+        return 2;
+      }
+      return projectsLink(restCopy[0], hostArg);
+    }
     case 'unlink':
       return projectsUnlink();
     case 'open': {
@@ -1481,9 +1491,16 @@ async function projectsUnset(hostArg?: string): Promise<number> {
   return 0;
 }
 
-async function projectsLink(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
 
   // Refuse to scatter `.kortix/link.json` into random directories. A
   // project is only "Kortix-linkable" if it already has a `.kortix/`
@@ -1538,7 +1555,7 @@ async function projectsLink(arg?: string): Promise<number> {
     return 1;
   }
 
-  const hostName = activeHostName() ?? 'default';
+  const hostName = hostArg ?? activeHostName() ?? 'default';
   saveLink({
     project_id: target.project_id,
     account_id: target.account_id,
