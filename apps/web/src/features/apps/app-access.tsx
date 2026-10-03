@@ -10,7 +10,7 @@ import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHea
 import { RadioGroup } from '@/components/ui/radio-group';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -128,8 +128,9 @@ function AppAccessForm({
       });
       successToast(tI18nComplete.raw('text0e76da589934'));
       onSaved();
-    } catch (error) {
-      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text7df8a0fb4684'));
+    } catch {
+      // The query client's global `mutations.onError` already toasts the failure.
+      // A second toast here rendered the heading twice. The modal stays open.
     }
   };
 

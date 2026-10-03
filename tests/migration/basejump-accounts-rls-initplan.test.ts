@@ -80,10 +80,10 @@ function seedLegacyShape(): void {
       primary_owner_user_id uuid not null,
       personal_account boolean not null default true,
       name text,
-      created_at timestamptz not null default now(),
-      -- Prod columns 8-9; 20261003010107485 indexes both.
+      -- Prod has both audit columns; the FK-covering-index migration indexes them.
       created_by uuid,
-      updated_by uuid
+      updated_by uuid,
+      created_at timestamptz not null default now()
     );
     alter table basejump.accounts enable row level security;
     create policy "${POLICY}" on basejump.accounts for select to authenticated

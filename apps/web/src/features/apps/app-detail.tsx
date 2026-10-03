@@ -10,7 +10,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalContent } from '@/components/ui/modal';
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -73,12 +73,8 @@ export function AppDetailModal({
       successToast(
         `${app.name} ${action === 'start' ? tI18nComplete.raw('text61659f74fe37') : tI18nComplete.raw('textde2d423ac039')}`,
       );
-    } catch (error) {
-      errorToast(
-        error instanceof Error
-          ? error.message
-          : tI18nComplete('textdf6cab363226', { value0: action }),
-      );
+    } catch {
+      // Failure is already toasted by the query client's global mutations.onError.
     }
   };
 
@@ -291,12 +287,8 @@ export function AppDetailModal({
                           successToast(
                             tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
                           );
-                        } catch (error) {
-                          errorToast(
-                            error instanceof Error
-                              ? error.message
-                              : tI18nComplete.raw('text147cd182c820'),
-                          );
+                        } catch {
+                          // Failure is already toasted by the query client's global mutations.onError.
                         }
                       }}
                     />
@@ -328,10 +320,8 @@ export function AppDetailModal({
             // frame keeps rendering a deleted App behind a dead action bar.
             onOpenChange(false);
             successToast(tI18nComplete('text84a4a73df826', { value0: app.name }));
-          } catch (error) {
-            errorToast(
-              error instanceof Error ? error.message : tI18nComplete.raw('texted3ae8cdf028'),
-            );
+          } catch {
+            // Failure is already toasted by the query client's global mutations.onError.
           }
         }}
       />
