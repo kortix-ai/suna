@@ -23,7 +23,7 @@ import type { PiBootState } from '@/harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
-import { readHostHealth } from '@/harness/shared/host-health'
+import { readHostHealth, __setPtEnvPathForTests } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
@@ -165,6 +165,9 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
     // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
     KORTIX_PI_PACKAGES_DIR: join(workspace, '.pi-packages'),
+    // Never the image's /opt/kortix/managed-skills either: the managed floor
+    // would inject 44 platform skills into a rig asserting its project's own.
+    KORTIX_MANAGED_SKILLS_DIR: join(workspace, '.no-managed-skills'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
     KORTIX_PROJECT_TARGET: workspace,
@@ -191,6 +194,17 @@ async function boot(input: {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
   input.prepare?.(workspace)
   gateway.script(input.script)
+  // The rig reads its own boot env, never the box's /etc/pt-env: this suite
+  // runs inside real Kortix sandboxes too, and the box's AUTO_CLONE=1 made
+  // runtimeReady false for a rig with no repo (KORTIX_PROJECT_AUTO_CLONE=0).
+  __setPtEnvPathForTests(join(workspace, '.pt-env'))
+  // managedSkillsDir() reads the PROCESS env, so the rig's isolation must land
+  // there too — the box's /opt/kortix/managed-skills would otherwise inject its
+  // 44 platform skills into a rig asserting its project's own. A test that set
+  // the var itself (the overlay tests) keeps its own dir.
+  if (process.env.KORTIX_MANAGED_SKILLS_DIR === undefined) {
+    process.env.KORTIX_MANAGED_SKILLS_DIR = join(workspace, '.no-managed-skills')
+  }
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
   const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks, releases: input.releases })
@@ -252,6 +266,11 @@ beforeEach(() => {
   process.env.HOME = homeDir
 })
 afterEach(async () => {
+  __setPtEnvPathForTests()
+  // boot() fills the managed-skills isolation only when the var is unset, and
+  // the overlay tests restore their own value in their finally — so dropping
+  // the leftover here is the clean slate for the next test.
+  delete process.env.KORTIX_MANAGED_SKILLS_DIR
   for (const rig of rigs.splice(0)) {
     await rig.service.lifecycle.stop().catch(() => {})
     rmSync(rig.workspace, { recursive: true, force: true })

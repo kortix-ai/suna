@@ -76,14 +76,19 @@ function createDetachedWarmCheckout(prefix: string): {
 
 const tempDirs: string[] = []
 
+/** A rig-local stand-in for the image-baked scaffold: this suite exercises the
+ *  clone paths, and a box that ships a real /opt/kortix/scaffold.git (every
+ *  Kortix sandbox image) must never satisfy existsSync() for it. */
+const NO_BAKED_SCAFFOLD = join(tmpdir(), 'kortix-no-baked-scaffold', 'scaffold.git')
+
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(NO_BAKED_SCAFFOLD)
 })
 
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(NO_BAKED_SCAFFOLD)
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 

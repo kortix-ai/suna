@@ -13,9 +13,20 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
+/** The platform's boot env file. A test rig points this at a rig-local path
+ *  (`__setPtEnvPathForTests`) so it reads the rig, not the box it happens to
+ *  run on — the same isolation `rigEnv` applies to the pi dirs. */
+const PT_ENV_PATH = '/etc/pt-env'
+let ptEnvPath = PT_ENV_PATH
+
+/** @internal test hook — mirrors `__setScaffoldRepoPathForTests`. */
+export function __setPtEnvPathForTests(path?: string): void {
+  ptEnvPath = path ?? PT_ENV_PATH
+}
+
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(ptEnvPath, 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -33,7 +44,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(ptEnvPath, 'utf8'))
   } catch {
     return false
   }

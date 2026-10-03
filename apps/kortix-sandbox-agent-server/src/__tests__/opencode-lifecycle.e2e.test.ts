@@ -34,6 +34,7 @@ import {
   createOpencodeLifecycle,
   resetManagedModelsStateForTests,
   waitForOpencodeReady,
+  __setBakedLlmCatalogPathForTests,
   type Opencode,
   type OpencodeLifecycleOptions,
 } from '@/harness/open-code/lifecycle'
@@ -63,11 +64,15 @@ beforeEach(() => {
   ctl = join(root, 'ctl')
   mkdirSync(ctl)
   lifecycle = null
+  // The rigs own the baked catalog too: this platform sandbox ships a real
+  // /opt/kortix/llm-catalog.json, which would answer the degraded-boot rigs.
+  __setBakedLlmCatalogPathForTests(join(root, 'no-baked-catalog.json'))
   for (const key of ENV_KEYS) savedEnv.set(key, process.env[key])
 })
 
 afterEach(async () => {
   restoreTestConfigRoot()
+  __setBakedLlmCatalogPathForTests()
   await lifecycle?.stop()
   for (const pid of grandchildPids()) {
     try {

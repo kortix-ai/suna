@@ -17,6 +17,7 @@ import {
   scheduleCatalogWarmToPathForTests,
   settleManagedModelsPrefetch,
   startManagedModelsPrefetch,
+  __setBakedLlmCatalogPathForTests,
   type Opencode,
 } from '@/harness/open-code/lifecycle'
 import { loadOpenCodeConfig as loadConfig } from '@/harness/open-code/config'
@@ -74,10 +75,14 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  // The rigs own their baked catalog: a box that ships a real
+  // /opt/kortix/llm-catalog.json must never answer these degraded-path tests.
+  __setBakedLlmCatalogPathForTests(join(tmpdir(), 'kortix-no-baked-catalog', 'catalog.json'))
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
+  __setBakedLlmCatalogPathForTests()
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))

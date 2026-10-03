@@ -117,8 +117,18 @@ function fakeOpencode(
   return { opencode, reloads, configReloads }
 }
 
+// A repo-less project target. The helper's default `/workspace` IS a git repo
+// on this platform's own sandbox (and on any box that runs the tests inside a
+// checkout), so the `auth` tests — which expect "no repo here, the repo work
+// answers 409" — would read the box's checkout instead.
+const noRepoDir = mkdtempSync(join(tmpdir(), 'kortix-refresh-no-repo-'))
+
 function app(cfg: Partial<Config>, lifecycle: FakeLifecycle = fakeOpencode()) {
-  return buildOpenCodeTestApp(testOpenCodeConfig(cfg), lifecycle.opencode, Date.now())
+  return buildOpenCodeTestApp(
+    testOpenCodeConfig({ workspace: noRepoDir, projectTarget: noRepoDir, ...cfg }),
+    lifecycle.opencode,
+    Date.now(),
+  )
 }
 
 const SERVICE = { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}`, [KORTIX_SERVICE_CALL_HEADER]: '1' }
