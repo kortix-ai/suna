@@ -1,3 +1,4 @@
+import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
 import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../runtime-request';
@@ -453,13 +454,22 @@ export function isProxiedBaseReset(
 }
 
 /**
- * The daemon's 503 while the session runtime cannot take a request: the
- * `runtime_not_ready` code (both harnesses, a W6 daemon), or the text of a
- * daemon without the code (`sandbox runtime not ready` on pi and on OpenCode's
- * boot steps, `opencode not ready` from the OpenCode process gate). `\b` keeps
- * this API's own `runtime_not_ready_timeout` park reason out.
+ * The daemon's 503 while the session runtime cannot take a request: it names
+ * its boot phase in `X-Kortix-Boot-Phase` and answers `code: runtime_not_ready`
+ * (both harnesses).
  */
-const DAEMON_RUNTIME_NOT_READY = /\bruntime_not_ready\b|sandbox runtime not ready|opencode not ready/;
+function isDaemonRuntimeNotReady(headers: Headers, bodyText: string): boolean {
+  if (headers.has(BOOT_PHASE_HEADER)) return true;
+  try {
+    if ((JSON.parse(bodyText) as { code?: unknown }).code === RUNTIME_NOT_READY_CODE) return true;
+  } catch {
+    // not JSON
+  }
+  // legacy: a daemon built before the code and the header sends only this
+  // text (pi and OpenCode's boot steps, then OpenCode's process gate). Delete
+  // once no box runs such a daemon.
+  return /sandbox runtime not ready|opencode not ready/.test(bodyText);
+}
 
 export async function forwardToSandbox(
   sandboxId: string,
@@ -1356,7 +1366,7 @@ export async function forwardToSandbox(
           .clone()
           .text()
           .catch(() => '');
-        if (DAEMON_RUNTIME_NOT_READY.test(bodyText)) {
+        if (isDaemonRuntimeNotReady(upstream.headers, bodyText)) {
           void markSandboxUsed(sandboxId);
           // The daemon rejected the request as not-ready, so the runtime did NOT
           // enqueue the prompt. Release the dedupe claim so the client's retry
@@ -1411,6 +1421,8 @@ export async function forwardToSandbox(
 
       if (upstream.status === 400) {
         const bodyText = await upstream.text();
+        // legacy allowlist: Daytona's edge marks a stopped or archived box only
+        // with this 400 text, no code. Delete when Daytona types the answer.
         const isSandboxDown =
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');

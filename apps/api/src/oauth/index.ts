@@ -41,33 +41,15 @@ import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
 
-// ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
+// ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
-const TOKEN_RATE_LIMIT = 20;
-const TOKEN_RATE_WINDOW_MS = 60_000;
-const tokenRateMap = new Map<string, number[]>();
+// replica-local: the bucket lives in this process, so the fleet allows
+// 20/min × replicas. It stops runaway clients; it does not meter a quota.
+const tokenRateLimiter = new TokenBucketRateLimiter('oauth_token');
 
 function checkTokenRateLimit(clientId: string): boolean {
-  const now = Date.now();
-  const timestamps = tokenRateMap.get(clientId) ?? [];
-  const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
-  if (recent.length >= TOKEN_RATE_LIMIT) {
-    tokenRateMap.set(clientId, recent);
-    return false;
-  }
-  recent.push(now);
-  tokenRateMap.set(clientId, recent);
-  return true;
+  return tokenRateLimiter.check(clientId, { limit: 20, windowMs: 60_000 }).allowed;
 }
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, timestamps] of tokenRateMap) {
-    const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
-    if (recent.length === 0) tokenRateMap.delete(key);
-    else tokenRateMap.set(key, recent);
-  }
-}, 5 * 60_000).unref?.();
 
 // ─── OAuth Access Token Middleware (userinfo only) ───────────────────────────
 
@@ -634,7 +616,7 @@ function redirectTarget(redirectUri: string): string {
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;
 }
 
-// ponytail: per-instance bucket; a shared store if registration spam spans instances.
+// replica-local: per-instance bucket; a shared store if registration spam spans instances.
 const registerLimiter = new TokenBucketRateLimiter('oauth_register');
 const REGISTER_POLICY = { limit: 30, windowMs: 60 * 60 * 1000 };
 
