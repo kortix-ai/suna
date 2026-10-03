@@ -1,5 +1,5 @@
 {
-  "source_hash": "89a1977ba5520751115b7972eda371703441cb64b9b44cedad591294eb83fd87",
+  "source_hash": "602baef7356f8097b925b8ee80809911c19e891acaa84841f38b249041a4edc3",
   "diff_files": [
     "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
     "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
@@ -35,13 +35,13 @@
     "packages/sdk/src/core/models/model-visibility.ts",
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
-  "diff_hash": "73d601c9ea6d586af1e0b0f16fccaea222774c79c87b298b57ee4a1d0c90c38a",
-  "head": "60f2caade7897c86e8992ae874a938bd63c0710e",
+  "diff_hash": "1f02e8732283e657f372a575be2df6e9d16d19affba35889563a94dc1a2b5a4e",
+  "head": "bde211fe75b27cdfb24342d216b26d7b2e5cf80d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:27:03.219Z"
+  "at": "2026-10-03T22:58:03.662Z"
 }
