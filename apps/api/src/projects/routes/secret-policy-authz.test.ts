@@ -63,8 +63,8 @@ function handlerSource(method: string, path: string): string {
 describe('PUT strategy is the reference guard', () => {
   const src = handlerSource('put', '/{projectId}/secrets/{identifier}/strategy');
 
-  test('refuses agent-session tokens with the shared message', () => {
-    expect(src).toContain('isProjectSessionPrincipal(c)');
+  test('refuses a session that borrows a human\'s authority, with the shared message', () => {
+    expect(src).toContain('isBorrowedSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     expect(src).toContain('403');
   });
@@ -76,8 +76,8 @@ describe('POST /:projectId/secrets', () => {
   test('refuses an agent session that supplies a non-default delivery policy', () => {
     // The guard lives in the extracted validation ladder
     // (../lib/secret-write-input.ts); the handler passes
-    // `isProjectSessionPrincipal(c)` into it as the boolean argument.
-    expect(src).toContain('isProjectSessionPrincipal(c)');
+    // `isBorrowedSessionPrincipal(c)` into it as the boolean argument.
+    expect(src).toContain('isBorrowedSessionPrincipal(c)');
     expect(RESOLVER).toContain(GUARD_MESSAGE);
     // Only runtime/sandbox and broker/connector without a host list pass —
     // the two shapes an agent-minted setup link can already write.
@@ -114,7 +114,7 @@ describe('DELETE /:projectId/secrets/:name', () => {
   const src = handlerSource('delete', '/{projectId}/secrets/{name}');
 
   test('refuses an agent session deleting a policy-bearing secret', () => {
-    expect(src).toContain('isProjectSessionPrincipal(c)');
+    expect(src).toContain('isBorrowedSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     // Conditional on the target carrying a non-runtime delivery policy.
     expect(src).toContain("existing.strategy !== 'runtime'");

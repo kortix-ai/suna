@@ -10,8 +10,7 @@
  *
  * A warm session is an ORDINARY session the user has not typed into yet. The
  * server hides it from the session list (`metadata.warm`) until its first
- * prompt lands, gates it by the `warm_sessions` project flag (on by default),
- * and never warms into an account's last free concurrent-session slot.
+ * prompt lands, and gates it by the `warm_sessions` project flag (on by default).
  *
  * Creates happen at three moments, no timers: on mount, when the app comes
  * back to the foreground, and to replace one a send used.
@@ -135,7 +134,7 @@ export function createWarmSessionPool(
         else ready.set(projectId, session);
       } catch {
         // Invisible on purpose: the ordinary create is unchanged and still the
-        // authority on every gate (billing, session cap, connectors).
+        // authority on every gate (billing, connectors).
       } finally {
         if (startedIn === generation) creating.delete(projectId);
       }

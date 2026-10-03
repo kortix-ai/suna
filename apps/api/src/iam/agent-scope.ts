@@ -29,6 +29,20 @@ export function isProjectSessionPrincipal(c: Context): boolean {
 }
 
 /**
+ * A session that borrows a human's authority: a project session that is NOT a
+ * governed agent principal (flag `agent_principal` off, or a null grant). Its
+ * permission check is the launcher's role, so routes keep their extra
+ * agent-session refusals for it. A governed agent principal authorizes as its
+ * own service account, so its permissions alone decide, like a human's.
+ */
+export function isBorrowedSessionPrincipal(c: Context): boolean {
+  if (!isProjectSessionPrincipal(c)) return false;
+  const credential = (c.get('actor') as { credential?: { kind?: string; agentPrincipal?: boolean } } | undefined)
+    ?.credential;
+  return !(credential?.kind === 'agent_session' && credential.agentPrincipal === true);
+}
+
+/**
  * MANIFEST-INPUT NORMALIZATION, and nothing else.
  *
  * `project.cr.open` / `project.cr.merge` were the same capability as

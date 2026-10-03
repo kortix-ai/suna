@@ -192,7 +192,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PUT /v1/admin/api/accounts/:id/overrides': { action: 'admin.account.overrides.set', title: 'Set account entitlement overrides' },
   'PUT /v1/admin/api/accounts/:id/sso-domain-verification': { action: 'admin.account.sso_domain.set', title: 'Set account SSO domain verification' },
   'GET /v1/admin/api/accounts/:id/projects': { action: 'admin.account.project.list', title: 'Listed account projects as admin' },
-  'POST /v1/admin/api/accounts/:id/session-limit': { action: 'admin.account.session_limit.set', title: 'Updated account session limit' },
   'GET /v1/admin/api/accounts/:id/subscription': { action: 'admin.account.subscription.read', title: 'Viewed account Stripe subscription' },
   'POST /v1/admin/api/accounts/:id/tier': { action: 'admin.account.tier.set', title: 'Updated account tier' },
   'DELETE /v1/admin/api/accounts/:id/trial': { action: 'admin.account.trial.revoke', title: 'Revoked account trial' },

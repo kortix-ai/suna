@@ -155,10 +155,10 @@ flow(
         }
       });
 
-      await ctx.step('the same credential on a sibling session → 403, nothing stored there', async () => {
+      await ctx.step('the same credential on a private sibling session it cannot open → 404, nothing stored there', async () => {
         const sibling = { projectId: project.id, sessionId: other.sessionId };
-        (await own.client.post(REMINDERS, { prompt: 'x', in: '1h' }, { params: sibling })).status(403);
-        (await own.client.get(REMINDERS, { params: sibling })).status(403);
+        (await own.client.post(REMINDERS, { prompt: 'x', in: '1h' }, { params: sibling })).status(404);
+        (await own.client.get(REMINDERS, { params: sibling })).status(404);
         (await ctx.client.as(ctx.P.OWNER).get(REMINDERS, { params: sibling })).status(200).body().has('$.reminders', []);
       });
 
