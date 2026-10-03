@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { lintMigration, lintMigrationSet, parseLockTimeoutMs } from './lint-migrations';
+import { lintMigration, lintMigrationSequence, lintMigrationSet, parseLockTimeoutMs } from './lint-migrations';
 
 const GOOD_NAME = '20260101000000000_add_widget.sql';
 
@@ -125,6 +125,25 @@ describe('lintMigrationSet', () => {
 
   test('ignores files without a 17-digit prefix (the per-file lint flags those)', () => {
     expect(lintMigrationSet(['not_a_migration.sql'])).toEqual([]);
+  });
+});
+
+describe('lintMigrationSequence (the #8846 dev-deploy halt)', () => {
+  const merged = ['20261003002832969_a.concurrent.ts', '20261003010107485_b.sql'];
+
+  test('a new migration dated before main\'s newest is out of sequence', () => {
+    const errors = lintMigrationSequence([...merged, '20261002233600044_mine.sql'], merged);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('20261002233600044_mine.sql');
+    expect(errors[0]).toContain('20261003010107485');
+  });
+
+  test('a new migration dated after main\'s newest passes; merged files are never flagged', () => {
+    expect(lintMigrationSequence([...merged, '20261003101559803_mine.sql'], merged)).toEqual([]);
+  });
+
+  test('no merged list (origin/main unavailable) checks nothing', () => {
+    expect(lintMigrationSequence(['20200101000000000_x.sql'], [])).toEqual([]);
   });
 });
 
