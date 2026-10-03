@@ -42,6 +42,8 @@ interface ProjectContextOpts {
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
+export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg'>;
+
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
 ): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
@@ -187,7 +189,7 @@ export function emitJson(data: unknown): void {
 // browser flow) — so the failure message prints ready-to-run
 // `login && retry --host <name>` one-liners for those hosts instead.
 
-export interface LocatedSession {
+interface LocatedSession {
   client: ApiClient;
   auth: Auth;
   projectId: string;
@@ -280,7 +282,7 @@ export async function locateSessionAnywhere(
   return { located: found, switched: true };
 }
 
-export interface LocatedProject {
+interface LocatedProject {
   client: ApiClient;
   auth: Auth;
   project: ProjectSummary;

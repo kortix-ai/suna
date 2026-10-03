@@ -15,7 +15,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { auditEventTitle, truncate } from '../commands/audit-render.ts';
+import { auditEventTitle } from '../commands/audit-render.ts';
+import { trim } from '../style.ts';
 import { buildAuditQuery, resolveInstant } from '../commands/audit.ts';
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
@@ -448,16 +449,16 @@ describe('audit CLI process', () => {
   });
 });
 
-describe('truncate', () => {
+describe('trim (style.ts)', () => {
   test('leaves a short action alone', () => {
-    expect(truncate('auth.login.success', 52)).toBe('auth.login.success');
+    expect(trim('auth.login.success', 52)).toBe('auth.login.success');
   });
 
   test('caps a long action so the table keeps its shape', () => {
     // Audit actions are raw HTTP lines carrying UUIDs; uncapped, RESOURCE ended
     // up off the right edge of the terminal.
     const long = `GET /v1/accounts/${'a'.repeat(60)}`;
-    const out = truncate(long, 52);
+    const out = trim(long, 52);
     expect(out).toHaveLength(52);
     expect(out.endsWith('…')).toBe(true);
   });

@@ -1,6 +1,6 @@
 import type { AuditEvent } from '@kortix/sdk';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
-import { C, pad } from '../style.ts';
+import { C, pad, trim } from '../style.ts';
 
 // The `kortix audit` table renderer — how a page of audit events becomes the
 // WHEN / ACTOR / EVENT / ACTION / OUTCOME / RESOURCE table the terminal shows.
@@ -30,10 +30,6 @@ const EVENT_MAX = 44;
  */
 export function auditEventTitle(action: string): string {
   return (auditLabelForAction(action) ?? auditLabelForHttpAction(action))?.title ?? action;
-}
-
-export function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
 function outcomeCell(outcome: AuditEvent['outcome']): string {
@@ -68,7 +64,7 @@ export function printEvents(events: AuditEvent[]): void {
       ? `${e.resource_type}${e.resource_id ? ` ${C.faded}${e.resource_id.slice(0, 8)}${C.reset}` : ''}`
       : `${C.faded}—${C.reset}`;
     process.stdout.write(
-      `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(truncate(auditEventTitle(e.action), EVENT_MAX), eventW)}   ${C.faded}${pad(truncate(e.action, ACTION_MAX), actionW)}${C.reset}   ${outcomeCell(e.outcome)}   ${resource}\n`,
+      `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(trim(auditEventTitle(e.action), EVENT_MAX), eventW)}   ${C.faded}${pad(trim(e.action, ACTION_MAX), actionW)}${C.reset}   ${outcomeCell(e.outcome)}   ${resource}\n`,
     );
   }
 }

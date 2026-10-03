@@ -1,5 +1,6 @@
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
 import {
+  
   emitJson,
   fail,
   resolveProjectContext,
@@ -7,11 +8,13 @@ import {
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
+
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { C, status } from '../style.ts';
 import { IDENTIFIER_RE } from './secrets-delivery.ts';
-import type { CtxOpts } from './secrets.ts';
+
 
 /** `share IDENTIFIER --user … --group … | --everyone`: set the value's audience exactly. */
 export async function secretsShare(args: string[], opts: CtxOpts, json = false): Promise<number> {

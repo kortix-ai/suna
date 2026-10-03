@@ -9,6 +9,8 @@ import {
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
+
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { C, help, status } from '../style.ts';
@@ -21,9 +23,6 @@ import {
 import { IDENTIFIER_RE, secretsCall, secretsDelivery } from './secrets-delivery.ts';
 import { secretsLs } from './secrets-ls.ts';
 
-export { deliveryCell } from './secrets-ls.ts';
-export { parseExposure } from './secrets-delivery.ts';
-export { describeLinkValidity } from './secrets-audience.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
@@ -210,8 +209,6 @@ export async function runSecrets(argv: string[]): Promise<number> {
       return 2;
   }
 }
-
-export type CtxOpts = { projectArg?: string; hostArg?: string };
 
 async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   // An explicit identifier (--identifier / --id) keeps a second value under the

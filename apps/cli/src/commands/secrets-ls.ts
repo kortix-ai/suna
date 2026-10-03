@@ -1,8 +1,12 @@
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
-import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
+import {
+   emitJson, resolveProjectContext, surfaceApiError ,
+
+  type CtxOpts,
+} from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
 import { C, pad, status, visibleWidth } from '../style.ts';
-import type { CtxOpts } from './secrets.ts';
+
 
 /** A displayed secret slot: keyed by identifier, with the env key it injects. */
 type SecretRow = {

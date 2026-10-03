@@ -1030,7 +1030,7 @@ Then verify the CR actually carries your diff: run \`kortix cr diff <number>\` â
 
 Do **not** run \`kortix cr merge\`. This is a human-reviewed change like any other â€” stop once the CR is open and verified non-empty, and tell the user its number so they can review the diff and merge it themselves.`;
 
-export interface ProjectCloneTarget {
+interface ProjectCloneTarget {
   repoUrl: string;
   token: string | null;
   username: string;

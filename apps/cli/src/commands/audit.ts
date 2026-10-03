@@ -13,8 +13,8 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
-import { printEvents, truncate } from './audit-render.ts';
+import { trim,  C, help, pad, status } from '../style.ts';
+import { printEvents } from './audit-render.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -476,12 +476,12 @@ export async function runAudit(argv: string[]): Promise<number> {
             for (const w of webhooks) {
               const state = w.enabled ? 'enabled' : `${C.yellow}disabled${C.reset}`;
               process.stdout.write(
-                `  ${pad(w.name, nameW)}   ${pad(truncate(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
+                `  ${pad(w.name, nameW)}   ${pad(trim(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
                   `${pad(w.action_prefix ?? 'all', 12)}   ${C.faded}${w.webhook_id}${C.reset}\n`,
               );
               if (w.last_error) {
                 process.stdout.write(
-                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${truncate(w.last_error, 80)}\n`,
+                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${trim(w.last_error, 80)}\n`,
                 );
               }
             }

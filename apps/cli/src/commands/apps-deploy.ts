@@ -23,7 +23,10 @@ import { C, status } from '../style.ts';
 // helpers every apps subcommand uses — plus the `deploy` pipeline. The
 // command bodies live in apps.ts (and apps-access.ts for access).
 
-export type AppsHandle = ProjectHandle['apps'];
+type AppsHandle = ProjectHandle['apps'];
+/** The access modes PUT /apps/:id/access accepts (SDK AppAccessMode). */
+export const APP_ACCESS_MODES = ['private', 'project', 'restricted', 'public', 'password'] as const;
+
 export type ContextOptions = { projectArg?: string; hostArg?: string };
 
 export function positiveNumber(value: string | undefined, label: string): number | undefined {
@@ -183,7 +186,7 @@ export function deployFlags(rest: string[]): DeployFlags {
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
   if (
     accessMode &&
-    !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)
+    !APP_ACCESS_MODES.includes(accessMode)
   ) {
     throw new Error('--access must be private, project, restricted, public, or password');
   }

@@ -15,7 +15,7 @@ import type { IamPolicy } from './roles-policies.ts';
  *  Bindings reference roles by KEY (not id) so a file survives a round-trip
  *  into a different account. Rows may omit fields — the importer tolerates
  *  partial roles and skips nothing it can key on. */
-export interface RolesDoc {
+interface RolesDoc {
   roles?: Array<{
     key?: string;
     name?: string;

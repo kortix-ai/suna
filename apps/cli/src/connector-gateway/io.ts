@@ -24,7 +24,7 @@ export function out(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
-export interface ExecArgs {
+interface ExecArgs {
   command: string;
   args: string[];
   /** Last value wins for a repeated flag. A valueless `--flag` is stored as `true`. */

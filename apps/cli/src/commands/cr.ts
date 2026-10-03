@@ -15,10 +15,10 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import {
-  type CtxOpts,
   crDiff,
   crVersionDiff,
   displayBranch,

@@ -31,8 +31,6 @@ import {
 } from './apps-deploy.ts';
 
 // The archive/manifest helpers keep their historical home in the entry module
-// for `commands/apps.test.ts`.
-export { archiveAppDirectory, loadManifestAppDefaults, readAppArchive } from './apps-deploy.ts';
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 

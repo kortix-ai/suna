@@ -10,10 +10,10 @@ import {
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import {
-  type CtxOpts,
   triggersAddLive,
   triggersRmLive,
   triggersSetLive,

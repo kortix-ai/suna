@@ -1,11 +1,14 @@
 import { formatDurationSeconds } from '@kortix/manifest-schema';
 import type { ProjectTriggersResponse } from '../api/types.ts';
 import {
+  
   emitJson,
   fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
+
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { parseMonitorFlags } from './triggers-manifest.ts';
@@ -17,8 +20,6 @@ import { parseMonitorFlags } from './triggers-manifest.ts';
 // triggers-manifest.ts). `--apply` takes the other door the dashboard uses: the
 // API commits kortix.yaml on main itself and reconciles the runtime in the same
 // request. Same destination, no ship, no change request.
-
-export type CtxOpts = { projectArg?: string; hostArg?: string };
 
 /** Repeatable live-only flags, already collected. */
 interface LiveOpts {

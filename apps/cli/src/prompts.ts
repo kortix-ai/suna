@@ -36,39 +36,17 @@ export async function prompt(label: string, defaultValue?: string): Promise<stri
  */
 export async function promptSecret(label: string): Promise<string> {
   ensureTTY();
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true,
-  });
-  let muted = false;
-  // Swallow keystroke echoes once the question has been written. readline
-  // calls `_writeToOutput` for both the prompt and every typed character; we
-  // let the prompt through, then mute everything after.
-  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = function (
-    this: { output: NodeJS.WritableStream },
-    str: string,
-  ) {
-    if (!muted) this.output.write(str);
-  };
-  try {
-    const value = await new Promise<string>((resolve) => {
-      rl.question(`${label}: `, (answer) => resolve(answer));
-      muted = true; // question() writes the prompt synchronously above
-    });
-    process.stdout.write('\n'); // the muted Enter never printed a newline
-    return value;
-  } finally {
-    rl.close();
-  }
+  // The label is used verbatim by readSecret, and callers pass it without a
+  // trailing separator — append the same ": " promptSecret always printed.
+  return readSecret(`${label}: `);
 }
 
 /**
  * Read a secret with input echo suppressed on a TTY. Falls back to a normal
  * echoed read when stdin is not a TTY (piped input can't be muted) — callers
  * that must refuse piped secrets should check `process.stdin.isTTY` first.
- * Unlike `promptSecret` the label is used verbatim: callers already end it
- * in ": ". Returns the raw value, not trimmed.
+ * The label is used verbatim (callers append their own separator). Returns
+ * the raw value, not trimmed.
  */
 export async function readSecret(label: string): Promise<string> {
   if (process.stdin.isTTY !== true) {
@@ -99,18 +77,6 @@ export async function readSecret(label: string): Promise<string> {
   } finally {
     rl.close();
   }
-}
-
-/** Read a plain (non-secret) value with normal echoed input — e.g. a region,
- *  which isn't sensitive and is easier to verify visibly. */
-export async function readVisible(label: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
 }
 
 /**

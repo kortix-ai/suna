@@ -3,7 +3,6 @@ import { emitJson, fail, resolveProjectContext, surfaceApiError } from '../comma
 import { C, status } from '../style.ts';
 import type { ExtraFlags } from './channels.ts';
 
-// ── Email (AgentMail) ───────────────────────────────────────────────────────
 // apps/api/src/channels/install-store.ts AgentMailSenderPolicy /
 // AgentMailInstallSummary; routes at apps/api/src/projects/routes/channel-email.ts.
 

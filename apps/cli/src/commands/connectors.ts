@@ -1923,7 +1923,7 @@ async function pollDeviceAuthorization(
 }
 
 /** `on`/`off` (and the obvious synonyms) → boolean, else null. */
-export function parseOnOff(value: string | undefined): boolean | null {
+function parseOnOff(value: string | undefined): boolean | null {
   switch ((value ?? '').toLowerCase()) {
     case 'on':
     case 'true':
@@ -1947,7 +1947,7 @@ export function parseOnOff(value: string | undefined): boolean | null {
  * an unparseable matcher, so a bad rule fails at write time rather than
  * compiling to a never-match that looks saved.
  */
-export function parsePolicyConditions(
+function parsePolicyConditions(
   raw: readonly string[],
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
@@ -1970,7 +1970,7 @@ export function parsePolicyConditions(
 }
 
 /** " when to=*@corp.com, subject!=/urgent/" — or "" when unconditioned. */
-export function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
+function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
   if (!conditions || conditions.length === 0) return '';
   return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
 }
@@ -2013,7 +2013,7 @@ async function readStdin(): Promise<string> {
  * project, else the grant labels. `(not you)` marks an account the caller
  * lists only because they manage the project's connections.
  */
-export function connectionAudienceLabel(connection: Connection): string {
+function connectionAudienceLabel(connection: Connection): string {
   if (connection.owner_type !== 'project') return 'owner only';
   const shares = connection.shared_with ?? [];
   const audience =

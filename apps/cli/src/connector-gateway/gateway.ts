@@ -91,7 +91,7 @@ export async function callWithApprovalHandoff<T = unknown>(
   });
 }
 
-export interface ConnectLinkResult {
+interface ConnectLinkResult {
   provider: string;
   url: string | null;
   slug: string;
@@ -104,7 +104,7 @@ export interface ConnectLinkResult {
   expires_at?: string;
 }
 
-export interface FinalizeConnectionResult {
+interface FinalizeConnectionResult {
   provider: string;
   connected: boolean;
   account_id: string | null;
@@ -295,7 +295,7 @@ export async function setSecrets(opts: {
 
 export type BrokerMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-export interface BrokerCallResult {
+interface BrokerCallResult {
   status: number;
   headers: Record<string, string>;
   body_base64: string;

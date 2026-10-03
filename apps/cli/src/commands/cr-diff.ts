@@ -7,6 +7,7 @@ import type {
   ChangeRequestsListResponse,
 } from '../api/types.ts';
 import {
+  
   emitJson,
   fail,
   missing,
@@ -14,6 +15,8 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { UUID_RE } from '../iam.ts';
 import { C, pad, status } from '../style.ts';
@@ -25,8 +28,6 @@ import { C, pad, status } from '../style.ts';
 // the live row) and `displayBranch` (a branch ref → display form) because
 // those two are shared by the verbs that stay in cr.ts; one home here keeps
 // cr.ts to the verbs themselves.
-
-export type CtxOpts = { projectArg?: string; hostArg?: string };
 
 /** GET /projects/:id/version-diff — a summary, no patch body. */
 interface VersionDiffPreview {

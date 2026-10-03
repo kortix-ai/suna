@@ -107,7 +107,7 @@ function label(version: string): string {
   return isValidTuiVersion(version) ? `v${version}` : version;
 }
 
-export interface TuiFlags {
+interface TuiFlags {
   host?: string;
   project?: string;
   session?: string;

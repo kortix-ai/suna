@@ -8,15 +8,18 @@ import {
 } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import {
+  
   emitJson,
   fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
   takeFlagValues,
+
+  type CtxOpts,
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
-import type { CtxOpts } from './secrets.ts';
+
 
 // Mirrors the backend's isValidIdentifier / web IDENTIFIER_REGEX: alphanumeric
 // start, then letters/digits/_.- up to 128 chars total. Validated here only for
