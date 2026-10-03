@@ -11,10 +11,9 @@
  *   - a credential that acts for no person (trigger, service account, shared
  *     session) gets 403 `capture_no_human`.
  * Every route needs the project's `capture` flag (403 `feature_disabled`).
+ * The queries live in reads.ts.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { captureDevices, projectSessions, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
-import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { auth, errors, json } from '../openapi';
@@ -24,12 +23,36 @@ import { projectsApp } from '../projects/lib/app';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
 import { recordAuditEvent } from '../shared/audit';
-import { db } from '../shared/db';
-import { PolicySchema, isEncrypted, liveState, objectKey, projectPrefix, type Manifest } from './format';
+import type { AppEnv } from '../types';
+import { PolicySchema } from './format';
 import { readProjectPolicy, writeDevicePolicy, writeProjectPolicy } from './policy';
-import { captureStore, captureStoreConfigured } from './store';
+import {
+  assetUrl,
+  chunkOf,
+  closeRangeForReprocess,
+  deviceInProject,
+  deviceView,
+  frameOf,
+  listDevices,
+  mediaUrl,
+  peopleSummary,
+  rangeInProject,
+  rangeOutputsOf,
+  rangeView,
+  rangesFor,
+  revokeDevice,
+  saveRange,
+  searchTimeline,
+  sessionVisibility,
+  timelineChunksIn,
+  timelineItems,
+  timelineRuns,
+  type SearchKind,
+} from './reads';
+import { captureStoreConfigured } from './store';
 import { enqueueRangeProcessing, pollDevice } from './workers';
 
+type Ctx = Context<AppEnv>;
 type Loaded = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
 interface Access {
@@ -44,13 +67,26 @@ interface Access {
   sessionId: string | null;
 }
 
-const refuse = (c: Context, status: 400 | 403 | 404 | 503, code: string, error: string) => c.json({ error, code }, status);
+const refuse = <S extends 400 | 403 | 404 | 503>(c: Ctx, status: S, code: string, error: string) => c.json({ error, code }, status);
 
-async function captureAccess(
-  c: Context,
-  opts: { userId?: string | null; projectWide?: boolean } = {},
-): Promise<Access | Response> {
-  const projectId = c.req.param('projectId')!;
+function auditRead(c: Ctx, access: Pick<Access, 'accountId' | 'projectId' | 'viewer' | 'sessionId'>, action: string, resourceId: string | null) {
+  return recordAuditEvent({
+    accountId: access.accountId,
+    projectId: access.projectId,
+    sessionId: access.sessionId,
+    actorUserId: access.viewer,
+    actorType: access.sessionId ? 'agent' : 'human',
+    onBehalfOfUserId: access.sessionId ? access.viewer : null,
+    action,
+    resourceType: 'capture_member',
+    resourceId,
+    outcome: 'success',
+    metadata: { path: c.req.path },
+  });
+}
+
+async function captureAccess(c: Ctx, opts: { userId?: string | null; projectWide?: boolean } = {}): Promise<Access | Response> {
+  const projectId = c.req.param('projectId') ?? '';
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'capture');
@@ -61,14 +97,7 @@ async function captureAccess(
   if (sessionId) {
     // An agent session acts for the person who started it, only in a private session.
     const onBehalf = getRequestOnBehalfOf(c);
-    const [session] = onBehalf
-      ? await db
-          .select({ visibility: projectSessions.visibility })
-          .from(projectSessions)
-          .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
-          .limit(1)
-      : [];
-    if (session?.visibility === 'private') viewer = onBehalf;
+    if (onBehalf && (await sessionVisibility(sessionId, projectId)) === 'private') viewer = onBehalf;
   } else if (authType === 'supabase' || authType === 'pat' || authType === 'oauth') {
     viewer = loaded.userId;
   }
@@ -76,42 +105,19 @@ async function captureAccess(
   const manager = !sessionId && roleAllows(loaded.effectiveRole, 'manage');
   const subject = opts.projectWide ? null : (opts.userId ?? viewer);
   const access: Access = { loaded, projectId, accountId: loaded.row.accountId, viewer, subject, manager, sessionId };
-  const audit = (action: string, resourceId: string | null) =>
-    recordAuditEvent({
-      accountId: access.accountId,
-      projectId,
-      sessionId,
-      actorUserId: viewer,
-      actorType: sessionId ? 'agent' : 'human',
-      onBehalfOfUserId: sessionId ? viewer : null,
-      action,
-      resourceType: 'capture_member',
-      resourceId,
-      outcome: 'success',
-      metadata: { path: c.req.path },
-    });
   if (subject !== viewer) {
     if (!manager) return refuse(c, 403, 'capture_forbidden', 'Only a project manager can read another member’s capture data');
-    await audit(subject ? 'capture.member_view' : 'capture.project_view', subject);
+    await auditRead(c, access, subject ? 'capture.member_view' : 'capture.project_view', subject);
   } else if (sessionId) {
-    await audit('capture.agent_read', viewer);
+    await auditRead(c, access, 'capture.agent_read', viewer);
   }
   return access;
 }
 
 const isResponse = (value: unknown): value is Response => value instanceof Response;
 
-/** Raw SQL rows carry Postgres timestamp text; the API answers ISO 8601 like every other route. */
-function isoRows<T extends Record<string, any>>(rows: Iterable<T>): T[] {
-  return Array.from(rows, (row) => {
-    const out: Record<string, any> = { ...row };
-    for (const key of ['ts', 'end_at', 'start_at']) if (out[key] != null) out[key] = new Date(out[key]).toISOString();
-    return out as T;
-  });
-}
-
 /** `[from, to)` from `day=YYYY-MM-DD` (UTC) or `from`/`to` ISO instants; default today. */
-function window(c: Context): { from: Date; to: Date } | null {
+function window(c: Ctx): { from: Date; to: Date } | null {
   const day = c.req.query('day');
   if (day) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
@@ -120,49 +126,31 @@ function window(c: Context): { from: Date; to: Date } | null {
   }
   const fromRaw = c.req.query('from');
   const toRaw = c.req.query('to');
-  const now = Date.now();
-  const from = fromRaw ? new Date(fromRaw) : new Date(new Date(now).setUTCHours(0, 0, 0, 0));
+  const from = fromRaw ? new Date(fromRaw) : new Date(new Date().setUTCHours(0, 0, 0, 0));
   const to = toRaw ? new Date(toRaw) : new Date(from.getTime() + 86_400_000);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) return null;
   if (to.getTime() - from.getTime() > 31 * 86_400_000) return null;
   return { from, to };
 }
+const BAD_WINDOW = 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart';
+
+/** A device of this project the caller may act on. Someone else's device is "not found" to a member. */
+async function loadDevice(access: Access, deviceId: string) {
+  const device = await deviceInProject(access.projectId, deviceId);
+  if (!device || (device.userId !== access.viewer && !access.manager)) return null;
+  return device;
+}
 
 const params = z.object({ projectId: z.string().uuid() });
 const ok = (description: string) => ({ 200: json(z.any(), description), ...errors(400, 403, 404) });
 const tags = ['capture'];
-
-function deviceView(device: typeof captureDevices.$inferSelect, now = Date.now()) {
-  return {
-    device_id: device.deviceId,
-    user_id: device.userId,
-    name: device.name,
-    os: device.os,
-    os_version: device.osVersion,
-    arch: device.arch,
-    app_version: device.appVersion,
-    live: {
-      state: liveState(device.status, now),
-      status: device.status,
-      reported_at: device.statusReportedAt?.toISOString() ?? null,
-    },
-    policy_override: device.policyOverride ? PolicySchema.parse(device.policyOverride) : null,
-    last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,
-    revoked_at: device.revokedAt?.toISOString() ?? null,
-    created_at: device.createdAt.toISOString(),
-  };
-}
-
-async function loadDevice(c: Context, access: Access, deviceId: string) {
-  const [device] = await db
-    .select()
-    .from(captureDevices)
-    .where(and(eq(captureDevices.deviceId, deviceId), eq(captureDevices.projectId, access.projectId)))
-    .limit(1);
-  // Someone else's device is "not found" to a member: no existence leak.
-  if (!device || (device.userId !== access.viewer && !access.manager)) return null;
-  return device;
-}
+const subjectQuery = z.object({
+  user_id: z.string().uuid().optional(),
+  device_id: z.string().uuid().optional(),
+  day: z.string().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
 // ─── Devices ─────────────────────────────────────────────────────────────────
 
@@ -176,20 +164,11 @@ projectsApp.openapi(
     request: { params, query: z.object({ user_id: z.string().uuid().optional(), scope: z.enum(['mine', 'project']).optional() }) },
     responses: ok('The devices'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id'), projectWide: c.req.query('scope') === 'project' });
-    if (isResponse(access)) return access;
-    const rows = await db
-      .select()
-      .from(captureDevices)
-      .where(
-        and(
-          eq(captureDevices.projectId, access.projectId),
-          ...(access.subject ? [eq(captureDevices.userId, access.subject)] : []),
-        ),
-      )
-      .orderBy(desc(captureDevices.updatedAt));
-    return c.json({ devices: rows.map((d) => deviceView(d)) });
+  async (c) => {
+    const query = c.req.valid('query');
+    const access = await captureAccess(c, { userId: query.user_id, projectWide: query.scope === 'project' });
+    if (isResponse(access)) return access as never;
+    return c.json({ devices: (await listDevices(access.projectId, access.subject)).map((d) => deviceView(d)) }, 200);
   },
 );
 
@@ -203,18 +182,13 @@ projectsApp.openapi(
     request: { params: params.extend({ deviceId: z.string().uuid() }) },
     responses: ok('The revoked device'),
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot revoke a capture device');
-    const device = await loadDevice(c, access, c.req.param('deviceId'));
+    const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device) return c.json({ error: 'Not found' }, 404);
-    const [revoked] = await db
-      .update(captureDevices)
-      .set({ revokedAt: sql`coalesce(${captureDevices.revokedAt}, now())`, revokedBy: access.viewer, tokenHash: null, updatedAt: sql`now()` })
-      .where(eq(captureDevices.deviceId, device.deviceId))
-      .returning();
-    return c.json(deviceView(revoked!));
+    return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
   },
 );
 
@@ -228,14 +202,37 @@ projectsApp.openapi(
     request: { params: params.extend({ deviceId: z.string().uuid() }) },
     responses: { ...ok('The number of items queued'), ...errors(503) },
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
-    const device = await loadDevice(c, access, c.req.param('deviceId'));
+    const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device || device.revokedAt) return c.json({ error: 'Not found' }, 404);
     const { enqueued } = await pollDevice(device);
-    return c.json({ device_id: device.deviceId, enqueued });
+    return c.json({ device_id: device.deviceId, enqueued }, 200);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/capture/devices/{deviceId}/assets/{name}',
+    tags,
+    summary: 'A signed, short-lived URL of one content-addressed asset (action screenshot, icon)',
+    ...auth,
+    request: { params: params.extend({ deviceId: z.string().uuid(), name: z.string() }) },
+    responses: { ...ok('The URL'), ...errors(503) },
+  }),
+  async (c) => {
+    const { deviceId, name } = c.req.valid('param');
+    if (!/^(sha256-)?[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(name)) return refuse(c, 400, 'capture_bad_asset', 'Asset names are sha256-<hex>.<ext>');
+    const access = await captureAccess(c);
+    if (isResponse(access)) return access as never;
+    const device = await loadDevice(access, deviceId);
+    if (!device) return c.json({ error: 'Not found' }, 404);
+    if (device.userId !== access.viewer) await auditRead(c, access, 'capture.member_view', device.userId);
+    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
+    return c.json(await assetUrl(access.accountId, access.projectId, device.deviceId, name), 200);
   },
 );
 
@@ -251,10 +248,10 @@ projectsApp.openapi(
     request: { params },
     responses: ok('The policy'),
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
-    return c.json(await readProjectPolicy(access.projectId));
+    if (isResponse(access)) return access as never;
+    return c.json(await readProjectPolicy(access.projectId), 200);
   },
 );
 
@@ -268,14 +265,14 @@ projectsApp.openapi(
     request: { params, body: { content: { 'application/json': { schema: z.object({ policy: z.record(z.string(), z.any()) }) } } } },
     responses: { ...ok('The stored policy'), ...errors(503) },
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     if (!access.manager) return refuse(c, 403, 'capture_forbidden', 'Only a project manager can change the capture policy');
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     const parsed = PolicySchema.safeParse(c.req.valid('json').policy);
     if (!parsed.success) return refuse(c, 400, 'capture_policy_invalid', parsed.error.issues[0]?.message ?? 'Invalid policy');
-    return c.json(await writeProjectPolicy(access, parsed.data, access.viewer));
+    return c.json(await writeProjectPolicy(access, parsed.data, access.viewer), 200);
   },
 );
 
@@ -292,37 +289,22 @@ projectsApp.openapi(
     },
     responses: { ...ok('The device'), ...errors(503) },
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     if (!access.manager) return refuse(c, 403, 'capture_forbidden', 'Only a project manager can change a device policy');
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
-    const device = await loadDevice(c, access, c.req.param('deviceId'));
+    const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device) return c.json({ error: 'Not found' }, 404);
     const raw = c.req.valid('json').policy;
     const parsed = raw === null ? null : PolicySchema.safeParse(raw);
     if (parsed && !parsed.success) return refuse(c, 400, 'capture_policy_invalid', parsed.error.issues[0]?.message ?? 'Invalid policy');
     await writeDevicePolicy(access, device.deviceId, parsed ? parsed.data : null);
-    const [fresh] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, device.deviceId));
-    return c.json(deviceView(fresh!));
+    return c.json(deviceView((await deviceInProject(access.projectId, device.deviceId))!), 200);
   },
 );
 
 // ─── Timeline ────────────────────────────────────────────────────────────────
-
-const subjectQuery = z.object({
-  user_id: z.string().uuid().optional(),
-  device_id: z.string().uuid().optional(),
-  day: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-});
-
-/** A timestamptz parameter. A bare Date in raw SQL is sent as its local `toString()`. */
-const at = (d: Date) => sql`${d.toISOString()}::timestamptz`;
-
-const deviceFilter = (column: string, deviceId: string | undefined) =>
-  deviceId ? sql` AND ${sql.raw(column)} = ${deviceId}::uuid` : sql``;
 
 projectsApp.openapi(
   createRoute({
@@ -334,57 +316,19 @@ projectsApp.openapi(
     request: { params, query: subjectQuery },
     responses: ok('The timeline'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id') });
-    if (isResponse(access)) return access;
+  async (c) => {
+    const query = c.req.valid('query');
+    const access = await captureAccess(c, { userId: query.user_id });
+    if (isResponse(access)) return access as never;
     const span = window(c);
-    if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart');
-    const deviceId = c.req.query('device_id');
+    if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
     const subject = access.subject!;
-    // Runs: consecutive frames of one device with the same app and window, no gap over 2 minutes.
-    const runs = isoRows(
-      await db.execute<Record<string, unknown>>(sql`
-        SELECT device_id, app, title, (array_agg(url ORDER BY ts))[1] AS url,
-               min(ts) AS start_at, max(ts) AS end_at, count(*)::int AS frames
-          FROM (SELECT *, sum(brk) OVER (PARTITION BY device_id ORDER BY ts) AS grp
-                  FROM (SELECT device_id, ts, app, title, url,
-                               CASE WHEN app IS NOT DISTINCT FROM lag(app) OVER w
-                                     AND title IS NOT DISTINCT FROM lag(title) OVER w
-                                     AND ts - lag(ts) OVER w < interval '2 minutes'
-                                    THEN 0 ELSE 1 END AS brk
-                          FROM kortix.timeline_frames
-                         WHERE project_id = ${access.projectId}::uuid AND user_id = ${subject}::uuid
-                           AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive
-                           ${deviceFilter('device_id', deviceId)}
-                        WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
-         GROUP BY device_id, grp, app, title
-         ORDER BY min(ts)
-         LIMIT 5000`),
-    );
-    const chunks = await db
-      .select({
-        chunk_id: timelineChunks.chunkId,
-        device_id: timelineChunks.deviceId,
-        kind: timelineChunks.kind,
-        start_at: timelineChunks.startAt,
-        end_at: timelineChunks.endAt,
-        item_count: timelineChunks.itemCount,
-        encrypted: timelineChunks.encrypted,
-      })
-      .from(timelineChunks)
-      .where(
-        and(
-          eq(timelineChunks.projectId, access.projectId),
-          eq(timelineChunks.userId, subject),
-          gte(timelineChunks.endAt, span.from),
-          lte(timelineChunks.startAt, span.to),
-          ...(deviceId ? [eq(timelineChunks.deviceId, deviceId)] : []),
-        ),
-      )
-      .orderBy(asc(timelineChunks.startAt))
-      .limit(5000);
-    const ranges = await rangesFor(access.projectId, subject, span);
-    return c.json({ user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), runs, chunks, ranges });
+    const [runs, chunks, ranges] = await Promise.all([
+      timelineRuns(access.projectId, subject, span, query.device_id),
+      timelineChunksIn(access.projectId, subject, span, query.device_id),
+      rangesFor(access.projectId, subject, span),
+    ]);
+    return c.json({ user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), runs, chunks, ranges }, 200);
   },
 );
 
@@ -398,39 +342,16 @@ projectsApp.openapi(
     request: { params, query: subjectQuery },
     responses: ok('The items'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id') });
-    if (isResponse(access)) return access;
+  async (c) => {
+    const query = c.req.valid('query');
+    const access = await captureAccess(c, { userId: query.user_id });
+    if (isResponse(access)) return access as never;
     const span = window(c);
-    if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart');
-    const deviceId = c.req.query('device_id');
-    const where = sql`project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${deviceFilter('device_id', deviceId)}`;
-    const [frames, actions, audio] = await Promise.all([
-      db.execute(sql`SELECT frame_id, ts, device_id, chunk_id, frame_index, app, bundle_id, title, url, domain, ocr_text, inactive FROM kortix.timeline_frames WHERE ${where} ORDER BY ts LIMIT 500`),
-      db.execute(sql`SELECT action_id, ts, device_id, chunk_id, kind, app, window_title, description, target, screenshot FROM kortix.timeline_actions WHERE ${where} ORDER BY ts LIMIT 500`),
-      db.execute(sql`SELECT line_id, ts, end_at, device_id, chunk_id, text FROM kortix.timeline_audio WHERE ${where} ORDER BY ts LIMIT 500`),
-    ]);
-    return c.json({ user_id: access.subject, from: span.from.toISOString(), to: span.to.toISOString(), frames: isoRows(frames as Iterable<Record<string, any>>), actions: isoRows(actions as Iterable<Record<string, any>>), audio: isoRows(audio as Iterable<Record<string, any>>) });
+    if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
+    const items = await timelineItems(access.projectId, access.subject!, span, query.device_id);
+    return c.json({ user_id: access.subject, from: span.from.toISOString(), to: span.to.toISOString(), ...items }, 200);
   },
 );
-
-// ─── Search ──────────────────────────────────────────────────────────────────
-
-// These expressions match the GIN indexes in kortix.ts exactly, so the planner uses them.
-const FRAME_DOC = sql.raw(`to_tsvector('simple'::regconfig, coalesce("app", '') || ' ' || coalesce("title", '') || ' ' || coalesce("url", '') || ' ' || coalesce("ocr_text", ''))`);
-const ACTION_DOC = sql.raw(`to_tsvector('simple'::regconfig, coalesce("kind", '') || ' ' || coalesce("app", '') || ' ' || coalesce("window_title", '') || ' ' || coalesce("description", ''))`);
-const AUDIO_DOC = sql.raw(`to_tsvector('simple'::regconfig, coalesce("text", ''))`);
-
-/** ±80 characters around the first query word found in `text`. */
-export function snippet(text: string | null, q: string): string {
-  if (!text) return '';
-  const flat = text.replace(/\s+/g, ' ');
-  const lower = flat.toLowerCase();
-  const hits = (q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map((w) => lower.indexOf(w)).filter((i) => i >= 0);
-  const at = hits.length ? Math.min(...hits) : 0;
-  const start = Math.max(0, at - 80);
-  return `${start > 0 ? '…' : ''}${flat.slice(start, at + 80)}${at + 80 < flat.length ? '…' : ''}`;
-}
 
 projectsApp.openapi(
   createRoute({
@@ -450,43 +371,26 @@ projectsApp.openapi(
     },
     responses: ok('Hits, newest first'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id') });
-    if (isResponse(access)) return access;
-    const q = String(c.req.query('q') ?? '').trim().slice(0, 500);
+  async (c) => {
+    const query = c.req.valid('query');
+    const access = await captureAccess(c, { userId: query.user_id });
+    if (isResponse(access)) return access as never;
+    const q = query.q.trim().slice(0, 500);
     if (!q) return refuse(c, 400, 'capture_bad_query', 'q is required');
-    const from = c.req.query('from') ? new Date(c.req.query('from')) : new Date(0);
-    const to = c.req.query('to') ? new Date(c.req.query('to')) : new Date(Date.now() + 86_400_000);
+    const from = query.from ? new Date(query.from) : new Date(0);
+    const to = query.to ? new Date(query.to) : new Date(Date.now() + 86_400_000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return refuse(c, 400, 'capture_bad_window', 'from/to must be ISO instants');
-    const kinds = new Set(String(c.req.query('kinds') ?? 'screen,actions,audio').split(',').map((k) => k.trim()));
-    const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 20) || 20, 1), 100);
-    const app = c.req.query('app');
-    const deviceId = c.req.query('device_id');
-    const scope = sql`project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid AND ts >= ${at(from)} AND ts < ${at(to)} ${deviceFilter('device_id', deviceId)} ${app ? sql` AND lower(app) = lower(${app})` : sql``}`;
-    const query = sql`websearch_to_tsquery('simple', ${q})`;
-    const parts = [
-      kinds.has('screen') &&
-        sql`(SELECT * FROM (SELECT DISTINCT ON (chunk_id, title) 'screen' AS kind, frame_id AS id, ts, device_id, chunk_id, app, title, url, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY chunk_id, title, ts DESC) per_window ORDER BY ts DESC LIMIT ${limit})`,
-      kinds.has('actions') &&
-        sql`(SELECT 'actions' AS kind, action_id AS id, ts, device_id, chunk_id, app, window_title AS title, NULL AS url, description AS text FROM kortix.timeline_actions WHERE ${scope} AND ${ACTION_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${limit})`,
-      kinds.has('audio') &&
-        sql`(SELECT 'audio' AS kind, line_id AS id, ts, device_id, chunk_id, NULL AS app, NULL AS title, NULL AS url, text FROM kortix.timeline_audio WHERE ${scope} AND ${AUDIO_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${limit})`,
-    ].filter(Boolean) as ReturnType<typeof sql>[];
-    if (!parts.length) return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');
-    const rows = isoRows(
-      await db.execute<Record<string, any>>(sql`SELECT * FROM (${sql.join(parts, sql` UNION ALL `)}) hits ORDER BY ts DESC LIMIT ${limit}`),
-    );
-    return c.json({
-      user_id: access.subject,
-      q,
-      hits: rows.map(({ text, ...row }) => ({ ...row, snippet: snippet(text, q) })),
-    });
+    const kinds = new Set((query.kinds ?? 'screen,actions,audio').split(',').map((k) => k.trim())) as Set<SearchKind>;
+    if (!(['screen', 'actions', 'audio'] as const).some((k) => kinds.has(k))) {
+      return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');
+    }
+    const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), 100);
+    const hits = await searchTimeline(access.projectId, access.subject!, { q, from, to, kinds, app: query.app, deviceId: query.device_id, limit });
+    return c.json({ user_id: access.subject, q, hits }, 200);
   },
 );
 
 // ─── Media ───────────────────────────────────────────────────────────────────
-
-const MEDIA_TTL_SECONDS = 300;
 
 projectsApp.openapi(
   createRoute({
@@ -498,29 +402,16 @@ projectsApp.openapi(
     request: { params: params.extend({ frameId: z.string().uuid() }), query: z.object({ user_id: z.string().uuid().optional() }) },
     responses: ok('The frame'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id') });
-    if (isResponse(access)) return access;
-    const [frame] = isoRows(
-      await db.execute<Record<string, any>>(
-        sql`SELECT * FROM kortix.timeline_frames WHERE frame_id = ${c.req.param('frameId')}::uuid AND project_id = ${access.projectId}::uuid AND user_id = ${access.subject!}::uuid LIMIT 1`,
-      ),
-    );
-    if (!frame) return c.json({ error: 'Not found' }, 404);
-    const [chunk] = await db.select().from(timelineChunks).where(eq(timelineChunks.chunkId, frame.chunk_id)).limit(1);
-    const video = chunk ? await mediaUrl(chunk, 'video') : null;
-    return c.json({ frame, video: video && { ...video, offset_ms: new Date(frame.ts).getTime() - chunk!.startAt.getTime() } });
+  async (c) => {
+    const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
+    if (isResponse(access)) return access as never;
+    const found = await frameOf(access.projectId, access.subject!, c.req.valid('param').frameId);
+    if (!found) return c.json({ error: 'Not found' }, 404);
+    const video = found.chunk ? await mediaUrl(found.chunk, 'video') : null;
+    const offset = found.chunk ? new Date(found.frame.ts as string).getTime() - found.chunk.startAt.getTime() : 0;
+    return c.json({ frame: found.frame, video: video && { ...video, offset_ms: offset } }, 200);
   },
 );
-
-async function mediaUrl(chunk: typeof timelineChunks.$inferSelect, role: string) {
-  const info = (chunk.manifest as Manifest).objects?.[role];
-  if (!info || !captureStoreConfigured()) return null;
-  const key = objectKey(projectPrefix(chunk.accountId, chunk.projectId), chunk.deviceId, info.key);
-  if (!key) return null;
-  const signed = await captureStore.presignDownload(key, MEDIA_TTL_SECONDS);
-  return { url: signed.url, expires_at: signed.expiresAt.toISOString(), encrypted: isEncrypted(chunk.manifest as Manifest) };
-}
 
 projectsApp.openapi(
   createRoute({
@@ -532,70 +423,26 @@ projectsApp.openapi(
     request: { params: params.extend({ chunkId: z.string().uuid() }), query: z.object({ user_id: z.string().uuid().optional() }) },
     responses: ok('The URLs'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id') });
-    if (isResponse(access)) return access;
-    const [chunk] = await db
-      .select()
-      .from(timelineChunks)
-      .where(and(eq(timelineChunks.chunkId, c.req.param('chunkId')), eq(timelineChunks.projectId, access.projectId), eq(timelineChunks.userId, access.subject!)))
-      .limit(1);
+  async (c) => {
+    const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
+    if (isResponse(access)) return access as never;
+    const chunk = await chunkOf(access.projectId, access.subject!, c.req.valid('param').chunkId);
     if (!chunk) return c.json({ error: 'Not found' }, 404);
-    return c.json({ chunk_id: chunk.chunkId, kind: chunk.kind, video: await mediaUrl(chunk, 'video'), audio: await mediaUrl(chunk, 'audio') });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/capture/devices/{deviceId}/assets/{name}',
-    tags,
-    summary: 'A signed, short-lived URL of one content-addressed asset (action screenshot, icon)',
-    ...auth,
-    request: { params: params.extend({ deviceId: z.string().uuid(), name: z.string() }) },
-    responses: ok('The URL'),
-  }),
-  async (c: any) => {
-    const name = c.req.param('name');
-    if (!/^(sha256-)?[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(name)) return refuse(c, 400, 'capture_bad_asset', 'Asset names are sha256-<hex>.<ext>');
-    const access = await captureAccess(c);
-    if (isResponse(access)) return access;
-    const device = await loadDevice(c, access, c.req.param('deviceId'));
-    if (!device) return c.json({ error: 'Not found' }, 404);
-    if (device.userId !== access.viewer) {
-      await recordAuditEvent({ accountId: access.accountId, projectId: access.projectId, actorUserId: access.viewer, actorType: 'human', action: 'capture.member_view', resourceType: 'capture_member', resourceId: device.userId, outcome: 'success', metadata: { path: c.req.path } });
-    }
-    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
-    const signed = await captureStore.presignDownload(`${projectPrefix(access.accountId, access.projectId)}/${device.deviceId}/assets/${name}`, MEDIA_TTL_SECONDS);
-    return c.json({ url: signed.url, expires_at: signed.expiresAt.toISOString() });
+    return c.json({ chunk_id: chunk.chunkId, kind: chunk.kind, video: await mediaUrl(chunk, 'video'), audio: await mediaUrl(chunk, 'audio') }, 200);
   },
 );
 
 // ─── Ranges ──────────────────────────────────────────────────────────────────
 
-async function rangesFor(projectId: string, userId: string, span: { from: Date; to: Date }) {
-  const rows = await db
-    .select()
-    .from(timelineRanges)
-    .where(and(eq(timelineRanges.projectId, projectId), eq(timelineRanges.userId, userId), gte(timelineRanges.endAt, span.from), lte(timelineRanges.startAt, span.to)))
-    .orderBy(asc(timelineRanges.startAt))
-    .limit(1000);
-  return rows.map(rangeView);
-}
-
-function rangeView(range: typeof timelineRanges.$inferSelect) {
-  return {
-    range_id: range.rangeId,
-    user_id: range.userId,
-    device_id: range.deviceId,
-    source: range.source,
-    title: range.title,
-    start_at: range.startAt.toISOString(),
-    end_at: range.endAt.toISOString(),
-    status: range.status,
-    created_by: range.createdBy,
-    created_at: range.createdAt.toISOString(),
-  };
+/** A range of this project the caller may read. Another member's is audited for managers, "not found" otherwise. */
+async function loadRange(c: Ctx, access: Access, rangeId: string) {
+  const range = await rangeInProject(access.projectId, rangeId);
+  if (!range) return null;
+  if (range.userId !== access.viewer) {
+    if (!access.manager) return null;
+    await auditRead(c, access, 'capture.member_view', range.userId);
+  }
+  return range;
 }
 
 projectsApp.openapi(
@@ -608,12 +455,12 @@ projectsApp.openapi(
     request: { params, query: subjectQuery },
     responses: ok('The ranges'),
   }),
-  async (c: any) => {
-    const access = await captureAccess(c, { userId: c.req.query('user_id') });
-    if (isResponse(access)) return access;
+  async (c) => {
+    const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
+    if (isResponse(access)) return access as never;
     const span = window(c);
-    if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart');
-    return c.json({ ranges: await rangesFor(access.projectId, access.subject!, span) });
+    if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
+    return c.json({ ranges: await rangesFor(access.projectId, access.subject!, span) }, 200);
   },
 );
 
@@ -636,9 +483,9 @@ projectsApp.openapi(
     },
     responses: { 201: json(z.any(), 'The saved range'), ...errors(400, 403, 404) },
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     const body = c.req.valid('json');
     const startAt = new Date(body.start_at);
     const endAt = new Date(body.end_at);
@@ -646,42 +493,22 @@ projectsApp.openapi(
       return refuse(c, 400, 'capture_bad_window', 'start_at < end_at, at most 24 hours apart');
     }
     if (body.device_id) {
-      const device = await loadDevice(c, access, body.device_id);
+      const device = await loadDevice(access, body.device_id);
       if (!device || device.userId !== access.viewer) return c.json({ error: 'Not found' }, 404);
     }
-    const [range] = await db
-      .insert(timelineRanges)
-      .values({
-        accountId: access.accountId,
-        projectId: access.projectId,
-        userId: access.viewer,
-        deviceId: body.device_id ?? null,
-        source: 'saved',
-        title: body.title?.trim() || null,
-        startAt,
-        endAt,
-        status: 'closed',
-        createdBy: access.viewer,
-      })
-      .returning();
-    await enqueueRangeProcessing(range!);
-    return c.json(rangeView(range!), 201);
+    const range = await saveRange({
+      accountId: access.accountId,
+      projectId: access.projectId,
+      userId: access.viewer,
+      deviceId: body.device_id ?? null,
+      title: body.title?.trim() || null,
+      startAt,
+      endAt,
+    });
+    await enqueueRangeProcessing(range);
+    return c.json(rangeView(range), 201);
   },
 );
-
-async function loadRange(c: Context, access: Access) {
-  const [range] = await db
-    .select()
-    .from(timelineRanges)
-    .where(and(eq(timelineRanges.rangeId, c.req.param('rangeId')!), eq(timelineRanges.projectId, access.projectId)))
-    .limit(1);
-  if (!range) return null;
-  if (range.userId !== access.viewer) {
-    if (!access.manager) return null;
-    await recordAuditEvent({ accountId: access.accountId, projectId: access.projectId, actorUserId: access.viewer, actorType: 'human', action: 'capture.member_view', resourceType: 'capture_member', resourceId: range.userId, outcome: 'success', metadata: { path: c.req.path } });
-  }
-  return range;
-}
 
 projectsApp.openapi(
   createRoute({
@@ -693,16 +520,12 @@ projectsApp.openapi(
     request: { params: params.extend({ rangeId: z.string().uuid() }) },
     responses: ok('The range'),
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
-    const range = await loadRange(c, access);
+    if (isResponse(access)) return access as never;
+    const range = await loadRange(c, access, c.req.valid('param').rangeId);
     if (!range) return c.json({ error: 'Not found' }, 404);
-    const outputs = await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, range.rangeId)).orderBy(asc(rangeOutputs.createdAt));
-    return c.json({
-      ...rangeView(range),
-      outputs: outputs.map((o) => ({ kind: o.kind, status: o.status, model: o.model, output: o.output, usage: o.usage, error: o.error, updated_at: o.updatedAt.toISOString() })),
-    });
+    return c.json({ ...rangeView(range), outputs: await rangeOutputsOf(range.rangeId) }, 200);
   },
 );
 
@@ -716,13 +539,13 @@ projectsApp.openapi(
     request: { params: params.extend({ rangeId: z.string().uuid() }) },
     responses: { 202: json(z.any(), 'Queued'), ...errors(403, 404) },
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c);
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot start range processing');
-    const range = await loadRange(c, access);
+    const range = await loadRange(c, access, c.req.valid('param').rangeId);
     if (!range) return c.json({ error: 'Not found' }, 404);
-    await db.update(timelineRanges).set({ status: 'closed', updatedAt: sql`now()` }).where(eq(timelineRanges.rangeId, range.rangeId));
+    await closeRangeForReprocess(range.rangeId);
     const queued = await enqueueRangeProcessing(range, `:rerun-${Date.now()}`);
     return c.json({ range_id: range.rangeId, queued }, 202);
   },
@@ -740,45 +563,11 @@ projectsApp.openapi(
     request: { params, query: z.object({ day: z.string().optional(), from: z.string().optional(), to: z.string().optional() }) },
     responses: ok('The summary'),
   }),
-  async (c: any) => {
+  async (c) => {
     const access = await captureAccess(c, { projectWide: true });
-    if (isResponse(access)) return access;
+    if (isResponse(access)) return access as never;
     const span = window(c);
-    if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart');
-    // A frame's time runs until the next frame of its device, capped at 60 s (a pause is not work).
-    const perApp = Array.from(
-      await db.execute<{ user_id: string; app: string | null; seconds: number }>(sql`
-        SELECT user_id, app, round(sum(LEAST(EXTRACT(EPOCH FROM (next_ts - ts)), 60)))::int AS seconds
-          FROM (SELECT user_id, app, ts, inactive, lead(ts) OVER (PARTITION BY device_id ORDER BY ts) AS next_ts
-                  FROM kortix.timeline_frames
-                 WHERE project_id = ${access.projectId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)}) f
-         WHERE NOT inactive AND next_ts IS NOT NULL
-         GROUP BY user_id, app`),
-    );
-    const ranges = Array.from(
-      await db.execute<{ user_id: string; ranges: number }>(sql`
-        SELECT user_id, count(*)::int AS ranges FROM kortix.timeline_ranges
-         WHERE project_id = ${access.projectId}::uuid AND end_at >= ${at(span.from)} AND start_at < ${at(span.to)}
-         GROUP BY user_id`),
-    );
-    const devices = await db
-      .select({ userId: captureDevices.userId, count: sql<number>`count(*)::int` })
-      .from(captureDevices)
-      .where(and(eq(captureDevices.projectId, access.projectId), isNull(captureDevices.revokedAt)))
-      .groupBy(captureDevices.userId);
-    const people = new Map<string, { user_id: string; active_seconds: number; apps: Array<{ app: string | null; seconds: number }>; ranges: number; devices: number }>();
-    const person = (userId: string) => {
-      if (!people.has(userId)) people.set(userId, { user_id: userId, active_seconds: 0, apps: [], ranges: 0, devices: 0 });
-      return people.get(userId)!;
-    };
-    for (const row of perApp) {
-      const p = person(row.user_id);
-      p.active_seconds += Number(row.seconds);
-      p.apps.push({ app: row.app, seconds: Number(row.seconds) });
-    }
-    for (const row of ranges) person(row.user_id).ranges = Number(row.ranges);
-    for (const row of devices) person(row.userId).devices = Number(row.count);
-    for (const p of people.values()) p.apps.sort((a, b) => b.seconds - a.seconds);
-    return c.json({ from: span.from.toISOString(), to: span.to.toISOString(), people: [...people.values()].sort((a, b) => b.active_seconds - a.active_seconds) });
+    if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
+    return c.json({ from: span.from.toISOString(), to: span.to.toISOString(), people: await peopleSummary(access.projectId, span) }, 200);
   },
 );

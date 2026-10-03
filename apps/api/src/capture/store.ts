@@ -23,7 +23,7 @@ export function captureStoreConfigured(): boolean {
 }
 
 export function captureRegion(): string {
-  return (config.KORTIX_CAPTURE_S3_REGION ?? '').trim() || process.env.AWS_REGION || 'us-east-1';
+  return (config.KORTIX_CAPTURE_S3_REGION ?? '').trim() || 'us-east-1';
 }
 
 /** The S3 endpoint a device talks to. AWS: the regional endpoint. */

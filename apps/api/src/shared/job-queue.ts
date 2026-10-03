@@ -23,6 +23,7 @@ import { logger } from '../lib/logger';
 export type Job = typeof jobQueue.$inferSelect;
 export type JobHandler = (job: Job) => Promise<void>;
 
+// replica-local: the handler registry is code, registered at import; every replica registers the same handlers.
 const handlers = new Map<string, { run: JobHandler; visibilityMs: number }>();
 
 /** Register the handler of one queue. `visibilityMs` must exceed the handler's worst run time. */
