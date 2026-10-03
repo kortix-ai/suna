@@ -10,7 +10,7 @@ import pg from 'pg';
  * the FK columns and an index's leading columns (supabase/splinter
  * lints/0001_unindexed_foreign_keys.sql). The UNIQUE constraint on
  * (session_id, connector_id, action_path) leads with session_id, so it covers
- * neither FK — before `20261002213220366_session_tool_approvals_fk_indexes`
+ * neither FK — before `20261003045230000_session_tool_approvals_fk_indexes`
  * the advisor reported both FKs (live prod read, 2026-10-02).
  *
  * The db-suites lane supplies TEST_DATABASE_URL: a fresh clone of the migrated

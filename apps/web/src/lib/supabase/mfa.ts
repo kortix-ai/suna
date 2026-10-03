@@ -367,7 +367,6 @@ export const supabaseMFAService = {
       const isNewUser = userCreatedAt && userCreatedAt >= PHONE_VERIFICATION_CUTOFF_DATE;
 
       const factors: FactorInfo[] = [];
-      const phoneFactors: FactorInfo[] = [];
       let hasVerifiedPhone = false;
 
       if (user.factors) {
@@ -384,7 +383,6 @@ export const supabaseMFAService = {
           factors.push(factorInfo);
 
           if (factor.factor_type === 'phone') {
-            phoneFactors.push(factorInfo);
             if (factor.status === 'verified') {
               hasVerifiedPhone = true;
             }

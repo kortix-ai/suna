@@ -64,6 +64,31 @@ describe('createCorsMiddleware', () => {
     expect(allowed).toContain('x-kortix-admin-bypass');
   });
 
+  // The SDK sends `X-Kortix-Client-Version` on every request. A browser
+  // refuses a cross-origin request whose preflight does not allow each
+  // custom header it carries, so a missing entry breaks every web request.
+  test('the client surface and version headers survive a preflight', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware({ internalEnvironment: 'prod', extraOrigins: [] }));
+    app.get('/v1/read', (context) => context.json({ ok: true }));
+
+    const response = await app.request('/v1/read', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://kortix.com',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'authorization,x-kortix-client,x-kortix-client-version',
+      },
+    });
+
+    const allowed = (response.headers.get('access-control-allow-headers') ?? '')
+      .toLowerCase()
+      .split(',')
+      .map((name) => name.trim());
+    expect(allowed).toContain('x-kortix-client');
+    expect(allowed).toContain('x-kortix-client-version');
+  });
+
   // The proxy attributes a failure with `X-Kortix-Proxy-Hop`, and the health
   // probe that reads it is ALWAYS cross-origin (dev.kortix.com →
   // dev-api.kortix.com). A response header the browser does not expose is

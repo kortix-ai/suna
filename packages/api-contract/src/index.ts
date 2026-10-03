@@ -1187,7 +1187,7 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
  * A negative is a claim, and only a source that could have known may make it.
  * Before this, `/start` could answer `stage:"failed"` from a stamp written
  * hours earlier without touching a provider on the call (SampleCo 2026-08-26,
- * session 9c8749ac: a 03:37Z `runtime_boot_failed` replayed for 10+ hours with
+ * one session: a 03:37Z `runtime_boot_failed` replayed for 10+ hours with
  * `lastInitError:null`). Every failure now carries its evidence.
  */
 export const SessionStartFailureEvidenceSchema = z
