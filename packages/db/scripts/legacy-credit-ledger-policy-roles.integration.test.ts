@@ -4,7 +4,7 @@ import pg from 'pg';
 
 const url = process.env.TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const migrationPath = join(import.meta.dir, '../migrations/20261003053000000_legacy_credit_ledger_policy_roles.sql');
+const migrationPath = join(import.meta.dir, '../migrations/20261003145424808_legacy_credit_ledger_policy_roles.sql');
 
 suite('legacy credit ledger policy roles', () => {
   let client: pg.Client;
