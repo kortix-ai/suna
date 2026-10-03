@@ -1,5 +1,5 @@
 {
-  "source_hash": "8105074a26a3dce2a9acb918c2917fd43c6fa15afc066dd98e8a87958a81985e",
+  "source_hash": "e6731688c2423107484f571a6efa93d8377f3db74156b0a248fd10f67d1d5bcc",
   "diff_files": [
     "apps/web/src/app/(auth)/auth/callback/pkce-resume-redirect.test.ts",
     "apps/web/src/app/(auth)/auth/callback/route.ts",
@@ -7,13 +7,13 @@
     "apps/web/src/lib/auth/pkce-resume.test.ts",
     "apps/web/src/lib/auth/pkce-resume.ts"
   ],
-  "diff_hash": "8a8ff0e0b7f2ac468ffdbef0d30a88712c75ae7f8d10a0071b29e9f5bb959aaf",
-  "head": "0ee3a80b351e149319ec922c48f0cedf9d845a52",
-  "passed": false,
+  "diff_hash": "b3f92c8b5ffcff3e2a87fb65e862f78e604c771a281c5384c7f936cc3f357dcf",
+  "head": "52c26bed4f7f662f1e8ec1c40aa1519e55ba0cb6",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:28:52.751Z"
+  "at": "2026-10-03T23:09:11.085Z"
 }
