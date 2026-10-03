@@ -111,13 +111,14 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Restore Chromium
-        if: matrix.mode == 'browser'
+        # The packages lane also runs apps/web's layout test that launches Chromium.
+        if: matrix.mode == 'browser' || matrix.mode == 'packages'
         uses: actions/cache@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
-        if: matrix.mode == 'browser'
+        if: matrix.mode == 'browser' || matrix.mode == 'packages'
         run: pnpm --dir tests exec playwright install --with-deps chromium
       - name: Free the local Supabase ports
         # Blacksmith runners are reused, and a job that ended without stopping
