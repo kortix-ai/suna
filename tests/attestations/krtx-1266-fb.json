@@ -17,6 +17,8 @@
     "apps/mobile/lib/session/session-list.ts",
     "apps/web/src/components/projects/session-label.ts",
     "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -29,15 +31,16 @@
     "packages/shared/package.json",
     "packages/shared/src/chat-mention.ts",
     "packages/shared/src/host-config/test-sandbox-env.ts",
-    "packages/shared/src/index.ts"
+    "packages/shared/src/index.ts",
+    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts"
   ],
-  "diff_hash": "6d25ae55772a393441cf8b60ec46822e590795a3920f013a0e59c1fe09b8c323",
-  "head": "afbb3f7d9a0d935d2aa16d3d4a37a8e8b40fdda9",
+  "diff_hash": "a6035507e976a0c5d36b2c4d22ef27878d7bcbeca3ea17989d743aeb3a206788",
+  "head": "329f814b6dd760fe38110da0177503cb375390b8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:32:49.373Z"
+  "at": "2026-10-03T23:43:18.962Z"
 }

@@ -8,7 +8,8 @@ import { logger } from '../../lib/logger';
 import { refusesSelfMerge } from '../change-request-policy';
 // Its own module, not the `../git` barrel: several route suites replace the
 // barrel wholesale with `mock.module`.
-import { manifestChangeRequiredActions } from '../change-request-governance';
+import { manifestChange } from '../change-request-governance';
+import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
@@ -113,9 +114,9 @@ projectsApp.openapi(
     // kortix_permissions list is flat, so an agent with merge alone cannot
     // merge a change that widens itself. Same rule for every principal.
     if (isProjectSessionPrincipal(c)) {
-      let required: string[];
+      let change: Awaited<ReturnType<typeof manifestChange>>;
       try {
-        required = await manifestChangeRequiredActions(projectForGit, cr);
+        change = await manifestChange(projectForGit, cr);
       } catch (err) {
         logger.warn('[cr-merge] could not read the manifest to classify the merge; refusing it', {
           cr: cr.number,
@@ -133,9 +134,11 @@ projectsApp.openapi(
           503,
         );
       }
-      for (const action of required) {
+      for (const action of change.required) {
         await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
       }
+      // And a merging agent grants only what it holds (iam/agent-grant-ceiling.ts).
+      await assertNoGrantEscalation(c, projectId, change.grantsBefore, change.grantsAfter);
     }
 
     // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't

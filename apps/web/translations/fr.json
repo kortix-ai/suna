@@ -1159,10 +1159,6 @@
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
         },
-        "agent_principal": {
-          "name": "Agents comme principaux",
-          "description": "Les agents agissent en leur propre nom : avec leurs permissions Kortix, plafonnées par leur rôle. La personne qui lance un agent n'apporte que ses propres comptes."
-        },
         "config_releases": {
           "name": "Versions de configuration",
           "description": "Exécute les sessions avec la configuration d'agent actuelle de la branche de base, servie en lecture seule, afin qu'un agent, un skill ou un outil fusionné atteigne chaque session en cours. Désactivé, une session lit son propre dossier de configuration dans le workspace."
@@ -19194,8 +19190,9 @@
       "text48b78a9ab65b": "Comment les exécutions restent-elles isolées ?",
       "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
       "text39207bf34111": "Compétences associées",
-      "text85b7a59cdbd5": "Agent de plateforme",
-      "textd9c0c74b514b": "Meta est un agent de plateforme qui orchestre votre travail. Sa configuration est fixée : démarrez une session avec lui, mais il ne peut pas être configuré ici."
+      "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
+      "text85b7a59cdbd5": "Agent de la plateforme",
+      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -19247,9 +19244,6 @@
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
       "grant": "{names} {count, plural, one {ne fait pas} other {ne font pas}} partie des secrets de l'agent {agent}. Ouvrez Personnaliser → Agents → {agent} → Secrets et {count, plural, one {activez-le} other {activez-les}}.",
       "allowlist": "{names} {count, plural, one {est} other {sont}} hors des secrets de cette session. Démarrez une nouvelle session pour {count, plural, one {l'utiliser} other {les utiliser}}."
-    },
-    "featuresSessionSessionChat": {
-      "turnFailedNoReason": "Le tour de l’agent a échoué. Aucune raison n’a été signalée."
     }
   },
   "projectOnboarding": {
@@ -20214,9 +20208,7 @@
     "openWithoutGrant": "Aucune autorisation requise",
     "grantNote": "L'agent a aussi besoin de project.app.read dans ses permissions Kortix.",
     "emptyTitle": "Pas encore d'Apps",
-    "emptyDescription": "Les Apps déployées dans ce projet apparaissent ici pour que l'agent les choisisse.",
-    "flagOffHint": "Agent principal est désactivé sur ce projet : l'autorisation est enregistrée mais ne contrôle encore aucune App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Les Apps déployées dans ce projet apparaissent ici pour que l'agent les choisisse."
   },
   "connectorsAppReturn": {
     "done": "Terminé. Retour à l’app Kortix"
