@@ -282,15 +282,28 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
 **Tests are attested, not run by CI.** `pnpm test` writes
-`tests/test-attestation.json` on a green run: `source_hash` (sha256 of every
-file the commit would contain, minus the attestation itself), `head`, `passed`,
-per-lane results, `at`. Commit it. The `.githooks/pre-push` hook recomputes the
-hash from the pushed commit and rejects the push when the attestation is stale,
-red, or missing. Never bypass it with `--no-verify`: the merge gate runs
-`pnpm test:verify` on the PR head: exit `0` green, `1` stale/red/missing
-(`--strict` exits `3` when a lane is skipped). Any
-source edit, including a merge of `main`, makes the attestation stale: re-run
-`pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. Two
+`tests/attestations/<branch>.json` on a green run (`/` and every char outside
+`[A-Za-z0-9._-]` become `-`; a detached HEAD writes `detached-<short-sha>.json`):
+`diff_files` + `diff_hash` (the files the PR itself changed —
+`git diff origin/main...HEAD` — and their sha256, minus every attestation file),
+`source_hash` (full-tree fallback for a direct main push), `head`, `passed`,
+per-lane results, `at`. The same write deletes every other file in
+`tests/attestations/` and the legacy `tests/test-attestation.json`. Commit
+`tests/attestations/`. One file per branch means two PRs never edit the same
+path, so a merge to `main` never makes another PR conflict on its attestation.
+The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
+rejects the push when the attestation is stale, red, or missing. Never bypass
+it with `--no-verify`: the merge gate runs
+`pnpm test:verify --rev <head> --branch <headRefName>`: exit `0` green, `1`
+stale/red/missing (`--strict` exits `3` when a lane is skipped). Verify
+reads the attestation file the PR's diff adds or edits under
+`tests/attestations/` (with several, the `--branch` match, else the newest
+`at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
+carries the legacy file and conflicts on it after a merge of `origin/main`:
+delete it and re-run `pnpm test`.
+The attestation stays green after a merge of `origin/main` that touches other
+files; it goes stale only when a file the PR itself changed is edited after the
+run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. Two
 sanctioned environment skips exist, never a pass and refused by `--strict`: with
 no Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
 `skipped-no-db` — the merge gate holds a DB-touching PR (`db-wait`) on it — and

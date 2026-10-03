@@ -534,9 +534,10 @@ describe('account membership', () => {
 
   test('account_memberships declares the indexes the database has', () => {
     // The primary key leads with user_id, so account-only reads need their own index.
+    // idx_account_members_user_account duplicated the primary key and was dropped
+    // by 20261003145424803_drop_duplicate_account_memberships_index.
     expect(indexNames(accountMemberships).sort()).toEqual([
       'idx_account_members_account_id',
-      'idx_account_members_user_account',
     ]);
   });
 });

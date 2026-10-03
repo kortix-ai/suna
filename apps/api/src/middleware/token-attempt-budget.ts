@@ -26,6 +26,7 @@ const WINDOW_MS = 60_000;
 const MAX_TRACKED_ADDRESSES = 50_000;
 
 type Window = { count: number; startedAt: number };
+// replica-local: limit × API replicas; blunts token guessing, not a quota.
 const windows = new Map<string, Window>();
 
 function limit(): number {

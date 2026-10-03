@@ -41,6 +41,11 @@ interface JwksResponse {
 const keyCache = new Map<string, CryptoKey>();
 let jwksFetchedAt = 0;
 const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour
+// `kid` is unauthenticated input: one refetch per minute at most, or every
+// forged kid costs a JWKS request. A token signed by a key rotated in inside
+// that minute falls back to the network check (`no-key-for-kid` is inconclusive).
+const UNKNOWN_KID_REFETCH_MS = 60 * 1000;
+let unknownKidRefetchAt = 0;
 
 async function loadJwks(): Promise<void> {
   const supabaseUrl = config.SUPABASE_URL;
@@ -190,8 +195,9 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
   let key: CryptoKey | undefined;
   if (header.kid) {
     key = keyCache.get(header.kid);
-    if (!key) {
+    if (!key && Date.now() - unknownKidRefetchAt >= UNKNOWN_KID_REFETCH_MS) {
       // Unknown kid — JWKS may have rotated, try refreshing once
+      unknownKidRefetchAt = Date.now();
       await loadJwks();
       key = keyCache.get(header.kid);
     }
