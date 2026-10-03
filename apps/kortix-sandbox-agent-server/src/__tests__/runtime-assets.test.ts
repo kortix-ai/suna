@@ -40,11 +40,6 @@ async function workspace() {
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'opt', 'runtime-assets-state.json'),
     configDir: join(dir, 'config'),
-    // Mask the platform's chunk-store binaries (the real /usr/local/bin/kortix-agent
-    // inside a Kortix platform sandbox): the chunk indexer reads every local
-    // source one chunkSize at a time, and a CI box has no agent binaries at all.
-    agentStateDir: join(dir, 'opt', 'agent-state'),
-    agentBakedPath: join(dir, 'opt', 'absent-agent'),
   }
 }
 
@@ -121,17 +116,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
-<<<<<<< HEAD
-    agentStateDir: ws.agentStateDir,
-    agentBakedPath: ws.agentBakedPath,
-=======
     // Own the box: the chunk index hashes whatever these resolve to, and the
     // defaults reach this host's real agent binary (/usr/local/bin/kortix-agent,
     // ~100 MB hashed 8 bytes at a time by the stub's chunk size). A CI runner
     // has neither, so pointing both into the fixture restores that shape.
     agentStateDir: join(ws.root, 'agent-state'),
     agentBakedPath: join(ws.root, 'absent-agent'),
->>>>>>> origin/main
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
