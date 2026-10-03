@@ -57,7 +57,7 @@ function allowedRedirectUri(value: string | undefined, projectId: string): strin
   return uri.href;
 }
 
-projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any) => {
+projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -94,7 +94,7 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any
   return c.json({ connection_id: connectionId });
 });
 
-projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', async (c: any) => {
+projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -112,7 +112,7 @@ projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', asyn
   return c.json({ ok: true });
 });
 
-projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', async (c: any) => {
+projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -122,7 +122,7 @@ projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', asyn
   return c.json({ application: redactOAuth2Application(loaded.application) });
 });
 
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   if (!(await loadMutableConnection(c, projectId, connectionId))) {
@@ -146,7 +146,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async 
  */
 projectsApp.post(
   '/:projectId/connections/:connectionId/oauth2/discover-resource',
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
     if (!(await loadMutableConnection(c, projectId, connectionId))) {
@@ -169,7 +169,7 @@ projectsApp.post(
 
 /** RFC 7591: register Kortix with the authorization server and save the
  * issued client as this connection's OAuth2 application. */
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -194,7 +194,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async 
   }
 });
 
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -221,7 +221,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async
   }
 });
 
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -251,7 +251,7 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c
 
 projectsApp.post(
   '/:projectId/connections/:connectionId/oauth2/device/:sessionId',
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
     const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -270,7 +270,7 @@ projectsApp.post(
   },
 );
 
-projectsApp.get('/:projectId/connections/:connectionId/oauth2/status', async (c: any) => {
+projectsApp.get('/:projectId/connections/:connectionId/oauth2/status', async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   if (!(await loadMutableConnection(c, projectId, connectionId))) {

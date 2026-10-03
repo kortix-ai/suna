@@ -15,9 +15,6 @@
   "src/accounts/core/accounts.ts": {
     "no-console": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/accounts/core/bootstrap-personal-account.ts": {
@@ -1801,9 +1798,6 @@
     },
     "no-restricted-imports": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 8
     }
   },
   "src/projects/routes/channel-bindings.ts": {
@@ -1944,9 +1938,6 @@
   "src/projects/routes/oauth2-connectors.ts": {
     "no-restricted-imports": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 10
     }
   },
   "src/projects/routes/project-access.ts": {
@@ -1978,9 +1969,6 @@
       "count": 2
     },
     "no-restricted-imports": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -2019,9 +2007,6 @@
   "src/projects/routes/project-sessions.ts": {
     "no-restricted-imports": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/projects/routes/project-settings.ts": {
@@ -2041,9 +2026,6 @@
     },
     "no-restricted-properties": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/projects/routes/prompt-attachments.ts": {
@@ -2187,9 +2169,6 @@
   "src/projects/routes/session-open-bundle.ts": {
     "no-console": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/projects/routes/session-open-context.ts": {
@@ -2241,19 +2220,9 @@
       "count": 2
     }
   },
-  "src/projects/routes/session-prompts.ts": {
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
   "src/projects/routes/session-reminders.ts": {
     "no-restricted-syntax": {
       "count": 6
-    }
-  },
-  "src/projects/routes/session-runtime.ts": {
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/projects/routes/session-scope-decide.ts": {
@@ -2280,11 +2249,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/session-transcripts.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/projects/routes/setup-links.ts": {
     "no-restricted-syntax": {
       "count": 2
@@ -2303,9 +2267,6 @@
   "src/projects/routes/triggers.ts": {
     "no-restricted-imports": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/projects/routes/turn-permissions.ts": {
@@ -2349,9 +2310,6 @@
     },
     "no-restricted-imports": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/projects/runtime-identity.ts": {

@@ -1,5 +1,6 @@
 import type {
   Project,
+  RuntimeSessionSnapshot,
   ProjectSession,
   Secret,
   SecretConsumer,
@@ -147,7 +148,8 @@ export function serializeSession(
   const canAccess = ctx?.canAccess ?? true;
   const opencodeSessions =
     canAccess && Array.isArray(row.metadata?.opencode_sessions)
-      ? row.metadata.opencode_sessions
+      ? // Written only by `syncOpencodeSessionSnapshot`, which normalizes each entry.
+        (row.metadata.opencode_sessions as RuntimeSessionSnapshot[])
       : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins

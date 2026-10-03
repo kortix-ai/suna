@@ -11,6 +11,16 @@ import {
   TriggerSchema as ContractTriggerSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
+  ChangeRequestSchema as ContractChangeRequestSchema,
+  ChangeRequestListSchema as ContractChangeRequestListSchema,
+  CreateSessionPromptResultSchema as ContractCreateSessionPromptResultSchema,
+  SessionPromptListSchema as ContractSessionPromptListSchema,
+  SessionPromptSchema as ContractSessionPromptSchema,
+  SessionSnapshotSchema as ContractSessionSnapshotSchema,
+  SessionTranscriptSchema as ContractSessionTranscriptSchema,
+  SessionTranscriptSyncEnvelopeSchema as ContractSessionTranscriptSyncEnvelopeSchema,
+  SessionTurnStatusSchema as ContractSessionTurnStatusSchema,
+  TriggerListSchema as ContractTriggerListSchema,
 } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 import { Hono } from 'hono';
@@ -42,11 +52,33 @@ export const ClaimWarmProjectSessionInputSchema =
 
 export const OkSchema = ContractOkResponseSchema.openapi('Ok');
 
-export const ChangeRequestSchema = z.object({}).passthrough().openapi('ChangeRequest');
+export const ChangeRequestSchema = ContractChangeRequestSchema.openapi('ChangeRequest');
+
+export const ChangeRequestListSchema = ContractChangeRequestListSchema.openapi('ChangeRequestList');
 
 export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
 export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
+
+export const TriggerListSchema = ContractTriggerListSchema.openapi('TriggerList');
+
+export const SessionTranscriptReadSchema = z
+  .union([
+    ContractSessionTranscriptSchema.openapi('SessionTranscript'),
+    ContractSessionTranscriptSyncEnvelopeSchema.openapi('SessionTranscriptSyncEnvelope'),
+  ])
+  .openapi('SessionTranscriptRead');
+
+export const SessionTurnStatusSchema = ContractSessionTurnStatusSchema.openapi('SessionTurnStatus');
+
+export const SessionPromptSchema = ContractSessionPromptSchema.openapi('SessionPrompt');
+
+export const SessionPromptListSchema = ContractSessionPromptListSchema.openapi('SessionPromptList');
+
+export const CreateSessionPromptResultSchema =
+  ContractCreateSessionPromptResultSchema.openapi('CreateSessionPromptResult');
+
+export const SessionSnapshotSchema = ContractSessionSnapshotSchema.openapi('SessionSnapshot');
 
 export const SnapshotSchema = z.object({}).passthrough().openapi('Snapshot');
 
