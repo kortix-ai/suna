@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { KortixAccount } from '@kortix/sdk';
+import { WORKSPACE_NAME_MAX_LENGTH } from './workspace-name';
 import {
   INITIAL_FORM_STATE,
   buildProvisionPayload,
@@ -273,6 +274,14 @@ describe('isSubmittable', () => {
 
   test('false when the name breaks the charset rule', () => {
     expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'my/agi' }, 1)).toBe(false);
+  });
+
+  test('false when the name exceeds the API ceiling — a 200-character typed name can never submit (KRTX-1424)', () => {
+    // KRTX-1424 removed the field's `maxLength` clamp, so the form state can
+    // now hold more characters than the API accepts. The submit gate is what
+    // keeps "no project is created" true for that input.
+    const typed = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 80);
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: typed }, 1)).toBe(false);
   });
 
   test('false at zero accounts — the query has not resolved, or there is nowhere to create', () => {

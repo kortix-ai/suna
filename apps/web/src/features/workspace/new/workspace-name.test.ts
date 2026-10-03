@@ -5,6 +5,7 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   suggestWorkspaceName,
   validateWorkspaceName,
+  workspaceNameError,
 } from './workspace-name';
 
 describe('validateWorkspaceName', () => {
@@ -46,6 +47,43 @@ describe('validateWorkspaceName', () => {
   test('accepts a name exactly at the ceiling', () => {
     const exact = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH);
     expect(validateWorkspaceName(exact)).toEqual({ ok: true, name: exact });
+  });
+});
+
+/**
+ * KRTX-1424: `/new` used to clamp the field with `maxLength` and gate every
+ * name error behind the first blur, so a typed or pasted over-limit name
+ * produced no message at all. `workspaceNameError` is the page's whole
+ * decision: which error may surface right now.
+ */
+describe('workspaceNameError — which name error /new shows right now', () => {
+  test('shows the over-limit error while the user is still typing, before any blur', () => {
+    const tooLong = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 1);
+    expect(workspaceNameError(tooLong, false)).toBe(
+      `Name must be ${WORKSPACE_NAME_MAX_LENGTH} characters or fewer`,
+    );
+  });
+
+  test('the required and charset errors still wait for the first blur', () => {
+    expect(workspaceNameError('', false)).toBeNull();
+    expect(workspaceNameError('   ', false)).toBeNull();
+    expect(workspaceNameError('café', false)).toBeNull();
+  });
+
+  test('after a blur every error surfaces', () => {
+    expect(workspaceNameError('', true)).toBe('Name is required');
+    expect(workspaceNameError('café', true)).toBe(
+      'Use only letters, numbers, spaces, hyphens, underscores or dots',
+    );
+    const tooLong = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 1);
+    expect(workspaceNameError(tooLong, true)).toBe(
+      `Name must be ${WORKSPACE_NAME_MAX_LENGTH} characters or fewer`,
+    );
+  });
+
+  test('a valid name surfaces nothing, touched or not', () => {
+    expect(workspaceNameError('suna-web', false)).toBeNull();
+    expect(workspaceNameError('suna-web', true)).toBeNull();
   });
 });
 

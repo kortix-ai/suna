@@ -27,6 +27,22 @@ export function validateWorkspaceName(raw: string): WorkspaceNameResult {
   return { ok: true, name };
 }
 
+/**
+ * Which name error a form may show right now, as the validator's error text —
+ * null when nothing may show. The over-limit error surfaces while the user is
+ * still typing: the field no longer clamps at the limit (no `maxLength` on
+ * /new since KRTX-1424), so this message is the only signal a typed or pasted
+ * over-limit name gets — waiting for blur would leave a full-length name with
+ * no explanation. Every other error waits for the first blur so it never
+ * interrupts the first keystrokes with "Name is required".
+ */
+export function workspaceNameError(raw: string, touched: boolean): string | null {
+  const result = validateWorkspaceName(raw);
+  if (result.ok) return null;
+  if (!touched && !result.error.startsWith('Name must be')) return null;
+  return result.error;
+}
+
 const NAME_ADJECTIVES = [
   'Amber',
   'Bright',

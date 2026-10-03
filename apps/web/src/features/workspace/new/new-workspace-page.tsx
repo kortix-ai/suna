@@ -35,7 +35,7 @@ import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
   suggestWorkspaceName,
-  validateWorkspaceName,
+  workspaceNameError,
 } from '@/features/workspace/new/workspace-name';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
@@ -202,13 +202,15 @@ export function NewWorkspacePage() {
 
   // Only surface a name error after the field has been left once. Validating
   // on the first keystroke would tell the user "Name is required" while they
-  // are still typing the name.
+  // are still typing the name. The one exception lives in
+  // `workspaceNameError`: the over-limit error fires while typing, because the
+  // field no longer clamps at the limit (no `maxLength` on the input below —
+  // KRTX-1424) and this message is the only signal an over-limit name gets.
   const nameError = useMemo(() => {
-    if (!touched) return null;
-    const result = validateWorkspaceName(state.name);
-    if (result.ok) return null;
-    if (result.error === 'Name is required') return t('validation.nameRequired');
-    if (result.error.startsWith('Name must be')) {
+    const error = workspaceNameError(state.name, touched);
+    if (!error) return null;
+    if (error === 'Name is required') return t('validation.nameRequired');
+    if (error.startsWith('Name must be')) {
       return t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
     }
     return t('validation.nameCharacters');
@@ -471,7 +473,6 @@ export function NewWorkspacePage() {
                       onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                       onBlur={() => setTouched(true)}
                       placeholder={t('name.placeholder')}
-                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
                       size="md"
                       className="w-full"
                       aria-invalid={nameError ? true : undefined}

@@ -40,6 +40,31 @@ function elementText(src: string, tag: string, from: number) {
   throw new Error(`unbalanced <${tag}> from ${from}`);
 }
 
+/**
+ * KRTX-1424: the name field used to carry `maxLength={WORKSPACE_NAME_MAX_LENGTH}`.
+ * The browser then silently truncated typed and pasted input at 120 characters,
+ * so `validateWorkspaceName`'s over-limit branch was unreachable for real input:
+ * the field held exactly 120 characters with no message and Create project
+ * enabled. The field must let an over-limit value through so the validator and
+ * the error markup below can fire; the message itself surfaces while typing via
+ * `workspaceNameError` (unit-tested in `workspace-name.test.ts`).
+ */
+describe('/new: the too-long-name message fires for typed input (KRTX-1424)', () => {
+  test('the name field does not clamp input at the limit — the validator, not the browser, rejects it', () => {
+    expect(code).not.toContain('maxLength');
+    // Paired presence check: the field that must NOT clamp is still the one
+    // wired to the validator through live form state.
+    expect(code).toContain("id=\"workspace-name\"");
+    expect(code).toContain('value={state.name}');
+  });
+
+  test('the too-long error reaches the field before the first blur', () => {
+    expect(code).toContain('workspaceNameError(state.name, touched)');
+    expect(code).toContain("t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH })");
+    expect(code).toContain("id=\"workspace-name-error\"");
+  });
+});
+
 describe('/new page: no invented constraints', () => {
   test('has no slug or URL field in the rendered markup — the API builds the slug itself', () => {
     expect(code.toLowerCase()).not.toContain('slug');
@@ -177,7 +202,11 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
 describe('/new page: uses the shared form model, not local rules', () => {
   test('imports and calls the shared validator and submittability check', () => {
     expect(code).toContain('isSubmittable');
-    expect(code).toContain('validateWorkspaceName');
+    // KRTX-1424: the page no longer calls `validateWorkspaceName` directly —
+    // the shared module now owns the WHEN an error may surface too, via
+    // `workspaceNameError` (over-limit fires while typing, the rest after a
+    // blur). Still the shared model, never local rules.
+    expect(code).toContain('workspaceNameError');
     expect(code).toContain('resolveDefaultCreatableAccountId');
     expect(code).toContain("from '@/features/workspace/new/new-workspace-form'");
     expect(code).toContain("from '@/features/workspace/new/workspace-name'");
@@ -206,9 +235,15 @@ describe('/new page: uses the shared form model, not local rules', () => {
     expect(code).not.toContain("account.account_role === 'owner'");
   });
 
-  test('only surfaces the name error after the field has been blurred once', () => {
-    expect(code).toContain('if (!touched) return null');
+  test('the blur gate lives in the shared workspaceNameError helper, not in page-local rules', () => {
+    // KRTX-1424 moved the decision into the shared module: the page passes
+    // the touched flag through, and `workspaceNameError` decides what may
+    // surface now (every error after a blur; the over-limit error while
+    // typing — unit-tested in `workspace-name.test.ts`). `onBlur` still
+    // records the blur itself.
+    expect(code).toContain('workspaceNameError(state.name, touched)');
     expect(code).toContain('onBlur={() => setTouched(true)}');
+    expect(code).not.toContain('if (!touched) return null');
   });
 
   test('wires aria-invalid and aria-describedby to the error text', () => {
