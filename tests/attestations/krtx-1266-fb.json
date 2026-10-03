@@ -1,5 +1,5 @@
 {
-  "source_hash": "f0631780e8224abced2cf25a2962d35a4d363559a1d1a4c877d54e3711db0d28",
+  "source_hash": "270a53a2532dfa430e752f663fc669b5e84426b4fa98e44293a71e2fc32244f8",
   "diff_files": [
     "apps/api/bunfig.toml",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -31,13 +31,13 @@
     "packages/shared/src/host-config/test-sandbox-env.ts",
     "packages/shared/src/index.ts"
   ],
-  "diff_hash": "9c907ab71e87281c992048a96311822b86ba56bd6bd714201105b71482fa481a",
-  "head": "91f82c849497268fc0a13b3fefe9697cd9537fd3",
+  "diff_hash": "6d25ae55772a393441cf8b60ec46822e590795a3920f013a0e59c1fe09b8c323",
+  "head": "afbb3f7d9a0d935d2aa16d3d4a37a8e8b40fdda9",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:19:44.008Z"
+  "at": "2026-10-03T23:32:49.373Z"
 }

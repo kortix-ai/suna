@@ -19193,7 +19193,9 @@
       "text9e52157faaab": "Sim. A mesma CLI do Kortix roda em cada sandbox, já autenticada, então os agentes usam exatamente os mesmos comandos que você.",
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
       "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
-      "text39207bf34111": "Habilidades relacionadas"
+      "text39207bf34111": "Habilidades relacionadas",
+      "text85b7a59cdbd5": "Agente da plataforma",
+      "textd9c0c74b514b": "A Meta é um agente da plataforma que orquestra o seu trabalho. A configuração dela é fixa: inicie uma sessão com ela, mas ela não pode ser configurada aqui."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
