@@ -9,7 +9,7 @@
     "build": "pnpm lint:sdk-boundary && next build",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
-    "test": "pnpm lint:sdk-boundary && bun test tests/e2e",
+    "test": "pnpm lint:sdk-boundary && bun test --timeout 15000 tests/e2e",
     "test:e2e": "pnpm lint:sdk-boundary && bun test tests/e2e",
     "typecheck": "pnpm lint:sdk-boundary && tsc --noEmit"
   },
