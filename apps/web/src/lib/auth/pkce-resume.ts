@@ -17,10 +17,10 @@ import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
  *
  * The verifier is not a secret from this browser — `@supabase/ssr` stores it
  * in a non-httpOnly cookie by design (the browser client must read it). So the
- * auth page snapshots it when the send succeeds and, if the callback bounces
- * back with the code, re-seeds the cookie and completes the exchange HERE, in
- * the same tab that started the flow. The session then lands in the same
- * cookies the app already reads.
+ * auth page snapshots it when the send succeeds and, when the callback bounces
+ * the code back, re-seeds the cookie and navigates back to the callback, which
+ * then runs the normal exchange and the normal server-side success path
+ * (return-URL demotion, terms stamp, billing-aware landing) unchanged.
  */
 
 const PKCE_VERIFIER_COOKIE = `${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`;
@@ -28,19 +28,19 @@ const BASE64_PREFIX = 'base64-';
 
 /** sessionStorage survives the mail detour within one tab; cookies may not. */
 const STASH_KEY = 'kortix:pkce-verifier';
-/** A verifier older than its link could ever be is not worth seeding. */
-const STASH_TTL_MS = 15 * 60 * 1000;
+/** One shot: a re-seeded exchange that still bounces goes to the resend screen. */
+const RESUME_GUARD_KEY = 'kortix:pkce-resume-armed';
 
-export interface PkceResumeClient {
-  auth: {
-    exchangeCodeForSession(authCode: string): Promise<{
-      data: { session?: unknown; user?: unknown };
-      error: { message?: string } | null;
-    }>;
-  };
-}
+/**
+ * The stash lives as long as the link it belongs to could still be opened:
+ * GoTrue honors the emailed OTP for `mailer_otp_exp` (24 h on the production
+ * project). A stale stash cannot pair with a different flow's code — the
+ * exchange then fails once and the resume guard routes the visitor to the
+ * resend screen.
+ */
+const STASH_TTL_MS = 24 * 60 * 60 * 1000;
 
-interface StashedVerifier {
+export interface StashedVerifier {
   verifier: string;
   stashedAt: number;
 }
@@ -48,7 +48,10 @@ interface StashedVerifier {
 function decodeVerifierCookieValue(raw: string): string | null {
   if (!raw.startsWith(BASE64_PREFIX)) return null;
   try {
-    const json = atob(raw.slice(BASE64_PREFIX.length).replace(/-/g, '+').replace(/_/g, '/'));
+    // base64url without padding — pad before atob so a verifier-length change
+    // upstream degrades loudly, not by luck of a multiple-of-4 length.
+    const b64 = raw.slice(BASE64_PREFIX.length).replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
     const parsed: unknown = JSON.parse(json);
     return typeof parsed === 'string' && parsed.length > 0 ? parsed : null;
   } catch {
@@ -104,38 +107,21 @@ function loadStashedVerifier(): string | null {
   }
 }
 
-export function clearStashedPkceVerifier(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.removeItem(STASH_KEY);
-  } catch {
-    // Nothing to clean up.
-  }
-}
-
 /**
- * The verifier, to seed back into the cookie jar: the stashed one, else the
- * one still in the cookie (the callback may have bounced for a reason the
- * cookie itself can still answer).
- */
-function verifierForResume(): string | null {
-  return loadStashedVerifier() ?? readBrowserPkceVerifier();
-}
-
-/**
- * Re-seed the verifier cookie and complete the exchange in this browser.
+ * Re-seed the verifier cookie from the snapshot (or the cookie itself, when the
+ * snapshot is gone but the cookie answered the read all along). Returns false
+ * when there is nothing to seed — the caller then owes the visitor the resend
+ * screen instead of a silent form.
  *
  * The seed must be a cookie write, not a storage call: `auth.storage` is
- * protected on the Supabase client, and the client's cookie-backed read path
- * (`@supabase/ssr`) is exactly what a `base64-…` cookie satisfies. Returns the
- * exchange result untouched so the caller decides what a failure means.
+ * protected on the Supabase client, and the value has to satisfy the client's
+ * cookie-backed read path (`@supabase/ssr` `base64-` + base64url + JSON), which
+ * is exactly what the server action originally wrote.
  */
-export async function resumePkceExchange(
-  authCode: string,
-  client: PkceResumeClient,
-): Promise<{ resumed: boolean; message?: string }> {
-  const verifier = verifierForResume();
-  if (!verifier || !authCode) return { resumed: false };
+export function seedPkceVerifierForResume(): boolean {
+  if (typeof window === 'undefined') return false;
+  const verifier = loadStashedVerifier() ?? readBrowserPkceVerifier();
+  if (!verifier) return false;
   try {
     const encoded = `${BASE64_PREFIX}${btoa(JSON.stringify(verifier))
       .replace(/\+/g, '-')
@@ -146,13 +132,31 @@ export async function resumePkceExchange(
     // cookie write is dropped on the http local stack.
     const secure = window.location.protocol === 'https:' ? '; secure' : '';
     document.cookie = `${PKCE_VERIFIER_COOKIE}=${encoded}; path=/; SameSite=Lax${secure}`;
-    const { data, error } = await client.auth.exchangeCodeForSession(authCode);
-    if (error || !data?.session) {
-      return { resumed: false, message: error?.message ?? 'missing session' };
-    }
-    clearStashedPkceVerifier();
-    return { resumed: true };
-  } catch (error) {
-    return { resumed: false, message: error instanceof Error ? error.message : 'unexpected' };
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Arm the one-shot guard before re-entering the callback with the seeded cookie. */
+export function armPkceResumeGuard(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(RESUME_GUARD_KEY, '1');
+  } catch {
+    // Without the guard a failed re-entry could loop; the callback's own
+    // bounce then runs one extra time and the visitor retries by hand.
+  }
+}
+
+/** True when the previous re-seeded exchange already bounced once. */
+export function consumePkceResumeGuard(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const armed = window.sessionStorage.getItem(RESUME_GUARD_KEY) === '1';
+    if (armed) window.sessionStorage.removeItem(RESUME_GUARD_KEY);
+    return armed;
+  } catch {
+    return false;
   }
 }

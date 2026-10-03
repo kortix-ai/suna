@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+
 /**
  * A PKCE exchange whose verifier cookie never made it back to the server must
  * hand the code back to the browser that started the flow, not tell the user
@@ -67,7 +68,7 @@ beforeEach(() => {
 });
 
 describe('auth callback resumes a verifier-less PKCE exchange', () => {
-  test('a missing verifier bounces the fresh code back to /auth for the client to finish', async () => {
+  test('a missing verifier bounces the fresh code back to /auth for the browser to re-seed', async () => {
     const response = await GET(callbackRequest('?code=fresh-code&returnUrl=%2Fprojects%2Fstart&terms_accepted=true'));
     expect(response.status).toBe(307);
     const location = new URL(response.headers.get('location') as string);
@@ -77,20 +78,28 @@ describe('auth callback resumes a verifier-less PKCE exchange', () => {
     expect(location.searchParams.get('expired')).toBeNull();
   });
 
-  test('a genuinely expired link (otp_expired) still reports expired', async () => {
+  test("a GoTrue otp_expired rejection keeps today's expired/error behavior", async () => {
     exchangeError = { code: 'otp_expired', status: 400, message: 'OTP token expired' };
     const response = await GET(callbackRequest('?code=old-code&returnUrl=%2Fprojects%2Fstart'));
     expect(locationOf(response)).toBe('/auth?expired=true&returnUrl=%2Fprojects%2Fstart');
   });
-
-  test('a genuinely expired link (expired_token) still reports expired', async () => {
+  test("a GoTrue expired_token rejection keeps today's expired/error behavior", async () => {
     exchangeError = { code: 'expired_token', status: 400, message: 'token expired' };
     const response = await GET(callbackRequest('?code=old-code&returnUrl=%2Fprojects%2Fstart'));
     expect(locationOf(response)).toBe('/auth?expired=true&returnUrl=%2Fprojects%2Fstart');
   });
-
-  test('a genuinely expired link (token_expired) still reports expired', async () => {
+  test("a GoTrue token_expired rejection keeps today's expired/error behavior", async () => {
     exchangeError = { code: 'token_expired', status: 400, message: 'token expired' };
+    const response = await GET(callbackRequest('?code=old-code&returnUrl=%2Fprojects%2Fstart'));
+    expect(locationOf(response)).toBe('/auth?expired=true&returnUrl=%2Fprojects%2Fstart');
+  });
+  test("a GoTrue flow_state_expired rejection keeps today's expired/error behavior", async () => {
+    exchangeError = { code: 'flow_state_expired', status: 400, message: 'flow state expired' };
+    const response = await GET(callbackRequest('?code=old-code&returnUrl=%2Fprojects%2Fstart'));
+    expect(locationOf(response)).toBe('/auth?expired=true&returnUrl=%2Fprojects%2Fstart');
+  });
+  test("a GoTrue bad_code_verifier rejection keeps today's expired/error behavior", async () => {
+    exchangeError = { code: 'bad_code_verifier', status: 400, message: 'code verifier mismatch' };
     const response = await GET(callbackRequest('?code=old-code&returnUrl=%2Fprojects%2Fstart'));
     expect(locationOf(response)).toBe('/auth?expired=true&returnUrl=%2Fprojects%2Fstart');
   });
