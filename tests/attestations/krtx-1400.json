@@ -1,0 +1,31 @@
+{
+  "source_hash": "c87ecc44fd1d5ad291be8e1a48e7fea09bf30d532bd1f031bcca0299aaa402d1",
+  "diff_files": [
+    "apps/api/scripts/test.sh",
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
+    "apps/api/src/shared/platinum.test.ts",
+    "apps/cli/package.json",
+    "apps/cli/scripts/test.sh",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/web/true",
+    "apps/whitelabel-demo/tests/e2e/harness.ts",
+    "packages/agent-tunnel/src/client/cli.test.ts",
+    "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
+    "tests/bin/package-quality.ts",
+    "tests/unit/test-runner-contract.test.ts"
+  ],
+  "diff_hash": "b0c3011d018d4ecd9a5f3ac803149e4735f42f555ef91996efc3cb4a0d458341",
+  "head": "acbc07af26e63e8980487ace5b354b0d3e5673d5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:15:15.434Z"
+}
