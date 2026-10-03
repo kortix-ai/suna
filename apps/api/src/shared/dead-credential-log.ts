@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: a per-replica log-volume rate limiter. Every replica rate-limits
+// its own dead-credential warnings with the same window and ceiling, so prod's
+// 3 replicas each stay under the same ceiling independently and no cross-replica
+// coordination is needed — the module doc above states the best-effort contract.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
