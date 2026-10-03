@@ -84,9 +84,16 @@ describe('denial', () => {
 
   test('every top-level command of the CLI is either denied or allowed: a new command needs a decision', () => {
     const source = readFileSync(join(import.meta.dir, '../../../cli/src/index.ts'), 'utf8');
-    const block = /const KNOWN_COMMANDS = \[([\s\S]*?)\] as const;/.exec(source)?.[1];
+    // KRTX-1341 replaced the KNOWN_COMMANDS literal with one handler record;
+    // the suggestion list derives from its keys plus the two landing verbs.
+    const block = /const COMMAND_HANDLERS: Record<string, RootCommandHandler> = \{([\s\S]*?)\n\};/.exec(
+      source,
+    )?.[1];
     expect(block).toBeDefined();
-    const commands = [...block!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
+    const keys = [...(block!.matchAll(/^ {2}(?:'([^']+)'|([a-z][a-z0-9]*)):/gm))].map(
+      (m) => m[1] ?? m[2],
+    );
+    const commands = [...keys, 'help', 'version'].filter((c): c is string => typeof c === 'string');
     expect(commands.length).toBeGreaterThan(40);
     const decided = new Set([...Object.keys(DENY_COMMANDS), ...CLI_ALLOWED]);
     expect(commands.filter((c) => !decided.has(c))).toEqual([]);

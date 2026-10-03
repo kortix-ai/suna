@@ -47,7 +47,11 @@ function runCli(args: string[]): Promise<RunResult> {
     stderr: 'pipe',
   });
   const timeout = setTimeout(() => proc.kill(9), 15_000);
-  return Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()])
+  return Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
     .finally(() => clearTimeout(timeout))
     .then(([code, stdout, stderr]) => ({ code, stdout, stderr }));
 }

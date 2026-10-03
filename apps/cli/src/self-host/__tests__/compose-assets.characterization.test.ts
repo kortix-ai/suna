@@ -30,7 +30,10 @@ describe('Caddyfile wildcard blocks — exact render characterization (KRTX-1341
   });
 
   test('both configured renders base + apps block + preview block, one shared ask', () => {
-    const caddyfile = renderCaddyfile({ appsHostingConfigured: true, previewHostingConfigured: true });
+    const caddyfile = renderCaddyfile({
+      appsHostingConfigured: true,
+      previewHostingConfigured: true,
+    });
     expect(caddyfile).toMatchSnapshot('both');
     // Exactly one global on_demand_tls ask — Caddy refuses a second one.
     expect(caddyfile.match(/on_demand_tls \{/g)).toHaveLength(1);

@@ -42,16 +42,24 @@ async function runMcp(stdin: string) {
     stderr: 'pipe',
   });
   const timer = setTimeout(() => proc.kill(), 20_000);
-  const [code, stdout] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-  ]).finally(() => clearTimeout(timer));
+  const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]).finally(
+    () => clearTimeout(timer),
+  );
   const responses = stdout
     .split('\n')
     .filter((line) => line.trim())
-    .map((line) => JSON.parse(line) as { id: unknown; result?: { isError?: boolean; content?: Array<{ text?: string }> } });
-  const payload = (index: number): Record<string, unknown> =>
-    JSON.parse(responses[index]!.result!.content![0]!.text!) as Record<string, unknown>;
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          id: unknown;
+          result?: { isError?: boolean; content?: Array<{ text?: string }> };
+        },
+    );
+  const payload = (index: number): Record<string, unknown> => {
+    const text = responses[index]?.result?.content?.[0]?.text;
+    if (typeof text !== 'string') throw new Error(`no tool payload at response ${index}`);
+    return JSON.parse(text) as Record<string, unknown>;
+  };
   // Exactly one tools/call per run → its decoded payload.
   const first = (): Record<string, unknown> => payload(0);
   return { code, responses, payload, first };
@@ -83,7 +91,7 @@ describe('connectors mcp — error envelope characterization (KRTX-1341)', () =>
     // One server process for the whole matrix — each tools/call is an
     // independent request, so batching changes nothing on the wire.
     const stdin = cases
-      .map(([, args], i) => rpc(i + 1, 'tools/call', { name: cases[i]![0], arguments: args }))
+      .map(([name, args], i) => rpc(i + 1, 'tools/call', { name, arguments: args }))
       .join('');
     const { responses, payload } = await runMcp(stdin);
     expect(responses).toHaveLength(cases.length);
@@ -111,7 +119,10 @@ describe('connectors mcp — error envelope characterization (KRTX-1341)', () =>
   test('the same thrown error through `call` and `upload_attachment` keeps the structured envelope with the generic code', async () => {
     const callRun = await runMcp(
       rpc(1, 'tools/call', { name: 'call', arguments: { connector: 'crm', action: 'whoami' } }) +
-        rpc(2, 'tools/call', { name: 'upload_attachment', arguments: { connector: 'crm', path: '/workspace/output/x.pdf' } }),
+        rpc(2, 'tools/call', {
+          name: 'upload_attachment',
+          arguments: { connector: 'crm', path: '/workspace/output/x.pdf' },
+        }),
     );
     // No API body reached the error, so connectorErrorPayload adds its generic
     // code — exactly the field the plain envelope must NOT grow.

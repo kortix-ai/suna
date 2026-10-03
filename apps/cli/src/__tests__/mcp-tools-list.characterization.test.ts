@@ -41,7 +41,11 @@ async function runMcp(stdin: string) {
     new Response(proc.stderr).text(),
   ]);
   const lines = stdout.split('\n').filter((line) => line.trim());
-  return { code, stderr, responses: lines.map((line) => JSON.parse(line) as Record<string, unknown>) };
+  return {
+    code,
+    stderr,
+    responses: lines.map((line) => JSON.parse(line) as Record<string, unknown>),
+  };
 }
 
 const rpc = (id: unknown, method: string, params: unknown = {}) =>
@@ -65,42 +69,51 @@ describe('connectors mcp — tools/list characterization (KRTX-1341)', () => {
 
   test('a params protocolVersion passes through unchanged', async () => {
     const { responses } = await runMcp(rpc(1, 'initialize', { protocolVersion: '1999-01-01' }));
-    expect(
-      (responses[0]!.result as Record<string, unknown>).protocolVersion,
-    ).toBe('1999-01-01');
+    const initialize = responses[0]?.result as Record<string, unknown>;
+    expect(initialize?.protocolVersion).toBe('1999-01-01');
   });
 
   test('notifications/initialized answers NOTHING (one line in, zero out)', async () => {
-    const { code, responses } = await runMcp(rpc(1, 'initialize') + rpc(null, 'notifications/initialized'));
+    const { code, responses } = await runMcp(
+      rpc(1, 'initialize') + rpc(null, 'notifications/initialized'),
+    );
     expect(code).toBe(0);
     expect(responses).toHaveLength(1);
-    expect(responses[0]!.id).toBe(1);
+    expect(responses[0]?.id).toBe(1);
   });
 
   test('tools/list carries every meta-tool, in order, with schemas and readOnly hints', async () => {
     const { responses } = await runMcp(rpc(1, 'initialize') + rpc(2, 'tools/list'));
     expect(responses).toHaveLength(2);
-    const result = responses[1]!.result as Record<string, unknown>;
+    const result = responses[1]?.result as Record<string, unknown>;
     // Snapshotted from the pre-split implementation. Any intentional catalog
     // change updates this snapshot deliberately; the module split must not.
     expect(result).toMatchSnapshot('tools-list');
   });
 
   test('an unknown tool call is a tool-level error, not a JSON-RPC error', async () => {
-    const { responses } = await runMcp(rpc(1, 'initialize') + rpc(2, 'tools/call', { name: 'no_such_tool', arguments: {} }));
+    const { responses } = await runMcp(
+      rpc(1, 'initialize') + rpc(2, 'tools/call', { name: 'no_such_tool', arguments: {} }),
+    );
     expect(responses).toHaveLength(2);
-    const result = responses[1]!.result as { isError?: boolean; content?: Array<{ text?: string }> };
+    const result = responses[1]?.result as {
+      isError?: boolean;
+      content?: Array<{ text?: string }>;
+    };
     expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content![0]!.text!)).toEqual({ ok: false, error: 'unknown tool no_such_tool' });
+    expect(JSON.parse(result.content?.[0]?.text ?? 'missing')).toEqual({
+      ok: false,
+      error: 'unknown tool no_such_tool',
+    });
   });
 
   test('a transport-level parse error is answered NOTHING (writeResponse drops the null id)', async () => {
-    const { responses } = await runMcp('not-json\n' + rpc(1, 'initialize'));
+    const { responses } = await runMcp(`not-json\n${rpc(1, 'initialize')}`);
     // The parse-error branch builds a -32700 payload with id null, but
     // writeResponse() returns early for a null id — so nothing reaches stdout.
     // Captured as-is from the pre-split implementation.
     expect(responses).toHaveLength(1);
-    expect(responses[0]!.id).toBe(1);
+    expect(responses[0]?.id).toBe(1);
   });
 
   test('an unsupported method answers -32000 naming the method', async () => {

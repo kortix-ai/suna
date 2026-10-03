@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
+import { stripAnsi } from './style.ts';
 /**
  * Characterization of the two pickers in `src/tui-select.ts`, captured BEFORE
  * the KRTX-1341 dedupe that merges their terminal lifecycles into one private
@@ -28,7 +29,6 @@ import { afterEach, describe, expect, test } from 'bun:test';
  * footer, Enter with no matches, and the two fallback answer parsers.
  */
 import { selectFromList, selectMultiFromList } from './tui-select.ts';
-import { stripAnsi } from './style.ts';
 
 const ESC = '\x1b';
 const CSI = `${ESC}[`;
@@ -186,9 +186,14 @@ describe('tui-select interactive characterization — fake TTY (KRTX-1341)', () 
     // The cleanup wipe is the last write, and it carries the exact row count
     // of the frame it removes (the second-to-last write).
     const full = transcript(tty.frames);
-    const wipe = full.match(/\x1b\[(\d+)A\x1b\[0J$/);
-    expect(wipe, 'cleanup wipe is the last write').not.toBeNull();
-    expect(Number(wipe![1])).toBe(countRows(tty.frames[tty.frames.length - 2]!));
+    const wipeSuffix = `${CSI}0J`;
+    expect(full.endsWith(wipeSuffix), 'cleanup wipe is the last write').toBe(true);
+    const beforeWipe = full.slice(0, full.length - wipeSuffix.length);
+    const aIndex = beforeWipe.lastIndexOf(`${CSI}`);
+    const rowCount = beforeWipe.slice(aIndex + CSI.length, beforeWipe.length - 1);
+    const previousFrame = tty.frames[tty.frames.length - 2] ?? '';
+    expect(rowCount).toMatch(/^\d+$/);
+    expect(Number(rowCount)).toBe(countRows(previousFrame));
   });
 
   test('single picker: Enter on an empty filtered list does nothing; Esc cancels with null', async () => {
@@ -208,6 +213,52 @@ describe('tui-select interactive characterization — fake TTY (KRTX-1341)', () 
     await tty.settle();
     expect(transcript(tty.frames).length).toBe(noMatch);
     tty.key(ESC); // Esc cancels
+    expect(await promise).toBeNull();
+    expect(tty.rawCalls).toEqual([true, false]);
+  });
+
+  test('single picker: Ctrl-C (0x03) cancels; an empty chunk is ignored — multi is the opposite', async () => {
+    const tty = installFakeTty();
+    const promise = selectFromList({
+      items: [
+        { value: 'a', label: 'Alpha' },
+        { value: 'b', label: 'Beta' },
+      ],
+    });
+    await tty.settle();
+    const before = transcript(tty.frames).length;
+    tty.key(''); // empty chunk: ignored in single mode (no re-render, stays open)
+    await tty.settle();
+    expect(transcript(tty.frames).length).toBe(before);
+    expect(tty.rawCalls).toEqual([true]);
+    tty.key('\x03'); // Ctrl-C cancels
+    expect(await promise).toBeNull();
+    expect(tty.rawCalls).toEqual([true, false]);
+  });
+
+  test('multi picker: an empty chunk cancels; Ctrl-C and DEL are ignored, BS backspaces', async () => {
+    const tty = installFakeTty();
+    const promise = selectMultiFromList({
+      items: [
+        { value: 'a', label: 'Alpha' },
+        { value: 'b', label: 'Beta' },
+      ],
+    });
+    await tty.settle();
+    const before = transcript(tty.frames).length;
+    tty.key('\x03'); // Ctrl-C: ignored in multi mode
+    await tty.settle();
+    expect(transcript(tty.frames).length).toBe(before);
+    tty.key('a'); // filter to Alpha
+    await tty.settle();
+    expect(lastFrame(tty.frames)).toContain('filter: a');
+    tty.key('\x7f'); // DEL does NOT backspace in multi mode (pre-1341 branch list)
+    await tty.settle();
+    expect(lastFrame(tty.frames)).toContain('filter: a');
+    tty.key('\b'); // BS does
+    await tty.settle();
+    expect(lastFrame(tty.frames)).not.toContain('filter:');
+    tty.key(''); // empty chunk: cancels in multi mode
     expect(await promise).toBeNull();
     expect(tty.rawCalls).toEqual([true, false]);
   });
@@ -268,7 +319,9 @@ describe('tui-select interactive characterization — fake TTY (KRTX-1341)', () 
     });
     await tty.settle();
     const initial = transcript(tty.frames);
-    expect(initial).toContain('↑/↓ navigate · Space toggle · Enter confirm · Esc cancel · type to filter');
+    expect(initial).toContain(
+      '↑/↓ navigate · Space toggle · Enter confirm · Esc cancel · type to filter',
+    );
     expect(initial).toContain('○ '); // unchecked glyph
     expect(initial).toContain('select at least 1 (currently 0)'); // below the gate
 
@@ -432,7 +485,11 @@ async function runFallback(mode: 'single' | 'multi', opts: unknown, input: strin
   return { code, stdout, stderr };
 }
 
-const resultOf = (stdout: string): unknown => JSON.parse(stdout.split('RESULT:')[1]!.trim());
+const resultOf = (stdout: string): unknown => {
+  const marker = stdout.split('RESULT:')[1];
+  if (marker === undefined) throw new Error('the fallback runner printed no RESULT line');
+  return JSON.parse(marker.trim());
+};
 
 describe('tui-select numbered fallback characterization (KRTX-1341)', () => {
   const opts = {
