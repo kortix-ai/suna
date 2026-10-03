@@ -4430,7 +4430,7 @@ export function SessionChat({
                         <TurnErrorDisplay
                           key={messageId}
                           errorText={notice.kind === 'unexplained'
-                            ? tHardcodedUi('turnFailedNoReason')
+                            ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
                             : failure.error?.message ?? undefined}
                           className="mt-2"
                         />
@@ -4580,8 +4580,7 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={boundAgentName ? undefined : handleAgentChange}
-                agentSelectorLocked={!!boundAgentName}
+                onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}

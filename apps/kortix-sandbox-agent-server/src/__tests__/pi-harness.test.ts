@@ -136,11 +136,9 @@ let gateway: ReturnType<typeof startFakeGateway>
 let catalogDir: string
 let previousManagedSkills: string | undefined
 beforeAll(() => {
-  // A Kortix sandbox carries a real /etc/pt-env naming THIS session; the rigs
-  // below pin a repo-less box, so hide the host env file behind the seam.
-  // Same for the image's baked managed-skills overlay: the rigs pin exactly
-  // the skills they write, never the box's set.
-  process.env.KORTIX_HOST_ENV_FILE = join(tmpdir(), 'kortix-absent-pt-env')
+  // The image's baked managed-skills overlay: the rigs pin exactly the skills
+  // they write, never the box's set. (The /etc/pt-env leak is neutralized by
+  // the runner: tests/bin/package-quality.ts sets KORTIX_PT_ENV_PATH.)
   previousManagedSkills = process.env.KORTIX_MANAGED_SKILLS_DIR
   process.env.KORTIX_MANAGED_SKILLS_DIR = join(tmpdir(), 'kortix-absent-managed-skills')
   gateway = startFakeGateway()
@@ -148,7 +146,6 @@ beforeAll(() => {
   writeFileSync(join(catalogDir, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } } }))
 })
 afterAll(() => {
-  delete process.env.KORTIX_HOST_ENV_FILE
   if (previousManagedSkills === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
   else process.env.KORTIX_MANAGED_SKILLS_DIR = previousManagedSkills
   gateway.stop()

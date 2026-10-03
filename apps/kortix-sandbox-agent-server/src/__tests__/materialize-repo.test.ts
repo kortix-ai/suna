@@ -700,6 +700,15 @@ function threeCommitOrigin(): string {
 }
 
 describe('clone depth', () => {
+  // These tests are about the plain clone's depth semantics. A host that
+  // bakes the image scaffold (every Kortix sandbox) would take the scaffold
+  // delta-fetch fast path instead — always --depth 1 — so hide it.
+  beforeEach(() => {
+    __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-absent-scaffold.git'))
+  })
+  afterEach(() => {
+    __setScaffoldRepoPathForTests()
+  })
   // Boot latency: a depth-1 clone is the default; history is restored off the
   // critical path by scheduleHistoryBackfill.
   it.each([

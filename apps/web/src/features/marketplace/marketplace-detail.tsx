@@ -2,7 +2,9 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import {
+  ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
+  ArrowUpRightIcon as ArrowUpRight,
   CubeIcon as Boxes,
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -17,8 +19,12 @@ import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { FileTree, FileTreeNav } from '@/components/ui/file-tree';
 import { Portal } from '@/components/ui/portal';
+import { Copy } from '@/features/icon/icons/copy';
 import { Github } from '@/features/icon/icons/github';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import type {
@@ -31,7 +37,6 @@ import { AddToProjectModal } from './add-to-project-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
-import { MarketplaceFileTree } from './marketplace-file-tree';
 import { MarketplaceFileView } from './marketplace-file-view';
 import { groupMarketplaceItemsByType } from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
@@ -39,12 +44,11 @@ import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
   groupCapabilities,
+  marketplaceFileNodes,
   resolveBundleMembers,
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
-import { MarketplaceProjectCard } from './marketplace-project-card';
-import { projectBannerClass } from './marketplace-project-visual';
 import { MarketplaceShell } from './marketplace-shell';
 import { useMarketplaceSurface } from './marketplace-surface';
 
@@ -61,11 +65,50 @@ function stripFrontmatter(md: string): string {
 
 function SectionLabel({ count, children }: { count?: number; children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground mb-3 flex items-center gap-2 text-sm">
+    <h2 className="text-foreground mb-3 flex items-baseline gap-2 text-base font-medium">
       <span>{children}</span>
       {count !== undefined ? (
-        <span className="text-muted-foreground/50 tabular-nums">{count}</span>
+        <span className="text-muted-foreground font-normal tabular-nums">{count}</span>
       ) : null}
+    </h2>
+  );
+}
+
+/** One provenance row in the detail rail: a fixed-width muted label lane and
+ *  a value that truncates, so labels and values align across rows. */
+function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3">
+      <dt className="text-muted-foreground w-16 shrink-0">{label}</dt>
+      <dd className="text-foreground min-w-0 flex-1">{children}</dd>
+    </div>
+  );
+}
+
+/** The install line for the terminal — the same id the CLI takes. Copy confirms
+ *  in place (the icon swaps; nothing reflows). */
+function InstallCommand({ itemId }: { itemId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const command = `kortix marketplace install ${itemId}`;
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <div className="bg-card flex items-center gap-3 rounded-md py-2 pr-2 pl-4">
+      <code className="text-foreground min-w-0 flex-1 truncate font-mono text-sm">{command}</code>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={tI18nComplete.raw(copied ? 'text8d525e5f158b' : 'text9a01feecae67')}
+        onClick={() => {
+          void navigator.clipboard.writeText(command).then(() => setCopied(true));
+        }}
+      >
+        {copied ? <SolidCheckIcon className="size-4" /> : <Copy className="size-4" />}
+      </Button>
     </div>
   );
 }
@@ -108,7 +151,7 @@ function BundleMemberRow({
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm">{title}</span>
         {subtitle ? (
-          <span className="text-muted-foreground/70 block truncate text-xs">{subtitle}</span>
+          <span className="text-muted-foreground block truncate text-xs">{subtitle}</span>
         ) : null}
       </span>
     </>
@@ -132,8 +175,8 @@ function BundleMemberRow({
 /** The README renders in full (no collapse) — it's the primary content. */
 function ReadmeMarkdown({ content }: { content: string }) {
   return (
-    <div className="bg-secondary rounded-md border p-4">
-      <div className="prose-sm text-foreground/90 max-w-none">
+    <div className="bg-secondary rounded-md border px-4 py-2.5">
+      <div className="prose-sm text-foreground max-w-none">
         <UnifiedMarkdown content={content} trust="untrusted" variant="document" />
       </div>
     </div>
@@ -174,7 +217,7 @@ function ExpandableText({ text }: { text: string }) {
       <p
         ref={ref}
         className={cn(
-          'text-foreground/90 text-sm leading-relaxed text-pretty',
+          'text-foreground text-sm leading-relaxed text-pretty',
           !expanded && 'line-clamp-5',
         )}
       >
@@ -198,7 +241,14 @@ function ExpandableText({ text }: { text: string }) {
  *  type on every surface. Public + signed-out gets an auth-redirect button
  *  instead. Adding is always an agent import now, so there's no deterministic
  *  "installed" state to track here and no Remove affordance. */
-function ItemActions({ data }: { data: MarketplaceItemDetail }) {
+function ItemActions({
+  data,
+  compact = false,
+}: {
+  data: MarketplaceItemDetail;
+  /** Page header: a content-width button beside the title instead of a full-width bar. */
+  compact?: boolean;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useMarketplaceSurface();
   const { user, isLoading: authLoading } = useAuth();
@@ -210,7 +260,7 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
   if (!authLoading && !user && surface.variant === 'public') {
     const redirectHref = surface.itemHref(data.id);
     return (
-      <Button variant="default" className="w-full gap-1.5" asChild>
+      <Button variant="default" className={cn('gap-1.5', !compact && 'w-full')} asChild>
         <Link href={`/auth?redirect=${encodeURIComponent(redirectHref)}`}>
           {tI18nComplete.raw('texte0ae10b8f4e7')}
           <ArrowRight className="size-4" />
@@ -221,10 +271,10 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
 
   return (
     <>
-      <div className="flex w-full items-center gap-2">
+      <div className={cn('flex items-center gap-2', !compact && 'w-full')}>
         <Button
           variant="default"
-          className="flex-1 gap-1.5"
+          className={cn('gap-1.5', !compact && 'flex-1')}
           disabled={authLoading}
           onClick={() => setAddOpen(true)}
         >
@@ -269,18 +319,7 @@ function ItemSidebar({
   return (
     <>
       <div className="space-y-4">
-        {isProject ? (
-          <div
-            className={cn(
-              'flex h-20 items-center justify-center rounded-md bg-gradient-to-br',
-              projectBannerClass(data.name || data.id),
-            )}
-          >
-            <Boxes className="text-foreground/60 size-7" aria-hidden />
-          </div>
-        ) : (
-          <MarketplaceItemAvatar item={data} size="lg" showSource={false} />
-        )}
+        <MarketplaceItemAvatar item={data} size="lg" showSource={false} />
 
         <div className="space-y-1">
           <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance capitalize">
@@ -343,24 +382,20 @@ function ItemSidebar({
       ) : null}
 
       {fileTargets.length > 0 ? (
-        <div>
-          <SectionLabel count={fileTargets.length}>
-            {tI18nComplete.raw('textabc7e9892806')}
-          </SectionLabel>
-          <div className="bg-popover max-h-72 overflow-y-auto rounded-md border py-1">
-            <MarketplaceFileTree
-              targets={fileTargets}
-              selected={selectedFile}
-              onSelect={onSelectFile}
-            />
-          </div>
-        </div>
+        <FileTree title={tI18nComplete.raw('textabc7e9892806')}>
+          <FileTreeNav
+            nodes={marketplaceFileNodes(fileTargets)}
+            selectedPath={selectedFile}
+            onSelect={onSelectFile}
+            label={`${itemTitle} files`}
+          />
+        </FileTree>
       ) : null}
 
       {companyClickable ? (
         <Link
           href={marketplaceSourceHref(data.marketplaceId)}
-          className="group border-border/60 flex items-center gap-3 border-t pt-4 transition-transform active:scale-[0.98]"
+          className="group border-border/60 flex items-center gap-3 border-t pt-4 transition-transform active:scale-[0.998]"
         >
           <MarketplaceAvatar
             id={data.marketplaceId}
@@ -454,19 +489,19 @@ function DetailPager({ nav }: { nav: DetailNav }) {
           onClick={nav.onPrev}
           disabled={!nav.onPrev}
           aria-label={tI18nComplete.raw('text81b35f1b4332')}
-          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <ChevronLeft className="size-4" />
         </button>
         <span className="text-foreground min-w-[3.75rem] px-1 text-center text-xs font-medium tabular-nums">
-          {nav.index} <span className="text-muted-foreground/50">/</span> {nav.total}
+          {nav.index} <span className="text-muted-foreground">/</span> {nav.total}
         </span>
         <button
           type="button"
           onClick={nav.onNext}
           disabled={!nav.onNext}
           aria-label={tI18nComplete.raw('text1e47d4f7a1a3')}
-          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <ChevronRight className="size-4" />
         </button>
@@ -484,14 +519,15 @@ function DetailPager({ nav }: { nav: DetailNav }) {
 export function MarketplaceDetail({
   data,
   company,
-  otherProjects = [],
+  related = [],
   onBack,
   nav,
 }: {
   data: MarketplaceItemDetail;
   company?: MarketplaceSummary;
-  /** Other `registry:project` items, for cross-link discovery (public only). */
-  otherProjects?: MarketplaceItem[];
+  /** Cross-link discovery under the content (public page only): other projects
+   *  for a project, other skills from the same source for anything else. */
+  related?: MarketplaceItem[];
   /** In-project overlay: renders an embedded shell + a back-button crumb. */
   onBack?: () => void;
   /** Floating pager over the surrounding item list (← / → + position). */
@@ -625,6 +661,7 @@ export function MarketplaceDetail({
   // The sidebar Files tree selects which file the main column shows; it defaults
   // to the README/SKILL.md (whose already-SSR'd body the view reuses).
   const fileTargets = data.files.map((f) => f.target);
+  const fileNodes = marketplaceFileNodes(fileTargets);
   const readmeTarget =
     fileTargets.find((t) => /README\.md$/i.test(t)) ??
     fileTargets.find((t) => /SKILL\.md$/i.test(t)) ??
@@ -700,11 +737,202 @@ export function MarketplaceDetail({
       </section>
     ) : null;
 
+  // Project contents + agents/triggers, as the SAME cards in the SAME grid as
+  // the gallery. Shared by both layouts; `columns` follows the surface width.
+  const projectSections = (gridClassName: string) => (
+    <>
+      {memberItemGroups.map((g) => (
+        <section key={g.label}>
+          <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
+          <div className={cn('grid gap-3', gridClassName)}>
+            {g.items.map((it) => (
+              <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
+            ))}
+          </div>
+        </section>
+      ))}
+      {projectExtraGroups.map((g) => (
+        <section key={g.label}>
+          <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
+          <div className={cn('grid gap-3', gridClassName)}>
+            {g.items.map((it) => (
+              <MarketplaceExploreCard key={it.id} item={it} showSource={false} navigable={false} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </>
+  );
+
+  const capabilitiesSection =
+    capCount > 0 ? (
+      <section>
+        <SectionLabel count={capCount}>{tI18nComplete.raw('text143f0330d2de')}</SectionLabel>
+        <div className="bg-card space-y-3 rounded-md px-4 py-2.5">
+          {capGroups.map((group) => (
+            <div key={group.kind}>
+              <div className="text-muted-foreground mb-1.5 text-xs">{group.label}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {group.items.map((value) => (
+                  <Badge
+                    key={`${group.kind}:${value}`}
+                    variant="outline"
+                    size="sm"
+                    className="font-mono"
+                  >
+                    {value}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    ) : null;
+
+  if (!onBack) {
+    // Public page: one content column — back link, identity row with the
+    // action, description, install line, files, contents, then related items.
+    // The rail holds the file tree and provenance under the breadcrumb.
+    const sourceUrl = company?.sourceUrl ?? data.sourceUrl;
+    return (
+      <MarketplaceShell
+        crumbs={crumbs.slice(0, -1)}
+        sidebar={
+          <div className="space-y-8">
+            {fileNodes.length > 0 ? (
+              // `-mx-2.5` pulls the trigger and row fills out past the column
+              // so their TEXT lands on the rail's left edge, in line with the
+              // breadcrumb; the hover fills bleed into the gutter instead.
+              <FileTree title={tI18nComplete.raw('textabc7e9892806')} className="-mx-2.5">
+                <FadedScrollArea
+                  fadeColor="from-background"
+                  rootClassName="h-auto max-h-144"
+                  className="overscroll-contain"
+                >
+                  <FileTreeNav
+                    nodes={fileNodes}
+                    selectedPath={selectedFile}
+                    onSelect={setSelectedFile}
+                    label={`${itemTitle} files`}
+                  />
+                </FadedScrollArea>
+              </FileTree>
+            ) : null}
+
+            {/* Provenance as a two-lane list: labels in one fixed column,
+                values in the next, so every row starts on the same x — the
+                rail's left edge, shared with the breadcrumb and "Files". */}
+            <dl className="space-y-3 text-sm">
+              <MetaRow label={tI18nComplete.raw('text0e570ca6fabe')}>
+                <Link
+                  href={marketplaceSourceHref(data.marketplaceId)}
+                  className="hover:text-foreground flex min-w-0 items-center gap-2 transition-colors duration-(--duration-normal)"
+                >
+                  <MarketplaceAvatar
+                    id={data.marketplaceId}
+                    owner={company?.owner ?? data.owner}
+                    sourceUrl={sourceUrl}
+                    label={data.marketplaceLabel}
+                    size="xs"
+                  />
+                  <span className="truncate">{companyLabel}</span>
+                </Link>
+              </MetaRow>
+              {data.partOfProject ? (
+                <MetaRow label={tI18nComplete.raw('text985959785319')}>
+                  <Link
+                    href={marketplaceItemHref(data.partOfProject.id)}
+                    className="hover:text-foreground block truncate transition-colors duration-(--duration-normal)"
+                  >
+                    {data.partOfProject.title}
+                  </Link>
+                </MetaRow>
+              ) : null}
+              {fileTargets.length > 0 ? (
+                <MetaRow label={tI18nComplete.raw('textabc7e9892806')}>
+                  <span className="tabular-nums">{fileTargets.length}</span>
+                </MetaRow>
+              ) : null}
+            </dl>
+
+            {sourceUrl ? (
+              <div>
+                <Link
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm transition-colors duration-(--duration-normal)"
+                >
+                  {tI18nComplete.raw('text6ee818aa2de3')}
+                  <ArrowUpRight className="size-3.5" aria-hidden />
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        }
+      >
+        <div className="space-y-10">
+          <header className="space-y-6">
+            <Link
+              href="/marketplace"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors duration-(--duration-normal)"
+            >
+              <ArrowLeft className="size-4" aria-hidden />
+              {tI18nComplete.raw('text76900f1bfd16')}
+            </Link>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <MarketplaceItemAvatar item={data} size="md" showSource={false} />
+                <h1 className="text-foreground min-w-0 text-2xl font-semibold tracking-tight text-balance capitalize">
+                  {itemTitle}
+                </h1>
+              </div>
+              <div className="shrink-0">
+                <ItemActions data={data} compact />
+              </div>
+            </div>
+            <ExpandableText text={data.description || emptyDescriptionCopy(data.type)} />
+          </header>
+
+          <InstallCommand itemId={data.id} />
+
+          {isProject ? (
+            <>
+              {filesSection}
+              {projectSections('sm:grid-cols-2')}
+            </>
+          ) : (
+            <>
+              {filesSection}
+              {membersSection}
+            </>
+          )}
+
+          {capabilitiesSection}
+
+          {related.length > 0 ? (
+            <section className="pt-10">
+              <SectionLabel>
+                {tI18nComplete.raw(isProject ? 'text7b4418d894c3' : 'text39207bf34111')}
+              </SectionLabel>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {related.map((item) => (
+                  <MarketplaceExploreCard key={item.id} item={item} showSource={false} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </MarketplaceShell>
+    );
+  }
+
   return (
     <>
       {nav ? <DetailPager nav={nav} /> : null}
       <MarketplaceShell
-        embedded={!!onBack}
+        embedded
         crumbs={crumbs}
         sidebar={
           <ItemSidebar
@@ -723,34 +951,7 @@ export function MarketplaceDetail({
               {/* README first — the file view defaults to the project's README.md
                 (the sidebar file tree drives it to browse any other file). */}
               {filesSection}
-              {/* Then the contents, as the SAME cards + typed grid as the gallery. */}
-              {memberItemGroups.map((g) => (
-                <section key={g.label}>
-                  <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {g.items.map((it) => (
-                      <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
-                    ))}
-                  </div>
-                </section>
-              ))}
-              {/* Agents + triggers (from kortix.yaml), rendered as the SAME cards
-                in the SAME grid as the skills above — just non-navigable. */}
-              {projectExtraGroups.map((g) => (
-                <section key={g.label}>
-                  <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {g.items.map((it) => (
-                      <MarketplaceExploreCard
-                        key={it.id}
-                        item={it}
-                        showSource={false}
-                        navigable={false}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
+              {projectSections('sm:grid-cols-3')}
             </>
           ) : (
             <>
@@ -759,43 +960,7 @@ export function MarketplaceDetail({
             </>
           )}
 
-          {capCount > 0 ? (
-            <section>
-              <SectionLabel count={capCount}>{tI18nComplete.raw('text143f0330d2de')}</SectionLabel>
-              <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-                {capGroups.map((group) => (
-                  <div key={group.kind}>
-                    <div className="text-muted-foreground mb-1.5 text-xs">{group.label}</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {group.items.map((value) => (
-                        <Badge
-                          key={`${group.kind}:${value}`}
-                          variant="outline"
-                          size="sm"
-                          className="font-mono"
-                        >
-                          {value}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {isProject && otherProjects.length > 0 ? (
-            <section>
-              <SectionLabel count={otherProjects.length}>
-                {tI18nComplete.raw('text7b4418d894c3')}
-              </SectionLabel>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {otherProjects.map((project) => (
-                  <MarketplaceProjectCard key={project.id} item={project} />
-                ))}
-              </div>
-            </section>
-          ) : null}
+          {capabilitiesSection}
         </div>
       </MarketplaceShell>
     </>

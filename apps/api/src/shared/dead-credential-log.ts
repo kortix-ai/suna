@@ -14,9 +14,7 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
-// replica-local: this map only throttles log volume. A per-replica count can
-// at worst emit one extra warning after a failover; exact accounting uses the
-// request-completion logs or auth audits named in the header.
+// replica-local: a log-noise limiter; each replica rate-limits its own lines.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one

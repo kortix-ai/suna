@@ -140,7 +140,6 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
    * kept the tokens apart.
    */
   const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = { ini: [2], php: [0], cpp: [0] };
-
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
       const sample = HIGHLIGHT_SAMPLES[lang];
