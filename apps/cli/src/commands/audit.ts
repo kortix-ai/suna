@@ -4,7 +4,7 @@ import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
+import { emitJson, resolveSpanInstant, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
 
@@ -108,14 +108,6 @@ interface AuditWebhook {
   test?: { ok: boolean; status?: number; error?: string };
 }
 
-const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w)$/i;
-const SPAN_MS: Record<string, number> = {
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-};
-
 /**
  * Accept `24h` / `7d` as well as ISO-8601.
  *
@@ -124,17 +116,7 @@ const SPAN_MS: Record<string, number> = {
  * is unambiguous and shows up in `--json` output as the instant it really used.
  */
 export function resolveInstant(input: string, now: Date = new Date()): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  const relative = RELATIVE_SPAN.exec(value);
-  if (relative) {
-    const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() - amount * SPAN_MS[unit]!).toISOString();
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return resolveSpanInstant(input, now, -1);
 }
 
 /** Query string shared by `ls` and `export`, so the two can never drift. */
@@ -315,6 +297,61 @@ async function collectAuditPages(
   }
 }
 
+/** The page fetcher of one audit listing: carry `cursor` in the search params
+ *  and hand the built URL to the client. */
+function auditPageFetcher(
+  ctx: AuditContext,
+  search: URLSearchParams,
+  url: (search: URLSearchParams) => string,
+): (cursor: string | null) => Promise<AuditPage> {
+  return async (cursor) => {
+    if (cursor) search.set('cursor', cursor);
+    else search.delete('cursor');
+    return ctx.client.get<AuditPage>(url(search));
+  };
+}
+
+/** One audit listing, shared by ls / project / session: collect the pages,
+ *  emit the JSON payload under --json, else the shared table plus the count
+ *  and the more-available footer. The three cases differ only in their footer:
+ *  `count` adds the "N events" line, `cursorHint` puts the next cursor in the
+ *  hint, `blank` ends with a blank line. */
+async function listAuditEvents(
+  fetchPage: (cursor: string | null) => Promise<AuditPage>,
+  f: Record<string, string | undefined>,
+  all: boolean,
+  json: boolean,
+  footer: { count: boolean; cursorHint: boolean; blank: boolean },
+): Promise<number> {
+  const collected = await collectAuditPages(fetchPage, f.cursor ?? null, all);
+  if (json) {
+    emitJson({
+      events: collected.events,
+      next_cursor: all ? null : collected.nextCursor,
+    });
+    return 0;
+  }
+  printEvents(collected.events);
+  if (footer.count) {
+    const count = `${collected.events.length} event${collected.events.length === 1 ? '' : 's'}`;
+    process.stdout.write(`\n  ${C.dim}${count}${C.reset}`);
+    if (collected.nextCursor && !all) {
+      process.stdout.write(
+        `  ${C.dim}more available — use --all${footer.cursorHint ? `, or --cursor ${collected.nextCursor}` : ''}${C.reset}`,
+      );
+    }
+    process.stdout.write(footer.blank ? '\n\n' : '\n');
+    return 0;
+  }
+  if (collected.nextCursor && !all) {
+    process.stdout.write(
+      `\n  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
+    );
+  }
+  process.stdout.write('\n');
+  return 0;
+}
+
 export async function runAudit(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
@@ -365,37 +402,16 @@ export async function runAudit(argv: string[]): Promise<number> {
       case 'list': {
         const built = buildAuditQuery(f);
         if ('error' in built) return fail(built.error);
-        const { search } = built;
+        const search = built.search;
         if (f.limit) search.set('limit', f.limit);
         if (f.cursor) search.set('cursor', f.cursor);
-
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) search.set('cursor', cursor);
-            else search.delete('cursor');
-            return ctx.client.get<AuditPage>(`${base}?${search.toString()}`);
-          },
-          f.cursor ?? null,
+        return listAuditEvents(
+          auditPageFetcher(ctx, search, (params) => `${base}?${params.toString()}`),
+          f,
           all,
+          json,
+          { count: true, cursorHint: true, blank: true },
         );
-
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        printEvents(collected.events);
-        const count = `${collected.events.length} event${collected.events.length === 1 ? '' : 's'}`;
-        process.stdout.write(`\n  ${C.dim}${count}${C.reset}`);
-        if (collected.nextCursor && !all) {
-          process.stdout.write(
-            `  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
-          );
-        }
-        process.stdout.write('\n\n');
-        return 0;
       }
 
       case 'project': {
@@ -406,35 +422,16 @@ export async function runAudit(argv: string[]): Promise<number> {
         }
         const built = buildAuditQuery({ ...f, project: undefined });
         if ('error' in built) return fail(built.error);
-        const { search } = built;
+        const search = built.search;
         if (f.limit) search.set('limit', f.limit);
         if (f.cursor) search.set('cursor', f.cursor);
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) search.set('cursor', cursor);
-            else search.delete('cursor');
-            return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/audit?${search.toString()}`,
-            );
-          },
-          f.cursor ?? null,
+        return listAuditEvents(
+          auditPageFetcher(ctx, search, (params) => `/projects/${encodeURIComponent(projectId)}/audit?${params.toString()}`),
+          f,
           all,
+          json,
+          { count: true, cursorHint: false, blank: true },
         );
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        printEvents(collected.events);
-        process.stdout.write(
-          `\n  ${C.dim}${collected.events.length} event${collected.events.length === 1 ? '' : 's'}${C.reset}`,
-        );
-        if (collected.nextCursor && !all)
-          process.stdout.write(`  ${C.dim}more available — use --all${C.reset}`);
-        process.stdout.write('\n\n');
-        return 0;
       }
 
       case 'export': {
@@ -513,38 +510,20 @@ export async function runAudit(argv: string[]): Promise<number> {
         const sessionSearch = new URLSearchParams();
         if (f.limit) sessionSearch.set('limit', f.limit);
         if (f.cursor) sessionSearch.set('cursor', f.cursor);
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) sessionSearch.set('cursor', cursor);
-            else sessionSearch.delete('cursor');
-            const query = sessionSearch.size ? `?${sessionSearch.toString()}` : '';
-            return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
-            );
-          },
-          f.cursor ?? null,
+        return listAuditEvents(
+          auditPageFetcher(
+            ctx,
+            sessionSearch,
+            (params) =>
+              `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${
+                params.size ? `?${params.toString()}` : ''
+              }`,
+          ),
+          f,
           all,
+          json,
+          { count: false, cursorHint: true, blank: false },
         );
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        const events = collected.events;
-        if (events.length === 0) {
-          printEvents(events);
-          return 0;
-        }
-        printEvents(events);
-        if (collected.nextCursor && !all) {
-          process.stdout.write(
-            `\n  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
-          );
-        }
-        process.stdout.write('\n');
-        return 0;
       }
 
       case 'webhooks': {

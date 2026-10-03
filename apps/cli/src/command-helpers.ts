@@ -565,6 +565,39 @@ export function missing(what: string): number {
   return fail(`Pass ${what}.`);
 }
 
+/** A relative CLI time span: `24h`, `7d`, `2w`, `90m`, `1y`. The unit set is
+ *  the union every caller accepts, so a span valid for one command is valid
+ *  for the next. */
+const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w|y)$/i;
+const SPAN_MS: Record<string, number> = {
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+  y: 31_536_000_000,
+};
+
+/**
+ * Resolve a CLI time argument to an ISO-8601 instant: an absolute timestamp
+ * passes through normalized, a relative span resolves against `now` in the
+ * given direction (`-1` reads a log "since 24h", `+1` mints a key "expires in
+ * 30d"). Anything else is null — a filter that quietly does not apply is worse
+ * than a refusal.
+ */
+export function resolveSpanInstant(input: string, now: Date, sign: 1 | -1): string | null {
+  const value = input.trim();
+  if (!value) return null;
+  const relative = RELATIVE_SPAN.exec(value);
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = relative[2]!.toLowerCase();
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    return new Date(now.getTime() + sign * amount * SPAN_MS[unit]!).toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 /** The first dash-separated segment of an id — `3f2a…-…` prints as `3f2a…`. */
 export function shortId(id: string): string {
   return id.split('-')[0] ?? id;

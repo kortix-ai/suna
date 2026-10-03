@@ -140,6 +140,9 @@ describe('resolveExpiry', () => {
     expect(resolveExpiry('12h', now)).toBe('2026-08-01T12:00:00.000Z');
     expect(resolveExpiry('2w', now)).toBe('2026-08-15T00:00:00.000Z');
     expect(resolveExpiry('1y', now)).toBe('2027-08-01T00:00:00.000Z');
+    // The unit set is the shared resolver's union (command-helpers.ts), so a
+    // minute-span mints a short-lived key instead of being refused.
+    expect(resolveExpiry('90m', now)).toBe('2026-08-01T01:30:00.000Z');
   });
 
   test('passes an ISO instant through, and rejects nonsense', () => {

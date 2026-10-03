@@ -8,6 +8,7 @@ import {
   type StarterTemplateId,
 } from '@kortix/starter';
 
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { applyScaffold } from '../scaffold.ts';
 import { prompt, confirm } from '../prompts.ts';
 import { selectMultiFromList } from '../tui-select.ts';
@@ -88,90 +89,61 @@ interface InitFlags {
 }
 
 function parseFlags(argv: string[]): InitFlags {
-  const f: InitFlags = {
-    force: false,
-    overwrite: false,
-    noGit: false,
-    yes: false,
-    help: false,
-  };
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    switch (arg) {
-      case '-h':
-      case '--help':
-        f.help = true;
-        break;
-      case '--force':
-        f.force = true;
-        break;
-      case '--overwrite':
-        f.overwrite = true;
-        break;
-      case '--no-git':
-        f.noGit = true;
-        break;
-      case '-y':
-      case '--yes':
-        f.yes = true;
-        break;
-      case '--name': {
-        const next = argv[i + 1];
-        if (!next || next.startsWith('-')) {
-          throw new Error(`kortix: --name requires a value`);
-        }
-        f.name = next;
-        i += 1;
-        break;
+  const rest = [...argv];
+  const f: InitFlags = { force: false, overwrite: false, noGit: false, yes: false, help: false };
+  // Help-first: `-h`/`--help` anywhere wins, wherever it sits.
+  if (rest.some((a) => a === '-h' || a === '--help')) {
+    f.help = true;
+    for (let i = rest.length - 1; i >= 0; i -= 1) {
+      if (rest[i] === '-h' || rest[i] === '--help') rest.splice(i, 1);
+    }
+    return f;
+  }
+  f.force = takeFlagBool(rest, ['--force']);
+  f.overwrite = takeFlagBool(rest, ['--overwrite']);
+  f.noGit = takeFlagBool(rest, ['--no-git']);
+  f.yes = takeFlagBool(rest, ['-y', '--yes']);
+  f.name = takeFlagValue(rest, ['--name']);
+  const primary = takeFlagValue(rest, ['--primary']);
+  if (primary !== undefined) {
+    if (!(SUPPORTED_AGENTS as readonly string[]).includes(primary)) {
+      throw new Error(`kortix: --primary must be one of ${SUPPORTED_AGENTS.join(', ')}`);
+    }
+    f.primary = primary as CodingAgent;
+  }
+  const agents = takeFlagValue(rest, ['--agents']);
+  if (agents !== undefined) {
+    const list: CodingAgent[] = [];
+    for (const part of agents.split(',')) {
+      const norm = part.trim().toLowerCase();
+      if (!norm) continue;
+      if (!(SUPPORTED_AGENTS as readonly string[]).includes(norm)) {
+        throw new Error(`kortix: unknown coding agent "${norm}"`);
       }
-      case '--primary': {
-        const next = argv[i + 1];
-        if (!next || next.startsWith('-')) {
-          throw new Error(`kortix: --primary requires a value`);
-        }
-        if (!(SUPPORTED_AGENTS as readonly string[]).includes(next)) {
-          throw new Error(`kortix: --primary must be one of ${SUPPORTED_AGENTS.join(', ')}`);
-        }
-        f.primary = next as CodingAgent;
-        i += 1;
-        break;
+      list.push(norm as CodingAgent);
+    }
+    f.agents = list;
+  }
+  const template = takeFlagValue(rest, ['--template']);
+  if (template !== undefined) {
+    if (!(STARTER_TEMPLATE_IDS as readonly string[]).includes(template)) {
+      throw new Error(`kortix: --template must be one of ${STARTER_TEMPLATE_IDS.join(', ')}`);
+    }
+    f.template = template as StarterTemplateId;
+  }
+  // One positional: the project name (the directory to create), like
+  // create-next-app. Anything else is a mistake.
+  const positional = rest.filter((a) => !a.startsWith('-'));
+  const unknownFlag = rest.find((a) => a.startsWith('-'));
+  if (unknownFlag !== undefined) throw new Error(`kortix: unknown option "${unknownFlag}"`);
+  if (positional.length > 0) {
+    if (f.name === undefined) {
+      f.name = positional[0];
+      if (positional.length > 1) {
+        throw new Error(`kortix: unexpected extra argument "${positional[1]}"`);
       }
-      case '--agents': {
-        const next = argv[i + 1];
-        if (!next || next.startsWith('-')) {
-          throw new Error(`kortix: --agents requires a value`);
-        }
-        const list: CodingAgent[] = [];
-        for (const part of next.split(',')) {
-          const norm = part.trim().toLowerCase();
-          if (!norm) continue;
-          if (!(SUPPORTED_AGENTS as readonly string[]).includes(norm)) {
-            throw new Error(`kortix: unknown coding agent "${norm}"`);
-          }
-          list.push(norm as CodingAgent);
-        }
-        f.agents = list;
-        i += 1;
-        break;
-      }
-      case '--template': {
-        const next = argv[i + 1];
-        if (!next || next.startsWith('-')) {
-          throw new Error(`kortix: --template requires a value`);
-        }
-        if (!(STARTER_TEMPLATE_IDS as readonly string[]).includes(next)) {
-          throw new Error(`kortix: --template must be one of ${STARTER_TEMPLATE_IDS.join(', ')}`);
-        }
-        f.template = next as StarterTemplateId;
-        i += 1;
-        break;
-      }
-      default:
-        if (arg.startsWith('-')) throw new Error(`kortix: unknown option "${arg}"`);
-        // Positional project name (the directory to create), like create-next-app.
-        if (f.name !== undefined) throw new Error(`kortix: unexpected extra argument "${arg}"`);
-        f.name = arg;
-        break;
+    } else {
+      throw new Error(`kortix: unexpected extra argument "${positional[0]}"`);
     }
   }
   return f;
@@ -250,15 +222,64 @@ export async function runInit(argv: string[]): Promise<number> {
 
   printBanner();
 
+  // The mode is ONE decision: `--force` with no name is the documented
+  // post-clone setup path and configures cwd in place; everything else
+  // scaffolds a new project in a fresh directory.
   const configureExisting = flags.force && !flags.name;
+  return configureExisting ? initExistingProject(flags) : initNewProject(flags);
+}
 
-  // ── Resolve project name ─────────────────────────────────────────────
-  // The default is a NEW standalone project. `--force` with no name is the
-  // documented post-clone setup path and operates on cwd in place.
+/** `kortix init --force` — configure a CLONED Kortix project in cwd: wire the
+ *  agents, exclude the local wiring from git, leave every file as-is. */
+async function initExistingProject(flags: InitFlags): Promise<number> {
+  const cwd = resolve(process.cwd());
+  const projectName = normalizeProjectName(basename(cwd));
+
+  const hasManifest = existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
+  const hasRuntime = [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].some((dir) =>
+    existsSync(resolve(cwd, dir)),
+  );
+  if (!hasManifest || !hasRuntime) {
+    process.stderr.write(
+      'kortix init --force: this directory is not a cloned Kortix project.\n' +
+        'Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n',
+    );
+    return 1;
+  }
+
+  // Headless by definition: an existing project keeps every agent wired.
+  const primary = flags.primary ?? DEFAULT_PRIMARY;
+  const requestedAgents =
+    flags.primary || flags.agents ? (flags.agents ?? []) : [...SUPPORTED_AGENTS];
+  const extras = requestedAgents.filter((a) => a !== primary);
+  const chosenAgents = [primary, ...extras];
+
+  const agentInstall = wireCodingAgents({
+    repoRoot: cwd,
+    agents: chosenAgents,
+    overwrite: true,
+  });
+  excludeLocalAgentWiring(cwd);
+
+  const report = wireAndReport({
+    cwd,
+    projectName,
+    flags,
+    chosenAgents,
+    scaffold: { written: [], skipped: [] },
+    agentInstall,
+    headline: `Configured this Kortix project in ${cwd}`,
+    nextHint: null,
+  });
+  printGetStarted({ prompt: sampleStarterPrompt() });
+  return report;
+}
+
+/** `kortix init <name>` — scaffold a NEW standalone project next to cwd. */
+async function initNewProject(flags: InitFlags): Promise<number> {
+  // The default is a NEW standalone project.
   let projectName: string;
-  if (configureExisting) {
-    projectName = normalizeProjectName(basename(process.cwd()));
-  } else if (flags.name) {
+  if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
     process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
@@ -270,58 +291,27 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // Create the project in a fresh directory next to the shell's cwd. Refuse to
   // scaffold into an existing non-empty folder — a Kortix project is standalone.
-  const cwd = configureExisting
-    ? resolve(process.cwd())
-    : resolve(process.cwd(), projectName);
-  if (
-    !configureExisting &&
-    existsSync(cwd) &&
-    statSync(cwd).isDirectory() &&
-    readdirSync(cwd).length > 0
-  ) {
+  const cwd = resolve(process.cwd(), projectName);
+  if (existsSync(cwd) && statSync(cwd).isDirectory() && readdirSync(cwd).length > 0) {
     process.stderr.write(
       `kortix init: "${projectName}" already exists and isn't empty.\n` +
         `Pick a different name, or remove the directory first.\n`,
     );
     return 1;
   }
-  if (!configureExisting) mkdirSync(cwd, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
 
-  if (configureExisting) {
-    const hasManifest =
-      existsSync(resolve(cwd, "kortix.yaml")) ||
-      existsSync(resolve(cwd, "kortix.toml"));
-    const hasRuntime = [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].some((dir) =>
-      existsSync(resolve(cwd, dir)),
-    );
-    if (!hasManifest || !hasRuntime) {
-      process.stderr.write(
-        "kortix init --force: this directory is not a cloned Kortix project.\n" +
-          "Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n",
-      );
-      return 1;
-    }
-  }
-
-  // ── Resolve starter template ────────────────────────────────────────
   // One public starter exists. Keep parsing historical template values for
   // scripts and API compatibility. Do not expose them as product choices.
   const template: StarterTemplateId = flags.template ?? DEFAULT_STARTER_TEMPLATE_ID;
 
-  // ── Resolve coding agents (multi-select TUI) ─────────────────────────
   // One picker, space toggles, Enter confirms. First toggled is the
   // "primary" used in the get-started panel. Order returned from the
   // TUI is toggle-order, so primary = chosen[0].
   let chosenAgents: CodingAgent[];
-
-  if (flags.primary || flags.agents || flags.yes || configureExisting) {
-    // Headless / flag-driven path. Honor --primary + --agents.
+  if (flags.primary || flags.agents || flags.yes) {
     const primary = flags.primary ?? DEFAULT_PRIMARY;
-    const requestedAgents =
-      configureExisting && !flags.primary && !flags.agents
-        ? [...SUPPORTED_AGENTS]
-        : (flags.agents ?? []);
-    const extras = requestedAgents.filter((a) => a !== primary);
+    const extras = (flags.agents ?? []).filter((a) => a !== primary);
     chosenAgents = [primary, ...extras];
   } else {
     printAgentPreamble();
@@ -344,9 +334,11 @@ export async function runInit(argv: string[]): Promise<number> {
     chosenAgents = picked;
   }
 
-  // ── Detect existing Kortix files ─────────────────────────────────────
-  const kortixExists = ['kortix.yaml', 'kortix.toml', '.kortix'].some((path) => existsSync(resolve(cwd, path)));
-  if (kortixExists && !configureExisting && !flags.overwrite && !flags.yes) {
+  // Detected existing Kortix files: keep or overwrite (interactive only).
+  const kortixExists = ['kortix.yaml', 'kortix.toml', '.kortix'].some((path) =>
+    existsSync(resolve(cwd, path)),
+  );
+  if (kortixExists && !flags.overwrite && !flags.yes) {
     const reuse = await confirm(
       `Detected existing Kortix files. Keep your files and only add what's missing?`,
       true,
@@ -357,68 +349,77 @@ export async function runInit(argv: string[]): Promise<number> {
     }
   }
 
-  // ── Scaffold ─────────────────────────────────────────────────────────
-  const result = configureExisting
-    ? { written: [] as string[], skipped: [] as string[] }
-    : applyScaffold({
+  const scaffold = applyScaffold({
     repoRoot: cwd,
     projectName,
     template,
     preserveExisting: !flags.overwrite,
   });
-
-  // ── Wire up the chosen coding agents ─────────────────────────────────
-  // Link the canonical skill source into each local tool's discovery path.
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,
-    overwrite: flags.overwrite || configureExisting,
+    overwrite: flags.overwrite,
   });
-  if (configureExisting) excludeLocalAgentWiring(cwd);
 
-  // ── Optional `git init` ──────────────────────────────────────────────
+  const report = wireAndReport({
+    cwd,
+    projectName,
+    flags,
+    chosenAgents,
+    scaffold,
+    agentInstall,
+    headline: `Initialized Kortix project "${projectName}" in ${cwd}`,
+    nextHint: projectName,
+  });
+  printGetStarted({ prompt: sampleStarterPrompt() });
+  return report;
+}
+
+/** The tail both modes share: resolve the git note, print the report and
+ *  (for a new project) the next-step hint. */
+function wireAndReport(opts: {
+  cwd: string;
+  projectName: string;
+  flags: InitFlags;
+  chosenAgents: CodingAgent[];
+  scaffold: { written: string[]; skipped: string[] };
+  agentInstall: { written: string[]; skipped: string[] };
+  headline: string;
+  nextHint: string | null;
+}): number {
+  const { cwd, flags, scaffold, agentInstall, headline, nextHint } = opts;
+
+  // Optional `git init`.
   let gitNote = '';
   if (!flags.noGit && !dirIsGitRepo(cwd) && gitAvailable()) {
     const r = spawnSync('git', ['init', '-b', 'main'], { cwd, encoding: 'utf8' });
     gitNote = r.status === 0 ? 'Git: initialized (main)' : `Git: init failed — ${r.stderr.trim()}`;
   } else if (flags.noGit) {
     gitNote = 'Git: skipped (--no-git)';
-  } else if (dirIsGitRepo(cwd)) {
+  } else {
     gitNote = 'Git: existing repo (left alone)';
   }
 
-  // ── Report ───────────────────────────────────────────────────────────
-  const lines: string[] = [];
-  lines.push(
-    configureExisting
-      ? `Configured this Kortix project in ${cwd}`
-      : `Initialized Kortix project "${projectName}" in ${cwd}`,
-  );
-  const totalWritten = result.written.length + agentInstall.written.length;
+  const lines: string[] = [headline];
+  const totalWritten = scaffold.written.length + agentInstall.written.length;
   lines.push(`Wrote ${totalWritten} file${totalWritten === 1 ? '' : 's'}:`);
-  for (const f of result.written) lines.push(`  + ${f}`);
+  for (const f of scaffold.written) lines.push(`  + ${f}`);
   for (const f of agentInstall.written) lines.push(`  + ${f}`);
 
-  const totalSkipped = result.skipped.length + agentInstall.skipped.length;
+  const totalSkipped = scaffold.skipped.length + agentInstall.skipped.length;
   if (totalSkipped > 0) {
     lines.push(
       `Preserved ${totalSkipped} existing file${totalSkipped === 1 ? '' : 's'} (pass --overwrite to replace):`,
     );
-    for (const f of result.skipped) lines.push(`  · ${f}`);
+    for (const f of scaffold.skipped) lines.push(`  · ${f}`);
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }
   if (gitNote) lines.push(gitNote);
-  if (!configureExisting) {
+  if (nextHint) {
     lines.push('');
     lines.push('Next:');
-    lines.push(`  cd ${projectName}`);
+    lines.push(`  cd ${nextHint}`);
   }
   process.stdout.write(`${lines.join('\n')}\n`);
-
-  // ── Get started panel ────────────────────────────────────────────────
-  printGetStarted({
-    prompt: sampleStarterPrompt(),
-  });
-
   return 0;
 }

@@ -127,6 +127,28 @@ export async function runCr(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
+/** The three merge verdicts of a preview, shared by `show` and
+ *  `merge-preview`: the verdict lines only — the caller owns the blank lines
+ *  around them. */
+function printMergeVerdict(preview: ChangeRequestMergePreview): void {
+  if (preview.is_up_to_date) {
+    process.stdout.write(`  ${C.dim}Already at base — nothing to merge.${C.reset}\n`);
+    return;
+  }
+  if (preview.can_merge) {
+    process.stdout.write(
+      `  ${C.green}✓${C.reset} Mergeable cleanly${preview.can_fast_forward ? ' (fast-forward)' : ''}.\n`,
+    );
+    return;
+  }
+  process.stdout.write(
+    `  ${C.yellow}⚠${C.reset} Conflicts in ${preview.conflicts.length} file${preview.conflicts.length === 1 ? '' : 's'}:\n`,
+  );
+  for (const p of preview.conflicts) {
+    process.stdout.write(`    ${C.faded}${p}${C.reset}\n`);
+  }
+}
+
 function displayBranch(name: string): string {
   return UUID_RE.test(name) ? `${name.slice(0, 8)}…` : name;
 }
@@ -301,20 +323,7 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
       const preview = await ctx.client.get<ChangeRequestMergePreview>(
         `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/merge-preview`,
       );
-      if (preview.is_up_to_date) {
-        process.stdout.write(`  ${C.dim}Already at base — nothing to merge.${C.reset}\n`);
-      } else if (preview.can_merge) {
-        process.stdout.write(
-          `  ${C.green}✓${C.reset} Mergeable cleanly${preview.can_fast_forward ? ' (fast-forward)' : ''}.\n`,
-        );
-      } else {
-        process.stdout.write(
-          `  ${C.yellow}⚠${C.reset} Conflicts in ${preview.conflicts.length} file${preview.conflicts.length === 1 ? '' : 's'}:\n`,
-        );
-        for (const p of preview.conflicts) {
-          process.stdout.write(`    ${C.faded}${p}${C.reset}\n`);
-        }
-      }
+      printMergeVerdict(preview);
       process.stdout.write('\n');
     } catch (err) {
       // Surface but don't block the rest of show.
@@ -536,26 +545,11 @@ async function crMergePreview(
   process.stdout.write(
     `  ${C.bold}#${cr.number}${C.reset}  ${displayBranch(cr.head_ref)} → ${displayBranch(cr.base_ref)}\n`,
   );
-  if (preview.is_up_to_date) {
-    process.stdout.write(`  ${C.dim}Already at base — nothing to merge.${C.reset}\n\n`);
-    return 0;
-  }
-  if (preview.can_merge) {
-    process.stdout.write(
-      `  ${C.green}✓${C.reset} Mergeable cleanly${preview.can_fast_forward ? ' (fast-forward)' : ''}.\n\n`,
-    );
-    return 0;
-  }
-  process.stdout.write(
-    `  ${C.yellow}⚠${C.reset} Conflicts in ${preview.conflicts.length} file${preview.conflicts.length === 1 ? '' : 's'}:\n`,
-  );
-  for (const path of preview.conflicts) {
-    process.stdout.write(`    ${C.faded}${path}${C.reset}\n`);
-  }
+  printMergeVerdict(preview);
   process.stdout.write('\n');
   // A conflicted CR cannot be shipped as it stands — say so in the exit code
   // too, so a script can branch on it without reading the text.
-  return 1;
+  return preview.can_merge || preview.is_up_to_date ? 0 : 1;
 }
 
 /**

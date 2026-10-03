@@ -30,6 +30,10 @@ describe('resolveInstant', () => {
     ['24h', '2026-08-04T12:00:00.000Z'],
     ['7d', '2026-07-29T12:00:00.000Z'],
     ['2w', '2026-07-22T12:00:00.000Z'],
+    // The unit set is the shared resolver's union (command-helpers.ts), so a
+    // year-long span resolves here too — `audit export --since 1y` reaches the
+    // full archive window without an ISO timestamp.
+    ['1y', '2025-08-05T12:00:00.000Z'],
   ])('%s resolves relative to now', (input, expected) => {
     expect(resolveInstant(input, NOW)).toBe(expected);
   });
@@ -46,7 +50,6 @@ describe('resolveInstant', () => {
   test.each([
     ['empty', ''],
     ['nonsense', 'yesterday'],
-    ['unknown unit', '5y'],
     ['zero span', '0h'],
     ['negative', '-3d'],
   ])('%s is rejected, never coerced to now', (_label, input) => {
