@@ -63,7 +63,13 @@ beforeEach(() => {
   ctl = join(root, 'ctl')
   mkdirSync(ctl)
   lifecycle = null
-  for (const key of ENV_KEYS) savedEnv.set(key, process.env[key])
+  for (const key of ENV_KEYS) {
+    savedEnv.set(key, process.env[key])
+    // Start every test from a clean slate, as a laptop does: a Kortix worker
+    // sandbox exports the live session's gateway env (KORTIX_LLM_PROXY_URL, …)
+    // into this process, and a test that needs the gateway off inherits it.
+    delete process.env[key]
+  }
 })
 
 afterEach(async () => {
