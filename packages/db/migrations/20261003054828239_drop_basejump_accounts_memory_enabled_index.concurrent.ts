@@ -56,10 +56,11 @@ export const shorthands = undefined;
 //    index name; app code stopped reading basejump.* when
 //    20260706120000000_retire_basejump shipped.
 // 3. The only prod objects still reading the COLUMN are the SECURITY DEFINER
-//    functions get/set_user_memory_enabled, which look the row up by `id`
-//    (accounts_pkey). A query on `id` alone cannot use a partial index whose
-//    predicate is `memory_enabled = false`, so dropping the index changes no
-//    plan they use; it only stops per-row maintenance of the partial index.
+//    functions public.get_user_memory_enabled / public.set_user_memory_enabled,
+//    which look the row up by `id` (accounts_pkey). A query on `id` alone cannot
+//    use a partial index whose predicate is `memory_enabled = false`, so
+//    dropping the index changes no plan they use; it only stops per-row
+//    maintenance of the partial index.
 // 4. It backs no constraint (not UNIQUE/PK) and appears in no migration,
 //    baseline included, so fresh self-host installs never had it; `if exists`
 //    makes this a no-op there.
