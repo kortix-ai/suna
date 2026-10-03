@@ -6,7 +6,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   MAX_COMPUTE_RATE_MULTIPLIER,
-  MAX_CONCURRENT_SESSIONS_OVERRIDE,
   describeOverridePatch,
   draftFromOverrides,
   isOverrideExpired,
@@ -22,7 +21,6 @@ const EMPTY: OverridesDraft = {
   auditAccess: 'inherit',
   branding: 'inherit',
   managedModels: 'inherit',
-  maxConcurrentSessions: '',
   computeRateMultiplier: '',
 };
 
@@ -41,11 +39,7 @@ describe('draftFromOverrides', () => {
   });
 
   test('a stored number becomes the input string', () => {
-    const draft = draftFromOverrides({
-      maxConcurrentSessions: { value: 12 },
-      computeRateMultiplier: { value: 0.5 },
-    });
-    expect(draft.maxConcurrentSessions).toBe('12');
+    const draft = draftFromOverrides({ computeRateMultiplier: { value: 0.5 } });
     expect(draft.computeRateMultiplier).toBe('0.5');
   });
 
@@ -64,12 +58,12 @@ describe('draftFromOverrides', () => {
     const draft = draftFromOverrides({
       sso: { value: 'yes' },
       scim: { value: 1 },
-      maxConcurrentSessions: { value: true },
+      computeRateMultiplier: { value: true },
       rbac: null as never,
     });
     expect(draft.sso).toBe('inherit');
     expect(draft.scim).toBe('inherit');
-    expect(draft.maxConcurrentSessions).toBe('');
+    expect(draft.computeRateMultiplier).toBe('');
     expect(draft.rbac).toBe('inherit');
   });
 });
@@ -178,23 +172,7 @@ describe('overridesPatch — the ranges the server enforces', () => {
     ).toBe(true);
   });
 
-  test('max concurrent sessions is an integer from 1 to the server ceiling', () => {
-    expect(overridesPatch({ ...EMPTY, maxConcurrentSessions: '0' }, {}).ok).toBe(false);
-    expect(overridesPatch({ ...EMPTY, maxConcurrentSessions: '1.5' }, {}).ok).toBe(false);
-    expect(
-      overridesPatch(
-        { ...EMPTY, maxConcurrentSessions: String(MAX_CONCURRENT_SESSIONS_OVERRIDE + 1) },
-        {},
-      ).ok,
-    ).toBe(false);
-    expect(overridesPatch({ ...EMPTY, maxConcurrentSessions: '12' }, {})).toEqual({
-      ok: true,
-      patch: { maxConcurrentSessions: { value: 12 } },
-    });
-  });
-
-  test('the ceilings match the server constants they mirror', () => {
-    expect(MAX_CONCURRENT_SESSIONS_OVERRIDE).toBe(100_000);
+  test('the ceiling matches the server constant it mirrors', () => {
     expect(MAX_COMPUTE_RATE_MULTIPLIER).toBe(10);
   });
 });

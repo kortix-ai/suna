@@ -132,14 +132,18 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    // Per-test timeout headroom: the git-fixture tests (clone, reset,
-    // materialize, fast-boot) measure 5-10 s of WALL time on slow storage
-    // against bun's 5 s default, so a rotating 2-4 of them tipped over in
-    // every full-suite run on this box. apps/api (scripts/test.sh) and
-    // apps/cli already run --timeout for the same reason. Still serial on
-    // purpose — no --parallel, for the bun stdio-fd bug the db expectation
-    // below documents.
-    expect(agentPackage.scripts.test).toBe('bun test --timeout=20000');
+    // Same timeout contract as the CLI above: process-heavy git fixtures sit
+    // above bun's 5 s default on slower boxes, and the packages lane already
+    // sets KORTIX_TEST_TIMEOUT_MS=30000 for every workspace suite.
+    expect(agentPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
+    const gatewayPackage = JSON.parse(
+      readFileSync(resolve(root, 'apps/llm-gateway/package.json'), 'utf8'),
+    );
+    expect(gatewayPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap
