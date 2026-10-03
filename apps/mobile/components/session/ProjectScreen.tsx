@@ -111,6 +111,9 @@ const Pages = {
   get BrowserPage(): typeof import('@/components/pages/BrowserPage').BrowserPage {
     return require('@/components/pages/BrowserPage').BrowserPage;
   },
+  get AppsPage(): typeof import('@/components/pages/AppsPage').AppsPage {
+    return require('@/components/pages/AppsPage').AppsPage;
+  },
   get SecretsNavPage(): typeof import('@/components/pages/SecretsNavPage').SecretsNavPage {
     return require('@/components/pages/SecretsNavPage').SecretsNavPage;
   },
@@ -570,9 +573,10 @@ export function ProjectScreen() {
           /* Tool page — the SAME page component the legacy screen renders. Its
              PageHeader hamburger opens the drawer. A page that takes `onBack`
              gets handlePageBack: back to the thread it was opened over, else
-             project home. Entry points: Review (drawer), Browser (a preview
-             card or tool link), a project (a project_select/create tool row).
-             Memory has no entry point (COR-156: re-add one or delete it). */
+             project home. Entry points: Review (drawer), Apps (drawer, the
+             `apps` flag), Browser (a preview card or tool link), a project
+             (a project_select/create tool row). Memory has no entry point
+             (COR-156: re-add one or delete it). */
           activePageId === 'page:review' && PAGE_TABS[activePageId] ? (
             <Pages.ReviewPage
               page={PAGE_TABS[activePageId]}
@@ -582,6 +586,8 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] ? (
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+          ) : activePageId === 'page:apps' && PAGE_TABS[activePageId] ? (
+            <Pages.AppsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
             <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId.startsWith('page:project:') ? (

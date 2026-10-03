@@ -165,6 +165,7 @@ import { SignOutIcon as SignOutGlyph } from 'phosphor-react-native/src/icons/Sig
 import { SlackLogoIcon as SlackLogoGlyph } from 'phosphor-react-native/src/icons/SlackLogo';
 import { SlidersHorizontalIcon as SlidersHorizontalGlyph } from 'phosphor-react-native/src/icons/SlidersHorizontal';
 import { SortAscendingIcon as SortAscendingGlyph } from 'phosphor-react-native/src/icons/SortAscending';
+import { AppWindowIcon as AppWindowGlyph } from 'phosphor-react-native/src/icons/AppWindow';
 import { SparkleIcon as SparkleGlyph } from 'phosphor-react-native/src/icons/Sparkle';
 import { SpeakerHighIcon as SpeakerHighGlyph } from 'phosphor-react-native/src/icons/SpeakerHigh';
 import { SquareIcon as SquareGlyph } from 'phosphor-react-native/src/icons/Square';
@@ -363,6 +364,7 @@ export const SignOutIcon = withAppWeight(SignOutGlyph, 'SignOutIcon');
 export const SlackLogoIcon = withAppWeight(SlackLogoGlyph, 'SlackLogoIcon');
 export const SlidersHorizontalIcon = withAppWeight(SlidersHorizontalGlyph, 'SlidersHorizontalIcon');
 export const SortAscendingIcon = withAppWeight(SortAscendingGlyph, 'SortAscendingIcon');
+export const AppWindowIcon = withAppWeight(AppWindowGlyph, 'AppWindowIcon');
 export const SparkleIcon = withAppWeight(SparkleGlyph, 'SparkleIcon');
 export const SpeakerHighIcon = withAppWeight(SpeakerHighGlyph, 'SpeakerHighIcon');
 export const SquareIcon = withAppWeight(SquareGlyph, 'SquareIcon');

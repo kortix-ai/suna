@@ -61,6 +61,7 @@ import {
   getProjectFileHistory,
   getVersionDiff,
   listAccounts,
+  listApps,
   listChangeRequests,
   listConnectors,
   listPipedreamApps,
@@ -152,6 +153,8 @@ export const projectKeys = {
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
+  /** The project's Apps (`GET /projects/:id/apps`, web parity: `qk.project.apps`). */
+  projectApps: (projectId: string | null | undefined) => ['project-apps', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
   slackMode: (projectId: string | null | undefined) => ['slack-mode', projectId] as const,
@@ -395,6 +398,19 @@ export function useProjectAccess(projectId: string | null) {
   return useQuery({
     queryKey: projectKeys.projectAccess(projectId),
     queryFn: () => listProjectAccess(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * The project's Apps (web parity: the SDK's `useProjectApps`, which mobile does
+ * not import). List only — lifecycle mutations stay on web for now.
+ */
+export function useProjectApps(projectId: string | null | undefined) {
+  return useQuery({
+    queryKey: projectKeys.projectApps(projectId),
+    queryFn: () => listApps(projectId!),
     enabled: !!projectId,
     staleTime: 30_000,
   });

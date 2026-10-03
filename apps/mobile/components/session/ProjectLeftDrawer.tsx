@@ -11,8 +11,9 @@
  *   The drawer's own gear button is gone: the project Settings page is
  *   reached from Settings (drawer avatar) → project row.
  * - Nav rows: Search (→ Sessions, its search field auto-focused), Files
- *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
- *   pill while items wait). Connectors moved to project Settings → Customize
+ *   (→ /projects/[id]/files), Apps (the `apps` flag; → the Apps page tab),
+ *   Review (→ the Review page, a trailing count pill while items wait).
+ *   Connectors moved to project Settings → Customize
  *   (KRTX-249): a "Customize in the web app" hand-off sheet, not a drawer row.
  * - Three sections of top-level sessions, by who started the run (KRTX-639):
  *   "Sessions" (yours, open), "Shared" (other members', collapsed, no header
@@ -40,9 +41,10 @@
  *
  * Every action closes the drawer first, except the switcher row: it opens a
  * sheet over the drawer, and only a pick inside that sheet closes the drawer.
- * Search, Files, and Review go through `onNavigateRoute` (ProjectScreen) or
- * `useTabStore.navigateToPage`: a push over project home, or a replace of the
- * screen that covers home, so the project stack stays one screen deep
+ * Search, Files, Apps, and Review go through `onNavigateRoute`
+ * (ProjectScreen) or `useTabStore.navigateToPage`: a push over project home,
+ * or a replace of the screen that covers home, so the project stack stays one
+ * screen deep
  * (lib/session/project-stack). New session returns to project home and pops a
  * covering screen. A navigation guard ignores a second tap while the drawer
  * closes, so a double tap never navigates twice.
@@ -57,6 +59,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  AppWindowIcon,
   FoldersIcon,
   CaretDownIcon,
   CaretRightIcon,
@@ -256,6 +259,9 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // own account, not necessarily the globally selected one — a deep link can
   // open a project in an account other than the one the user last picked.
   const { data: project } = useProject(projectId);
+  // The Apps row (and page) exist only while the project turns the `apps`
+  // feature flag on. Fail-closed: loading and an old server both count as off.
+  const appsFlag = project?.experimental?.apps === true;
   const accountsQuery = useAccounts();
   const projectAccountId = project?.account_id ?? null;
   const projectAccountName =
@@ -482,11 +488,16 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     [navigateOnce, onNavigateRoute]
   );
 
-  // Review is a tab-store page, not a drawer route: `navigateToPage` alone is
-  // enough regardless of which project route is focused (ProjectScreen's old
-  // gear button used the same call).
+  // Review and Apps are tab-store pages, not drawer routes: `navigateToPage`
+  // alone is enough regardless of which project route is focused
+  // (ProjectScreen's old gear button used the same call).
   const goToReview = useCallback(
     () => navigateOnce(() => useTabStore.getState().navigateToPage('page:review')),
+    [navigateOnce]
+  );
+
+  const goToApps = useCallback(
+    () => navigateOnce(() => useTabStore.getState().navigateToPage('page:apps')),
     [navigateOnce]
   );
 
@@ -751,6 +762,11 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       <View className="px-2 -mx-1 space-y-1">
         <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
         <NavPill icon={FoldersIcon} label="Files" onPress={goToFiles} />
+        {/* Apps rides the project's `apps` feature flag, fail-closed like web's
+            sidebar entry (project-apps-nav). */}
+        {appsFlag ? (
+          <NavPill icon={AppWindowIcon} label="Apps" onPress={goToApps} />
+        ) : null}
         <NavPill
           icon={SealCheckIcon}
           label="Review"

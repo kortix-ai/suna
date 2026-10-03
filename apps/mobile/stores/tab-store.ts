@@ -3,7 +3,7 @@
  *
  * Supports two tab types:
  * - Session tabs (chat sessions identified by session ID)
- * - Page tabs (Review, Browser, a project's page, …: `PAGE_TABS`)
+ * - Page tabs (Review, Apps, Browser, a project's page, …: `PAGE_TABS`)
  */
 
 import { create, type StoreApi } from 'zustand';
@@ -23,11 +23,13 @@ export interface PageTab {
  * All known page tabs. A page with no entry point is deleted, not kept here
  * (COR-156). Entry points: Review (drawer), Browser (a preview card or tool
  * link), Files (the drawer's `files` route), and project Settings / Schedules
- * / Secrets / Members (sub-pages). Memory has none: re-add an entry or delete it.
+ * / Secrets / Members (sub-pages). Apps (drawer, the `apps` flag). Memory has
+ * none: re-add an entry or delete it.
  */
 export const PAGE_TABS: Record<string, PageTab> = {
   'page:memory':            { id: 'page:memory',            label: 'Memory' },
   'page:browser':           { id: 'page:browser',           label: 'Browser' },
+  'page:apps':              { id: 'page:apps',              label: 'Apps' },
   'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
   'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
   'page:review':            { id: 'page:review',            label: 'Review' },

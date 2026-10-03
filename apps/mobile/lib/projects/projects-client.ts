@@ -93,6 +93,9 @@ export {
   updateExperimentalFeature,
 } from '@kortix/sdk';
 
+export { listApps, createAppAccessSession } from '@kortix/sdk';
+export type { App } from '@kortix/sdk';
+
 // ── Dev ───────────────────────────────────────────────────────────────────────
 // inviteRepoCollaborator / isManagedGithubProject re-exported above.
 
