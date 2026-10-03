@@ -318,8 +318,9 @@ The implicated test and observer have no changes relative to merged main `b34c23
 A focused rerun passed all 162 tests in that file in 3.53 seconds; this does not replace the failed package gate.
 The failure cause remains unknown. No assertion or timing threshold was relaxed.
 
-The branch remains local and unmerged. No PR, deployment, or dev verification completed.
-The recorded repository attestation is red. The required full browser gate remains incomplete.
+At checkpoint `c804eb6191`, the branch was local and unmerged, with no PR, deployment, or dev verification.
+Its repository attestation was red and its required full browser gate remained incomplete.
+Main `146b4fb046` is subsequently merged, including the upstream Meta guide assertion fix and Customize-page fixes.
 
 The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.
 The final delivery status must include the most recent completed repository gate; the evidence above does not claim a green broad gate.
