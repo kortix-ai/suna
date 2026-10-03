@@ -1,5 +1,3 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { stringify as stringifyToml } from 'smol-toml';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,

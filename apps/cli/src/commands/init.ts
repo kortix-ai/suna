@@ -263,9 +263,7 @@ async function initExistingProject(flags: InitFlags): Promise<number> {
 
   const report = wireAndReport({
     cwd,
-    projectName,
     flags,
-    chosenAgents,
     scaffold: { written: [], skipped: [] },
     agentInstall,
     headline: `Configured this Kortix project in ${cwd}`,
@@ -363,9 +361,7 @@ async function initNewProject(flags: InitFlags): Promise<number> {
 
   const report = wireAndReport({
     cwd,
-    projectName,
     flags,
-    chosenAgents,
     scaffold,
     agentInstall,
     headline: `Initialized Kortix project "${projectName}" in ${cwd}`,
@@ -379,9 +375,7 @@ async function initNewProject(flags: InitFlags): Promise<number> {
  *  (for a new project) the next-step hint. */
 function wireAndReport(opts: {
   cwd: string;
-  projectName: string;
   flags: InitFlags;
-  chosenAgents: CodingAgent[];
   scaffold: { written: string[]; skipped: string[] };
   agentInstall: { written: string[]; skipped: string[] };
   headline: string;

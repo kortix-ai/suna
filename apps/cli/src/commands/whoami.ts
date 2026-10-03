@@ -120,6 +120,12 @@ function tokenKind(ctx: MeResponse['token_context']): string {
  *  slots the context fills. */
 function renderTokenContext(ctx: MeResponse['token_context']): void {
   process.stdout.write(`  ${C.dim}token      ${C.reset}${tokenKind(ctx)}\n`);
+  renderTokenSlots(ctx);
+}
+
+/** The context slots both render modes share: project, session, agent and the
+ *  connector grant, in one column layout. */
+function renderTokenSlots(ctx: MeResponse['token_context']): void {
   if (ctx?.project_id) process.stdout.write(`  ${C.dim}project    ${C.reset}${ctx.project_id}\n`);
   if (ctx?.session_id) process.stdout.write(`  ${C.dim}session    ${C.reset}${ctx.session_id}\n`);
   if (ctx?.agent) process.stdout.write(`  ${C.dim}agent      ${C.reset}${ctx.agent}\n`);
@@ -131,12 +137,7 @@ function renderTokenContext(ctx: MeResponse['token_context']): void {
 function whoamiTokenOnly(me: MeResponse): number {
   process.stdout.write(`\n  ${C.bold}${tokenKind(me.token_context)}${C.reset}\n`);
   const ctx = me.token_context;
-  if (ctx?.project_id) process.stdout.write(`  ${C.dim}project    ${C.reset}${ctx.project_id}\n`);
-  if (ctx?.session_id) process.stdout.write(`  ${C.dim}session    ${C.reset}${ctx.session_id}\n`);
-  if (ctx?.agent) process.stdout.write(`  ${C.dim}agent      ${C.reset}${ctx.agent}\n`);
-  if (ctx?.connectors != null) {
-    process.stdout.write(`  ${C.dim}connectors ${C.reset}${formatGrant(ctx.connectors)}\n`);
-  }
+  renderTokenSlots(ctx);
   const permissions = ctx?.kortix_permissions ?? ctx?.kortix_cli;
   if (permissions != null) {
     process.stdout.write(`  ${C.dim}permissions ${C.reset}${formatGrant(permissions)}\n`);

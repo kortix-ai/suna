@@ -10,7 +10,7 @@ import {
   takeFlagValues,
 } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { teamsConnect, teamsDisconnect, teamsManifest, teamsStatus } from './channels-teams.ts';
 import { emailCommand } from './channels-email.ts';
 import { bindingsLs, bindingsPatch } from './channels-bindings.ts';
@@ -111,8 +111,9 @@ type Platform = 'slack' | 'teams';
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
-/** Extra flags the email/bindings subcommands take. */
-interface ExtraFlags {
+/** Extra flags the email/bindings subcommands take. The email and
+ *  bindings modules import this type and narrow it to what they read. */
+export interface ExtraFlags {
   connector?: string;
   apiKey?: string;
   displayName?: string;

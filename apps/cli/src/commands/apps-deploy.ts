@@ -107,7 +107,7 @@ export async function provisionDeployApp(
   return apps.create({ slug, name: flags.name ?? slug });
 }
 
-function slugFrom(value: string): string {
+export function slugFrom(value: string): string {
   const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

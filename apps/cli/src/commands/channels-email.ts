@@ -39,19 +39,21 @@ interface EmailMode {
 /** The default connector slug every email route falls back to (channel-email.ts). */
 const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
 
-/** The email flags of `kortix channels <cmd>`, parsed once by runChannels. */
-interface EmailFlags {
-  connector?: string;
-  apiKey?: string;
-  displayName?: string;
-  username?: string;
-  domain?: string;
-  inboxId?: string;
-  email?: string;
-  allow: string[];
-  allowRegex?: string;
-  allowAll: boolean;
-}
+import type { ExtraFlags } from './channels.ts';
+
+type EmailFlags = Pick<
+  ExtraFlags,
+  | 'connector'
+  | 'apiKey'
+  | 'displayName'
+  | 'username'
+  | 'domain'
+  | 'inboxId'
+  | 'email'
+  | 'allow'
+  | 'allowRegex'
+  | 'allowAll'
+>;
 /**
  * Build the wire `sender_policy` from repeated `--allow` values.
  *

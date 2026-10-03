@@ -1,19 +1,14 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { AppBlockV2 } from '@kortix/manifest-schema';
 import type {
   App,
   AppDeployment,
   AppHostingProvider,
   AppAccessMode,
-  AppSource,
   ProjectHandle,
   UpdateAppInput,
 } from '@kortix/sdk';
-import ignore from 'ignore';
-import * as tar from 'tar';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
@@ -30,6 +25,7 @@ import { loadLocalManifest } from '../manifest.ts';
 import {
   mergeManifestDefaults,
   provisionDeployApp,
+  slugFrom,
   stageArtifact,
   type DeployFlags,
   type ManifestAppDefaults,
@@ -118,16 +114,6 @@ function positiveInteger(value: string | undefined, label: string): number | und
   return number;
 }
 
-function slugFrom(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63)
-    .replace(/-+$/g, '');
-  if (!slug) throw new Error('Could not derive an App slug; pass --slug');
-  return slug;
-}
 
 function commandArg(value: string | undefined): string[] | undefined {
   if (value === undefined) return undefined;

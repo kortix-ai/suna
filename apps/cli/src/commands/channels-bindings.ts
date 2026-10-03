@@ -34,14 +34,9 @@ interface ChannelBindingsResponse {
   bindings: ChannelBinding[];
 }
 
-/** The bind flags of `kortix channels bind`, parsed once by runChannels. */
-interface BindFlags {
-  agent?: string;
-  noAgent: boolean;
-  model?: string;
-  noModel: boolean;
-  policy?: string;
-}
+import type { ExtraFlags } from './channels.ts';
+
+type BindFlags = Pick<ExtraFlags, 'agent' | 'noAgent' | 'model' | 'noModel' | 'policy'>;
 
 /** `#general`, a person's name for a Slack DM, or the id when nothing names it. */
 function bindingLabel(b: ChannelBinding): string {
