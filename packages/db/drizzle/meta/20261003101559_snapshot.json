@@ -1,5 +1,5 @@
 {
-  "id": "4f68e8d0-0ed3-41ef-9b8a-bd266ce3739b",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -5498,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",
@@ -10642,6 +10642,21 @@
         }
       },
       "indexes": {
+        "idx_legacy_sandbox_migrations_run": {
+          "name": "idx_legacy_sandbox_migrations_run",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_legacy_sandbox_migrations_sandbox": {
           "name": "idx_legacy_sandbox_migrations_sandbox",
           "columns": [

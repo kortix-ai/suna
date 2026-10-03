@@ -13,6 +13,7 @@
 // counter threaded in via opts.createAttempt (see restorePlatinumCreateAttempt
 // in session-sandbox.ts for the persistence/restore side of that counter).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { platinumHttpError, timeoutError } from '../../__tests__/helpers/platinum-http-error';
 mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
@@ -173,7 +174,7 @@ describe('S1 ambiguous-retry / replay handling', () => {
     // the caller (session-sandbox.ts) retries with the SAME createAttempt,
     // and the CP's Idempotency-Key replay returns the ALREADY-committed box.
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes?wait_for_state=running timed out after 70000ms (caller-provided budget)') },
+      { error: timeoutError('platinum POST /v1/sandboxes?wait_for_state=running timed out after 70000ms (caller-provided budget)') },
       { result: { id: 'sbx_committed', state: 'running', replayed: true } },
     ];
     const p = new PlatinumProvider();
@@ -190,7 +191,7 @@ describe('S1 ambiguous-retry / replay handling', () => {
 
   test('an unexpected 409 name_taken re-issues the SAME body+key once and adopts the replayed box (no list/GET call)', async () => {
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes?wait_for_state=running -> 409 {"code":"name_taken","error":"name already taken"}') },
+      { error: platinumHttpError('platinum POST /v1/sandboxes?wait_for_state=running -> 409 {"code":"name_taken","error":"name already taken"}') },
       { result: { id: 'sbx_committed', state: 'running', replayed: true } },
     ];
     const p = new PlatinumProvider();
@@ -208,7 +209,7 @@ describe('S1 ambiguous-retry / replay handling', () => {
 
   test('a definitive non-name_taken error (e.g. 503) is NOT retried by the dedup layer — propagates untouched', async () => {
     createSequence = [
-      { error: new Error('platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"unavailable"}') },
+      { error: platinumHttpError('platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"unavailable"}') },
     ];
     const p = new PlatinumProvider();
 
