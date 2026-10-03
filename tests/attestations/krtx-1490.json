@@ -1,0 +1,28 @@
+{
+  "source_hash": "5a71c1689620955d508c2f0860d8bb8ffa57cec7140fa33b72328dd4cdb50ad2",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-openapi-catalog-quality.test.ts",
+    "apps/api/src/connectors/router.ts",
+    "apps/api/src/projects/routes/access-requests.ts",
+    "apps/api/src/projects/routes/approvals.ts",
+    "apps/api/src/projects/routes/group-grants.ts",
+    "apps/api/src/projects/routes/project-access.ts",
+    "apps/api/src/projects/routes/project-git.ts",
+    "apps/api/src/projects/routes/project-invites.ts",
+    "apps/api/src/projects/routes/project-sessions.ts",
+    "apps/api/src/projects/routes/resource-grants.ts",
+    "apps/api/src/projects/routes/review-items.ts",
+    "apps/api/src/projects/routes/session-prompts.ts",
+    "apps/api/src/projects/routes/setup-links.ts",
+    "apps/api/src/projects/routes/triggers.ts"
+  ],
+  "diff_hash": "b7889b1118340a11acc4475639d0c7c87b0a60dbd176c28f8f04b2b9f42a1770",
+  "head": "e247c402771416483813b35e208b88b91f12a10a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:46:46.263Z"
+}

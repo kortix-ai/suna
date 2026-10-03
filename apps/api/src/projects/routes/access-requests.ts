@@ -181,7 +181,7 @@ projectsApp.openapi(
       request: {
         params: z.object({ projectId: z.string(), requestId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            role: z.enum(['manager,member']).optional().openapi({ description: 'Role to grant. Default member.' }),
+            role: z.enum(['manager', 'member']).optional().openapi({ description: 'Role to grant. Default member.' }),
           }) } } },
       },
     responses: {

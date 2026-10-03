@@ -13,11 +13,20 @@ const doc: { paths: Record<string, Record<string, Op>> } = await (
   await app.request('http://localhost/v1/openapi.json')
 ).json();
 
+/** The lenientBody request schema: the object branch of the anyOf. */
+function bodyShape(method: string, path: string): any {
+  const schema = doc.paths[path]?.[method]?.requestBody?.content?.['application/json']?.schema;
+  return schema?.properties ? schema : schema?.anyOf?.find((s: any) => s.properties);
+}
+
 /** Property names of a JSON request body, first `anyOf` branch included (lenientBody). */
 function bodyProps(method: string, path: string): string[] {
-  const schema = doc.paths[path]?.[method]?.requestBody?.content?.['application/json']?.schema;
-  const first = schema?.properties ? schema : schema?.anyOf?.find((s: any) => s.properties);
-  return Object.keys(first?.properties ?? {});
+  return Object.keys(bodyShape(method, path)?.properties ?? {});
+}
+
+/** One property schema of a JSON request body. */
+function bodyProp(method: string, path: string, field: string): any {
+  return bodyShape(method, path)?.properties?.[field];
 }
 
 describe('OpenAPI catalog quality (MCP search_api / describe_api)', () => {
@@ -42,5 +51,32 @@ describe('OpenAPI catalog quality (MCP search_api / describe_api)', () => {
   ] as const)('%s %s documents its body fields', (method, path, fields) => {
     const props = bodyProps(method, path);
     for (const f of fields) expect(props).toContain(f);
+  });
+
+  // A comma-separated literal pasted as ONE z.enum value publishes a bogus
+  // one-value enum: a generated SDK can only send it and every real value
+  // fails client-side validation. Pin the real value sets.
+  test.each([
+    ['post', '/v1/projects/{projectId}/access/invite', 'role', ['manager', 'member']],
+    ['post', '/v1/projects/{projectId}/git/collaborators', 'permission', ['read', 'write']],
+  ] as const)('%s %s publishes %s with its real enum values', (method, path, field, values) => {
+    expect(bodyProp(method, path, field)?.enum).toEqual(values);
+  });
+
+  // And pin the class itself: no request body in the whole document may
+  // publish a comma-joined literal as an enum value.
+  test('no request body publishes a merged comma-joined literal as an enum', () => {
+    const bad: string[] = [];
+    const visit = (schema: any, at: string) => {
+      if (!schema || typeof schema !== 'object') return;
+      if (Array.isArray(schema.enum))
+        for (const v of schema.enum)
+          if (typeof v === 'string' && /^[a-z0-9_]+(,[a-z0-9_]+)+$/.test(v)) bad.push(`${at}: ${v}`);
+      for (const v of Object.values(schema)) if (v && typeof v === 'object') visit(v, at);
+    };
+    for (const [path, item] of Object.entries(doc.paths))
+      for (const [method, op] of Object.entries(item))
+        visit((op as any).requestBody?.content, `${method} ${path}`);
+    expect(bad).toEqual([]);
   });
 });
