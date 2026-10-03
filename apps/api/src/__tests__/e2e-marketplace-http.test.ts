@@ -24,8 +24,12 @@ describe('marketplace HTTP contract', () => {
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-    server = Bun.serve({ port: 0, fetch: app.fetch });
-    baseUrl = `http://${server.hostname}:${server.port}/v1`;
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: app.fetch });
+    // The loopback literal, not `server.hostname` (which yields `localhost`):
+    // the contract under test is the HTTP surface, and a box may resolve
+    // `localhost` to nothing at all (a factory sandbox does). Every other e2e
+    // HTTP test in this repo addresses its server the same way.
+    baseUrl = `http://127.0.0.1:${server.port}/v1`;
   });
 
   afterAll(() => {
