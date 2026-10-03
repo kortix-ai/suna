@@ -39,6 +39,13 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped' }) }), cur()).code).toBe(1);
   });
+  it('packages may be skipped-sandbox-image (owner rule: the Kortix image breaks those tests at base); --strict never lets it pass', () => {
+    const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image', 'db-suites': 'skipped-no-db' }) });
+    expect(evaluate(a, cur()).code).toBe(0);
+    expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
+    expect(evaluate(att({ lanes: lanes({ core: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
+    expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
+  });
   it('a diff-keyed attestation ignores source_hash: fresh iff its own files are unchanged', () => {
     const line = '100644 blob1 pr.txt';
     const a = att({ diff_files: ['pr.txt'], diff_hash: diffHash([line]) });
