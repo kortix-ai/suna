@@ -51,6 +51,9 @@ async function runCli(args: string[]): Promise<CliResult> {
     'KORTIX_FRONTEND_URL',
     'KORTIX_PROJECT_ID',
     'BASH_ENV',
+    // A Kortix sandbox run injects a live session id; the golden outputs were
+    // recorded with an empty session leaf.
+    'KORTIX_SESSION_ID',
   ]) {
     delete env[key];
   }

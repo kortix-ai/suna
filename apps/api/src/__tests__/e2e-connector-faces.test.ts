@@ -389,6 +389,11 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
+      // Pin the project the stub authorizes. Without it the CLI falls back to
+      // the operator's default project (a real linked checkout or a logged-in
+      // `kortix` config carries one; CI has neither), and the stub answers
+      // forbidden for that foreign project id.
+      KORTIX_PROJECT_ID: PROJECT,
       ...extraEnv,
     },
     stdout: 'pipe',
@@ -677,6 +682,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_PROJECT_ID: PROJECT,
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -771,6 +777,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_PROJECT_ID: PROJECT,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',
@@ -843,6 +850,7 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_PROJECT_ID: PROJECT,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',

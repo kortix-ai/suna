@@ -24,6 +24,10 @@ const ENV_KEYS = [
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
   'KORTIX_AUTH_FILE',
+  // A Kortix sandbox run injects a live session id; without this scrub the
+  // context block renders that session instead of the synthetic config's
+  // empty session leaf, and the breadcrumb test sees the wrong leaf.
+  'KORTIX_SESSION_ID',
 ] as const;
 
 let saved: Record<string, string | undefined>;

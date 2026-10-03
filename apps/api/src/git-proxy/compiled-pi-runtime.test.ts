@@ -9,6 +9,22 @@ import {
   type CompilePiRuntimeInput,
 } from './compiled-pi-runtime';
 
+// A Kortix sandbox run injects the real project/runtime identity into the
+// environment; the compiled shim's identity check compares those against the
+// synthetic manifest and would exit 78. The suite defines its own identity per
+// spawn, so drop the inherited one before any test spawns a runtime.
+for (const key of [
+  'KORTIX_PROJECT_ID',
+  'KORTIX_DEFAULT_BRANCH',
+  'KORTIX_BASE_REF',
+  'KORTIX_BASE_SHA',
+  'KORTIX_COMPILED_RUNTIME_FORMAT',
+  'KORTIX_COMPILED_RUNTIME_SOURCE_SHA',
+  'KORTIX_COMPILED_AGENT_CONFIG',
+  'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
+]) delete process.env[key];
+
+
 const roots: string[] = [];
 const INPUT: CompilePiRuntimeInput = {
   projectId: 'project-1',
@@ -84,7 +100,13 @@ describe('compilePiRuntime', () => {
 
   test('the worker runtime receives the baked config via __KORTIX_COMPILED__', async () => {
     const { runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
+    // env is passed explicitly: bun's child_process inherits a start-of-process
+    // environment snapshot, which still carries the sandbox identity this file
+    // scrubs from process.env at module scope.
+    const stdout = execFileSync(process.execPath, [runtimePath], {
+      encoding: 'utf8',
+      env: { ...process.env },
+    });
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
     const baked = JSON.parse(lines[1]).baked;
@@ -115,7 +137,13 @@ describe('compilePiRuntime', () => {
     });
     expect(artifact.manifest.agent_config).toBeNull();
     expect(artifact.manifest.agent_config_etag).toBeNull();
-    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
+    // env is passed explicitly: bun's child_process inherits a start-of-process
+    // environment snapshot, which still carries the sandbox identity this file
+    // scrubs from process.env at module scope.
+    const stdout = execFileSync(process.execPath, [runtimePath], {
+      encoding: 'utf8',
+      env: { ...process.env },
+    });
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
 

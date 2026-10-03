@@ -42,6 +42,12 @@ async function runProviderCase(input: {
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_CONFIG_FILE: join(directory, 'config.json'),
       KORTIX_TOKEN: undefined,
+      // A Kortix sandbox run injects a live API URL and session id; the golden
+      // host notice below describes the config-only 'cloud' host, so scrub
+      // everything that would render the env host instead.
+      KORTIX_API_URL: undefined,
+      KORTIX_SESSION_ID: undefined,
+      KORTIX_PROJECT_ID: undefined,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },

@@ -5,6 +5,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compileOpenCodeRuntime } from './compiled-runtime';
 
+
+// A Kortix sandbox run injects the real project/runtime identity into the
+// environment; the compiled shim's identity check compares those against the
+// synthetic manifest and would exit 78. The suite defines its own identity per
+// spawn, so drop the inherited one before any test spawns a runtime.
+for (const key of [
+  'KORTIX_PROJECT_ID',
+  'KORTIX_DEFAULT_BRANCH',
+  'KORTIX_BASE_REF',
+  'KORTIX_BASE_SHA',
+  'KORTIX_COMPILED_RUNTIME_FORMAT',
+  'KORTIX_COMPILED_RUNTIME_SOURCE_SHA',
+  'KORTIX_COMPILED_AGENT_CONFIG',
+  'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
+]) delete process.env[key];
+
 const roots: string[] = [];
 const INPUT = {
   projectId: 'project-1',
