@@ -1,18 +1,34 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "f65e34933f265f71658adc16ea6037830c0007cc7a08eed13b0581722fec93ee",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/api/scripts/test.sh",
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/cli/package.json",
+    "apps/cli/scripts/test.sh",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "apps/web/true",
+    "packages/db/drizzle/meta/20261003115541_snapshot.json",
+    "packages/db/drizzle/meta/20261003145424_snapshot.json",
+    "packages/db/drizzle/meta/20261003170058_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003170200000_app_deployments_artifact_idx.concurrent.ts",
+    "packages/db/migrations/20261003170201000_app_deployments_source_session_idx.concurrent.ts",
+    "packages/db/src/schema/kortix.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "4574e90c1e6dccf60aa4aa311b94d60f3b15c907de33942504da1c685eac3c65",
+  "head": "5910e5e0f769a1a89aaae4f8edc0b7bfe6b90a34",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T17:21:28.939Z"
 }
