@@ -592,9 +592,14 @@ describe('materializeProject — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'stall'
-    const started = Date.now()
     const result = await materializeProject(cfg, { deadlineMs: 1_500 })
-    expect(Date.now() - started).toBeLessThan(6_000)
+    // The deadline governs the S3 attempt, not the git fallback that follows
+    // it: assert the attempt gave up at the deadline (plus scheduler slack)
+    // and that the fallback is attributed to it. The git step's wall time is
+    // real subprocess work whose duration tracks box load — measured at
+    // 10 s once under the packages lane's concurrent wave on a 12 GiB
+    // sandbox — and is bounded by the suite's test timeout, not by this row.
+    expect(result.fallback?.durationMs).toBeLessThan(2_500)
     expect(result.provider).toBe('git')
     expect(result.fallback?.reason).toBe('timeout')
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
