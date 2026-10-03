@@ -1,30 +1,19 @@
 {
-  "source_hash": "0563ac9e50a0c6778df546e333302d7e4a61319ea60a3a99debc16a65c3d5509",
+  "source_hash": "f0e01f80a0aa935733d86060aea80dc541ab9281a513a6ba4e8fb3352f42f61b",
   "diff_files": [
-    "apps/cli/src/__tests__/no-inline-arg-errors.test.ts",
-    "apps/cli/src/__tests__/validate-argv.blackbox.test.ts",
-    "apps/cli/src/commands/validate.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets-download.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts",
-    "apps/mobile/lib/highlight/shiki.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/kortix-sandbox-agent-server/package.json",
+    "packages/shared/src/tool-output/testing.ts",
+    "scripts/dev-local.sh",
+    "tests/unit/dev-local-warmup.test.ts",
+    "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "a306818837089f3e2a69766f50aa4a1c4685da459efbb7e249df7964161a0953",
-  "head": "e8661f93352cfd2a167a31718f173719042645a8",
+  "diff_hash": "1052fe2c33cde33af50e4190c002d18f8e1ccc0b6661bc98ebbe6a56e63c80d0",
+  "head": "a6154602a7482439c01274e793b22bf6ed702bae",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T16:18:07.380Z"
+  "at": "2026-10-03T21:19:53.465Z"
 }
