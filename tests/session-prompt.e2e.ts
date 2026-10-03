@@ -219,7 +219,9 @@ test(
     );
     expect(requests).toHaveLength(1);
     expect(requests[0].parts).toEqual([{ type: 'text', text: prompt }]);
-    const reply = browser.locator('.kortix-markdown').filter({ hasText: new RegExp(`^${marker}$`) });
+    const reply = browser
+      .locator('.kortix-markdown')
+      .filter({ hasText: new RegExp(`^${marker}$`) });
     await expect(reply).toBeVisible({ timeout: 180_000 });
     await expect
       .poll(
