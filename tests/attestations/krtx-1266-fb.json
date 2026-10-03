@@ -1,5 +1,5 @@
 {
-  "source_hash": "aa61f4605d04878aa6d9d87e0481d553d41222bcd5b6c5abc59c33d7941778a8",
+  "source_hash": "f0631780e8224abced2cf25a2962d35a4d363559a1d1a4c877d54e3711db0d28",
   "diff_files": [
     "apps/api/bunfig.toml",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -9,7 +9,6 @@
     "apps/cli/bunfig.toml",
     "apps/cli/src/__tests__/preload-clean-sandbox-env.ts",
     "apps/kortix-sandbox-agent-server/package.json",
-    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
     "apps/mobile/lib/highlight/reference-child.ts",
@@ -18,7 +17,6 @@
     "apps/mobile/lib/session/session-list.ts",
     "apps/web/src/components/projects/session-label.ts",
     "apps/web/src/features/session/session-chat.tsx",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
     "apps/web/translations/es.json",
@@ -31,16 +29,15 @@
     "packages/shared/package.json",
     "packages/shared/src/chat-mention.ts",
     "packages/shared/src/host-config/test-sandbox-env.ts",
-    "packages/shared/src/index.ts",
-    "tests/unit/test-runner-contract.test.ts"
+    "packages/shared/src/index.ts"
   ],
-  "diff_hash": "efd8a4dd60d78a02cf85a11146c42fce1fb3aa7779cb97d872b15456600faa54",
-  "head": "2a2d35cf220bef4bf1457c8fbbc29b9ebfc75065",
+  "diff_hash": "9c907ab71e87281c992048a96311822b86ba56bd6bd714201105b71482fa481a",
+  "head": "91f82c849497268fc0a13b3fefe9697cd9537fd3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:04:05.880Z"
+  "at": "2026-10-03T20:19:44.008Z"
 }
