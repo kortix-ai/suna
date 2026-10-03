@@ -53,8 +53,8 @@ mock.module('canvas-confetti', () => {
 const confettiModule = await import('./confetti');
 const Confetti = confettiModule.Confetti;
 
-let roots: Root[] = [];
-let containers: Element[] = [];
+const roots: Root[] = [];
+const containers: Element[] = [];
 
 /** happy-dom's element crosses into react-dom through one explicit cast. */
 function libContainer(node: { appendChild(child: unknown): void }) {

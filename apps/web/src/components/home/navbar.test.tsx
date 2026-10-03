@@ -37,7 +37,7 @@ globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
 
 let authUser: { id: string } | null = null;
 let pathname = '/';
-let stars = 4321 as number | null;
+const stars: number | null = 4321;
 
 const translate = Object.assign((key: string) => key, { raw: (key: string) => key });
 mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate }));
