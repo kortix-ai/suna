@@ -1042,7 +1042,6 @@ export type SessionOpenBundleModels =
   | {
       known: true;
       platformDefault: string | null;
-      accountDefault: string | null;
       agentDefaults: Record<string, string>;
       projectDefault: string | null;
       resolvedForCaller: string | null;

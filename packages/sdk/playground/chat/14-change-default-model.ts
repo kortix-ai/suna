@@ -106,7 +106,7 @@ async function main() {
     );
   }
   console.log(
-    `current: project=${before.projectDefault ?? "(unset)"} account=${before.accountDefault ?? "(unset)"} platform=${before.platformDefault}`,
+    `current: project=${before.projectDefault ?? "(unset)"} platform=${before.platformDefault}`,
   );
   console.log(
     `resolved for this project: ${before.resolvedForCaller ?? "(none)"} · source: ${before.resolvedSource ?? "n/a"}`,

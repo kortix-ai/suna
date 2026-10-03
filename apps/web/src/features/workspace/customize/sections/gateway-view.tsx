@@ -257,7 +257,6 @@ export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
   const effectiveDefault =
     modelDefaults.projectDefault ??
-    modelDefaults.accountDefault ??
     (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
     null;
 

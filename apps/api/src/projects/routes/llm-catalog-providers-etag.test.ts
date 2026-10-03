@@ -23,7 +23,7 @@ import { join } from 'node:path';
 const source = readFileSync(join(import.meta.dir, 'models.ts'), 'utf8');
 const routeStart = source.indexOf("path: '/{projectId}/llm-catalog/providers',");
 const routeEnd = source.indexOf(
-  '// ─── Default model preferences (account-scoped) ───',
+  '// ─── Default model preferences ───',
 );
 const route = source.slice(routeStart, routeEnd);
 

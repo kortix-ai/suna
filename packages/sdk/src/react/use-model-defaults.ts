@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { ApiError, MODEL_NOT_SERVABLE_CODE } from '../core/http/api-client';
 import { platformConfig } from '../core/http/config';
@@ -14,8 +14,6 @@ import {
 import {
   type ModelKey,
   modelKeyToWire,
-  seedGlobalDefaultFromServer,
-  setGlobalDefaultModel,
   wireToModelKey,
 } from './use-model-store';
 import { resolveModelDefault } from '../core/models/composer-model';
@@ -36,16 +34,13 @@ export interface UseModelDefaults {
    * 404 llm_gateway_disabled.
    */
   llmGatewayEnabled: boolean;
-  accountDefault: ModelKey | undefined;
   agentDefaults: Record<string, ModelKey>;
   projectDefault: ModelKey | undefined;
   platformDefault: ModelKey | undefined;
   freeTier: boolean;
   resolveDefaultFor: (agentName: string | undefined) => ModelKey | undefined;
-  setAccountDefault: (model: ModelKey) => Promise<void>;
   setAgentDefault: (agentName: string, model: ModelKey) => Promise<void>;
   setProjectDefault: (model: ModelKey) => Promise<void>;
-  clearAccountDefault: () => Promise<void>;
   clearAgentDefault: (agentName: string) => Promise<void>;
   clearProjectDefault: () => Promise<void>;
 }
@@ -67,13 +62,6 @@ export function useModelDefaults(
     staleTime: 30_000,
   });
 
-  useEffect(() => {
-    if (!data) return;
-    seedGlobalDefaultFromServer(
-      data.accountDefault ? wireToModelKey(data.accountDefault) : undefined,
-    );
-  }, [data?.accountDefault]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const invalidate = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey }),
@@ -87,7 +75,7 @@ export function useModelDefaults(
 
   const setMutation = useMutation({
     mutationFn: (input: {
-      scope: 'account' | 'agent' | 'project';
+      scope: 'agent' | 'project';
       agentName?: string;
       model: string;
     }) => setModelDefault(projectId as string, input),
@@ -120,16 +108,12 @@ export function useModelDefaults(
   });
   const clearMutation = useMutation({
     mutationFn: (params: {
-      scope: 'account' | 'agent' | 'project';
+      scope: 'agent' | 'project';
       agentName?: string;
     }) => clearModelDefault(projectId as string, params),
     onSuccess: invalidate,
   });
 
-  const accountDefault = useMemo(
-    () => (data?.accountDefault ? wireToModelKey(data.accountDefault) : undefined),
-    [data?.accountDefault],
-  );
   const agentDefaults = useMemo<Record<string, ModelKey>>(() => {
     const defaults: Record<string, ModelKey> = {};
     for (const [name, wire] of Object.entries(data?.agentDefaults ?? {})) {
@@ -150,16 +134,6 @@ export function useModelDefaults(
     [data],
   );
 
-  const setAccountDefault = useCallback(
-    async (model: ModelKey) => {
-      setGlobalDefaultModel(model);
-      await setMutation.mutateAsync({
-        scope: 'account',
-        model: modelKeyToWire(model),
-      });
-    },
-    [setMutation],
-  );
   const setAgentDefault = useCallback(
     async (agentName: string, model: ModelKey) => {
       await setMutation.mutateAsync({
@@ -179,10 +153,6 @@ export function useModelDefaults(
     },
     [setMutation],
   );
-  const clearAccountDefault = useCallback(async () => {
-    setGlobalDefaultModel(undefined);
-    await clearMutation.mutateAsync({ scope: 'account' });
-  }, [clearMutation]);
   const clearAgentDefault = useCallback(
     async (agentName: string) => {
       await clearMutation.mutateAsync({ scope: 'agent', agentName });
@@ -198,7 +168,6 @@ export function useModelDefaults(
     isLoading,
     isUpdating: setMutation.isPending || clearMutation.isPending,
     llmGatewayEnabled: gateway.enabled,
-    accountDefault,
     agentDefaults,
     projectDefault,
     platformDefault,
@@ -206,10 +175,8 @@ export function useModelDefaults(
     // from seeing managed models for one render before the server response.
     freeTier: data ? data.freeTier : true,
     resolveDefaultFor,
-    setAccountDefault,
     setAgentDefault,
     setProjectDefault,
-    clearAccountDefault,
     clearAgentDefault,
     clearProjectDefault,
   };

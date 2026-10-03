@@ -170,7 +170,6 @@ async function resolveBindingEffectiveModel(
   return chooseEffectiveModel({
     agentDefault: ctx.modelDefaults.agents[agentName] ?? null,
     projectDefault: ctx.modelDefaults.projects[ctx.projectId] ?? null,
-    accountDefault: ctx.modelDefaults.account,
     freeModelsOnly: ctx.freeModelsOnly,
   });
 }

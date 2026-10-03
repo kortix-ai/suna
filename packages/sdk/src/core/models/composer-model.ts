@@ -13,7 +13,7 @@ import { type ModelKey, wireToModelKey } from './model-key';
 
 /**
  * The gateway's configured default for an agent, from
- * `GET /projects/:id/model-defaults`: agent → project → account → platform.
+ * `GET /projects/:id/model-defaults`: agent → project → platform.
  * A free-tier account never resolves the platform default.
  */
 export function resolveModelDefault(
@@ -23,7 +23,6 @@ export function resolveModelDefault(
   const wire =
     (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
     data?.projectDefault ??
-    data?.accountDefault ??
     (data?.freeTier ? undefined : data?.platformDefault);
   return wire ? wireToModelKey(wire) : undefined;
 }
@@ -54,7 +53,7 @@ export function resolveComposerModel(input: {
   picks?: ReadonlyArray<ModelKey | undefined>;
   /** `resolveModelDefault(modelDefaults, agentName)`. */
   serverDefault?: ModelKey;
-  /** The user's account-wide default. */
+  /** A client-local preferred model (e.g. mobile). */
   globalDefault?: ModelKey;
   /** The current agent's configured `model`. */
   agentModel?: ModelKey;

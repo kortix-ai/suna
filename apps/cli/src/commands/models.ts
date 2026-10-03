@@ -10,8 +10,8 @@
  *     exception map, so every write here reads the current map first and merges
  *     into it. The gateway still serves a disabled model if a caller names it
  *     outright (apps/api/src/projects/routes/models.ts).
- *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
- *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
+ *  2. DEFAULTS (`default`) — what `auto` resolves to, at project scope. The
+ *     per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *
  * Both writes assert `project.customize.write`.
  */
@@ -49,7 +49,6 @@ interface ModelPicker {
 /** GET /projects/:id/model-defaults (routes/models.ts). */
 interface ModelDefaults {
   platformDefault: string | null;
-  accountDefault: string | null;
   agentDefaults: Record<string, string>;
   projectDefault: string | null;
   resolvedForCaller: string | null;
@@ -79,11 +78,10 @@ Subcommands:
   disable <model-id>...           Stop offering them. The project default
                                   refuses with 409 — change the default first.
   reset                           Drop every exception; back to catalog default.
-  default [--json]                Print the default chain (project → account →
-                                  platform) and what it resolves to.
-  default <model-id> [--account]  Set the project default (or the account-wide
-                                  one with --account).
-  default --clear [--account]     Clear the project (or account) default.
+  default [--json]                Print the default chain (project → platform)
+                                  and what it resolves to.
+  default <model-id>              Set the project default.
+  default --clear                 Clear the project default.
 
 Model ids are gateway wire ids — a bare managed id (\`deepseek-v4.1-flash\`) or a BYOK
 \`provider/model\`. Copy one from \`kortix models ls --json\`.
@@ -91,7 +89,6 @@ Model ids are gateway wire ids — a bare managed id (\`deepseek-v4.1-flash\`) o
 Per-agent pins live on \`kortix agents model <agent> <model-id>\`.
 
 Options:
-  --account          default: act on the ACCOUNT scope, not this project.
   --clear            default: remove the pin instead of setting one.
   --json             Machine-readable output (ls, default).
   --project <id>     Operate on this project id (default: linked).
@@ -108,13 +105,11 @@ export async function runModels(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   let json = false;
-  let account = false;
   let clear = false;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
     json = takeFlagBool(rest, ['--json']);
-    account = takeFlagBool(rest, ['--account']);
     clear = takeFlagBool(rest, ['--clear', '--unset']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -139,7 +134,7 @@ export async function runModels(argv: string[]): Promise<number> {
         return await modelsReset(ctx.client, base, json);
       case 'default':
       case 'defaults':
-        return await modelsDefault(ctx.client, base, positional[0], { account, clear, json });
+        return await modelsDefault(ctx.client, base, positional[0], { clear, json });
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
         return 2;
@@ -266,10 +261,10 @@ async function modelsDefault(
   client: Client,
   base: string,
   model: string | undefined,
-  opts: { account: boolean; clear: boolean; json: boolean },
+  opts: { clear: boolean; json: boolean },
 ): Promise<number> {
   const path = `${base}/model-defaults`;
-  const scope = opts.account ? 'account' : 'project';
+  const scope = 'project';
 
   if (opts.clear) {
     const resp = await client.delete<{ ok: boolean }>(`${path}?scope=${scope}`);
@@ -289,7 +284,6 @@ async function modelsDefault(
     }
     process.stdout.write('\n');
     row('project', d.projectDefault);
-    row('account', d.accountDefault);
     row('platform', d.platformDefault);
     process.stdout.write(
       `\n  ${C.dim}resolves to ${C.reset}${C.bold}${d.resolvedForCaller ?? '—'}${C.reset}` +

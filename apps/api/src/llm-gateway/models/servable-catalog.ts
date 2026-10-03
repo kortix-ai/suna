@@ -73,11 +73,10 @@ export async function servableProjectCatalog(input: {
     ? await listGrantedGatewaySecretNames(accountId, projectId, principalUserId, personalUserId).catch(() => [] as string[])
     : [];
   const effectiveDefault = toWireModel(
-    defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
+    defaults.projects[projectId] ?? platformDefaultModelId() ?? '',
   );
   const requiredModels = [
     defaults.projects[projectId],
-    defaults.account,
     platformDefaultModelId(),
     routing?.visionModel,
     ...(routing?.defaultFallback?.models ?? []),

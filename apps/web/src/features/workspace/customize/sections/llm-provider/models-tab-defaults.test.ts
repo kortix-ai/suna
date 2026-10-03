@@ -5,13 +5,12 @@ import { join } from 'node:path';
 import { wireToModelKey } from '@kortix/sdk/react';
 
 /**
- * The two default SCOPES this tab owns.
+ * The project default scope this tab owns.
  *
- * Both used to be buttons stacked under the session model picker
- * (`features/session/model-selector.tsx`), which could SET a default at three
- * scopes while showing which model held none of them. They moved onto the row
- * they apply to, where each one also badges its current holder. The picker
- * keeps a one-click star for the account default only.
+ * It used to be a button stacked under the session model picker
+ * (`features/session/model-selector.tsx`). It moved onto the row it applies to,
+ * where it also badges its current holder. The picker keeps a one-click star for
+ * the project default.
  *
  * `ModelsTab` reads three query hooks and renders inside a modal, so there is
  * no cheap way to mount it here. These pin the two things that actually broke
@@ -34,12 +33,10 @@ const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
 
 describe('the identity a badged row is decided by', () => {
   /**
-   * `models-tab.tsx` asks `defaults.accountDefault?.modelID === wireId`. That
-   * only holds because every scope in `useModelDefaults` is built with
-   * `wireToModelKey`, which parks the WHOLE wire id in `modelID` under the
-   * synthetic `kortix` provider rather than splitting it. If that ever changes
-   * to a real split, the comparison silently stops matching and every row
-   * quietly loses its badge — no error, no failing render.
+   * `defaults.setProjectDefault(wireToModelKey(wireId))` round-trips a wire id
+   * through `wireToModelKey`, which parks the WHOLE wire id in `modelID` under
+   * the synthetic `kortix` provider rather than splitting it. If that ever
+   * changes to a real split, the set would send the wrong model.
    */
   test('wireToModelKey keeps the whole wire id in modelID', () => {
     expect(wireToModelKey('glm-5.3-flash')).toEqual({
@@ -66,30 +63,18 @@ describe('the identity a badged row is decided by', () => {
   });
 });
 
-describe('ModelsTab offers both default scopes', () => {
-  test('the account default is settable from this tab', () => {
-    // The half that was missing: the project default already lived here, the
-    // account default only existed under the session picker.
-    expect(tabSource).toContain('defaults.setAccountDefault(');
-  });
-
-  test('the project default is still settable from this tab', () => {
+describe('ModelsTab offers the project default scope', () => {
+  test('the project default is settable from this tab', () => {
     expect(tabSource).toContain('defaults.setProjectDefault(');
   });
 
-  test('each scope badges the model that currently holds it', () => {
-    // The full `<Tag>` element, NOT the bare words: the scope phrases also
-    // appear in the menu items' own labels, so a substring check on a phrase
+  test('the project default badges the model that currently holds it', () => {
+    // The full `<Tag>` element, NOT the bare words: the scope phrase also
+    // appears in the menu item's own label, so a substring check on the phrase
     // passes with the badge deleted — it cannot fail, which makes it worse
     // than no test. Verified by deleting the tag and watching the loose
     // version stay green.
-    //
-    // `your default` was `my default`. Both tags are read on someone else's
-    // row as often as your own, and "my" in a badge is ambiguous about whose
-    // "my" it is; the menu item that SETS it still says "my", because there
-    // the reader is the actor.
     expect(tabSource).toContain("raw('text5e06ae1125b5')");
-    expect(tabSource).toContain("raw('text071c0f5e8495')");
   });
 
   /**
@@ -131,7 +116,6 @@ describe('ModelsTab offers both default scopes', () => {
     expect(tabSource).not.toContain('!isProjectDefault && enabled');
     expect(tabSource).toContain('(enabled || hiddenFromPicker)');
     expect(tabSource).toContain('disabled={!enabled || isProjectDefault || defaults.isUpdating}');
-    expect(tabSource).toContain('disabled={!enabled || isAccountDefault || defaults.isUpdating}');
   });
 });
 

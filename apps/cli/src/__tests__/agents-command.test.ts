@@ -39,7 +39,6 @@ function startServer(): string {
     fetch: () =>
       Response.json({
         platformDefault: null,
-        accountDefault: null,
         projectDefault: null,
         agentDefaults: {},
         resolvedForCaller: null,

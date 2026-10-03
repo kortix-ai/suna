@@ -31,8 +31,7 @@ import {
 // is scoped to this file's own test lifecycle instead.
 
 let resolveCandidatesImpl: (model: string) => Promise<Array<{ provider: string }>> = async () => [];
-let accountDefaults: { account: string | null; agents: Record<string, string>; projects: Record<string, string> } = {
-  account: null,
+let accountDefaults: { agents: Record<string, string>; projects: Record<string, string> } = {
   agents: {},
   projects: {},
 };
@@ -40,7 +39,7 @@ let connectedSecretNames: string[] = [];
 
 beforeEach(() => {
   resolveCandidatesImpl = async () => [];
-  accountDefaults = { account: null, agents: {}, projects: {} };
+  accountDefaults = { agents: {}, projects: {} };
   connectedSecretNames = [];
   // resolveDefaultModelForPrincipal reads through a module-level 30s-TTL cache
   // (cachedAccountDefaults) keyed by accountId — every test below reuses the
@@ -137,14 +136,14 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
   });
 
   test('a servable configured project default is returned as-is (real source, no degrade)', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'openai/gpt-5.5' } };
+    accountDefaults = { agents: {}, projects: { p1: 'openai/gpt-5.5' } };
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
     const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
     expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'project' });
   });
 
   test('THE SAMPLECO BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
+    accountDefaults = { agents: {}, projects: { p1: 'openrouter/some-model' } };
     // The configured openrouter default is no longer servable — no key connected.
     resolveCandidatesImpl = async (model) => {
       if (model === 'openrouter/some-model') {
@@ -171,7 +170,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
   });
 
   test('stale configured default AND nothing connected → degrades to plain platform default (unchanged pre-existing behavior), still no throw', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
+    accountDefaults = { agents: {}, projects: { p1: 'openrouter/some-model' } };
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
     };
@@ -185,7 +184,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     // A default reached only through one person's ChatGPT subscription is not
     // a default for a Teams channel session: the gateway runs it with
     // personalUserId null, so the first turn would fail "Connect Codex".
-    accountDefaults = { account: 'codex/gpt-6-astra', agents: {}, projects: {} };
+    accountDefaults = { agents: {}, projects: { p1: 'codex/gpt-6-astra' } };
     const principals: Array<Record<string, unknown>> = [];
     spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
       (async (principal: Record<string, unknown>) => {
@@ -207,11 +206,11 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     );
 
     const own = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
-    expect(own).toEqual({ model: 'codex/gpt-6-astra', source: 'account' });
+    expect(own).toEqual({ model: 'codex/gpt-6-astra', source: 'project' });
   });
 
   test('an explicit pin that is unservable degrades through the same chain (never throws)', async () => {
-    accountDefaults = { account: null, agents: {}, projects: {} };
+    accountDefaults = { agents: {}, projects: {} };
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
     };
@@ -235,7 +234,7 @@ describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account
     const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
     spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {
       const agents: Record<string, string> = projectId && byProject[projectId] ? { kortix: byProject[projectId] } : {};
-      return { account: null, agents, projects: {} };
+      return { agents, projects: {} };
     });
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'kortix',
@@ -265,7 +264,7 @@ describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account
     let call = 0;
     spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => {
       call += 1;
-      return { account: call === 1 ? 'before/model' : 'after/model', agents: {}, projects: {} };
+      return { agents: {}, projects: { 'proj-a': call === 1 ? 'before/model' : 'after/model' } };
     });
     resolveCandidatesImpl = async () => [{ provider: 'x' }];
 
@@ -291,7 +290,7 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
   });
 
   test('a stale/unservable configured default degrades to a CONNECTED provider, not an unconnected platform default, for a real chat/generation request', async () => {
-    accountDefaults = { account: 'openrouter/some-model', agents: {}, projects: {} };
+    accountDefaults = { agents: {}, projects: { p1: 'openrouter/some-model' } };
     resolveCandidatesImpl = async (model) => {
       if (model === 'openrouter/some-model') {
         throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
@@ -307,7 +306,7 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
   });
 
   test('a stale configured default with nothing connected degrades to undefined (platform default applies), never throws', async () => {
-    accountDefaults = { account: 'openrouter/some-model', agents: {}, projects: {} };
+    accountDefaults = { agents: {}, projects: { p1: 'openrouter/some-model' } };
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
     };
@@ -334,7 +333,6 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
 describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a session stuck on the "default" sentinel', () => {
   test('THE BUG: session.agent_name is the sentinel, but the project declares "kortix" as its default agent and "kortix" has a pin → the pin applies', async () => {
     accountDefaults = {
-      account: null,
       agents: { kortix: 'anthropic/claude-opus-4.8' },
       projects: {},
     };
@@ -356,7 +354,6 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
 
   test('an explicit (non-sentinel) session agent still wins over the project default, even when both have pins', async () => {
     accountDefaults = {
-      account: null,
       agents: { kortix: 'anthropic/claude-opus-4.8', 'release-bot': 'openai/gpt-5.5' },
       projects: {},
     };
@@ -376,11 +373,10 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     expect(result).toBe('openai/gpt-5.5');
   });
 
-  test('sentinel with no project default configured falls through to project/account/platform (unchanged pre-existing behavior)', async () => {
+  test('sentinel with no agent default configured falls through to project/platform (unchanged pre-existing behavior)', async () => {
     accountDefaults = {
-      account: 'openai/gpt-5.5',
       agents: { kortix: 'anthropic/claude-opus-4.8' },
-      projects: {},
+      projects: { p1: 'openai/gpt-5.5' },
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
@@ -396,15 +392,14 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     });
 
     // No agent pin matched (neither 'default' nor any resolved name) → falls
-    // through to the account default.
+    // through to the project default.
     expect(result).toBe('openai/gpt-5.5');
   });
 
-  test('sentinel resolves to a project default that has NO pin of its own → still falls through to account default', async () => {
+  test('sentinel resolves to a project default agent that has NO pin of its own → still falls through to project default', async () => {
     accountDefaults = {
-      account: 'openai/gpt-5.5',
       agents: { 'some-other-agent': 'anthropic/claude-opus-4.8' },
-      projects: {},
+      projects: { p1: 'openai/gpt-5.5' },
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',

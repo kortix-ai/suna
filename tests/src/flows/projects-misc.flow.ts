@@ -634,7 +634,7 @@ flow(
   },
 );
 
-// PROJ-27 — model-defaults CRUD. GET reads the platform/account/project/agent
+// PROJ-27 — model-defaults CRUD. GET reads the platform/project/agent
 // defaults; PUT upserts one scope (agent requires agentName); DELETE clears
 // one scope by query. PUT rejects models that the account cannot serve. The
 // flow reads the current project picker and selects a managed model from that

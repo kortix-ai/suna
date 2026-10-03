@@ -93,12 +93,12 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 // `packages/sdk/src/core/http/api-client.ts` (PR #6082).
 //
 // BUT every call site fire-and-forgets the returned promise —
-// `void setAccountDefault(...)` / `void setAgentDefault(...)` /
-// `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
-// `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
+// `void setAgentDefault(...)` / `void setProjectDefault(...)` in
+// `session-chat.tsx`, `agents-view.tsx`, `gateway-view.tsx`, and
+// `models-tab.tsx`.
 // The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
 // `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
-// (`setAccountDefault`/…) promise rejects → `void` discards the rejected
+// (`setProjectDefault`/…) promise rejects → `void` discards the rejected
 // promise with no `.catch()` → UNHANDLED rejection → Sentry's
 // `onunhandledrejection` global handler auto-captures it. The `setMutation`
 // `onError` SWALLOWS the rejection inside react-query (the toast fires), but
@@ -315,8 +315,8 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
  * user-facing toast, and `makeRequest` already classifies the typed 409 as
  * SILENT to `onError` (Sentry) — see `MODEL_NOT_SERVABLE_CODE` (PR #6082) —
  * but every call site fire-and-forgets the returned promise
- * (`void setAccountDefault(...)` / `void setAgentDefault(...)` /
- * `void setProjectDefault(...)`), so the rejected `mutateAsync` becomes an
+ * (`void setAgentDefault(...)` / `void setProjectDefault(...)`),
+ * so the rejected `mutateAsync` becomes an
  * UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
  * which the #6082 SDK gate never sees (it's past the `makeRequest` return).
  * This is the leak-path backstop. The model name varies, so the match is a

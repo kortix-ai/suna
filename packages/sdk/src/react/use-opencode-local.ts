@@ -54,10 +54,10 @@ export interface UseRuntimeLocalOptions {
   freeTier?: boolean;
   /**
    * Resolve the gateway's configured default model for an agent (agent →
-   * project → account → platform) — a host with a server-backed default-model
+   * project → platform) — a host with a server-backed default-model
    * preferences API (see `useModelDefaults` in apps/web) supplies this; a host
    * without one omits it and the resolution chain simply skips this step,
-   * falling through to `globalDefault` / `agent.model` / the generic fallback.
+   * falling through to `agent.model` / the generic fallback.
    */
   resolveServerDefault?: (agentName: string | undefined) => ModelKey | undefined;
 }
@@ -399,7 +399,7 @@ export function useRuntimeLocal({
   );
 
   // ---- Model resolution — the framework-free chain (`resolveComposerModel`):
-  // explicit (session / per-agent slots) > server default > globalDefault >
+  // explicit (session / per-agent slots) > server default >
   // agent.model > fallback (config > recent > provider default), every
   // candidate validated against the offered list, bare Bedrock ids healed.
   // Model selection must NOT depend on a loaded agent: the session/global/
@@ -421,9 +421,8 @@ export function useRuntimeLocal({
           currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined,
         ],
         // The gateway-configured default for the current agent (agent -> project
-        // -> account -> platform), when the host supplies a resolver.
+        // -> platform), when the host supplies a resolver.
         serverDefault: resolveServerDefault?.(currentAgent?.name),
-        globalDefault: modelStore.globalDefault,
         agentModel: currentAgent?.model as ModelKey | undefined,
         configModel: config?.model,
         recent: modelStore.recent,
@@ -470,12 +469,6 @@ export function useRuntimeLocal({
   // ---- Model set (persists selection to localStorage) ----
   const setModel = useCallback(
     (model: ModelKey | undefined, options?: { recent?: boolean; autoSeed?: boolean }) => {
-      // When auto-seeding from a message and globalDefault is set, skip —
-      // the user's setup wizard choice takes precedence over message-seeded models.
-      if (options?.autoSeed && modelStore.globalDefault && isModelValid(modelStore.globalDefault)) {
-        return;
-      }
-
       const next = model ?? fallbackModel;
       // Persist unconditionally into the composer's slot. This was gated on
       // `currentAgent`, which made the whole picker inert for a project member
@@ -491,13 +484,9 @@ export function useRuntimeLocal({
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
-        // Per-session and per-agent overrides already take priority in the
-        // resolution chain, so there's no need to clear globalDefault here.
-        // The user's onboarding/settings choice should persist as the default
-        // for NEW sessions even when they change model in an existing session.
       }
     },
-    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
@@ -554,8 +543,6 @@ export function useRuntimeLocal({
     // Don't override if user already has a persisted selection for this agent
     const persisted = modelStore.getSelectedModel(currentAgent.name);
     if (persisted && isModelValid(persisted)) return;
-    // Don't override if user set a global default during onboarding setup
-    if (modelStore.globalDefault && isModelValid(modelStore.globalDefault)) return;
     if (currentAgent.model) {
       if (isModelValid(currentAgent.model as ModelKey)) {
         setModel(

@@ -32,14 +32,12 @@ describe('sanitizeModelStore', () => {
       variant: [],
       selectedModel: { 'native:agent': { providerID: 'p', modelID: 'm' } },
       lastAgentName: 'kortix',
-      globalDefault: { providerID: 'p', modelID: 'm' },
     });
     expect(s.user).toEqual([]);
     expect(s.recent).toEqual([]);
     expect(s.variant).toEqual({});
     expect(s.selectedModel).toEqual({ 'native:agent': { providerID: 'p', modelID: 'm' } });
     expect(s.lastAgentName).toBe('kortix');
-    expect(s.globalDefault).toEqual({ providerID: 'p', modelID: 'm' });
   });
 
   test('a fully valid store passes through unchanged', () => {

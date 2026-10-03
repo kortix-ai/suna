@@ -188,7 +188,7 @@ describe('splitModelLabel', () => {
 });
 
 /**
- * The account default renders twice — pinned at the top of the picker and again
+ * The project default renders twice — pinned at the top of the picker and again
  * in its provider group. cmdk drives filtering, arrow-key navigation and
  * `data-selected` off each row's `value`, and two rows sharing one value fails
  * SILENTLY: the highlight lands on both and nothing throws.

@@ -11,8 +11,8 @@ import { flagshipRefForEnvVar } from './picker-catalog';
 // default and "by default takes the project one" actually means something. Runs
 // detached after a provider secret is saved; never throws into the request.
 //
-// Only seeds when the account has NO model default yet (account- or
-// project-scoped) and the chosen flagship is genuinely servable now that the key
+// Only seeds when the project has NO model default yet (project-scoped) and the
+// chosen flagship is genuinely servable now that the key
 // exists. Managed-only accounts need no seed — the platform flagship already
 // applies. Idempotent: a concurrent connect or an already-set default is never
 // clobbered (onlyIfAbsent → INSERT … ON CONFLICT DO NOTHING).
@@ -28,7 +28,7 @@ export async function seedProjectDefaultModelOnConnect(params: {
     if (!flagshipRef) return; // not a known provider credential (e.g. codex auth)
 
     const defaults = await getAccountModelDefaults(params.accountId, params.projectId);
-    if (defaults.account || defaults.projects[params.projectId]) return; // already chosen
+    if (defaults.projects[params.projectId]) return; // already chosen
 
     const servable = await isModelServableForAccount({
       userId: params.userId,
