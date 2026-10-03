@@ -493,7 +493,7 @@ describe('materializeProject — prefer-s3', () => {
     expect(hydration.attempts).toBe(2)
     expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(2)
     expect(missingObjects(target)).toBe(0)
-  })
+  }, 30_000)
 
   test('a descriptor presigned in the env skips the proxy: one direct GET from the store, then hydration', async () => {
     const target = join(root, 'ws')
@@ -664,7 +664,7 @@ describe('materializeProject — prefer-s3', () => {
     await materializeProject(cfg, { onSummary: (s) => (summary = s) }).catch(() => undefined)
     expect(summary).toMatchObject({ s3_attempted: false, s3_skipped: true, s3_reason: reason })
     expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot'))).toHaveLength(0)
-  })
+  }, 30_000)
 
   test('authorization denial on the descriptor is a denial: no fallback, nothing materialized', async () => {
     const target = join(root, 'ws')

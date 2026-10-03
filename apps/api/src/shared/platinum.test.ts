@@ -42,9 +42,10 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
   // Daytona/Platinum-style network stall, not a fast error response.
   server = Bun.serve({
     port: 0,
+    hostname: '127.0.0.1',
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://${server.hostname}:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -59,9 +60,10 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
 test('platinumJson respects an explicit caller-provided signal instead of the default', async () => {
   server = Bun.serve({
     port: 0,
+    hostname: '127.0.0.1',
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://${server.hostname}:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 

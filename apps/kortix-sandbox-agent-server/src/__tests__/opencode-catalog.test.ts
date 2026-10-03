@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@/harness/open-code/fallback-models'
 import {
+  __setBakedLlmCatalogPathForTests,
   buildOpencodeConfigContent,
   catalogIsDegraded,
   convergeManagedModelCatalog,
@@ -74,12 +75,16 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  // A box that develops Kortix shares the image's /opt/kortix/llm-catalog.json;
+  // the "no catalog" cases below must see the fallback, not that file.
+  __setBakedLlmCatalogPathForTests()
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  __setBakedLlmCatalogPathForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

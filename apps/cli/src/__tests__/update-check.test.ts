@@ -37,6 +37,9 @@ beforeEach(() => {
   delete process.env.KORTIX_NO_UPDATE_CHECK;
   delete process.env.KORTIX_SKIP_UPDATE_CHECK;
   delete process.env.CI;
+  // A suite run inside a managed sandbox inherits KORTIX_SUPERVISED, which
+  // silences the notifier before these cases reach their own signals.
+  delete process.env.KORTIX_SUPERVISED;
   // isDisabled() bails on a non-TTY stdout, which is exactly what `bun test`
   // gives us — force it on so the resolution logic is reachable.
   Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });

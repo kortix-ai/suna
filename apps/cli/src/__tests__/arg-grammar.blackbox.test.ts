@@ -50,6 +50,7 @@ async function runCli(args: string[]): Promise<CliResult> {
     'KORTIX_TOKEN',
     'KORTIX_FRONTEND_URL',
     'KORTIX_PROJECT_ID',
+    'KORTIX_SESSION_ID',
     'BASH_ENV',
   ]) {
     delete env[key];

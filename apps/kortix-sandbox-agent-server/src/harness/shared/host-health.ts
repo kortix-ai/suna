@@ -1,9 +1,28 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CatalogSnapshot, HarnessDiagnosticsContext } from '../contract/diagnostics'
 import { readRepoInfo } from '@/lib/git/git'
 import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
+
+/** Test seam: point the host-written env file readers at a controlled path.
+ *  With no argument they read a guaranteed-missing file. A suite that runs
+ *  INSIDE a Kortix sandbox VM shares the real /etc/pt-env, whose
+ *  `KORTIX_PROJECT_AUTO_CLONE=1` makes every repo-less rig report
+ *  repo_required=true; CI, which has no such file, never sees this. */
+let ptEnvPath: string | null = null
+export function __setPtEnvPathForTests(path?: string): void {
+  ptEnvPath = path ?? join(tmpdir(), 'kortix-tests-no-pt-env')
+}
+
+function readPtEnv(): string {
+  try {
+    return readFileSync(ptEnvPath ?? '/etc/pt-env', 'utf8')
+  } catch {
+    return ''
+  }
+}
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -14,10 +33,8 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
 function wantedSessionBranch(): string {
-  try {
-    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
-    if (m?.[1]) return m[1]
-  } catch { /* no env file (local dev) */ }
+  const m = readPtEnv().match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+  if (m?.[1]) return m[1]
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
 }
 
@@ -32,11 +49,7 @@ function wantedSessionBranch(): string {
  */
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
-  try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
-  } catch {
-    return false
-  }
+  return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readPtEnv())
 }
 
 /**

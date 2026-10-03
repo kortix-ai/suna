@@ -62,6 +62,10 @@ beforeEach(() => {
   delete process.env.KORTIX_SKIP_UPDATE_CHECK;
   delete process.env.KORTIX_OPENCODE_BIN;
   delete process.env.CI;
+  // The tests below set KORTIX_SUPERVISED per case. A suite that itself runs
+  // inside a managed sandbox inherits it from the runner env, which would flip
+  // every "not supervised" case before its explicit set.
+  delete process.env.KORTIX_SUPERVISED;
   // The update notifier bails on a non-TTY stdout, which is what `bun test`
   // gives us. Force it on: the point of these tests is that the supervised
   // gate holds on a REAL terminal, which the Session PTY is.

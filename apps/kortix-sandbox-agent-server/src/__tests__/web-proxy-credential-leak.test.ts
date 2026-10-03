@@ -23,7 +23,7 @@
  * wired to the wrong call.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-
+import { promises as dns } from 'node:dns'
 import { networkInterfaces } from 'node:os'
 
 import { createWebProxyRouter } from '@/routes/proxy/web-proxy'
@@ -41,6 +41,16 @@ function ownInterfaceAddresses(): string[] {
 }
 
 const SERVICE_KEY = 'sandbox-service-key-under-test'
+
+/** The proxy dials the NAME the caller typed (`fetch('http://localhost:…')`);
+ *  `resolveHost` only vets. Dialing a name is the OS's contract, so the two
+ *  name-dialing cases below are skipped on a box whose resolver cannot answer
+ *  "localhost" at all (a Kortix sandbox was seen with a root-owned, empty
+ *  /etc/hosts) — there the 502 comes from the OS, not from the proxy. */
+const localhostResolves = await dns.lookup('localhost', { all: true }).then(
+  () => true,
+  () => false,
+)
 
 let upstream: ReturnType<typeof Bun.serve>
 let upstreamPort: number
@@ -146,8 +156,13 @@ describe('/web-proxy stays off the box control plane', () => {
       // Test the resolver result, not the availability or latency of nip.io.
       // GitHub-hosted runners can take longer than Bun's 5-second test timeout
       // to resolve the public name. The production path still uses real DNS.
+      // "localhost" resolves too: a box without a working /etc/hosts entry for
+      // it (a Kortix sandbox with a broken hosts file) would otherwise 502 the
+      // dev-server case below instead of exercising the guard.
       resolveHost: async (hostname) =>
-        hostname === '127.0.0.1.nip.io' ? [{ address: '127.0.0.1' }] : [],
+        hostname === '127.0.0.1.nip.io' || hostname === 'localhost'
+          ? [{ address: '127.0.0.1' }]
+          : [],
     })
   }
 
@@ -209,7 +224,7 @@ describe('/web-proxy stays off the box control plane', () => {
     expect(res.status).toBe(403)
   })
 
-  test("browsing the agent's own dev server still works", async () => {
+  test.skipIf(!localhostResolves)("browsing the agent's own dev server still works", async () => {
     // The whole point of this proxy. Blocking all of loopback would have been a
     // cheaper fix and would have broken the internal browser.
     const res = await guarded().request(
@@ -238,10 +253,16 @@ describe('/web-proxy stays off the box control plane', () => {
  * original Host.
  */
 describe('a vetted destination is the one we connect to', () => {
-  test('the upstream sees the original Host header', async () => {
+  test.skipIf(!localhostResolves)('the upstream sees the original Host header', async () => {
     // Virtual hosting on the agent's own dev server depends on it.
     received = null
-    const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
+    // Resolve by injection, like the guarded() cases above: the test pins the
+    // proxy's connect decision, not this box's DNS.
+    const open = createWebProxyRouter({
+      blockedSelfPorts: new Set<number>(),
+      resolveHost: async (hostname) =>
+        hostname === 'localhost' ? [{ address: '127.0.0.1' }] : [],
+    })
     const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {
       method: 'GET',
     })

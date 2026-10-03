@@ -123,6 +123,12 @@ export const MAX_HIGHLIGHT_LENGTH = 20_000;
 /** A single line longer than this is left unhighlighted (minified code). */
 const MAX_LINE_LENGTH = 2_000;
 
+/** Per-line tokenizer bound (see `highlightToTokens`): Shiki's default 500 ms
+ *  is a WASM hang guard; a line it abandons is tokenized in ONE stale scope —
+ *  silently wrong colours this module would then cache. Generous, not infinite:
+ *  a true grammar hang still ends. */
+const TOKENIZE_TIME_LIMIT_MS = 30_000;
+
 const CACHE_MAX = 64;
 
 export interface HighlighterOptions {
@@ -299,6 +305,14 @@ export function highlightToTokens(
       lang,
       theme: codeThemeFor(scheme),
       tokenizeMaxLineLength: MAX_LINE_LENGTH,
+      // Shiki's default 500 ms per-line limit is a hang guard for the WASM
+      // engine. Under it the tokenizer abandons the rest of the line in ONE
+      // stale scope and this cache would keep those silently wrong colours
+      // forever (a cold php grammar on a loaded box crossed 500 ms and the
+      // parity test caught the corrupt cache). The JS engine compiles once;
+      // after that every line is sub-millisecond, so a generous bound only
+      // bites on a true hang.
+      tokenizeTimeLimit: TOKENIZE_TIME_LIMIT_MS,
     });
     lines = toCodeLines(raw, CODE_THEME_FOREGROUND[scheme]);
   } catch {
@@ -365,6 +379,7 @@ export function highlightToTokensAsync(
             theme,
             grammarState: state,
             tokenizeMaxLineLength: MAX_LINE_LENGTH,
+            tokenizeTimeLimit: TOKENIZE_TIME_LIMIT_MS,
           });
           state = core.getLastGrammarState(raw);
           lines.push(...toCodeLines(raw, fallback));

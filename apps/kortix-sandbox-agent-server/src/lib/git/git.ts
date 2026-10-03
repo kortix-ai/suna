@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createWriteStream, existsSync } from 'node:fs'
 import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -1013,7 +1014,12 @@ const DEFAULT_SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
 let scaffoldRepoPath = DEFAULT_SCAFFOLD_REPO_PATH
 
 export function __setScaffoldRepoPathForTests(path?: string): void {
-  scaffoldRepoPath = path ?? DEFAULT_SCAFFOLD_REPO_PATH
+  // A no-arg call DISABLES the scaffold path instead of restoring the
+  // production default: on a machine where the image bakes
+  // /opt/kortix/scaffold.git (every Kortix sandbox) the default would hijack
+  // every clone-path test — the zero-network scaffold path answers instead of
+  // the clone the test is exercising.
+  scaffoldRepoPath = path ?? join(tmpdir(), 'kortix-tests-disable-scaffold')
 }
 
 /**

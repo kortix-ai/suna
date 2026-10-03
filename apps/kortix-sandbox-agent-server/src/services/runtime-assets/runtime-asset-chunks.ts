@@ -109,7 +109,17 @@ interface LocalChunk {
  * on the heap is exactly the memory pressure that makes a box abort a turn
  * (the 2026-09-22 page-cache guard incident), and this runs beside a live
  * OpenCode process.
+ *
+ * The work is O(source_bytes / chunk_size) hashes, and chunk_size comes from
+ * the API's manifest. A manifest with an absurdly small chunk_size must not
+ * turn one reconcile into an hour of hashing over the box's ~116 MB binaries
+ * (seen live: a test fixture served 8-byte chunks and the running CLI's index
+ * never finished). Cap the chunks indexed per source; the real API serves
+ * 1 MiB chunks, so a full CLI indexes ~105. A source past the cap contributes
+ * nothing and the transfer degrades to the full download.
  */
+const MAX_INDEXED_CHUNKS_PER_SOURCE = 65536
+
 async function indexLocalChunks(
   paths: string[],
   chunkSize: number,
@@ -128,7 +138,7 @@ async function indexLocalChunks(
     try {
       const stats = await handle.stat()
       if (!stats.isFile() || stats.size === 0) continue
-      const size = stats.size
+      const size = Math.min(stats.size, MAX_INDEXED_CHUNKS_PER_SOURCE * chunkSize)
       for (let offset = 0; offset < size; offset += chunkSize) {
         const length = Math.min(chunkSize, size - offset)
         const { bytesRead } = await handle.read(buffer, 0, length, offset)

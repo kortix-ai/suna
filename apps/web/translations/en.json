@@ -9426,6 +9426,7 @@
       "text25ab55af92b1": "Started attachment upload",
       "text40078a553439": "Uploaded attachment chunk",
       "text4c7f8000aabd": "Completed attachment upload",
+      "text73112526c03a": "Agent turn failed. No reason was reported.",
       "text91420d2587c2": "Removed attachment upload",
       "text3aab5b3be2b9": "Resolved runtime attachment descriptor",
       "text0005b85debac": "Sound pack played for session events.",

@@ -154,7 +154,7 @@ export async function startApp(
       throw new Error(`next start exited before printing a URL (code ${proc.exitCode}). Output:\n${log}`);
     }
     const m = log.match(/Local:\s+(http:\/\/localhost:\d+)/);
-    if (m) baseUrl = m[1];
+    if (m) baseUrl = m[1].replace('//localhost:', '//127.0.0.1:');
   }
 
   // The URL line can print a beat before the listener actually accepts

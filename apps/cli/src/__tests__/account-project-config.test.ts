@@ -17,9 +17,9 @@ import { stripAnsi } from '../style.ts';
 
 const ENV_KEYS = [
   'KORTIX_TOKEN',
-  'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_SESSION_ID',
   'BASH_ENV',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',

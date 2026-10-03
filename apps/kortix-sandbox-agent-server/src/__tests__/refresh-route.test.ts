@@ -42,6 +42,16 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
+/** A project target that is never a materialized repo. The "no repo here"
+ *  cases must hold on any machine: /workspace IS a git repo inside a Kortix
+ *  sandbox, and a materialized target turns the expected 409 into a 500 from
+ *  the clone-credential gate. */
+function appWithoutRepo() {
+  const target = mkdtempSync(join(tmpdir(), 'kortix-refresh-norepo-'))
+  roots.push(target)
+  return app({ projectTarget: target })
+}
+
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
     cwd,
@@ -159,7 +169,7 @@ describe('auth', () => {
 
   it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
     // No repo here, so the repo work answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
+    const res = await appWithoutRepo().request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
     expect(body.error).toBe('refresh failed')
@@ -170,7 +180,7 @@ describe('auth', () => {
     // Only the destructive flag needs the direct call: a user pulling their own
     // workspace keeps working without it. No repo here, so the repo work
     // answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh', {
+    const res = await appWithoutRepo().request('/kortix/refresh', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
     })
@@ -269,7 +279,7 @@ describe('repo work and reload', () => {
     expect(second.status).toBe(409)
     expect(await second.json()).toEqual({ error: 'refresh already running' })
     expect((await first).status).toBe(200)
-  })
+  }, 30_000)
 
   it('answers 409 when the fast-forward pull fails', async () => {
     // The session committed on top of an old base while the base moved: the

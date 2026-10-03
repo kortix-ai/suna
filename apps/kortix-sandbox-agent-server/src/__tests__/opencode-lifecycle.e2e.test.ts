@@ -30,6 +30,7 @@ import { join } from 'node:path'
 
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
+  __setBakedLlmCatalogPathForTests,
   convergeManagedModelCatalog,
   createOpencodeLifecycle,
   resetManagedModelsStateForTests,
@@ -55,6 +56,11 @@ const ENV_KEYS = [
   'KORTIX_LLM_BASE_URL',
   'KORTIX_TOKEN',
   'KORTIX_RUNTIME_STATE_DIR',
+  // The session's model overrides: a suite run inside a Kortix sandbox inherits
+  // them, and the daemon would bake a model into OPENCODE_CONFIG_CONTENT where
+  // every case below asserts the native (no model) shape.
+  'KORTIX_MODEL',
+  'KORTIX_OPENCODE_MODEL',
 ] as const
 const savedEnv = new Map<string, string | undefined>()
 
@@ -63,7 +69,13 @@ beforeEach(() => {
   ctl = join(root, 'ctl')
   mkdirSync(ctl)
   lifecycle = null
-  for (const key of ENV_KEYS) savedEnv.set(key, process.env[key])
+  for (const key of ENV_KEYS) {
+    savedEnv.set(key, process.env[key])
+    delete process.env[key]
+  }
+  // A box that develops Kortix shares the image's /opt/kortix/llm-catalog.json;
+  // the catalog-absent rigs must fall back to the minimal set, not to it.
+  __setBakedLlmCatalogPathForTests()
 })
 
 afterEach(async () => {
@@ -78,6 +90,7 @@ afterEach(async () => {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
+  __setBakedLlmCatalogPathForTests()
   rmSync(root, { recursive: true, force: true })
 })
 
