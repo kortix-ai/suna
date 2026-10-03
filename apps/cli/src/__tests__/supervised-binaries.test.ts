@@ -62,9 +62,6 @@ beforeEach(() => {
   delete process.env.KORTIX_SKIP_UPDATE_CHECK;
   delete process.env.KORTIX_OPENCODE_BIN;
   delete process.env.CI;
-  // A hosted Kortix sandbox exports KORTIX_SUPERVISED into every process,
-  // including this suite; every test below sets the signal it needs.
-  delete process.env.KORTIX_SUPERVISED;
   // The update notifier bails on a non-TTY stdout, which is what `bun test`
   // gives us. Force it on: the point of these tests is that the supervised
   // gate holds on a REAL terminal, which the Session PTY is.
