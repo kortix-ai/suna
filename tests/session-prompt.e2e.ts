@@ -8,7 +8,7 @@ import { createApiJsonClient } from './e2e/helpers/http';
 import { fundAccount } from './e2e/helpers/manifest-project';
 import { createAuthUser, signIn } from './e2e/helpers/session-auth';
 import { waitForSessionReady } from './e2e/helpers/session-ready';
-import { LOCAL_TEST_PROFILE_HEADER, resolveLocalTopology } from './src/core/local-stack';
+import { localApiUsesTestProfile, resolveLocalTopology } from './src/core/local-stack';
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -34,7 +34,7 @@ test(
       signal: AbortSignal.timeout(5_000),
     });
     expect(health.ok).toBe(true);
-    if (health.headers.get(LOCAL_TEST_PROFILE_HEADER) === '1') {
+    if (await localApiUsesTestProfile(topology.apiUrl)) {
       throw new Error(
         'AGENTIC-1 requires the live development stack; stop the deterministic test stack before running it',
       );
