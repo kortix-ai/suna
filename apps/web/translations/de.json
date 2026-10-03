@@ -260,10 +260,6 @@
       "fallbackName": "ihm",
       "confetti": "Konfetti werfen"
     },
-    "runtime": {
-      "metaLabel": "Meta-Laufzeit",
-      "metaDescription": "Meta verwendet eine feste minimale Sandbox. Für Projektarbeit startet Meta spezialisierte Sitzungen."
-    },
     "sandbox": {
       "label": "Sandbox-Vorlage",
       "agentEnvironment": "Agentenumgebung",
@@ -1145,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "Vorgewärmte Sitzungen",
-          "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung und einen Platz für gleichzeitige Sitzungen."
+          "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung."
         },
         "secrets_egress": {
           "name": "Netzwerkerzwungene Geheimnisse",
@@ -1162,10 +1158,6 @@
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
-        },
-        "agent_principal": {
-          "name": "Agenten als Prinzipale",
-          "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
         },
         "config_releases": {
           "name": "Config-Releases",
@@ -9460,7 +9452,6 @@
       "text0154297a0f48": "Beliebige Phase",
       "text01676385135f": "Es ist ein Entwurf — und nennt sich auch so",
       "text016cec7c484d": "Connector widerrufen",
-      "text016e549e6831": "Überschreibung für maximale gleichzeitige Sitzungen",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "Die Definition",
       "text018912e44371": "Kompilierten Projekt-Checkout heruntergeladen",
@@ -10255,7 +10246,6 @@
       "text197300839f83": "Kopiere „{value0}“",
       "text19766ed6ccb2": "Abbrechen",
       "text197da3e17a78": "Geräteautorisierung",
-      "text197f9370a831": "Tariflimit",
       "text19890c7ac88a": "Projektzugriff konnte nicht geladen werden",
       "text1994b6869b97": "SP-Entity-ID",
       "text19962f19ebb6": "# Kunden",
@@ -11729,7 +11719,6 @@
       "text445d71b74731": "Es gleicht das Hauptbuch mit dem Kontoauszug ab, gruppiert nicht übereinstimmende Positionen nach wahrscheinlicher Ursache und markiert wirklich unklare Fälle, statt sie zwanghaft abzugleichen. Die Liste der nicht zugeordneten Positionen ist das Ergebnis; ein sauberer Lauf, der drei Probleme verborgen hat, ist es nicht.",
       "text446f4eabf99f": "Wofür dieser Agent gedacht ist",
       "text4471a7e4e487": "# Incident-Response",
-      "text44912abd87c3": "Gleichzeitige Sitzungen",
       "text449992e55737": "3.000+ Apps mit einem Klick",
       "text449a509f5f87": "Erweitertes RBAC",
       "text44a57b22e03d": "Warnung",
@@ -12894,7 +12883,6 @@
       "text654f8c9688a8": "Lesevorgänge laufen, Schreibvorgänge warten",
       "text65511e543224": "Fügen Sie einen weiteren Parameter mit dem Feldnamen „groups“ hinzu. Wählen Sie im Dropdown „Value“ die Option „User Roles“ (dieser Eintrag übermittelt die Rollennamen des Benutzers — das separate OneLogin-Konzept „Groups“ ist ein anderes Attribut). Aktivieren Sie „Include in SAML assertion“ UND die Mehrfachwert-Option, damit jede Rolle als eigener Wert gesendet wird.",
       "text65562e698ff8": "Wie eine Listen- oder Verwaltungsseite aufgebaut ist: Kopfzeile, Suchleiste, Zeilen, leerer Zustand.",
-      "text655a03fa2bea": "Führe ein Upgrade durch, um ein höheres Limit zu erhalten, oder kontaktiere das Kortix-Team, um es für dein Konto zu erhöhen.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Jedes Projektmitglied kann diese Sitzungen öffnen.",
       "text6562d4f7e6fb": "Die unterste Rolle des Kontos. Kein impliziter Projektzugriff — sichtbar sind nur Projekte, denen die Person direkt oder über eine Gruppe hinzugefügt wurde.",
@@ -16431,7 +16419,6 @@
       "textca3bcc681e99": "Directory Sync überträgt Benutzer und Gruppen proaktiv aus Entra – Deaktivierungen werden ohne eine Anmeldung wirksam. Es verwendet dieselbe Unternehmensanwendung, die Sie bereits für SAML SSO registriert haben; Sie müssen nichts Neues erstellen.",
       "textca3f00ae4063": "Einstellungen · Feature-Flags",
       "textca3ff6018449": "CSV durchsuchen",
-      "textca41e8913ee7": "Sitzungslimit für das gesamte Konto. Leer übernimmt das Tariflimit.",
       "textca44d7470fff": "3 Anweisungen, 0 Fehler.",
       "textca519bb35fbb": "Anwendung aktivieren",
       "textca566c8968e7": "Angemeldet",
@@ -17015,7 +17002,6 @@
       "textdaaf5ab03267": "Nicht festgelegt – Standardanweisungen werden verwendet",
       "textdacd5f120ffe": "Zugangsdaten verschlüsselt, serverseitig vermittelt und nie an das Modell weitergegeben.",
       "textdad35b178f11": "Entra admin center – Liste der Enterprise applications mit hervorgehobenem „New application“",
-      "textdae85d16887b": "Maximale gleichzeitige Sitzungen",
       "textdaee28c0c883": "Du besitzt alles davon.",
       "textdaee7606b339": "Zurücksetzen",
       "textdaf44c9faf1b": "Der Versionsverlauf konnte nicht geladen werden",
@@ -19206,8 +19192,9 @@
       "text39207bf34111": "Ähnliche Fähigkeiten",
       "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet.",
       "text0e5f7f6732e0": "Unterhaltung abspalten",
-      "text32ad3abe4479": "Unterhaltung konnte nicht abgespalten werden"
-    },
+      "text32ad3abe4479": "Unterhaltung konnte nicht abgespalten werden",
+      "text85b7a59cdbd5": "Plattform-Agent",
+      "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren."    },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
@@ -20192,7 +20179,7 @@
     "ceilingDefault": "Standard-Obergrenze für Agents",
     "changeCeiling": "Ändern",
     "humanOnly": "Nur für Menschen",
-    "humanOnlyHelp": "Mitglieder verwalten, das Projekt löschen und Zugangsdaten ausstellen bleibt bei Menschen.",
+    "humanOnlyHelp": "Das Ausstellen von Projekt-Zugangsdaten bleibt bei Menschen.",
     "humanOnlyValue": "Nie gewährt",
     "effective": "Wirksame Berechtigungen",
     "effectiveHelp": "Kortix-Berechtigungen innerhalb der Obergrenzen-Rolle, ohne die Berechtigungen nur für Menschen. project.read ist immer gewährt.",
@@ -20222,9 +20209,7 @@
     "openWithoutGrant": "Keine Freigabe nötig",
     "grantNote": "Der Agent benötigt außerdem project.app.read in seinen Kortix-Berechtigungen.",
     "emptyTitle": "Noch keine Apps",
-    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten.",
-    "flagOffHint": "Agent-Prinzipal ist für dieses Projekt aus. Die Freigabe wird gespeichert, steuert aber noch keinen App-Zugriff.",
-    "featureFlags": "Feature-Flags"
+    "emptyDescription": "In diesem Projekt bereitgestellte Apps erscheinen hier zur Auswahl für den Agenten."
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"
