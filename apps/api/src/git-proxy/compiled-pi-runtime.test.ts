@@ -85,7 +85,10 @@ describe('compilePiRuntime', () => {
 
   test('the worker runtime receives the baked config via __KORTIX_COMPILED__', async () => {
     const { runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
+    const stdout = execFileSync(process.execPath, [runtimePath], {
+      encoding: 'utf8',
+      env: compiledRuntimeChildEnv(),
+    });
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
     const baked = JSON.parse(lines[1]).baked;
@@ -100,7 +103,7 @@ describe('compilePiRuntime', () => {
     try {
       execFileSync(process.execPath, [runtimePath], {
         encoding: 'utf8',
-        env: { ...process.env, KORTIX_PROJECT_ID: 'someone-else' },
+        env: compiledRuntimeChildEnv({ KORTIX_PROJECT_ID: 'someone-else' }),
       });
     } catch (error) {
       exitCode = (error as { status: number | null }).status;
@@ -116,7 +119,10 @@ describe('compilePiRuntime', () => {
     });
     expect(artifact.manifest.agent_config).toBeNull();
     expect(artifact.manifest.agent_config_etag).toBeNull();
-    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
+    const stdout = execFileSync(process.execPath, [runtimePath], {
+      encoding: 'utf8',
+      env: compiledRuntimeChildEnv(),
+    });
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
 

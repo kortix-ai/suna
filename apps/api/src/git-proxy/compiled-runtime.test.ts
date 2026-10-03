@@ -92,11 +92,10 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
 }));
 `);
     const child = Bun.spawn([process.execPath, runtimePath], {
-      env: {
-        ...process.env,
+      env: compiledRuntimeChildEnv({
         CAPTURE_PATH: capturePath,
         KORTIX_TOKEN: 'runtime-only-token',
-      },
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -147,11 +146,10 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     await writeFile(runtimePath, artifact.source, { mode: 0o700 });
 
     const child = Bun.spawn([process.execPath, runtimePath], {
-      env: {
-        ...process.env,
+      env: compiledRuntimeChildEnv({
         CAPTURE_PATH: capturePath,
         KORTIX_COMPILED_CONFIG_ROOT: extractionRoot,
-      },
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -179,11 +177,10 @@ import { writeFileSync } from "node:fs";
 writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
 `);
     const child = Bun.spawn(['node', runtimePath], {
-      env: {
-        ...process.env,
+      env: compiledRuntimeChildEnv({
         CAPTURE_PATH: capturePath,
         KORTIX_BUN_BIN: process.execPath,
-      },
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -199,10 +196,7 @@ writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
   test('rejects a runtime identity that differs from the compiled artifact', async () => {
     const { runtimePath } = await materializeRuntime();
     const child = Bun.spawn([process.execPath, runtimePath], {
-      env: {
-        ...process.env,
-        KORTIX_PROJECT_ID: 'different-project',
-      },
+      env: compiledRuntimeChildEnv({ KORTIX_PROJECT_ID: 'different-project' }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
