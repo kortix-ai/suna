@@ -58,11 +58,17 @@ function mockRpcResponse(method: string, params: Record<string, unknown>): unkno
   }
 }
 
+// Pin the loopback family on every mock server and on every URL that reaches
+// one: `localhost` resolves to ::1 first inside a Kortix platform sandbox (its
+// hosts entry is not readable) while Bun.serve binds the IPv4 loopback, so the
+// spawned CLI's requests were refused before any handler ran. 127.0.0.1 is
+// the address these servers bind on a laptop and on CI alike.
 let mockServer: ReturnType<typeof Bun.serve>;
 let mockPort = 0;
 
 beforeAll(() => {
   mockServer = Bun.serve({
+    hostname: '127.0.0.1',
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
@@ -117,7 +123,7 @@ function runCli(
     const child = spawn('bun', cliArgs, {
       env: {
         ...process.env,
-        TUNNEL_API_URL: `http://localhost:${mockPort}`,
+        TUNNEL_API_URL: `http://127.0.0.1:${mockPort}`,
         TUNNEL_TOKEN: 'test-token',
         TUNNEL_ID: '',
         ...envOverrides,
@@ -293,6 +299,7 @@ describe('Agent Tunnel CLI', () => {
 
     beforeAll(() => {
       permServer = Bun.serve({
+        hostname: '127.0.0.1',
         port: 0,
         async fetch(req) {
           const url = new URL(req.url);
@@ -320,7 +327,7 @@ describe('Agent Tunnel CLI', () => {
 
     test('permission denied returns structured response', async () => {
       const r = await runCli('cua_list_apps', undefined, {
-        TUNNEL_API_URL: `http://localhost:${permPort}`,
+        TUNNEL_API_URL: `http://127.0.0.1:${permPort}`,
       });
       expect(r.json!.success).toBe(false);
       expect(r.json!.permissionRequired).toBe(true);
@@ -342,6 +349,7 @@ describe('Agent Tunnel CLI', () => {
 
     beforeAll(() => {
       emptyServer = Bun.serve({
+        hostname: '127.0.0.1',
         port: 0,
         async fetch(req) {
           const url = new URL(req.url);
@@ -357,7 +365,7 @@ describe('Agent Tunnel CLI', () => {
     });
 
     test('status with no connections returns empty list', async () => {
-      const r = await runCli('status', undefined, { TUNNEL_API_URL: `http://localhost:${emptyPort}` });
+      const r = await runCli('status', undefined, { TUNNEL_API_URL: `http://127.0.0.1:${emptyPort}` });
       expect(r.exitCode).toBe(0);
       expect(r.json!.success).toBe(true);
       expect((r.json!.connections as unknown[]).length).toBe(0);
@@ -365,7 +373,7 @@ describe('Agent Tunnel CLI', () => {
 
     test('fs_read with no connections returns error', async () => {
       const r = await runCli('fs_read', '{"path":"/tmp/x"}', {
-        TUNNEL_API_URL: `http://localhost:${emptyPort}`,
+        TUNNEL_API_URL: `http://127.0.0.1:${emptyPort}`,
       });
       expect(r.exitCode).toBe(1);
       expect(r.json!.success).toBe(false);
