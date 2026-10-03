@@ -22,6 +22,6 @@ export KORTIX_MANAGED_SKILLS_DIR="$_kortix_test_box/managed-skills"
 export KORTIX_AGENT_STATE_DIR="$_kortix_test_box/agent-state"
 export KORTIX_AGENT_BIN="$_kortix_test_box/agent-bin"
 export KORTIX_SCAFFOLD_REPO_PATH="$_kortix_test_box/scaffold.git"
-export KORTIX_BAKED_LLM_CATALOG="$_kortix_test_box/llm-catalog.json"
-export KORTIX_PT_ENV_FILE="$_kortix_test_box/pt-env"
+export KORTIX_BAKED_LLM_CATALOG_PATH="$_kortix_test_box/llm-catalog.json"
+export KORTIX_PT_ENV_PATH="$_kortix_test_box/pt-env"
 unset _kortix_test_box _kortix_name
