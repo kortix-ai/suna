@@ -1205,7 +1205,7 @@ export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_h
  * 20260728132613912_secret_delivery_indexes.concurrent.ts; the non-unique
  * `idx_secret_handles_session` (session_id) is on
  * scripts/schema-contract-sql-only.ts. The FK covering indexes are declared
- * below and built by 20261002213239677_secret_handle_fk_indexes.concurrent.ts.
+ * below and built by 20261003013330695_secret_handle_fk_indexes.concurrent.ts.
  */
 export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
   handleId: uuid('handle_id').defaultRandom().primaryKey(),
@@ -3000,6 +3000,18 @@ export const accountTokens = kortixSchema.table(
     index('idx_account_tokens_account').on(table.accountId),
     index('idx_account_tokens_user').on(table.userId),
     index('idx_account_tokens_project').on(table.projectId),
+    // FK coverage for the Supabase advisor's unindexed_foreign_keys lint
+    // (KRTX-1091): every ON DELETE CASCADE walk from service_accounts and every
+    // ON DELETE SET NULL walk from auth.users over these two columns seq-scans
+    // account_tokens without an index leading with them. Partial: both columns
+    // are NULL for most rows (laptop CLI PATs, unattended runs), and a FK
+    // enforcement scan never matches a NULL.
+    index('idx_account_tokens_service_account')
+      .on(table.serviceAccountId)
+      .where(sql`${table.serviceAccountId} is not null`),
+    index('idx_account_tokens_on_behalf_of_user')
+      .on(table.onBehalfOfUserId)
+      .where(sql`${table.onBehalfOfUserId} is not null`),
   ],
 );
 
@@ -4273,6 +4285,7 @@ export const appDeploymentEvents = kortixSchema.table(
       sql`${table.level} IN ('debug', 'info', 'warn', 'error')`,
     ),
     index('app_deployment_events_deployment_idx').on(table.deploymentId, table.createdAt),
+    index('app_deployment_events_runtime_idx').on(table.runtimeId),
   ],
 );
 

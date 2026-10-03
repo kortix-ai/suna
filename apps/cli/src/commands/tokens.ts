@@ -116,8 +116,9 @@ Service accounts — act as THEMSELVES, with no inherited access:
   service-accounts ls [--json]              List service accounts.
   service-accounts new <name>               Create one. The bearer prints ONCE.
       [--description <t>] [--expires <when>]
-  service-accounts disable <id>             Disable (reversible only by
-                                            deleting and re-creating).
+  service-accounts disable <id>             Disable the service account (it
+                                            cannot authorize; delete and
+                                            re-create to return).
   service-accounts rm <id> [-y]             Delete permanently.
 
 Connected apps — apps you approved with "Sign in with Kortix" (MCP clients

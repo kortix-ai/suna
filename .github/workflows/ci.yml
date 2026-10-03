@@ -4,13 +4,14 @@ name: CI
 # (SOC 2 CC8.1 — automated checks run on every change before review/merge).
 
 on:
-  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
-  # their box. The push to `main` is the non-blocking post-merge check; release
-  # pull requests (`staging`, `prod`) are the gate.
-  push:
-    branches: [main]
+  # A push or pull request into `main` runs no CI (Actions minutes, 2026-10-03):
+  # the developer runs `pnpm test` in their box. Release pull requests
+  # (`staging`, `prod`) are the gate. A weekly schedule runs every job as a
+  # safety net on `main`.
   pull_request:
     branches: [staging, prod]
+  schedule:
+    - cron: '53 4 * * 1' # weekly, Monday 04:53 UTC
   workflow_dispatch:
 
 concurrency:
@@ -32,8 +33,8 @@ jobs:
   #
   # A job gated `if: needs.changes.outputs.* == 'true'` reports as "skipped" when
   # it doesn't run, and GitHub treats a skipped job as passing — safe even if
-  # these are later made required checks. workflow_dispatch always runs the full
-  # suite (the `|| workflow_dispatch` guard on each job).
+  # these are later made required checks. workflow_dispatch and schedule always run the
+  # full suite (the `|| github.event_name != 'pull_request'` guard on each job).
   changes:
     name: Detect changes
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
@@ -107,7 +108,7 @@ jobs:
   api-typecheck:
     name: API typecheck
     needs: changes
-    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
@@ -141,7 +142,7 @@ jobs:
   frontend-build:
     name: Frontend build
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.frontend == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     steps:
@@ -218,7 +219,7 @@ jobs:
   sandbox-agent-build:
     name: Sandbox agent build
     needs: changes
-    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
@@ -269,7 +270,7 @@ jobs:
   sandbox-image-packages:
     name: Sandbox image apt packages
     needs: changes
-    if: needs.changes.outputs.sandbox_image == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.sandbox_image == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     steps:
@@ -282,7 +283,7 @@ jobs:
   cli-binary-smoke:
     name: CLI binary smoke
     needs: changes
-    if: needs.changes.outputs.cli == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.cli == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
@@ -330,7 +331,7 @@ jobs:
   self-host-schema:
     name: Self-host schema bootstrap
     needs: changes
-    if: needs.changes.outputs.self_host == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.self_host == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     steps:
@@ -378,7 +379,7 @@ jobs:
     # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
     # still cover the full signed release artifacts.
     needs: changes
-    if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.desktop == 'true' || github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 30
     steps:

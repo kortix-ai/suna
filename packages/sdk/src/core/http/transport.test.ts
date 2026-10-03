@@ -361,4 +361,25 @@ describe('client surface', () => {
     await send('http://backend.test/v1/x');
     expect(seen.map((s) => s.headers.get('x-kortix-client'))).toEqual([null, null]);
   });
+
+  test('sends the configured client version; a caller-set or blank one wins or is omitted', async () => {
+    const withVersion = (clientVersion?: string) =>
+      configureKortix({
+        backendUrl: 'http://backend.test/v1',
+        clientVersion,
+        getToken: async () => 'tok1',
+        fetch: async (_input, init) => {
+          seen.push({ url: '', headers: new Headers(init?.headers), body: null, signal: null });
+          return new Response('{}');
+        },
+      });
+    withVersion('cli/0.13.42');
+    await send('http://backend.test/v1/x');
+    await send('http://backend.test/v1/x', { headers: { 'X-Kortix-Client-Version': 'caller' } });
+    withVersion('  ');
+    await send('http://backend.test/v1/x');
+    withVersion(undefined);
+    await send('http://backend.test/v1/x');
+    expect(seen.map((s) => s.headers.get('x-kortix-client-version'))).toEqual(['cli/0.13.42', 'caller', null, null]);
+  });
 });
