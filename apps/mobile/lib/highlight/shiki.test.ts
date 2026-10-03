@@ -141,6 +141,12 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
       // crossed that limit and failed the parity check below.
       highlightToTokens(sample, lang, 'light');
+      // The warm-up itself can cross that cap on a loaded runner, and
+      // highlightToTokens memoizes its result: a truncated cold compile then
+      // fails the parity check below through the cache (observed: the php
+      // sample's first line split `<?php` in two). Drop the memoized entry;
+      // the parity runs reuse the warm grammar and stay inside the cap.
+      __testing.tokenCache.clear();
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
