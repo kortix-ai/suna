@@ -172,7 +172,11 @@ export function VideoRenderer({
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        // An unhandled play() rejection pages Better Stack as
+        // `NotAllowedError: The play method is not allowed…` (the UA's
+        // autoplay policy). On rejection the element stays paused — keep the
+        // toggle state truthful instead of letting the promise escape.
+        void videoRef.current.play().catch(() => setIsPlaying(false));
       }
       setIsPlaying(!isPlaying);
     }
@@ -206,7 +210,9 @@ export function VideoRenderer({
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       setCurrentTime(0);
-      videoRef.current.play();
+      // Same play() rejection guard as togglePlay: the restart attempt stays
+      // paused when the UA denies playback, so keep the state truthful.
+      void videoRef.current.play().catch(() => setIsPlaying(false));
       setIsPlaying(true);
     }
   };
