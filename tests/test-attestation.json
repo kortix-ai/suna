@@ -1,11 +1,30 @@
 {
-  "source_hash": "778ab50534de7c4c24de4d277175827f937bb9964c9c8c2e4e83dd74c4ca2a0f",
-  "head": "8b47b3e3ba77447d94ba1c736e4efcdb68bee72f",
-  "passed": false,
+  "source_hash": "4393802ad04b43f5b36a115fdf109ef9f5e71a58ad192baa3267331062ef6065",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/open-code-harness.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/sandbox-image.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261003145752_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003145752438_account_secret_grants_fk_indexes.concurrent.ts",
+    "packages/db/scripts/account-secret-grants-fk-indexes.integration.test.ts",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "d14f77fb6ed8168179869aabda225444838976d219724e1a776e21783fc13980",
+  "head": "b85081cec8b3cf5ce8b78aa17cf53a0179bba3d5",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T13:21:04.830Z"
+  "at": "2026-10-03T15:12:46.812Z"
 }
