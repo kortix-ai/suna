@@ -8,6 +8,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { markComputeSessionAlive, reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { type SandboxProviderName, config } from '../../config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
+import { isProviderNotFound } from '../../platform/providers/status';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
@@ -382,29 +383,15 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
 }
 
 export function isMissingRuntimeError(error: unknown): boolean {
-  const err = error as
-    | {
-        statusCode?: unknown;
-        status?: unknown;
-        code?: unknown;
-        message?: unknown;
-      }
-    | null
-    | undefined;
-  const status = err?.statusCode ?? err?.status;
-  if (status === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
+  if (isProviderNotFound(error)) return true;
+  // legacy: Daytona answers a start on a box whose container is gone with a
+  // non-404 that names the gone container only in Docker's text. Scoped to
+  // Daytona's own error classes so another provider's text never matches.
+  // Delete when Daytona types this answer (status 404 or an errorCode).
+  const name = error instanceof Error ? error.name : '';
   return (
-    message.includes('no such container') ||
-    message.includes('container not found') ||
-    message.includes('sandbox container not found') ||
-    message.includes('failed to inspect sandbox container') ||
-    message.includes('not found')
+    name.startsWith('Daytona') &&
+    /no such container|container not found|failed to inspect sandbox container/i.test((error as Error).message)
   );
 }
 
