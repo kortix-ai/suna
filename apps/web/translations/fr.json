@@ -1141,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "Sessions préchauffées",
-          "description": "Gardez une sandbox prête pour un démarrage immédiat. La sandbox inactive consomme du calcul et un emplacement de session simultanée."
+          "description": "Gardez une sandbox prête pour un démarrage immédiat. La sandbox inactive consomme du calcul."
         },
         "secrets_egress": {
           "name": "Secrets protégés par le réseau",
@@ -9456,7 +9456,6 @@
       "text0154297a0f48": "Toutes les phases",
       "text01676385135f": "C’est un brouillon, et il le précise",
       "text016cec7c484d": "Connecteur révoqué",
-      "text016e549e6831": "Remplacement du nombre max. de sessions simultanées",
       "text017245d54fdb": "dans Slack.",
       "text018069eabbfd": "La définition",
       "text018912e44371": "Checkout de projet compilé téléchargé",
@@ -10251,7 +10250,6 @@
       "text197300839f83": "Copiez \"{value0}\"",
       "text19766ed6ccb2": "Annuler",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Limite du forfait",
       "text19890c7ac88a": "Échec du chargement des accès au projet",
       "text1994b6869b97": "ID d'entité SP",
       "text19962f19ebb6": "# Clients",
@@ -11725,7 +11723,6 @@
       "text445d71b74731": "Il rapproche le grand livre du relevé, regroupe les éléments non rapprochés par cause probable et signale les cas réellement ambigus au lieu de les rapprocher de force. La liste des éléments non rapprochés est le livrable ; une exécution propre qui masque trois problèmes ne l’est pas.",
       "text446f4eabf99f": "Rôle de cet agent",
       "text4471a7e4e487": "# Réponse aux incidents",
-      "text44912abd87c3": "Sessions simultanées",
       "text449992e55737": "Plus de 3 000 applications en un clic",
       "text449a509f5f87": "RBAC avancé",
       "text44a57b22e03d": "Alerte",
@@ -12890,7 +12887,6 @@
       "text654f8c9688a8": "Les lectures s’exécutent, les écritures attendent",
       "text65511e543224": "Ajoutez un paramètre supplémentaire avec « groups » comme Field name. Dans la liste Value, sélectionnez « User Roles » (c’est l’entrée qui émet les noms de rôle de l’utilisateur — le concept « Groups » distinct de OneLogin correspond à un autre attribut). Cochez « Include in SAML assertion » ET activez l’option multi-value afin que chaque rôle soit envoyé comme valeur distincte.",
       "text65562e698ff8": "Comment une page de liste ou de gestion est assemblée : en-tête, barre de recherche, lignes, état vide.",
-      "text655a03fa2bea": "Passez à un forfait supérieur pour bénéficier d’une limite plus élevée, ou contactez l’équipe Kortix pour l’augmenter pour votre compte.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Tous les membres du projet peuvent ouvrir ces sessions.",
       "text6562d4f7e6fb": "Le rôle de base du compte. Aucun accès implicite aux projets — il ne voit que ceux auxquels il a été ajouté, directement ou via un groupe.",
@@ -16427,7 +16423,6 @@
       "textca3bcc681e99": "Directory Sync envoie proactivement les utilisateurs et groupes depuis Entra — les désactivations s’appliquent sans attendre une connexion. Il réutilise la même application d’entreprise déjà enregistrée pour le SSO SAML ; rien de nouveau n’est à créer.",
       "textca3f00ae4063": "Paramètres · Indicateurs de fonctionnalités",
       "textca3ff6018449": "Rechercher dans le CSV",
-      "textca41e8913ee7": "Limite de sessions pour l’ensemble du compte. Vide, la limite du forfait s’applique.",
       "textca44d7470fff": "3 instructions, 0 erreur.",
       "textca519bb35fbb": "Activer l’application",
       "textca566c8968e7": "Connecté",
@@ -17011,7 +17006,6 @@
       "textdaaf5ab03267": "Non défini — utilisation des instructions par défaut",
       "textdacd5f120ffe": "Identifiants chiffrés, traités côté serveur, jamais transmis au modèle.",
       "textdad35b178f11": "Centre d’administration Entra — liste Enterprise applications avec New application mis en évidence",
-      "textdae85d16887b": "Sessions simultanées max.",
       "textdaee28c0c883": "Vous possédez tout.",
       "textdaee7606b339": "Réinitialiser",
       "textdaf44c9faf1b": "Impossible de charger l’historique des versions",

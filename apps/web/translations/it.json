@@ -1141,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "Sessioni preriscaldate",
-          "description": "Mantieni una sandbox pronta per avvii immediati. La sandbox inattiva usa risorse di calcolo e uno slot di sessione simultanea."
+          "description": "Mantieni una sandbox pronta per avvii immediati. La sandbox inattiva usa risorse di calcolo."
         },
         "secrets_egress": {
           "name": "Segreti protetti dalla rete",
@@ -9456,7 +9456,6 @@
       "text0154297a0f48": "Qualsiasi fase",
       "text01676385135f": "È una bozza, e lo dichiara",
       "text016cec7c484d": "Connettore revocato",
-      "text016e549e6831": "Override del numero massimo di sessioni simultanee",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "La definizione",
       "text018912e44371": "Checkout compilato del progetto scaricato",
@@ -10251,7 +10250,6 @@
       "text197300839f83": "Copia \"{value0}\"",
       "text19766ed6ccb2": "Annulla",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Limite del piano",
       "text19890c7ac88a": "Impossibile caricare l'accesso al progetto",
       "text1994b6869b97": "SP Entity ID",
       "text19962f19ebb6": "# Clienti",
@@ -11725,7 +11723,6 @@
       "text445d71b74731": "Confronta il libro mastro con l’estratto conto, raggruppa ciò che non coincide per causa probabile e lascia segnalati i casi davvero ambigui invece di abbinarli a forza. L’elenco dei non abbinati è il risultato; un’esecuzione pulita che nasconde tre problemi non lo è.",
       "text446f4eabf99f": "A cosa serve questo agente",
       "text4471a7e4e487": "# Risposta agli incidenti",
-      "text44912abd87c3": "Sessioni simultanee",
       "text449992e55737": "Oltre 3.000 app con un clic",
       "text449a509f5f87": "RBAC avanzato",
       "text44a57b22e03d": "Avviso",
@@ -12890,7 +12887,6 @@
       "text654f8c9688a8": "Le letture partono, le scritture attendono",
       "text65511e543224": "Aggiungi un altro parametro con Field name \"groups\". Nel menu Value seleziona \"User Roles\" (questa voce invia i nomi dei ruoli dell'utente; il concetto separato di \"Groups\" di OneLogin è un attributo diverso). Seleziona \"Include in SAML assertion\" E abilita l'opzione multi-value, così ogni ruolo viene inviato come valore separato.",
       "text65562e698ff8": "Come si compone una pagina di elenco o di gestione: intestazione, barra di ricerca, righe, stato vuoto.",
-      "text655a03fa2bea": "Fai l'upgrade del piano per aumentare il limite oppure contatta il team Kortix per aumentarlo per il tuo account.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Ogni membro del progetto può aprire queste sessioni.",
       "text6562d4f7e6fb": "Il ruolo base dell'account. Nessun accesso implicito ai progetti — vede solo quelli a cui è stato aggiunto, direttamente o tramite un gruppo.",
@@ -16427,7 +16423,6 @@
       "textca3bcc681e99": "Directory Sync invia proattivamente utenti e gruppi da Entra — le disattivazioni si applicano senza attendere un accesso. Riutilizza la stessa applicazione aziendale già registrata per SAML SSO; non è necessario crearne una nuova.",
       "textca3f00ae4063": "Impostazioni · Flag di funzionalità",
       "textca3ff6018449": "Cerca nel CSV",
-      "textca41e8913ee7": "Limite di sessioni per l'intero account. Vuoto eredita il limite del piano.",
       "textca44d7470fff": "3 istruzioni, 0 errori.",
       "textca519bb35fbb": "Abilita applicazione",
       "textca566c8968e7": "Accesso effettuato",
@@ -17011,7 +17006,6 @@
       "textdaaf5ab03267": "Non impostato — usa le istruzioni predefinite",
       "textdacd5f120ffe": "Credenziali crittografate, gestite lato server e mai consegnate al modello.",
       "textdad35b178f11": "Entra admin center — elenco Enterprise applications con New application evidenziato",
-      "textdae85d16887b": "Numero massimo di sessioni simultanee",
       "textdaee28c0c883": "Possiedi tutto.",
       "textdaee7606b339": "Reimposta",
       "textdaf44c9faf1b": "Impossibile caricare la cronologia delle versioni",
