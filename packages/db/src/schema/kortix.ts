@@ -2687,7 +2687,12 @@ export const providerTransitions = kortixSchema.table(
   },
   (table) => [
     index('idx_provider_transitions_project_recent').on(table.projectId, table.requestedAt.desc()),
-    index('idx_provider_transitions_status').on(table.status),
+    // Dropped 2026-10-03 (migration
+    // 20261003122908536_drop_unused_provider_transitions_status_index):
+    // `idx_provider_transitions_status` (status). idx_scan = 0 since the table's
+    // creation (the Supabase advisor's unused_index finding); every status filter
+    // is `inArray(status, LIVE)`, served by idx_provider_transitions_resume's
+    // leading status column.
     index('idx_provider_transitions_resume').on(table.status, table.nextRetryAt, table.heartbeatAt),
     // Atomic generation allocation guard: one transition per (project,
     // generation). The request path reserves the generation on the project row

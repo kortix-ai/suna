@@ -806,6 +806,13 @@
       "when": 1791022559790,
       "tag": "20261003101559_chat_pending_picker_project_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791030534741,
+      "tag": "20261003122854_drop_unused_provider_transitions_status_index",
+      "breakpoints": true
     }
   ]
 }
