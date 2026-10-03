@@ -219,6 +219,7 @@
       "create": "プロジェクトを作成",
       "tryAgain": "もう一度試す",
       "upgrade": "プランをアップグレード",
+      "settings": "設定",
       "logOut": "ログアウト",
       "signingOut": "ログアウト中",
       "back": "プロジェクトに戻る"

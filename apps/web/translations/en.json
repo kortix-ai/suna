@@ -219,6 +219,7 @@
       "create": "Create project",
       "tryAgain": "Try again",
       "upgrade": "Upgrade plan",
+      "settings": "Settings",
       "logOut": "Log out",
       "signingOut": "Signing out",
       "back": "Back to projects"
