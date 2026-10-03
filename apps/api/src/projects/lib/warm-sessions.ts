@@ -15,11 +15,14 @@
  *   `metadata.warm === true`  ⇒  created speculatively, never used.
  *
  * `POST /projects/:id/sessions/warm` writes it (projects/routes/warm-sessions.ts). The
- * `visible` list scope hides marked rows (projects/lib/session-inventory.ts).
- * `recordSessionActivity` DELETES it in the same statement that stamps the first
- * accepted turn (projects/session-activity.ts), so "used" and "last active" are
- * one fact written once and cannot drift apart. From that moment the row lists
- * like any other session.
+ * `visible` list scope hides marked rows whose session is not actively
+ * provisioning or running (projects/lib/session-inventory.ts): a live box
+ * bills compute from creation (warmPoolGrantMs), and a billed session must
+ * stay listed so its owner can see and stop it. `recordSessionActivity`
+ * DELETES it in the same statement that stamps the first accepted turn
+ * (projects/session-activity.ts), so "used" and "last active" are one fact
+ * written once and cannot drift apart. From that moment the row lists like
+ * any other session.
  *
  * Compute placement is matched server-side before reuse or adoption. A
  * server-stamped requested location deduplicates in-flight warming but is

@@ -110,30 +110,22 @@ describe('ShowContentRenderer — the HTML preview blob URL is minted in an effe
 // the whole class string (not just `bg-secondary`, which several unrelated
 // surfaces use) is what makes its presence/absence a real discriminator.
 const VIEWER_FRAME_HEADER =
-  'bg-secondary flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2';
+  'bg-secondary flex min-h-12 shrink-0 flex-wrap items-center justify-end gap-2 border-b px-3 py-2';
 
-describe('ShowContentRenderer — inline image/video are framed like every other viewer', () => {
-  // Image and video returned a bare `<div>` on both surfaces while CSV, PPTX,
-  // XLSX, DOCX, PDF and the plain-text viewer all went through `framed()`. The
-  // inline card therefore had no file-name row above a picture, and the
-  // `toolbarActions` slot `ViewerFrame` exists to carry had no host on those
-  // two types.
-  test('an inline image renders inside ViewerFrame, labelled with the file name', () => {
-    const html = renderToStaticMarkup(
+describe('ShowContentRenderer — no file-name row', () => {
+  // The inline card used to draw a strip carrying only the file name under its
+  // header. The name now lives in the header icon's hover hint, so a viewer
+  // with no actions renders bare — never a name-only row.
+  test('an inline image or video draws no header row and no file name', () => {
+    const image = renderToStaticMarkup(
       withProviders(<ShowContentRenderer type="image" path="/workspace/photo.png" />),
     );
-
-    expect(html).toContain(VIEWER_FRAME_HEADER);
-    expect(html).toContain('photo.png');
-  });
-
-  test('an inline video renders inside ViewerFrame, labelled with the file name', () => {
-    const html = renderToStaticMarkup(
+    const video = renderToStaticMarkup(
       withProviders(<ShowContentRenderer type="video" path="/workspace/clip.mp4" />),
     );
 
-    expect(html).toContain(VIEWER_FRAME_HEADER);
-    expect(html).toContain('clip.mp4');
+    expect(image).not.toContain(VIEWER_FRAME_HEADER);
+    expect(video).not.toContain(VIEWER_FRAME_HEADER);
   });
 
   // `framed()` is a no-op under `fill`: on the panel surface the host already

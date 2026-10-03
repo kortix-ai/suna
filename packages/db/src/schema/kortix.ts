@@ -301,8 +301,6 @@ export const accountMemberships = kortixSchema.table(
     // Account-only reads (member lists, seat counts, cache invalidation). The
     // primary key leads with user_id, so it serves user-only reads.
     index('idx_account_members_account_id').on(table.accountId),
-    // Duplicates the primary key; kept until a drop migration retires it.
-    uniqueIndex('idx_account_members_user_account').on(table.userId, table.accountId),
   ],
 );
 
@@ -953,6 +951,11 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
 }, (table) => [
   index('account_secret_resources_account_provider').on(table.accountId, table.providerId),
   unique('account_secret_resources_account_identity').on(table.secretId, table.accountId),
+  // Covers the project_id FK (account_secret_resources_project_id_projects_project_id_fk,
+  // built by 20261002225526000_account_secret_project_id_index.concurrent.ts): a
+  // project delete cascades here by project_id, and that lookup otherwise seq-scans
+  // the table (Supabase advisor: unindexed_foreign_keys).
+  index('idx_account_secret_resources_project_id').on(table.projectId),
 ]);
 
 /** A member's permission to use one account secret resource. */
@@ -1864,15 +1867,15 @@ export const chatThreads = kortixSchema.table(
   ],
 );
 
-// Short-lived Slack messages waiting for the sender to finish `/login`. The
-// login URL carries only this id; the original Slack event stays server-side so
-// we can resume the exact message after the account bind succeeds.
+// Short-lived chat messages parked server-side until the sender acts: Slack
+// `/login` resume (project set), or a Slack/Teams project-picker click (project
+// NULL until the pick). The URL or button carries only this id, so any replica
+// can resume the exact message.
 export const chatPendingAuthMessages = kortixSchema.table(
   'chat_pending_auth_messages',
   {
     pendingId: uuid('pending_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
-      .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).default('slack').notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
@@ -4799,10 +4802,6 @@ export const accessRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_access_requests_email').on(table.email),
-    index('idx_access_requests_status').on(table.status),
-  ],
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 // Derives a lastModified timestamp for every public content source that lacks
 // an explicit `date` frontmatter field — docs MDX files and code-rendered
 // marketing pages — by reading the most recent git commit that touched the
-// source file. Blog posts and use-cases already carry a `date` frontmatter
-// value that public-content.ts reads directly, so they are intentionally
-// excluded here to avoid drift between the two sources.
+// source file. Use-cases already carry a `date` frontmatter value that
+// public-content.ts reads directly, so they are intentionally excluded here to
+// avoid drift between the two sources.
 //
 // Output: apps/web/src/lib/seo/content-timestamps.json
 //   { "<kind>:<slug>": "<ISO 8601 commit-date string>", ... }
@@ -68,7 +68,6 @@ const MARKETING_SOURCES = {
   'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
   careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
-  blog: 'apps/web/src/app/[locale]/(public)/(seo)/blog/page.tsx',
   'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
   download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
 };

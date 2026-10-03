@@ -1926,7 +1926,6 @@
     "messageInput": "Message input",
     "attachFiles": "Attach files",
     "selectAgent": "Select agent",
-    "agentLockedHint": "You can't switch agents in an already started session.",
     "noModel": "No model",
     "thinkingEffort": "Thinking effort",
     "sessionOverrides": "Session overrides",
@@ -17210,7 +17209,6 @@
       "textdf80c0ee2f08": "Agents & Skills",
       "textdf8e32d18dbd": "Anything you can reach",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Please enter the 6-digit code from your email",
       "textdfa16aeaca13": "This workspace’s repository is hosted on {value0}, which does not support collaborator invites from Kortix. Manage access where the repository lives.",
       "textdfa2cff42f0c": "No systems depth",
       "textdfad83e7eb69": "{value0} are implicit Manager on every active project in the account.",
@@ -19217,7 +19215,9 @@
       "textd4586396b9ba": "Can agents use the CLI themselves?",
       "text9e52157faaab": "Yes. The same Kortix CLI runs inside every sandbox, pre-authenticated, so agents use the exact commands you do.",
       "text48b78a9ab65b": "How do runs stay isolated?",
-      "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs."
+      "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
+      "text39207bf34111": "Related skills",
+      "text73112526c03a": "Agent turn failed. No reason was reported."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20203,7 +20203,7 @@
     "ceilingDefault": "Default agent ceiling",
     "changeCeiling": "Change",
     "humanOnly": "Human only",
-    "humanOnlyHelp": "Managing members, deleting the project, and issuing credentials stay with people.",
+    "humanOnlyHelp": "Issuing project credentials stays with people.",
     "humanOnlyValue": "Never granted",
     "effective": "Effective permissions",
     "effectiveHelp": "Kortix permissions within the ceiling role, minus human-only permissions. project.read is always granted.",
