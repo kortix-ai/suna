@@ -89,7 +89,7 @@ describe('isAutoResuming', () => {
   });
 });
 
-// Regression for prod session ad4b63ac (2026-08-13). Its Platinum box was lost
+// Regression for a prod session (2026-08-13). Its Platinum box was lost
 // provider-side; the server answered `/start` with `stage: 'failed'`,
 // `retriable: false`, `reason: 'runtime_identity_unavailable'` — and a
 // SERIALIZED sandbox row that still reads `status: 'stopped'` + an
@@ -103,10 +103,10 @@ describe('isSandboxResumable — a preserved-unavailable identity is never resum
     expect(
       isSandboxResumable({
         status: 'stopped',
-        external_id: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
+        external_id: 'sbx_01SYNTHETIC0000000000000',
         metadata: {
           runtimeIdentityState: 'unavailable',
-          preservedExternalId: 'sbx_01AAAAAAAAAAAAAAAAAAAAAAAA',
+          preservedExternalId: 'sbx_01SYNTHETIC0000000000000',
           runtimeUnavailableReason: 'runtime_removed',
         },
       }),

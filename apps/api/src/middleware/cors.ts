@@ -61,6 +61,8 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       // builds from before the change still send it, and dropping it here would
       // fail their CORS preflight.
       'X-Kortix-Client',
+      // The SDK sends the host's release version on every request (R0.6).
+      'X-Kortix-Client-Version',
       // Defense in depth for the session stream: a cross-origin SSE reader that
       // sends `Cache-Control: no-cache` (older SDKs, the opencode fallback) would
       // otherwise fail preflight and the stream would never open. The current SDK

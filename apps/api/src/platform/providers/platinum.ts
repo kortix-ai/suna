@@ -584,7 +584,7 @@ export class PlatinumProvider implements SandboxProvider {
     // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
     // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
     // an intermittent guest-boot stall surfaced as a "running" session that was
-    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // actually failed-start (proven 2026-07-07 on one session: Platinum
     // state=failed-start, comp status=active). Throw on a non-running terminal
     // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
     // another host) instead of silently returning an unusable sandbox. The
@@ -976,7 +976,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (!isProviderNotFound(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, a prod <sandbox_id>:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:

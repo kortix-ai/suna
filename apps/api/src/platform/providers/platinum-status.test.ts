@@ -125,7 +125,7 @@ test('recoverInPlace() starts a failed-start box that has booted before, in plac
   expect(calls).toEqual(['GET /v1/sandboxes/sbx_kept', 'POST /v1/sandboxes/sbx_kept/start']);
 });
 
-// Regression for incident 2026-08-12 (a prod <sandbox_id>).
+// Regression for incident 2026-08-12 (one Platinum sandbox).
 //
 // Platinum's reconciler deleted a sandbox that had a COMPLETED 4.87 GB backup
 // in S3. From that moment `GET /v1/sandboxes/:id` returns 404 — the same 404 a

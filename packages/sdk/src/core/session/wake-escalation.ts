@@ -14,7 +14,7 @@
  *     "Couldn't start session <id> — The session runtime did not become
  *      reachable. Restart the session to try again."
  *
- * Measured on SampleCo (2026-08-26, box `inqwpv4a1cc1kynlg46k8`): that card
+ * Measured on SampleCo (2026-08-26, one E2B box): that card
  * painted while the box was SECONDS from ready — its daemon logged
  * `opencode ready` at 06:10:02, right after the budget expired. The card is a
  * dead end with no auto-recovery, and the human's fix is always the same one
