@@ -211,13 +211,6 @@ async function agentSwitchRefusal(
   const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
   if (!isConcreteAgentSwitch(requestedAgent, sessionAgent)) return null;
   const switchedToAgent = requestedAgent as string;
-  if (sessionAgent !== DEFAULT_AGENT_SENTINEL) {
-    return jsonProxyError(
-      { error: 'A session cannot switch agents.', code: 'AGENT_SWITCH_NOT_ALLOWED' },
-      409,
-      origin,
-    );
-  }
   if (!userId) {
     // A switch is an authorization decision and there is no principal to decide
     // about — a share-token forward, say. Refuse rather than run another agent
@@ -261,9 +254,10 @@ async function agentSwitchRefusal(
   );
 }
 
-// A concrete session rejects another concrete agent. The legacy `default`
-// sentinel is non-binding: clients can echo a resolved default before the
-// session's agent has loaded, so that path still requires agent authorization.
+// A concrete agent different from the session's own is a SWITCH: authorize it
+// exactly like the legacy `default` path below. The legacy `default` sentinel
+// is non-binding: clients can echo a resolved default before the session's
+// agent has loaded, so that path still requires agent authorization.
 function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
   if (!requestedAgent) return false;
   // Asking for the sentinel is asking for "this session's own agent" — never a
@@ -1059,10 +1053,11 @@ export async function forwardToSandbox(
 
       if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
-        // Agent immutability and authorization run before the dedupe claim.
-        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
-        // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent remains on the authorized default-sentinel path.
+        // Authorization runs before the dedupe claim. Drop only the legacy
+        // 'default' sentinel so OpenCode resolves its own `default_agent` (the
+        // real default the session booted with). A *concrete* requested agent
+        // stays on the authorized switch path: the caller's grant decides, and
+        // the pre-prompt env sync re-scopes box and token to that agent.
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }

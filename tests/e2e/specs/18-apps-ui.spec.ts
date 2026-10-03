@@ -415,7 +415,9 @@ test.describe('18 — Kortix Apps UI', () => {
 
       // Exercise deployed-only controls with deterministic network fixtures;
       // no cloud runtime is provisioned by this browser characterization.
-      const appApi = `**/projects/${project.id}/apps`;
+      // `/v1/` keeps the glob on the API: `**/projects/<id>/apps` also matches
+      // the Apps PAGE URL, so the reload below got the fixture JSON as its document.
+      const appApi = `**/v1/projects/${project.id}/apps`;
       const liveApp = { ...seeded, active_deployment_id: 'deployment-current', desired_state: 'running' };
       let activeDeployment = 'deployment-current';
       await page.route(appApi, (route) => route.request().method() === 'GET'
