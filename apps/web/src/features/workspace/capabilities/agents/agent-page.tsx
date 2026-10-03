@@ -1148,8 +1148,8 @@ function ReadOnlyAgentPage({
         <EditorSectionStyleProvider value="panel">
           <div className="space-y-4">
             {isPlatform ? (
-              <InfoBanner tone="info" title={tI18nComplete.raw('i18nComplete.text85b7a59cdbd5')}>
-                {tI18nComplete.raw('i18nComplete.textd9c0c74b514b')}
+              <InfoBanner tone="info" title={tI18nComplete.raw('text85b7a59cdbd5')}>
+                {tI18nComplete.raw('textd9c0c74b514b')}
               </InfoBanner>
             ) : showUpgradeHint ? (
               <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>

@@ -35,6 +35,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
+  ApiError,
   createProjectSession,
   getProjectSession,
   getProjectSessionScope,
@@ -57,8 +58,8 @@ import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sd
  * session ready that fits this send (`use-warm-project-session.ts`) this takes
  * it and the SERVER owns the id. Otherwise the id is minted client-side and
  * created as before. `takeWarmSessionEntry` returns null whenever nothing
- * suitable is held, so the create path below remains the authority on billing,
- * the session cap and connector requirements — the user sees the same outcome
+ * suitable is held, so the create path below remains the authority on billing
+ * and connector requirements — the user sees the same outcome
  * either way. When it DOES fit, `onReady` also seeds the sessions-list cache
  * with the entry's server row (JAY-599/T21, `warm-session-seed.ts`), so the
  * sidebar shows the session the instant this tab sends — it does not wait for
@@ -121,7 +122,7 @@ function makeTakeOrCreateSession(
       // network-free hand-off that skips the sandbox boot the user would
       // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
       // null whenever there is nothing suitable, so the create path below stays
-      // the authority on billing, the session cap and connector requirements.
+      // the authority on billing and connector requirements.
       async function takeOrCreateSession() {
         const warm = takeWarmSessionEntry(projectId, {
           create: opts?.create,
@@ -367,7 +368,7 @@ export function useNewProjectSession(projectId: string | undefined) {
         },
       }).catch((err) => {
         const code = (err as { code?: string })?.code;
-        const action = resolveCreateFailure(code);
+        const action = resolveCreateFailure(code, err instanceof ApiError);
         if (action === 'upgrade') {
           openUpgradeDialog({ reason: 'subscription_required', accountId });
         } else if (action === 'connect') {
@@ -386,7 +387,6 @@ export function useNewProjectSession(projectId: string | undefined) {
         } else if (action === 'toast') {
           errorToast(err instanceof Error ? err.message : t('failedToStartSession'));
         }
-        // 'silent': the global 429 handler already surfaced the session cap.
         // No navigation happened, so release the claim now — the user stays
         // where they are and must be able to try again immediately.
         release();

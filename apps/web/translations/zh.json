@@ -1141,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "预热会话",
-          "description": "保留一个沙盒以立即启动会话。空闲沙盒会占用计算资源和一个并发会话名额。"
+          "description": "保留一个沙盒以立即启动会话。空闲沙盒会占用计算资源。"
         },
         "secrets_egress": {
           "name": "网络强制保护的机密",
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
-        },
-        "agent_principal": {
-          "name": "代理作为主体",
-          "description": "代理以自身身份执行操作：使用其 Kortix 权限，并受其角色上限约束。运行代理的人只会提供自己的账户。"
         },
         "config_releases": {
           "name": "配置发布",
@@ -9456,7 +9452,6 @@
       "text0154297a0f48": "任意阶段",
       "text01676385135f": "它是草稿，而且明确标注了这一点",
       "text016cec7c484d": "已撤销连接器",
-      "text016e549e6831": "最大并发会话数覆盖值",
       "text017245d54fdb": "在 Slack 中。",
       "text018069eabbfd": "定义",
       "text018912e44371": "已下载编译后的项目检出内容",
@@ -10251,7 +10246,6 @@
       "text197300839f83": "复制“{value0}”",
       "text19766ed6ccb2": "取消",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "套餐上限",
       "text19890c7ac88a": "加载项目访问权限失败",
       "text1994b6869b97": "SP 实体 ID",
       "text19962f19ebb6": "# 客户",
@@ -11725,7 +11719,6 @@
       "text445d71b74731": "它将总账与对账单匹配，按可能原因归类未匹配项，并将真正含糊的项目标记出来，而不是强行匹配。未匹配清单才是交付物；隐藏三个问题的“干净”结果不是。",
       "text446f4eabf99f": "此代理的用途",
       "text4471a7e4e487": "# 事故响应",
-      "text44912abd87c3": "并发会话",
       "text449992e55737": "一键接入 3,000+ 个应用",
       "text449a509f5f87": "高级 RBAC",
       "text44a57b22e03d": "警告",
@@ -12890,7 +12883,6 @@
       "text654f8c9688a8": "读取直接运行，写入等待",
       "text65511e543224": "再添加一个参数，Field name 为“groups”。在 Value 下拉菜单中选择“User Roles”（这是会输出用户角色名称的条目——OneLogin 独立的“Groups”概念是另一种属性）。勾选“Include in SAML assertion”，并启用多值标志，以便将每个角色作为独立值发送。",
       "text65562e698ff8": "列表页或管理页的组成：页眉、搜索栏、行、空状态。",
-      "text655a03fa2bea": "请升级套餐以提高限额，或联系 Kortix 团队为您的账户提升限额。",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "每位项目成员都可以打开这些会话。",
       "text6562d4f7e6fb": "账户的基础角色。不隐式授予项目访问权限 — 只能查看直接添加到其中或通过群组加入的项目。",
@@ -16427,7 +16419,6 @@
       "textca3bcc681e99": "Directory Sync 会主动从 Entra 推送用户和组——停用会立即生效，无需等待登录。它会复用已注册 SAML SSO 的同一企业应用，无需创建新应用。",
       "textca3f00ae4063": "设置·功能标志",
       "textca3ff6018449": "搜索 CSV",
-      "textca41e8913ee7": "整个账户的会话上限。留空则继承套餐上限。",
       "textca44d7470fff": "3 条语句，0 个错误。",
       "textca519bb35fbb": "启用应用",
       "textca566c8968e7": "已登录",
@@ -17011,7 +17002,6 @@
       "textdaaf5ab03267": "未设置 — 使用默认指令",
       "textdacd5f120ffe": "凭据加密后由服务器端代理处理，绝不交给模型。",
       "textdad35b178f11": "Entra admin center — Enterprise applications 列表，突出显示 New application",
-      "textdae85d16887b": "最大并发会话数",
       "textdaee28c0c883": "这一切都归你所有。",
       "textdaee7606b339": "重置",
       "textdaf44c9faf1b": "无法加载版本历史",
@@ -19201,8 +19191,8 @@
       "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。",
       "text39207bf34111": "相关技能",
       "text73112526c03a": "智能体这一轮运行失败，未报告原因。",
-      "text85b7a59cdbd5": "平台代理",
-      "textd9c0c74b514b": "Meta 是一个为你的工作做编排的平台代理。它的设置是固定的：可以与它开启会话，但无法在此处配置。"
+      "text85b7a59cdbd5": "平台智能体",
+      "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20218,9 +20208,7 @@
     "openWithoutGrant": "无需授权",
     "grantNote": "智能体的 Kortix 权限还需要包含 project.app.read。",
     "emptyTitle": "尚无应用",
-    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。",
-    "flagOffHint": "本项目未开启智能体主体，因此该授权会被保存，但尚未对任何应用生效。",
-    "featureFlags": "功能开关"
+    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。"
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"

@@ -291,8 +291,8 @@ export async function continueSession(
   const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl });
   // The wake above is a claim that a runtime is coming. A delivery that ends
   // with no runtime (`unreachable`, `pending`, `no-session`) takes the claim
-  // back, or the session reads `running` over a stopped box and holds a
-  // concurrent-session slot through every retry. `failed` and `not-landed`
+  // back, or the session reads `running` over a stopped box through every
+  // retry. `failed` and `not-landed`
   // reached a live runtime, so they keep it.
   if (wokeFrom && (outcome === 'unreachable' || outcome === 'pending' || outcome === 'no-session')) {
     await undoDeliveryWake(sessionId, wokeFrom).catch((err) =>
