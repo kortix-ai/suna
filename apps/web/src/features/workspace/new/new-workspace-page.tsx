@@ -200,17 +200,21 @@ export function NewWorkspacePage() {
    */
   const handingOff = submitting || Boolean(onboardingProjectId);
 
-  // Only surface a name error after the field has been left once. Validating
-  // on the first keystroke would tell the user "Name is required" while they
-  // are still typing the name.
+  // "Name is required" and the charset error surface only after the field has
+  // been left once — validating on the first keystroke would tell the user
+  // "Name is required" while they are still typing the name. The length error
+  // cannot wait: the input carries no maxLength, so whatever the user typed or
+  // pasted reaches this state in full, and a name that crosses the limit must
+  // say so the keystroke it happens — not after a blur the user may never make
+  // before reaching for Create.
   const nameError = useMemo(() => {
-    if (!touched) return null;
     const result = validateWorkspaceName(state.name);
     if (result.ok) return null;
-    if (result.error === 'Name is required') return t('validation.nameRequired');
     if (result.error.startsWith('Name must be')) {
       return t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
     }
+    if (!touched) return null;
+    if (result.error === 'Name is required') return t('validation.nameRequired');
     return t('validation.nameCharacters');
   }, [state.name, t, touched]);
 
@@ -471,7 +475,6 @@ export function NewWorkspacePage() {
                       onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                       onBlur={() => setTouched(true)}
                       placeholder={t('name.placeholder')}
-                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
                       size="md"
                       className="w-full"
                       aria-invalid={nameError ? true : undefined}

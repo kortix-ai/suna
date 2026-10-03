@@ -206,7 +206,7 @@ describe('/new page: uses the shared form model, not local rules', () => {
     expect(code).not.toContain("account.account_role === 'owner'");
   });
 
-  test('only surfaces the name error after the field has been blurred once', () => {
+  test('surfaces the required and charset errors only after the field has been blurred once', () => {
     expect(code).toContain('if (!touched) return null');
     expect(code).toContain('onBlur={() => setTouched(true)}');
   });
@@ -487,6 +487,44 @@ describe('/new page: foreign-accounts-list state (B3)', () => {
     const noteGuard = code.match(/\{[^{}]*foreignAccountList[^{}]*\? \(/)?.[0];
     expect(noteGuard).toBeDefined();
     expect(noteGuard).toContain('!accountsQuery.isLoading');
+  });
+});
+
+describe('/new page: the too-long name message is reachable for typed input', () => {
+  /** The `nameError` memo, isolated so the ordering assertions below can only
+   * pass or fail on the error logic itself, not on a lookalike elsewhere in the
+   * page. */
+  const nameErrorMemo =
+    code.match(/const nameError = useMemo\(\(\) => \{[\s\S]*?\}, \[state\.name, t, touched\]\);/)?.[0] ?? '';
+
+  test('the scan found the nameError memo', () => {
+    // Guard the guard: an empty string passes every `.toContain` silently.
+    expect(nameErrorMemo.length).toBeGreaterThan(0);
+  });
+
+  test('the name input does not clamp typed input with maxLength — the browser must not truncate what the validator must judge', () => {
+    // `maxLength` made the documented "Name must be 120 characters or fewer"
+    // message unreachable: the browser cut typed and pasted input at the limit
+    // before it reached the form state, so the validator never saw an over-long
+    // name and Create project stayed enabled on a silently truncated name
+    // (dogfood journey `proj-create-validation`, dev, 2026-10-03). The limit
+    // belongs to the validator and the API, not to the input element.
+    expect(code).not.toContain('maxLength=');
+  });
+
+  test('the too-long message is judged before the touched gate, so typing past the limit reports it without a blur', () => {
+    // A 200-character name typed into the now-unclamped field must show
+    // "Name must be 120 characters or fewer" the keystroke it crosses the
+    // limit — the user may never blur before reaching for Create project, and
+    // a silently dead button is the same defect this file already pins for the
+    // zero-accounts state. "Name is required" and the charset error keep the
+    // blur gate, so the first keystroke does not call a name in progress bad.
+    const tooLongAt = nameErrorMemo.indexOf("result.error.startsWith('Name must be')");
+    const touchedAt = nameErrorMemo.indexOf('if (!touched) return null');
+    const requiredAt = nameErrorMemo.indexOf("result.error === 'Name is required'");
+    expect(tooLongAt).toBeGreaterThan(-1);
+    expect(touchedAt).toBeGreaterThan(tooLongAt);
+    expect(requiredAt).toBeGreaterThan(touchedAt);
   });
 });
 

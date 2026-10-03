@@ -10,6 +10,7 @@ import {
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
 } from './new-workspace-form';
+import { WORKSPACE_NAME_MAX_LENGTH } from './workspace-name';
 
 const owner: KortixAccount = { account_id: 'a1', name: 'Owner Co', account_role: 'owner' };
 const admin: KortixAccount = { account_id: 'a2', name: 'Admin Co', account_role: 'admin' };
@@ -273,6 +274,18 @@ describe('isSubmittable', () => {
 
   test('false when the name breaks the charset rule', () => {
     expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'my/agi' }, 1)).toBe(false);
+  });
+
+  test('false when the name exceeds the API ceiling — the full typed or pasted value now reaches this state, since the input carries no maxLength (KRTX-1424)', () => {
+    expect(
+      isSubmittable({ ...INITIAL_FORM_STATE, name: 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 1) }, 1),
+    ).toBe(false);
+  });
+
+  test('true at exactly the ceiling', () => {
+    expect(
+      isSubmittable({ ...INITIAL_FORM_STATE, name: 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH) }, 1),
+    ).toBe(true);
   });
 
   test('false at zero accounts — the query has not resolved, or there is nowhere to create', () => {
