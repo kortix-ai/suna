@@ -19194,7 +19194,9 @@
       "text48b78a9ab65b": "Како покретања остају изолована?",
       "text4af0b7d8bfb1": "Свака сесија ради у сопственом sandbox окружењу, на сопственој git грани. Између покретања ништа се не дели.",
       "text39207bf34111": "Сродне вештине",
-      "text73112526c03a": "Корак агента није успео. Разлог није пријављен."
+      "text73112526c03a": "Корак агента није успео. Разлог није пријављен.",
+      "text85b7a59cdbd5": "Agent platforme",
+      "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
