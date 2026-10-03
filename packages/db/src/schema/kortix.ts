@@ -4953,10 +4953,10 @@ export const reviewItems = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_review_items_project').on(table.projectId),
-    index('idx_review_items_project_status').on(table.projectId, table.status),
+    // The only index the review-inbox queries scan (advisor: 60k+ scans); its
+    // project_id prefix also serves project-only filters. The three dropped
+    // indexes (drop_unused_review_items_indexes) were never scanned.
     index('idx_review_items_project_kind').on(table.projectId, table.kind),
-    index('idx_review_items_created').on(table.createdAt),
   ],
 );
 
