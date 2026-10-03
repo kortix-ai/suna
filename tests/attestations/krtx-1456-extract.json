@@ -1,0 +1,16 @@
+{
+  "source_hash": "648dae69f6baaebebaf8783b9020415801341303254f4ac582adfcb9edf436a9",
+  "diff_files": [
+    "scripts/dev-local.sh",
+    "tests/unit/dev-local-warmup.test.ts"
+  ],
+  "diff_hash": "6f334ba64d62a0de10c6c3f9ddc159736e35619747128d9d6450a77a68ec93c4",
+  "head": "d96105aa3d6fc685d753e26abfa60d0ccd6bedc2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T23:26:09.570Z"
+}
