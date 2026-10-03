@@ -624,6 +624,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/capture/device/grants/:user_code/deny': { action: 'capture.device.grant.deny', title: 'Denied a capture device sign-in' },
   'GET /v1/projects/:projectId/capture/devices': { action: 'capture.device.list', title: 'Listed capture devices', events: ['capture.member_view', 'capture.project_view'] },
   'DELETE /v1/projects/:projectId/capture/devices/:deviceId': { action: 'capture.device.revoke', title: 'Revoked a capture device' },
+  'POST /v1/projects/:projectId/capture/devices/:deviceId/sync': { action: 'capture.device.sync', title: 'Synced a capture device' },
   'PUT /v1/projects/:projectId/capture/devices/:deviceId/policy': { action: 'capture.device.policy.update', title: 'Updated a capture device policy' },
   'GET /v1/projects/:projectId/capture/devices/:deviceId/assets/:name': { action: 'capture.asset.read', title: 'Opened a capture screenshot', events: ['capture.member_view'] },
   'GET /v1/projects/:projectId/capture/policy': { action: 'capture.policy.read', title: 'Viewed the capture policy' },

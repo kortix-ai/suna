@@ -19233,7 +19233,8 @@
       "texte9c3e69646f7": "Vio el resumen de personas de Capture",
       "text976ea5cbcc50": "Vio los datos de Capture de un miembro",
       "text4d2eb8231235": "Vio los datos de Capture de un proyecto",
-      "textafa16172b21b": "Un agente leyó la línea de tiempo de Capture de la persona para la que actúa"
+      "textafa16172b21b": "Un agente leyó la línea de tiempo de Capture de la persona para la que actúa",
+      "textec9dc2164abe": "Sincronizó un dispositivo de Capture"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

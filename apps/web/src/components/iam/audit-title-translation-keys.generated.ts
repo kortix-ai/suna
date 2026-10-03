@@ -583,6 +583,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Submitted review item': 'text5ba726e28aa7',
   'Submitted session question': 'text31c204ebfde4',
   'Suppressed anonymous audit rows': 'texta8c3d047a0ce',
+  'Synced a capture device': 'textec9dc2164abe',
   'Synced secrets to active sandboxes': 'textbbead2370eca',
   'Synced session runtime projection': 'textdf6b8288d572',
   'Synchronized connectors': 'texta6f4480a9a84',

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 724,
+  "count": 725,
   "routes": [
     {
       "method": "GET",
@@ -1637,6 +1637,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/capture/devices/:deviceId/policy"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/capture/devices/:deviceId/sync"
     },
     {
       "method": "GET",

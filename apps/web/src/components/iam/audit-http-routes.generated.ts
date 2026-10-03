@@ -411,6 +411,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|capture|devices|:deviceId",
   "GET|v1|projects|:projectId|capture|devices|:deviceId|assets|:name",
   "PUT|v1|projects|:projectId|capture|devices|:deviceId|policy",
+  "POST|v1|projects|:projectId|capture|devices|:deviceId|sync",
   "GET|v1|projects|:projectId|capture|frames|:frameId",
   "GET|v1|projects|:projectId|capture|people",
   "GET|v1|projects|:projectId|capture|policy",

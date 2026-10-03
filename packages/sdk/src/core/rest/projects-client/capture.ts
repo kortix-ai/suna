@@ -313,6 +313,17 @@ export async function revokeCaptureDevice(projectId: string, deviceId: string) {
   return unwrap(await backendApi.delete<CaptureDevice>(`${base(projectId)}/devices/${deviceId}`));
 }
 
+/**
+ * Read a device's status, description and index now, and queue every new item
+ * for indexing (a "Sync now"). Without it the readers pick items up within a
+ * minute. Your own device, or any device for managers.
+ */
+export async function syncCaptureDevice(projectId: string, deviceId: string) {
+  return unwrap(
+    await backendApi.post<{ device_id: string; enqueued: number }>(`${base(projectId)}/devices/${deviceId}/sync`, {}),
+  );
+}
+
 /** Set (or clear with null) one device's policy override. Managers only. */
 export async function setCaptureDevicePolicy(projectId: string, deviceId: string, policy: CapturePolicy | null) {
   return unwrap(await backendApi.put<CaptureDevice>(`${base(projectId)}/devices/${deviceId}/policy`, { policy }));

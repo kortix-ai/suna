@@ -28,7 +28,7 @@ import { db } from '../shared/db';
 import { PolicySchema, isEncrypted, liveState, objectKey, projectPrefix, type Manifest } from './format';
 import { readProjectPolicy, writeDevicePolicy, writeProjectPolicy } from './policy';
 import { captureStore, captureStoreConfigured } from './store';
-import { enqueueRangeProcessing } from './workers';
+import { enqueueRangeProcessing, pollDevice } from './workers';
 
 type Loaded = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
@@ -215,6 +215,27 @@ projectsApp.openapi(
       .where(eq(captureDevices.deviceId, device.deviceId))
       .returning();
     return c.json(deviceView(revoked!));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/capture/devices/{deviceId}/sync',
+    tags,
+    summary: 'Read a device’s status, description and index now, and queue every new item for indexing',
+    ...auth,
+    request: { params: params.extend({ deviceId: z.string().uuid() }) },
+    responses: { ...ok('The number of items queued'), ...errors(503) },
+  }),
+  async (c: any) => {
+    const access = await captureAccess(c);
+    if (isResponse(access)) return access;
+    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
+    const device = await loadDevice(c, access, c.req.param('deviceId'));
+    if (!device || device.revokedAt) return c.json({ error: 'Not found' }, 404);
+    const { enqueued } = await pollDevice(device);
+    return c.json({ device_id: device.deviceId, enqueued });
   },
 );
 

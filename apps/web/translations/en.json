@@ -19246,7 +19246,8 @@
       "texte9c3e69646f7": "Viewed the capture people summary",
       "text976ea5cbcc50": "Viewed the capture data of a member",
       "text4d2eb8231235": "Viewed the capture data of a project",
-      "textafa16172b21b": "An agent read the capture timeline of the person it acts for"
+      "textafa16172b21b": "An agent read the capture timeline of the person it acts for",
+      "textec9dc2164abe": "Synced a capture device"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

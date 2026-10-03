@@ -7,6 +7,7 @@ export function bindProjectCapture(projectId: string) {
       devices: {
         list: (opts?: Parameters<typeof P.listCaptureDevices>[1]) => P.listCaptureDevices(projectId, opts),
         revoke: (deviceId: string) => P.revokeCaptureDevice(projectId, deviceId),
+        sync: (deviceId: string) => P.syncCaptureDevice(projectId, deviceId),
         setPolicy: (deviceId: string, policy: P.CapturePolicy | null) =>
           P.setCaptureDevicePolicy(projectId, deviceId, policy),
         assetUrl: (deviceId: string, name: string) => P.getCaptureAssetUrl(projectId, deviceId, name),

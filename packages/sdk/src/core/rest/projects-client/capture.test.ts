@@ -17,6 +17,7 @@ import {
   listCaptureRanges,
   processCaptureRange,
   revokeCaptureDevice,
+  syncCaptureDevice,
   saveCaptureRange,
   searchCapture,
   setCaptureDevicePolicy,
@@ -59,6 +60,9 @@ test('devices: list mine, a member, or the project; revoke; set and clear a devi
   expect(last().url).toBe(`${P}/devices?scope=project`);
   await revokeCaptureDevice('p1', 'd1');
   expect(last()).toMatchObject({ method: 'DELETE', url: `${P}/devices/d1` });
+  nextBody = { device_id: 'd1', enqueued: 3 };
+  expect((await syncCaptureDevice('p1', 'd1')).enqueued).toBe(3);
+  expect(last()).toMatchObject({ method: 'POST', url: `${P}/devices/d1/sync` });
   await setCaptureDevicePolicy('p1', 'd1', POLICY);
   expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d1/policy`, body: { policy: POLICY } });
   await setCaptureDevicePolicy('p1', 'd1', null);
@@ -140,6 +144,8 @@ test('the facade binds capture to a project and exposes the sign-in approval at 
   expect(last().url).toBe(`${P}/devices?scope=project`);
   await kortix.project('p1').capture.timeline.get({ day: '2026-10-03' });
   expect(last().url).toBe(`${P}/timeline?day=2026-10-03`);
+  await kortix.project('p1').capture.devices.sync('d1');
+  expect(last().url).toBe(`${P}/devices/d1/sync`);
   await kortix.project('p1').capture.ranges.process('r1');
   expect(last().url).toBe(`${P}/ranges/r1/process`);
   await kortix.capture.approveDevice('ABCD-1234', 'p1');

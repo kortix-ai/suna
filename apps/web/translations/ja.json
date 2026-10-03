@@ -19233,7 +19233,8 @@
       "texte9c3e69646f7": "Capture のメンバー概要を表示",
       "text976ea5cbcc50": "メンバーの Capture データを表示",
       "text4d2eb8231235": "プロジェクトの Capture データを表示",
-      "textafa16172b21b": "エージェントが代理する人物の Capture タイムラインを読み取った"
+      "textafa16172b21b": "エージェントが代理する人物の Capture タイムラインを読み取った",
+      "textec9dc2164abe": "Capture デバイスを同期"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

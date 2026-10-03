@@ -28,6 +28,7 @@ const R = {
   deny: 'POST /v1/capture/device/grants/:user_code/deny',
   devices: 'GET /v1/projects/:projectId/capture/devices',
   revoke: 'DELETE /v1/projects/:projectId/capture/devices/:deviceId',
+  sync: 'POST /v1/projects/:projectId/capture/devices/:deviceId/sync',
   devicePolicy: 'PUT /v1/projects/:projectId/capture/devices/:deviceId/policy',
   asset: 'GET /v1/projects/:projectId/capture/devices/:deviceId/assets/:name',
   policyGet: 'GET /v1/projects/:projectId/capture/policy',
@@ -45,9 +46,10 @@ const R = {
 };
 const path = (route: string) => route.split(' ')[1]!;
 
-async function captureProject(ctx: FlowContext) {
+async function captureProject(ctx: FlowContext, opts: { managedGit?: boolean } = {}) {
   const team = await ctx.fixtures.team();
-  const project = await team.project();
+  // An agent session needs a manifest commit, so CAP-3 uses a project with a Git repository.
+  const project = await team.project(opts.managedGit ? { managedGit: true } : undefined);
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'member');
   return { team, project, member };
@@ -181,8 +183,8 @@ interface Hit {
   chunk_id: string;
 }
 
-async function ingestedWorld(ctx: FlowContext, label: string) {
-  const { team, project, member } = await captureProject(ctx);
+async function ingestedWorld(ctx: FlowContext, label: string, opts: { managedGit?: boolean } = {}) {
+  const { team, project, member } = await captureProject(ctx, opts);
   await enableCapture(ctx, project.id);
   const machineKey = syntheticMachineKey(ctx.fixtures.name(label));
   const device = await signInDevice(ctx, member, project.id, machineKey);
@@ -193,9 +195,14 @@ async function ingestedWorld(ctx: FlowContext, label: string) {
   const day = buildCaptureDay({ prefix: device.prefix, deviceId: device.device_id, machineKeySha256: machineKey, marker });
   await uploadCaptureObjects(store, day.objects);
   const asMember = ctx.client.as(member);
+  // "Sync now": read the device's index and status at once (the local profile runs no leader readers).
+  (await asMember.post(path(R.sync), {}, { params: { projectId: project.id, deviceId: device.device_id } }))
+    .status(200)
+    .body()
+    .has('$.enqueued', day.manifestKeys.length);
   await waitFor(
     async () => (await asMember.get(path(R.timeline), { params: { projectId: project.id }, query: { from: new Date(day.sessions[0]!.startMs - 60_000).toISOString(), to: new Date().toISOString() } })).json<{ chunks?: unknown[] }>(),
-    { until: (t) => (t.chunks?.length ?? 0) >= day.expected.chunks, timeoutMs: 60_000, intervalMs: 1_000, description: 'the index reader to ingest every item' },
+    { until: (t) => (t.chunks?.length ?? 0) >= day.expected.chunks, timeoutMs: 60_000, intervalMs: 1_000, description: 'the job worker to ingest every queued item' },
   );
   return { team, project, member, device, store, marker, day, asMember };
 }
@@ -206,7 +213,7 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.devices, R.timeline, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.devicePolicy, R.ranges, R.saveRange, R.range, R.process, R.people],
+    routes: [R.devices, R.sync, R.timeline, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.devicePolicy, R.ranges, R.saveRange, R.range, R.process, R.people],
   },
   async (ctx) => {
     const { project, member, device, store, marker, day, asMember } = await ingestedWorld(ctx, 'cap2');
@@ -214,7 +221,8 @@ flow(
     const params = { projectId: project.id };
     const window = { from: new Date(day.sessions[0]!.startMs - 60_000).toISOString(), to: new Date().toISOString() };
 
-    await ctx.step('every item of the day is indexed once: chunks, frames, actions and audio lines match the device output', async () => {
+    await ctx.step('a second sync finds nothing new; every item of the day is indexed once and the counts match the device output', async () => {
+      (await asMember.post(path(R.sync), {}, { params: { ...params, deviceId: device.device_id } })).status(200).body().has('$.enqueued', 0);
       const t = (await asMember.get(path(R.timeline), { params, query: window })).status(200).json<any>();
       if (t.chunks.length !== day.expected.chunks) throw new Error(`chunks ${t.chunks.length} != ${day.expected.chunks}`);
       const frames = t.chunks.filter((c: any) => c.kind === 'chunk').reduce((n: number, c: any) => n + c.item_count, 0);
@@ -318,7 +326,7 @@ flow(
     routes: [R.search, R.timeline, R.frame],
   },
   async (ctx) => {
-    const { team, project, member, marker } = await ingestedWorld(ctx, 'cap3');
+    const { team, project, member, marker } = await ingestedWorld(ctx, 'cap3', { managedGit: true });
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
     const sandbox = new CliSandbox('cap3');
     const params = { projectId: project.id };

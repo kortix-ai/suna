@@ -19233,7 +19233,8 @@
       "texte9c3e69646f7": "查看了 Capture 人员摘要",
       "text976ea5cbcc50": "查看了成员的 Capture 数据",
       "text4d2eb8231235": "查看了项目的 Capture 数据",
-      "textafa16172b21b": "智能体读取了其所代理人员的 Capture 时间线"
+      "textafa16172b21b": "智能体读取了其所代理人员的 Capture 时间线",
+      "textec9dc2164abe": "同步了 Capture 设备"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
