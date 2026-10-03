@@ -42,8 +42,8 @@ export function isRuntimeIdentityUnavailable(
  * its `external_id` — that is what "the identity was preserved, and no
  * replacement sandbox was created" means. Reading only status + external_id
  * therefore called a permanently dead runtime resumable, and the page spent its
- * whole auto-resume budget re-issuing `/start` against it (prod session
- * ad4b63ac, 2026-08-13) before landing on a Restart button that can only 409.
+ * whole auto-resume budget re-issuing `/start` against it (a prod session,
+ * 2026-08-13) before landing on a Restart button that can only 409.
  */
 export function isSandboxResumable(sandbox: ResumableSandboxLike | null | undefined): boolean {
   if (isRuntimeIdentityUnavailable(sandbox)) return false;
@@ -123,7 +123,7 @@ export interface WakeFailureInput {
  * Two exclusions are load-bearing:
  *   - a runtime the provider LOST (`runtimeIdentityState: 'unavailable'`) is
  *     never wake-class — `POST /restart` answers 409 forever, so retrying it is
- *     the prod loop of session ad4b63ac;
+ *     the 2026-08-13 prod loop;
  *   - a capacity or git-auth failure is not fixed by restarting either, and its
  *     card must appear at once.
  */

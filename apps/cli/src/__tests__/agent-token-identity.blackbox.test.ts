@@ -18,9 +18,9 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 
 const CLI_ENTRY = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
 
-const PROJECT_ID = '508bccdd-1edb-4c61-877b-164aceac20e2';
-const SESSION_ID = 'ea985b87-d12c-4ba4-aa12-ee0711dab6f6';
-const ACCOUNT_ID = '3b1fc472-a90e-404f-823f-ca42f6b32e4d';
+const PROJECT_ID = '5a1e0c0a-0000-4000-8000-00000000000a';
+const SESSION_ID = '5a1e0c0b-0000-4000-8000-00000000000b';
+const ACCOUNT_ID = '5a1e0c0c-0000-4000-8000-00000000000c';
 const AGENT_TOKEN = 'kortix_pat_minted_for_osp_vision_route_agent';
 
 let tmp: string;
@@ -54,7 +54,7 @@ function startApi() {
             kortix_cli: ['project.secret.read', 'project.secret.write'],
           },
           accounts: [
-            { account_id: ACCOUNT_ID, slug: '3b1fc472', name: 'SampleCo', role: 'owner' },
+            { account_id: ACCOUNT_ID, slug: '5a1e0c0c', name: 'SampleCo', role: 'owner' },
           ],
         });
       }

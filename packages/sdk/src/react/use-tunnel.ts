@@ -120,7 +120,11 @@ export function useTunnelConnections(options: { refetchInterval?: number | false
         showErrors: false,
         timeout: 10_000,
       });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch connections');
+      // Rethrow the API error itself, not a re-wrapped `new Error(message)`:
+      // the web QueryClient's default retry guard reads `error.status` to stop
+      // on 4xx. A re-wrapped error hides the status, so a dead token made this
+      // 5 s poller run full default-retry cycles of 401s.
+      if (!res.success) throw res.error ?? new Error('Failed to fetch connections');
       return res.data!;
     },
     staleTime: 2_000,
@@ -139,7 +143,8 @@ export function useTunnelConnection(tunnelId: string) {
         showErrors: false,
         timeout: 10_000,
       });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch connection');
+      // Same status-preservation rule as `useTunnelConnections` above.
+      if (!res.success) throw res.error ?? new Error('Failed to fetch connection');
       return res.data!;
     },
     enabled: !!tunnelId,
@@ -295,7 +300,8 @@ export function useDeviceAuthInfo(code: string) {
         showErrors: false,
         timeout: 10_000,
       });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch device auth info');
+      // Same status-preservation rule as `useTunnelConnections` above.
+      if (!res.success) throw res.error ?? new Error('Failed to fetch device auth info');
       return res.data!;
     },
     enabled: !!code,

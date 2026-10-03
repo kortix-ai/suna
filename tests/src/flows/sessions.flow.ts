@@ -1274,15 +1274,20 @@ flow(
       r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
-    await ctx.step('an unused warm session is hidden from the visible list', async () => {
+    // A warm session whose box is coming up or up bills compute from creation
+    // (warmPoolGrantMs), so it must STAY in the visible list and sidebar — a
+    // billed session its owner cannot see, open or stop is the KRTX-1068
+    // dogfood report. The marker only hides a warm row that is no longer
+    // active (reaped, failed, completed).
+    await ctx.step('an unused warm session that is provisioning or running stays in the visible list', async () => {
       const visible = await owner.get('/v1/projects/:projectId/sessions', {
         params: { projectId: p.id },
         query: { scope: 'visible' },
       });
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
-      if (visibleIds.includes(warmSessionId)) {
-        throw new Error('An unused warm session appeared in the visible session list');
+      if (!visibleIds.includes(warmSessionId)) {
+        throw new Error('A warm session whose box bills compute is hidden from the visible session list');
       }
     });
 
@@ -1738,7 +1743,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/turn'],
   },
   async (ctx) => {
-    // Session ad02e053: the sandbox memory guard stopped two turns and the
+    // A 2026-09-18 session: the sandbox memory guard stopped two turns and the
     // ledger dropped the reason, so the UI said nothing under four failed
     // sub-agent tasks. This pins what `/turn` reports about how turns died,
     // straight off seeded ledger rows: no runtime is needed to read history.

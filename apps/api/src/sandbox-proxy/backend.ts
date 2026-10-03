@@ -81,9 +81,12 @@ const previewLinkCache = new Map<string, PreviewLinkEntry>();
 /**
  * Provider resolves in flight, by the cache key. Concurrent misses on one
  * (sandbox, port, transport) share one provider call instead of each paying
- * it. Per process, and an entry lives only as long as its call: a rejection is
- * never kept.
+ * it. An entry lives only as long as its call: a rejection is never kept.
  */
+// replica-local: single-flight dedup of concurrent resolves in one process.
+// An entry dies with its promise, so there is no state to share; another
+// replica resolving the same key again costs one redundant provider call,
+// never a stale answer.
 const ingressInFlight = new Map<string, Promise<ResolvedSandboxIngress>>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 const sandboxTouchCache = new Map<string, number>();

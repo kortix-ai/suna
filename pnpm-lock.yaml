@@ -286,9 +286,15 @@ importers:
       bun-types:
         specifier: ^1.3.12
         version: 1.4.2
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      typescript-eslint:
+        specifier: 8.70.0
+        version: 8.70.0(eslint@9.39.5)(typescript@5.9.3)
 
   apps/cli:
     dependencies:

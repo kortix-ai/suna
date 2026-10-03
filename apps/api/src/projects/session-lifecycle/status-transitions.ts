@@ -90,6 +90,14 @@ export const SESSION_TRANSITIONS = {
   resume: { from: ANY_SESSION, to: 'running' },
   /** The runtime stopped for a reason of its own: lost, parked, failed restart. */
   park: { from: ANY_SESSION, to: 'stopped' },
+  /**
+   * The session's last turn ended with a terminal runtime error
+   * (`session.error`, `isRetryable` false) and left no live turn behind:
+   * `routes/turn-stream-handlers.ts` parks it. The box is still up, but the
+   * agent is not working, so `running` would read as a live session in every
+   * list until the idle reaper stopped the box (~15 min, KRTX-1046).
+   */
+  parkTurnError: { from: ['running'], to: 'stopped' },
 } as const satisfies Record<string, SessionTransitionRule>;
 
 export const SANDBOX_TRANSITIONS = {
