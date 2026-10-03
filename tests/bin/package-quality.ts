@@ -117,11 +117,10 @@ async function verifyAgentTunnelCli(): Promise<void> {
 
 /** Ambient KORTIX_* vars the test runner itself owns. Everything else is stripped. */
 const RUNNER_ENV_KEYS = new Set([
-  // Set by this lane below, or by the CI workflow for it.
+  // The two below are also set explicitly for every spawn; the last two keep a
+  // dedicated-runner override of apps/api/scripts/test.sh working.
   'KORTIX_TEST_TIMEOUT_MS',
   'KORTIX_ATTACHMENT_OFFLOAD',
-  'KORTIX_PACKAGE_SKIP_SDK_TESTS',
-  // Read by apps/api/scripts/test.sh; keep a dedicated-runner override working.
   'KORTIX_API_TEST_WORKERS',
   'KORTIX_MIN_TEST_FILES',
 ]);
