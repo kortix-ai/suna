@@ -21,16 +21,10 @@ describe('marketplace HTTP contract', () => {
   beforeAll(async () => {
     process.env.KORTIX_DEFAULT_MARKETPLACES = '';
     process.env.KORTIX_MARKETPLACE_REGISTRIES = '';
-    // Hermetic by the catalog's own seam: no registry sources from the
-    // database. Without this the drizzle pool's background connect to the
-    // fake test-database host rejects after the assertions and fails the
-    // process — the assertions themselves never touch the DB.
-    const { registerMarketplaceSourceProvider } = await import('../marketplace/catalog');
-    registerMarketplaceSourceProvider(async () => []);
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-// Explicit loopback: `server.hostname` is "localhost", which a container
+    // Explicit loopback: `server.hostname` is "localhost", which a container
     // without a `localhost` resolver entry cannot resolve — a transport
     // detail, not what this contract tests.
     server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: app.fetch });
