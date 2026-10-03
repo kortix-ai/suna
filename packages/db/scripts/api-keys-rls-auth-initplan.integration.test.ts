@@ -221,10 +221,13 @@ describe('api_keys RLS auth_rls_initplan migration', () => {
       await withClient(laneUrl, async (client) => {
         // The lane role owns the table, so FORCE RLS makes the policy apply
         // to it too — the same rows an authenticated client would see.
+        await client.query('GRANT ALL ON public.api_keys TO authenticated');
         await client.query('ALTER TABLE public.api_keys FORCE ROW LEVEL SECURITY');
         try {
           await client.query('BEGIN');
           await client.query(`SET LOCAL request.jwt.claim.sub = '${USER_A}'`);
+          // postgres has BYPASSRLS on some Supabase images; FORCE RLS does not stop it.
+          await client.query('SET LOCAL ROLE authenticated');
 
           const visible = await client.query<{ account_id: string; title: string }>(
             `SELECT account_id::text, title FROM public.api_keys`,
@@ -256,6 +259,8 @@ describe('api_keys RLS auth_rls_initplan migration', () => {
 
           await client.query('BEGIN');
           await client.query(`SET LOCAL request.jwt.claim.sub = '${USER_B}'`);
+          // postgres has BYPASSRLS on some Supabase images; FORCE RLS does not stop it.
+          await client.query('SET LOCAL ROLE authenticated');
           const visibleB = await client.query<{ account_id: string }>(
             `SELECT account_id::text FROM public.api_keys`,
           );

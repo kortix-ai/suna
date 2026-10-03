@@ -261,8 +261,9 @@ trivial single-file typo/comment fixes on the current branch.
 
 ## Default delivery: verify in your box, self-merge to `main`, verify on dev
 
-`main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
-It is not a save point.
+`main` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
+dispatch, but **merging to `main` still lands your change in everyone's next
+deploy and next `main` checkout.** It is not a save point.
 
 **The development machine does the work. CI does not.** Every test, preview,
 and demo for a change runs in your own box: the worktree's local stack, the
@@ -280,6 +281,20 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
+**Tests are attested, not run by CI.** `pnpm test` writes
+`tests/test-attestation.json` on a green run: `source_hash` (sha256 of every
+file the commit would contain, minus the attestation itself), `head`, `passed`,
+per-lane results, `at`. Commit it. The `.githooks/pre-push` hook recomputes the
+hash from the pushed commit and rejects the push when the attestation is stale,
+red, or missing. Never bypass it with `--no-verify`: the merge gate runs
+`pnpm test:verify` on the PR head: exit `0` green, `1` stale/red/missing
+(`--strict` exits `3` when `db-suites` is skipped). Any
+source edit, including a merge of `main`, makes the attestation stale: re-run
+`pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
+Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
+`skipped-no-db`. It is the only lane that may skip, and it is never a pass:
+the merge gate holds a DB-touching PR (`db-wait`) on it.
+
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
    command first, then `pnpm test`. Start the worktree's stack
@@ -295,7 +310,7 @@ Never add a label by default or from automation. CI otherwise runs in two places
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
    - the relevant local checks ran with real inputs and outputs (rule 2), and
-     they passed;
+     they passed, and `pnpm test:verify` exits `0` on the branch head;
    - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
    A failing check blocks the merge until you fix it or state why it is
@@ -313,22 +328,20 @@ Never add a label by default or from automation. CI otherwise runs in two places
    the whole objective ran through a real session on your local stack, and runs
    again on dev after the merge (rule 8). Green tests are not the bar. Someone
    used it.
-7. After the merge, wait for the **Live on dev** comment on your pull request.
-   Deploy Dev posts it when `/health` on every surface it changed serves the
-   deployed commit, with the time since merge; "Not live on dev yet" names the
-   surface that failed. A successful `/health` response alone is not
-   deployment proof — the comment checks the commit. Deploys queue, they never
-   cancel: a run in flight finishes, then the newest waiting push deploys, so
-   a merge is live within about two deploy lengths. Force a full redeploy with
-   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
-   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
-   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit. The comment names the failing lanes and
-   every commit since the last green run, because merges land faster than the
-   suite and the red commit is often not the culprit. The author whose commit
-   broke `main` fixes forward. If `main` is still red 1 hour after the comment,
-   anyone may revert the culprit PR. `main` never blocks a merge or a deploy on
-   a red run.
+7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
+   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   rebuild). Deploys queue, they never cancel. Wait for the run to finish.
+   `/health` on every changed surface must serve the merge SHA: a successful
+   `/health` response alone is not deployment proof. The run comments "Live on
+   dev" on the merged pull request, and "Not live on dev yet" names the
+   surface that failed. The surfaces and their checks are in
+   `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
+   attestation (`pnpm test:verify`) was the gate, and the scheduled daily
+   `Tests` run on `main` is the backstop. A red scheduled run comments the
+   failing lanes and every commit since the last green run. The author whose
+   commit broke `main` fixes forward. If `main` is still red 1 hour after the
+   comment, anyone may revert the culprit PR. A red run never blocks a merge or
+   a deploy.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
