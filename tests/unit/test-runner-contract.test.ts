@@ -129,8 +129,12 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain(
-      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
+    expect(cliPackage.scripts.test).toContain('bash scripts/test.sh');
+    // The proven flags live in apps/cli/scripts/test.sh (the hermeticity
+    // wrapper the script delegates to); keep guarding them there.
+    const cliTestScript = readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8');
+    expect(cliTestScript).toContain(
+      'bun test --timeout "${KORTIX_TEST_TIMEOUT_MS:-15000}" --isolate --parallel=4',
     );
     // Same timeout contract as the CLI above: process-heavy git fixtures sit
     // above bun's 5 s default on slower boxes, and the packages lane already
