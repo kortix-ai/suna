@@ -2,63 +2,63 @@
   "translations": [
     {
       "locale": "en",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "de",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "it",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "zh",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "ja",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "pt",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "fr",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "es",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
     },
     {
       "locale": "sr",
-      "leafKeys": 18597,
+      "leafKeys": 18757,
       "missing": [],
       "extra": [],
       "invalid": []
@@ -66,38 +66,20 @@
   ],
   "hardcoded": [
     {
-      "file": "src/features/layout/connect-mcp-modal.tsx",
-      "line": 67,
-      "kind": "jsx-text",
-      "text": "Claude Code"
+      "file": "src/features/workspace/capabilities/agents/agent-page.tsx",
+      "line": 1151,
+      "kind": "jsx-attr:title",
+      "text": "Platform agent"
     },
     {
-      "file": "src/features/layout/connect-mcp-modal.tsx",
-      "line": 68,
-      "kind": "jsx-text",
-      "text": "Codex"
-    },
-    {
-      "file": "src/features/layout/connect-mcp-modal.tsx",
-      "line": 69,
-      "kind": "jsx-text",
-      "text": "Cursor"
-    },
-    {
-      "file": "src/features/layout/connect-mcp-modal.tsx",
-      "line": 73,
-      "kind": "jsx-attr:text",
-      "text": "claude mcp add --scope user kortix -- kortix mcp"
-    },
-    {
-      "file": "src/features/layout/connect-mcp-modal.tsx",
-      "line": 76,
-      "kind": "jsx-attr:text",
-      "text": "codex mcp add kortix -- kortix mcp"
+      "file": "src/features/workspace/capabilities/agents/agent-page.tsx",
+      "line": 1153,
+      "kind": "jsx-expression",
+      "text": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
     }
   ],
   "missingTranslationReferences": [],
   "topFiles": {
-    "src/features/layout/connect-mcp-modal.tsx": 5
+    "src/features/workspace/capabilities/agents/agent-page.tsx": 2
   }
 }

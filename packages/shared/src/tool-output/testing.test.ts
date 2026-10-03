@@ -13,17 +13,18 @@ describe('within', () => {
   });
 
   test('a genuine quadratic blowup still fails', () => {
+    // Burn 300 ms of CPU — bounded by the CPU clock, not the wall clock, so
+    // the burn is guaranteed even when the box preempts this process (a
+    // wall-bounded loop measures LESS CPU than wall under the lane's load).
+    // 300 ms is 1.2x the 250 ms budget and far under a real blowup's
+    // 100-1000x: this proves the budget still has teeth, not just slack.
     const started = process.cpuUsage();
-    // Burn ~300 ms of CPU: 1.2x the 250 ms budget, far under a real blowup's
-    // 100-1000x — this proves the budget still has teeth, not just slack.
-    // Estimated iterations: ~3.7e8 adds at ~8e8 ops/s per core.
     let sink = 0;
-    const target = performance.now() + 300;
-    while (performance.now() < target) {
-      for (let i = 0; i < 100_000; i++) sink += i;
+    for (;;) {
+      for (let i = 0; i < 10_000; i++) sink += i;
+      const cpu = process.cpuUsage(started);
+      if ((cpu.user + cpu.system) / 1000 >= 300) break;
     }
     expect(sink).toBeGreaterThan(0);
-    const cpu = process.cpuUsage(started);
-    expect((cpu.user + cpu.system) / 1000).toBeGreaterThanOrEqual(250);
   });
 });

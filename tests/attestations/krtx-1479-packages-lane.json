@@ -1,0 +1,29 @@
+{
+  "source_hash": "6cbae7986970345f7968ea6080b6ca1a345d635b44ae2700b4e8de4d1e238fbd",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
+    "packages/agent-tunnel/package.json",
+    "packages/api-contract/package.json",
+    "packages/llm-catalog/package.json",
+    "packages/llm-gateway/package.json",
+    "packages/manifest-schema/package.json",
+    "packages/registry/package.json",
+    "packages/shared/package.json",
+    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
+    "packages/shared/src/tool-output/testing.test.ts",
+    "packages/shared/src/tool-output/testing.ts",
+    "packages/starter/package.json",
+    "tests/bin/package-quality.ts"
+  ],
+  "diff_hash": "83b89a3017d0fece5b5c25d37c7031ae06399c5e52a053b9a7b3abad4b257d2b",
+  "head": "bf04eda0402da10f3a0d9ac460b48d11424e62fd",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:41:45.486Z"
+}
