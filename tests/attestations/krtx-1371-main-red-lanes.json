@@ -1,5 +1,5 @@
 {
-  "source_hash": "f77af285d437fcbff41f70382895b25295e43cfd27b7d754e60eb52babab2e48",
+  "source_hash": "8d20b1b0f735d2a55952d6637cab1fc925588ee63073911f71d5ac18e7dd90a3",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-03T164055Z-unit-suites-that-spawn-or-import-kortix-clis-and-harnesses-m.md",
@@ -19,12 +19,12 @@
     "tests/unit/test-runner-contract.test.ts"
   ],
   "diff_hash": "3c6bddc496b9e8b5cda0b9df4324a790811d2ffd1917befb7ab90a8952ecbcfd",
-  "head": "5c5fbf419bb4b585bf000934ab64b03c8f133840",
+  "head": "6092a772c86036faac2db887ad882569fa8a04b1",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T21:57:53.050Z"
+  "at": "2026-10-03T23:15:20.000Z"
 }
