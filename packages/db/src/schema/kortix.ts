@@ -1867,15 +1867,15 @@ export const chatThreads = kortixSchema.table(
   ],
 );
 
-// Short-lived Slack messages waiting for the sender to finish `/login`. The
-// login URL carries only this id; the original Slack event stays server-side so
-// we can resume the exact message after the account bind succeeds.
+// Short-lived chat messages parked server-side until the sender acts: Slack
+// `/login` resume (project set), or a Slack/Teams project-picker click (project
+// NULL until the pick). The URL or button carries only this id, so any replica
+// can resume the exact message.
 export const chatPendingAuthMessages = kortixSchema.table(
   'chat_pending_auth_messages',
   {
     pendingId: uuid('pending_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
-      .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).default('slack').notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),

@@ -25,7 +25,7 @@ import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 function handleSandboxProxyAbort(err: Error, c: Context, errName: string, path: string): Response | null {
   // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
   // not real errors. The client reconnects automatically.
-  const isAbort = errName === 'DOMException' || err.message?.includes('The operation was aborted');
+  const isAbort = errName === 'DOMException' || err.name === 'AbortError';
   const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
   if (isAbort && isSandboxProxy) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);

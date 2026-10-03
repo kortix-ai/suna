@@ -261,11 +261,6 @@
       "count": 1
     }
   },
-  "src/billing/index.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
   "src/billing/require-billing-write.ts": {
     "no-restricted-syntax": {
       "count": 1
@@ -485,9 +480,6 @@
     }
   },
   "src/channels/slack/dispatch.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-console": {
       "count": 5
     }
@@ -1143,20 +1135,12 @@
       "count": 1
     }
   },
-  "src/middleware/token-attempt-budget.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/notifications/routes.ts": {
     "no-restricted-syntax": {
       "count": 2
     }
   },
   "src/oauth/index.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     },
@@ -1529,11 +1513,6 @@
   "src/projects/lib/session-caps.ts": {
     "no-console": {
       "count": 3
-    }
-  },
-  "src/projects/lib/session-control-events.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
     }
   },
   "src/projects/lib/session-control-reconciler.ts": {
@@ -2756,11 +2735,6 @@
       "count": 2
     }
   },
-  "src/sandbox-proxy/prompt-dedupe.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/sandbox-proxy/routes/preview.ts": {
     "no-console": {
       "count": 21
@@ -2971,9 +2945,6 @@
     }
   },
   "src/shared/opencode-audit-rate-guard.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     }
@@ -3090,9 +3061,6 @@
     }
   },
   "src/snapshots/builder.ts": {
-    "kortix-api/replica-local": {
-      "count": 2
-    },
     "no-console": {
       "count": 9
     },
