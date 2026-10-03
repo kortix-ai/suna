@@ -19,6 +19,8 @@ export function bindProjectCapture(projectId: string) {
       timeline: {
         get: (query?: P.CaptureWindowQuery) => P.getCaptureTimeline(projectId, query),
         items: (query?: P.CaptureWindowQuery) => P.getCaptureTimelineItems(projectId, query),
+        /** The days with recorded items, newest first, grouped in `tz`. */
+        days: (query?: P.CaptureDaysQuery) => P.getCaptureDays(projectId, query),
       },
       search: (query: P.CaptureSearchQuery) => P.searchCapture(projectId, query),
       frame: (frameId: string, opts?: { userId?: string }) => P.getCaptureFrame(projectId, frameId, opts),

@@ -803,6 +803,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Viewed the capture data of a project': 'text4d2eb8231235',
   'Viewed the capture people summary': 'texte9c3e69646f7',
   'Viewed the capture policy': 'text824bd00e2a12',
+  'Viewed the days of a capture timeline': 'textba3a78850415',
   'Viewed the signed-in user': 'textcbabc661c9c6',
   'Viewed tier configurations': 'textbda3fcd4343c',
   'Viewed transaction summary': 'text30cef615e8e3',
