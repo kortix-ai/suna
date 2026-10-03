@@ -376,8 +376,6 @@ export const accountInvitations = kortixSchema.table(
       .notNull(),
   },
   (table) => [
-    index('idx_account_invitations_email').on(table.email),
-    index('idx_account_invitations_account').on(table.accountId),
     index('idx_account_invitations_expires_at').on(table.expiresAt),
     uniqueIndex('idx_account_invitations_pending').on(table.accountId, table.email),
   ],
