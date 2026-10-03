@@ -629,6 +629,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/capture/devices/:deviceId/assets/:name': { action: 'capture.asset.read', title: 'Opened a capture screenshot', events: ['capture.member_view'] },
   'GET /v1/projects/:projectId/capture/policy': { action: 'capture.policy.read', title: 'Viewed the capture policy' },
   'PUT /v1/projects/:projectId/capture/policy': { action: 'capture.policy.update', title: 'Updated the capture policy' },
+  'GET /v1/projects/:projectId/capture/days': { action: 'capture.days.read', title: 'Viewed the days of a capture timeline', events: ['capture.member_view', 'capture.project_view', 'capture.agent_read'] },
   'GET /v1/projects/:projectId/capture/timeline': { action: 'capture.timeline.read', title: 'Viewed a capture timeline', events: ['capture.member_view', 'capture.project_view', 'capture.agent_read'] },
   'GET /v1/projects/:projectId/capture/timeline/items': { action: 'capture.timeline.items.read', title: 'Viewed capture timeline items', events: ['capture.member_view', 'capture.project_view', 'capture.agent_read'] },
   'GET /v1/projects/:projectId/capture/search': { action: 'capture.search', title: 'Searched a capture timeline', events: ['capture.member_view', 'capture.project_view', 'capture.agent_read'] },

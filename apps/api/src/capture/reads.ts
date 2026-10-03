@@ -135,6 +135,24 @@ export async function timelineChunksIn(projectId: string, userId: string, span: 
     .limit(5000);
 }
 
+/**
+ * The days with recorded items, newest first (at most 366): each local day in
+ * `tz` with its first and last recorded moment and its seconds of screen chunks.
+ * Grouped over items (5-minute chunks), not frames, so a year costs ~100k rows at most.
+ */
+export async function recordedDays(projectId: string, userId: string, opts: { tz: string; deviceId?: string }) {
+  const rows = await db.execute<{ day: string; start_at: string; end_at: string; screen_seconds: number }>(sql`
+    SELECT to_char((start_at AT TIME ZONE ${opts.tz})::date, 'YYYY-MM-DD') AS day,
+           min(start_at) AS start_at, max(end_at) AS end_at,
+           coalesce(round(sum(EXTRACT(EPOCH FROM (end_at - start_at))) FILTER (WHERE kind = 'chunk')), 0)::int AS screen_seconds
+      FROM kortix.timeline_chunks
+     WHERE project_id = ${projectId}::uuid AND user_id = ${userId}::uuid ${onDevice(opts.deviceId)}
+     GROUP BY 1
+     ORDER BY 1 DESC
+     LIMIT 366`);
+  return isoRows(rows).map((row) => ({ ...row, screen_seconds: Number(row.screen_seconds) }));
+}
+
 export async function timelineItems(projectId: string, userId: string, span: Span, deviceId?: string) {
   const where = sql`project_id = ${projectId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}`;
   const [frames, actions, audio] = await Promise.all([

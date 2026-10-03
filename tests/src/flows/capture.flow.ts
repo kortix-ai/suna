@@ -40,6 +40,7 @@ const R = {
   policyPut: 'PUT /v1/projects/:projectId/capture/policy',
   timeline: 'GET /v1/projects/:projectId/capture/timeline',
   items: 'GET /v1/projects/:projectId/capture/timeline/items',
+  days: 'GET /v1/projects/:projectId/capture/days',
   search: 'GET /v1/projects/:projectId/capture/search',
   frame: 'GET /v1/projects/:projectId/capture/frames/:frameId',
   media: 'GET /v1/projects/:projectId/capture/chunks/:chunkId/media',
@@ -235,7 +236,7 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.devices, R.sync, R.timeline, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.devicePolicy, R.ranges, R.saveRange, R.range, R.process, R.people],
+    routes: [R.devices, R.sync, R.timeline, R.days, R.items, R.search, R.frame, R.media, R.asset, R.policyGet, R.policyPut, R.devicePolicy, R.ranges, R.saveRange, R.range, R.process, R.people],
   },
   async (ctx) => {
     const { project, member, device, store, day, asMember } = await ingestedWorld(ctx, 'cap2');
@@ -255,6 +256,19 @@ flow(
       }
       const apps = t.runs.map((r: any) => r.app);
       if (!apps.includes('Editor')) throw new Error(`no Editor run in ${apps}`);
+    });
+
+    await ctx.step('the recorded days list the member’s day (newest first) with its last moment; a bad tz → 400; another member → 403', async () => {
+      const tz = 'Europe/Berlin';
+      const localDay = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(ms));
+      const days = (await asMember.get(path(R.days), { params, query: { tz } })).status(200).json<{ tz: string; days: any[] }>();
+      const expected = [...new Set([localDay(day.endMs), localDay(day.startMs)])];
+      if (days.tz !== tz || JSON.stringify(days.days.map((d) => d.day)) !== JSON.stringify(expected)) throw new Error(`days ${JSON.stringify(days)}`);
+      if (days.days[0].end_at !== new Date(day.endMs).toISOString()) throw new Error(`last moment ${days.days[0].end_at}`);
+      if (!(days.days.reduce((n: number, d: any) => n + d.screen_seconds, 0) > 0)) throw new Error(`screen seconds ${JSON.stringify(days.days)}`);
+      (await asMember.get(path(R.days), { params, query: { device_id: device.device_id } })).status(200).body().has('$.tz', 'UTC');
+      (await asMember.get(path(R.days), { params, query: { tz: 'Mars/Olympus' } })).status(400).body().has('$.code', 'capture_bad_window');
+      (await asMember.get(path(R.days), { params, query: { user_id: ctx.P.OWNER.userId! } })).status(403).body().has('$.code', 'capture_forbidden');
     });
 
     await ctx.step('the device reads as recording from its status.json; its minute of activity is one detected range', async () => {

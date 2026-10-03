@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 725,
+  "count": 726,
   "routes": [
     {
       "method": "GET",
@@ -1621,6 +1621,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/capture/chunks/:chunkId/media"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/days"
     },
     {
       "method": "GET",

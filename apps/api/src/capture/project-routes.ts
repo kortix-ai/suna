@@ -40,6 +40,7 @@ import {
   rangeOutputsOf,
   rangeView,
   rangesFor,
+  recordedDays,
   revokeDevice,
   saveRange,
   searchTimeline,
@@ -329,6 +330,38 @@ projectsApp.openapi(
       rangesFor(access.projectId, subject, span),
     ]);
     return c.json({ user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), runs, chunks, ranges }, 200);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/capture/days',
+    tags,
+    summary: 'The days of one person’s timeline with recorded items, newest first, grouped in a time zone',
+    ...auth,
+    request: {
+      params,
+      query: z.object({
+        user_id: z.string().uuid().optional(),
+        device_id: z.string().uuid().optional(),
+        tz: z.string().max(64).optional().describe('IANA time zone of the days (default UTC)'),
+      }),
+    },
+    responses: ok('The days'),
+  }),
+  async (c) => {
+    const query = c.req.valid('query');
+    const access = await captureAccess(c, { userId: query.user_id });
+    if (isResponse(access)) return access as never;
+    const tz = query.tz || 'UTC';
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: tz });
+    } catch {
+      return refuse(c, 400, 'capture_bad_window', 'tz must be an IANA time zone, for example Europe/Berlin');
+    }
+    const days = await recordedDays(access.projectId, access.subject!, { tz, deviceId: query.device_id });
+    return c.json({ user_id: access.subject, tz, days }, 200);
   },
 );
 
