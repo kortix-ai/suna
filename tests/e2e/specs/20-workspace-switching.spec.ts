@@ -12,7 +12,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
+import { dismissOnboarding, settingsPanel } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:13738/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://localhost:13740";
@@ -124,11 +124,17 @@ test.describe("20 — Workspace switching", () => {
         `/projects/${first.id}`,
         authOptions,
       );
-      await selectAccountForUi(page, account.account_id);
+      await page.evaluate(() => localStorage.removeItem("kortix.currentAccount"));
       await page.goto(`/projects/${first.id}`, {
         waitUntil: "domcontentloaded",
       });
       await dismissOnboarding(page);
+      await test.step("the live switcher seeds an unselected account", async () => {
+        await expect.poll(() => page.evaluate(() => {
+          const saved = localStorage.getItem("kortix.currentAccount");
+          return saved ? JSON.parse(saved).state.selectedAccountId : null;
+        })).toBe(account.account_id);
+      });
 
       // First switch: first -> second.
       let picker = await openWorkspacePicker(page);
@@ -162,6 +168,61 @@ test.describe("20 — Workspace switching", () => {
         0,
       );
 
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await test.step("the live menu opens Profile without leaving the project", async () => {
+        await page.locator('[data-slot="sidebar"]')
+          .getByRole("button", { name: "Switch project", exact: true }).click();
+        await page.getByRole("menuitem", { name: /^Settings/ }).click();
+        const panel = settingsPanel(page);
+        await expect(panel).toBeVisible();
+        await expect(panel.getByRole("tab", { name: "Profile", exact: true }))
+          .toHaveAttribute("aria-selected", "true");
+        await expect(panel.getByRole("tabpanel")).toContainText(email);
+        await expect(page).toHaveURL(new RegExp(`/projects/${first.id}`));
+        await panel.getByRole("button", { name: "Back to app" }).click();
+      });
+      await test.step("account branding changes the document and restores on removal", async () => {
+        const accountRoute = "**/v1/accounts";
+        await page.route(accountRoute, async (route) => {
+          const response = await route.fetch();
+          const rows = await response.json();
+          await route.fulfill({ response, json: rows.map((row: AccountSummary) => ({
+            ...row,
+            branding: row.account_id === account.account_id
+              ? { app_name: "Synthetic Brand", favicon_url: "/favicon.png?brand=synthetic" } : null,
+          })) });
+        });
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await expect(page).toHaveTitle(/Synthetic Brand/);
+        await expect(page.locator('link[rel="icon"]').first())
+          .toHaveAttribute("href", "/favicon.png?brand=synthetic");
+        await page.goto(`/projects/${second.id}`, { waitUntil: "domcontentloaded" });
+        await expect(page).toHaveTitle(/Synthetic Brand/);
+        await page.unroute(accountRoute);
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await expect(page).toHaveTitle(/Kortix/);
+        await expect(page).not.toHaveTitle(/Synthetic Brand/);
+        await expect(page.locator('link[rel="icon"]').first())
+          .not.toHaveAttribute("href", "/favicon.png?brand=synthetic");
+      });
+      await test.step("the live menu cancels then confirms sign-out", async () => {
+        await dismissOnboarding(page);
+        const trigger = page.locator('[data-slot="sidebar"]')
+          .getByRole("button", { name: "Switch project", exact: true });
+        await trigger.click();
+        await page.getByRole("menuitem", { name: "Log out", exact: true }).click();
+        const confirm = page.getByRole("alertdialog");
+        await expect(confirm).toBeVisible();
+        await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(confirm).not.toBeVisible();
+        await trigger.click();
+        await page.getByRole("menuitem", { name: "Log out", exact: true }).click();
+        await confirm.getByRole("button", { name: "Log out", exact: true }).click();
+        await expect(page).toHaveURL(/\/auth(?:[/?]|$)/, { timeout: 60_000 });
+        await page.goto(`/projects/${first.id}`, { waitUntil: "domcontentloaded" });
+        await expect(page).toHaveURL(/\/auth(?:[/?]|$)/);
+      });
       expect(pageErrors).toEqual([]);
     } finally {
       for (const projectId of projectIds) {

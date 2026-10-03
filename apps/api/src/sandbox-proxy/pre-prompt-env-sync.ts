@@ -74,16 +74,23 @@ export function errorMessage(error: unknown, fallback: string): string {
 // can never use it to escalate into another agent's connector / Kortix-CLI grant.
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
+// A fetch that timed out or never connected (Bun and Node spellings).
+const RETRYABLE_ENV_SYNC_ERROR_NAMES = new Set(['TimeoutError', 'AbortError']);
+const RETRYABLE_ENV_SYNC_ERROR_CODES = new Set([
+  'ConnectionRefused',
+  'ConnectionClosed',
+  'FailedToOpenSocket',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+]);
 
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
+export function isRetryableEnvSyncFailure(err: unknown): boolean {
+  const e = err as { name?: unknown; code?: unknown; status?: unknown } | null | undefined;
+  // `EnvSyncHttpError` (projects/lib/sandbox-env-push.ts), matched by name so
+  // this module does not import the push module's DB graph.
+  if (e?.name === 'EnvSyncHttpError') return e.status === 502 || e.status === 503 || e.status === 504;
+  return RETRYABLE_ENV_SYNC_ERROR_NAMES.has(String(e?.name)) || RETRYABLE_ENV_SYNC_ERROR_CODES.has(String(e?.code));
 }
 
 /**
@@ -464,7 +471,7 @@ export async function runPrePromptEnvSync(
       return grantResponse;
     }
     const message = errorMessage(err, 'project env sync failed');
-    if (isRetryableEnvSyncFailure(message)) {
+    if (isRetryableEnvSyncFailure(err)) {
       // Treat daemon/preview-transient env-sync failures like any other
       // sandbox-port reachability miss: retry/wake in the outer loop, then
       // return the friendly port-unreachable response if the sandbox never

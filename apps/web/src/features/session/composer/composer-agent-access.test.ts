@@ -176,14 +176,14 @@ describe('resolveComposerAgent — bound session agent', () => {
     expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'bound' });
   });
 
-  test('a bound agent outranks a stale accessible pick', () => {
+  test("the caller's pick outranks the bound agent — switching works (KRTX-1290)", () => {
     const resolved = resolveComposerAgent({
       agents: [agent('meta'), agent('kortix'), agent('writer')],
       boundAgent: 'kortix',
       selectedAgent: 'writer',
     });
 
-    expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'bound' });
+    expect(resolved).toEqual({ selected: 'writer', disabled: false, reason: 'selected' });
   });
 
   test('a bound agent missing from the roster is still the one displayed and sent', () => {
@@ -209,14 +209,14 @@ describe('resolveComposerAgent — bound session agent', () => {
     expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'loading' });
   });
 
-  test('while the roster loads, the bound agent still wins over an old pick', () => {
+  test('while the roster loads, an explicit pick is the display value', () => {
     const resolved = resolveComposerAgent({
       agents: undefined,
       boundAgent: 'kortix',
       selectedAgent: 'writer',
     });
 
-    expect(resolved.selected).toBe('kortix');
+    expect(resolved.selected).toBe('writer');
   });
 
   test('without a bound agent, the roster fallback chain is unchanged', () => {

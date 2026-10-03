@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fstatSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -77,9 +77,15 @@ describe('ecs-deploy.sh --dry-run rendered environment', () => {
       // The version stamp replaces the old one; KORTIX_COMMIT is never carried.
       { name: 'KORTIX_VERSION', value: '0.0.2-dev.new' },
     ]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    // Secret values never reach the rendered environment.
-    expect(readFileSync(file, 'utf8')).not.toContain('blob-value');
+    // One open: stat and read the same handle (CodeQL js/file-system-race).
+    const fd = openSync(file, 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      // Secret values never reach the rendered environment.
+      expect(readFileSync(fd, 'utf8')).not.toContain('blob-value');
+    } finally {
+      closeSync(fd);
+    }
   });
 
   it('writes nothing when no file is requested', () => {

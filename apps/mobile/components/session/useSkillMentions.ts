@@ -64,9 +64,8 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
     }
   }, [items.length]);
 
-  // On React Native we don't get cursor position from onChangeText — the
-  // caller passes cursorPos (matches `useMentions.ts`'s own contract).
-  const handleTextChange = useCallback(
+  // Detection uses the native selection; text changes only prune tracked tokens.
+  const detect = useCallback(
     (text: string, cursorPos: number) => {
       const match = detectSkillTrigger(text, cursorPos);
       // Don't re-trigger for an already-tracked skill (exact match only) —
@@ -78,12 +77,13 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
       } else {
         setTrigger(null);
       }
-
-      // Prune tracked mentions whose #label text was deleted.
-      setMentions((prev) => pruneSkillMentions(text, prev));
     },
     [mentions],
   );
+
+  const prune = useCallback((text: string) => {
+    setMentions((prev) => pruneSkillMentions(text, prev));
+  }, []);
 
   const selectSkill = useCallback(
     (item: MentionItem, text: string): string => {
@@ -131,7 +131,8 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
     items,
     selectedIndex,
     mentions,
-    handleTextChange,
+    prune,
+    detect,
     selectSkill,
     moveUp,
     moveDown,
