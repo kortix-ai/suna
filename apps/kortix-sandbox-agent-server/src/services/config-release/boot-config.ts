@@ -369,8 +369,8 @@ export async function materializeRelease(input: {
  *
  * The root and `skills/` used to stay writable so the installer and the
  * overlay could create entries there. That left a hole with a bad failure
- * mode, measured on a Daytona box on 2026-09-24 (release `7a60e568`, session
- * `1a685caf`): an agent's `write` tool answered "Wrote file successfully."
+ * mode, measured on a Daytona box on 2026-09-24 (release `7a60e568`, one
+ * session): an agent's `write` tool answered "Wrote file successfully."
  * for `<release>/skills/<name>/SKILL.md` and for a root-level file, and the
  * next convergence then failed `verifyRelease`, rebuilt the release and
  * respawned OpenCode. The user got a success message, the file vanished, and

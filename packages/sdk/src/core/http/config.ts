@@ -50,6 +50,12 @@ export interface KortixPlatformConfig {
    *  trail records the authenticated credential (`credential_kind`), not a
    *  self-reported surface. Accepted so existing hosts keep compiling. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  /** The host's surface and release version as `<surface>/<version>` (e.g.
+   *  `cli/0.13.42`), sent as `X-Kortix-Client-Version`. The API writes it to
+   *  its request log only, to see which client versions still call a route
+   *  before the route is retired. It is self-reported telemetry: it never
+   *  reaches the audit trail and grants nothing. Omitted when unset or blank. */
+  clientVersion?: string;
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;
   /** Default sandbox id for local/single-sandbox hosts (was `getEnv().SANDBOX_ID`). */

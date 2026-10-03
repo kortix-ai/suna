@@ -255,6 +255,33 @@ Notes:
 - The bench sends `client_sent_at_ms`, as the web composer does. Without it the
   prompt route keeps the 250 ms burst wait.
 
+### Prepared statements on current `main`, 2026-10-03
+
+`main` at `a350174638`, same laptop, provider, harness and model, 50 ms RTT.
+Each arm restarted the stack; 7 sessions and 21 turns per arm (12 turns for the
+middle arm), all answered. Values in ms, p50 / p90.
+
+| Metric | Prepare off | Prepare on, `plan_cache_mode` auto | Prepare on, `force_custom_plan` |
+| --- | --- | --- | --- |
+| POST /sessions wall | 802 / 1,164 | 622 / 2,029 | 655 / 1,185 |
+| POST /prompts wall | 687 / 932 | 376 / 481 | 391 / 542 |
+| POST /prompts db dur | 599 / 853 | 276 / 381 | 285 / 458 |
+| delivery: `proxy` total | 2,566 / 3,442 | 1,458 / 2,678 | 1,907 / 3,068 |
+| delivery: created→forwarded (DB) | 3,860 / 9,987 | 3,027 / 6,192 | 3,116 / 7,110 |
+| POST→busy | 4,499 / 10,779 | 3,067 / 6,737 | 3,371 / 7,486 |
+| `proxy` env-sync | 637 | 283 | 282 |
+| `proxy` turn-begin | 495 | 329 | 327 |
+| `proxy` turn-accept | 332 | 270 | 223 |
+
+- `force_custom_plan` costs nothing measurable against `auto`: the
+  single-statement stages agree within 1–47 ms. It is what `createDb` sets when
+  prepare is on, so no statement can switch to a generic plan.
+- Delivery is about 1.7 s slower with prepare off than the R1 table above
+  (created→forwarded 3,860 against 2,188). `proxy` turn-begin went from 113 to
+  495 ms: #8755 (`a350174638`) wraps turn begin and accept in a transaction
+  with `SELECT … FOR UPDATE` and a savepoint. The rest of the gap is not
+  attributed yet.
+
 ### On dev, after the merge
 
 `68f98e566e` (#8765) on `dev-api.kortix.com`, 2026-10-02 18:23–18:45 UTC. Same

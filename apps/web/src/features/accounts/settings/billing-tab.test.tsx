@@ -29,8 +29,15 @@ mock.module('@/stores/billing-account-context', () => ({
 
 const { BillingTab } = await import('./billing-tab');
 
-const cases: [number, string, string][] = [[2, '$2.00', '200'], [0, '$0.00', '0'], [-1, '-$1.00', '100']];
-for (const [balance, dollars, credits] of cases) {
+// The expected copy is spelled out per case — the "owed" suffix included — so
+// the test never branches on the balance itself (billing-source-rules forbids a
+// balance-vs-literal comparison outside the decision layer, tests included).
+const cases: [number, string, string][] = [
+  [2, '$2.00', '200 credits'],
+  [0, '$0.00', '0 credits'],
+  [-1, '-$1.00', '100 credits owed'],
+];
+for (const [balance, dollars, creditsLine] of cases) {
   test(`Plan shows the free account's ${balance} dollar balance before checkout`, () => {
     total = balance;
     billingEnabled = true;
@@ -39,8 +46,7 @@ for (const [balance, dollars, credits] of cases) {
     }));
     expect(html).toContain('Available balance');
     expect(html).toContain(`>${dollars}</p>`);
-    expect(html).toContain(`>${credits} credits${balance < 0 ? ' owed' : ''}</p>`);
+    expect(html).toContain(`>${creditsLine}</p>`);
     expect(html).toContain('Subscribe');
-    if (balance < 0) expect(html).toContain('owed');
   });
 }
