@@ -37,7 +37,7 @@ async function main() {
       (${row.account_id}, ${row.user_id}, 'cli-smoke', ${publicKey}, ${hash})
   `);
 
-  process.stdout.write(`${secretKey}\n`);
+  process.stdout.write(`${JSON.stringify({ publicKey, secretKey })}\n`);
   process.exit(0);
 }
 
