@@ -6389,7 +6389,6 @@ export const connectorAttachments = kortixSchema.table(
     ),
     check('connector_attachments_size_check', sql`${table.sizeBytes} > 0`),
     index('idx_connector_attachments_scope').on(table.projectId, table.sessionId, table.userId),
-    index('idx_connector_attachments_expiry').on(table.expiresAt),
   ],
 );
 
