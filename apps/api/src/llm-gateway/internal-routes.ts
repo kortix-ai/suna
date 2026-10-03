@@ -182,7 +182,11 @@ export function createInternalGatewayRoutes() {
   app.post('/billing', async (c) => {
     const { accountId } = await c.req.json();
     try {
-      const result = await assertLlmBillingActive(accountId);
+      // The pod calls this only for a Kortix-billed request it already
+      // resolved (`simple-handler.ts` gates admitCharge on billingMode), so
+      // the wallet floor applies to every account here — the platform default
+      // included (KRTX-1067).
+      const result = await assertLlmBillingActive(accountId as string, { creditsRequest: true });
       return c.json({ active: true, holdUsd: result?.holdUsd });
     } catch (err) {
       return c.json({
