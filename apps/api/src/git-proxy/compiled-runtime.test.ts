@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { compiledRuntimeChildEnv } from '../__tests__/helpers/compiled-runtime-env';
 import { compileOpenCodeRuntime } from './compiled-runtime';
 
 const roots: string[] = [];
