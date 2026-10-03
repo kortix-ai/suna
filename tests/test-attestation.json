@@ -1,18 +1,18 @@
 {
-  "source_hash": "276b4595432c71a941455795bd6fe842d1cf16b5616384dd53ed85706b192efd",
+  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
   "diff_files": [
-    "packages/db/drizzle/meta/20261003104518_snapshot.json",
-    "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261003143316196_drop_teams_pending_uploads_expiry_index.concurrent.ts",
-    "packages/db/src/schema/kortix.ts"
+    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
+    "apps/api/src/projects/routes/warm-sessions.ts",
+    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
+    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
   ],
-  "diff_hash": "2f02993a61f40371c489863c3625a9fdf698878c7546153f87a168aa45f709a7",
-  "head": "2d11016c98c54a562fee0e204505f44b33a73e30",
-  "passed": false,
+  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
+  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "skipped-no-db"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T14:50:22.230Z"
+  "at": "2026-10-03T15:08:44.943Z"
 }

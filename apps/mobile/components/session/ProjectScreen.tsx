@@ -129,6 +129,9 @@ const Pages = {
   get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
     return require('@/components/pages/MemoryPage').MemoryPage;
   },
+  get AppsPage(): typeof import('@/components/pages/AppsPage').AppsPage {
+    return require('@/components/pages/AppsPage').AppsPage;
+  },
   get ProjectDetailPage(): typeof import('@/components/pages/ProjectDetailPage').ProjectDetailPage {
     return require('@/components/pages/ProjectDetailPage').ProjectDetailPage;
   },
@@ -582,6 +585,8 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] ? (
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+          ) : activePageId === 'page:apps' && PAGE_TABS[activePageId] ? (
+            <Pages.AppsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
             <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId.startsWith('page:project:') ? (

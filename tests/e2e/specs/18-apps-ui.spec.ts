@@ -415,7 +415,9 @@ test.describe('18 — Kortix Apps UI', () => {
 
       // Exercise deployed-only controls with deterministic network fixtures;
       // no cloud runtime is provisioned by this browser characterization.
-      const appApi = `**/projects/${project.id}/apps`;
+      // `/v1/` keeps the glob on the API: `**/projects/<id>/apps` also matches
+      // the Apps PAGE URL, so the reload below got the fixture JSON as its document.
+      const appApi = `**/v1/projects/${project.id}/apps`;
       const liveApp = { ...seeded, active_deployment_id: 'deployment-current', desired_state: 'running' };
       let activeDeployment = 'deployment-current';
       await page.route(appApi, (route) => route.request().method() === 'GET'
@@ -439,10 +441,9 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect.poll(scaleMatchesTile).toBe(true);
       await seededCard.click();
       const modalFrame = appModal.getByTestId('app-live-preview');
-      await modalFrame.dispatchEvent('error');
-      await expect(appModal.getByText('Preview unavailable. Open the App to retry.')).toBeVisible();
-      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
-      await seededCard.click();
+      // No `error` step: an iframe never fires `error` for a failed load, and
+      // React 19 attaches only `load` to an iframe, so the failed overlay (unit
+      // tested in app-preview.test.tsx) cannot be reached from a browser.
       await expect(appModal.getByText('Loading preview', { exact: true })).toBeVisible();
       await modalFrame.dispatchEvent('load');
       await expect(appModal.getByText('Loading preview', { exact: true })).toBeHidden();
@@ -466,8 +467,10 @@ test.describe('18 — Kortix Apps UI', () => {
           await control.click();
           await expect(control).toBeDisabled();
           release();
-          await expect(page.getByText(failed ? `${action} characterization failure`
-            : action === 'rollback' ? 'Rolled back to version 1' : `Seed App ${action === 'stop' ? 'suspended' : 'is ready'}`, { exact: true })).toBeVisible();
+          // A failed mutation reaches the global handler, which prefixes the
+          // message ("Failed to perform action: ..."), so match by substring.
+          await expect((failed ? page.getByText(`${action} characterization failure`)
+            : page.getByText(action === 'rollback' ? 'Rolled back to version 1' : `Seed App ${action === 'stop' ? 'suspended' : 'is ready'}`, { exact: true })).first()).toBeVisible();
           await page.unroute(path);
           await expect(appModal).toBeVisible();
           await expect(appModal.getByText('v2', { exact: true })).toBeVisible();
@@ -477,12 +480,14 @@ test.describe('18 — Kortix Apps UI', () => {
       await appModal.getByRole('button', { name: 'Close', exact: true }).click();
       // Deny only Apps write/deploy probes, leaving project navigation intact.
       await page.route('**/effective?*', async (route) => {
+        if (route.request().method() === 'OPTIONS') return route.fallback();
         const response = await route.fetch();
         const body = await response.json();
         if (['project.app.write', 'project.app.deploy'].includes(new URL(route.request().url()).searchParams.get('action') ?? '')) body.allowed = false;
         await route.fulfill({ response, json: body });
       });
       await page.route('**/effective:batch', async (route) => {
+        if (route.request().method() === 'OPTIONS') return route.fallback();
         const response = await route.fetch();
         const body = await response.json();
         body.results = body.results.map((result: { action: string; allowed: boolean }) => ['project.app.write', 'project.app.deploy'].includes(result.action) ? { ...result, allowed: false } : result);
@@ -514,7 +519,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.getByRole('menuitem', { name: 'Delete App', exact: true }).click();
       let releaseDelete: () => void = () => {};
       const deleteGate = new Promise<void>((resolve) => { releaseDelete = resolve; });
-      const appPath = `**/projects/${project.id}/apps/${seeded.app_id}`;
+      const appPath = `**/v1/projects/${project.id}/apps/${seeded.app_id}`;
       await page.route(appPath, async (route) => {
         if (route.request().method() !== 'DELETE') return route.continue();
         await deleteGate;
@@ -524,7 +529,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(deleteModal.getByRole('button', { name: 'Delete…', exact: true })).toBeDisabled();
       await expect(deleteModal.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
       releaseDelete();
-      await expect(page.getByText('Characterized delete failure', { exact: true })).toBeVisible();
+      await expect(page.getByText('Characterized delete failure').first()).toBeVisible();
       await expect(deleteModal.getByRole('button', { name: 'Delete', exact: true })).toBeEnabled();
       await expect(deleteModal).toBeVisible();
       await page.unroute(appPath);
