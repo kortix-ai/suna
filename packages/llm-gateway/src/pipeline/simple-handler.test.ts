@@ -63,7 +63,13 @@ describe('simple gateway pipeline', () => {
 
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
-    const upstream = Bun.serve({ port: 0, fetch: (request) => {
+    // Pin the loopback family: `localhost` resolves to ::1 first inside a
+    // Kortix platform sandbox (its hosts entry is not readable) while
+    // Bun.serve binds the IPv4 loopback — the pipeline's fetch would be
+    // refused, classified as a provider transport failure, and answer 502
+    // instead of the pool's 429. With the hostname pinned, `upstream.url`
+    // reports the 127.0.0.1 form both here and on CI.
+    const upstream = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (request) => {
       const key = request.headers.get('authorization') ?? '';
       keys.push(key);
       return new Response('limited', { status: 429, headers: { 'retry-after': key.includes('first') ? '7' : '120' } });
