@@ -5,19 +5,23 @@ import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
   acceptInvite,
+  buildPublicTemplateUrl,
   claimComputer,
   createBackup,
   createInstance,
   declineInvite,
   deleteBackup,
   deleteInstance,
+  discoverLocalSandbox,
   getInvite,
+  getPublicTemplate,
   getJustavpsServerTypes,
   getSSHConnection,
   getSandboxProvisionStatus,
   getSandboxProvisionStreamUrl,
   listBackups,
   markInstanceError,
+  openStressTestStream,
   restoreBackup,
   setupSSH,
 } from './index';
@@ -104,6 +108,20 @@ const THROWS: Array<
   ],
   ['deleteInstance', () => deleteInstance('sb-1'), retired('deleteInstance'), true],
   ['claimComputer', () => claimComputer(), retired('claimComputer'), true],
+  // The API deleted `POST /v1/admin/stress-test/run` with the ops console (#6249).
+  [
+    'openStressTestStream',
+    () => openStressTestStream({}, { backendUrl: 'http://test.local' }),
+    retired('openStressTestStream'),
+    true,
+  ],
+  // The TypeScript API never served `GET /v1/templates/public/:id`.
+  [
+    'getPublicTemplate',
+    () => getPublicTemplate('http://test.local', '6f1c2c3e-8d0a-4b7e-9a51-0c2d3e4f5a6b'),
+    retired('getPublicTemplate'),
+    true,
+  ],
 ];
 
 test.each(THROWS)(
@@ -123,16 +141,24 @@ test.each(THROWS)(
   },
 );
 
-test('getSandboxProvisionStreamUrl throws its exact current error and sends no request', () => {
+const SYNC_THROWS: Array<[name: string, call: () => unknown]> = [
+  ['getSandboxProvisionStreamUrl', () => getSandboxProvisionStreamUrl('sb-1', 'token')],
+  [
+    'buildPublicTemplateUrl',
+    () => buildPublicTemplateUrl('http://test.local', '6f1c2c3e-8d0a-4b7e-9a51-0c2d3e4f5a6b'),
+  ],
+];
+
+test.each(SYNC_THROWS)('%s throws its exact current error and sends no request', (name, call) => {
   let error: unknown;
   try {
-    getSandboxProvisionStreamUrl('sb-1', 'token');
+    call();
   } catch (e) {
     error = e;
   }
   expect(error).toBeInstanceOf(ApiError);
   expect((error as ApiError).code).toBe('ENDPOINT_RETIRED');
-  expect((error as ApiError).message).toBe(retired('getSandboxProvisionStreamUrl'));
+  expect((error as ApiError).message).toBe(retired(name));
   expect(requests).toEqual([]);
 });
 
@@ -147,11 +173,25 @@ test('best-effort retired exports keep their no-throw contract and send no reque
   expect(requests).toEqual([]);
 });
 
+test('discoverLocalSandbox finds no local sandbox and sends no request, even in a browser', async () => {
+  // The API deleted `GET /v1/platform/local-bridge/status` with the local
+  // instance system (#3825). Before, a browser probed three origins for it.
+  const host = globalThis as { window?: unknown };
+  host.window = {};
+  try {
+    await expect(discoverLocalSandbox()).resolves.toBeNull();
+  } finally {
+    delete host.window;
+  }
+  expect(requests).toEqual([]);
+});
+
 /** Every retired platform-client name this file pins — the exact set phase 2
  * (KRTX-419) deletes and regenerates the snapshots without. */
 const RETIRED_NAMES = [
   ...THROWS.map(([name]) => name),
-  'getSandboxProvisionStreamUrl',
+  ...SYNC_THROWS.map(([name]) => name),
+  'discoverLocalSandbox',
   'markInstanceError',
   'getSandboxProvisionStatus',
   'getJustavpsServerTypes',
