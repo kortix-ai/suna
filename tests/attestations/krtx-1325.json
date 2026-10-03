@@ -1,0 +1,19 @@
+{
+  "source_hash": "a59f31f064ee55c964318a646a03237400eb8bcf21f831d7daddf3cad6b09eac",
+  "diff_files": [
+    "apps/cli/src/commands/self-host.ts",
+    "apps/cli/src/self-host/__tests__/self-host-cli.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-runtime-routes.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts"
+  ],
+  "diff_hash": "21ecdefb31cd8eba5a6ecdd1dc02e37fedae8f42310a9024b7bccc9bce8e97ab",
+  "head": "c6e225a825bce17d41289c6f6b497f1c42ddec42",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:25:41.421Z"
+}
