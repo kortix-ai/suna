@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { fetchCostExportCsv } from '@kortix/sdk';
+import { dollarsToCredits, formatDollarsAsCredits, formatCreditsWithSign } from '@kortix/shared';
 
 import { withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
@@ -25,6 +26,8 @@ const HELP = help`Usage: kortix billing <subcommand> [options]
 
 Read the active account's plan, credits and spend. Read-only: plan changes,
 top-ups and payment methods are dashboard flows.
+Human credit output uses 100 credits per USD, matching the web.
+--json preserves API credit amounts in USD; costs always use USD.
 
 Subcommands:
   status                            Plan, credits, seats, subscription. --json.
@@ -87,6 +90,12 @@ interface Flags {
 function money(value: unknown): string {
   const n = Number(value);
   return Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
+}
+
+function credits(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${formatDollarsAsCredits(value)} credits`
+    : '—';
 }
 
 function integer(value: string | undefined, label: string): number | undefined {
@@ -198,7 +207,7 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
     row('plan', `${plan}${state.plan?.sublabel ? ` ${C.dim}${state.plan.sublabel}${C.reset}` : ''}`),
   );
   process.stdout.write(row('state', state.billing_state ?? sub.status ?? '—'));
-  process.stdout.write(row('credits', money(state.credits?.total)));
+  process.stdout.write(row('credits', credits(state.credits?.total)));
   if (state.credits?.can_run === false) {
     process.stdout.write(row('', `${C.yellow}blocked — out of credits${C.reset}`));
   }
@@ -255,7 +264,7 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
     }
     process.stdout.write(`\n  ${C.bold}${f.summary ? 'Transaction summary' : 'Usage history'}${C.reset}\n\n`);
     for (const [key, value] of Object.entries(data)) {
-      process.stdout.write(row(key, String(value)));
+      process.stdout.write(row(key, key === 'totalCredits' || key === 'totalDebits' ? credits(value) : String(value)));
     }
     process.stdout.write('\n');
     return 0;
@@ -267,7 +276,7 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
       return 0;
     }
     process.stdout.write(`\n  ${C.bold}Credit breakdown${C.reset}\n\n`);
-    for (const [key, value] of Object.entries(data)) process.stdout.write(row(key, money(value)));
+    for (const [key, value] of Object.entries(data)) process.stdout.write(row(key, credits(value)));
     process.stdout.write('\n');
     return 0;
   }
@@ -291,12 +300,12 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
     return 0;
   }
   const typeW = Math.max(4, ...page.transactions.map((t) => t.type.length));
-  process.stdout.write(`\n  ${C.bold}${pad('WHEN', 20)}  ${pad('TYPE', typeW)}  ${pad('AMOUNT', 10)}  BALANCE${C.reset}\n`);
+  process.stdout.write(`\n  ${C.bold}${pad('WHEN', 20)}  ${pad('TYPE', typeW)}  ${pad('CREDITS', 10)}  BALANCE (CREDITS)${C.reset}\n`);
   for (const t of page.transactions) {
     const when = String(t.created_at).slice(0, 19).replace('T', ' ');
-    const amount = `${t.amount >= 0 ? '+' : '-'}${money(Math.abs(t.amount))}`;
+    const amount = formatCreditsWithSign(dollarsToCredits(t.amount), { showDecimals: true });
     process.stdout.write(
-      `  ${pad(when, 20)}  ${pad(t.type, typeW)}  ${pad(amount, 10)}  ${money(t.balance_after)}\n`,
+      `  ${pad(when, 20)}  ${pad(t.type, typeW)}  ${pad(amount, 10)}  ${formatDollarsAsCredits(t.balance_after, { showDecimals: true })}\n`,
     );
     if (t.description) process.stdout.write(`  ${C.dim}${t.description}${C.reset}\n`);
   }

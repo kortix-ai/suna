@@ -5,18 +5,23 @@
  * replaces the message. Shared by a thread send (`SessionPage` `handleSend`)
  * and a project-home send's seed (`first-prompt-seed.ts`).
  *
- * Ids use the `prt_` prefix: `addOptimisticMessage` registers each one and
- * `upsertPart` drops exactly those when the real parts land. Pure, so
- * `bun test` runs it.
+ * Ids use the `prt_` prefix. The SDK's session store drops these parts when
+ * the echo's real parts land. Pure, so `bun test` runs it.
  */
-import type { Part } from '../opencode/types';
+import type { LocalFilePart, Part } from './types';
 import type { AttachedFile } from './attachments';
 
-/** `text` is used as given; the caller trims it if it wants to. */
+/**
+ * `text` is used as given; the caller trims it if it wants to. The parts carry
+ * no `sessionID`/`messageID`: `addOptimisticMessage` (session-store.ts) stamps
+ * them with the message they join.
+ */
 export function optimisticUserParts(text: string, files: readonly AttachedFile[], nowMs: number): Part[] {
   let n = 0;
   const partId = () => `prt_${nowMs}_${n++}_${Math.random().toString(36).slice(2, 8)}`;
-  const parts: Part[] = text.trim() ? [{ type: 'text', id: partId(), text }] : [];
+  const parts: Array<{ type: 'text'; id: string; text: string } | LocalFilePart> = text.trim()
+    ? [{ type: 'text', id: partId(), text }]
+    : [];
   for (const file of files) {
     parts.push({
       type: 'file',
@@ -27,5 +32,5 @@ export function optimisticUserParts(text: string, files: readonly AttachedFile[]
       localUri: file.uri,
     });
   }
-  return parts;
+  return parts as unknown as Part[];
 }

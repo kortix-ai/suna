@@ -1,6 +1,5 @@
+import { pluginFilesInDir, toolNamesInDir } from './config-directory-inventory'
 import { existsSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
@@ -28,15 +27,8 @@ import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
-import {
-  deliverGovernance,
-  effectiveReleaseId,
-  manifestFromDescriptor,
-  noteRunningConfig,
-  prepareConfigDir,
-  preparePlatformConfigDir,
-  setRunningConfig,
-} from './config-release'
+import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-release/release'
+import { noteRunningConfig, prepareConfigDir, preparePlatformConfigDir, setRunningConfig } from './config-release'
 import type { ConfigSource } from '@/types/config-release'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
@@ -150,16 +142,6 @@ function boundedReason(reasons: readonly string[]): string | null {
   const reason = reasons.filter(Boolean).join('; ')
   if (!reason) return null
   return reason.length > MAX_FALLBACK_REASON ? `${reason.slice(0, MAX_FALLBACK_REASON - 1)}…` : reason
-}
-
-async function pluginFilesInDir(dir: string): Promise<string[]> {
-  const entries = await readdir(join(dir, 'plugins'), { withFileTypes: true }).catch(() => [])
-  return pluginFilesFrom(entries.filter((entry) => entry.isFile()).map((entry) => `plugins/${entry.name}`))
-}
-
-async function toolNamesInDir(dir: string): Promise<string[]> {
-  const entries = await readdir(join(dir, 'tools'), { withFileTypes: true }).catch(() => [])
-  return toolNamesFromFiles(entries.filter((entry) => entry.isFile()).map((entry) => `tools/${entry.name}`))
 }
 
 /**

@@ -39,6 +39,19 @@ export function appFrameAncestors(): string {
   return 'frame-ancestors ' + [...parts].join(' ');
 }
 
+// Brand tokens for the standalone proxy pages. Values copy
+// .agents/skills/kortix-brand/references/visual/tokens.css (hex is legal outside
+// apps/web). The CSP is `default-src 'none'`, so no webfont loads: the stack is
+// the system fallback of --font-sans.
+export const PROXY_PAGE_TOKENS =
+  ':root{color-scheme:light dark;--background:#ffffff;--card:#f4f4f4;--foreground:#1f1f1f;--muted-foreground:#666666;--border:#e2e2e2;--primary:#1f1f1f;--primary-foreground:#ffffff;--destructive:#e7000b;--kortix-red:#f14b4c;--kortix-yellow:#cca300;--font-sans:ui-sans-serif,-apple-system,"Segoe UI","Helvetica Neue","Noto Sans",sans-serif;--font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Monaco,Consolas,monospace}' // audit:allow standalone page under a CSP with no stylesheet: tokens.css values inlined
+  + '@media(prefers-color-scheme:dark){:root{--background:#0b0b0b;--card:#141414;--foreground:#ffffff;--muted-foreground:#999999;--border:#262626;--primary:#ffffff;--primary-foreground:#090909;--destructive:#ff6467}}'; // audit:allow same
+
+// The symbol, from apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg
+// (viewBox 164 x 140), filled with currentColor. Sized by height.
+export const PROXY_PAGE_SYMBOL =
+  '<svg class="symbol" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 140" height="20" fill="currentColor" aria-hidden="true"><path d="M139.737 139.53H163.055C163.055 109.932 147.261 84.0225 123.642 69.7694C147.261 55.5163 163.054 29.6068 163.054 0.0085907H139.736C139.736 28.0165 119.67 51.4471 93.2922 56.9406V0.0085907H69.9773V56.9406C43.4754 51.5428 23.5331 28.1045 23.5331 0.0085907H0.21529C0.21529 29.6068 16.0088 55.5163 39.6282 69.7694C16.0086 84.0225 0.214773 109.932 0.214773 139.53H23.5325C23.5325 111.434 43.4754 87.996 69.9773 82.5981V139.556H93.2922V82.598C119.794 87.9957 139.737 111.434 139.737 139.53Z"/></svg>';
+
 export function appWakeSupersededResponse(): Response {
   return Response.json({
     error: 'App start was superseded by a newer lifecycle request',
@@ -219,8 +232,8 @@ export function appPublicStatusResponse(
   headers.set('content-type', 'text/html; charset=utf-8');
   return new Response(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${refresh}<title>${documentTitle}</title>
-<style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:light-dark(#f6f6f3,#10100f);color:light-dark(#171716,#f4f4f1);font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(100%,420px);padding:24px;border:1px solid light-dark(#deded9,#30302e);border-radius:12px;background:light-dark(#fff,#191918)}.mark{display:flex;align-items:center;gap:9px;margin-bottom:28px;font-weight:650}.glyph{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:currentColor}.glyph:after{content:"K";color:light-dark(#fff,#191918);font-size:12px}.state{display:flex;align-items:center;gap:9px;color:light-dark(#666662,#aaa9a3);font-size:12px}.dot{width:8px;height:8px;border-radius:999px;background:${copy.progress ? '#e6a522' : '#d74a4a'}${copy.progress ? ';animation:pulse 1.4s ease-in-out infinite' : ''}}h1{margin:12px 0 6px;font-size:20px;line-height:1.25;letter-spacing:-.02em}p{margin:0;color:light-dark(#666662,#aaa9a3)}code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@media(prefers-reduced-motion:reduce){.dot{animation:none}}</style></head>
-<body><main class="card"><div class="mark"><span class="glyph"></span>Kortix Apps</div><div class="state"><span class="dot"></span>${escapeHtml(status)}</div><h1>${heading}</h1><p>${escapeHtml(copy.message)}</p></main></body></html>`, {
+<style>${PROXY_PAGE_TOKENS}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--background);color:var(--foreground);font:14px/1.5 var(--font-sans)}.card{width:min(100%,420px);padding:24px;border:1px solid var(--border);border-radius:12px;background:var(--card)}.mark{display:flex;align-items:center;gap:9px;margin-bottom:28px;font-weight:600}.symbol{display:block;width:auto}.state{display:flex;align-items:center;gap:9px;color:var(--muted-foreground);font-size:12px}.dot{width:8px;height:8px;border-radius:999px;background:var(--${copy.progress ? 'kortix-yellow' : 'kortix-red'})${copy.progress ? ';animation:pulse 1.4s ease-in-out infinite' : ''}}h1{margin:12px 0 6px;font-size:20px;line-height:1.25;letter-spacing:-.02em}p{margin:0;color:var(--muted-foreground)}code{font:12px var(--font-mono)}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@media(prefers-reduced-motion:reduce){.dot{animation:none}}</style></head>
+<body><main class="card"><div class="mark">${PROXY_PAGE_SYMBOL}Kortix Apps</div><div class="state"><span class="dot"></span>${escapeHtml(status)}</div><h1>${heading}</h1><p>${escapeHtml(copy.message)}</p></main></body></html>`, {
     status: httpStatus,
     headers,
   });

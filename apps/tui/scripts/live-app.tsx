@@ -16,7 +16,8 @@
  *   2. the session view reaches `ready` on the real runtime;
  *   3. a typed prompt streams a reply containing a unique marker;
  *   4. `Ctrl+P` opens the switcher over the real session list;
- *   5. `?` opens the help overlay and shows every scope;
+ *   5. `?` opens the help overlay and shows every scope (`LIVE_EXPECT_ATTACH=1|0`
+ *      also asserts the attach key is listed on OpenCode, omitted on pi);
  *   6. `Alt+F` routes to the files screen and `Esc` comes back;
  *   7. `Alt+R` lists this project's change requests, `Enter` opens a real diff;
  *   8. `Alt+A` lists this project's Apps;
@@ -270,6 +271,14 @@ const help = setup.captureCharFrame();
 banner('FRAME 7 — help overlay');
 console.log(help);
 expectFrame(help, 'Anywhere', 'the help overlay opens on the global scope');
+// The attach key is listed only when the open session's runtime serves
+// `session.attach`: LIVE_EXPECT_ATTACH=1 on an OpenCode session, =0 on pi.
+if (process.env.LIVE_EXPECT_ATTACH === '1') {
+  expectFrame(help, 'stock opencode TUI', 'the help overlay lists the attach key on OpenCode');
+}
+if (process.env.LIVE_EXPECT_ATTACH === '0') {
+  expectValue(help.includes('stock opencode TUI'), false, 'the help overlay omits the attach key on pi');
+}
 setup.mockInput.pressEscape();
 await settle(500);
 

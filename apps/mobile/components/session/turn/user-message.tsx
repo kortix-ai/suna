@@ -14,13 +14,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SlackIcon } from '@/components/icons/slack-icon';
 import {
   CaretDownIcon,
   CopyIcon,
@@ -28,18 +30,18 @@ import {
   TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
-  SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import type { Turn } from '@/lib/opencode/types';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Turn } from '@/lib/session/types';
+import type { Command } from '@/lib/session/runtime-data';
 import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
 import { parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
+import { participantName, type AvatarPerson } from '@/lib/session/participants';
 import {
   isPreviewableImage,
   localOrResolvedSource,
@@ -80,6 +82,8 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHe
 const BUBBLE_PADDING_X = webSpace(3.5);
 const BUBBLE_PADDING_Y = webSpace(2.5);
 const BUBBLE_RADIUS = 10;
+/** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
+const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
 /** `h-10` fade. */
@@ -87,15 +91,37 @@ const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
 const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 
-// Fixed third-party brand marks for channel cards; they must not follow the app theme.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: 'hsl(198.7 91.9% 56.3%)', // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
-  Slack: 'hsl(339.6 82.2% 51.6%)', // hex-allowlist: Slack pink, web CHANNEL_BRAND_COLOR.Slack hsl(339.6 82.2% 51.6%)
-} as const;
+// Telegram's fixed brand blue for its channel card; it must not follow the app
+// theme. Slack has no hue to tint with: its mark is four colors (`SlackIcon`)
+// and its name reads like Slack's wordmark, in the text color.
+const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
 
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
   return THEME[isDark ? 'dark' : 'light'];
+}
+
+/**
+ * A message in a shared session: its sender's avatar above the bubble, on
+ * the right edge, your own included (web `MessageSenderAbove`).
+ */
+function MessageSenderAbove({
+  sender,
+  children,
+}: {
+  sender: AvatarPerson | null | undefined;
+  children: React.ReactNode;
+}) {
+  if (!sender) return <>{children}</>;
+  return (
+    <View
+      className="items-end"
+      style={{ gap: webSpace(1.5) }}
+      accessibilityLabel={`Sent by ${participantName(sender)}`}>
+      <ParticipantAvatar person={sender} />
+      <View className="max-w-full">{children}</View>
+    </View>
+  );
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -154,6 +180,7 @@ export function UserMessage({
   rewindDisabled,
   queueState,
   uploadStatus,
+  sender,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -175,6 +202,11 @@ export function UserMessage({
   /** Dims the column; `interrupted` also shows a status line. */
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /**
+   * Who sent this message, in a shared session, the viewer included. Drawn
+   * as their avatar above the bubble. Null when no sender is recorded.
+   */
+  sender?: AvatarPerson | null;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -225,6 +257,8 @@ export function UserMessage({
   const openMenu = useCallback(() => {
     if (!promptText) return;
     haptics.medium();
+    // The menu draws under the keyboard otherwise: close it first.
+    Keyboard.dismiss();
     menuRef.current?.open();
   }, [promptText]);
   const menuProps = {
@@ -235,11 +269,7 @@ export function UserMessage({
     onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
   };
 
-  const actions = selecting ? (
-    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
-      <Text>Done</Text>
-    </Button>
-  ) : statusLabel ? (
+  const status = statusLabel ? (
     <Text
       variant="muted"
       numberOfLines={1}
@@ -247,6 +277,13 @@ export function UserMessage({
       {statusLabel}
     </Text>
   ) : null;
+  const actions = selecting ? (
+    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
+      <Text>Done</Text>
+    </Button>
+  ) : (
+    status
+  );
 
   // Editing replaces the whole column with the full-width editor.
   if (editingText != null && onEditSend && onEditCancel) {
@@ -264,16 +301,18 @@ export function UserMessage({
   }
 
   if (channelMessageInfo) {
-    const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
+    const telegram = channelMessageInfo.platform === 'Telegram';
     return (
       <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
         <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          <Icon
-            as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
-            size={webSpace(3.5)}
-            color={brand}
-          />
-          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
+          {telegram ? (
+            <Icon as={PaperPlaneTiltIcon} size={webSpace(3.5)} color={TELEGRAM_BRAND_COLOR} />
+          ) : (
+            <SlackIcon size={webSpace(3.5)} />
+          )}
+          <Text
+            style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, telegram ? { color: TELEGRAM_BRAND_COLOR } : null]}
+          >
             {channelMessageInfo.platform}
           </Text>
           <Text variant="muted" style={META_TEXT_STYLE}>
@@ -326,29 +365,32 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          // A failed send greys its bubble; "Try again" above stays full strength.
-          <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
-            <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
-              <UserMessageBubble
-                isDark={isDark}
-                quotes={content.quotes}
-                // While selecting, a long press belongs to the text selection.
-                onLongPress={selecting ? undefined : openMenu}>
-                {selecting ? (
-                  <SelectableMessageText text={promptText} isDark={isDark} />
-                ) : bodyText || commandInfo ? (
-                  <MessageBody
-                    text={bodyText}
-                    command={commandInfo?.name}
-                    sessions={content.sessions}
-                    agentNames={agentNames}
-                    onFileMention={onFileMention}
-                    onSessionMention={onSessionMention}
-                  />
-                ) : null}
-              </UserMessageBubble>
-            </View>
-          </MessageMenu>
+          <MessageSenderAbove sender={sender}>
+            {/* A failed send greys its bubble; "Try again" above stays full strength. */}
+            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+              <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+                <UserMessageBubble
+                  isDark={isDark}
+                  tail={!!sender}
+                  quotes={content.quotes}
+                  // While selecting, a long press belongs to the text selection.
+                  onLongPress={selecting ? undefined : openMenu}>
+                  {selecting ? (
+                    <SelectableMessageText text={promptText} isDark={isDark} />
+                  ) : bodyText || commandInfo ? (
+                    <MessageBody
+                      text={bodyText}
+                      command={commandInfo?.name}
+                      sessions={content.sessions}
+                      agentNames={agentNames}
+                      onFileMention={onFileMention}
+                      onSessionMention={onSessionMention}
+                    />
+                  ) : null}
+                </UserMessageBubble>
+              </View>
+            </MessageMenu>
+          </MessageSenderAbove>
         ) : null}
 
         {actions}
@@ -534,8 +576,11 @@ export function UserMessageBubble({
   quotes = [],
   children,
   onLongPress,
+  tail = false,
 }: {
   isDark: boolean;
+  /** The sender's avatar sits above: the top-right corner, under it, is 4pt, as web. */
+  tail?: boolean;
   /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
   quotes?: string[];
   children?: React.ReactNode;
@@ -573,6 +618,7 @@ export function UserMessageBubble({
         maxWidth: '100%',
         backgroundColor: surface,
         borderRadius: BUBBLE_RADIUS,
+        ...(tail ? { borderTopRightRadius: BUBBLE_TAIL_RADIUS } : null),
         paddingHorizontal: BUBBLE_PADDING_X,
         paddingVertical: BUBBLE_PADDING_Y,
         overflow: 'hidden',

@@ -2,7 +2,7 @@
  * Platform API Client for Kortix Computer Mobile
  *
  * Communicates with the Computer backend to manage sandbox lifecycle
- * and provides the sandbox URL for OpenCode session operations.
+ * and provides the sandbox URL for runtime session operations.
  *
  * All sandbox operations are proxied through:
  *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
@@ -26,9 +26,8 @@ import {
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
-// `sandboxRuntimeReload` and `/pty` stay mobile-native: the SDK's
-// `systemReload` targets the globally-active runtime URL, not an explicit
-// sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
+// `sandboxRuntimeReload` stays mobile-native: the SDK's `systemReload`
+// targets the globally-active runtime URL, not an explicit sandboxUrl.
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -97,7 +96,7 @@ interface ProjectSessionSandbox {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the OpenCode server URL for a sandbox.
+ * Build the runtime URL for a sandbox.
  * Pattern: {BACKEND_URL}/p/{externalId}/8000
  */
 export function getSandboxUrl(sandboxExternalId: string): string {

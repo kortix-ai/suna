@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
+  isAnonymousAuthRefreshRace,
   isAndroidWebViewNativeBridgePostMessageNoise,
   isCanvasImageDataOOMNoise,
   isCaptchaInterceptorNoise,
@@ -5133,7 +5134,7 @@ test('does NOT suppress a near-worded message that is not a document-state looku
 // loop after its document-state-map race (see the document-state matcher
 // above), tripping React's 50-nested-update guard (#185) WITHOUT an
 // `onTileRendering` frame. All three patterns are from the SAME Safari 26.5
-// session (`be897489-…`), same release, same `0foj1ouh5ijrj.js` chunk, same
+// session, same release, same `0foj1ouh5ijrj.js` chunk, same
 // 2026-08-05 ~04:30–05:28 UTC window, 1 occurrence each, UNCAUGHT
 // (`handled:false`). The existing `isEmbedPdfTilingReactUpdateDepthNoise`
 // matcher anchors on the `onTileRendering` frame and does NOT catch these —
@@ -7272,7 +7273,7 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
 // `IntersectionObserver` threshold callback) calls `const { tile } =
 // queue.pop()` on an `undefined` pop result, and V8 throws
 // `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` Two
-// patterns, SAME root cause, SAME user/session (`7254bee8-…`/`bd1306e9-…`), 1
+// patterns, SAME root cause, SAME user and session, 1
 // occurrence each, 0 identified users, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route
 // `/projects/:id/sessions/:sessionId`, Chrome 150 on Windows 10. Pattern
@@ -12186,4 +12187,21 @@ test('suppresses the digest-less React #419 at both gates', () => {
     }),
     false,
   );
+});
+
+test('anonymous Supabase refresh race is noise only on the landing page', () => {
+  const input = {
+    message: 'Auth session missing!',
+    requestUrl: 'https://kortix.com/',
+    mechanism: 'auto.browser.global_handlers.onunhandledrejection',
+    frames: [{ filename: 'app:///_next/static/immutable/chunks/22knfs0jv6sj3.js', function: 'async sc.refreshSession' }],
+  };
+  assert.equal(isAnonymousAuthRefreshRace(input), true);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, requestUrl: 'https://kortix.com/projects' }), false);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, frames: [{ filename: 'apps/web/src/auth.ts', function: 'refreshSession' }] }), false);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, message: 'Invalid refresh token' }), false);
+  assert.equal(shouldIgnoreSentryBrowserNoise({
+    request: { url: input.requestUrl },
+    exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
+  }), true);
 });

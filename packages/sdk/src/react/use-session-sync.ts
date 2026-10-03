@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
-import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus, Todo } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
@@ -44,7 +44,7 @@ interface SyncStoreShape {
   wasTranscriptEvicted: (sessionID: string) => boolean;
 }
 
-type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
+type FileDiff = Omit<import('../core/runtime/runtime-types').SnapshotFileDiff, 'patch'> & {
   patch?: string;
   before?: string;
   after?: string;
@@ -484,9 +484,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           : 'loading';
 
   useEffect(() => {
+    // No runtime session to read (`''` under `useSession({ chatEngine: false })`):
+    // the controller never goes busy, so no poll and no turn-end read start.
+    const readable = canQueryRuntimeSession(sessionId);
     controller.setBusy(
-      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
-      networkEnabled && canQueryRuntimeSession(sessionId) && runtimeScope !== 'none',
+      readable && livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+      networkEnabled && readable && runtimeScope !== 'none',
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn, sessionId, runtimeScope]);
 

@@ -348,7 +348,10 @@ describe('the scope route validates for the session OWNER, not the caller', () =
     // still the SESSION, never the caller.
     expect(ROUTE).toContain('const secretsPrincipal = await resolveSessionPersonalOwner(');
     expect(ROUTE).toContain('legacyUserId: visible.row.createdBy ?? loaded.userId');
-    expect(ROUTE).toContain('listResolvedProjectSecrets(projectId, secretsPrincipal)');
+    // The third argument is the session's audience subject (secret-audience.ts)
+    // — also the SESSION's, never the caller's.
+    expect(ROUTE).toContain('listResolvedProjectSecrets(projectId, secretsPrincipal, sessionAudience)');
+    expect(ROUTE).toContain('sessionId: visible.row.sessionId');
   });
 
   test('it no longer resolves availability against the caller', () => {

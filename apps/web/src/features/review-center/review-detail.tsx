@@ -9,10 +9,6 @@ import { useTranslations } from '@/i18n/use-translations';
  * Actions mutate parent state optimistically via the passed handlers.
  */
 
-import {
-  type ApprovalDecisionValue,
-  ApprovalRequest,
-} from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
@@ -35,7 +31,7 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 import { ChangeFiles } from './change-files';
-import { connectorCallId, formatItemAgeLong } from './review-actions';
+import { formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -51,8 +47,7 @@ export interface ReviewActions {
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
-  /** Live-data mode. The shared Connector parameter review submits its exact
-   *  decision through `resolve()`. */
+  /** Live-data mode: verdicts go to the server through `resolve()`. */
   connected?: boolean;
   /** The review item id currently mid-mutation, if any — drives the
    *  per-item `Loading` state on Approve/Deny while connected. */
@@ -200,6 +195,8 @@ function ChangeBody({
 }
 
 // ── approval ──────────────────────────────────────────────────────────────
+// Connector calls never reach this page: the inbox opens them in
+// `ApprovalDecisionModal`. What is left here is the native multi-action approval.
 function ApprovalActionRow({
   action,
   connected,
@@ -315,54 +312,13 @@ function ApprovalBody({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const list = item.detail.actions ?? [];
-  const adaptedExecutionId = connectorCallId(item.id);
-  const adaptedAction = adaptedExecutionId ? list[0] : null;
-  if (actions.connected && adaptedAction) {
-    const busyDecision: ApprovalDecisionValue | null =
-      actions.pendingId === item.id ? (actions.pendingDecision ?? null) : null;
-    return (
-      <ApprovalRequest
-        request={{
-          action: adaptedAction.actionPath ?? adaptedAction.title,
-          risk: adaptedAction.connectorRisk ?? adaptedAction.risk,
-          projectName: item.project,
-          requestedAt: item.createdAt,
-          argsPreview: adaptedAction.rawArgsPreview ?? null,
-          reviewComplete: adaptedAction.reviewComplete === true,
-          previewAuthorized: adaptedAction.previewAuthorized !== false,
-          approvalContext: adaptedAction.approvalContext ?? null,
-          pending: item.status === 'needs_you',
-          resolution:
-            item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,
-          status:
-            item.status === 'approved'
-              ? 'ok'
-              : item.status === 'rejected'
-                ? 'denied'
-                : 'pending_approval',
-        }}
-        onDecision={(decision, note) =>
-          actions.resolve(
-            item.id,
-            decision === 'approve' ? 'approved' : 'rejected',
-            decision === 'approve' ? tI18nComplete.raw('text24234d557d8d') : 'Denied',
-            note,
-          )
-        }
-        busyDecision={busyDecision}
-      />
-    );
-  }
   const openSession =
     actions.openSession && item.sessionId
       ? () => actions.openSession?.(item.sessionId as string)
       : undefined;
-  // Adapted Connector approvals return through ApprovalRequest above. This
-  // native/prototype branch keeps its existing whole-item decision behavior.
   return (
     <>
-      {/* Native multi-action approvals resolve as one item. Adapted Connector
-          approvals cannot reach this branch. */}
+      {/* Native multi-action approvals resolve as one item. */}
       {(() => {
         const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;
         const busy = actions.connected && actions.pendingId === item.id;
@@ -656,7 +612,7 @@ function ActionBar({
       </span>
     );
   }
-  // Decisions and approvals decide inside their body.
+  // Decisions and native approvals decide inside their body.
   if (item.kind === 'decision' || item.kind === 'approval') return null;
 
   // change · output · batch
@@ -841,7 +797,7 @@ export function ReviewDetail({
       </header>
 
       <div className="mt-8 space-y-8">
-        {composing && secondaryLabel && (
+        {composing && secondaryLabel && item.kind !== 'approval' && (
           <FeedbackComposer
             onCancel={() => setComposing(false)}
             onSend={(text) => {

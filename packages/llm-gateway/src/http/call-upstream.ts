@@ -69,6 +69,26 @@ function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
   return (input, init) => fetchImpl(String(input), init ?? {});
 }
 
+// OpenRouter extensions that a strict OpenAI-schema upstream (OpenCode Zen)
+// answers with 400 "Extra inputs are not permitted" (probed 2026-10-01).
+// Clients replay them after an OpenRouter turn; the Responses ingress sends `reasoning`.
+const NON_OPENAI_BODY_FIELDS = ['reasoning', 'usage', 'provider', 'transforms', 'verbosity', 'modalities', 'safety_identifier'];
+
+function toStrictChat(body: Record<string, any>): Record<string, unknown> {
+  const out = { ...body };
+  if (out.reasoning_effort === undefined && typeof out.reasoning?.effort === 'string') out.reasoning_effort = out.reasoning.effort;
+  for (const field of NON_OPENAI_BODY_FIELDS) delete out[field];
+  if (!Array.isArray(out.messages)) return out;
+  out.messages = out.messages.map(({ reasoning, reasoning_details, annotations, ...message }: Record<string, any>) => {
+    const details = Array.isArray(reasoning_details) ? reasoning_details.map((d) => d?.text ?? '').join('') : '';
+    const prior = details || (typeof reasoning === 'string' ? reasoning : '');
+    if (message.reasoning_content === undefined && prior) message.reasoning_content = prior;
+    if (Array.isArray(message.content)) message.content = message.content.map(({ cache_control, ...part }: Record<string, unknown>) => part);
+    return message;
+  });
+  return out;
+}
+
 function directOpenAiRequest(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
@@ -81,7 +101,7 @@ function directOpenAiRequest(
   if (descriptor.headers) Object.assign(headers, descriptor.headers);
   if (opts.requestId) headers['x-request-id'] = opts.requestId;
 
-  let payload = body;
+  let payload = descriptor.strictChatSchema ? toStrictChat(body) : body;
   if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
   if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
 

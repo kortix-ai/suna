@@ -1,14 +1,15 @@
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { PanelMode } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { act, create } from 'react-test-renderer';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
-import { ActionPanel, shouldDiscardPendingPrimaryOpen } from './index';
-import { SessionPanelContext, type SessionPanelValue } from './session-panel-provider';
+import { ActionPanel } from './index';
+import { SessionPanelContext, SessionPanelProvider, useOptionalSessionPanel, type SessionPanelValue } from './session-panel-provider';
 
 // The cards read everything from `SessionPanelProvider`. Standing the real one
 // up here would drag in the sandbox proxy, react-query and four stores for
@@ -48,72 +49,14 @@ function withQueryClient(node: ReactNode) {
   return <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>;
 }
 
-/**
- * Panel-mode regression coverage.
- *
- * The brief's original draft drove `ActionPanel` through
- * `useUserPreferencesStore.setState()` before each `renderToStaticMarkup`
- * call. That does not work: zustand v5's React binding feeds
- * `useSyncExternalStore` a `getServerSnapshot` pinned to `api.getInitialState()`
- * (see `zustand/react.js`), which is captured once at store-module-load time
- * and never updated by `setState` — `AppsCard`'s own comment documents the
- * same trap. Under `renderToStaticMarkup`, `ActionPanel`'s
- * `useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy')` read
- * therefore always resolves to whatever the store's pristine state was,
- * regardless of any `setState` call made in the test body.
- *
- * So instead this file mocks the store module itself (`mock.module`) with a
- * plain callable `(selector) => selector(state)` stand-in, and drives
- * `state.preferences.panelMode` per test. This is a genuine fallback test:
- * `mockPanelMode = undefined` below reproduces exactly what a pre-panelMode
- * persisted store looks like, and exercises the `?? 'easy'` coalesce inside
- * `ActionPanel` for real — not a copy of the store's own default.
- *
- * `mock.module` is file-global in Bun (it patches the shared module
- * registry for the rest of this file's run), so every `ActionPanel` test in
- * this file goes through this same mock rather than mixing mocked and
- * unmocked reads of the store.
- *
- * `AdvancedPanel` still can't be exercised directly under
- * `renderToStaticMarkup` without a `NextIntlClientProvider` ancestor (it
- * calls `useTranslations('hardcodedUi')`), so the advanced-mode case renders
- * `ActionPanel` wrapped in the provider instead of calling `AdvancedPanel`
- * directly.
- */
-
-let mockPanelMode: PanelMode | undefined;
-
-mock.module('@/stores/user-preferences-store', () => ({
-  useUserPreferencesStore: (
-    selector: (state: { preferences: { panelMode: PanelMode | undefined } }) => unknown,
-  ) => selector({ preferences: { panelMode: mockPanelMode } }),
-}));
-
 describe('panel mode gate', () => {
-  test('missing panelMode (pre-panelMode persisted state) falls back to Easy', () => {
-    mockPanelMode = undefined;
-    const html = renderToStaticMarkup(withQueryClient(withPanel(<ActionPanel />)));
-    expect(html).toContain('Outputs');
-    expect(html).toContain('Context');
-  });
-
-  test("panelMode: 'easy' renders the Easy card home", () => {
-    mockPanelMode = 'easy';
-    const html = renderToStaticMarkup(withQueryClient(withPanel(<ActionPanel />)));
-    expect(html).toContain('Outputs');
-    expect(html).toContain('Context');
-  });
-
-  test("panelMode: 'advanced' renders the Easy card home too (Advanced panel disabled)", () => {
-    mockPanelMode = 'advanced';
+  test('ActionPanel renders the Easy card home even when Advanced is disabled', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         {withQueryClient(withPanel(<ActionPanel />))}
       </NextIntlClientProvider>,
     );
-    // ADVANCED PANEL TEMPORARILY DISABLED (Easy Panel v2): ActionPanel renders
-    // EasyPanel for every mode. Restore the old assertion when the advanced
-    // branch in index.tsx is uncommented.
+    // No preference read: a persisted Advanced preference cannot change this render.
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
   });
@@ -149,31 +92,58 @@ describe('EasyPanel home has no Terminal/Audit footer row', () => {
   });
 });
 
-// ─── IMPORTANT 7 — a chip's pending "open with primary" request left
-// standing while the user is in Advanced mode must not survive a later
-// switch back to Easy mode and auto-open a deliverable out of nowhere.
-// `ActionPanel`'s effect can't be exercised under `renderToStaticMarkup`
-// (SSR never runs effects — see the file header), so this covers the
-// extracted pure predicate directly, plus the store mechanic it drives. ──
-describe('shouldDiscardPendingPrimaryOpen (W7)', () => {
-  test('discards only in Advanced mode, and only for the matching session', () => {
-    expect(shouldDiscardPendingPrimaryOpen('advanced', 's1', 's1')).toBe(true);
-    expect(shouldDiscardPendingPrimaryOpen('easy', 's1', 's1')).toBe(false);
-    expect(shouldDiscardPendingPrimaryOpen('advanced', 's1', 's2')).toBe(false);
-    expect(shouldDiscardPendingPrimaryOpen('advanced', null, 's1')).toBe(false);
-  });
+// A mounted renderer runs child effects before provider effects, reproducing
+// the lost-request race that server rendering cannot observe.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const previousWindow = globalThis.window;
+Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+  innerWidth: 1440,
+  matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+} });
+afterAll(() => Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow }));
 
-  test("end to end: Advanced mode consumes this session's pending request via the store", () => {
-    useKortixComputerStore.getState().reset();
-    useKortixComputerStore.getState().requestPrimaryOpen('s1');
-    expect(
-      shouldDiscardPendingPrimaryOpen(
-        'advanced',
-        useKortixComputerStore.getState().pendingPrimaryOpenSessionId,
-        's1',
-      ),
-    ).toBe(true);
-    expect(useKortixComputerStore.getState().consumePrimaryOpen('s1')).toBe(true);
-    expect(useKortixComputerStore.getState().pendingPrimaryOpenSessionId).toBeNull();
-  });
+describe('pending panel requests', () => {
+  for (const mode of ['easy', 'advanced'] as const) {
+    test(`${mode} preference opens the primary deliverable and palette quick views`, async () => {
+      useKortixComputerStore.getState().reset();
+      useUserPreferencesStore.getState().patchPreferences({ panelMode: mode });
+      const opened: string[] = [];
+      function Observe() {
+        const panel = useOptionalSessionPanel();
+        if (panel?.detail?.key && opened.at(-1) !== panel.detail.key) opened.push(panel.detail.key);
+        if (panel?.terminalOpen && opened.at(-1) !== 'terminal') opened.push('terminal');
+        return null;
+      }
+      const messages = [{
+        info: {
+          id: 'm1', sessionID: 's1', role: 'assistant' as const,
+          time: { created: 1 }, parentID: 'u1', modelID: 'test', providerID: 'test',
+          mode: 'build', agent: 'build', path: { cwd: '/', root: '/' }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{
+          id: 'p1', sessionID: 's1', messageID: 'm1', type: 'tool' as const,
+          tool: 'write', callID: 'c1', state: {
+            status: 'completed' as const, input: { filePath: '/a/report.pdf' },
+            output: '', title: '', metadata: {}, time: { start: 1, end: 2 },
+          },
+        }],
+      }];
+      let renderer: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(withQueryClient(
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <SessionPanelProvider sessionId="s1" messages={messages}>
+              <ActionPanel /><Observe />
+            </SessionPanelProvider>
+          </NextIntlClientProvider>,
+        ));
+      });
+      await act(async () => { useKortixComputerStore.getState().requestPrimaryOpen('s1'); });
+      expect(opened).toContain('file:/a/report.pdf');
+      await act(async () => { useKortixComputerStore.getState().requestQuickView('terminal', 's1'); });
+      expect(opened).toContain('terminal');
+      await act(async () => { renderer!.unmount(); });
+    });
+  }
 });

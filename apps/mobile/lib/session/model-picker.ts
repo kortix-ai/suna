@@ -132,7 +132,7 @@ export function pickerModelName(model: PickerModel): string {
 /**
  * The picks project home sends with the first message (`pending_prompt` on
  * session create, web's channel). Null when there is no level to carry: the
- * model alone already travels as `opencode_model`. A level the active model
+ * model alone already travels as the session `model`. A level the active model
  * does not offer (picked for another model) is not sent.
  */
 export function firstPromptPicks(

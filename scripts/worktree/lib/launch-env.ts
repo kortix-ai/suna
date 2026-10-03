@@ -33,8 +33,10 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
     FRONTEND_URL: `http://localhost:${ports.web}`,
     KORTIX_SKIP_ENSURE_SCHEMA: '1',
-    DATABASE_URL: c.dbUrl,
-    SUPABASE_URL: c.supabaseUrl,
+    // Latency bench only: point the API at apps/api/scripts/latency-proxy.ts
+    // (runbook: .agents/skills/testing/references/api-latency-baseline.md).
+    DATABASE_URL: process.env.KORTIX_WT_API_DATABASE_URL || c.dbUrl,
+    SUPABASE_URL: process.env.KORTIX_WT_API_SUPABASE_URL || c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
     ...(c.jwtSecret ? { SUPABASE_JWT_SECRET: c.jwtSecret } : {}),
     // Config archives go through the API's one object store, pointed at THIS

@@ -7,7 +7,7 @@ import {
   saveTeamsInstall,
 } from '../../channels/install-store';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
-import { proveTeamsTenant, teamsChannelEnabled } from '../../channels/teams-auth';
+import { proveTeamsTenant } from '../../channels/teams-auth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
@@ -16,7 +16,6 @@ import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/fil
 import { deleteTeamsMessage, editTeamsMessage, listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
-import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -66,10 +65,9 @@ projectsApp.openapi(
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
-    const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
-      ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl, enabled }),
+      ...teamsMode(baseUrl, { projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
@@ -143,11 +141,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, {
-      enabled: teamsChannelEnabled(loaded.row.metadata),
-      projectId,
-      byoAppId,
-    });
+    const mode = teamsMode(baseUrl, { projectId, byoAppId });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -182,8 +176,6 @@ projectsApp.openapi(
     // Connecting a Teams bot is a connector-write capability — a custom role can
     // withhold it and a scoped agent must hold it (central fold), mirroring the
     // Slack (channel-slack.ts slack/connect) and email connect twins.
-    // Authz before the feature-flag check so an unauthorized caller never gets a
-    // capability-independent answer (same order as the file-upload twin below).
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -191,9 +183,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) {
-      return c.json(featureDisabledBody('teams'), 403);
-    }
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -337,7 +326,6 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
     return c.json({ conversations: await listTeamsPostTargets(projectId) });
   },
 );
@@ -374,7 +362,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
     const body = await readJsonObject(c);
     const result = await postToTeamsConversation(projectId, {
       conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
@@ -411,7 +398,6 @@ for (const op of ['edit', 'delete'] as const) {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
-      if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
       const body = await readJsonObject(c);
       const target = {
         conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
@@ -460,8 +446,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Posting a consent card drives the project bot to SEND into the customer's
     // Teams channel — a send primitive gated on connector-write like the Slack
-    // (channel-slack.ts slack/file/upload) and meet/speak twins. Authz before the feature-flag
-    // check so an unauthorized caller never gets a capability-independent answer.
+    // (channel-slack.ts slack/file/upload) and meet/speak twins.
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -469,9 +454,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) {
-      return c.json(featureDisabledBody('teams'), 403);
-    }
     const body = await readJsonObject(c);
     // `service_url` in the body is ignored: the server addresses the
     // conversation (teams/post.ts resolveTeamsProjectConversation).

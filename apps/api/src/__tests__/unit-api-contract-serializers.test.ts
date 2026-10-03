@@ -190,6 +190,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       canManageProject: true,
       ownerEmail: 'owner@acme.dev',
       ownerName: 'Build Agent',
+      ownerAvatarUrl: 'https://img.example.test/owner.png',
       ownerType: 'service_account',
       canAccess: false,
       runtimeStatus: 'stopped',
@@ -200,6 +201,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.sharing).toEqual({ mode: 'members', memberIds: [USER_ID], groupIds: [] });
     expect(parsed.owner_email).toBe('owner@acme.dev');
     expect(parsed.owner_name).toBe('Build Agent');
+    expect(parsed.owner_avatar_url).toBe('https://img.example.test/owner.png');
     expect(parsed.owner_type).toBe('service_account');
     expect(parsed.can_access).toBe(false);
     expect(parsed.runtime_status).toBe('stopped');

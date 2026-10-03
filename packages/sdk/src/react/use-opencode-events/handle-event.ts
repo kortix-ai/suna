@@ -1,43 +1,23 @@
-import { type QueryClient } from '@tanstack/react-query';
 import type {
   Event as OpenCodeSdkEvent,
   PermissionRequest,
   QuestionRequest,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
+import type { QueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
-import {
-  infoToast,
-  notifyPermissionRequest,
-  notifyQuestion,
-  notifySessionError,
-  notifyTaskComplete,
-} from '../../platform/ui';
-import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
-import { isAbortError } from '../../core/http/abort-error';
-import { getClient } from '../../core/runtime/client';
-import {
-  SESSION_SYNC_PAGE_SIZE,
-  type SessionSyncReason,
-} from '../../core/session-sync/session-sync-controller';
+import type { getClient } from '../../core/runtime/client';
+import type { SessionSyncReason } from '../../core/session-sync/session-sync-controller';
+import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
-import { ptyKeys } from '../use-opencode-pty';
-import { type MessageWithParts, runtimeKeys, type Session } from '../use-opencode-sessions';
-import { applyPartDiagnostics } from './diagnostics';
-import {
-  asStringOrUndefined,
-  patchKortixSessionTitleMirrors,
-  readSessionInfo,
-  realRuntimeTitle,
-  refetchKortixSessionMirrors,
-  scheduleProjectMetadataRefetch,
-} from './helpers';
+import { type Session, runtimeKeys } from '../use-opencode-sessions';
+import { handleInteractionEvent } from './handle-interaction-event';
+import { handleMessageEvent } from './handle-message-event';
+import { handleSessionEvent } from './handle-session-event';
+import { handleWorkspaceEvent } from './handle-workspace-event';
+import type { HandlerContext } from './handler-context';
 import type { NormalizeDiagnosticPaths, RuntimeEvent } from './types';
-
-/** See `createEventHandler`'s `userPartsGraceMs`. */
 export const USER_PARTS_GRACE_MS = 1_500;
-
-/** Builds the SSE event handler; all closure dependencies are injected. */
 export function createEventHandler(deps: {
   queryClient: QueryClient;
   client: ReturnType<typeof getClient>;
@@ -66,649 +46,51 @@ export function createEventHandler(deps: {
    *  always passes it (`use-opencode-events/index.ts`). */
   projectId?: string | null;
 }) {
-  const {
-    queryClient,
-    client,
-    applySyncEvent,
-    stopCompaction,
-    addPermission,
-    removePermission,
-    addQuestion,
-    removeQuestion,
-    normalizeDiagnosticPaths,
-    markSessionAbortedLocally,
-    fetchLspDiagnosticsDebounced,
-    projectId = null,
-    userPartsGraceMs = USER_PARTS_GRACE_MS,
-  } = deps;
+  const { queryClient, client } = deps;
   const reconcileTail =
     deps.reconcileSessionTail ??
     (async (sessionID: string) => {
-      const result = await client.session.messages({
-        sessionID,
-        limit: SESSION_SYNC_PAGE_SIZE,
-      });
+      const result = await client.session.messages({ sessionID, limit: SESSION_SYNC_PAGE_SIZE });
       if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
     });
-
-  // Helper: look up a session title from the React Query cache for notifications
-  function getSessionTitle(sessionID: string): string | undefined {
-    const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
-    if (sessions) {
-      const s = sessions.find((s) => s.id === sessionID);
-      if (s?.title) return s.title;
-    }
-    const session = queryClient.getQueryData<Session>(runtimeKeys.runtimeSession(sessionID));
-    return session?.title || undefined;
-  }
-
-  // The agent's turn just settled, so any file it touched may have moved.
-  // `file.edited` does not fire for every agent write (shell redirects,
-  // generated binaries), so the turn end is the one reliable moment to drop
-  // every open file view: the Changes panel, the file tree, and an open
-  // viewer's text or binary content. No `type` filter on purpose: every match
-  // is marked stale, so a file closed mid-turn refetches when it reopens;
-  // only what is on screen refetches now (`refetchType` defaults to active).
-  function invalidateWorkspaceFilesAfterTurn() {
-    for (const queryKey of [
-      gitStatusKeys.all,
-      runtimeKeys.vcsDiffAll(),
-      fileListKeys.all,
-      fileContentKeys.all,
-      binaryBlobKeys.all,
-    ]) {
-      queryClient.invalidateQueries({ queryKey });
-    }
-  }
-
-  function handleEvent(event: RuntimeEvent) {
-    // Sync store is the SINGLE source of truth for messages & parts.
-    // This matches OpenCode's architecture where the SolidJS store is
-    // the only place message/part data lives.
-    //
-    // `event` also carries the frontend-synthesized `lsp.client.diagnostics`
-    // member (see `RuntimeEvent`), which isn't a real wire event and doesn't
-    // match any `applyEvent` case (falls through to its `default`) — the
-    // assertion below just widens past that one extra union member.
-    //
-    // The reducer writes a `session.status` / `session.idle` into
-    // `sessionStatus` synchronously, so the status the turn is settling FROM
-    // has to be read before it runs. Read after, it is always the new 'idle',
-    // and the busy → idle work below (file refresh, Changes refresh,
-    // task-complete notice) never ran in the app — only in tests that stub
-    // the reducer out.
-    const statusSessionID =
+  const ctx: HandlerContext = {
+    ...deps,
+    projectId: deps.projectId ?? null,
+    userPartsGraceMs: deps.userPartsGraceMs ?? USER_PARTS_GRACE_MS,
+    reconcileTail,
+    getSessionTitle(sessionID) {
+      const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
+      return (
+        sessions?.find((s) => s.id === sessionID)?.title ||
+        queryClient.getQueryData<Session>(runtimeKeys.runtimeSession(sessionID))?.title ||
+        undefined
+      );
+    },
+    invalidateWorkspaceFilesAfterTurn() {
+      for (const queryKey of [
+        gitStatusKeys.all,
+        runtimeKeys.vcsDiffAll(),
+        fileListKeys.all,
+        fileContentKeys.all,
+        binaryBlobKeys.all,
+      ])
+        queryClient.invalidateQueries({ queryKey });
+    },
+  };
+  return (event: RuntimeEvent) => {
+    const sessionID =
       event.type === 'session.status' || event.type === 'session.idle'
         ? event.properties.sessionID
         : undefined;
-    const statusBeforeEvent = statusSessionID
-      ? useSyncStore.getState().sessionStatus[statusSessionID]
+    const statusBeforeEvent = sessionID
+      ? useSyncStore.getState().sessionStatus[sessionID]
       : undefined;
-
-    applySyncEvent(event as OpenCodeSdkEvent);
-
-    switch (event.type) {
-      // ---- Message events — handled by sync store only ----
-      case 'message.updated': {
-        // A user message is two frames — the info, then its text part. If the
-        // second never lands this tab renders an empty bubble for good; a
-        // tail re-read after a short grace repairs it from the server.
-        const info = (
-          event.properties as { info?: { id?: string; role?: string; sessionID?: string } }
-        ).info;
-        const sessionID = info?.sessionID ?? (event.properties as { sessionID?: string }).sessionID;
-        if (info?.role === 'user' && info.id && sessionID) {
-          const messageID = info.id;
-          setTimeout(() => {
-            const state = useSyncStore.getState();
-            const stillListed = state.messages[sessionID]?.some((m) => m.id === messageID);
-            if (stillListed && !(state.parts[messageID]?.length ?? 0)) {
-              void reconcileTail(sessionID, 'sse-gap');
-            }
-          }, userPartsGraceMs);
-        }
-        break;
-      }
-      case 'message.removed':
-        break;
-
-      case 'message.part.updated': {
-        // Extract diagnostics from tool output and/or metadata
-        applyPartDiagnostics(event.properties.part, normalizeDiagnosticPaths);
-        break;
-      }
-
-      case 'message.part.removed':
-        break;
-
-      // ---- Session lifecycle — surgical cache mutations (zero HTTP) ----
-      //
-      // IMPORTANT: Return the old array reference when nothing changed.
-      // Creating new arrays on every SSE event causes cascading re-renders
-      // in all session list consumers, which triggers a Radix UI compose-refs
-      // infinite loop (Maximum update depth exceeded).
-      case 'session.created': {
-        const info = readSessionInfo(event);
-        if (info) {
-          // T22 — reload/cross-tab recovery: a `Session.revert` field on the
-          // info this event carries is the only way a fresh mount (nothing
-          // staged locally yet, the `.staged` wire event already happened
-          // before this tab connected) rediscovers an already-staged revert.
-          // See `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment —
-          // absence never clears an existing record; only the three
-          // dedicated wire events (also routed through `applySyncEvent`
-          // above) do that.
-          useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
-          queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-            if (!old) return [info];
-            const exists = old.findIndex((s) => s.id === info.id);
-            if (exists >= 0) {
-              // Already exists — check if actually changed
-              if (old[exists].time.updated === info.time.updated) return old;
-              const next = [...old];
-              next[exists] = info;
-              return next.sort((a, b) => b.time.updated - a.time.updated);
-            }
-            return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
-          });
-          queryClient.setQueryData(runtimeKeys.runtimeSession(info.id), info);
-          patchKortixSessionTitleMirrors(
-            queryClient,
-            projectId,
-            info.id,
-            realRuntimeTitle(info.title),
-          );
-          refetchKortixSessionMirrors(queryClient, projectId);
-        }
-        break;
-      }
-
-      case 'session.updated': {
-        const info = readSessionInfo(event);
-        if (info) {
-          // T22 — see the identical call in the `session.created` case above.
-          useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
-          // OpenCode auto-titles after the first message via session.updated.
-          // Capture the previous title before local cache mutation so we only
-          // force the server-owned mirror read when the title actually changed.
-          const prevTitle =
-            queryClient
-              .getQueryData<Session[]>(runtimeKeys.sessions())
-              ?.find((s) => s.id === info.id)?.title ??
-            queryClient.getQueryData<Session>(runtimeKeys.runtimeSession(info.id))?.title ??
-            null;
-          const titleChanged = !!info.title && info.title !== prevTitle;
-          // Only update individual session cache (cheap, targeted)
-          queryClient.setQueryData(runtimeKeys.runtimeSession(info.id), info);
-          // Update session list only if the session actually changed
-          queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-            if (!old) return old;
-            const idx = old.findIndex((s) => s.id === info.id);
-            if (idx < 0) return old;
-            // Shallow check: skip only if BOTH the timestamp and the title are
-            // unchanged. Title alone can flip (opencode auto-titles) without a
-            // perceptible time bump, and dropping that would keep the tab stale.
-            if (old[idx].time.updated === info.time.updated && old[idx].title === info.title)
-              return old;
-            const next = [...old];
-            next[idx] = info;
-            return next.sort((a, b) => b.time.updated - a.time.updated);
-          });
-          if (titleChanged) {
-            // Instant local mirror first (the refetch below can race the
-            // server-side snapshot write and return the pre-title name),
-            // then the authoritative server read.
-            patchKortixSessionTitleMirrors(
-              queryClient,
-              projectId,
-              info.id,
-              realRuntimeTitle(info.title),
-            );
-            refetchKortixSessionMirrors(queryClient, projectId);
-          }
-        }
-        break;
-      }
-
-      case 'session.deleted': {
-        const info = readSessionInfo(event);
-        if (info) {
-          queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-            if (!old) return old;
-            const found = old.some((s) => s.id === info.id);
-            if (!found) return old;
-            return old.filter((s) => s.id !== info.id);
-          });
-          queryClient.removeQueries({
-            queryKey: runtimeKeys.runtimeSession(info.id),
-          });
-          queryClient.removeQueries({
-            queryKey: runtimeKeys.runtimeMessages(info.id),
-          });
-          deleteSessionFromIDB(info.id);
-        }
-        break;
-      }
-
-      case 'session.compacted': {
-        const sessionID = event.properties.sessionID;
-        if (sessionID) {
-          stopCompaction(sessionID);
-          const client = getClient();
-          void reconcileTail(sessionID, 'compaction');
-          // Refetch the individual session to clear time.compacting
-          // (targeted refetch, not full session list invalidation). This is
-          // the FAST path — it fires the instant the frame arrives, and on
-          // success also patches the session list mirror.
-          //
-          // It is not the ONLY path any more: a failure here (this fetch has
-          // no retry of its own) used to leave `time.compacting` stale in the
-          // `runtimeKeys.runtimeSession` cache FOREVER — `useRuntimeSession`
-          // reads it with `staleTime: Infinity` and nothing else refetches it,
-          // so `projectCompacting`'s server-observed rule (`core/session/
-          // compaction.ts`) stayed pinned `true` for the rest of the tab's
-          // life. On failure, route the retry through the SAME query
-          // `useRuntimeSession` registers (3 attempts, exponential backoff)
-          // instead of swallowing it silently. `use-session.ts` also arms a
-          // `serverCompactionRevalidateAtMs` timer as a second, frame-
-          // independent backstop — see that function's doc comment.
-          client.session
-            .get({ sessionID })
-            .then((res) => {
-              if (res.data) {
-                const session = res.data;
-                queryClient.setQueryData(runtimeKeys.runtimeSession(sessionID), session);
-                // Also update in session list
-                queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
-                  if (!old) return old;
-                  const idx = old.findIndex((s) => s.id === sessionID);
-                  if (idx < 0) return old;
-                  const next = [...old];
-                  next[idx] = session;
-                  return next;
-                });
-              } else {
-                void queryClient.invalidateQueries({
-                  queryKey: runtimeKeys.runtimeSession(sessionID),
-                });
-              }
-            })
-            .catch(() => {
-              void queryClient.invalidateQueries({
-                queryKey: runtimeKeys.runtimeSession(sessionID),
-              });
-            });
-        }
-        break;
-      }
-
-      // ---- Rewind commit in a view that never saw the staging ----
-      case 'session.next.revert.committed': {
-        // The store's `applyEvent` refuses to guess-delete when this tab has
-        // no tracked revert record (second tab / fresh mount) — guessing a
-        // watermark from the local tip can delete the user's REPLACEMENT
-        // prompt. It raises `sessionRevertNeedsTailReconcile` instead; this
-        // is the one consumer: fetch the server's already-truncated tail so
-        // truth arrives by read, not by guess.
-        const { sessionID } = event.properties as { sessionID?: string };
-        if (sessionID && useSyncStore.getState().sessionRevertNeedsTailReconcile[sessionID]) {
-          useSyncStore.getState().clearSessionRevertNeedsTailReconcile(sessionID);
-          void reconcileTail(sessionID, 'manual');
-        }
-        break;
-      }
-
-      // ---- Session status ----
-      case 'session.status': {
-        const { sessionID, status } = event.properties;
-        if (sessionID && status) {
-          if (status.type === 'idle') void reconcileTail(sessionID, 'turn-end');
-          // Detect busy/retry → idle against the status from BEFORE the
-          // reducer ran (see `statusBeforeEvent`). Coalescing can drop
-          // intermediate busy events, so the transition is checked here.
-          const prevStatus = statusBeforeEvent;
-          if (status.type === 'idle' && prevStatus && prevStatus.type !== 'idle') {
-            notifyTaskComplete(sessionID, getSessionTitle(sessionID));
-            invalidateWorkspaceFilesAfterTurn();
-          }
-        }
-        break;
-      }
-
-      case 'session.idle': {
-        const sessionID = event.properties.sessionID;
-        if (sessionID) {
-          void reconcileTail(sessionID, 'turn-end');
-          const prevStatus = statusBeforeEvent;
-          if (prevStatus && prevStatus.type !== 'idle') {
-            notifyTaskComplete(sessionID, getSessionTitle(sessionID));
-            invalidateWorkspaceFilesAfterTurn();
-          }
-        }
-        break;
-      }
-
-      // ---- Session errors ----
-      case 'session.error': {
-        const props = event.properties;
-        if (props.sessionID && props.error) {
-          const sessionID = props.sessionID;
-          const error = props.error;
-          stopCompaction(sessionID);
-          // Fire browser notification
-          const rawMessage = error.data.message;
-          const errorTitle =
-            error.name ||
-            (typeof rawMessage === 'string' ? rawMessage : undefined) ||
-            'An error occurred';
-          notifySessionError(sessionID, errorTitle, getSessionTitle(sessionID));
-
-          // Patch the error onto the last assistant message in cache.
-          // This is critical because:
-          // 1. session.error arrives BEFORE message.updated with .error
-          // 2. Some error paths (model-not-found, agent-not-found) never
-          //    emit message.updated with .error at all
-          // 3. Polling can race and overwrite the error from message.updated
-          const key = runtimeKeys.runtimeMessages(sessionID);
-          queryClient.cancelQueries({ queryKey: key });
-          queryClient.setQueryData<MessageWithParts[]>(key, (old) => {
-            if (!old || old.length === 0) return old;
-            // Find the last assistant message and patch error onto it
-            for (let i = old.length - 1; i >= 0; i--) {
-              const info = old[i].info;
-              if (info.role === 'assistant') {
-                if (info.error) return old; // already has error
-                const updated = [...old];
-                updated[i] = {
-                  ...old[i],
-                  info: { ...info, error },
-                };
-                return updated;
-              }
-            }
-            return old;
-          });
-
-          // Fetch real messages from the server to bring in
-          // authoritative data. In error paths the server may never
-          // send message.updated for the user message, leaving the
-          // optimistic duplicate. After hydrating server data,
-          // clear any optimistic messages (now superseded by real
-          // ones) to prevent double user bubbles.
-          //
-          // EXCEPTION: On abort, skip the fetch+hydrate — the server
-          // may not have persisted the partial assistant response yet,
-          // so hydrating would wipe the streamed content the user saw.
-          // The error is already patched onto the message above.
-          const aborted = isAbortError(error);
-          if (!aborted) {
-            reconcileTail(sessionID, 'session-error')
-              .then(() => {
-                useSyncStore.getState().clearOptimisticMessages(sessionID);
-              })
-              .catch(() => {});
-          } else {
-            // Still clear optimistic messages on abort — the real
-            // user message should have arrived via SSE by now.
-            useSyncStore.getState().clearOptimisticMessages(sessionID);
-          }
-        }
-        break;
-      }
-
-      // ---- Permissions ----
-      case 'permission.asked': {
-        const props = event.properties;
-        if (props.id && props.sessionID) {
-          addPermission(props);
-          // Fire browser notification for permission requests. `tool` (when
-          // present) is `{messageID, callID}`, not a name — some historical
-          // wire shapes carried a bare string `type` field instead, which the
-          // current SDK types no longer declare. Duck-type both defensively
-          // rather than assume either is a string.
-          const rawProps: { tool?: unknown; type?: unknown } = props;
-          const toolName =
-            asStringOrUndefined(rawProps.tool) ?? asStringOrUndefined(rawProps.type) ?? 'a tool';
-          notifyPermissionRequest(props.sessionID, toolName, getSessionTitle(props.sessionID));
-        }
-        break;
-      }
-      case 'permission.replied': {
-        const requestID = event.properties.requestID;
-        if (requestID) removePermission(requestID);
-        break;
-      }
-
-      // ---- Questions ----
-      case 'question.asked': {
-        const props = event.properties;
-        if (props.id && props.sessionID) {
-          addQuestion(props);
-          // Fire browser notification for questions needing user input
-          const questionText =
-            props.questions[0]?.question || props.questions[0]?.header || 'Kortix needs your input';
-          notifyQuestion(props.sessionID, questionText, getSessionTitle(props.sessionID));
-        }
-        break;
-      }
-      case 'question.replied':
-      case 'question.rejected': {
-        const requestID = event.properties.requestID;
-        if (requestID) removeQuestion(requestID);
-        break;
-      }
-
-      // ---- Session diff ----
-      case 'session.diff': {
-        const props = event.properties;
-        if (props.sessionID) {
-          queryClient.setQueryData(['opencode', 'session-diff', props.sessionID], props.diff);
-        }
-        // This event describes ONE message's diff, which is not what the
-        // Changes surface shows (that is the whole version vs. its base). But
-        // it is a precise "files just moved" signal, so it is what keeps the
-        // panel live MID-turn instead of only at idle.
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.vcsDiffAll(),
-          type: 'active',
-        });
-        break;
-      }
-
-      // ---- Todo updated ----
-      case 'todo.updated': {
-        const props = event.properties;
-        if (props.sessionID) {
-          queryClient.setQueryData(['opencode', 'session-todo', props.sessionID], props.todos);
-        }
-        break;
-      }
-
-      // ---- VCS branch ----
-      case 'vcs.branch.updated': {
-        const props = event.properties;
-        queryClient.setQueryData(['opencode', 'vcs'], {
-          branch: props.branch,
-        });
-        // A different branch is a different base — every `mode: 'branch'` diff
-        // in the cache now describes a comparison that no longer applies.
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.vcsDiffAll(),
-          type: 'active',
-        });
-        break;
-      }
-
-      // ---- Server disposed ----
-      case 'server.instance.disposed': {
-        for (const [sessionID, status] of Object.entries(useSyncStore.getState().sessionStatus)) {
-          if (status?.type !== 'idle') {
-            markSessionAbortedLocally.current(
-              sessionID,
-              'The operation was aborted because the server instance was disposed.',
-            );
-          }
-        }
-        // Instance dispose means the server rescanned skills, agents,
-        // tools, and commands. Invalidate all cached app metadata so
-        // the UI picks up newly installed marketplace components or
-        // agent-created skills/agents immediately.
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.sessions(),
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.mcpStatus(),
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.skills(),
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.agents(),
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.toolIds(),
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.commands(),
-          type: 'active',
-        });
-        break;
-      }
-
-      // ---- LSP updated ----
-      case 'lsp.updated': {
-        queryClient.invalidateQueries({
-          queryKey: ['opencode', 'lsp'],
-          type: 'active',
-        });
-        // A new LSP client connected — fetch diagnostics after a short
-        // delay to give the language server time to produce initial results.
-        fetchLspDiagnosticsDebounced.current();
-        break;
-      }
-
-      // ---- LSP client diagnostics (per-file notification) ----
-      case 'lsp.client.diagnostics': {
-        // This event signals diagnostics changed for a specific file.
-        // The event only carries { serverID, path } — actual diagnostic
-        // data must be fetched from the /lsp/diagnostics endpoint.
-        fetchLspDiagnosticsDebounced.current();
-        break;
-      }
-
-      // ---- MCP tools changed ----
-      case 'mcp.tools.changed': {
-        // MCP server tools were added/removed/changed — refresh status + tool lists.
-        // Only refetch if queries are actively mounted (type: 'active').
-        queryClient.refetchQueries({
-          queryKey: runtimeKeys.mcpStatus(),
-          type: 'active',
-        });
-        queryClient.refetchQueries({
-          queryKey: runtimeKeys.toolIds(),
-          type: 'active',
-        });
-        break;
-      }
-
-      // ---- PTY events ----
-      case 'pty.created':
-      case 'pty.updated':
-      case 'pty.exited':
-      case 'pty.deleted': {
-        queryClient.invalidateQueries({
-          queryKey: ptyKeys.listPrefix(),
-          type: 'active',
-        });
-        break;
-      }
-
-      // ---- Worktree events — disabled for now ----
-      case 'worktree.ready': {
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.worktrees(),
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.projects(),
-          type: 'active',
-        });
-        break;
-      }
-
-      case 'worktree.failed': {
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.worktrees(),
-          type: 'active',
-        });
-        break;
-      }
-
-      // ---- Project updated ----
-      case 'project.updated': {
-        // Targeted refetch — project data is small and changes rarely,
-        // but OpenCode can emit bursts while tools are running. Coalesce
-        // these so a burst cannot spam /project/current.
-        scheduleProjectMetadataRefetch(queryClient);
-        break;
-      }
-
-      // ---- File edited (outside agent, e.g. user edits in editor) ----
-      case 'file.edited': {
-        const fileProps = event.properties;
-        queryClient.invalidateQueries({
-          queryKey: fileListKeys.all,
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: gitStatusKeys.all,
-          type: 'active',
-        });
-        queryClient.invalidateQueries({
-          queryKey: runtimeKeys.vcsDiffAll(),
-          type: 'active',
-        });
-        if (fileProps.file) {
-          queryClient.invalidateQueries({
-            queryKey: fileContentKeys.all,
-            type: 'active',
-          });
-          queryClient.invalidateQueries({
-            queryKey: binaryBlobKeys.all,
-            type: 'active',
-          });
-        }
-        break;
-      }
-
-      // ---- Installation events ----
-      case 'installation.updated': {
-        const installProps = event.properties;
-        const versionStr = installProps.version ? ` (v${installProps.version})` : '';
-        infoToast(`Installation updated${versionStr}. Restart to apply changes.`, {
-          duration: 10_000,
-        });
-        break;
-      }
-
-      case 'installation.update-available': {
-        const updateProps = event.properties;
-        const versionLabel = updateProps.version ? `v${updateProps.version}` : 'A new version';
-        infoToast(`${versionLabel} is available. Update when you're ready.`, {
-          duration: 15_000,
-        });
-        break;
-      }
-
-      default:
-        break;
-    }
-  }
-
-  return handleEvent;
+    deps.applySyncEvent(event as OpenCodeSdkEvent);
+    if (event.type.startsWith('message.')) handleMessageEvent(event, ctx);
+    else if (event.type.startsWith('session.') && event.type !== 'session.diff')
+      handleSessionEvent(event, ctx, statusBeforeEvent);
+    else if (event.type.startsWith('permission.') || event.type.startsWith('question.'))
+      handleInteractionEvent(event, ctx);
+    else handleWorkspaceEvent(event, ctx);
+  };
 }

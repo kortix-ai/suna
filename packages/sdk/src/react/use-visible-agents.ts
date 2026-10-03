@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { Agent } from '@opencode-ai/sdk/v2/client';
+import type { Agent } from '../core/runtime/runtime-types';
 import { useRuntimeAgents } from './use-opencode-sessions';
 import { isSelectableAgent } from '../core/rest/projects-client/project-agents';
 

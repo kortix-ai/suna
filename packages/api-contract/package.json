@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./secret-relay": "./src/secret-relay.ts",
-    "./runtime-relay": "./src/runtime-relay.ts"
+    "./runtime-relay": "./src/runtime-relay.ts",
+    "./transcript": "./src/transcript.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

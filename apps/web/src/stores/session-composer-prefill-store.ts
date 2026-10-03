@@ -21,6 +21,8 @@ export interface SessionPrefill {
   id: number;
   /** Files to attach with the text — queued messages taken back with Up. */
   files?: AttachedFile[];
+  /** `replace` swaps out what is typed; the default merges into it. */
+  mode?: 'replace';
 }
 
 interface SessionComposerPrefillState {
@@ -33,7 +35,12 @@ interface SessionComposerPrefillState {
    *  over whatever the user typed since. `clearPrefill` is how the session
    *  (not the composer) declares "already delivered, forget it". */
   prefillBySession: Record<string, SessionPrefill>;
-  setPrefill: (sessionId: string, text: string, files?: AttachedFile[]) => void;
+  setPrefill: (
+    sessionId: string,
+    text: string,
+    files?: AttachedFile[],
+    mode?: 'replace',
+  ) => void;
   /** Called once the composer has been handed this session's prefill —
    *  removes it so a later remount doesn't re-apply stale text. */
   clearPrefill: (sessionId: string, expectedId?: number) => void;
@@ -56,11 +63,16 @@ let nextId = 0;
 
 export const useSessionComposerPrefillStore = create<SessionComposerPrefillState>((set) => ({
   prefillBySession: {},
-  setPrefill: (sessionId, text, files) =>
+  setPrefill: (sessionId, text, files, mode) =>
     set((s) => ({
       prefillBySession: {
         ...s.prefillBySession,
-        [sessionId]: { text, id: ++nextId, ...(files?.length ? { files } : {}) },
+        [sessionId]: {
+          text,
+          id: ++nextId,
+          ...(files?.length ? { files } : {}),
+          ...(mode ? { mode } : {}),
+        },
       },
     })),
   clearPrefill: (sessionId, expectedId) =>

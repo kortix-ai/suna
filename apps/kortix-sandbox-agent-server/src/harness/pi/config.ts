@@ -112,9 +112,17 @@ export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string
   return null
 }
 
-export function resolvePiSkillDirectories(cfg: HostConfig, piDir?: string | null): string[] {
+export function resolvePiSkillDirectories(
+  cfg: HostConfig,
+  piDir?: string | null,
+  releaseSkillDirs: string[] | null = null,
+): string[] {
+  const piSkills = piDir ? [join(piDir, 'skills')] : []
+  // A config release decides the project's skills (config-release.ts); the
+  // working tree is read only while releases are not in play.
+  if (releaseSkillDirs) return [managedSkillsDir(), ...releaseSkillDirs, ...piSkills]
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
   // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
   // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).
-  return [managedSkillsDir(), join(workspace, 'skills'), ...(piDir ? [join(piDir, 'skills')] : []), join(workspace, '.kortix', 'opencode', 'skills')]
+  return [managedSkillsDir(), join(workspace, 'skills'), ...piSkills, join(workspace, '.kortix', 'opencode', 'skills')]
 }

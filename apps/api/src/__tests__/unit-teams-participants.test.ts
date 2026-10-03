@@ -3,12 +3,14 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 /**
  * Who may continue a Teams session — the Teams twin of the Slack join
- * policies. Slack whispers to the requester with an ephemeral; Teams has none,
- * so the verdict carries a `notice` for the requester's own live card and the
- * owner's Approve / Deny is a normal card.
+ * policies. Slack whispers to one person with an ephemeral; Teams does it with
+ * a targeted message. The verdict carries a `notice` for the requester alone
+ * (session.ts sends it), the owner's Approve / Deny goes to the owner alone,
+ * and so does the decision to the requester. When Teams refuses a targeted
+ * message, the card goes to the whole conversation.
  */
 
-const TENANT = '36009a52-46d2-44bc-ba56-57a87e485e0a';
+const TENANT = '5a1e0c09-0000-4000-8000-000000000009';
 const CONV = '19:chan@thread.tacv2;messageid=1';
 const REF = { serviceUrl: 'https://smba.trafficmanager.net/emea/', conversationId: CONV, tenantId: TENANT, projectId: 'p1' };
 
@@ -47,11 +49,24 @@ mock.module('../shared/db', () => ({
 }));
 mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['req-1', 'marko@example.com']]) }));
+// Where each card went: to one person (targeted), or to the whole conversation.
+const deliveries: Array<{ to: 'targeted' | 'public'; recipient?: string }> = [];
+let targetedAccepted = true;
+/** Teams user ids (`29:…`) by Entra object id, for the members Teams knows here. */
+let members: Record<string, string> = { 'aad-req': '29:req' };
 mock.module('../channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: unknown) => {
     cards.push(card);
+    deliveries.push({ to: 'public' });
     return 'card-1';
   },
+  sendTargetedCard: async (_ref: unknown, recipient: string, card: unknown) => {
+    if (!targetedAccepted) return null;
+    cards.push(card);
+    deliveries.push({ to: 'targeted', recipient });
+    return 'card-2';
+  },
+  conversationMemberId: async (_ref: unknown, aadObjectId: string) => members[aadObjectId] ?? null,
 }));
 mock.module('../channels/core/identity', () =>
   chatIdentityStub({
@@ -83,6 +98,9 @@ beforeEach(() => {
   insertResult = [{ participantId: 'pp-1' }];
   ops.length = 0;
   cards.length = 0;
+  deliveries.length = 0;
+  targetedAccepted = true;
+  members = { 'aad-req': '29:req' };
   identity = { userId: 'owner-1' };
   updateResult = [{ participantId: 'pp-1' }];
   deciderMayWork = true;
@@ -101,7 +119,7 @@ describe('ensureTeamsThreadParticipant', () => {
     expect(ops).toEqual(['insert']);
   });
 
-  test('owner_only: refused with a notice for the requester\'s card', async () => {
+  test('owner_only: refused with a notice for the requester', async () => {
     const v = await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_only' });
     expect(v.allowed).toBe(false);
     if (!v.allowed) expect(v.notice).toMatch(/owner-only/);
@@ -118,6 +136,24 @@ describe('ensureTeamsThreadParticipant', () => {
     expect(card.actions.map((a) => a.title)).toEqual(['Approve', 'Deny']);
     expect(card.actions[0].data).toMatchObject({ verb: 'teams_thread_join', decision: 'approved', sessionId: 's1', requesterUserId: 'req-1', requesterTeamsUserId: 'aad-req' });
     expect(card.body[0].text).toContain('marko@example.com');
+  });
+
+  test('the Approve / Deny card goes to the owner alone: the person who started the session', async () => {
+    selectQueue = [[]];
+    await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval', sessionMetadata: { teams: { user: '29:owner' } } });
+    expect(deliveries).toEqual([{ to: 'targeted', recipient: '29:owner' }]);
+  });
+
+  test('the Approve / Deny card goes to the whole conversation when the owner is unknown or Teams refuses', async () => {
+    selectQueue = [[]];
+    await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval' });
+    expect(deliveries).toEqual([{ to: 'public' }]);
+
+    deliveries.length = 0;
+    selectQueue = [[]];
+    targetedAccepted = false;
+    await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval', sessionMetadata: { teams: { user: '29:owner' } } });
+    expect(deliveries).toEqual([{ to: 'public' }]);
   });
 
   test('owner_approval, asked again while pending: no second card, "still waiting"', async () => {
@@ -186,6 +222,20 @@ describe('decideTeamsThreadJoin', () => {
     expect(r.ok).toBe(true);
     expect(ops.filter((o) => o === 'insert')).toHaveLength(0);
     expect(JSON.stringify(cards[0])).toContain('declined');
+  });
+
+  test('the decision goes to the requester alone, found by the Entra id their request stored', async () => {
+    selectQueue = [thread, pending, session];
+    await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
+    expect(deliveries).toEqual([{ to: 'targeted', recipient: '29:req' }]);
+  });
+
+  test('a requester Teams does not know here still hears the decision, in the conversation', async () => {
+    members = {};
+    selectQueue = [thread, pending, session];
+    await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
+    expect(deliveries).toEqual([{ to: 'public' }]);
+    expect(JSON.stringify(cards[0])).toContain('Send your message again');
   });
 
   test('an unlinked clicker is asked to /login first', async () => {

@@ -40,7 +40,7 @@ import {
   type ConnectionSharePrincipal,
 } from '@kortix/sdk';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
-import { LockIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
+import { LockIcon, RobotIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -65,8 +65,9 @@ export interface ShareableObject {
 }
 
 export interface SharePlan {
-  /** Principals to grant, in the canonical assignment vocabulary. */
-  add: Array<{ type: 'user' | 'group' | 'project'; id: string }>;
+  /** Principals to grant, in the canonical assignment vocabulary. An agent is
+   *  its service account. */
+  add: Array<{ type: 'user' | 'group' | 'project' | 'service_account'; id: string }>;
   /** Assignment ids to revoke. */
   revoke: string[];
 }
@@ -74,6 +75,7 @@ export interface SharePlan {
 function repicked(grant: ConnectionShare, picked: PrincipalSelection): boolean {
   if (grant.principal_type === 'member') return picked.memberIds.includes(grant.principal_id);
   if (grant.principal_type === 'group') return picked.groupIds.includes(grant.principal_id);
+  if (grant.principal_type === 'agent') return (picked.agentIds ?? []).includes(grant.principal_id);
   return picked.everyone === true;
 }
 
@@ -92,6 +94,7 @@ export function planShare(
   const add: SharePlan['add'] = [];
   for (const id of picked.memberIds) if (!granted('member', id)) add.push({ type: 'user', id });
   for (const id of picked.groupIds) if (!granted('group', id)) add.push({ type: 'group', id });
+  for (const id of picked.agentIds ?? []) if (!granted('agent', id)) add.push({ type: 'service_account', id });
   if (picked.everyone && !current.some((grant) => grant.principal_type === 'project')) {
     add.push({ type: 'project', id: projectId });
   }
@@ -154,7 +157,10 @@ export function sharedWithEveryoneAfter(
   if (picked.everyone) return true;
   const kept = current.filter((grant) => !removed.has(grant.grant_id) || repicked(grant, picked));
   if (kept.some((grant) => grant.principal_type === 'project')) return true;
-  return kept.length === 0 && picked.memberIds.length + picked.groupIds.length === 0;
+  return (
+    kept.length === 0 &&
+    picked.memberIds.length + picked.groupIds.length + (picked.agentIds?.length ?? 0) === 0
+  );
 }
 
 export function ShareAccessBody({
@@ -320,7 +326,13 @@ export function ShareAccessBody({
                           <UserAvatar email={grant.label} size="sm" />
                         ) : (
                           <EntityAvatar
-                            icon={grant.principal_type === 'group' ? UsersIcon : UsersThreeIcon}
+                            icon={
+                              grant.principal_type === 'group'
+                                ? UsersIcon
+                                : grant.principal_type === 'agent'
+                                  ? RobotIcon
+                                  : UsersThreeIcon
+                            }
                             label={label}
                             size="sm"
                           />
@@ -334,7 +346,9 @@ export function ShareAccessBody({
                             ? t('groupMeta')
                             : grant.principal_type === 'member'
                               ? t('memberMeta')
-                              : t('everyoneMeta')
+                              : grant.principal_type === 'agent'
+                                ? t('agentMeta')
+                                : t('everyoneMeta')
                       }
                       removed={isRemoved}
                       action={
@@ -374,7 +388,9 @@ export function ShareAccessBody({
             <PrincipalPicker
               scope={{ kind: 'project', projectId }}
               selection="multi"
-              kinds={['member', 'group']}
+              // A private account becomes shared through `shareConnection`,
+              // which takes people and groups; an agent joins once it is shared.
+              kinds={privateOwner ? ['member', 'group'] : ['member', 'group', 'agent']}
               everyone={{ label: everyoneLabel }}
               excludeUserIds={grantedMemberIds}
               value={picked}
@@ -384,6 +400,9 @@ export function ShareAccessBody({
               emptyLabel={tI18nComplete.raw('textd2600c68a9ff')}
               allExcludedLabel={tI18nComplete.raw('textf68d7561db3d')}
             />
+            {(picked.agentIds?.length ?? 0) > 0 ? (
+              <p className="text-muted-foreground text-xs">{t('agentShareHint')}</p>
+            ) : null}
           </Field>
 
           <InfoBanner tone="neutral" icon={everyoneAfter ? UsersThreeIcon : LockIcon}>

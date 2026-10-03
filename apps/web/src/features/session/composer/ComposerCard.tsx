@@ -25,7 +25,6 @@ import {
   EMPTY_VARIANTS,
   type SessionChatInputProps,
 } from './composer';
-import { ComposerDictation } from './composer-dictation';
 import { shouldFocusEditorFromPadding } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
@@ -154,6 +153,7 @@ export function ComposerCard({
   lockForQuestion = false,
   lockForApproval = false,
   questionButtonLabel = null,
+  submitLabel = null,
   questionCanAct = true,
   escCount = 0,
   isBusy = false,
@@ -337,9 +337,7 @@ export function ComposerCard({
           />
           <ComposerToolbar
             leading={
-              <>
-                <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
-                {inlineUnderbar ? (
+              inlineUnderbar ? (
                 <ComposerUnderbar
                   variant="inline"
                   onAttachClick={handleAttachClick}
@@ -353,8 +351,7 @@ export function ComposerCard({
                   selectedModel={availableSelectedModel}
                   onContextClick={onContextClick}
                 />
-                ) : null}
-              </>
+              ) : null
             }
             modelsLoading={modelsLoading}
             models={models}
@@ -384,6 +381,7 @@ export function ComposerCard({
             escCount={escCount}
             lockForQuestion={lockForQuestion}
             questionButtonLabel={questionButtonLabel}
+            submitLabel={submitLabel}
             questionCanAct={questionCanAct}
             hasText={!isEmpty}
             canSubmit={canSubmit}

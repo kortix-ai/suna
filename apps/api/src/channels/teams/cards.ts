@@ -283,21 +283,21 @@ function emphasisContainer(items: CardElement[]): CardElement {
   return { type: 'Container', style: 'emphasis', spacing: 'medium', bleed: true, items };
 }
 
-export function buildConnectAccountCard(loginUrl: string): Record<string, unknown> {
-  return card(
-    headerBlock(
-      '🔗',
-      'Connect your Kortix account',
-      'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
-    ),
-    [openUrlAction('Connect or create account', loginUrl)],
-  );
+export function buildConnectAccountCard(loginUrl: string, opts: { resumes?: boolean } = {}): Record<string, unknown> {
+  const lines = [
+    'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
+    ...(opts.resumes ? ['What you sent runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')), [
+    openUrlAction('Connect or create account', loginUrl),
+  ]);
 }
 
 /**
- * The sign-in prompt in a channel or group chat. It carries no link: everyone
- * in the conversation sees the card, and the link links whoever opens it
- * (identity-routes.ts `/bind`). The link is shown only in a one-to-one chat.
+ * The sign-in prompt in a channel or group chat when Teams refuses the
+ * targeted message that carries the link (login-card.ts). It carries no link:
+ * everyone in the conversation sees this card, and the link links whoever
+ * opens it (identity-routes.ts `/bind`).
  */
 export function buildConnectPrivatelyCard(input: {
   /** A deep link that opens a one-to-one chat with the bot; null when unknown. */

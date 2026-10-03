@@ -34,7 +34,7 @@ import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { CodeBlockFullHeightContext } from '@/components/markdown/code-block';
 import { MarkdownActionsProvider, type MarkdownActions } from '@/components/markdown/inline-code';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { usePendingPermissions } from '@/lib/session/session-store';
 import { activitySheetEntries, burstHasPendingPermission, type ActivitySheetEntry } from '@/lib/session/activity-sheet';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { useTabStore } from '@/stores/tab-store';
@@ -347,7 +347,6 @@ const ActivitySheet = memo(ActivitySheetImpl);
 
 // ─── Host ────────────────────────────────────────────────────────────────────
 
-const NO_PERMISSIONS: ReadonlyArray<{ tool?: { callID: string } }> = [];
 
 /**
  * Mount once per transcript screen, next to `ToolFilePreviewHost`. It shows the
@@ -368,7 +367,7 @@ export function ActivitySheetHost({
   const sheet = store?.context.sessionId === hostSessionId ? store : null;
   const closeSheet = useActivitySheetStore((state) => state.close);
   const sessionId = sheet?.context.sessionId;
-  const permissions = useSyncStore((state) => (sessionId ? state.permissions[sessionId] : undefined)) ?? NO_PERMISSIONS;
+  const permissions = usePendingPermissions(sessionId);
   const view = sheet?.view;
   const entries = useMemo(() => (view ? activitySheetEntries(view) : []), [view]);
 

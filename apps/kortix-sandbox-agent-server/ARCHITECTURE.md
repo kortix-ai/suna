@@ -111,10 +111,9 @@ typecheck does not know this `@/`.
 OpenCode knowledge belongs in `src/harness/open-code/`. The `kortixd/opencode-names`
 lint rule rejects an identifier or string that matches `/open.?code/i` in
 `src/lib/`, `src/types/`, `src/services/`, `src/routes/`, `src/app/`,
-`src/main.ts`, `src/harness/contract/` and `src/harness/shared/`. Tests,
-`src/harness/harness.ts` and both adapters are out of scope. `src/harness/pi/`
-joins after E2, when pi stops emitting the OpenCode wire. Comments are not
-checked.
+`src/main.ts`, `src/harness/contract/`, `src/harness/shared/` and, since W5 E2
+(pi emits the Kortix format), `src/harness/pi/`. Tests, `src/harness/harness.ts`
+and the OpenCode adapter are out of scope. Comments are not checked.
 
 `OPENCODE_NAMES_ALLOWED` in `eslint.config.mjs` lists the names that exist
 today, per file. The list only shrinks: an entry whose word no longer occurs in
@@ -125,7 +124,10 @@ Since W3 the list holds one file, `src/routes/kortix/legacy-names.ts`: the
 pre-W3 wire names (`opencode_pid`, `opencodeEnv`, `/kortix/opencode`, …) that an
 API deploy built before W3 still reads and sends. Every other module uses the
 Kortix names (`runtime_*`, `runtime_session_id`, `harness_version`). Delete the
-file, its callers' spreads and its entry when no such API deploy can run.
+file, its callers' spreads and its entry when no such API deploy can run. The
+two pi entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
+layout's config directory, `.kortix/opencode`, which a project that has not
+moved to the root layout still uses.
 
 ## Where a type goes
 

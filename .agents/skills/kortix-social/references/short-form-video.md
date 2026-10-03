@@ -75,7 +75,7 @@ Platform: TikTok / Reels / Shorts   Length: XXs   Format: [talking head / demo /
 
 Most short-form is watched on mute; subtitles lift watch time 25–40%.
 - Max 2 lines on screen, 3–5 words per line
-- Bold sans-serif with a black outline; highlight the key word in a second color
+- Roobert at semibold at most; highlight the key word in the one accent (see `kortix-brand` `art-direction.md`)
 - Time to speech exactly
 - Tools: CapCut (free), Descript, Captions.ai
 

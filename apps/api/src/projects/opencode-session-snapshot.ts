@@ -5,19 +5,20 @@ import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import type { ProjectSessionRow } from './lib/serializers';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
-import {
-  type OpencodeSessionLite,
-  listSandboxOpencodeSessions,
-  resolveRootSessionId,
-} from './opencode-mapping';
+import { readRuntimeLeg } from './lib/session-runtime-projection';
+import { refreshRuntimeProjection } from './lib/session-runtime-projection-refresh';
+import type { OpencodeSessionLite } from './opencode-mapping';
 
-// Keeps `metadata.opencode_sessions` — the scoped list of the OpenCode sessions
-// (root + sub-agent children) under a session's canonical root — fresh. The
-// frontend reads it for the conversation count and per-conversation labels
-// (project-sessions-view.tsx, session-label.ts). Session TITLES are NOT handled
-// here: `metadata.name` is owned solely by session-title-generate.ts. The
-// canonical-root PIN (`opencode_session_id`) is owned solely by
-// ensureOpencodeSessionPin; this pass only reads it to scope the snapshot.
+// Keeps `metadata.opencode_sessions` — the scoped list of the runtime's
+// conversations (root + subagent children) under a session's canonical root —
+// fresh. Clients read it as `runtime_sessions` for the conversation count and
+// the subagent rows (the SDK's `directSubsessions`). The list comes from the
+// runtime projection's `sessions` (`/kortix/runtime/state`), which both
+// harnesses serve, so a harness needs no OpenCode `GET /session` to show its
+// children. Session TITLES are NOT handled here: `metadata.name` is owned
+// solely by session-title-generate.ts. The canonical-root PIN
+// (`runtime_session_id`) is owned solely by ensureOpencodeSessionPin; this pass
+// only reads it to scope the snapshot.
 //
 // Scheduled deferred off the prompt proxy — the one moment the sandbox is
 // guaranteed awake — and best-effort: a failure never surfaces to the prompt.
@@ -114,34 +115,49 @@ function sameSessions(a: unknown, b: OpenCodeSessionSnapshot[]): boolean {
   }
 }
 
-/** Refresh `metadata.opencode_sessions` for one session from its live sandbox.
- *  Writes only when the scoped snapshot changed; best-effort on unreachability. */
-export async function syncOpencodeSessionSnapshot(input: {
-  row: ProjectSessionRow;
-  externalId: string;
-  userId?: string;
-}): Promise<ProjectSessionRow> {
-  const listed = await listSandboxOpencodeSessions(input.externalId, input.userId);
-  if (!listed.ok) return input.row;
+/** Seams for unit tests: the projection pull and the stored-projection read. */
+export interface SnapshotSourceDeps {
+  refresh?: typeof refreshRuntimeProjection;
+  readLeg?: typeof readRuntimeLeg;
+}
 
-  const snapshots = listed.sessions
+/** Refresh `metadata.opencode_sessions` for one session from its runtime projection.
+ *  Writes only when the scoped snapshot changed; best-effort on unreachability. */
+export async function syncOpencodeSessionSnapshot(
+  input: { row: ProjectSessionRow; userId?: string },
+  deps: SnapshotSourceDeps = {},
+): Promise<ProjectSessionRow> {
+  const { row } = input;
+  // Pull the box's current document first (a 304 when nothing changed). The
+  // read below also serves a projection the box pushed, or one stored before.
+  if (input.userId) {
+    await (deps.refresh ?? refreshRuntimeProjection)(
+      { sessionId: row.sessionId, projectId: row.projectId, accountId: row.accountId, userId: input.userId },
+      { force: true },
+    );
+  }
+  const leg = await (deps.readLeg ?? readRuntimeLeg)(row.sessionId);
+  if (!leg.known) return row;
+  const sessions = leg.state.sessions as { known?: unknown; value?: unknown } | undefined;
+  if (sessions?.known !== true || !Array.isArray(sessions.value)) return row;
+
+  const snapshots = sessions.value
     .map((session) => normalizeSnapshot(session as OpenCodeSessionLike))
     .filter((session): session is OpenCodeSessionSnapshot => Boolean(session));
-  if (snapshots.length === 0) return input.row;
+  if (snapshots.length === 0) return row;
 
-  const resolvedRootId = resolveRootSessionId({
-    pinnedRootId: input.row.runtimeSessionId,
-    sessions: listed.sessions,
-  });
-  if (!resolvedRootId) return input.row;
+  // The pin, else the root the box itself reports. Not `pickCanonicalRoot`:
+  // it reads `parentID`, and a projection entry names its parent `parent_id`.
+  const resolvedRootId = row.runtimeSessionId ?? leg.identity.runtime_session_id;
+  if (!resolvedRootId) return row;
 
   const resolveRoot = rootResolver(snapshots);
   const scopedSessions = snapshots
     .filter((entry) => resolveRoot(entry.id) === resolvedRootId)
     .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
 
-  const metadata = (input.row.metadata ?? {}) as Record<string, unknown>;
-  if (sameSessions(metadata.opencode_sessions, scopedSessions)) return input.row;
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  if (sameSessions(metadata.opencode_sessions, scopedSessions)) return row;
 
   // Merge in-SQL, never write back the whole object read above: this pass is
   // scheduled off the SAME prompt that fires title generation, so a
@@ -157,14 +173,14 @@ export async function syncOpencodeSessionSnapshot(input: {
     })
     .where(
       and(
-        eq(projectSessions.sessionId, input.row.sessionId),
-        eq(projectSessions.projectId, input.row.projectId),
-        eq(projectSessions.accountId, input.row.accountId),
+        eq(projectSessions.sessionId, row.sessionId),
+        eq(projectSessions.projectId, row.projectId),
+        eq(projectSessions.accountId, row.accountId),
       ),
     )
     .returning();
 
-  return updated ?? { ...input.row, metadata: nextMetadata, updatedAt: new Date() };
+  return updated ?? { ...row, metadata: nextMetadata, updatedAt: new Date() };
 }
 
 /** Injectable seams so unit tests run without process-global module mocks. */
@@ -189,23 +205,19 @@ async function loadRow(sessionId: string, projectId: string): Promise<ProjectSes
  * a prompt. Safe to call on every prompt — deduped per session; two attempts
  * (the second catches sub-agent sessions spawned during the turn).
  *
- * `userId` is REQUIRED, not optional. The daemon's auth gate rejects every
- * non-`/kortix/*` path — `GET /session` included — with 401 unless the call
- * carries a valid `X-Kortix-User-Context` header (apps/kortix-sandbox-agent-server
- * /src/proxy.ts). That header is minted by `sandboxOpencodeEndpoint` ONLY when a
- * userId is supplied: `resolvePreviewUserContext` returns null for `undefined`.
- * A userId-less schedule therefore 401s, degrades to `unreachable`, and the
- * snapshot is silently never written — which is exactly what happened between
- * 2026-08-01 and 2026-08-20, when 0 of 2804 staging sessions got a populated
- * `metadata.opencode_sessions`. Spelling the parameter as required (rather than
- * `userId?`) makes the compiler, not a reviewer, catch the next caller that
- * forgets it.
+ * `userId` is REQUIRED, not optional. It signs the `X-Kortix-User-Context` the
+ * projection pull sends; without it the sync can only read a projection the
+ * box pushed on its own (boot, env, catalog), which lists no child spawned
+ * since. A userId-less schedule once left `metadata.opencode_sessions` empty on
+ * 0 of 2804 staging sessions (2026-08). Spelling the parameter as required
+ * (rather than `userId?`) makes the compiler, not a reviewer, catch the next
+ * caller that forgets it.
  */
 export function scheduleOpencodeSnapshotSync(
-  input: { sessionId: string; projectId: string; externalId: string; userId: string | undefined },
+  input: { sessionId: string; projectId: string; accountId: string; userId: string | undefined },
   options: SnapshotSyncOptions = {},
 ): void {
-  if (!input.sessionId || !input.projectId || !input.externalId) return;
+  if (!input.sessionId || !input.projectId || !input.accountId) return;
   if (pending.has(input.sessionId)) return;
   pending.add(input.sessionId);
 
@@ -216,7 +228,7 @@ export function scheduleOpencodeSnapshotSync(
 
   const attempt = async (): Promise<void> => {
     const row = await load(input.sessionId, input.projectId);
-    if (row) await sync({ row, externalId: input.externalId, userId: input.userId });
+    if (row) await sync({ row, userId: input.userId });
   };
 
   const run = async () => {

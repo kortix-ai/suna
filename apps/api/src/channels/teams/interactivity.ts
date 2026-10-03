@@ -1,5 +1,4 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { changeChannelAgent, switchChannelProject } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
@@ -67,22 +66,6 @@ export async function handleAdaptiveCardAction(
   // trustworthy as its admin, so any project it names must be that project.
   if (typeof action.data.projectId === 'string' && !inboundAllowsTeamsProject(inbound, action.data.projectId)) {
     return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
-  }
-
-  // Turning Teams off for a project stops its cards too, not only its
-  // messages (dispatch): an Approve or Stop posted before still reached the
-  // project. The bring-your-own endpoint checks the flag before any of this.
-  if (inbound.kind === 'managed') {
-    const convo = convoOf(activity);
-    const projectId =
-      typeof action.data.projectId === 'string'
-        ? action.data.projectId
-        : convo
-          ? await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)
-          : null;
-    if (projectId && !(await projectFeatureFlagEnabled(projectId, 'teams'))) {
-      return cardResponse(buildNoticeCard('Microsoft Teams is turned off for this project.'));
-    }
   }
 
   switch (action.verb) {

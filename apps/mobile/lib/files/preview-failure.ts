@@ -1,6 +1,6 @@
 /**
  * Why a sandbox file did not load, in words a person can act on. The file hooks
- * (`lib/files/hooks.ts`) throw `Failed to … file: <status>`; a stopped sandbox
+ * (`lib/files/hooks.ts`) reject with the SDK's error, which carries `status`; a stopped sandbox
  * keeps its transcript but answers no file read, so "not reachable" is the
  * common case and the one worth a retry.
  */
@@ -15,6 +15,8 @@ export interface PreviewFailure {
 }
 
 function statusOf(error: unknown): number | null {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') return status;
   const text = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   const match = text.match(/\b([1-5]\d{2})\b/);
   return match ? Number(match[1]) : null;

@@ -95,3 +95,24 @@ test('pins normalization, parsing, matching, rank and stable tie order', async (
     ['/workspace/a/a.ts', '/workspace/z/a.ts'],
   );
 });
+
+test('runtime-files policy preserves raw paths and legacy ranking without changing defaults', async () => {
+  const { rankWorkspaceSearchEntry, workspaceEntryMatchesQuery } = await import('./core');
+  const entry = (path: string) => ({ path, name: 'ignored', isDir: false });
+  const policy = 'runtime-files' as const;
+  for (const [path, query, rank] of [
+    ['a//APP', ' app ', 0.02], ['x/app.ts', 'app', 10.01],
+    ['x/myapp.ts', 'app', 20.01], ['app/z.ts', 'app', 30.01],
+    ['x/app/z.ts', 'app', 40.02], ['other.ts', 'app', 1000],
+    ['a//b', ' ', 2], ['src\\app.ts', 'app', 20],
+  ] as const) {
+    assert.equal(rankWorkspaceSearchEntry(entry(path), query, policy), rank);
+  }
+  assert.equal(workspaceEntryMatchesQuery(entry('src//app.ts'), 'src/app', policy), false);
+  assert.equal(workspaceEntryMatchesQuery(entry('src//app.ts'), ' SRC//APP ', policy), true);
+  assert.equal(workspaceEntryMatchesQuery(entry('src\\app.ts'), 'src\\app', policy), true);
+  assert.equal(workspaceEntryMatchesQuery(entry('src/a-p-p.ts'), 'app', policy), false);
+  assert.equal(workspaceEntryMatchesQuery(entry('anything'), ' ', policy), true);
+  assert.equal(workspaceEntryMatchesQuery(toWorkspaceSearchEntry('src/a-p-p.ts'), 'app'), true);
+  assert.equal(rankWorkspaceSearchEntry(toWorkspaceSearchEntry('app'), 'app'), 0.001);
+});

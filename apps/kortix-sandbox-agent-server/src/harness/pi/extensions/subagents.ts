@@ -16,12 +16,13 @@
  * (no nesting) and no `question` (nobody answers a child).
  */
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
+import type { CompiledAgent } from '@kortix/api-contract/runtime-relay'
 import { Type } from 'typebox'
 
 /** What the subagents extension needs from the runtime that hosts it. */
 export interface KortixHost {
   /** The compiled agent config's `agent` map (`KORTIX_COMPILED_AGENT_CONFIG`). */
-  compiledAgents(): Record<string, { description?: string; mode?: string; model?: string; variant?: string; prompt?: string; disable?: boolean; permission?: unknown }>
+  compiledAgents(): Record<string, CompiledAgent>
   /** Run one prompt in a child session of this session and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
 }

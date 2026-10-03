@@ -77,6 +77,8 @@ import {
 import {
   __clearRunningCatalogForTests,
   lastKnownManagedCatalog,
+  modelConfirmation,
+  noteModelConfirmation,
   noteRunningCatalog,
 } from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
@@ -641,7 +643,9 @@ export async function convergeModelCatalogForTurnStart(
         await probeRunningRelease(sid);
         return lastKnownManagedCatalog(sid);
       },
-      convergeCatalog: (sid) => convergeSandboxModelCatalog(sid),
+      convergeCatalog: (sid, model) => convergeSandboxModelCatalog(sid, undefined, model),
+      modelConfirmation,
+      noteModelConfirmation,
     });
   } catch (error) {
     logger.warn('[projects] turn-start model-catalog convergence threw', {

@@ -34,6 +34,21 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
   }
   c.set('agentGrant', result.agentGrant ?? null);
   c.set('onBehalfOfUserId', result.onBehalfOfUserId ?? null);
+  // The token's IAM binding, from the row validation just read: `buildActor`
+  // uses it instead of reading the same `account_tokens` row again. Only a
+  // result that actually carries the row's `service_account_id` qualifies (a
+  // stubbed or partial result does not): seeding a missing service account
+  // would demote an agent-session token to a plain PAT, so anything less
+  // falls back to the read.
+  if (result.tokenId && result.serviceAccountId !== undefined) {
+    c.set('iamTokenBinding', {
+      tokenId: result.tokenId,
+      projectId: result.projectId ?? null,
+      agentGrant: result.agentGrant ?? null,
+      serviceAccountId: result.serviceAccountId,
+      onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+    });
+  }
   setSentryUser({ id: userId, accountId: result.accountId });
   setContextField('userId', userId);
   if (result.accountId) setContextField('accountId', result.accountId);
@@ -46,8 +61,13 @@ export async function jwtPrincipal(c: Context, userId: string, email: string, pa
   c.set('userId', userId);
   c.set('userEmail', email);
   c.set('authType', 'supabase');
+  // The token's assurance level ('aal2' = the session passed MFA), on every
+  // path: MFA gates read it (`mfaGateBlocks`, the IAM actor). combinedAuth's
+  // local path used to drop it, so an account that requires MFA refused an
+  // aal2 session there (2026-10-01: chat `/bind` asked for the code again
+  // after every step-up).
+  if (payload?.aal) c.set('mfaAal', payload.aal);
   if (!preview || path === 'network') {
-    if (payload?.aal) c.set('mfaAal', payload.aal);
     if (payload?.session_id) c.set('sessionId', payload.session_id);
     if (typeof payload?.iat === 'number') c.set('sessionIat', payload.iat);
   }

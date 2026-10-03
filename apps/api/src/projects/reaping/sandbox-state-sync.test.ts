@@ -335,12 +335,14 @@ describe('applyStoppedState — unattended recovery after runtime_gone', () => {
         accountId: 'acc-2',
         projectId: 'proj-2',
         metadata: {
-          activeTurn: {
-            token: 'tok-1',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_1',
-            startedAtMs: NOW.getTime() - 5_000,
+          activeTurns: {
+            'tok-1': {
+              token: 'tok-1',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_1',
+              startedAtMs: NOW.getTime() - 5_000,
+            },
           },
         },
       },

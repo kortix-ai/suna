@@ -107,6 +107,8 @@ let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> =
 // FIRST posted id, so the delivery's retry lands and the test does not have to
 // sit out the loop's 45s deadline.
 let runtimeDropsFirstDelivery = false;
+/** A body over the landing-proof threshold: what the provider edge can drop. */
+const OVER_EDGE_TEXT = 'x'.repeat(70_000);
 let promotionCalls: string[] = [];
 /** Runs inside every `promoteNextInboxRow` — lets a test change the world
  *  between one delivery of a chain and the next. */
@@ -412,6 +414,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+  invalidateSandbox: () => {},
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {
@@ -625,7 +628,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     for (const scenario of cases) {
       scenario.setup();
       expect(await executeQueuedContinue(baseRow({ payload: {
-        text: 'say hi',
+        text: scenario.delivery === 'not-landed' ? OVER_EDGE_TEXT : 'say hi',
         ...(scenario.delivery === 'not-landed' ? { wireMessageId: SUBMITTED_WIRE_ID } : {}),
       } }))).toBe(scenario.result);
       expect({
@@ -648,6 +651,15 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       capturedBodies = [];
       seenKeys.clear();
     }
+  });
+  // A conversation with people opens with the asking agent's message: it joins
+  // the transcript and starts no turn — the people answer it.
+  test('a prompt stamped noReply goes out noReply and records it', async () => {
+    const row = baseRow();
+    (row.payload as Record<string, unknown>).noReply = true;
+    expect(await executeQueuedContinue(row)).toBe('succeeded');
+    expect(capturedBodies[0]!.noReply).toBe(true);
+    expect(forwardedCalls[0]!.noReply).toBe(true);
   });
   // A box whose env cannot be converged would run the prompt against a stale
   // gateway URL, stale secrets and a stale model catalog. It waits instead.
@@ -1249,10 +1261,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
-          text: 'HII',
+          text: OVER_EDGE_TEXT,
           clientMessageId: 'q_dropped',
           wireMessageId: SUBMITTED_WIRE_ID,
-          parts: [{ type: 'text', text: 'HII' }],
+          parts: [{ type: 'text', text: OVER_EDGE_TEXT }],
         },
       }),
     );
@@ -1283,10 +1295,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
-          text: 'HII',
+          text: OVER_EDGE_TEXT,
           clientMessageId: 'q_dropped_final',
           wireMessageId: SUBMITTED_WIRE_ID,
-          parts: [{ type: 'text', text: 'HII' }],
+          parts: [{ type: 'text', text: OVER_EDGE_TEXT }],
         },
       }),
     );
@@ -1299,6 +1311,25 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       options: { retryable: false },
     });
   }, 20_000);
+
+  // The read-back guards a body the edge can drop. An ordinary prompt cannot be
+  // dropped by it, and paid a database read plus a daemon GET for nothing.
+  test('an ordinary prompt is forwarded without reading it back', async () => {
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'HII',
+          clientMessageId: 'q_small',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [{ type: 'text', text: 'HII' }],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedKeys).toEqual(['cmd-1']);
+    expect(legacyMessageReads.filter((read) => read.path.endsWith(`/message/${SUBMITTED_WIRE_ID}`))).toEqual([]);
+  });
 
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {
     // The POST route deliberately accepts an empty flattened text when a

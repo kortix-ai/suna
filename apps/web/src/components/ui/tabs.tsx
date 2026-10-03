@@ -177,19 +177,17 @@ interface TabsListProps extends React.ComponentProps<typeof TabsPrimitive.List> 
   orientation?: 'horizontal' | 'vertical';
 }
 
-function TabsList({
-  className,
-  type: typeProp = 'default',
-  variant,
-  size = 'default',
-  underlineSize = 'sm',
-  animate = 'fluid',
-  orientation = 'horizontal',
-  children,
-  ...props
-}: TabsListProps) {
+function TabsList(props: TabsListProps) {
+  return <TabsListRenderer {...props} orientation={props.orientation ?? 'horizontal'} />;
+}
+
+function TabsListRenderer({
+  className, type: typeProp = 'default', variant, size = 'default',
+  underlineSize = 'sm', animate = 'fluid', orientation, compact = false,
+  children, ...props
+}: TabsListProps & { compact?: boolean }) {
   const activeValue = React.useContext(TabsActiveValueContext);
-  const isVertical = orientation === 'vertical';
+  const isVertical = !compact && orientation === 'vertical';
   const requested: TabsListType = variant === 'segmented' ? 'segmented' : typeProp;
   // Every horizontal list that is not `underline` is the segmented control.
   // Triggers read the resolved type from context, so a vertical rail keeps its
@@ -198,64 +196,45 @@ function TabsList({
     requested === 'underline' ? 'underline' : isVertical ? 'default' : 'segmented';
   const isSegmented = type === 'segmented';
   const useSlidingIndicator = isSegmented && animate === 'fluid';
-
+  const trackClassName = cn(
+    compact
+      ? 'text-muted-foreground inline-flex h-7 w-fit items-center justify-center'
+      : 'text-muted-foreground inline-flex w-fit items-center justify-center',
+    !compact && tabsListHeightClasses[size], tabsSegmentedTrackClasses, className,
+  );
   const list = (
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        isSegmented &&
-          'relative z-10 flex h-full w-full items-stretch justify-center gap-0.5',
+        isSegmented && 'relative z-10 flex h-full w-full items-stretch justify-center gap-0.5',
         !isVertical && type === 'underline' && tabsListUnderlineBaseClasses,
+        compact && type === 'underline' && 'h-7',
         !isVertical && type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
-        !isVertical && type === 'underline' && tabsListHeightClasses[size],
-        isVertical &&
-          'flex h-auto w-full flex-col items-stretch gap-0.5 rounded-none bg-transparent p-0',
-        className,
+        !compact && !isVertical && type === 'underline' && tabsListHeightClasses[size],
+        isVertical && 'flex h-auto w-full flex-col items-stretch gap-0.5 rounded-none bg-transparent p-0',
+        (!compact || type === 'underline') && className,
       )}
       {...props}
     >
       {children}
     </TabsPrimitive.List>
   );
-
+  // The sliding pill indicator only measures the x-axis (see
+  // SlidingTabIndicator) — in a column it would collapse to a
+  // zero-width bar, so vertical lists render without it.
+  const content = isVertical || type === 'underline' ? list : useSlidingIndicator ? (
+    <SlidingTabIndicator activeId={activeValue} className={trackClassName}
+      indicatorClassName={tabsSegmentedChipClasses}>{list}</SlidingTabIndicator>
+  ) : <div className={trackClassName}>{list}</div>;
   return (
     <TabsListTypeContext.Provider value={type}>
       <TabsAnimateContext.Provider value={animate}>
         <TabsSizeContext.Provider value={size}>
-          <TabsOrientationContext.Provider value={orientation}>
-            {isVertical ? (
-              // The sliding pill indicator only measures the x-axis (see
-              // SlidingTabIndicator) — in a column it would collapse to a
-              // zero-width bar, so vertical lists render without it.
-              list
-            ) : useSlidingIndicator ? (
-              <SlidingTabIndicator
-                activeId={activeValue}
-                className={cn(
-                  'text-muted-foreground inline-flex w-fit items-center justify-center',
-                  tabsListHeightClasses[size],
-                  tabsSegmentedTrackClasses,
-                  className,
-                )}
-                indicatorClassName={tabsSegmentedChipClasses}
-              >
-                {list}
-              </SlidingTabIndicator>
-            ) : type === 'underline' ? (
-              list
-            ) : (
-              <div
-                className={cn(
-                  'text-muted-foreground inline-flex w-fit items-center justify-center',
-                  tabsListHeightClasses[size],
-                  tabsSegmentedTrackClasses,
-                  className,
-                )}
-              >
-                {list}
-              </div>
-            )}
-          </TabsOrientationContext.Provider>
+          {compact ? content : (
+            <TabsOrientationContext.Provider value={orientation ?? 'horizontal'}>
+              {content}
+            </TabsOrientationContext.Provider>
+          )}
         </TabsSizeContext.Provider>
       </TabsAnimateContext.Provider>
     </TabsListTypeContext.Provider>
@@ -355,69 +334,9 @@ interface TabsListCompactProps extends React.ComponentProps<typeof TabsPrimitive
   animate?: 'fluid' | 'none';
 }
 
-function TabsListCompact({
-  className,
-  type: typeProp = 'default',
-  underlineSize = 'sm',
-  animate = 'fluid',
-  children,
-  ...props
-}: TabsListCompactProps) {
-  const activeValue = React.useContext(TabsActiveValueContext);
+function TabsListCompact(props: TabsListCompactProps) {
   // Same rule as `TabsList`: anything that is not `underline` is segmented.
-  const type: TabsListType = typeProp === 'underline' ? 'underline' : 'segmented';
-  const isSegmented = type === 'segmented';
-  const useSlidingIndicator = isSegmented && animate === 'fluid';
-
-  const list = (
-    <TabsPrimitive.List
-      data-slot="tabs-list"
-      className={cn(
-        isSegmented && 'relative z-10 flex h-full w-full items-stretch justify-center gap-0.5',
-        type === 'underline' && tabsListUnderlineBaseClasses,
-        type === 'underline' && 'h-7',
-        type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
-        type === 'underline' && className,
-      )}
-      {...props}
-    >
-      {children}
-    </TabsPrimitive.List>
-  );
-
-  return (
-    <TabsListTypeContext.Provider value={type}>
-      <TabsAnimateContext.Provider value={animate}>
-        <TabsSizeContext.Provider value="xs">
-          {useSlidingIndicator ? (
-            <SlidingTabIndicator
-              activeId={activeValue}
-              className={cn(
-                'text-muted-foreground inline-flex h-7 w-fit items-center justify-center',
-                tabsSegmentedTrackClasses,
-                className,
-              )}
-              indicatorClassName={tabsSegmentedChipClasses}
-            >
-              {list}
-            </SlidingTabIndicator>
-          ) : type === 'underline' ? (
-            list
-          ) : (
-            <div
-              className={cn(
-                'text-muted-foreground inline-flex h-7 w-fit items-center justify-center',
-                tabsSegmentedTrackClasses,
-                className,
-              )}
-            >
-              {list}
-            </div>
-          )}
-        </TabsSizeContext.Provider>
-      </TabsAnimateContext.Provider>
-    </TabsListTypeContext.Provider>
-  );
+  return <TabsListRenderer {...props} size="xs" compact />;
 }
 
 /** Compact Radix TabsTrigger — use inside <Tabs> root for smaller contexts. */

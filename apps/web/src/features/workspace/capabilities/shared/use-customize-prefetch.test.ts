@@ -143,13 +143,13 @@ describe('prefetchCustomize', () => {
     expect(second.filter((name) => name !== 'listReviewItems')).toEqual([]);
   });
 
-  test('uses the Discover catalogue when the project flag selects it', async () => {
+  test('prefetches managed discovery even when direct discovery is enabled', async () => {
     const client = new QueryClient();
     const calls: string[] = [];
 
     await prefetchCustomize(client, PROJECT, { ...ALL, discoverEnabled: true }, fakeApi(calls));
 
-    expect(calls).toContain('sections:discover');
-    expect(calls).not.toContain('getConnectStatus');
+    expect(calls).not.toContain('sections:discover');
+    expect(calls).toContain('getConnectStatus');
   });
 });

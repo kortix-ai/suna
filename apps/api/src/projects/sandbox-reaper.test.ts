@@ -874,11 +874,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'turn-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'turn-token': {
+              token: 'turn-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -939,11 +941,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -972,11 +976,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1002,11 +1008,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + 60_000),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1291,11 +1299,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1317,11 +1327,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1353,11 +1365,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1381,11 +1395,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1404,11 +1420,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1438,14 +1456,16 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
-            // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
-            // why a record this young is not orphaned yet.
-            startedAtMs: NOW.getTime() - 120_000,
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
+              // why a record this young is not orphaned yet.
+              startedAtMs: NOW.getTime() - 120_000,
+            },
           },
         },
       }),
@@ -1472,8 +1492,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, SampleCo session
-    // d1b74954): this used to CLEAR the record while skipping the redelivery.
+    // EXPECTATION CHANGED 2026-08-20 (live incident, a SampleCo
+    // session): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
     // a one-shot race that swallowed the prompt for good (cleared `unknown` at
@@ -1484,12 +1504,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
-            startedAtMs: NOW.getTime() - 2_000,
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 2_000,
+            },
           },
         },
       }),
@@ -1513,11 +1535,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1538,11 +1562,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: null,
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+            },
           },
         },
       }),
@@ -1560,11 +1586,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1617,11 +1645,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1977,7 +2007,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE SILENT RENEWAL STARVATION THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a): `deadlineGrant` stayed
+  // Incident 2026-08-17T20:40:03Z (a prod session): `deadlineGrant` stayed
   // `boot_floor` for the box's whole life. The daemon on that warm snapshot
   // answered the turn probe with nothing readable, so `observeSandboxTurn`
   // never returned `active`, `renewActiveSandboxTurn` never ran, and the box
@@ -2016,7 +2046,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // SampleCo 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (one session): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
@@ -2462,11 +2492,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'newer-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_newer',
+          activeTurns: {
+            'newer-token': {
+              token: 'newer-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_newer',
+            },
           },
         },
       }),
@@ -2757,7 +2789,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): one
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): one
   // provider read of `stopped` durably parked a box that was running a turn,
   // `stopReason: provider_reconcile`, and Daytona's own autoStopInterval was 720
   // — the provider never stopped it. `stopping` and `pending_stop` both map to

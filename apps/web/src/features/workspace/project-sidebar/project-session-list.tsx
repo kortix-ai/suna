@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import {
-  directSubsessions,
   isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
@@ -82,6 +81,7 @@ import {
 } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
+  directSubsessions,
   listChangeRequests,
   restartProjectSession,
   sessionParentId,
@@ -389,7 +389,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // sessions it spawned, loaded when the row opens. `nested` marks a spawned
   // row: the connector already carries the link, and it has no children of its
   // own to show.
-  const renderSessionNode = (session: ProjectSession, nested: boolean) => {
+  const renderSessionNode = (session: ProjectSession, nested: boolean, inSharedGroup = false) => {
     const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
     const isActive = pathname?.includes(`/sessions/${session.session_id}`);
     const isSwitchTarget = switchingToSessionId === session.session_id;
@@ -415,6 +415,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             }
           }}
           displayTitle={getSessionDisplayTitle(session)}
+          inSharedGroup={inSharedGroup}
           childCount={children.length}
           spawnedCount={spawnedCount}
           spawnedOpen={spawnedOpen}
@@ -583,22 +584,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           </SessionListSection>
         ))}
         {hasNextPage && (
-          <div className="px-2 pt-1 pb-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
-              disabled={isFetchingNextPage}
-              onClick={() => fetchNextPage()}
-            >
-              {/* A failed page keeps the rows above it; the button is the retry. */}
-              {isFetchingNextPage
-                ? t('loadingMore')
-                : isFetchNextPageError
-                  ? t('retry')
-                  : t('loadMore')}
-            </Button>
-          </div>
+          <ShowMoreButton
+            loading={isFetchingNextPage}
+            failed={isFetchNextPageError}
+            label={t('loadMore')}
+            onClick={() => fetchNextPage()}
+          />
         )}
         <StarterSection
           title={t('startedBy.others')}
@@ -606,7 +597,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           sessions={visibleShared}
           open={expandedIdSet.has('section:shared')}
           onToggle={() => toggleExpanded(projectId, 'section:shared')}
-          renderNode={(session) => renderSessionNode(session, false)}
+          renderNode={(session) => renderSessionNode(session, false, true)}
         />
         <StarterSection
           title={t('startedBy.automated')}
@@ -1004,7 +995,7 @@ function ShowMoreButton({
     <Button
       variant="ghost"
       size="sm"
-      className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
+      className="text-muted-foreground hover:text-foreground h-8 w-full justify-start px-2 text-xs"
       disabled={loading}
       onClick={onClick}
     >
@@ -1095,6 +1086,8 @@ interface ProjectSessionRowProps {
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
   canShowHoverCard: boolean;
+  /** The row sits under the Shared group header, which already says it: no share icon. */
+  inSharedGroup?: boolean;
 }
 
 function ProjectSessionRow({
@@ -1119,6 +1112,7 @@ function ProjectSessionRow({
   reviewCount = 0,
   changeRequests,
   canShowHoverCard,
+  inSharedGroup = false,
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
@@ -1144,7 +1138,8 @@ function ProjectSessionRow({
   // render at all when it is empty (an empty flex item still draws the row's
   // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
   // the hover shift below only makes sense when there is something to shift.
-  const hasIndicators = showStarter || sessionIsShared(session);
+  const showSharedIcon = !inSharedGroup && sessionIsShared(session);
+  const hasIndicators = showStarter || showSharedIcon;
   // `reviewCount` is not optional here, whatever the signature's default says.
   // Omitting it does not mean "unknown", it asserts "nothing is waiting", which
   // is how the row's dot and this row's own hover card came to disagree: the dot
@@ -1156,6 +1151,7 @@ function ProjectSessionRow({
   const sessionLink = (
     <HoverPrefetchLink
       href={href}
+      prefetch
       onClick={onNavigate}
       {...openIntent}
       aria-busy={isSwitching || undefined}
@@ -1242,23 +1238,23 @@ function ProjectSessionRow({
         >
           {showStarter && (
             <span
-              className="flex size-4 shrink-0 items-center justify-center"
+              className="flex size-5 shrink-0 items-center justify-center"
               data-session-source="true"
               data-session-starter={starter.type}
             >
               <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
-                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                <span className="text-muted-foreground/70 flex size-5 items-center justify-center">
                   <SessionStarterMark
                     session={session}
                     starter={starter}
                     iconClassName="size-3"
-                    avatarClassName="size-4"
+                    avatarClassName="size-5"
                   />
                 </span>
               </Hint>
             </span>
           )}
-          <SessionSharedIcon session={session} />
+          {!inSharedGroup && <SessionSharedIcon session={session} />}
         </div>
       )}
     </HoverPrefetchLink>

@@ -39,6 +39,8 @@ let secretItems: Array<{
     'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   requires_rotation?: boolean;
+  shared_with?: Array<{ grant_id: string; principal_type: 'member' | 'group' | 'project'; principal_id: string; label: string; expires_at: null }>;
+  usable?: boolean;
 }>;
 let manifestRequired: string[];
 let manifestOptional: string[];
@@ -62,6 +64,8 @@ function secret(
     delivery_status?: 'available' | 'unavailable' | 'disabled';
     network_boundary_available?: boolean;
     requires_rotation?: boolean;
+    shared_with?: Array<{ grant_id: string; principal_type: 'member' | 'group' | 'project'; principal_id: string; label: string; expires_at: null }>;
+    usable?: boolean;
   } = {},
 ) {
   const configured = state.configured ?? true;
@@ -82,6 +86,8 @@ function secret(
     // Left off the JSON entirely when undefined — an older server omits it.
     network_boundary_available: state.network_boundary_available,
     requires_rotation: state.requires_rotation ?? false,
+    ...(state.shared_with ? { shared_with: state.shared_with } : {}),
+    ...(state.usable === undefined ? {} : { usable: state.usable }),
   };
 }
 
@@ -143,6 +149,23 @@ function mockApi() {
     }
     requests.push({ url, method, body });
 
+    if (url.endsWith('/accounts/me') && method === 'GET') {
+      return json({ user_id: 'user_1', email: 'user@example.test' });
+    }
+    if (url.endsWith('/projects/proj_1') && method === 'GET') {
+      return json({ project_id: 'proj_1', account_id: 'account_1' });
+    }
+    if (url.endsWith('/projects/proj_1/agent-identities') && method === 'GET') {
+      return json({
+        agents: [{ service_account_id: 'sa_reporter', name: 'agent', project_id: 'proj_1', agent_name: 'reporter' }],
+      });
+    }
+    if (url.endsWith('/accounts/account_1/members') && method === 'GET') {
+      return json([
+        { user_id: 'user_1', email: 'user@example.test' },
+        { user_id: 'user_2', email: 'finance@example.test' },
+      ]);
+    }
     if (url.includes('/projects/proj_1/secrets') && method === 'GET') {
       return json({
         items: secretItems.map((s) => secret(s.identifier, s.name, s)),
@@ -488,6 +511,8 @@ describe('kortix secrets ls — identifier-first', () => {
       delivery_status: 'available',
       requires_rotation: false,
       granted: true,
+      shared_with: [],
+      usable: true,
       key: 'GOOGLE_MAPS_API_KEY',
       has_value: true,
       source: 'undeclared',
@@ -506,6 +531,8 @@ describe('kortix secrets ls — identifier-first', () => {
       delivery_status: 'available',
       requires_rotation: false,
       granted: true,
+      shared_with: [],
+      usable: true,
       key: 'STRIPE_API_KEY',
       has_value: false,
       source: 'required',
@@ -1154,5 +1181,114 @@ describe('kortix secrets unset — by identifier', () => {
     expect(code).toBe(0);
     const del = requests.find((r) => r.method === 'DELETE');
     expect(del?.url).toContain('/secrets/GMAPS-backup');
+  });
+});
+
+describe('kortix secrets — who can use a value', () => {
+  test('set --only-me narrows the new value to the caller in the same write', async () => {
+    const code = await runSecrets(['set', 'DEEL_API_TOKEN=tok', '--only-me']);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0]!)).toEqual({
+      name: 'DEEL_API_TOKEN',
+      value: 'tok',
+      shared_with: [{ principal_type: 'user', principal_id: 'user_1' }],
+    });
+  });
+
+  test('share --everyone widens it to the whole project ([] audience)', async () => {
+    secretItems = [{ identifier: 'DEEL_API_TOKEN', name: 'DEEL_API_TOKEN' }];
+    const code = await runSecrets(['share', 'DEEL_API_TOKEN', '--everyone']);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0]!)).toEqual({
+      name: 'DEEL_API_TOKEN',
+      identifier: 'DEEL_API_TOKEN',
+      shared_with: [],
+    });
+    expect(stripAnsi(stdout)).toContain('DEEL_API_TOKEN: everyone in the project');
+  });
+
+  test('share --user me --user <email> --group <id> resolves people and sends the exact audience', async () => {
+    secretItems = [{ identifier: 'deel-marko', name: 'DEEL_API_TOKEN' }];
+    const code = await runSecrets([
+      'share', 'deel-marko', '--user', 'me', '--user', 'finance@example.test', '--group', '11111111-1111-4111-8111-111111111111',
+    ]);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0]!)).toEqual({
+      name: 'DEEL_API_TOKEN',
+      identifier: 'deel-marko',
+      shared_with: [
+        { principal_type: 'group', principal_id: '11111111-1111-4111-8111-111111111111' },
+        { principal_type: 'user', principal_id: 'user_1' },
+        { principal_type: 'user', principal_id: 'user_2' },
+      ],
+    });
+    expect(stripAnsi(stdout)).toContain('deel-marko: 2 people, 1 group');
+  });
+
+  test('share --agent <name> names that agent of THIS project as principal_type agent', async () => {
+    secretItems = [{ identifier: 'NIGHTLY_REPORT_KEY', name: 'NIGHTLY_REPORT_KEY' }];
+    const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'reporter']);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0]!)).toEqual({
+      name: 'NIGHTLY_REPORT_KEY',
+      identifier: 'NIGHTLY_REPORT_KEY',
+      shared_with: [{ principal_type: 'agent', principal_id: 'sa_reporter' }],
+    });
+    expect(stripAnsi(stdout)).toContain('NIGHTLY_REPORT_KEY: 1 agent');
+    expect(stripAnsi(stdout)).toContain('every session of the agent');
+  });
+
+  test('share --agent with an unknown agent fails without a write', async () => {
+    secretItems = [{ identifier: 'NIGHTLY_REPORT_KEY', name: 'NIGHTLY_REPORT_KEY' }];
+    const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'nobody']);
+    expect(code).toBe(1);
+    expect(posts()).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this project');
+  });
+
+  test('share refuses --everyone together with people, before any write', async () => {
+    secretItems = [{ identifier: 'DEEL_API_TOKEN', name: 'DEEL_API_TOKEN' }];
+    const code = await runSecrets(['share', 'DEEL_API_TOKEN', '--everyone', '--user', 'me']);
+    expect(code).toBe(2);
+    expect(posts()).toHaveLength(0);
+  });
+
+  test('share of an unknown identifier fails without a write', async () => {
+    const code = await runSecrets(['share', 'NOPE', '--everyone']);
+    expect(code).toBe(1);
+    expect(posts()).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('No secret with identifier "NOPE"');
+  });
+
+  test('ls shows WHO CAN USE: everyone, the audience labels, and (not you)', async () => {
+    secretItems = [
+      { identifier: 'MAPS_KEY', name: 'MAPS_KEY' },
+      {
+        identifier: 'DEEL_API_TOKEN',
+        name: 'DEEL_API_TOKEN',
+        shared_with: [{ grant_id: 'g1', principal_type: 'member', principal_id: 'user_2', label: 'finance@example.test', expires_at: null }],
+        usable: false,
+      },
+    ];
+    expect(await runSecrets(['ls'])).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('WHO CAN USE');
+    expect(out).toMatch(/MAPS_KEY .*everyone/);
+    expect(out).toMatch(/DEEL_API_TOKEN .*finance@example\.test \(not you\)/);
+  });
+
+  test('ls --json carries shared_with labels and usable', async () => {
+    secretItems = [
+      {
+        identifier: 'DEEL_API_TOKEN',
+        name: 'DEEL_API_TOKEN',
+        shared_with: [{ grant_id: 'g1', principal_type: 'member', principal_id: 'user_1', label: 'user@example.test', expires_at: null }],
+        usable: true,
+      },
+    ];
+    expect(await runSecrets(['ls', '--json'])).toBe(0);
+    const row = JSON.parse(stdout).secrets[0];
+    expect(row.shared_with).toEqual(['user@example.test']);
+    expect(row.usable).toBe(true);
   });
 });

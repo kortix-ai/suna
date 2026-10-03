@@ -38,6 +38,8 @@ import type {
   ToolState,
 } from '../runtime/client';
 import { type GatewayAttemptFailure, extractGatewayErrorDetails, unwrapError } from './errors';
+import { getChildSessionId } from './parts';
+import { type ToolKind, inputPath, toolKind } from './tool-kind';
 import { toolInfo } from './tool-registry';
 import type { TokenUsageLike } from './types';
 
@@ -47,10 +49,27 @@ import type { TokenUsageLike } from './types';
 
 export type ToolStatus = 'pending' | 'running' | 'done' | 'error';
 
+/** A file a tool call read, wrote or changed. */
+export interface ToolFile {
+  path: string;
+  type?: 'add' | 'update' | 'delete' | 'move';
+  /** Content before and after the change, when the harness sent it. */
+  before?: string;
+  after?: string;
+  /** A unified diff of the change, when the harness sent one. */
+  patch?: string;
+  additions?: number;
+  deletions?: number;
+  movePath?: string;
+}
+
 /** Normalized view of a tool part's state, independent of the wire's
- *  pending/running/completed/error status-union shape. */
+ *  pending/running/completed/error status-union shape and of which harness
+ *  ran the tool. */
 export interface ToolView {
   name: string;
+  /** What the tool does (`toolKind`), whatever the harness calls it. Always set by `classifyPart`/`toToolView`. */
+  kind?: ToolKind;
   title: string;
   status: ToolStatus;
   input?: Record<string, unknown>;
@@ -69,6 +88,16 @@ export interface ToolView {
   /** The raw output text, unconditionally — same value as `output` (kept as
    *  its own field so `outputParsed`/`outputText` read as a matched pair). */
   outputText?: string;
+  /** The files a file tool read, wrote or changed. */
+  files?: ToolFile[];
+  /** A unified diff of the change. */
+  diff?: string;
+  /** Language-server diagnostics after the change, keyed by file path. */
+  diagnostics?: Record<string, unknown[]>;
+  /** The user's answers to a `question`, one list per question. */
+  answers?: string[][];
+  /** The child session a delegating call (`task`) runs. */
+  childSessionId?: string;
 }
 
 /** Never parse (or diff/pretty-print) an output blob larger than this — a
@@ -130,6 +159,82 @@ function detectEmbeddedFailure(outputParsed: unknown): string | undefined {
   return 'Tool reported failure';
 }
 
+const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+const count = (value: unknown): number | undefined => (typeof value === 'number' ? value : undefined);
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+
+/** Drop the keys whose value is undefined, so a `ToolFile` carries only what the harness sent. */
+function defined<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
+}
+
+const FILE_TYPES = new Set(['add', 'update', 'delete', 'move']);
+
+/** The files a call touched, from whichever fields its harness sent. */
+function toolFiles(kind: ToolKind, input: Record<string, unknown>, metadata: Record<string, unknown>): ToolFile[] | undefined {
+  if (kind === 'apply_patch') {
+    const files = Array.isArray(metadata.files) ? metadata.files : [];
+    const out = files.flatMap((raw) => {
+      const f = record(raw);
+      const path = f && (text(f.relativePath) || text(f.filePath));
+      if (!f || !path) return [];
+      const type = text(f.type);
+      return [
+        defined<ToolFile>({
+          path,
+          type: type && FILE_TYPES.has(type) ? (type as ToolFile['type']) : undefined,
+          before: text(f.before),
+          after: text(f.after),
+          patch: text(f.patch) ?? text(f.diff),
+          additions: count(f.additions),
+          deletions: count(f.deletions),
+          movePath: text(f.movePath),
+        }),
+      ];
+    });
+    return out.length ? out : undefined;
+  }
+  const path = inputPath(input);
+  if (!path) return undefined;
+  if (kind === 'read') return [{ path }];
+  if (kind === 'write') return [defined<ToolFile>({ path, after: text(input.content) })];
+  if (kind !== 'edit') return undefined;
+  // OpenCode sends the whole file before and after; the daemon drops metadata
+  // over 4 KB, so the replaced block in the input is the fallback. pi sends a
+  // unified patch.
+  const filediff = record(metadata.filediff);
+  const patch = filediff ? undefined : text(metadata.patch);
+  const counts = patch ? patchLineCounts(patch) : undefined;
+  return [
+    defined<ToolFile>({
+      path,
+      before: text(filediff?.before) ?? text(input.oldString),
+      after: text(filediff?.after) ?? text(input.newString),
+      patch,
+      additions: count(filediff?.additions) ?? counts?.additions,
+      deletions: count(filediff?.deletions) ?? counts?.deletions,
+    }),
+  ];
+}
+
+/** `+`/`-` lines of a unified patch, not its `+++`/`---` file headers. */
+function patchLineCounts(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+    else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+  }
+  return { additions, deletions };
+}
+
+function toolAnswers(metadata: Record<string, unknown>): string[][] | undefined {
+  const answers = metadata.answers;
+  if (!Array.isArray(answers)) return undefined;
+  return answers.map((answer) => (Array.isArray(answer) ? answer.filter((a): a is string => typeof a === 'string') : []));
+}
+
 function classifyToolState(tool: string, state: ToolState): ToolView {
   const liveTitle = 'title' in state ? state.title : undefined;
   const rawOutput = state.status === 'completed' ? state.output : undefined;
@@ -146,8 +251,14 @@ function classifyToolState(tool: string, state: ToolState): ToolView {
     }
   }
 
+  const kind = toolKind(tool);
+  const input = state.input ?? {};
+  const metadata = ('metadata' in state && record(state.metadata)) || {};
+  const diagnostics = record(metadata.diagnostics) as Record<string, unknown[]> | undefined;
+
   return {
     name: tool,
+    kind,
     title: liveTitle || toolInfo(tool).label,
     status,
     input: state.input,
@@ -155,7 +266,18 @@ function classifyToolState(tool: string, state: ToolState): ToolView {
     outputParsed,
     outputText,
     error,
+    files: toolFiles(kind, input, metadata),
+    // pi's `diff` is its own format; its `patch` is the unified one.
+    diff: text(metadata.patch) ?? text(metadata.diff),
+    diagnostics,
+    answers: kind === 'question' ? toolAnswers(metadata) : undefined,
+    childSessionId: getChildSessionId({ tool, state }),
   };
+}
+
+/** The harness-neutral view of one tool part. */
+export function toToolView(part: Pick<ToolPart, 'tool' | 'state'>): ToolView {
+  return classifyToolState(part.tool, part.state);
 }
 
 // ============================================================================

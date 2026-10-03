@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 696,
+  "count": 702,
   "routes": [
     {
       "method": "GET",
@@ -1468,6 +1468,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/agent-identities"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
     {
@@ -1533,6 +1537,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
     },
     {
       "method": "GET",
@@ -1777,6 +1785,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connections"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/connections/:connectionId"
     },
     {
       "method": "PUT",
@@ -2259,12 +2271,20 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/message-authors"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/open-bundle"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
     },
     {
       "method": "PUT",
@@ -2284,6 +2304,10 @@
     },
     {
       "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
+    },
+    {
+      "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
     },
     {

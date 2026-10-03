@@ -69,7 +69,7 @@ type Recorder = {
   deps: PrePromptEnvSyncDeps;
   envSync: Array<{ requestedAgent?: string | null; sessionId: string; providerName: string }>;
   remint: Array<{ sessionAgent: string; requestedAgent: string | null }>;
-  snapshot: Array<{ sessionId: string; projectId: string; externalId: string; userId?: string }>;
+  snapshot: Array<{ sessionId: string; projectId: string; accountId: string; userId?: string }>;
   titles: string[];
 };
 
@@ -100,7 +100,7 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       rec.snapshot.push({
         sessionId: input.sessionId,
         projectId: input.projectId,
-        externalId: input.externalId,
+        accountId: input.accountId,
         userId: input.userId,
       });
     }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
@@ -221,7 +221,7 @@ describe('runPrePromptEnvSync — a /command body', () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
     expect(rec.snapshot).toEqual([
-      { sessionId: 'sess-1', projectId: 'proj-1', externalId: 'ext-1', userId: 'u1' },
+      { sessionId: 'sess-1', projectId: 'proj-1', accountId: 'acct-1', userId: 'u1' },
     ]);
   });
 
@@ -333,6 +333,18 @@ describe('requestedPromptManagedModelId', () => {
   // /session/:id/command — verified against `SessionCommandData`: `model` is
   // a flat STRING ref ("kortix/<id>" or a native "provider/model"), not an
   // object. `COMMAND_BODY` above carries a native anthropic ref.
+  // POST /kortix/runtime/sessions/:id/prompt — the body `postPrompt`
+  // (session-lifecycle/runtime-client.ts) relays every inbox prompt as. Without
+  // this branch no relayed turn reaches the model-catalog lane at all.
+  test('reads the Kortix prompt route body (flat kortix/<provider>/<model> string)', () => {
+    const body = encode({
+      message_id: 'msg_0fdcfe9b0000mSIdTv1hWHxxEe',
+      parts: [{ type: 'text', text: 'hi' }],
+      model: 'kortix/codex/gpt-6.1-sol',
+    });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('codex/gpt-6.1-sol');
+  });
+
   test("reads a /command body's flat kortix/<id> model string", () => {
     const body = encode({ command: 'webapp', arguments: 'x', model: 'kortix/kimi-k3' });
     expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');

@@ -1,4 +1,4 @@
-import type { OpencodeClient, SessionHandle } from '@kortix/sdk';
+import type { SessionHandle } from '@kortix/sdk';
 
 import type { Auth } from './api/auth.ts';
 import type { ApiClient } from './api/client.ts';
@@ -54,12 +54,10 @@ export interface SessionRuntime {
   auth: Auth;
   /** Session-scoped SDK handle. */
   handle: SessionHandle;
-  /** Typed OpenCode REST client bound to this session's runtime. */
-  runtime: OpencodeClient;
   /** SDK-resolved runtime URL used by the local `opencode attach` adapter. */
   runtimeUrl: string;
   /** Canonical OpenCode session id resolved by `/start`. */
-  opencodeSessionId: string;
+  runtimeSessionId: string;
 }
 
 export interface WaitForSessionReadyOptions {
@@ -179,9 +177,8 @@ export async function resolveSessionRuntime(
     session,
     auth,
     handle,
-    runtime: handle.runtime,
     runtimeUrl: ready.runtimeUrl,
-    opencodeSessionId: ready.runtimeSessionId,
+    runtimeSessionId: ready.runtimeSessionId,
   };
 }
 

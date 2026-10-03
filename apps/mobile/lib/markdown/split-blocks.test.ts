@@ -345,3 +345,80 @@ describe('isMarkdownSeparatorBlock', () => {
     expect(isMarkdownSeparatorBlock('text\n---')).toBe(false);
   });
 });
+
+describe('splitMarkdown while text streams', () => {
+  /** A full scan, with no saved state to resume from. */
+  const fullSplit = (text: string) => splitMarkdown(text, null);
+
+  /** Feeds `text` in steps of `step` characters; every result equals a full scan. */
+  function expectStreamingEqualsFull(text: string, step = 1) {
+    const streamed: ReturnType<typeof splitMarkdown>[] = [];
+    for (let end = 0; end <= text.length; end += step) streamed.push(splitMarkdown(text.slice(0, end)));
+    let index = 0;
+    for (let end = 0; end <= text.length; end += step) {
+      const prefix = text.slice(0, end);
+      const full = fullSplit(prefix);
+      if (JSON.stringify(streamed[index]) !== JSON.stringify(full)) {
+        throw new Error(`Streamed split differs for ${JSON.stringify(prefix)}: ${JSON.stringify(streamed[index])}`);
+      }
+      index += 1;
+    }
+  }
+
+  const CORPUS = [
+    '# Plan\n\nIntro text\n\n```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n- one\n\n- two\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\nThe last paragraph',
+    'Math:\n\n$$\nx = 1\n\ny = 2\n$$\n\n$$$\na\n$$\nstill math\n$$$\n\nAfter $x$ text',
+    '- step\n\n  ```sh\n  a\n\n  b\n  ```\n\n- next\n\n> quote\n>\n> ```\n> code\n\nOutside',
+    'Text\n---\n\n***\n\n- a\n  ---\n\n    indented\n\n    code\n\npara\r\n\r\nCRLF para\r\n```\r\nx\r\n```\r\n',
+    'Intro\n\n[ref]: https://kortix.com\n\nUses [a][ref]\n\n```\nunclosed',
+    '~~~\n```\nnot closed by backticks\n~~~\n\n````\n```\ninner\n````\n\n1. one\n2) two\n\n   continued',
+    '<div align="center">\n  <img src="a.png">\n\n</div>\n\nAfter the HTML block\n\n<!-- comment\n\nstill comment -->\n\nEnd',
+    'See [the docs][docs] first.\n\nMore text\n\n- list\n\n[docs]: https://docs.example.com\n\nTail paragraph',
+  ];
+
+  test('every streamed prefix of the corpus equals a full scan', () => {
+    for (const text of CORPUS) {
+      expectStreamingEqualsFull(text);
+      expectStreamingEqualsFull(text + '\n\n' + text, 3);
+    }
+  });
+
+  test('random streamed documents equal a full scan', () => {
+    const pieces = [
+      'para text', '# Head', '- item', '  - nested', '1. one', '   continued', '    indented code', '> quote',
+      '```', '```js', '~~~', '````', '    ```', '| a | b |', '| - | - |', '', '', '---', '$$', '$$$', '> $$',
+      '- $$', '$x$', '[r]: https://x.co', '\t tab',
+    ];
+    let seed = 20261002;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let doc = 0; doc < 400; doc += 1) {
+      const lines: string[] = [];
+      const count = 2 + random(14);
+      for (let i = 0; i < count; i += 1) lines.push(pieces[random(pieces.length)]);
+      expectStreamingEqualsFull(lines.join(random(10) === 0 ? '\r\n' : '\n'), 1 + random(5));
+    }
+  });
+
+  test('texts that stream side by side equal a full scan', () => {
+    const texts = [CORPUS[0], CORPUS[2], CORPUS[3]];
+    const longest = Math.max(...texts.map((text) => text.length));
+    for (let end = 0; end <= longest; end += 2) {
+      for (const text of texts) {
+        const prefix = text.slice(0, end);
+        expect(splitMarkdown(prefix)).toEqual(fullSplit(prefix));
+      }
+    }
+  });
+
+  test('a text that is not an extension of the previous one splits from scratch', () => {
+    const a = 'First\n\n```\ncode\n\nmore';
+    const b = 'First\n\nDifferent\n\nend';
+    splitMarkdown(a);
+    expect(splitMarkdown(b)).toEqual(fullSplit(b));
+    splitMarkdown(b);
+    expect(splitMarkdown(a)).toEqual(fullSplit(a));
+  });
+});

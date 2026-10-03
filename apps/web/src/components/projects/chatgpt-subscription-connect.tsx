@@ -138,11 +138,16 @@ export function useChatGptConnectFlow({
   sharing = DEFAULT_PROJECT_SHARING,
   autoStart = false,
   onConnected,
+  provider = 'openai',
+  successMessage,
 }: {
   projectId: string;
   sharing?: SharingSelection;
   autoStart?: boolean;
   onConnected?: () => void;
+  /** The OAuth provider route: `openai` (ChatGPT), `opencode`, or `opencode-go`. */
+  provider?: string;
+  successMessage?: string;
 }): ChatGptConnectFlow {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
@@ -176,7 +181,7 @@ export function useChatGptConnectFlow({
     setChallenge(null);
     setPhase('waiting');
     try {
-      const start = await startProjectProviderOAuth(projectId, 'openai', {
+      const start = await startProjectProviderOAuth(projectId, provider, {
         sharing: selectionToIntent(sharing),
       });
       if (cancelledRef.current) return;
@@ -189,16 +194,18 @@ export function useChatGptConnectFlow({
         if (cancelledRef.current) return;
         let res;
         try {
-          res = await pollProjectProviderOAuth(projectId, 'openai', start.flow_id);
+          res = await pollProjectProviderOAuth(projectId, provider, start.flow_id);
         } catch {
           continue;
         }
         if (cancelledRef.current) return;
         if (res.status === 'success') {
           setPhase('done');
-          successToast(tI18nComplete.raw('text5630381eeca0'));
+          successToast(successMessage ?? tI18nComplete.raw('text5630381eeca0'));
           queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-          refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
+          refreshProjectProviderState(queryClient, projectId, {
+            expectProviderId: provider === 'openai' ? 'codex' : provider,
+          });
           onConnected?.();
           return;
         }
@@ -226,7 +233,7 @@ export function useChatGptConnectFlow({
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }, [projectId, sharing, queryClient, onConnected, tI18nComplete]);
+  }, [projectId, sharing, queryClient, onConnected, tI18nComplete, provider, successMessage]);
 
   useEffect(() => {
     if (!autoStart || autoStartedRef.current || phase !== 'idle') return;

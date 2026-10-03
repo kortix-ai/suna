@@ -79,10 +79,23 @@ const STRUCTURAL_WRAPPER_KEYS = new Set(['session', 'message', 'part', 'info', '
 
 type AuditInsert = typeof auditEvents.$inferInsert;
 
+/**
+ * `kortix.audit_events` is partitioned by week and keeps 90 days hot. An instant outside
+ * [now - 80 days, now + 1 day] (a sandbox offline for months, a skewed clock) has no weekly
+ * partition and would land in the default partition, where retention never reaches it.
+ * It is stored as the start of today (UTC) instead; the instant the sandbox reported stays in
+ * `metadata.original_occurred_at`. The value is the same for every re-send within the UTC
+ * day, so the unique dedupe key (source tuple + occurred_at) still matches a retry.
+ */
+const MAX_EVENT_AGE_MS = 80 * 86_400_000;
+const MAX_EVENT_SKEW_MS = 86_400_000;
+
 export interface OpenCodeAuditScope {
   accountId: string;
   projectId: string;
   sessionId: string;
+  /** Test seam: the clock the instant window is measured against. */
+  now?: Date;
   /** Canonical attribution resolved from server-owned rows. Payload fields are untrusted. */
   trustedProvenance?: {
     opencodeSessionId: string | null;
@@ -272,6 +285,13 @@ export function parseOpenCodeAuditBatch(
     ) {
       fail(index, 'has an invalid occurred_at');
     }
+    const now = scope.now ?? new Date();
+    const outOfRange =
+      occurredAt.getTime() < now.getTime() - MAX_EVENT_AGE_MS ||
+      occurredAt.getTime() > now.getTime() + MAX_EVENT_SKEW_MS;
+    const storedAt = outOfRange
+      ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+      : occurredAt;
     const outcome = event.outcome ?? 'success';
     if (typeof outcome !== 'string' || !OUTCOMES.has(outcome)) {
       fail(index, 'has an invalid outcome');
@@ -360,11 +380,12 @@ export function parseOpenCodeAuditBatch(
       errorMessage: null,
       metadata: {
         ...sanitizeMetadata(event.metadata, index),
+        ...(outOfRange ? { original_occurred_at: occurredAt.toISOString() } : {}),
         provenance_trust: 'sandbox_reported',
         reported_provenance: reportedProvenance,
         harness,
       },
-      occurredAt,
+      occurredAt: storedAt,
     };
   });
 

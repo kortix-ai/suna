@@ -1,11 +1,12 @@
 'use client';
 
-import { CheckIcon } from '@phosphor-icons/react';
+import { ArrowsClockwiseIcon, CheckIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -56,9 +57,11 @@ function DeviceAuthorize() {
   const deny = useDenyDeviceAuth();
   const { sections } = useProjectSelectorData();
 
-  // `null` until the user types: the machine's hostname is the default name.
+  // `null` until the user types or picks: a machine already paired to the
+  // caller keeps its name and access, a new one starts from its hostname and
+  // with nothing selected.
   const [typedName, setName] = useState<string | null>(null);
-  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set());
+  const [pickedCaps, setSelectedCaps] = useState<Set<string> | null>(null);
   const [share, setShare] = useState<Share>('me');
   const [done, setDone] = useState<'approved' | 'denied' | null>(null);
 
@@ -83,7 +86,12 @@ function DeviceAuthorize() {
     }
   }, [user, authLoading, router, code]);
 
-  const name = typedName ?? info?.machineHostname ?? '';
+  const registered = info?.registered ?? null;
+  // macOS appends " (4)" to a name another device on the network already
+  // uses. That suffix is noise in a name people pick their computer by.
+  const name =
+    typedName ?? registered?.name ?? (info?.machineHostname ?? '').replace(/ \(\d+\)$/, '');
+  const selectedCaps = pickedCaps ?? new Set(registered?.capabilities ?? []);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -99,8 +107,8 @@ function DeviceAuthorize() {
   const seconds = remaining % 60;
 
   const toggleCap = (key: string) => {
-    setSelectedCaps((prev) => {
-      const next = new Set(prev);
+    setSelectedCaps(() => {
+      const next = new Set(selectedCaps);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
@@ -184,6 +192,23 @@ function DeviceAuthorize() {
             </span>
           </div>
 
+          {/* Pairing binds the computer to the signed-in account: say which. */}
+          {user?.email ? (
+            <p className="text-muted-foreground text-xs">
+              {t('approvingAs', { email: user.email })}
+            </p>
+          ) : null}
+
+          {registered ? (
+            <InfoBanner
+              tone="info"
+              icon={ArrowsClockwiseIcon}
+              title={t('alreadyConnected', { name: registered.name })}
+            >
+              {registered.isLive ? t('alreadyConnectedLive') : t('alreadyConnectedHint')}
+            </InfoBanner>
+          ) : null}
+
           <div className="space-y-3">
             <FieldLabel htmlFor="connection-name">
               {tI18nComplete.raw('text686d4d5d8ecd')}
@@ -225,7 +250,7 @@ function DeviceAuthorize() {
                 {tI18nComplete.raw('text5db4167d9f88')}
               </p>
               <p className="text-muted-foreground text-xs text-pretty">
-                {tI18nComplete.raw('text7d899c8ca569')}
+                {t('accessHint')}
               </p>
             </div>
             <div className="divide-border divide-y overflow-hidden rounded-md border">
@@ -290,7 +315,7 @@ function DeviceAuthorize() {
               disabled={busy || selectedCaps.size === 0}
             >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              {tI18nComplete.raw('textf4da86da1210')}
+              {registered ? t('reconnect') : tI18nComplete.raw('textf4da86da1210')}
             </Button>
             <Button
               variant="outline"

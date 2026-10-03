@@ -145,6 +145,18 @@ locals {
       ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }
+    # Day-to-day human access for engineers who do not administer IAM.
+    # PowerUserAccess allows every service except IAM, Organizations, and
+    # Account. The group carries its own MFA self-service and MFA deny, so
+    # membership in this one group is complete and safe. Person memberships
+    # are managed out-of-band, as for administrators.
+    engineers = {
+      policies = concat([
+        "arn:aws:iam::aws:policy/PowerUserAccess",
+        aws_iam_policy.mfa_self_manage.arn,
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
+      members = []
+    }
     bedrock-limited = {
       policies = ["arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"]
       members  = ["BedrockAPIKey-0v89", "BedrockAPIKey-8k3j", "BedrockAPIKey-derh", "BedrockAPIKey-fafo", "BedrockAPIKey-hsns", "BedrockAPIKey-j2st", "BedrockAPIKey-jzid", "BedrockAPIKey-mk3l", "BedrockAPIKey-no80", "BedrockAPIKey-nwbk", "BedrockAPIKey-xzvm"]

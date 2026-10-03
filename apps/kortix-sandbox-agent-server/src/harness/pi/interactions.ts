@@ -1,44 +1,22 @@
 /**
  * The two blocking interactions a turn can raise: a permission request before
- * a tool runs, and a question the agent asks the user. Both are OpenCode wire
- * objects (`PermissionRequest`, `QuestionRequest`) answered over the same
+ * a tool runs, and a question the agent asks the user. Both are Kortix types
+ * (`RuntimePermissionRequest`, `RuntimeQuestionRequest`), answered over the
  * routes the product already calls (`/permission/:id/reply`,
  * `/question/:id/reply|reject`).
  */
 import { randomUUID } from 'node:crypto'
-import type { WireFrame } from './transcript'
+import type {
+  RuntimePermissionCapability,
+  RuntimePermissionReply,
+  RuntimePermissionRequest,
+  RuntimeQuestion,
+  RuntimeQuestionRequest,
+  RuntimeToolRef,
+} from '@kortix/api-contract/transcript'
+import type { RuntimeFrame } from './transcript'
 
-export type PermissionReply = 'once' | 'always' | 'reject'
-
-export interface PermissionRequestWire {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: string[]
-  metadata: Record<string, unknown>
-  always: string[]
-  tool?: { messageID: string; callID: string }
-}
-
-export interface QuestionOption {
-  label: string
-  description: string
-}
-
-export interface QuestionInfo {
-  question: string
-  header: string
-  options: QuestionOption[]
-  multiple?: boolean
-  custom?: boolean
-}
-
-export interface QuestionRequestWire {
-  id: string
-  sessionID: string
-  questions: QuestionInfo[]
-  tool?: { messageID: string; callID: string }
-}
+export type PermissionReply = RuntimePermissionReply
 
 /** `allow` | `ask` | `deny` per tool name, `*` as the default. */
 export type PermissionRule = 'allow' | 'ask' | 'deny'
@@ -128,13 +106,26 @@ function resolveRule(config: PermissionRuleConfig | undefined, tool: string, arg
   return config['*']
 }
 
-/** OpenCode's `edit` permission governs every tool that writes a file; pi names one of them `write`. */
-const PERMISSION_KEY: Record<string, string> = { write: 'edit' }
+/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; the search and scrape tools reach the web. */
+const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
+  write: 'edit',
+  web_search: 'websearch',
+  image_search: 'websearch',
+  scrape_webpage: 'webfetch',
+}
 
-/** One call's rule under `policy`: the tool's entry, else its OpenCode key's, else `*`. `undefined` means the policy says nothing. */
+/**
+ * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
+ * `memory` writes files under `memory/`: every command but `view` is an `edit`, so `edit: deny` stops it as it stops `write`.
+ */
+export function toolCapability(tool: string, args?: unknown): string {
+  if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'
+  return TOOL_CAPABILITY[tool] ?? tool
+}
+
+/** One call's rule under `policy`: the tool's entry, else its capability's, else `*`. `undefined` means the policy says nothing. */
 export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
-  const key = PERMISSION_KEY[tool]
-  return resolveRule(policy[tool] ?? (key ? policy[key] : undefined) ?? policy['*'], tool, args)
+  return resolveRule(policy[tool] ?? policy[toolCapability(tool, args)] ?? policy['*'], tool, args)
 }
 
 /**
@@ -147,14 +138,14 @@ export function skillGranted(policy: PermissionPolicy, name: string): boolean {
 }
 
 export class PermissionBroker {
-  private readonly pending = new Map<string, { request: PermissionRequestWire; resolve: (reply: PermissionReply) => void }>()
+  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void }>()
   private readonly alwaysAllowed = new Set<string>()
 
   constructor(
     private readonly sessionID: string,
-    private readonly publish: (frame: WireFrame) => void,
+    private readonly publish: (frame: RuntimeFrame) => void,
     private policy: PermissionPolicy = {},
-    private readonly onAsked?: (request: PermissionRequestWire) => void,
+    private readonly onAsked?: (request: RuntimePermissionRequest) => void,
   ) {}
 
   setPolicy(policy: PermissionPolicy): void {
@@ -166,19 +157,20 @@ export class PermissionBroker {
     // A deny outranks an earlier "always": approving `ls` must not unlock the
     // `rm -rf *` the same pattern map denies.
     if (resolved === 'deny') return 'deny'
-    if (this.alwaysAllowed.has(tool)) return 'allow'
+    if (this.alwaysAllowed.has(toolCapability(tool, args))) return 'allow'
     return resolved ?? 'allow'
   }
 
   /** Resolves with the user's reply; never rejects. */
-  ask(input: { tool: string; args: unknown; ref?: { messageID: string; callID: string } }): Promise<PermissionReply> {
-    const request: PermissionRequestWire = {
+  ask(input: { tool: string; args: unknown; ref?: RuntimeToolRef }): Promise<PermissionReply> {
+    const request: RuntimePermissionRequest = {
       id: `perm_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
       sessionID: this.sessionID,
-      permission: input.tool,
-      patterns: [input.tool],
+      // The capability, so "always" covers every tool that shares it (`write` and `edit`).
+      permission: toolCapability(input.tool, input.args),
+      patterns: [permissionSubject(input.tool, input.args) ?? '*'],
       metadata: input.args && typeof input.args === 'object' ? (input.args as Record<string, unknown>) : {},
-      always: [input.tool],
+      always: ['*'],
       ...(input.ref ? { tool: input.ref } : {}),
     }
     return new Promise<PermissionReply>((resolve) => {
@@ -198,7 +190,7 @@ export class PermissionBroker {
     return true
   }
 
-  list(): PermissionRequestWire[] {
+  list(): RuntimePermissionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
   }
 
@@ -209,17 +201,17 @@ export class PermissionBroker {
 }
 
 export class QuestionBroker {
-  private readonly pending = new Map<string, { request: QuestionRequestWire; resolve: (answers: string[][] | null) => void }>()
+  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void }>()
 
   constructor(
     private readonly sessionID: string,
-    private readonly publish: (frame: WireFrame) => void,
-    private readonly onAsked?: (request: QuestionRequestWire) => void,
+    private readonly publish: (frame: RuntimeFrame) => void,
+    private readonly onAsked?: (request: RuntimeQuestionRequest) => void,
   ) {}
 
   /** Resolves with the answers, or null when rejected; never rejects. */
-  ask(questions: QuestionInfo[], ref?: { messageID: string; callID: string }): Promise<string[][] | null> {
-    const request: QuestionRequestWire = {
+  ask(questions: RuntimeQuestion[], ref?: RuntimeToolRef): Promise<string[][] | null> {
+    const request: RuntimeQuestionRequest = {
       id: `que_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
       sessionID: this.sessionID,
       questions,
@@ -250,7 +242,7 @@ export class QuestionBroker {
     return true
   }
 
-  list(): QuestionRequestWire[] {
+  list(): RuntimeQuestionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
   }
 

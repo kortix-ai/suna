@@ -37,6 +37,27 @@ const UNUSED_RUNTIME_EXPORTS = [
   'refreshRuntimeConfiguration',
 ];
 
+/**
+ * The message-id clock arithmetic: an ordering detail of OpenCode's ids that
+ * clients must not depend on. Kortix message ids are opaque; `mintWireMessageId`
+ * and `WIRE_MESSAGE_ID` stay.
+ */
+const MESSAGE_ID_CLOCK_EXPORTS = [
+  'WIRE_ID_TIME_SCALE',
+  'WIRE_ID_TIME_MASK',
+  'WIRE_ID_CLOCK_TOLERANCE',
+  'WIRE_ID_BACKDATE_MS',
+  'wireIdClock',
+  'wireIdClockAt',
+  'wireIdClockDelta',
+  'maxWireIdClock',
+  'isWireIdAheadOf',
+  'newestWireIdClock',
+  'mintWireMessageIdAbove',
+  'MintWireMessageIdAboveInput',
+  'MintedWireMessageId',
+];
+
 /** The sandbox daemon serves none of `/kortix/tasks|tickets|projects|services`: every call answers 404. */
 const functionNames = (module: Record<string, unknown>) =>
   Object.keys(module).filter((name) => typeof module[name] === 'function');
@@ -80,5 +101,13 @@ describe('deprecated exports', () => {
 
   test.each(KORTIX_MASTER_EXPORTS)('%s is @deprecated', (name) => {
     expect(isDeprecated(name)).toBe(true);
+  });
+
+  test.each(MESSAGE_ID_CLOCK_EXPORTS)('%s is @deprecated', (name) => {
+    expect(isDeprecated(name)).toBe(true);
+  });
+
+  test.each(['mintWireMessageId', 'WIRE_MESSAGE_ID'])('%s stays current (the Kortix message id format)', (name) => {
+    expect(isDeprecated(name)).toBe(false);
   });
 });

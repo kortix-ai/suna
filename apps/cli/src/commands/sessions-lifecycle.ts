@@ -8,7 +8,7 @@
  * Stop button and the session page's open call drive, disk kept.
  */
 
-import { runtimeSupports } from '@kortix/sdk';
+import { ApiError, runtimeSupports } from '@kortix/sdk';
 
 import {
   emitJson,
@@ -18,7 +18,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { readRuntimeCapabilities } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
@@ -330,6 +330,8 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   const { client, projectId, session } = located.located;
 
   let result: {
+    /** `model` since W4; an older API answers only `opencode_model`. */
+    model?: string;
     opencode_model: string;
     applied_live: boolean;
     push_failed?: true;
@@ -337,6 +339,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   };
   try {
     result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
+      model,
       opencode_model: model,
     });
   } catch (err) {
@@ -352,15 +355,15 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   // mechanism there.
   if (result.push_failed) {
     process.stderr.write(
-      `${status.err(`Stored ${result.opencode_model}, but the live push FAILED — the running agent still answers from the old model${result.detail ? `: ${result.detail}` : ''}.`)}\n`,
+      `${status.err(`Stored ${result.model ?? result.opencode_model}, but the live push FAILED — the running agent still answers from the old model${result.detail ? `: ${result.detail}` : ''}.`)}\n`,
     );
     return 1;
   }
   process.stdout.write(
     `${status.ok(
       result.applied_live
-        ? `Now running ${C.bold}${result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
-        : `Stored ${C.bold}${result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
+        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
+        : `Stored ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
     )}\n`,
   );
   return 0;
@@ -386,53 +389,28 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   }
 
   // The session's OWN persisted model is the right one to summarize with —
-  // same split the prompt path uses. Fall back to the runtime's configured
-  // default when the row carries none.
-  let model = sessionPromptDefaults(resolved.session).model;
-  if (!model) {
-    try {
-      const config = await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime<{ model?: string }>(await resolved.runtime.global.config.get()),
-      );
-      const reference = typeof config?.model === 'string' ? config.model : '';
-      const separator = reference.indexOf('/');
-      if (separator > 0 && separator < reference.length - 1) {
-        model = {
-          providerID: reference.slice(0, separator),
-          modelID: reference.slice(separator + 1),
-        };
-      }
-    } catch {
-      // Fall through to the explicit error below — a guess would compact with
-      // a model the sandbox cannot serve.
-    }
-  }
-  if (!model) {
-    process.stderr.write(
-      `${status.err('No model configured for this session — set one with `kortix sessions model <id> <model>` first.')}\n`,
-    );
-    return 1;
-  }
-
+  // same split the prompt path uses. Without one, the runtime's configured
+  // default applies; with neither, `compact` refuses instead of guessing.
+  let model: { providerID: string; modelID: string };
   try {
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.session.summarize({
-          sessionID: resolved.opencodeSessionId,
-          providerID: model!.providerID,
-          modelID: model!.modelID,
-        }),
-      ),
+    model = await withKortixScope(resolved.auth, () =>
+      resolved.handle.compact(sessionPromptDefaults(resolved.session).model),
     );
   } catch (err) {
+    if (err instanceof ApiError && err.code === 'MODEL_REQUIRED') {
+      process.stderr.write(
+        `${status.err('No model configured for this session — set one with `kortix sessions model <id> <model>` first.')}\n`,
+      );
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
   if (json) {
     emitJson({
       session_id: resolved.session.session_id,
-      runtime_session_id: resolved.opencodeSessionId,
-      opencode_session_id: resolved.opencodeSessionId,
+      runtime_session_id: resolved.runtimeSessionId,
+      opencode_session_id: resolved.runtimeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,
     });

@@ -12,7 +12,7 @@
 import type {
   WorkspaceSearchEntry,
   WorkspaceSearchOptions,
-} from '@/features/file-browser/search/workspace-search-core';
+} from '@kortix/sdk/workspace-search';
 
 interface WorkspaceSearchRuntimeOptions extends WorkspaceSearchOptions {
   apiLimit?: number;

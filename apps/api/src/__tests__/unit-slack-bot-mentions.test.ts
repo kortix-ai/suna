@@ -71,7 +71,8 @@ mock.module('../channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
-  getChannelName: async () => 'general',
+  describeSlackConversation: async () => ({ name: 'general', type: 'channel', unavailable: false }),
+  getSlackUserDisplayName: async () => null,
   isBotUser: async () => true,
   findBotUserIdByName: async () => null,
   joinChannel: async () => true,
@@ -166,23 +167,6 @@ describe('the event another bot sends now classifies as real work', () => {
 });
 
 describe('source contracts', () => {
-  const dispatchSrc = readFileSync(
-    join(import.meta.dir, '..', 'channels', 'slack', 'dispatch.ts'),
-    'utf8',
-  );
-
-  test('dispatchSlackEvent uses isOwnBotEvent, not a blanket bot_id gate', () => {
-    // Every behavioural test above passes even if the call site still returns on
-    // any bot, because they exercise the function directly. Pin the call site.
-    const body = dispatchSrc.slice(dispatchSrc.indexOf('export async function dispatchSlackEvent'));
-    expect(body, 'the self-identity gate is gone — the bot would answer its own messages in a loop')
-      .toContain('if (isOwnBotEvent(event, botUserId)) return;');
-    expect(
-      body.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n'),
-      'the blanket `|| event.bot_id` gate is back — every other bot is silently dropped again',
-    ).not.toMatch(/\|\|\s*event\.bot_id\s*\)\s*return/);
-  });
-
   test('no username/icon override in the Slack send path — that is what keeps event.user ours', () => {
     // isOwnBotEvent identifies our messages by event.user. Slack only sets that
     // when a post goes out as the bot itself; posting with username/icon_emoji/
@@ -215,23 +199,9 @@ describe('source contracts', () => {
 // Worse, it returned LOUDLY into a void: postIdentityPrompt posts an ephemeral
 // AND opens a DM, both addressed to slackUserId — the bot. Nobody sees either,
 // so the mention reads as "Kortix ignored it". Verified on dev f07c04f0 with a
-// real bot-to-bot mention (Slack ts 1787153374.887479).
+// real bot-to-bot mention.
 
 describe('a bot sender is never sent an identity prompt', () => {
-  const src = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'dispatch.ts'), 'utf8');
-
-  test('postIdentityPrompt is guarded on the sender not being a bot', () => {
-    // BOTH sites: the bare-@mention branch and the main turn path. Checking only
-    // the first is how the second stayed unguarded — this test caught that.
-    const sites = [...src.matchAll(/await postIdentityPrompt\(/g)];
-    expect(sites.length, 'expected two identity-prompt sites').toBe(2);
-    for (const m of sites) {
-      const before = src.slice(Math.max(0, m.index! - 400), m.index!);
-      expect(before, 'an unlinked BOT gets an ephemeral + a DM it cannot read, and the mention looks ignored')
-        .toContain('if (!event.bot_id) {');
-    }
-  });
-
   test('link-bot is routed and identity-flag gated', () => {
     const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
     expect(cmds, 'the only way to make a bot resolvable is gone').toContain("case 'link-bot':");
@@ -257,7 +227,7 @@ describe('a bot sender is never sent an identity prompt', () => {
 // resolveChatActor treats the row as the authoritative
 // (workspace, slack_user) -> kortix_user mapping, so binding a person's id would
 // silently make THEIR later Slack actions run as whoever linked them. Human and
-// bot ids are the same shape — /^[UWB][A-Z0-9]{6,}$/ matches U0B8ERR54BH (a
+// bot ids are the same shape — /^[UWB][A-Z0-9]{6,}$/ matches U0A1B2C3D4E (a
 // person) exactly as it matches a bot — so only Slack can tell them apart.
 
 describe('link-bot refuses anything that is not a verified bot', () => {

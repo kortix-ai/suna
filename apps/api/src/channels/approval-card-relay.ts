@@ -14,7 +14,8 @@ import type { ApprovalDecision } from '../projects/lib/connector-approval-decisi
 import { db } from '../shared/db';
 import { loadSlackTokenForProject } from './install-store';
 import { postBlocks, updateBlocks } from './slack-api';
-import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks } from './slack/approval-card';
+import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks, slackUserIdsIn } from './slack/approval-card';
+import { slackUserNames } from './slack/labels';
 import { deleteTurn, finalizeTurn, loadTurn } from './slack/turn';
 import { updateCard } from './teams-api';
 import { postTeamsApprovalCard } from './teams/approval';
@@ -91,7 +92,8 @@ export async function postApprovalCard(input: PostApprovalCardInput): Promise<{ 
   }
   if (thread.projectId !== input.projectId) return { posted: false };
 
-  const blocks = buildApprovalCardBlocks(cardInput);
+  const names = await slackUserNames(thread.token, thread.teamId, slackUserIdsIn(argsPreview));
+  const blocks = buildApprovalCardBlocks(cardInput, names);
   const ts = await postBlocks(
     thread.token,
     thread.channel,

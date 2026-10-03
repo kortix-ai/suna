@@ -24,11 +24,12 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
- * `review_center`, `agent_tunnel` and `session_transcript_history` are
- * deprecated. `agent_tunnel` graduated like `review_center` below: a paired
- * computer is a connector account and needs no flag. So did
+ * `review_center`, `agent_tunnel`, `session_transcript_history` and `teams`
+ * are deprecated. `agent_tunnel` graduated like `review_center` below: a
+ * paired computer is a connector account and needs no flag. So did
  * `session_transcript_history`: every session saves its transcript and shows
- * it while its computer is off.
+ * it while its computer is off. And `teams`: every project can connect
+ * Microsoft Teams.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -43,6 +44,7 @@ export type FeatureFlagKey =
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
+  /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
   | 'llm_gateway'
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
@@ -60,7 +62,9 @@ export type FeatureFlagKey =
   | 'pi_harness'
   | 'config_releases'
   | 'agent_principal'
-  | 'us_region';
+  | 'us_region'
+  /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
+  | 'human_messaging';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -71,7 +75,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
   'connectors_api_discover',
   'agentmail_email',
-  'teams',
   'llm_gateway',
   'meta_agent',
   'apps',

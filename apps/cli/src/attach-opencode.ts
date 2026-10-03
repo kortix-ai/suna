@@ -5,9 +5,8 @@ import { runtimeSupports } from '@kortix/sdk';
 import type { Auth } from './api/auth.ts';
 import { clientFromAuth } from './api/client.ts';
 import {
-  type RunningOpenCodeProxy,
-  startOpenCodeProxy,
-  unwrapRuntime,
+  type RunningSandboxPortProxy,
+  startSandboxPortProxy,
   withKortixScope,
 } from './api/sdk.ts';
 import type { ProjectSession } from './api/types.ts';
@@ -50,7 +49,7 @@ export type AttachStage =
  */
 export interface AttachStatusContext {
   session?: ProjectSession;
-  opencodeSessionId?: string;
+  runtimeSessionId?: string;
   proxyUrl?: string;
 }
 
@@ -77,7 +76,7 @@ export interface AttachOpenCodeDeps {
     runtimeUrl: string;
     token: string;
     port?: number;
-  }) => RunningOpenCodeProxy;
+  }) => RunningSandboxPortProxy;
   spawnAttach?: (
     bin: string,
     args: string[],
@@ -110,7 +109,7 @@ export interface AttachOpenCodeOptions {
 
 export interface AttachOpenCodeResult {
   exitCode: number;
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   proxyUrl: string;
 }
 
@@ -148,7 +147,7 @@ export async function attachOpenCodeSession(
   const probeCapabilities = deps.probeCapabilities ?? readRuntimeCapabilities;
   const probeRuntimeVersion = deps.probeRuntimeVersion ?? runtimeOpencodeVersion;
   const ensureBin = deps.ensureBin ?? ensureOpencodeBin;
-  const startProxy = deps.startProxy ?? startOpenCodeProxy;
+  const startProxy = deps.startProxy ?? startSandboxPortProxy;
   const spawnAttach = deps.spawnAttach ?? spawnOpenCodeAttach;
 
   const emit = (stage: AttachStage, detail: string, context: AttachStatusContext = {}): void => {
@@ -174,7 +173,7 @@ export async function attachOpenCodeSession(
   if (!runtimeSupports(await probeCapabilities(runtime), 'session.attach')) {
     throw new AttachOpenCodeError('resolving', ATTACH_UNSUPPORTED);
   }
-  if (!runtime.opencodeSessionId) {
+  if (!runtime.runtimeSessionId) {
     throw new AttachOpenCodeError(
       'resolving',
       `Session ${options.sessionId} has no OpenCode session to attach to.`,
@@ -182,7 +181,7 @@ export async function attachOpenCodeSession(
   }
   const attachContext: AttachStatusContext = {
     session: runtime.session,
-    opencodeSessionId: runtime.opencodeSessionId,
+    runtimeSessionId: runtime.runtimeSessionId,
   };
 
   // Resolve (and, first time, download) the version-matched binary BEFORE the
@@ -195,7 +194,7 @@ export async function attachOpenCodeSession(
   }
   emit('downloading-binary', `OpenCode binary ready (${bin}).`, attachContext);
 
-  let proxy: RunningOpenCodeProxy;
+  let proxy: RunningSandboxPortProxy;
   try {
     proxy = startProxy({
       runtimeUrl: runtime.runtimeUrl,
@@ -209,11 +208,11 @@ export async function attachOpenCodeSession(
   try {
     attachContext.proxyUrl = proxy.url;
     emit('proxy-ready', `Local OpenCode proxy listening on ${proxy.url}.`, attachContext);
-    const args = buildAttachArgs(proxy.url, runtime.opencodeSessionId, options.extraArgs ?? []);
+    const args = buildAttachArgs(proxy.url, runtime.runtimeSessionId, options.extraArgs ?? []);
     emit(
       'attached',
       `Connecting to ${attachSessionLabel(runtime.session)} ` +
-        `(OpenCode ${runtime.opencodeSessionId}, local ${proxy.url})`,
+        `(OpenCode ${runtime.runtimeSessionId}, local ${proxy.url})`,
       attachContext,
     );
     let exitCode: number;
@@ -222,7 +221,7 @@ export async function attachOpenCodeSession(
     } catch (err) {
       throw new AttachOpenCodeError('attached', (err as Error).message, err);
     }
-    return { exitCode, opencodeSessionId: runtime.opencodeSessionId, proxyUrl: proxy.url };
+    return { exitCode, runtimeSessionId: runtime.runtimeSessionId, proxyUrl: proxy.url };
   } finally {
     proxy.close();
   }
@@ -251,10 +250,10 @@ async function resolveRuntimeViaApi(request: AttachResolveRequest): Promise<Sess
 }
 
 /**
- * The version the session's OpenCode server actually runs, from its own
- * `/global/health` — the sandbox image may be newer or older than this CLI's
- * baked pin, and the TUI must match the server, not the pin. Falls back to
- * undefined (→ the runtime-versions pin) when the probe fails.
+ * The version the session's OpenCode server actually runs, from the daemon's
+ * `/kortix/health` harness block — the sandbox image may be newer or older than
+ * this CLI's baked pin, and the TUI must match the server, not the pin. Falls
+ * back to undefined (→ the runtime-versions pin) when the probe fails.
  *
  * The value crosses a trust boundary: it comes from inside the sandbox and
  * ends up in a download URL and an executable path, so anything that is not
@@ -262,10 +261,8 @@ async function resolveRuntimeViaApi(request: AttachResolveRequest): Promise<Sess
  */
 async function runtimeOpencodeVersion(runtime: SessionRuntime): Promise<string | undefined> {
   try {
-    const health = unwrapRuntime(
-      await withKortixScope(runtime.auth, () => runtime.runtime.global.health()),
-    );
-    const version = (health as { version?: unknown }).version;
+    const { health } = await withKortixScope(runtime.auth, () => runtime.handle.health());
+    const version = health?.harness?.id === 'opencode' ? health.harness.version : undefined;
     return typeof version === 'string' && isValidOpencodeVersion(version) ? version : undefined;
   } catch {
     return undefined;
@@ -274,7 +271,7 @@ async function runtimeOpencodeVersion(runtime: SessionRuntime): Promise<string |
 
 export function buildAttachArgs(
   url: string,
-  opencodeSessionId: string,
+  runtimeSessionId: string,
   extraArgs: string[],
 ): string[] {
   const hasContinuation = extraArgs.some(
@@ -288,7 +285,7 @@ export function buildAttachArgs(
   return [
     'attach',
     url,
-    ...(hasContinuation ? [] : ['--session', opencodeSessionId]),
+    ...(hasContinuation ? [] : ['--session', runtimeSessionId]),
     ...extraArgs,
   ];
 }

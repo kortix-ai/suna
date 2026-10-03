@@ -7,6 +7,8 @@
  * glob/grep are Kortix additions on top of ripgrep (pi ships none), named
  * exactly as OpenCode's so `toolViewModel()` in the web client needs no
  * remapping. `question` is the interactive ask the product renders.
+ * `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are the
+ * Kortix tools every session has (`createKortixTools`).
  */
 import {
   DEFAULT_MAX_BYTES,
@@ -29,7 +31,11 @@ import {
 } from '@earendil-works/pi-agent-core'
 import { BACKGROUND_CONTEXT, withAbortSignal } from '@earendil-works/pi-agent-core/harness/context'
 import { Type } from 'typebox'
-import type { QuestionBroker, QuestionInfo } from './interactions'
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
+import type { QuestionBroker } from './interactions'
+import { createMemoryTool } from './kortix-memory-tool'
+import { createShowTool } from './kortix-show-tool'
+import { createImageSearchTool, createScrapeWebpageTool, createWebSearchTool } from './kortix-web-tools'
 
 const globSchema = Type.Object({
   pattern: Type.String({ minLength: 1, description: 'Glob pattern to match, such as **/*.ts or src/**/test-*.tsx' }),
@@ -139,7 +145,7 @@ export function createGrepTool(): Harness {
 export function createQuestionTool(
   questions: QuestionBroker,
   ref: (toolCallId: string) => { messageID: string; callID: string } | undefined,
-): AgentTool<typeof questionSchema, undefined> {
+): AgentTool<typeof questionSchema, { answers: string[][] }> {
   return {
     name: 'question',
     label: 'question',
@@ -147,11 +153,12 @@ export function createQuestionTool(
       'Ask the user one or more questions and wait for the answers. Use it when a decision needs the user, not to narrate progress. Each question has a short header, the full question, and 2-5 options.',
     parameters: questionSchema,
     async execute(toolCallId, params) {
-      const asked = params.questions as QuestionInfo[]
+      const asked = params.questions as RuntimeQuestion[]
       const answers = await questions.ask(asked, ref(toolCallId))
       if (answers === null) throw new Error('The user dismissed the question.')
       const text = asked.map((q, i) => `${q.header}: ${(answers[i] ?? []).join(', ') || '(no answer)'}`).join('\n')
-      return { content: [{ type: 'text', text: `User answered:\n${text}` }], details: undefined }
+      // `details` becomes the part's `state.metadata`: the answers a client shows.
+      return { content: [{ type: 'text', text: `User answered:\n${text}` }], details: { answers } }
     },
   }
 }
@@ -183,8 +190,16 @@ export function bindTool(tool: Harness, env: ExecutionEnv): AgentTool<any, any> 
   }
 }
 
+/** Every tool a root agent and a subagent can be given: pi's workspace tools on this sandbox, then the Kortix tools. */
 export function createWorkspaceTools(env: ExecutionEnv): AgentTool<any, any>[] {
-  return [createBashTool(), createReadTool(), createWriteTool(), createEditTool(), createGlobTool(), createGrepTool()].map(
-    (tool) => bindTool(tool as Harness, env),
-  )
+  return [
+    ...[createBashTool(), createReadTool(), createWriteTool(), createEditTool(), createGlobTool(), createGrepTool()].map((tool) =>
+      bindTool(tool as Harness, env),
+    ),
+    createWebSearchTool(),
+    createImageSearchTool(),
+    createScrapeWebpageTool(),
+    createMemoryTool(env.cwd),
+    createShowTool(env.cwd),
+  ]
 }

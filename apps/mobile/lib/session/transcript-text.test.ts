@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts, Part } from '@/lib/opencode/types';
+import type { MessageWithParts, Part } from '@/lib/session/types';
 
 import {
   TRANSCRIPT_INCOMPLETE_LINE,
@@ -10,12 +10,12 @@ import {
 } from './transcript-text';
 
 let seq = 0;
-function msg(role: 'user' | 'assistant', parts: Part[], extra: Partial<MessageWithParts['info']> = {}): MessageWithParts {
+function msg(role: 'user' | 'assistant', parts: Part[], extra: Record<string, unknown> = {}): MessageWithParts {
   seq += 1;
   return {
     info: { id: `msg_${seq}`, role, sessionID: 'ses_1', time: { created: seq }, ...extra },
     parts,
-  };
+  } as unknown as MessageWithParts;
 }
 const text = (value: string, flags: { synthetic?: boolean; ignored?: boolean } = {}): Part =>
   ({ type: 'text', id: `prt_${++seq}`, text: value, ...flags }) as Part;
@@ -27,7 +27,7 @@ const tool = (name: string, output = 'SECRET OUTPUT'): Part =>
     tool: name,
     input: { command: 'SECRET INPUT' },
     state: { status: 'completed', output },
-  }) as Part;
+  }) as unknown as Part;
 const reasoning = (value: string): Part => ({ type: 'reasoning', id: `prt_${++seq}`, text: value }) as Part;
 
 describe('buildTranscriptText', () => {
