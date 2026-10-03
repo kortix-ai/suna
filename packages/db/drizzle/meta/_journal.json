@@ -813,6 +813,13 @@
       "when": 1791027817427,
       "tag": "20261003114337_drop_unused_access_requests_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791041158118,
+      "tag": "20261003152558_oauth_consents_client_index",
+      "breakpoints": true
     }
   ]
 }
