@@ -1,5 +1,6 @@
 import type { CaptureRangeOutput } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { activeCaptureTab } from './capture-shell';
 import {
   appColor,
   dayWindow,
@@ -186,5 +187,15 @@ describe('device status', () => {
     expect(deviceStatus(device('recording', { sync: { errorClass: 'network' } })).syncFailed).toBe(
       true,
     );
+  });
+});
+
+describe('capture tabs', () => {
+  test('a capture path names its tab; the index and unknown segments are the timeline', () => {
+    expect(activeCaptureTab('/projects/p1/capture')).toBe('timeline');
+    expect(activeCaptureTab('/projects/p1/capture/ranges/r1')).toBe('ranges');
+    expect(activeCaptureTab('/projects/p1/capture/people')).toBe('people');
+    expect(activeCaptureTab('/projects/p1/capture/nope')).toBe('timeline');
+    expect(activeCaptureTab(null)).toBe('timeline');
   });
 });

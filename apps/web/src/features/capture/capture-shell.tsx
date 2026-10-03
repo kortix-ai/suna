@@ -15,23 +15,15 @@ import { useCaptureViewer } from './use-capture-viewer';
 
 type CaptureTab = 'timeline' | 'ask' | 'ranges' | 'devices' | 'people' | 'settings';
 
-const SEGMENT: Record<CaptureTab, string> = {
-  timeline: '',
-  ask: '/ask',
-  ranges: '/ranges',
-  devices: '/devices',
-  people: '/people',
-  settings: '/settings',
-};
+const TABS: readonly CaptureTab[] = ['timeline', 'ask', 'ranges', 'devices', 'people', 'settings'];
+/** The path segment after `/capture` (Timeline is the index). */
+const segmentOf = (tab: CaptureTab) => (tab === 'timeline' ? '' : `/${tab}`);
 
 /** The tab a capture path belongs to (`/projects/p/capture/ranges/r1` → ranges). */
 export function activeCaptureTab(pathname: string | null): CaptureTab {
   const rest = pathname?.split('/capture')[1] ?? '';
   const segment = rest.split('/')[1] ?? '';
-  return (
-    (Object.keys(SEGMENT) as CaptureTab[]).find((tab) => SEGMENT[tab] === `/${segment}`) ??
-    'timeline'
-  );
+  return TABS.find((tab) => tab !== 'timeline' && tab === segment) ?? 'timeline';
 }
 
 function CaptureTabs({ projectId, isManager }: { projectId: string; isManager: boolean }) {
@@ -45,7 +37,7 @@ function CaptureTabs({ projectId, isManager }: { projectId: string; isManager: b
     : ['timeline', 'ask', 'ranges', 'devices'];
   // A manager looking at a member keeps that member on the tabs that read one person.
   const href = (tab: CaptureTab) =>
-    `/projects/${projectId}/capture${SEGMENT[tab]}${user && (tab === 'timeline' || tab === 'ranges') ? `?user=${user}` : ''}`;
+    `/projects/${projectId}/capture${segmentOf(tab)}${user && (tab === 'timeline' || tab === 'ranges') ? `?user=${user}` : ''}`;
 
   return (
     <div
