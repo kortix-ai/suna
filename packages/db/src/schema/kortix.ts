@@ -6496,7 +6496,6 @@ export const projectUserProviderConnections = kortixSchema.table('project_user_p
     foreignColumns: [userProviderConnections.connectionId, userProviderConnections.userId, userProviderConnections.providerId],
     name: 'project_user_provider_connections_owner_fk',
   }).onDelete('cascade'),
-  index('project_user_provider_connections_connection').on(table.connectionId),
 ]);
 
 /** A session retains its selected personal pool member across API replicas. */
