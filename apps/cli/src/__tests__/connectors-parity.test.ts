@@ -636,6 +636,27 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stdout).toContain('delete_* → block when scope=prod, actor!=bot');
   });
 
+  test('policy add preserves != inside matcher values in the wire payload and label', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'policy', 'add', 'send_*', 'block', '--condition', 'to=a!=b', '--condition', 'subject!=a!=b', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({
+      policies: [{
+        match: 'send_*',
+        action: 'block',
+        conditions: [
+          { arg: 'to', match: 'a!=b' },
+          { arg: 'subject', match: 'a!=b', negate: true },
+        ],
+      }],
+      defaultMode: 'risk',
+    });
+    expect(r.stdout).toContain('send_* → block when to=a!=b, subject!=a!=b');
+  });
+
   test('policy add rejects a malformed --condition before any write', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'policy', 'add', 'x', 'block', '--condition', 'nope', '--project', PROJECT], config);

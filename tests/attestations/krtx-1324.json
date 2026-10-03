@@ -1,0 +1,17 @@
+{
+  "source_hash": "ce90a1cc11dd0b9ce4015275f9403661a444832f234b61f1de56ecfb18808f46",
+  "diff_files": [
+    "apps/cli/src/__tests__/connectors-parity.test.ts",
+    "apps/cli/src/commands/connectors.test.ts",
+    "apps/cli/src/commands/connectors.ts"
+  ],
+  "diff_hash": "3b462bfe0c2879b969455ccd261ed5e0a12388008e1af679140c2dcf01499c41",
+  "head": "5e70029c291be2b3269db33e7a43cddc5c453d69",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:19:49.308Z"
+}
