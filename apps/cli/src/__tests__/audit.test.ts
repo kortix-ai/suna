@@ -15,8 +15,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { buildAuditQuery, resolveInstant } from '../commands/audit.ts';
 import { auditEventTitle, truncate } from '../commands/audit-render.ts';
+import { buildAuditQuery, resolveInstant } from '../commands/audit.ts';
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 
@@ -201,7 +201,9 @@ describe('audit CLI process', () => {
             ? 'project'
             : 'account';
         return Response.json({
-          events: [event(`${scope}-${cursor ? '2' : '1'}`, `${scope}.${cursor ? 'second' : 'first'}`)],
+          events: [
+            event(`${scope}-${cursor ? '2' : '1'}`, `${scope}.${cursor ? 'second' : 'first'}`),
+          ],
           next_cursor: cursor ? null : `${scope}-cursor-2`,
         });
       },
@@ -327,7 +329,8 @@ describe('audit CLI process', () => {
       );
 
       const accountRequests = requests.filter(
-        (url) => url.pathname.endsWith('/accounts/account-1/audit') && !url.pathname.endsWith('/export'),
+        (url) =>
+          url.pathname.endsWith('/accounts/account-1/audit') && !url.pathname.endsWith('/export'),
       );
       expect(accountRequests).toHaveLength(2);
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
@@ -340,8 +343,8 @@ describe('audit CLI process', () => {
       expect(accountRequests[0]!.searchParams.get('since')).toMatch(/^2026-/);
       expect(accountRequests[1]!.searchParams.get('cursor')).toBe('account-cursor-2');
 
-      const projectRequests = requests.filter(
-        (url) => url.pathname.endsWith('/projects/project-1/audit'),
+      const projectRequests = requests.filter((url) =>
+        url.pathname.endsWith('/projects/project-1/audit'),
       );
       expect(projectRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
         null,
@@ -401,7 +404,12 @@ describe('audit CLI process', () => {
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       };
-      for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+      for (const key of [
+        'KORTIX_API_URL',
+        'KORTIX_TOKEN',
+        'KORTIX_FRONTEND_URL',
+        'KORTIX_PROJECT_ID',
+      ]) {
         delete env[key];
       }
       const child = Bun.spawn({
@@ -522,7 +530,12 @@ describe('audit ls table', () => {
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       };
-      for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+      for (const key of [
+        'KORTIX_API_URL',
+        'KORTIX_TOKEN',
+        'KORTIX_FRONTEND_URL',
+        'KORTIX_PROJECT_ID',
+      ]) {
         delete env[key];
       }
       const child = Bun.spawn({

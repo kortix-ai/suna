@@ -118,7 +118,10 @@ function startServer(): string {
               },
         );
       }
-      if (url.pathname === `${base}/change-requests/${CR_ID}/request-changes` && req.method === 'POST') {
+      if (
+        url.pathname === `${base}/change-requests/${CR_ID}/request-changes` &&
+        req.method === 'POST'
+      ) {
         if (!(body as { feedback?: string })?.feedback) {
           return Response.json({ error: 'feedback is required' }, { status: 400 });
         }
@@ -167,7 +170,17 @@ async function runCli(args: string[], configFile?: string) {
     KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     KORTIX_CONFIG_FILE: configFile,
   };
-  for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'KORTIX_BRANCH_NAME', 'KORTIX_HEAD_REF', 'KORTIX_SESSION_ID', 'BASH_ENV']) {
+  for (const key of [
+    'KORTIX_API_URL',
+    'KORTIX_CLI_TOKEN',
+    'KORTIX_FRONTEND_URL',
+    'KORTIX_PROJECT_ID',
+    'KORTIX_TOKEN',
+    'KORTIX_BRANCH_NAME',
+    'KORTIX_HEAD_REF',
+    'KORTIX_SESSION_ID',
+    'BASH_ENV',
+  ]) {
     delete env[key];
   }
   const proc = Bun.spawn({
@@ -205,7 +218,12 @@ describe('kortix cr — review parity', () => {
   test('--help documents the three new subcommands', async () => {
     const r = await runCli(['cr', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['merge-preview <cr>', 'request-changes <cr>', 'version-diff --from', 'project.review.act']) {
+    for (const fragment of [
+      'merge-preview <cr>',
+      'request-changes <cr>',
+      'version-diff --from',
+      'project.review.act',
+    ]) {
       expect(r.stdout).toContain(fragment);
     }
   });
@@ -241,7 +259,10 @@ describe('kortix cr — review parity', () => {
 
   test('request-changes POSTs {feedback} and reports delivery', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'request-changes', CR_ID, '--message', 'Rename it first', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'request-changes', CR_ID, '--message', 'Rename it first', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
@@ -262,7 +283,10 @@ describe('kortix cr — review parity', () => {
 
   test('version-diff sends from/into and prints the summary', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'version-diff', '--from', 'feature/x', '--into', 'main', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'version-diff', '--from', 'feature/x', '--into', 'main', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'GET',
@@ -276,7 +300,10 @@ describe('kortix cr — review parity', () => {
 
   test('version-diff says so when there is nothing to propose', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'version-diff', '--from', 'empty', '--into', 'main', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'version-diff', '--from', 'empty', '--into', 'main', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('No changes');
   });
@@ -291,7 +318,10 @@ describe('kortix cr — review parity', () => {
 
   test('an unknown CR number reports it without hitting the write route', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['cr', 'request-changes', '99', '--message', 'x', '--project', PROJECT], config);
+    const r = await runCli(
+      ['cr', 'request-changes', '99', '--message', 'x', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No CR #99');
     expect(calls.every((c) => c.method === 'GET')).toBe(true);

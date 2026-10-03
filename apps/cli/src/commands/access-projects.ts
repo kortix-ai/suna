@@ -43,7 +43,9 @@ export async function accessLs(client: ApiClient, base: string, json: boolean): 
   }
   const emailW = Math.max(...resp.members.map((m) => (m.email ?? m.user_id).length), 6);
   process.stdout.write('\n');
-  process.stdout.write(`  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`,
+  );
   for (const m of resp.members) {
     const eff = m.effective_project_role ?? '—';
     const src = m.effective_source ?? (m.has_implicit_access ? 'implicit' : '—');
@@ -51,7 +53,9 @@ export async function accessLs(client: ApiClient, base: string, json: boolean): 
       `  ${pad(m.email ?? m.user_id, emailW)}   ${pad(m.account_role, 7)}   ${pad(eff, 12)}   ${C.faded}${src}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${resp.members.length} member${resp.members.length === 1 ? '' : 's'}${resp.can_manage ? '' : ` ${C.faded}(read-only — you can't manage)${C.reset}`}${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${resp.members.length} member${resp.members.length === 1 ? '' : 's'}${resp.can_manage ? '' : ` ${C.faded}(read-only — you can't manage)${C.reset}`}${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -98,11 +102,15 @@ export async function accessInvite(
       `${status.warn(`Invited ${C.bold}${email}${C.reset} as ${role}${pending} — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
     );
     if (resp.invite_url) {
-      process.stdout.write(`  Share this link with them:\n  ${C.bold}${resp.invite_url}${C.reset}\n`);
+      process.stdout.write(
+        `  Share this link with them:\n  ${C.bold}${resp.invite_url}${C.reset}\n`,
+      );
     }
     return 0;
   }
-  process.stdout.write(`${status.ok(`Invited ${C.bold}${email}${C.reset} as ${role}${pending}`)}\n`);
+  process.stdout.write(
+    `${status.ok(`Invited ${C.bold}${email}${C.reset} as ${role}${pending}`)}\n`,
+  );
   return 0;
 }
 
@@ -140,7 +148,11 @@ export async function accessRevoke(
   return 0;
 }
 
-export async function accessPending(client: ApiClient, base: string, json: boolean): Promise<number> {
+export async function accessPending(
+  client: ApiClient,
+  base: string,
+  json: boolean,
+): Promise<number> {
   const resp = await client.get<{ pending: PendingInvite[] }>(`${base}/access/pending-invites`);
   if (json) {
     emitJson(resp);

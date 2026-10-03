@@ -1,7 +1,4 @@
 import type { ApiClient } from '../api/client.ts';
-import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { UUID_RE } from '../iam.ts';
-import { C, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
   ChangeRequestDetailResponse,
@@ -9,6 +6,17 @@ import type {
   ChangeRequestMergePreview,
   ChangeRequestsListResponse,
 } from '../api/types.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveProjectContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+} from '../command-helpers.ts';
+import { UUID_RE } from '../iam.ts';
+import { C, pad, status } from '../style.ts';
 
 // `kortix cr` — the diff surfaces, plus the plumbing every CR verb shares.
 //
@@ -210,9 +218,7 @@ export async function crVersionDiff(argv: string[], opts: CtxOpts, json = false)
     return 0;
   }
   process.stdout.write('\n');
-  process.stdout.write(
-    `  ${displayBranch(diff.from)} → ${displayBranch(diff.into)}\n`,
-  );
+  process.stdout.write(`  ${displayBranch(diff.from)} → ${displayBranch(diff.into)}\n`);
   if (diff.is_same_ref) {
     process.stdout.write(`  ${C.dim}Same version — nothing to compare.${C.reset}\n\n`);
     return 0;

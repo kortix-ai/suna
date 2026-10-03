@@ -1,10 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type {
-  App,
-  AppDeployment,
-  UpdateAppInput,
-} from '@kortix/sdk';
+import type { App, AppDeployment, UpdateAppInput } from '@kortix/sdk';
 
 import { splitHelp } from '../command-argv.ts';
 import {
@@ -17,6 +13,7 @@ import {
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
 import {
+  type ContextOptions,
   commandArg,
   context,
   csv,
@@ -31,7 +28,6 @@ import {
   slugFrom,
   stageArtifact,
   waitForDeployment,
-  type ContextOptions,
 } from './apps-deploy.ts';
 
 // The archive/manifest helpers keep their historical home in the entry module
@@ -109,16 +105,20 @@ Global options:
  * The deployment a user named: its full id, or its version as `v3` or `3` —
  * the form `kortix apps show` prints. Deleted deployments are never listed.
  */
-export function resolveDeploymentTarget(deployments: AppDeployment[], target: string): AppDeployment {
+export function resolveDeploymentTarget(
+  deployments: AppDeployment[],
+  target: string,
+): AppDeployment {
   const version = /^v?(\d+)$/i.exec(target.trim());
-  const match = deployments.find((deployment) =>
-    deployment.deployment_id === target
-    || (version !== null && deployment.version === Number(version[1])));
+  const match = deployments.find(
+    (deployment) =>
+      deployment.deployment_id === target ||
+      (version !== null && deployment.version === Number(version[1])),
+  );
   if (match) return match;
   const known = deployments.map((deployment) => `v${deployment.version}`).join(', ');
   throw new Error(`Deployment ${target} not found${known ? ` (deployments: ${known})` : ''}`);
 }
-
 
 function renderApps(apps: App[]): number {
   if (apps.length === 0) {
@@ -128,7 +128,9 @@ function renderApps(apps: App[]): number {
   const slugWidth = Math.max(4, ...apps.map((app) => app.slug.length));
   process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  STATE     URL${C.reset}\n`);
   for (const app of apps) {
-    process.stdout.write(`  ${pad(app.slug, slugWidth)}  ${pad(app.desired_state, 9)} ${app.url}\n`);
+    process.stdout.write(
+      `  ${pad(app.slug, slugWidth)}  ${pad(app.desired_state, 9)} ${app.url}\n`,
+    );
   }
   process.stdout.write('\n');
   return 0;
@@ -201,7 +203,11 @@ async function listCommand(options: ContextOptions, json: boolean): Promise<numb
   return renderApps(apps);
 }
 
-async function createCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+async function createCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   const slugInput = rest.find((value) => !value.startsWith('-'));
   if (!slugInput) return fail('create needs a slug');
   rest.splice(rest.indexOf(slugInput), 1);
@@ -252,7 +258,9 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (idle !== undefined) input.idle_timeout_seconds = idle;
   if (budget !== undefined) input.monthly_budget_usd = budget;
   if (Object.keys(input).length === 0) {
-    return fail('set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --budget');
+    return fail(
+      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --budget',
+    );
   }
   const ctx = await context(options);
   if (!ctx) return 1;
@@ -266,13 +274,21 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     process.stdout.write(
       `  ${C.dim}${pad('machine', 14)}${C.reset}${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk\n`,
     );
-    process.stdout.write(`  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`);
-    process.stdout.write(`  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n\n`);
+    process.stdout.write(
+      `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
+    );
+    process.stdout.write(
+      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n\n`,
+    );
   }
   return 0;
 }
 
-async function deployCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+async function deployCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   let flags = deployFlags(rest);
   const pathArgument = rest.find((value) => !value.startsWith('-'));
   if (rest.some((value) => value.startsWith('-'))) {
@@ -291,7 +307,8 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
     : pathArgument
       ? resolve(pathArgument)
       : resolve(manifestDefaults?.root ?? process.cwd(), manifestBlock?.path ?? '.');
-  if (sourcePath && !existsSync(sourcePath)) throw new Error(`Source path does not exist: ${sourcePath}`);
+  if (sourcePath && !existsSync(sourcePath))
+    throw new Error(`Source path does not exist: ${sourcePath}`);
 
   const ctx = await context(options);
   if (!ctx) return 1;
@@ -319,11 +336,14 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
         ...(manifestBlock?.env ? { environment: manifestBlock.env } : {}),
         ...(manifestBlock?.secrets ? { secrets: manifestBlock.secrets } : {}),
       });
-      if (flags.wait) deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
+      if (flags.wait)
+        deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
       const currentApp = flags.wait ? await ctx.apps.get(app.app_id) : app;
       if (json) emitJson({ app: currentApp, deployment });
       else {
-        process.stdout.write(`\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n\n`);
+        process.stdout.write(
+          `\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n\n`,
+        );
       }
       return 0;
     } finally {
@@ -332,7 +352,11 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
   });
 }
 
-async function showCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+async function showCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('show needs an App id or slug');
   const ctx = await context(options);
@@ -345,15 +369,24 @@ async function showCommand(rest: string[], options: ContextOptions, json: boolea
   else {
     process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  ${result.app.url}\n`);
     for (const deployment of result.deployments) {
-      const live = deployment.deployment_id === result.app.active_deployment_id ? `  ${C.bold}live${C.reset}` : '';
-      process.stdout.write(`  v${deployment.version}  ${deployment.status}  ${deployment.deployment_id}${live}\n`);
+      const live =
+        deployment.deployment_id === result.app.active_deployment_id
+          ? `  ${C.bold}live${C.reset}`
+          : '';
+      process.stdout.write(
+        `  v${deployment.version}  ${deployment.status}  ${deployment.deployment_id}${live}\n`,
+      );
     }
     process.stdout.write('\n');
   }
   return 0;
 }
 
-async function logsCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+async function logsCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   const after = positiveInteger(takeFlagValue(rest, ['--after']), '--after') ?? 0;
   const limit = positiveInteger(takeFlagValue(rest, ['--limit']), '--limit') ?? 200;
   const positional = rest.filter((value) => !value.startsWith('-'));
@@ -362,13 +395,17 @@ async function logsCommand(rest: string[], options: ContextOptions, json: boolea
   if (!ctx) return 1;
   const logs = await scoped(ctx, async () => {
     const app = await resolveApp(ctx.apps, positional[0]!);
-    const deploymentId = positional[1] ?? app.active_deployment_id ??
+    const deploymentId =
+      positional[1] ??
+      app.active_deployment_id ??
       (await ctx.apps.deployments.list(app.app_id))[0]?.deployment_id;
     if (!deploymentId) throw new Error('App has no deployment');
     return ctx.apps.deployments.logs(app.app_id, deploymentId, { after, limit });
   });
   if (json) emitJson(logs);
-  else for (const entry of logs.entries) process.stdout.write(`${entry.time} ${entry.source}  ${entry.line}\n`);
+  else
+    for (const entry of logs.entries)
+      process.stdout.write(`${entry.time} ${entry.source}  ${entry.line}\n`);
   return 0;
 }
 
@@ -387,11 +424,16 @@ async function stateCommand(
     return action === 'start' ? ctx.apps.start(found.app_id) : ctx.apps.stop(found.app_id);
   });
   if (json) emitJson(app);
-  else process.stdout.write(`\n  ${status.ok(`${app.slug} ${app.desired_state}`)}\n  ${app.url}\n\n`);
+  else
+    process.stdout.write(`\n  ${status.ok(`${app.slug} ${app.desired_state}`)}\n  ${app.url}\n\n`);
   return 0;
 }
 
-async function rollbackCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+async function rollbackCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   const positional = rest.filter((value) => !value.startsWith('-'));
   if (!positional[0] || !positional[1]) return fail('rollback needs an App and deployment id');
   const ctx = await context(options);
@@ -401,7 +443,8 @@ async function rollbackCommand(rest: string[], options: ContextOptions, json: bo
     return ctx.apps.rollback(found.app_id, positional[1]!);
   });
   if (json) emitJson(app);
-  else process.stdout.write(`\n  ${status.ok(`traffic moved to ${positional[1]}`)}\n  ${app.url}\n\n`);
+  else
+    process.stdout.write(`\n  ${status.ok(`traffic moved to ${positional[1]}`)}\n  ${app.url}\n\n`);
   return 0;
 }
 
@@ -409,31 +452,45 @@ function imageLines(released: number, pending: number): string {
   const lines: string[] = [];
   if (released > 0) lines.push(`  freed ${released} deployment image${released === 1 ? '' : 's'}`);
   if (pending > 0) {
-    lines.push(`  ${pending} deployment image${pending === 1 ? '' : 's'} not released yet; Kortix retries automatically`);
+    lines.push(
+      `  ${pending} deployment image${pending === 1 ? '' : 's'} not released yet; Kortix retries automatically`,
+    );
   }
   return lines.map((line) => `${C.dim}${line}${C.reset}\n`).join('');
 }
 
-async function deleteCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+async function deleteCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   const yes = takeFlagBool(rest, ['--yes', '-y']);
   const deploymentTarget = takeFlagValue(rest, ['--deployment']);
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('delete needs an App id or slug');
-  if (!yes) return fail(`${deploymentTarget ? 'deleting a deployment' : 'delete'} is destructive; pass --yes`);
+  if (!yes)
+    return fail(
+      `${deploymentTarget ? 'deleting a deployment' : 'delete'} is destructive; pass --yes`,
+    );
   const ctx = await context(options);
   if (!ctx) return 1;
 
   if (deploymentTarget) {
     const result = await scoped(ctx, async () => {
       const app = await resolveApp(ctx.apps, target);
-      const deployment = resolveDeploymentTarget(await ctx.apps.deployments.list(app.app_id), deploymentTarget);
+      const deployment = resolveDeploymentTarget(
+        await ctx.apps.deployments.list(app.app_id),
+        deploymentTarget,
+      );
       const deleted = await ctx.apps.deployments.remove(app.app_id, deployment.deployment_id);
       return { ...deleted, app_id: app.app_id, slug: app.slug, version: deployment.version };
     });
     if (json) emitJson(result);
     else {
       process.stdout.write(`\n  ${status.ok(`deleted v${result.version} of ${result.slug}`)}\n`);
-      process.stdout.write(imageLines(result.image === 'released' ? 1 : 0, result.image === 'pending' ? 1 : 0));
+      process.stdout.write(
+        imageLines(result.image === 'released' ? 1 : 0, result.image === 'pending' ? 1 : 0),
+      );
       process.stdout.write('\n');
     }
     return 0;

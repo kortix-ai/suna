@@ -29,8 +29,24 @@ let requests: Array<{ url: string; method: string; body: any }> = [];
 
 // Built-in `member` (project floor role) + a custom `support_agent` role.
 const ROLES = [
-  { role_id: 'builtin:member', key: 'member', name: 'Member', description: null, resource_type: 'project', is_system: true, account_id: null },
-  { role_id: 'role_77', key: 'support_agent', name: 'Support Agent', description: 'Read + run', resource_type: 'project', is_system: false, account_id: 'account_1' },
+  {
+    role_id: 'builtin:member',
+    key: 'member',
+    name: 'Member',
+    description: null,
+    resource_type: 'project',
+    is_system: true,
+    account_id: null,
+  },
+  {
+    role_id: 'role_77',
+    key: 'support_agent',
+    name: 'Support Agent',
+    description: 'Read + run',
+    resource_type: 'project',
+    is_system: false,
+    account_id: 'account_1',
+  },
 ];
 
 function writeConfig(): void {
@@ -68,34 +84,84 @@ function mockApi() {
     const method = (init?.method ?? 'GET').toUpperCase();
     let body: any = undefined;
     if (typeof init?.body === 'string') {
-      try { body = JSON.parse(init.body); } catch { body = init.body; }
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
     }
     requests.push({ url, method, body });
 
     const has = (p: string) => url.includes(p);
-    if (has('/iam/roles/role_77/permissions')) return json({ role_id: 'role_77', key: 'support_agent', actions: ['project.read', 'project.session.start'] });
+    if (has('/iam/roles/role_77/permissions'))
+      return json({
+        role_id: 'role_77',
+        key: 'support_agent',
+        actions: ['project.read', 'project.session.start'],
+      });
     if (has('/iam/roles/role_77/usage')) return json({ role_id: 'role_77', policy_count: 1 });
     if (has('/iam/roles/role_77') && method === 'DELETE') return json({ deleted: true });
-    if (has('/iam/roles') && method === 'POST') return json({ role_id: 'role_new', key: body?.key, name: body?.name, resource_type: body?.resourceType, is_system: false, account_id: 'account_1' });
+    if (has('/iam/roles') && method === 'POST')
+      return json({
+        role_id: 'role_new',
+        key: body?.key,
+        name: body?.name,
+        resource_type: body?.resourceType,
+        is_system: false,
+        account_id: 'account_1',
+      });
     if (has('/iam/roles')) return json({ roles: ROLES });
-    if (has('/iam/actions')) return json({ actions: [{ action: 'project.read', label: 'Read project', resource_type: 'project' }] });
+    if (has('/iam/actions'))
+      return json({
+        actions: [{ action: 'project.read', label: 'Read project', resource_type: 'project' }],
+      });
     if (has('/iam/policies:bulk-import') && method === 'POST') {
       const n = (body?.policies ?? []).length;
       return json({ attempted: n, created: n, skipped: 0, errors: [] });
     }
-    if (has('/iam/policies') && method === 'POST') return json({ policy_id: 'pol_1', principal_type: body?.principalType, principal_id: body?.principalId, scope_type: body?.scopeType, scope_id: body?.scopeId, role_id: body?.roleId, effect: 'allow', created_at: '2026-01-01T00:00:00.000Z' });
-    if (has('/iam/policies')) return json({ policies: [{ policy_id: 'pol_1', principal_type: 'member', principal_id: 'user-9', scope_type: 'project', scope_id: 'proj-1', role_id: 'role_77', effect: 'allow', created_at: '2026-01-01T00:00:00.000Z' }] });
+    if (has('/iam/policies') && method === 'POST')
+      return json({
+        policy_id: 'pol_1',
+        principal_type: body?.principalType,
+        principal_id: body?.principalId,
+        scope_type: body?.scopeType,
+        scope_id: body?.scopeId,
+        role_id: body?.roleId,
+        effect: 'allow',
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+    if (has('/iam/policies'))
+      return json({
+        policies: [
+          {
+            policy_id: 'pol_1',
+            principal_type: 'member',
+            principal_id: 'user-9',
+            scope_type: 'project',
+            scope_id: 'proj-1',
+            role_id: 'role_77',
+            effect: 'allow',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
   }) as typeof fetch;
 }
 
 function json(data: unknown): Response {
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 beforeEach(() => {
   saved = {};
-  for (const key of ENV_KEYS) { saved[key] = process.env[key]; delete process.env[key]; }
+  for (const key of ENV_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
   process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
   originalCwd = process.cwd();
   tmp = mkdtempSync(join(tmpdir(), 'kortix-roles-test-'));
@@ -138,10 +204,14 @@ describe('kortix roles', () => {
 
   test('create sends key/name/resourceType/actions to POST /iam/roles', async () => {
     const code = await runRoles([
-      'create', 'support_agent',
-      '--name', 'Support Agent',
-      '--scope', 'project',
-      '--actions', 'project.read, project.session.start',
+      'create',
+      'support_agent',
+      '--name',
+      'Support Agent',
+      '--scope',
+      'project',
+      '--actions',
+      'project.read, project.session.start',
     ]);
     expect(code).toBe(0);
     const post = requests.find((r) => r.method === 'POST' && r.url.includes('/iam/roles'));
@@ -155,7 +225,14 @@ describe('kortix roles', () => {
   });
 
   test('create rejects an invalid key client-side (no round-trip) and suggests a fix', async () => {
-    const code = await runRoles(['create', 'support-agent', '--name', 'X', '--actions', 'project.read']);
+    const code = await runRoles([
+      'create',
+      'support-agent',
+      '--name',
+      'X',
+      '--actions',
+      'project.read',
+    ]);
     expect(code).toBe(2);
     const err = stripAnsi(stderr);
     expect(err).toContain('[a-z0-9_]');
@@ -165,11 +242,18 @@ describe('kortix roles', () => {
   });
 
   test('assign binds a role to a principal at project scope (POST /iam/policies)', async () => {
-    const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9', '--project', 'proj-1']);
+    const code = await runRoles([
+      'assign',
+      'support_agent',
+      '--to',
+      'member:user-9',
+      '--project',
+      'proj-1',
+    ]);
     expect(code).toBe(0);
     const post = requests.find((r) => r.method === 'POST' && r.url.includes('/iam/policies'));
     expect(post).toBeDefined();
-    expect(post!.body).toMatchObject({
+    expect(post?.body).toMatchObject({
       principalType: 'member',
       principalId: 'user-9',
       scopeType: 'project',
@@ -182,8 +266,8 @@ describe('kortix roles', () => {
     const code = await runRoles(['assignments', '--project', 'proj-1']);
     expect(code).toBe(0);
     const get = requests.find((r) => r.method === 'GET' && r.url.includes('/iam/policies'));
-    expect(get!.url).toContain('scopeType=project');
-    expect(get!.url).toContain('scopeId=proj-1');
+    expect(get?.url).toContain('scopeType=project');
+    expect(get?.url).toContain('scopeId=proj-1');
   });
 
   test('set-actions refuses a system role', async () => {
@@ -201,7 +285,9 @@ describe('kortix roles', () => {
     requests = [];
     const code = await runRoles(['rm', 'support_agent']);
     expect(code).toBe(0);
-    expect(requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/roles/role_77'))).toBe(true);
+    expect(
+      requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/roles/role_77')),
+    ).toBe(true);
   });
 
   test('export emits only custom roles (with actions) + bindings as TOML', async () => {
@@ -222,17 +308,41 @@ describe('kortix roles', () => {
     writeFileSync(
       file,
       [
-        '[[roles]]', 'key = "support_agent"', 'name = "Support Agent"', 'resource_type = "project"', 'actions = ["project.read"]', '',
-        '[[roles]]', 'key = "new_role"', 'name = "New Role"', 'resource_type = "project"', 'actions = ["project.read"]', '',
-        '[[policies]]', 'role_key = "support_agent"', 'principal_type = "member"', 'principal_id = "user-9"', 'scope_type = "project"', 'scope_id = "proj-1"', '',
-        '[[policies]]', 'role_key = "support_agent"', 'principal_type = "member"', 'principal_id = "user-NEW"', 'scope_type = "project"', 'scope_id = "proj-1"', '',
+        '[[roles]]',
+        'key = "support_agent"',
+        'name = "Support Agent"',
+        'resource_type = "project"',
+        'actions = ["project.read"]',
+        '',
+        '[[roles]]',
+        'key = "new_role"',
+        'name = "New Role"',
+        'resource_type = "project"',
+        'actions = ["project.read"]',
+        '',
+        '[[policies]]',
+        'role_key = "support_agent"',
+        'principal_type = "member"',
+        'principal_id = "user-9"',
+        'scope_type = "project"',
+        'scope_id = "proj-1"',
+        '',
+        '[[policies]]',
+        'role_key = "support_agent"',
+        'principal_type = "member"',
+        'principal_id = "user-NEW"',
+        'scope_type = "project"',
+        'scope_id = "proj-1"',
+        '',
       ].join('\n'),
       'utf8',
     );
     const code = await runRoles(['import', file]);
     expect(code).toBe(0);
     // Only the NEW role is created (support_agent already exists).
-    const rolePosts = requests.filter((r) => r.method === 'POST' && /\/iam\/roles(\?|$)/.test(r.url));
+    const rolePosts = requests.filter(
+      (r) => r.method === 'POST' && /\/iam\/roles(\?|$)/.test(r.url),
+    );
     expect(rolePosts.length).toBe(1);
     expect(rolePosts[0].body.key).toBe('new_role');
     // Bulk-import receives ONLY the new binding; user-9 matches the live policy.
@@ -245,7 +355,9 @@ describe('kortix roles', () => {
   test('unassign DELETEs the policy and reports it', async () => {
     const code = await runRoles(['unassign', 'pol_1']);
     expect(code).toBe(0);
-    expect(requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/policies/pol_1'))).toBe(true);
+    expect(
+      requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/policies/pol_1')),
+    ).toBe(true);
     expect(stripAnsi(stdout)).toContain('Removed assignment pol_1');
   });
 
@@ -267,14 +379,31 @@ describe('kortix roles', () => {
     writeFileSync(
       file,
       JSON.stringify({
-        roles: [{ key: 'json_role', name: 'JSON Role', resource_type: 'project', actions: ['project.read'] }],
-        policies: [{ role_key: 'json_role', principal_type: 'member', principal_id: 'user-NEW', scope_type: 'project', scope_id: 'proj-1' }],
+        roles: [
+          {
+            key: 'json_role',
+            name: 'JSON Role',
+            resource_type: 'project',
+            actions: ['project.read'],
+          },
+        ],
+        policies: [
+          {
+            role_key: 'json_role',
+            principal_type: 'member',
+            principal_id: 'user-NEW',
+            scope_type: 'project',
+            scope_id: 'proj-1',
+          },
+        ],
       }),
       'utf8',
     );
     const code = await runRoles(['import', file]);
     expect(code).toBe(0);
-    const rolePosts = requests.filter((r) => r.method === 'POST' && /\/iam\/roles(\?|$)/.test(r.url));
+    const rolePosts = requests.filter(
+      (r) => r.method === 'POST' && /\/iam\/roles(\?|$)/.test(r.url),
+    );
     expect(rolePosts.length).toBe(1);
     expect(rolePosts[0]!.body.key).toBe('json_role');
     const bulk = requests.find((r) => r.method === 'POST' && r.url.includes(':bulk-import'));

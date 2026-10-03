@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { isProjectGlyphColor, isProjectGlyphName, PROJECT_GLYPH_COLORS } from '@kortix/shared';
+import { PROJECT_GLYPH_COLORS, isProjectGlyphColor, isProjectGlyphName } from '@kortix/shared';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
+import type { Auth } from '../api/auth.ts';
+import { ApiError, clientFromAuth } from '../api/client.ts';
 import {
   activeAccount,
   activeHostName,
@@ -11,16 +13,8 @@ import {
   setActiveAccount,
   setDefaultProject,
 } from '../api/config.ts';
-import { ApiError, clientFromAuth } from '../api/client.ts';
-import { confirm } from '../prompts.ts';
-import {
-  clearLink,
-  isKortixProject,
-  loadLink,
-  resolveProjectId,
-  saveLink,
-} from '../project-link.ts';
-import { selectFromList } from '../tui-select.ts';
+import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
+import { openInBrowser } from '../browser.ts';
 import {
   emitJson,
   locateProjectAnywhere,
@@ -29,14 +23,20 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
-import { projectWebUrl } from '../web-url.ts';
-import { openInBrowser } from '../browser.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
-import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
-import type { Auth } from '../api/auth.ts';
-import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 import { authHeaderArgs } from '../git-ops.ts';
+import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
+import {
+  clearLink,
+  isKortixProject,
+  loadLink,
+  resolveProjectId,
+  saveLink,
+} from '../project-link.ts';
+import { confirm } from '../prompts.ts';
+import { C, help, pad, status } from '../style.ts';
+import { selectFromList } from '../tui-select.ts';
+import { projectWebUrl } from '../web-url.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */
@@ -166,7 +166,10 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsUse(restCopy.find((a) => !a.startsWith('-')), hostArg);
+      return projectsUse(
+        restCopy.find((a) => !a.startsWith('-')),
+        hostArg,
+      );
     }
     case 'unset':
     case 'clear': {
@@ -273,9 +276,7 @@ function printFeatureTable(rows: FeatureFlagRow[]): void {
         ? `${C.green}on   ${C.reset}`
         : `${C.dim}off  ${C.reset}`;
     const origin = !r.available ? 'unavailable' : r.overridden ? 'override' : 'default';
-    process.stdout.write(
-      `  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`,
-    );
+    process.stdout.write(`  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`);
   }
   process.stdout.write('\n');
 }
@@ -318,24 +319,43 @@ async function projectsFeatures(argv: string[]): Promise<number> {
     }
   }
 
-  if (sub === 'enable' || sub === 'on' || sub === 'disable' || sub === 'off' || sub === 'reset' || sub === 'clear') {
+  if (
+    sub === 'enable' ||
+    sub === 'on' ||
+    sub === 'disable' ||
+    sub === 'off' ||
+    sub === 'reset' ||
+    sub === 'clear'
+  ) {
     if (!flag) {
-      process.stderr.write(`${status.err(`features ${sub} requires a <flag>.`)}\n\n${FEATURES_HELP}`);
+      process.stderr.write(
+        `${status.err(`features ${sub} requires a <flag>.`)}\n\n${FEATURES_HELP}`,
+      );
       return 2;
     }
-    const enabled = sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
+    const enabled =
+      sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
     try {
-      const project = await client.patch<Record<string, unknown>>(`/projects/${projectId}/features`, {
-        feature: flag,
-        enabled,
-      });
+      const project = await client.patch<Record<string, unknown>>(
+        `/projects/${projectId}/features`,
+        {
+          feature: flag,
+          enabled,
+        },
+      );
       const row = featureRows(project).find((r) => r.key === flag);
       if (json) {
         emitJson(row ?? { key: flag, enabled });
         return 0;
       }
       const verb = enabled === null ? 'reset to default' : enabled ? 'enabled' : 'disabled';
-      const effective = row ? (row.available ? (row.enabled ? 'on' : 'off') : 'unavailable on this host') : '?';
+      const effective = row
+        ? row.available
+          ? row.enabled
+            ? 'on'
+            : 'off'
+          : 'unavailable on this host'
+        : '?';
       process.stdout.write(`${status.ok(`${flag} ${verb} — effective: ${effective}`)}\n`);
       if (row && !row.available) {
         process.stdout.write(
@@ -623,7 +643,9 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
           `  ${pad(t.token_id, idW)}  ${pad(t.name, nameW)}  ${pad(t.status, 8)}  ${C.faded}${used}${C.reset}\n`,
         );
       }
-      process.stdout.write(`\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
+      process.stdout.write(
+        `\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`,
+      );
       return 0;
     } catch (err) {
       return surfaceApiError(err);
@@ -1032,11 +1054,7 @@ export function saveClonedProjectLink(
     repoRoot,
   );
 
-  appendGitExcludeEntries(
-    repoRoot,
-    ['/.kortix/link.json'],
-    'Kortix local project binding',
-  );
+  appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
 }
 
 /** Resolve clone auth without ever placing a credential in the remote URL.
@@ -1049,9 +1067,9 @@ export function resolveProjectCloneTarget(
   const target = resolveProjectGitTarget(project);
   return {
     repoUrl: target.repoUrl,
-    token: target.credentialMode === "kortix-token" ? kortixToken : null,
-    username: "x-access-token",
-    needsManagedToken: target.credentialMode === "managed-git-token",
+    token: target.credentialMode === 'kortix-token' ? kortixToken : null,
+    username: 'x-access-token',
+    needsManagedToken: target.credentialMode === 'managed-git-token',
   };
 }
 
@@ -1063,7 +1081,7 @@ async function projectsClone(
   const id = arg ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
-      `${status.err("No project selected. Run `kortix projects use`, link a directory, or pass an id.")}\n`,
+      `${status.err('No project selected. Run `kortix projects use`, link a directory, or pass an id.')}\n`,
     );
     return 1;
   }
@@ -1091,33 +1109,25 @@ async function projectsClone(
   }
 
   const args = target.token
-    ? [
-        ...authHeaderArgs(target.repoUrl, target.token, target.username),
-        "clone",
-        target.repoUrl,
-      ]
-    : ["clone", target.repoUrl];
+    ? [...authHeaderArgs(target.repoUrl, target.token, target.username), 'clone', target.repoUrl]
+    : ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync("git", args, { stdio: "inherit" });
+  const cloned = spawnSync('git', args, { stdio: 'inherit' });
   if (cloned.error) {
-    process.stderr.write(
-      `${status.err(`Could not start git: ${cloned.error.message}`)}\n`,
-    );
+    process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
   }
   if ((cloned.status ?? 1) !== 0) {
-    process.stderr.write(
-      `${status.err(`git clone failed (exit ${cloned.status ?? 1}).`)}\n`,
-    );
+    process.stderr.write(`${status.err(`git clone failed (exit ${cloned.status ?? 1}).`)}\n`);
     return cloned.status ?? 1;
   }
 
   const defaultDirectory =
     target.repoUrl
-      .split("/")
+      .split('/')
       .pop()
-      ?.replace(/\.git$/i, "") || project.name;
+      ?.replace(/\.git$/i, '') || project.name;
   const repoRoot = resolve(process.cwd(), destination || defaultDirectory);
   if (isKortixProject(repoRoot)) {
     saveClonedProjectLink(
@@ -1270,8 +1280,7 @@ async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<
 
   let total = 0;
   for (const s of sections) {
-    const activeMark =
-      s.account.account_id === activeId ? `   ${C.green}← active${C.reset}` : '';
+    const activeMark = s.account.account_id === activeId ? `   ${C.green}← active${C.reset}` : '';
     process.stdout.write('\n');
     process.stdout.write(
       `  ${C.bold}${s.account.name || s.account.slug}${C.reset} ${C.faded}(${s.account.slug}, ${s.account.role})${C.reset}${activeMark}\n`,
@@ -1303,11 +1312,7 @@ function renderProjectTable(
   for (const p of projects) {
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
-    const marker = isDefault
-      ? `${C.green}● ${C.reset}`
-      : isLinked
-        ? `${C.cyan}◆ ${C.reset}`
-        : '  ';
+    const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
     const tag = isDefault
       ? `   ${C.green}default${C.reset}`
       : isLinked
@@ -1412,7 +1417,7 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
   // it (resolving the account's display name best-effort) before recording
   // the default. With --host the comparison is against the named host's own
   // stored account, not the ambient active one.
-  const priorAccountId = hostArg ? auth.account_id : activeAccount()?.id ?? auth.account_id;
+  const priorAccountId = hostArg ? auth.account_id : (activeAccount()?.id ?? auth.account_id);
   const switched = target.account_id !== priorAccountId;
   let accountLabel = target.account_id.slice(0, 8);
   if (switched) {
@@ -1458,7 +1463,7 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
 async function projectsUnset(hostArg?: string): Promise<number> {
   // The message describes the entry being cleared: the named host with
   // --host, else the active one (the same resolution clearDefaultProject uses).
-  const existing = hostArg ? getHost(hostArg)?.default_project ?? null : defaultProject();
+  const existing = hostArg ? (getHost(hostArg)?.default_project ?? null) : defaultProject();
   if (clearDefaultProject(hostArg)) {
     process.stdout.write(
       `${status.ok(`Cleared the default project${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
@@ -1548,7 +1553,9 @@ async function projectsUnlink(): Promise<number> {
   const existing = loadLink();
   clearLink();
   if (existing) {
-    process.stdout.write(`${status.ok(`Unlinked ${C.dim}(was ${existing.project_id})${C.reset}`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Unlinked ${C.dim}(was ${existing.project_id})${C.reset}`)}\n`,
+    );
   } else {
     process.stdout.write(`${C.dim}Not linked. Nothing to do.${C.reset}\n`);
   }

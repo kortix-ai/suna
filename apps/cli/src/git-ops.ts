@@ -1,18 +1,14 @@
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
 
 import type { Auth } from './api/auth.ts';
-import { ApiError, type ApiClient } from './api/client.ts';
-import type {
-  ProjectSummary,
-  MeResponse,
-  AccountMembership,
-} from './api/types.ts';
+import { type ApiClient, ApiError } from './api/client.ts';
+import type { AccountMembership, MeResponse, ProjectSummary } from './api/types.ts';
 import { loadLocalManifest } from './manifest.ts';
+import { type ProjectGitTarget, projectIsManaged } from './project-git.ts';
 import { loadLink } from './project-link.ts';
-import { selectFromList } from './tui-select.ts';
 import { confirm } from './prompts.ts';
-import { projectIsManaged, type ProjectGitTarget } from './project-git.ts';
 import { C, status } from './style.ts';
+import { selectFromList } from './tui-select.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Git plumbing for `kortix ship` — everything between "a project to push" and
@@ -86,13 +82,20 @@ export async function linkGitHubBackedProject(
           `  ${C.dim}Or skip the app with a token: ${C.reset}${C.cyan}kortix ship --github-token <PAT>${C.reset}\n\n`,
       );
       if (opts.yes) {
-        throw new Error('GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.');
+        throw new Error(
+          'GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.',
+        );
       }
       const again = await confirm('Installed it? Retry the link', true);
-      if (!again) throw new Error('Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.');
+      if (!again)
+        throw new Error(
+          'Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.',
+        );
     }
   }
-  throw new Error('GitHub App still not detected after several tries — install it, or use --github-token <PAT>.');
+  throw new Error(
+    'GitHub App still not detected after several tries — install it, or use --github-token <PAT>.',
+  );
 }
 
 // ── git helpers ─────────────────────────────────────────────────────────────
@@ -166,7 +169,9 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
   }
   const commit = run('git', ['commit', '-m', msg]);
   if (!commit.ok && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
-    process.stderr.write(`${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`);
+    process.stderr.write(
+      `${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`,
+    );
     return 'error';
   }
   if (commit.ok) process.stdout.write(`${status.ok(`Committed: ${C.bold}${msg}${C.reset}`)}\n`);
@@ -343,13 +348,19 @@ export function run(cmd: string, args: string[], opts?: { inheritStdio?: boolean
  * account B that can't see it." Returns an exit code if it handled the error,
  * or null to let the generic handler take over.
  */
-export function explainLinkedProjectError(err: unknown, projectId: string, auth: Auth): number | null {
+export function explainLinkedProjectError(
+  err: unknown,
+  projectId: string,
+  auth: Auth,
+): number | null {
   if (!(err instanceof ApiError)) return null;
   const link = loadLink();
   const host = link?.host ?? 'default';
 
   if (err.status === 403) {
-    const linkedAccount = link?.account_id ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}` : '';
+    const linkedAccount = link?.account_id
+      ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}`
+      : '';
     process.stderr.write(
       `\n${status.err("This folder is linked to a project on an account you can't access.")}\n` +
         `  ${C.dim}linked project ${C.reset}${projectId}${linkedAccount}\n` +
@@ -397,9 +408,7 @@ export async function resolveShipAccount(
   }
 
   if (flags.account) {
-    const match = accounts.find(
-      (a) => a.account_id === flags.account || a.slug === flags.account,
-    );
+    const match = accounts.find((a) => a.account_id === flags.account || a.slug === flags.account);
     if (!match) {
       const known = accounts.map((a) => a.slug).join(', ') || '(none)';
       throw new Error(`No account "${flags.account}" — you belong to: ${known}`);

@@ -36,10 +36,22 @@ let secretItems: Array<{
   effective_source?: 'mine' | 'shared' | 'none';
   strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
   consumer?:
-    'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
+    | 'sandbox'
+    | 'llm_gateway'
+    | 'connector'
+    | 'git_proxy'
+    | 'http_broker'
+    | 'network'
+    | null;
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   requires_rotation?: boolean;
-  shared_with?: Array<{ grant_id: string; principal_type: 'member' | 'group' | 'project'; principal_id: string; label: string; expires_at: null }>;
+  shared_with?: Array<{
+    grant_id: string;
+    principal_type: 'member' | 'group' | 'project';
+    principal_id: string;
+    label: string;
+    expires_at: null;
+  }>;
   usable?: boolean;
 }>;
 let manifestRequired: string[];
@@ -60,11 +72,23 @@ function secret(
     effective_source?: 'mine' | 'shared' | 'none';
     strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
     consumer?:
-      'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
+      | 'sandbox'
+      | 'llm_gateway'
+      | 'connector'
+      | 'git_proxy'
+      | 'http_broker'
+      | 'network'
+      | null;
     delivery_status?: 'available' | 'unavailable' | 'disabled';
     network_boundary_available?: boolean;
     requires_rotation?: boolean;
-    shared_with?: Array<{ grant_id: string; principal_type: 'member' | 'group' | 'project'; principal_id: string; label: string; expires_at: null }>;
+    shared_with?: Array<{
+      grant_id: string;
+      principal_type: 'member' | 'group' | 'project';
+      principal_id: string;
+      label: string;
+      expires_at: null;
+    }>;
     usable?: boolean;
   } = {},
 ) {
@@ -157,7 +181,14 @@ function mockApi() {
     }
     if (url.endsWith('/projects/proj_1/agent-identities') && method === 'GET') {
       return json({
-        agents: [{ service_account_id: 'sa_reporter', name: 'agent', project_id: 'proj_1', agent_name: 'reporter' }],
+        agents: [
+          {
+            service_account_id: 'sa_reporter',
+            name: 'agent',
+            project_id: 'proj_1',
+            agent_name: 'reporter',
+          },
+        ],
       });
     }
     if (url.endsWith('/accounts/account_1/members') && method === 'GET') {
@@ -255,17 +286,19 @@ beforeEach(() => {
     synced: 1,
     failed: 0,
     exported: 2,
-    results: [{
-      session_id: 'session-1',
-      sandbox_id: 'sandbox-1',
-      status: 'synced',
-      scope: 'inherit',
-      revision: 'revision-1',
-      exported: 2,
-      managed: 2,
-      withheld: 0,
-      agent_env_written: true,
-    }],
+    results: [
+      {
+        session_id: 'session-1',
+        sandbox_id: 'sandbox-1',
+        status: 'synced',
+        scope: 'inherit',
+        revision: 'revision-1',
+        exported: 2,
+        managed: 2,
+        withheld: 0,
+        agent_env_written: true,
+      },
+    ],
   };
   mockApi();
 });
@@ -383,7 +416,9 @@ describe('kortix secrets sync — verified delivery', () => {
     const code = await runSecrets(['sync']);
 
     expect(code).toBe(0);
-    expect(stripAnsi(stdout)).toContain('Verified 2 secret export(s) across 1/1 active sandbox(es).');
+    expect(stripAnsi(stdout)).toContain(
+      'Verified 2 secret export(s) across 1/1 active sandbox(es).',
+    );
     expect(stripAnsi(stdout)).toContain('session-1: 2 exported');
     expect(stripAnsi(stdout)).toContain('revision revision-1');
     expect(stripAnsi(stdout)).not.toContain('Synced true secret(s)');
@@ -397,18 +432,20 @@ describe('kortix secrets sync — verified delivery', () => {
       synced: 0,
       failed: 1,
       exported: 0,
-      results: [{
-        session_id: 'session-broken',
-        sandbox_id: 'sandbox-broken',
-        status: 'failed',
-        scope: 'inherit',
-        revision: 'revision-broken',
-        exported: 0,
-        managed: null,
-        withheld: null,
-        agent_env_written: false,
-        reason: 'env sync did not confirm agent-env.sh write',
-      }],
+      results: [
+        {
+          session_id: 'session-broken',
+          sandbox_id: 'sandbox-broken',
+          status: 'failed',
+          scope: 'inherit',
+          revision: 'revision-broken',
+          exported: 0,
+          managed: null,
+          withheld: null,
+          agent_env_written: false,
+          reason: 'env sync did not confirm agent-env.sh write',
+        },
+      ],
     };
 
     const code = await runSecrets(['sync']);
@@ -427,23 +464,27 @@ describe('kortix secrets sync — verified delivery', () => {
       synced: 1,
       failed: 0,
       exported: 0,
-      results: [{
-        session_id: 'session-zero',
-        sandbox_id: 'sandbox-zero',
-        status: 'synced',
-        scope: 'none',
-        revision: 'revision-zero',
-        exported: 0,
-        managed: 54,
-        withheld: 54,
-        agent_env_written: true,
-      }],
+      results: [
+        {
+          session_id: 'session-zero',
+          sandbox_id: 'sandbox-zero',
+          status: 'synced',
+          scope: 'none',
+          revision: 'revision-zero',
+          exported: 0,
+          managed: 54,
+          withheld: 54,
+          agent_env_written: true,
+        },
+      ],
     };
 
     const code = await runSecrets(['sync']);
 
     expect(code).toBe(0);
-    expect(stripAnsi(stdout)).toContain('0 exported · revision revision-zero · scope permits zero secrets');
+    expect(stripAnsi(stdout)).toContain(
+      '0 exported · revision revision-zero · scope permits zero secrets',
+    );
   });
 
   test('states when no active sandbox needs synchronization', async () => {
@@ -690,7 +731,7 @@ describe('kortix secrets ls — inside an agent session', () => {
     expect(out).not.toContain('required secret missing');
     expect(out).toContain('1 secret is not granted to agent analyst');
     expect(out).toContain('Customize → Agents → analyst → Secrets');
-    expect(out).toContain("Listed: only the secrets agent analyst is granted");
+    expect(out).toContain('Listed: only the secrets agent analyst is granted');
     expect(out).toContain('Then run `kortix secrets sync` to pull it into this session');
   });
 
@@ -738,7 +779,9 @@ describe('kortix secrets request', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('https://app.test/secret-intake/ksl_test');
     expect(out).toContain('This session will not receive STRIPE_API_KEY');
-    expect(out).toContain('STRIPE_API_KEY is not in agent "analyst"\'s secrets grant. Fix: Customize.');
+    expect(out).toContain(
+      'STRIPE_API_KEY is not in agent "analyst"\'s secrets grant. Fix: Customize.',
+    );
   });
 
   test('a fully delivered request prints no warning', async () => {
@@ -761,9 +804,7 @@ describe('kortix secrets delivery', () => {
     const code = await runSecrets(['delivery', 'ANTHROPIC_API_KEY', 'plaintext']);
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain(
-      'Exposure must be environment, enforced, or none',
-    );
+    expect(stripAnsi(stderr)).toContain('Exposure must be environment, enforced, or none');
   });
 
   test('configures an HTTPS broker policy from explicit allow and injection flags', async () => {
@@ -1291,7 +1332,14 @@ describe('kortix secrets — who can use a value', () => {
   test('share --user me --user <email> --group <id> resolves people and sends the exact audience', async () => {
     secretItems = [{ identifier: 'deel-marko', name: 'DEEL_API_TOKEN' }];
     const code = await runSecrets([
-      'share', 'deel-marko', '--user', 'me', '--user', 'finance@example.test', '--group', '11111111-1111-4111-8111-111111111111',
+      'share',
+      'deel-marko',
+      '--user',
+      'me',
+      '--user',
+      'finance@example.test',
+      '--group',
+      '11111111-1111-4111-8111-111111111111',
     ]);
     expect(code).toBe(0);
     expect(objectBody(posts()[0]!)).toEqual({
@@ -1347,7 +1395,15 @@ describe('kortix secrets — who can use a value', () => {
       {
         identifier: 'DEEL_API_TOKEN',
         name: 'DEEL_API_TOKEN',
-        shared_with: [{ grant_id: 'g1', principal_type: 'member', principal_id: 'user_2', label: 'finance@example.test', expires_at: null }],
+        shared_with: [
+          {
+            grant_id: 'g1',
+            principal_type: 'member',
+            principal_id: 'user_2',
+            label: 'finance@example.test',
+            expires_at: null,
+          },
+        ],
         usable: false,
       },
     ];
@@ -1363,7 +1419,15 @@ describe('kortix secrets — who can use a value', () => {
       {
         identifier: 'DEEL_API_TOKEN',
         name: 'DEEL_API_TOKEN',
-        shared_with: [{ grant_id: 'g1', principal_type: 'member', principal_id: 'user_1', label: 'user@example.test', expires_at: null }],
+        shared_with: [
+          {
+            grant_id: 'g1',
+            principal_type: 'member',
+            principal_id: 'user_1',
+            label: 'user@example.test',
+            expires_at: null,
+          },
+        ],
         usable: true,
       },
     ];

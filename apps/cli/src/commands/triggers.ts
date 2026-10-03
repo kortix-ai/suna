@@ -1,4 +1,5 @@
 import { formatDurationSeconds } from '@kortix/manifest-schema';
+import type { ProjectTrigger, ProjectTriggersResponse, TriggerFireResponse } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -11,23 +12,14 @@ import {
   takeFlagValues,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
-import type {
-  ProjectTrigger,
-  ProjectTriggersResponse,
-  TriggerFireResponse,
-} from '../api/types.ts';
 import {
-  triggersAddLocal,
-  triggersRmLocal,
-  triggersToggle,
-} from './triggers-manifest.ts';
-import {
+  type CtxOpts,
   triggersAddLive,
   triggersRmLive,
   triggersSetLive,
   triggersToggleLive,
-  type CtxOpts,
 } from './triggers-live.ts';
+import { triggersAddLocal, triggersRmLocal, triggersToggle } from './triggers-manifest.ts';
 
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
@@ -148,7 +140,10 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.name = takeFlagValue(rest, ['--name']);
     disabled = (() => {
       const i = rest.indexOf('--disabled');
-      if (i >= 0) { rest.splice(i, 1); return true; }
+      if (i >= 0) {
+        rest.splice(i, 1);
+        return true;
+      }
       return false;
     })();
   } catch (err) {
@@ -205,9 +200,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
 
   let resp: ProjectTriggersResponse;
   try {
-    resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
-    );
+    resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -224,7 +217,9 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (resp.triggers.length === 0) {
-    process.stdout.write(`  ${C.dim}No triggers declared. Add [[triggers]] to kortix.yaml.${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}No triggers declared. Add [[triggers]] to kortix.yaml.${C.reset}\n`,
+    );
   } else {
     const slugW = Math.max(...resp.triggers.map((t) => t.slug.length), 4);
     const nameW = Math.max(...resp.triggers.map((t) => t.name.length), 4);
@@ -241,11 +236,15 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
         `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 30), 30)}  ${C.faded}${lastFired}${C.reset}${failed}\n`,
       );
     }
-    process.stdout.write(`\n  ${C.dim}${resp.triggers.length} trigger${resp.triggers.length === 1 ? '' : 's'}${C.reset}\n`);
+    process.stdout.write(
+      `\n  ${C.dim}${resp.triggers.length} trigger${resp.triggers.length === 1 ? '' : 's'}${C.reset}\n`,
+    );
   }
 
   if (resp.errors.length > 0) {
-    process.stdout.write(`\n  ${status.warn(`${resp.errors.length} manifest error${resp.errors.length === 1 ? '' : 's'}:`)}\n`);
+    process.stdout.write(
+      `\n  ${status.warn(`${resp.errors.length} manifest error${resp.errors.length === 1 ? '' : 's'}:`)}\n`,
+    );
     for (const e of resp.errors) {
       process.stdout.write(`    ${C.red}${e.path}${C.reset}: ${e.error}\n`);
     }
@@ -269,9 +268,13 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
   }
 
   if (resp.status === 'fired' && resp.session_id) {
-    process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}\n`,
+    );
   } else if (resp.status === 'queued') {
-    process.stdout.write(`${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}\n`);
+    process.stdout.write(
+      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}\n`,
+    );
   } else {
     process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
   }
@@ -301,16 +304,18 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
   return 0;
 }
 
-async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = false): Promise<number> {
+async function triggersInfo(
+  slug: string | undefined,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;
   try {
-    resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
-    );
+    resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -341,17 +346,18 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
       rows.push(['interval', formatDurationSeconds(t.interval_seconds)]);
     }
     if (t.expect_event_within_seconds !== null && t.expect_event_within_seconds !== undefined) {
-      rows.push([
-        'expect_event_within',
-        formatDurationSeconds(t.expect_event_within_seconds),
-      ]);
+      rows.push(['expect_event_within', formatDurationSeconds(t.expect_event_within_seconds)]);
     }
   } else {
     rows.push(['secret_env', t.secret_env ?? '—']);
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
   }
   rows.push(['last_fired', t.last_fired_at ?? 'never']);
-  if (t.last_status) rows.push(['last_status', t.last_status === 'failed' ? `${C.red}failed${C.reset}` : t.last_status]);
+  if (t.last_status)
+    rows.push([
+      'last_status',
+      t.last_status === 'failed' ? `${C.red}failed${C.reset}` : t.last_status,
+    ]);
   if (t.last_error) rows.push(['last_error', t.last_error]);
   rows.push(['prompt', trimMid(t.prompt_template.replace(/\n/g, ' '), 80)]);
   const labelW = Math.max(...rows.map(([label]) => label.length)) + 1;

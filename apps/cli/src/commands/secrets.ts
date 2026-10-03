@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { splitHelp } from '../command-argv.ts';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -12,9 +12,14 @@ import {
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { C, help, status } from '../style.ts';
+import {
+  describeLinkValidity,
+  secretsGrant,
+  secretsRequest,
+  secretsShare,
+} from './secrets-audience.ts';
 import { IDENTIFIER_RE, secretsCall, secretsDelivery } from './secrets-delivery.ts';
 import { secretsLs } from './secrets-ls.ts';
-import { describeLinkValidity, secretsGrant, secretsRequest, secretsShare } from './secrets-audience.ts';
 
 export { deliveryCell } from './secrets-ls.ts';
 export { parseExposure } from './secrets-delivery.ts';
@@ -358,17 +363,16 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
         agent_env_written: boolean;
         reason?: string;
       }>;
-    }>(
-      `/projects/${ctx.projectId}/secrets/sync`,
-      {},
-    );
+    }>(`/projects/${ctx.projectId}/secrets/sync`, {});
     if (json) {
       emitJson(result);
       return result.ok ? 0 : 1;
     }
     if (result.ok) {
       if (result.active_sandboxes === 0) {
-        process.stdout.write(`\n${status.ok('No active sandboxes require secret synchronization.')}\n\n`);
+        process.stdout.write(
+          `\n${status.ok('No active sandboxes require secret synchronization.')}\n\n`,
+        );
         return 0;
       }
       process.stdout.write(

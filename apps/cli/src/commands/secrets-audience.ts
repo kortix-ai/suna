@@ -1,17 +1,17 @@
+import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
 import {
   emitJson,
+  fail,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  fail,
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { C, status } from '../style.ts';
-import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
-import type { CtxOpts } from './secrets.ts';
 import { IDENTIFIER_RE } from './secrets-delivery.ts';
+import type { CtxOpts } from './secrets.ts';
 
 /** `share IDENTIFIER --user … --group … | --everyone`: set the value's audience exactly. */
 export async function secretsShare(args: string[], opts: CtxOpts, json = false): Promise<number> {
@@ -28,28 +28,37 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
   }
   const identifier = args[0]?.trim();
   if (!identifier) {
-    return fail('Usage: kortix secrets share IDENTIFIER --user <email|id|me> | --group <id> | --agent <name> | --everyone');
+    return fail(
+      'Usage: kortix secrets share IDENTIFIER --user <email|id|me> | --group <id> | --agent <name> | --everyone',
+    );
   }
   if (everyone && users.length + groups.length + agents.length > 0) {
     return fail('--everyone shares it with the whole project; drop --user, --group and --agent.');
   }
   if (!everyone && users.length + groups.length + agents.length === 0) {
-    return fail('Say who can use it: --user <email|id|me>, --group <id>, --agent <name>, or --everyone.');
+    return fail(
+      'Say who can use it: --user <email|id|me>, --group <id>, --agent <name>, or --everyone.',
+    );
   }
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   try {
     const list = await ctx.client.get<ProjectSecretsResponse>(`/projects/${ctx.projectId}/secrets`);
-    const target = list.items.find((item) => item.identifier.toUpperCase() === identifier.toUpperCase());
+    const target = list.items.find(
+      (item) => item.identifier.toUpperCase() === identifier.toUpperCase(),
+    );
     if (!target) {
-      process.stderr.write(`${status.err(`No secret with identifier "${identifier}". See: kortix secrets ls`)}\n`);
+      process.stderr.write(
+        `${status.err(`No secret with identifier "${identifier}". See: kortix secrets ls`)}\n`,
+      );
       return 1;
     }
-    const principals: Array<{ principal_type: 'user' | 'group' | 'agent'; principal_id: string }> = groups.map((id) => ({
-      principal_type: 'group',
-      principal_id: id,
-    }));
+    const principals: Array<{ principal_type: 'user' | 'group' | 'agent'; principal_id: string }> =
+      groups.map((id) => ({
+        principal_type: 'group',
+        principal_id: id,
+      }));
     let accountId: string | null = null;
     for (const who of users) {
       if (who === 'me') {
@@ -57,7 +66,8 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
         principals.push({ principal_type: 'user', principal_id: me.user_id });
         continue;
       }
-      accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`)).account_id;
+      accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`))
+        .account_id;
       const userId = await resolveUserId(ctx.client, accountId, who);
       if (!userId) return 1;
       principals.push({ principal_type: 'user', principal_id: userId });
@@ -65,14 +75,16 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
     if (agents.length > 0) {
       // An agent is its service account, one per (project, agent).
       const identities = (
-        await ctx.client.get<{ agents: Array<{ service_account_id: string; agent_name: string | null }> }>(
-          `/projects/${ctx.projectId}/agent-identities`,
-        )
+        await ctx.client.get<{
+          agents: Array<{ service_account_id: string; agent_name: string | null }>;
+        }>(`/projects/${ctx.projectId}/agent-identities`)
       ).agents;
       for (const name of agents) {
         const hit = identities.find((agent) => agent.agent_name === name);
         if (!hit) {
-          process.stderr.write(`${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`);
+          process.stderr.write(
+            `${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`,
+          );
           return 1;
         }
         principals.push({ principal_type: 'agent', principal_id: hit.service_account_id });
@@ -93,7 +105,11 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
     };
     const audience = everyone
       ? 'everyone in the project'
-      : [count('user', 'person', 'people'), count('group', 'group', 'groups'), count('agent', 'agent', 'agents')]
+      : [
+          count('user', 'person', 'people'),
+          count('group', 'group', 'groups'),
+          count('agent', 'agent', 'agents'),
+        ]
           .filter(Boolean)
           .join(', ');
     process.stdout.write(`${status.ok(`${target.identifier}: ${audience}`)}\n`);
@@ -249,4 +265,3 @@ export async function secretsGrant(argv: string[], opts: CtxOpts, json = false):
   }
   return 0;
 }
-

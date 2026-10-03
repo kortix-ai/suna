@@ -132,7 +132,8 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     agentScope && agentScope.secrets !== 'all'
       ? new Set(agentScope.secrets.map((identifier) => identifier.toUpperCase()))
       : null;
-  const isGranted = (identifier: string) => !scopedGrant || scopedGrant.has(identifier.toUpperCase());
+  const isGranted = (identifier: string) =>
+    !scopedGrant || scopedGrant.has(identifier.toUpperCase());
   const availableKeys = new Set(
     resp.items.filter((secret) => itemState(secret).available).map((secret) => secret.name),
   );
@@ -244,9 +245,22 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     'DELIVERY'.length,
   );
   const statusOf = (r: SecretRow) =>
-    !r.granted ? 'not granted' : r.available ? (r.effectiveSource === 'mine' ? 'personal' : 'set') : 'missing';
-  const statusW = Math.max(...allRows.map((r) => statusOf(r).length), 'STATUS'.length, 'personal'.length);
-  const accessW = Math.max(...allRows.map((r) => secretAudienceLabel(r).length), 'WHO CAN USE'.length);
+    !r.granted
+      ? 'not granted'
+      : r.available
+        ? r.effectiveSource === 'mine'
+          ? 'personal'
+          : 'set'
+        : 'missing';
+  const statusW = Math.max(
+    ...allRows.map((r) => statusOf(r).length),
+    'STATUS'.length,
+    'personal'.length,
+  );
+  const accessW = Math.max(
+    ...allRows.map((r) => secretAudienceLabel(r).length),
+    'WHO CAN USE'.length,
+  );
   process.stdout.write(
     `  ${C.dim}${pad('IDENTIFIER', nameW)}   ${pad('STATUS', statusW)}  ${pad('DELIVERY', deliveryW)}  ${pad('WHO CAN USE', accessW)}  SPEC${C.reset}\n`,
   );

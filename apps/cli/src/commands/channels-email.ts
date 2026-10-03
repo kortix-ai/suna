@@ -1,10 +1,5 @@
 import { readFileSync } from 'node:fs';
-import {
-  emitJson,
-  fail,
-  resolveProjectContext,
-  surfaceApiError,
-} from '../command-helpers.ts';
+import { emitJson, fail, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import type { ExtraFlags } from './channels.ts';
 
@@ -180,7 +175,12 @@ export async function emailCommand(
         // to ask for the empty (accept-everyone) one, so it never happens by
         // accident from a typo'd --allow.
         const sender_policy = extra.allowAll
-          ? { mode: 'allow_all' as const, allowedEmails: [], allowedDomains: [], allowedRegex: null }
+          ? {
+              mode: 'allow_all' as const,
+              allowedEmails: [],
+              allowedDomains: [],
+              allowedRegex: null,
+            }
           : buildSenderPolicy(extra);
         const install = await ctx.client.patch<EmailInstallation>(`${base}/installation`, {
           connector_slug: slug,

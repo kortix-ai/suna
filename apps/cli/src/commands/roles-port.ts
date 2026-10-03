@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import type { ApiClient } from '../api/client.ts';
-import { missing, fail } from '../command-helpers.ts';
+import { fail, missing } from '../command-helpers.ts';
 import type { IamRole } from '../iam.ts';
 import { C, status } from '../style.ts';
 import type { IamPolicy } from './roles-policies.ts';
@@ -77,7 +77,9 @@ export async function rolesExport(
   const text = fmt === 'json' ? JSON.stringify(doc, null, 2) + '\n' : stringifyToml(doc) + '\n';
   if (out) {
     writeFileSync(out, text, 'utf8');
-    process.stdout.write(`${status.ok(`Exported ${roleDocs.length} role${roleDocs.length === 1 ? '' : 's'} + ${policyDocs.length} binding${policyDocs.length === 1 ? '' : 's'} → ${C.bold}${out}${C.reset}`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Exported ${roleDocs.length} role${roleDocs.length === 1 ? '' : 's'} + ${policyDocs.length} binding${policyDocs.length === 1 ? '' : 's'} → ${C.bold}${out}${C.reset}`)}\n`,
+    );
   } else {
     process.stdout.write(text);
   }
@@ -113,7 +115,10 @@ export async function rolesImport(
   let skipped = 0;
   for (const r of doc.roles ?? []) {
     if (!r?.key) continue;
-    if (haveKey.has(r.key)) { skipped++; continue; }
+    if (haveKey.has(r.key)) {
+      skipped++;
+      continue;
+    }
     await client.post(`${base}/roles`, {
       key: r.key,
       name: r.name ?? r.key,
@@ -130,18 +135,32 @@ export async function rolesImport(
   const rolesNow = (await client.get<{ roles: IamRole[] }>(`${base}/roles`)).roles;
   const idByKey = new Map(rolesNow.map((r) => [r.key, r.role_id]));
   const livePolicies = (await client.get<{ policies: IamPolicy[] }>(`${base}/policies`)).policies;
-  const bindKey = (pt: string, pid: string, st: string, sid: string | null | undefined, rid: string) =>
-    `${pt}|${pid}|${st}|${sid ?? ''}|${rid}`;
+  const bindKey = (
+    pt: string,
+    pid: string,
+    st: string,
+    sid: string | null | undefined,
+    rid: string,
+  ) => `${pt}|${pid}|${st}|${sid ?? ''}|${rid}`;
   const have = new Set(
-    livePolicies.map((p) => bindKey(p.principal_type, p.principal_id, p.scope_type, p.scope_id, p.role_id)),
+    livePolicies.map((p) =>
+      bindKey(p.principal_type, p.principal_id, p.scope_type, p.scope_id, p.role_id),
+    ),
   );
   const fresh = wanted.filter((p) => {
     const rid = idByKey.get(p.role_key);
     if (!rid) return true; // unknown role → let the server report the error
-    return !have.has(bindKey(p.principal_type, p.principal_id, p.scope_type, p.scope_id ?? null, rid));
+    return !have.has(
+      bindKey(p.principal_type, p.principal_id, p.scope_type, p.scope_id ?? null, rid),
+    );
   });
   const alreadyBound = wanted.length - fresh.length;
-  let result = { attempted: 0, created: 0, skipped: 0, errors: [] as Array<{ index: number; error: string }> };
+  let result = {
+    attempted: 0,
+    created: 0,
+    skipped: 0,
+    errors: [] as Array<{ index: number; error: string }>,
+  };
   if (fresh.length > 0) {
     result = await client.post<typeof result>(`${base}/policies:bulk-import`, { policies: fresh });
   }

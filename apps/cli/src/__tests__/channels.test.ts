@@ -22,7 +22,8 @@ const ENV_KEYS = [
   'SLACK_SIGNING_SECRET',
 ] as const;
 
-const INSTALL_URL = 'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
+const INSTALL_URL =
+  'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
 const TEAMS_CONSENT_URL = 'https://login.microsoftonline.com/common/adminconsent?client_id=teams-1';
 const INSTALLATION = {
   workspaceId: 'T012AB3CD',
@@ -66,7 +67,10 @@ interface MockState {
 let state: MockState;
 let installationGets = 0;
 let teamsInstall: typeof TEAMS_INSTALLATION | null = null;
-let bindingsResponse: { projectDefaultAgent: string | null; bindings: Array<Record<string, unknown>> } | null = null;
+let bindingsResponse: {
+  projectDefaultAgent: string | null;
+  bindings: Array<Record<string, unknown>>;
+} | null = null;
 
 function writeConfig(url = 'https://api.test'): void {
   const file = join(tmp, 'config.json');
@@ -98,7 +102,10 @@ function captureOutput() {
 }
 
 function json(data: unknown): Response {
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 function mockApi() {
@@ -108,7 +115,11 @@ function mockApi() {
     const method = (init?.method ?? 'GET').toUpperCase();
     let body: any = undefined;
     if (typeof init?.body === 'string') {
-      try { body = JSON.parse(init.body); } catch { body = init.body; }
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
     }
     requests.push({ url, method, body });
 
@@ -166,7 +177,10 @@ function mockApi() {
 
 beforeEach(() => {
   saved = {};
-  for (const key of ENV_KEYS) { saved[key] = process.env[key]; delete process.env[key]; }
+  for (const key of ENV_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
   process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
   process.env.KORTIX_PROJECT_ID = 'proj_1';
   originalCwd = process.cwd();
@@ -250,14 +264,22 @@ describe('kortix channels connect — manual (self-host)', () => {
     process.env.SLACK_SIGNING_SECRET = 'sig-abc';
     const code = await runChannels(['connect']);
     expect(code).toBe(0);
-    const post = requests.find((r) => r.method === 'POST' && r.url.includes('/channels/slack/connect'));
+    const post = requests.find(
+      (r) => r.method === 'POST' && r.url.includes('/channels/slack/connect'),
+    );
     expect(post).toBeDefined();
     expect(post!.body).toMatchObject({ bot_token: 'xoxb-123', signing_secret: 'sig-abc' });
     expect(stripAnsi(stdout)).toContain('Connected to Acme');
   });
 
   test('explicit --bot-token/--signing-secret skips the /mode lookup entirely', async () => {
-    const code = await runChannels(['connect', '--bot-token', 'xoxb-456', '--signing-secret', 'sig-def']);
+    const code = await runChannels([
+      'connect',
+      '--bot-token',
+      'xoxb-456',
+      '--signing-secret',
+      'sig-def',
+    ]);
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/mode'))).toBe(false);
     const post = requests.find((r) => r.method === 'POST');
@@ -272,7 +294,13 @@ describe('kortix channels connect — manual (self-host)', () => {
   });
 
   test('bad bot token prefix is rejected client-side', async () => {
-    const code = await runChannels(['connect', '--bot-token', 'xoxp-oops', '--signing-secret', 's']);
+    const code = await runChannels([
+      'connect',
+      '--bot-token',
+      'xoxp-oops',
+      '--signing-secret',
+      's',
+    ]);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('xoxb-');
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
@@ -406,7 +434,13 @@ describe('kortix channels --platform teams', () => {
   // connected — printing "not connected" for it (the old `!orgInstalled`
   // shortcut) sent users back to a consent flow that had already succeeded.
   test('status: tenant bound, catalog publish still running → connected + "publishing"', async () => {
-    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: null, publishState: 'publishing', publishError: null };
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: null,
+      publishState: 'publishing',
+      publishError: null,
+    };
     const code = await runChannels(['status', '--platform', 'teams']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -433,7 +467,13 @@ describe('kortix channels --platform teams', () => {
   });
 
   test('status: submitted for admin review → connected + "review"', async () => {
-    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: 'sub-9', publishState: 'review', publishError: null };
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: 'sub-9',
+      publishState: 'review',
+      publishError: null,
+    };
     const code = await runChannels(['status', '--platform', 'teams']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -492,7 +532,13 @@ describe('kortix channels --platform teams', () => {
   });
 
   test('status --json exposes publishState and publishError verbatim', async () => {
-    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: null, publishState: 'failed', publishError: 'boom' };
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: null,
+      publishState: 'failed',
+      publishError: 'boom',
+    };
     const code = await runChannels(['status', '--platform', 'teams', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
@@ -554,9 +600,7 @@ describe('kortix channels --platform teams', () => {
     const code = await runChannels(['disconnect', '--platform', 'teams']);
     expect(code).toBe(0);
     expect(
-      requests.some(
-        (r) => r.method === 'DELETE' && r.url.includes('/channels/teams/installation'),
-      ),
+      requests.some((r) => r.method === 'DELETE' && r.url.includes('/channels/teams/installation')),
     ).toBe(true);
     expect(stripAnsi(stdout)).toContain('Disconnected');
   });
@@ -592,8 +636,18 @@ describe('kortix channels bindings', () => {
     bindingsResponse = {
       projectDefaultAgent: 'kortix',
       bindings: [
-        binding({ bindingId: 'bnd-1', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' }),
-        binding({ bindingId: 'bnd-2', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' }),
+        binding({
+          bindingId: 'bnd-1',
+          channelId: 'C0TEST1',
+          channelName: 'general',
+          channelType: 'channel',
+        }),
+        binding({
+          bindingId: 'bnd-2',
+          channelId: 'D0TEST1',
+          channelName: 'Sam Rivera',
+          channelType: 'im',
+        }),
         binding({ bindingId: 'bnd-3', channelId: 'C0GONE1', channelUnavailable: true }),
         binding({ bindingId: 'bnd-4', channelId: 'C0TEST4' }),
       ],
@@ -612,8 +666,18 @@ describe('kortix channels bindings', () => {
     bindingsResponse = {
       projectDefaultAgent: 'kortix',
       bindings: [
-        binding({ bindingId: 'bnd-1', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' }),
-        binding({ bindingId: 'bnd-2', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' }),
+        binding({
+          bindingId: 'bnd-1',
+          channelId: 'C0TEST1',
+          channelName: 'general',
+          channelType: 'channel',
+        }),
+        binding({
+          bindingId: 'bnd-2',
+          channelId: 'D0TEST1',
+          channelName: 'Sam Rivera',
+          channelType: 'im',
+        }),
       ],
     };
     expect(await runChannels(['bind', 'bnd-1', '--agent', 'reviewer'])).toBe(0);

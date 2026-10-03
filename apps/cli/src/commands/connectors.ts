@@ -1,28 +1,28 @@
 import {
+  type ConnectionSharePrincipal,
+  renameConnection,
+  setConnectorSecretBinding,
+  shareConnection,
+} from '@kortix/sdk';
+import { withKortixScope } from '../api/sdk.ts';
+import {
   emitJson,
   fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  takeFlagBool,
 } from '../command-helpers.ts';
-import { promptSecret } from '../prompts.ts';
+import { UUID_RE, resolveUserId } from '../iam.ts';
 import {
   appendArrayBlock,
   arrayEntryExists,
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import {
-  type ConnectionSharePrincipal,
-  renameConnection,
-  setConnectorSecretBinding,
-  shareConnection,
-} from '@kortix/sdk';
-import { resolveUserId, UUID_RE } from '../iam.ts';
-import { withKortixScope } from '../api/sdk.ts';
+import { promptSecret } from '../prompts.ts';
 import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
 
@@ -380,7 +380,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     );
     return runConnector(['ls', ...forwarded]);
   }
-  let f: Record<string, string | undefined> = {};
+  const f: Record<string, string | undefined> = {};
   let asStdin = false;
   let statusOnly = false;
   let json = false;
@@ -2042,4 +2042,3 @@ function accountsCell(connector: Pick<AdminConnector, 'accounts'>): string {
   const names = ordered.map((a) => `${a.label}${a.is_default ? '*' : ''}`).join(', ');
   return `${accounts.length} · ${names}`;
 }
-

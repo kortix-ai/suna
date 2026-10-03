@@ -1,3 +1,4 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   missing,
@@ -7,7 +8,6 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { UUID_RE } from '../iam.ts';
-import { splitHelp } from '../command-argv.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +

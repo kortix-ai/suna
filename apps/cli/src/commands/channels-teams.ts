@@ -1,8 +1,4 @@
-import {
-  emitJson,
-  resolveProjectContext,
-  surfaceApiError,
-} from '../command-helpers.ts';
+import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 
 interface TeamsInstallation {
@@ -114,9 +110,7 @@ export async function teamsConnect(
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
-    const mode = await ctx.client.get<TeamsMode>(
-      `/projects/${ctx.projectId}/channels/teams/mode`,
-    );
+    const mode = await ctx.client.get<TeamsMode>(`/projects/${ctx.projectId}/channels/teams/mode`);
     // Only an older server (before the `teams` flag graduated) answers
     // `enabled: false`. Worded like that server's feature-flag gate. It is a
     // failure, so it goes to stderr like every other CLI error — stdout stays
@@ -139,10 +133,10 @@ export async function teamsConnect(
     }
     process.stdout.write(
       `\n  ${C.bold}Add to Microsoft Teams — admin consent:${C.reset}\n\n` +
-      `  ${mode.orgConsentUrl}\n\n` +
-      `  Open the link, sign in as a Teams admin, grant tenant-wide consent.\n` +
-      `  Kortix publishes the app to your Teams catalog automatically.\n` +
-      `  Confirm after install with ${C.cyan}kortix channels status --platform teams${C.reset}.\n\n`,
+        `  ${mode.orgConsentUrl}\n\n` +
+        `  Open the link, sign in as a Teams admin, grant tenant-wide consent.\n` +
+        `  Kortix publishes the app to your Teams catalog automatically.\n` +
+        `  Confirm after install with ${C.cyan}kortix channels status --platform teams${C.reset}.\n\n`,
     );
     return 0;
   } catch (err) {
@@ -150,9 +144,10 @@ export async function teamsConnect(
   }
 }
 
-export async function teamsManifest(
-  ctxOpts: { projectArg?: string; hostArg?: string },
-): Promise<number> {
+export async function teamsManifest(ctxOpts: {
+  projectArg?: string;
+  hostArg?: string;
+}): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   // The Teams app manifest is BUILT by the API (apps/api/src/channels/teams-manifest.ts)
@@ -188,9 +183,10 @@ export async function teamsManifest(
 // DELETE /projects/:id/channels/teams/installation (channel-teams.ts). Needs the
 // 'manage' project role + `project.connector.write`.
 
-export async function teamsDisconnect(
-  ctxOpts: { projectArg?: string; hostArg?: string },
-): Promise<number> {
+export async function teamsDisconnect(ctxOpts: {
+  projectArg?: string;
+  hostArg?: string;
+}): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {

@@ -1,11 +1,11 @@
-import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
+import type { DefaultProjectRef } from '@kortix/shared/host-config';
+import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
+import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
+import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
-import type { AccountMembership, MeResponse } from '../api/types.ts';
-import type { DefaultProjectRef } from '@kortix/shared/host-config';
 
 const HELP = help`Usage: kortix whoami [options]
 
@@ -157,7 +157,9 @@ function whoamiHuman(
       `  ${C.dim}project   ${C.reset}${def.name || def.project_id} ${C.faded}(default)${C.reset}\n`,
     );
   }
-  process.stdout.write(`  ${C.dim}host      ${C.reset}${resolvedHost ?? '—'} ${C.faded}(${auth.api_base})${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}host      ${C.reset}${resolvedHost ?? '—'} ${C.faded}(${auth.api_base})${C.reset}\n`,
+  );
   const ctx = me.token_context;
   if (ctx?.project_id || ctx?.session_id || ctx?.agent) {
     const { kind, details } = renderTokenContext(ctx, 'token');

@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import {
-  brokerProjectSecretRequest,
-  setProjectSecretStrategy,
   type SecretBrokerRequest,
   type SecretEgressPolicy,
   type SecretInjectionSlot,
+  brokerProjectSecretRequest,
+  setProjectSecretStrategy,
 } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import {
@@ -52,7 +52,6 @@ export function parseExposure(input: string | undefined): SecretStrategy | null 
 
 const BROKER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 type BrokerMethod = (typeof BROKER_METHODS)[number];
-
 
 /**
  * True when the error is the `secrets_egress` feature-flag gate — the 403
@@ -207,7 +206,11 @@ function buildEgressPolicy(flags: DeliveryFlags): SecretEgressPolicy | string {
   };
 }
 
-export async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Promise<number> {
+export async function secretsDelivery(
+  args: string[],
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
   const [identifier, strategyRaw] = args;
   const options = args.slice(2);
   if (!identifier || !IDENTIFIER_RE.test(identifier)) {
@@ -215,7 +218,9 @@ export async function secretsDelivery(args: string[], opts: CtxOpts, json = fals
   }
   const parsedStrategy = parseExposure(strategyRaw);
   if (parsedStrategy === null) {
-    return fail('Exposure must be environment, enforced, or none (stored aliases: runtime, egress, broker, denied).');
+    return fail(
+      'Exposure must be environment, enforced, or none (stored aliases: runtime, egress, broker, denied).',
+    );
   }
 
   let consumerFlag: string | undefined;
@@ -261,7 +266,9 @@ export async function secretsDelivery(args: string[], opts: CtxOpts, json = fals
 
   let policy: SecretEgressPolicy | undefined;
   if (strategy === 'broker' && consumer !== 'http_broker' && hasHttpPolicyOptions(flags)) {
-    return fail(`HTTP policy flags cannot be used with the ${consumer.replace(/_/g, '-')} consumer.`);
+    return fail(
+      `HTTP policy flags cannot be used with the ${consumer.replace(/_/g, '-')} consumer.`,
+    );
   }
   if (strategy === 'broker' && consumer === 'http_broker') {
     const built = buildBrokerPolicy(flags);

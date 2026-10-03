@@ -64,7 +64,8 @@ function startServer(): string {
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
-      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
+      const body =
+        req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const base = `/v1/projects/${PROJECT}`;
 
@@ -92,7 +93,10 @@ function startServer(): string {
       if (url.pathname === `${base}/access/pending-invites/${INVITE}` && req.method === 'DELETE') {
         return Response.json({ ok: true });
       }
-      if (url.pathname === `${base}/access/pending-invites/${INVITE}/resend` && req.method === 'POST') {
+      if (
+        url.pathname === `${base}/access/pending-invites/${INVITE}/resend` &&
+        req.method === 'POST'
+      ) {
         return Response.json({
           ok: true,
           expires_at: '2026-01-15T00:00:00.000Z',
@@ -125,7 +129,10 @@ function startServer(): string {
         return Response.json({ request: { ...accessRequest(), status: 'rejected' } });
       }
       if (url.pathname === `${base}/access-requests/req_gone/reject` && req.method === 'POST') {
-        return Response.json({ error: 'Access request has already been reviewed' }, { status: 409 });
+        return Response.json(
+          { error: 'Access request has already been reviewed' },
+          { status: 409 },
+        );
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -142,7 +149,14 @@ async function runCli(args: string[], configFile?: string) {
     KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     KORTIX_CONFIG_FILE: configFile,
   };
-  for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'BASH_ENV']) {
+  for (const key of [
+    'KORTIX_API_URL',
+    'KORTIX_CLI_TOKEN',
+    'KORTIX_FRONTEND_URL',
+    'KORTIX_PROJECT_ID',
+    'KORTIX_TOKEN',
+    'BASH_ENV',
+  ]) {
     delete env[key];
   }
   const proc = Bun.spawn({
@@ -179,7 +193,13 @@ describe('kortix access — invites + access requests', () => {
   test('--help documents resend and the requests block', async () => {
     const r = await runCli(['access', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['resend <invite-id>', 'requests ls', 'requests approve <req-id>', 'requests reject <req-id>', 'project.members.manage']) {
+    for (const fragment of [
+      'resend <invite-id>',
+      'requests ls',
+      'requests approve <req-id>',
+      'requests reject <req-id>',
+      'project.members.manage',
+    ]) {
       expect(r.stdout).toContain(fragment);
     }
   });
@@ -240,7 +260,10 @@ describe('kortix access — invites + access requests', () => {
 
   test('requests approve omits role by default and sends it when asked', async () => {
     const config = writeConfig(startServer());
-    const plain = await runCli(['access', 'requests', 'approve', REQUEST, '--project', PROJECT], config);
+    const plain = await runCli(
+      ['access', 'requests', 'approve', REQUEST, '--project', PROJECT],
+      config,
+    );
     expect(plain.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
@@ -250,7 +273,10 @@ describe('kortix access — invites + access requests', () => {
     expect(plain.stdout).toContain('newbie@corp.com → member');
 
     calls = [];
-    const asManager = await runCli(['access', 'requests', 'approve', REQUEST, '--role', 'manager', '--project', PROJECT], config);
+    const asManager = await runCli(
+      ['access', 'requests', 'approve', REQUEST, '--role', 'manager', '--project', PROJECT],
+      config,
+    );
     expect(asManager.code).toBe(0);
     expect(calls.at(-1)!.body).toEqual({ role: 'manager' });
     expect(asManager.stdout).toContain('→ manager');
@@ -258,7 +284,10 @@ describe('kortix access — invites + access requests', () => {
 
   test('requests approve rejects a role the API removed', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['access', 'requests', 'approve', REQUEST, '--role', 'editor', '--project', PROJECT], config);
+    const r = await runCli(
+      ['access', 'requests', 'approve', REQUEST, '--role', 'editor', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('--role must be one of manager, member');
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
@@ -278,7 +307,10 @@ describe('kortix access — invites + access requests', () => {
 
   test('a 409 on an already-reviewed request surfaces the API message', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['access', 'requests', 'reject', 'req_gone', '--project', PROJECT], config);
+    const r = await runCli(
+      ['access', 'requests', 'reject', 'req_gone', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('already been reviewed');
   });
@@ -301,7 +333,7 @@ describe('kortix access — invites + access requests', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['access', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/projects/${PROJECT}/access`);
+    expect(calls[calls.length - 1]?.path).toBe(`/v1/projects/${PROJECT}/access`);
     expect(r.stdout).toContain('MEMBER');
     expect(r.stdout).toContain('newbie@corp.com');
     expect(r.stdout).toContain('1 member');

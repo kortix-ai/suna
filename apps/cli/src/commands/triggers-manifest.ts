@@ -156,7 +156,9 @@ export function triggersAddLocal(
   }
   try {
     if (arrayEntryExists('triggers', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A [[triggers]] "${slug}" already exists in kortix.yaml.`)}\n`);
+      process.stderr.write(
+        `${status.err(`A [[triggers]] "${slug}" already exists in kortix.yaml.`)}\n`,
+      );
       return 1;
     }
     const fields: Record<string, unknown> = { slug };

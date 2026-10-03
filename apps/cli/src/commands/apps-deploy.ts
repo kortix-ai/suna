@@ -35,7 +35,8 @@ export function positiveNumber(value: string | undefined, label: string): number
 
 export function positiveInteger(value: string | undefined, label: string): number | undefined {
   const number = positiveNumber(value, label);
-  if (number !== undefined && !Number.isInteger(number)) throw new Error(`${label} must be an integer`);
+  if (number !== undefined && !Number.isInteger(number))
+    throw new Error(`${label} must be an integer`);
   return number;
 }
 
@@ -52,7 +53,14 @@ export function slugFrom(value: string): string {
 
 export function csv(value: string | undefined): string[] | undefined {
   if (value === undefined) return undefined;
-  return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 export function commandArg(value: string | undefined): string[] | undefined {
@@ -122,7 +130,10 @@ export async function context(options: ContextOptions): Promise<{
   };
 }
 
-export async function scoped<T>(ctx: NonNullable<Awaited<ReturnType<typeof context>>>, fn: () => Promise<T>) {
+export async function scoped<T>(
+  ctx: NonNullable<Awaited<ReturnType<typeof context>>>,
+  fn: () => Promise<T>,
+) {
   return withKortixScope(ctx.auth, fn);
 }
 
@@ -170,16 +181,17 @@ export function deployFlags(rest: string[]): DeployFlags {
     throw new Error('--provider must be daytona, platinum, or e2b');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
-  if (accessMode && !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)) {
+  if (
+    accessMode &&
+    !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)
+  ) {
     throw new Error('--access must be private, project, restricted, public, or password');
   }
   const spa = takeFlagBool(rest, ['--spa']);
   const noSpa = takeFlagBool(rest, ['--no-spa']);
   if (spa && noSpa) throw new Error('Use only one of --spa and --no-spa');
-  const waitSeconds = positiveInteger(
-    takeFlagValue(rest, ['--wait-seconds']),
-    '--wait-seconds',
-  ) ?? 1200;
+  const waitSeconds =
+    positiveInteger(takeFlagValue(rest, ['--wait-seconds']), '--wait-seconds') ?? 1200;
   return {
     app: takeFlagValue(rest, ['--app']),
     slug: takeFlagValue(rest, ['--slug']),
@@ -225,7 +237,9 @@ export function loadManifestAppDefaults(
   const entries = Object.entries(rawApps as Record<string, AppBlockV2>);
   const selected = requestedName
     ? entries.find(([name]) => name === requestedName)
-    : allowSingleDefault && entries.length === 1 ? entries[0] : undefined;
+    : allowSingleDefault && entries.length === 1
+      ? entries[0]
+      : undefined;
   if (!selected) {
     if (requestedName) throw new Error(`kortix.yaml has no apps.${requestedName} block`);
     return null;
@@ -237,7 +251,10 @@ export function loadManifestAppDefaults(
  * Fill the flags a deploy inherited nothing for from the manifest's apps
  * block. Explicit flags always win; the manifest only supplies defaults.
  */
-export function mergeManifestDefaults(flags: DeployFlags, manifestBlock: AppBlockV2 | undefined): DeployFlags {
+export function mergeManifestDefaults(
+  flags: DeployFlags,
+  manifestBlock: AppBlockV2 | undefined,
+): DeployFlags {
   return {
     ...flags,
     type: flags.type ?? manifestBlock?.type,
@@ -297,7 +314,10 @@ function buildSource(kind: 'static' | 'bundle' | 'dockerfile', flags: DeployFlag
   };
 }
 
-export async function archiveAppDirectory(source: string, includeNodeModules: boolean): Promise<{
+export async function archiveAppDirectory(
+  source: string,
+  includeNodeModules: boolean,
+): Promise<{
   bytes: Uint8Array;
   cleanup: () => Promise<void>;
 }> {
@@ -374,10 +394,18 @@ export async function provisionDeployApp(
     const existing = (await apps.list()).find((row) => row.slug === manifestSlug);
     const settings = {
       ...(manifestBlock?.resources?.cpu !== undefined ? { cpu: manifestBlock.resources.cpu } : {}),
-      ...(manifestBlock?.resources?.memory_gb !== undefined ? { memory_gb: manifestBlock.resources.memory_gb } : {}),
-      ...(manifestBlock?.resources?.disk_gb !== undefined ? { disk_gb: manifestBlock.resources.disk_gb } : {}),
-      ...(manifestBlock?.idle_timeout_seconds !== undefined ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds } : {}),
-      ...(manifestBlock?.monthly_budget_usd !== undefined ? { monthly_budget_usd: manifestBlock.monthly_budget_usd } : {}),
+      ...(manifestBlock?.resources?.memory_gb !== undefined
+        ? { memory_gb: manifestBlock.resources.memory_gb }
+        : {}),
+      ...(manifestBlock?.resources?.disk_gb !== undefined
+        ? { disk_gb: manifestBlock.resources.disk_gb }
+        : {}),
+      ...(manifestBlock?.idle_timeout_seconds !== undefined
+        ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
+        : {}),
+      ...(manifestBlock?.monthly_budget_usd !== undefined
+        ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
+        : {}),
     };
     return existing
       ? apps.update(existing.app_id, settings)
@@ -387,7 +415,9 @@ export async function provisionDeployApp(
           ...settings,
         });
   }
-  const inferred = flags.image ? flags.image.split('/').pop()!.split(':')[0]! : basename(sourcePath!);
+  const inferred = flags.image
+    ? flags.image.split('/').pop()!.split(':')[0]!
+    : basename(sourcePath!);
   const slug = slugFrom(flags.slug ?? inferred);
   return apps.create({ slug, name: flags.name ?? slug });
 }
@@ -405,7 +435,8 @@ export async function stageArtifact(
   json: boolean,
 ): Promise<{ artifactId: string; source: AppSource; cleanup?: () => Promise<void> }> {
   if (flags.image) {
-    if (!flags.command || !flags.port) throw new Error('OCI deployments require --command and --port');
+    if (!flags.command || !flags.port)
+      throw new Error('OCI deployments require --command and --port');
     const registered = await apps.artifacts.register({ kind: 'oci_image', image: flags.image });
     return {
       artifactId: registered.artifact.artifact_id,
@@ -438,7 +469,8 @@ export async function stageArtifact(
     const source = buildSource(kind, flags);
     const artifact = await apps.artifacts.uploadArchive(bytes, {
       onProgress: (uploaded, total) => {
-        if (!json && uploaded === total) process.stderr.write(`${C.dim}Uploaded ${total} bytes.${C.reset}\n`);
+        if (!json && uploaded === total)
+          process.stderr.write(`${C.dim}Uploaded ${total} bytes.${C.reset}\n`);
       },
     });
     return { artifactId: artifact.artifact_id, source, cleanup };
@@ -458,7 +490,8 @@ export async function waitForDeployment(
   let current = deployment;
   let polls = 0;
   while (!['ready', 'failed', 'cancelled'].includes(current.status)) {
-    if (Date.now() >= deadline) throw new Error(`Deployment did not finish within ${waitSeconds} seconds`);
+    if (Date.now() >= deadline)
+      throw new Error(`Deployment did not finish within ${waitSeconds} seconds`);
     await Bun.sleep(polls < 40 ? 500 : polls < 100 ? 1_000 : 2_000);
     polls += 1;
     current = (await apps.deployments.get(appId, deployment.deployment_id)).deployment;

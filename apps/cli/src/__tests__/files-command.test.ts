@@ -7,11 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  type FakeApi,
   runCommand,
   startFakeApi,
   writeConfig,
   writeRunner,
-  type FakeApi,
 } from './support/account-cli-harness.ts';
 
 const PROJECT = 'proj_1';
@@ -107,7 +107,7 @@ function boot(): void {
 /** Every invocation pins the project explicitly — no link.json in play. The
  *  subcommand leads; flags come after it, as the real CLI passes them. */
 async function run(args: string[]) {
-  return runCommand(runner, [args[0]!, '--project', PROJECT, ...args.slice(1)], {
+  return runCommand(runner, [args[0], '--project', PROJECT, ...args.slice(1)], {
     cwd: tmp,
     configFile: config,
   });
@@ -150,7 +150,11 @@ describe('kortix files', () => {
     boot();
     const r = await run(['ls', 'src']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({ method: 'GET', path: `${BASE}/files`, query: '?path=src' });
+    expect(api?.requests[0]).toMatchObject({
+      method: 'GET',
+      path: `${BASE}/files`,
+      query: '?path=src',
+    });
     expect(r.stdout).toContain('src/main.ts');
     expect(r.stdout).toContain('2.0K');
     expect(r.stdout).toContain('2 files');
@@ -163,7 +167,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['cat', 'README.md']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/files/content`,
       query: '?path=README.md',
@@ -178,7 +182,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['search', 'run', '--content']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/files/search`,
       query: '?q=run&content=1',
@@ -192,7 +196,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['history', 'README.md', '--limit', '2']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/files/history`,
       query: '?path=README.md&limit=2',
@@ -206,7 +210,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['branches']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/branches`,
       query: '?include_session_branches=true&limit=2000',
@@ -219,7 +223,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['commits', '--path', 'src', '--limit', '5']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/commits`,
       query: '?path=src&limit=5',
@@ -232,7 +236,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['show', SHA]);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({ method: 'GET', path: `${BASE}/commits/${SHA}` });
+    expect(api?.requests[0]).toMatchObject({ method: 'GET', path: `${BASE}/commits/${SHA}` });
     expect(r.stdout).toContain('Add README');
     expect(r.stdout).toContain('Ada <ada@corp.test>');
     expect(r.stdout).toContain('A README.md');
@@ -247,7 +251,7 @@ describe('kortix files', () => {
     boot();
     const r = await run(['diff', SHA, '--path', 'src/app.ts']);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/commits/${SHA}/diff`,
       query: '?path=src%2Fapp.ts',
@@ -260,7 +264,7 @@ describe('kortix files', () => {
     const out = join(tmp, 'nested', 'workspace.zip');
     const r = await run(['download', '--ref', 'feature/x', '--path', '.kortix', '-o', out]);
     expect(r.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api?.requests[0]).toMatchObject({
       method: 'GET',
       path: `${BASE}/files/archive`,
       query: '?ref=feature%2Fx&path=.kortix',
@@ -290,6 +294,6 @@ describe('kortix files', () => {
       const r = await run(args);
       expect(r.code).toBe(2);
     }
-    expect(api!.requests).toHaveLength(0);
+    expect(api?.requests).toHaveLength(0);
   });
 });

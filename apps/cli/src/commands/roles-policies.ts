@@ -1,6 +1,6 @@
 import type { ApiClient } from '../api/client.ts';
-import { emitJson, missing, fail } from '../command-helpers.ts';
-import { findRole, type IamRole } from '../iam.ts';
+import { emitJson, fail, missing } from '../command-helpers.ts';
+import { type IamRole, findRole } from '../iam.ts';
 import { C, pad, status } from '../style.ts';
 
 // The assignment-policy half of `kortix roles` — the legacy policy store the
@@ -45,11 +45,15 @@ export async function rolesAssignments(
   const { roles } = await client.get<{ roles: IamRole[] }>(`${base}/roles`);
   const roleKey = new Map(roles.map((r) => [r.role_id, r.key]));
   if (policies.length === 0) {
-    process.stdout.write(`  ${C.dim}No assignments${project ? ' on this project' : ''}.${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}No assignments${project ? ' on this project' : ''}.${C.reset}\n`,
+    );
     return 0;
   }
   process.stdout.write('\n');
-  process.stdout.write(`  ${C.dim}ROLE             PRINCIPAL                 SCOPE      POLICY ID${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}ROLE             PRINCIPAL                 SCOPE      POLICY ID${C.reset}\n`,
+  );
   for (const p of policies) {
     const principal = `${p.principal_type}:${p.principal_id}`;
     const scope = p.scope_id ? `${p.scope_type}:${p.scope_id.slice(0, 8)}` : p.scope_type;
@@ -57,7 +61,9 @@ export async function rolesAssignments(
       `  ${pad(roleKey.get(p.role_id) ?? p.role_id, 16)} ${pad(principal, 25)} ${pad(scope, 10)} ${C.faded}${p.policy_id}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${policies.length} assignment${policies.length === 1 ? '' : 's'}${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${policies.length} assignment${policies.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
   return 0;
 }
 

@@ -1,10 +1,18 @@
 import { writeFileSync } from 'node:fs';
-import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
+import { type AuditEvent, type AuditEventList, downloadAccountAudit } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
+import { type ApiClient, clientFromAuth } from '../api/client.ts';
 import { activeAccount } from '../api/config.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, resolveSpanInstant, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveSpanInstant,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+} from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { printEvents, truncate } from './audit-render.ts';
 
@@ -173,7 +181,8 @@ function resolveAccountContext(accountArg?: string, hostArg?: string): AuditCont
     );
     return null;
   }
-  const accountId = accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
+  const accountId =
+    accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
   if (!accountId) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -424,7 +433,8 @@ export async function runAudit(argv: string[]): Promise<number> {
         const sessionId = positional[0];
         if (!sessionId) return fail('Missing a session id.');
         const projectId = f.project;
-        if (!projectId) return missing('--project <id> — the session audit route is project-scoped');
+        if (!projectId)
+          return missing('--project <id> — the session audit route is project-scoped');
         return await listAuditEvents(
           ctx,
           (search) =>

@@ -39,7 +39,8 @@ function startServer(): string {
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
-      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
+      const body =
+        req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       const url = new URL(req.url);
       calls.push({ method: req.method, path: `${url.pathname}${url.search}`, body });
       return Response.json({
@@ -65,7 +66,7 @@ async function runCli(args: string[], configFile?: string) {
   };
   for (const key of [
     'KORTIX_API_URL',
-  'KORTIX_TOKEN',
+    'KORTIX_TOKEN',
     'KORTIX_FRONTEND_URL',
     'KORTIX_PROJECT_ID',
     'KORTIX_TOKEN',
@@ -112,7 +113,10 @@ describe('kortix agents command', () => {
 
   test('model pins a plain model id via PUT; --clear DELETEs the pin', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT], config);
+    const r = await runCli(
+      ['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('reviewer');
     expect(r.stdout).toContain('glm-5.3-flash');
@@ -122,7 +126,10 @@ describe('kortix agents command', () => {
       body: { scope: 'agent', agentName: 'reviewer', model: 'glm-5.3-flash' },
     });
 
-    const cleared = await runCli(['agents', 'model', 'reviewer', '--clear', '--project', PROJECT], config);
+    const cleared = await runCli(
+      ['agents', 'model', 'reviewer', '--clear', '--project', PROJECT],
+      config,
+    );
     expect(cleared.code).toBe(0);
     expect(cleared.stdout).toContain('follows the default model again');
     expect(calls.at(-1)).toMatchObject({
@@ -137,10 +144,7 @@ describe('kortix agents command', () => {
 
   test('models does not invent Auto when a malformed server omits every default', async () => {
     const config = writeConfig(startServer());
-    const result = await runCli(
-      ['agents', 'models', '--project', PROJECT],
-      config,
-    );
+    const result = await runCli(['agents', 'models', '--project', PROJECT], config);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('unavailable');
     expect(result.stdout.toLowerCase()).not.toContain('auto');

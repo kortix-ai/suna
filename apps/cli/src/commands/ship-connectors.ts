@@ -1,4 +1,4 @@
-import { ApiError, type ApiClient } from '../api/client.ts';
+import { type ApiClient, ApiError } from '../api/client.ts';
 import { promptSecret } from '../prompts.ts';
 import { C, status } from '../style.ts';
 
@@ -158,7 +158,9 @@ async function setConnectorCredential(
   ex: string,
   c: ShipConnector,
 ): Promise<boolean> {
-  const value = await promptSecret(`    ${c.slug} ${C.dim}(credential → ${c.authSecret})${C.reset}`);
+  const value = await promptSecret(
+    `    ${c.slug} ${C.dim}(credential → ${c.authSecret})${C.reset}`,
+  );
   if (!value) {
     process.stdout.write(`    ${C.dim}skipped ${c.slug}${C.reset}\n`);
     return false;

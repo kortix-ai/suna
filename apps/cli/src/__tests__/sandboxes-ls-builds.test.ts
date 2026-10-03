@@ -161,7 +161,9 @@ describe('kortix sandboxes ls and builds (characterization)', () => {
     expect(result.code).toBe(0);
     // The default template carries the ● marker.
     expect(result.stdout).toContain('● web');
-    expect(result.stdout).toMatch(/● web\s+ready\s+toml\s+repo\.example\.test\/web:2\s+2cpu\/4g\/10g/);
+    expect(result.stdout).toMatch(
+      /● web\s+ready\s+toml\s+repo\.example\.test\/web:2\s+2cpu\/4g\/10g/,
+    );
     expect(result.stdout).toMatch(/tools\s+error\s+ui\s+sandbox\/tools\.Dockerfile\s+1cpu\/2g\/5g/);
     expect(result.stdout).toContain('2 templates · default: web');
 

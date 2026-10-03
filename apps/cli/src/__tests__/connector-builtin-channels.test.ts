@@ -44,7 +44,14 @@ describe('kortix connectors — built-in channel slugs', () => {
   });
 
   test('add kortix_slack is rejected too', async () => {
-    const code = await runConnector(['add', 'kortix_slack', '--provider', 'pipedream', '--app', 'slack']);
+    const code = await runConnector([
+      'add',
+      'kortix_slack',
+      '--provider',
+      'pipedream',
+      '--app',
+      'slack',
+    ]);
     expect(code).toBe(1);
     expect(JSON.parse(stdout).code).toBe('BUILTIN_CHANNEL');
   });

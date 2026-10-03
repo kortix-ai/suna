@@ -2,21 +2,16 @@ import type { ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveAccountContext,
   surfaceApiError,
-  takeFlagValue,
   takeFlagBool,
-  fail,
+  takeFlagValue,
 } from '../command-helpers.ts';
-import { findRole, type IamRole } from '../iam.ts';
+import { type IamRole, findRole } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
-import {
-  notFound,
-  rolesAssignments,
-  rolesAssign,
-  rolesUnassign,
-} from './roles-policies.ts';
+import { notFound, rolesAssign, rolesAssignments, rolesUnassign } from './roles-policies.ts';
 import { rolesExport, rolesImport } from './roles-port.ts';
 
 // Account-scoped IAM roles. `ls` / `show` / `permissions` read the whole
@@ -147,7 +142,15 @@ export async function runRoles(argv: string[]): Promise<number> {
         return await rolesActions(ctx.client, base, json);
 
       case 'create':
-        return await rolesCreate(ctx.client, base, positional[0], f.name, f.desc, f.scope, f.actions);
+        return await rolesCreate(
+          ctx.client,
+          base,
+          positional[0],
+          f.name,
+          f.desc,
+          f.scope,
+          f.actions,
+        );
 
       case 'edit':
         return await rolesEdit(ctx.client, base, positional[0], f.name, f.desc, clearDesc, json);
@@ -166,7 +169,15 @@ export async function runRoles(argv: string[]): Promise<number> {
         return await rolesAssignments(ctx.client, base, f.project, json);
 
       case 'assign':
-        return await rolesAssign(ctx.client, base, positional[0], f.to, f.project, f.scope, f.expires);
+        return await rolesAssign(
+          ctx.client,
+          base,
+          positional[0],
+          f.to,
+          f.project,
+          f.scope,
+          f.expires,
+        );
 
       case 'unassign':
         return await rolesUnassign(ctx.client, base, positional[0]);
@@ -194,14 +205,18 @@ async function rolesLs(client: ApiClient, base: string, json: boolean): Promise<
   const keyW = Math.max(...roles.map((r) => r.key.length), 4);
   const nameW = Math.max(...roles.map((r) => r.name.length), 4);
   process.stdout.write('\n');
-  process.stdout.write(`  ${C.dim}${pad('KEY', keyW)}   ${pad('NAME', nameW)}   SCOPE      KIND${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}${pad('KEY', keyW)}   ${pad('NAME', nameW)}   SCOPE      KIND${C.reset}\n`,
+  );
   for (const r of roles) {
     const kind = r.is_system ? `${C.faded}system${C.reset}` : `${C.cyan}custom${C.reset}`;
     process.stdout.write(
       `  ${pad(r.key, keyW)}   ${pad(r.name, nameW)}   ${pad(r.resource_type, 8)}   ${kind}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${roles.length} role${roles.length === 1 ? '' : 's'}${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${roles.length} role${roles.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -225,9 +240,13 @@ async function rolesShow(
     .catch(() => ({ policy_count: 0 }));
   if (json) return emitJson({ ...role, actions: perms.actions, ...usage }), 0;
   process.stdout.write('\n');
-  process.stdout.write(`  ${C.bold}${role.name}${C.reset}  ${C.faded}${role.key}${C.reset}${role.is_system ? `  ${C.faded}(system)${C.reset}` : ''}\n`);
+  process.stdout.write(
+    `  ${C.bold}${role.name}${C.reset}  ${C.faded}${role.key}${C.reset}${role.is_system ? `  ${C.faded}(system)${C.reset}` : ''}\n`,
+  );
   if (role.description) process.stdout.write(`  ${C.dim}${role.description}${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}scope ${role.resource_type} · ${usage.policy_count} assignment${usage.policy_count === 1 ? '' : 's'}${C.reset}\n\n`);
+  process.stdout.write(
+    `  ${C.dim}scope ${role.resource_type} · ${usage.policy_count} assignment${usage.policy_count === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
   process.stdout.write(`  ${C.dim}PERMISSIONS (${perms.actions.length})${C.reset}\n`);
   for (const a of perms.actions.slice().sort()) process.stdout.write(`    ${a}\n`);
   process.stdout.write('\n');
@@ -250,7 +269,10 @@ async function rolesPermissions(
     `${base}/roles/${encodeURIComponent(role.role_id)}/permissions`,
   );
   const actions = perms.actions.slice().sort();
-  if (json) return emitJson({ role_id: role.role_id, key: role.key, is_system: role.is_system, actions }), 0;
+  if (json)
+    return (
+      emitJson({ role_id: role.role_id, key: role.key, is_system: role.is_system, actions }), 0
+    );
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.bold}${role.key}${C.reset}  ${C.faded}${role.resource_type} scope${role.is_system ? ' · system' : ''}${C.reset}\n\n`,
@@ -290,7 +312,11 @@ async function rolesCreate(
   if (!key) return missing('a role key (e.g. "support_agent")');
   // Match the backend rule client-side so the error is friendly + offline.
   if (!/^[a-z0-9_]{2,64}$/.test(key)) {
-    const suggestion = key.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
+    const suggestion = key
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 64);
     process.stderr.write(
       `${status.err(`Role key must be 2–64 chars of [a-z0-9_] (lowercase, digits, underscore — no hyphens or spaces).`)}\n` +
         (suggestion.length >= 2 ? `   ${C.dim}Try: ${C.cyan}${suggestion}${C.reset}\n` : ''),
@@ -299,7 +325,10 @@ async function rolesCreate(
   }
   if (!name) return missing('--name <display name>');
   const resourceType = (scopeArg ?? 'project') as ResourceType;
-  const actions = (actionsArg ?? '').split(',').map((a) => a.trim()).filter(Boolean);
+  const actions = (actionsArg ?? '')
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
   const role = await client.post<IamRole>(`${base}/roles`, {
     key,
     name,
@@ -335,12 +364,16 @@ async function rolesEdit(
   const { roles } = await client.get<{ roles: IamRole[] }>(`${base}/roles`);
   const role = findRole(roles, ref);
   if (!role) return notFound(`role "${ref}"`);
-  if (role.is_system) return fail('Built-in roles cannot be edited — clone it as a custom role instead.');
+  if (role.is_system)
+    return fail('Built-in roles cannot be edited — clone it as a custom role instead.');
   const body: Record<string, unknown> = {};
   if (name !== undefined) body.name = name;
   if (desc !== undefined) body.description = desc;
   if (clearDesc) body.description = null;
-  const updated = await client.patch<IamRole>(`${base}/roles/${encodeURIComponent(role.role_id)}`, body);
+  const updated = await client.patch<IamRole>(
+    `${base}/roles/${encodeURIComponent(role.role_id)}`,
+    body,
+  );
   if (json) return emitJson(updated), 0;
   process.stdout.write(
     `${status.ok(`Updated role ${C.bold}${updated.key}${C.reset} — ${updated.name}`)}\n`,
@@ -359,10 +392,16 @@ async function rolesSetActions(
   const { roles } = await client.get<{ roles: IamRole[] }>(`${base}/roles`);
   const role = findRole(roles, ref);
   if (!role) return notFound(`role "${ref}"`);
-  if (role.is_system) return fail('System roles are read-only — clone it as a custom role instead.');
-  const actions = actionsArg.split(',').map((a) => a.trim()).filter(Boolean);
+  if (role.is_system)
+    return fail('System roles are read-only — clone it as a custom role instead.');
+  const actions = actionsArg
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
   await client.put(`${base}/roles/${encodeURIComponent(role.role_id)}/permissions`, { actions });
-  process.stdout.write(`${status.ok(`${C.bold}${role.key}${C.reset} → ${actions.length} permission${actions.length === 1 ? '' : 's'}`)}\n`);
+  process.stdout.write(
+    `${status.ok(`${C.bold}${role.key}${C.reset} → ${actions.length} permission${actions.length === 1 ? '' : 's'}`)}\n`,
+  );
   return 0;
 }
 

@@ -1,9 +1,4 @@
-import {
-  emitJson,
-  fail,
-  resolveProjectContext,
-  surfaceApiError,
-} from '../command-helpers.ts';
+import { emitJson, fail, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 import type { ExtraFlags } from './channels.ts';
 
@@ -42,7 +37,10 @@ interface ChannelBindingsResponse {
 /** `#general`, a person's name for a Slack DM, or the id when nothing names it. */
 function bindingLabel(b: ChannelBinding): string {
   if (b.platform === 'slack') {
-    if (b.channelName) return b.channelType === 'im' || b.channelType === 'mpim' ? b.channelName : `#${b.channelName}`;
+    if (b.channelName)
+      return b.channelType === 'im' || b.channelType === 'mpim'
+        ? b.channelName
+        : `#${b.channelName}`;
     if (b.channelUnavailable) return `unavailable (${b.channelId})`;
   }
   if (b.threadTitle) return `${b.channelName ?? b.channelId} · ${b.threadTitle}`;

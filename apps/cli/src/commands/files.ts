@@ -1,17 +1,17 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { ApiClient } from '../api/client.ts';
 import type { Auth } from '../api/auth.ts';
+import type { ApiClient } from '../api/client.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
+  emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
-  takeFlagValue,
   takeFlagBool,
-  emitJson,
-  missing,
-  fail,
+  takeFlagValue,
 } from '../command-helpers.ts';
 import { C, help, pad, status, trim } from '../style.ts';
 
@@ -195,9 +195,13 @@ async function filesLs(
   }
   process.stdout.write('\n');
   for (const f of items) {
-    process.stdout.write(`  ${f.path}${C.faded}${f.size != null ? `  ${humanSize(f.size)}` : ''}${C.reset}\n`);
+    process.stdout.write(
+      `  ${f.path}${C.faded}${f.size != null ? `  ${humanSize(f.size)}` : ''}${C.reset}\n`,
+    );
   }
-  process.stdout.write(`\n  ${C.dim}${items.length} file${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${items.length} file${items.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -265,7 +269,9 @@ async function filesSearch(
       process.stdout.write(`  ${r.path}\n`);
     }
   }
-  process.stdout.write(`\n  ${C.dim}${resp.results.length} match${resp.results.length === 1 ? '' : 'es'}${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${resp.results.length} match${resp.results.length === 1 ? '' : 'es'}${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -326,11 +332,7 @@ async function filesCommits(
 
 // ── files branches ─────────────────────────────────────────────────────────
 
-async function filesBranches(
-  client: ApiClient,
-  base: string,
-  json: boolean,
-): Promise<number> {
+async function filesBranches(client: ApiClient, base: string, json: boolean): Promise<number> {
   // The server excludes auto-created session branches (named after the
   // session's own UUID) and caps the result by default (see
   // apps/api/src/projects/git/branches.ts). This command is the one
@@ -346,7 +348,9 @@ async function filesBranches(
   }
   const nameW = Math.max(...resp.branches.map((b) => b.name.length), 6);
   process.stdout.write('\n');
-  process.stdout.write(`  ${C.dim}${pad('BRANCH', nameW)}   TIP       AHEAD/BEHIND   SUBJECT${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}${pad('BRANCH', nameW)}   TIP       AHEAD/BEHIND   SUBJECT${C.reset}\n`,
+  );
   for (const b of resp.branches) {
     const marker = b.is_default ? `${C.green}●${C.reset} ` : '  ';
     const ab = `${b.ahead ?? '?'}/${b.behind ?? '?'}`;
@@ -354,7 +358,9 @@ async function filesBranches(
       `${marker}${pad(b.name, nameW)}   ${C.faded}${b.tip_short}${C.reset}  ${pad(ab, 12)}   ${C.dim}${trim(b.subject, 50)}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}default: ${resp.default_branch} · ${resp.branches.length} branches${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}default: ${resp.default_branch} · ${resp.branches.length} branches${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -387,7 +393,9 @@ async function filesShow(
       `  ${sym}${C.reset} ${rename}${f.path}  ${C.green}+${f.additions}${C.reset} ${C.red}-${f.deletions}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${c.files.length} file${c.files.length === 1 ? '' : 's'} changed${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${c.files.length} file${c.files.length === 1 ? '' : 's'} changed${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -426,7 +434,9 @@ async function filesDownload(
   // for exactly this route; scoping it to the host's auth is what binds
   // its token + backend url.
   const blob = await withKortixScope(ctx.auth, () =>
-    kortixFromAuth(ctx.auth).project(ctx.projectId).files.archive(ref ?? '', path),
+    kortixFromAuth(ctx.auth)
+      .project(ctx.projectId)
+      .files.archive(ref ?? '', path),
   );
   // Read the body to completion FIRST, then write. Handing a streaming
   // response straight to a file writer can hang; a Uint8Array cannot.

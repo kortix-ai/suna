@@ -153,7 +153,9 @@ export async function runAgents(argv: string[]): Promise<number> {
 // ── model defaults ──────────────────────────────────────────────────────────
 
 async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
-  const d = await ctx.client.get<ModelDefaultsResponse>(`/projects/${ctx.projectId}/model-defaults`);
+  const d = await ctx.client.get<ModelDefaultsResponse>(
+    `/projects/${ctx.projectId}/model-defaults`,
+  );
   if (json) {
     emitJson(d);
     return 0;
@@ -215,7 +217,10 @@ async function agentsDefault(
     const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
     const current = detail.config?.default_agent ?? null;
     if (opts.json) {
-      emitJson({ default_agent: current, agents: (detail.config?.agents ?? []).map((a) => a.name) });
+      emitJson({
+        default_agent: current,
+        agents: (detail.config?.agents ?? []).map((a) => a.name),
+      });
       return 0;
     }
     if (!agent && !opts.show) {
@@ -336,7 +341,10 @@ async function agentsScope(
   if (opts.apps !== undefined) body.apps = parseGrantSet(opts.apps);
   if (opts.required.length > 0) {
     body.connectors_required = opts.required.flatMap((v) =>
-      v.split(',').map((s) => s.trim()).filter(Boolean),
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
     );
   }
 

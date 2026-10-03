@@ -1,15 +1,15 @@
-import { describe, expect, test, afterEach, beforeEach } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ApiError, type ApiClient } from '../api/client.ts';
+import { type ApiClient, ApiError } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
-import { reconcileShippedManifest } from '../commands/ship-connectors.ts';
-import { authHeaderArgs, linkGitHubBackedProject } from '../git-ops.ts';
-import { runShip } from '../commands/ship.ts';
-import { resolveProjectGitTarget } from '../project-git.ts';
 import { resolveProjectCloneTarget } from '../commands/projects.ts';
+import { reconcileShippedManifest } from '../commands/ship-connectors.ts';
+import { runShip } from '../commands/ship.ts';
+import { authHeaderArgs, linkGitHubBackedProject } from '../git-ops.ts';
+import { resolveProjectGitTarget } from '../project-git.ts';
 
 test('managed git auth headers honor the provider-selected username', () => {
   const args = authHeaderArgs('https://kortix.code.storage/demo.git', 'jwt-token', 't');
@@ -308,10 +308,10 @@ describe('stale-CLI warning on a 404 from the connector routes', () => {
 // call still returns 201 and the break only shows up at `git push`.
 describe('ship provisioning declares who owns the first commit', () => {
   test('the provision body sends seed_starter:false', async () => {
-    const source = await Bun.file(
-      new URL('../commands/ship.ts', import.meta.url).pathname,
-    ).text();
-    const call = source.slice(source.indexOf("client.post<ProvisionResponse>('/projects/provision'"));
+    const source = await Bun.file(new URL('../commands/ship.ts', import.meta.url).pathname).text();
+    const call = source.slice(
+      source.indexOf("client.post<ProvisionResponse>('/projects/provision'"),
+    );
     const body = call.slice(0, call.indexOf('});'));
     expect(body).toContain('seed_starter: false');
   });
@@ -324,9 +324,7 @@ describe('ship provisioning declares who owns the first commit', () => {
 // declared agents, no skills, and manifest detection falling back to v1.
 describe('ship refuses a project with no manifest', () => {
   test('prepareManifest treats a missing kortix.yaml as fatal, and --no-verify does not bypass it', async () => {
-    const source = await Bun.file(
-      new URL('../commands/ship.ts', import.meta.url).pathname,
-    ).text();
+    const source = await Bun.file(new URL('../commands/ship.ts', import.meta.url).pathname).text();
     const fn = source.slice(source.indexOf('function prepareManifest'));
     const body = fn.slice(0, fn.indexOf('\n}\n'));
 

@@ -594,9 +594,10 @@ export function resolveSpanInstant(input: string, now: Date, sign: 1 | -1): stri
   const relative = RELATIVE_SPAN.exec(value);
   if (relative) {
     const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() + sign * amount * SPAN_MS[unit]!).toISOString();
+    const unit = (relative[2] ?? '').toLowerCase();
+    const ms = SPAN_MS[unit];
+    if (!Number.isFinite(amount) || amount <= 0 || ms === undefined) return null;
+    return new Date(now.getTime() + sign * amount * ms).toISOString();
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();

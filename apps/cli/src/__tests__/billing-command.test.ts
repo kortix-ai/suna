@@ -62,11 +62,15 @@ function startServer(): string {
     fetch: async (req) => {
       const url = new URL(req.url);
       const path = url.pathname;
-      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
+      const body =
+        req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path, search: url.search, body });
 
       if (path === '/v1/billing/account-state' && req.method === 'GET') {
-        return Response.json({ ...ACCOUNT_STATE, credits: { ...ACCOUNT_STATE.credits, total: creditBalance } });
+        return Response.json({
+          ...ACCOUNT_STATE,
+          credits: { ...ACCOUNT_STATE.credits, total: creditBalance },
+        });
       }
       if (path === '/v1/billing/transactions' && req.method === 'GET') {
         return Response.json({
@@ -89,7 +93,10 @@ function startServer(): string {
       if (path === '/v1/billing/credit-breakdown' && req.method === 'GET') {
         return Response.json({ total: 42.5, expiring: 2.5, non_expiring: 40, daily: 0 });
       }
-      if (path === '/v1/billing/transactions/summary' || (path === '/v1/billing/usage-history' && url.searchParams.get('days') !== '99')) {
+      if (
+        path === '/v1/billing/transactions/summary' ||
+        (path === '/v1/billing/usage-history' && url.searchParams.get('days') !== '99')
+      ) {
         return Response.json({ totalCredits: 2, totalDebits: 1.25, count: 2 });
       }
       if (path === '/v1/usage/cost-summary' && req.method === 'GET') {
@@ -159,7 +166,10 @@ function startServer(): string {
       // Stands in for a self-hosted box that never enabled Stripe: the route
       // exists but 404s with `billing_disabled`.
       if (path === '/v1/billing/usage-history' && req.method === 'GET') {
-        return Response.json({ error: 'Billing is not enabled', billing_disabled: true }, { status: 404 });
+        return Response.json(
+          { error: 'Billing is not enabled', billing_disabled: true },
+          { status: 404 },
+        );
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -236,7 +246,14 @@ describe('kortix billing', () => {
       expect(h.stdout).toContain(fragment);
     }
     // The write verbs are gone from the surface entirely.
-    for (const gone of ['auto-topup', 'checkout', 'portal', 'topup', 'downgrade', 'cancel-scheduled']) {
+    for (const gone of [
+      'auto-topup',
+      'checkout',
+      'portal',
+      'topup',
+      'downgrade',
+      'cancel-scheduled',
+    ]) {
       expect(h.stdout).not.toContain(gone);
     }
     const none = await runCli(['billing']);
@@ -330,7 +347,14 @@ describe('kortix billing', () => {
   test('costs defaults to /usage/cost-summary and --by project rolls up', async () => {
     const config = writeConfig(startServer());
     const s = await runCli(
-      ['billing', 'costs', '--since', '2026-08-01T00:00:00.000Z', '--until', '2026-08-08T00:00:00.000Z'],
+      [
+        'billing',
+        'costs',
+        '--since',
+        '2026-08-01T00:00:00.000Z',
+        '--until',
+        '2026-08-08T00:00:00.000Z',
+      ],
       config,
     );
     expect(s.code).toBe(0);
@@ -344,15 +368,34 @@ describe('kortix billing', () => {
     expect(p.code).toBe(0);
     expect(call('GET', '/v1/usage/cost-by-project')?.search).toContain('sort=name_asc');
     expect(p.stdout).toContain('Atlas');
-    const scoped = await runCli(['billing', 'costs', '--by', 'project', '--project', 'project-self'], config);
+    const scoped = await runCli(
+      ['billing', 'costs', '--by', 'project', '--project', 'project-self'],
+      config,
+    );
     expect(scoped.code).toBe(0);
-    expect(calls.find((c) => c.path === '/v1/usage/cost-by-project' && c.search.includes('project_id=project-self'))).toBeTruthy();
+    expect(
+      calls.find(
+        (c) =>
+          c.path === '/v1/usage/cost-by-project' && c.search.includes('project_id=project-self'),
+      ),
+    ).toBeTruthy();
   });
 
   test('costs --by session rolls up per session and forwards owner/project scope', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['billing', 'costs', '--by', 'session', '--owner', 'user_9', '--project', 'project-self', '--sort', 'recent'],
+      [
+        'billing',
+        'costs',
+        '--by',
+        'session',
+        '--owner',
+        'user_9',
+        '--project',
+        'project-self',
+        '--sort',
+        'recent',
+      ],
       config,
     );
     expect(r.code).toBe(0);
@@ -369,7 +412,10 @@ describe('kortix billing', () => {
     const config = writeConfig(startServer());
     for (const [args, message] of [
       [['--sort', 'bogus'], '--sort must be one of'],
-      [['--by', 'session', '--sort', 'name_asc'], '--sort name_asc is only valid with --by project'],
+      [
+        ['--by', 'session', '--sort', 'name_asc'],
+        '--sort name_asc is only valid with --by project',
+      ],
       [['--by', 'bogus'], '--by must be project or session'],
     ] as const) {
       const r = await runCli(['billing', 'costs', ...args], config);
@@ -385,7 +431,9 @@ describe('kortix billing', () => {
     expect(r.code).toBe(0);
     expect(readFileSync(out, 'utf8')).toContain('project_id,total_cost_usd');
     expect(r.stdout).toContain('capped at 10000 rows');
-    const csvCall = calls.find((c) => c.path === '/v1/usage/cost-by-project' && c.search.includes('format=csv'));
+    const csvCall = calls.find(
+      (c) => c.path === '/v1/usage/cost-by-project' && c.search.includes('format=csv'),
+    );
     expect(csvCall).toBeTruthy();
   });
 

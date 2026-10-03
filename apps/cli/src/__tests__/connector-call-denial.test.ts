@@ -1,5 +1,5 @@
-import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { join, resolve } from 'node:path';
 
 /**
  * A denied connector call must reach the agent WITH its remedy.
@@ -152,7 +152,11 @@ describe('a denied connector call carries its remedy', () => {
     ]);
 
     expect(captured[0]?.path).toBe(`/v1/connectors/projects/${PROJECT_ID}/call`);
-    expect(captured[0]?.body).toMatchObject({ connector: 'crm', action: 'whoami', account: 'nope' });
+    expect(captured[0]?.body).toMatchObject({
+      connector: 'crm',
+      action: 'whoami',
+      account: 'nope',
+    });
     expect(result.code).toBe(1);
     expect(result.payload).toEqual({
       ...UNKNOWN_ACCOUNT_DENIAL,
@@ -166,13 +170,7 @@ describe('a denied connector call carries its remedy', () => {
   test('CLI: nothing connected hands back the connect link itself', async () => {
     respondWith = () => jsonResponse(NOTHING_CONNECTED_DENIAL, 403);
 
-    const result = await runCli([
-      'connectors',
-      'call',
-      'crm.whoami',
-      '--project',
-      PROJECT_ID,
-    ]);
+    const result = await runCli(['connectors', 'call', 'crm.whoami', '--project', PROJECT_ID]);
 
     expect(result.code).toBe(1);
     expect(result.payload.connect_url).toBe('https://app.kortix.test/connect/tok_123');

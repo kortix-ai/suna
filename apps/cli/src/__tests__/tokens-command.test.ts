@@ -5,11 +5,11 @@ import { join } from 'node:path';
 
 import { resolveExpiry } from '../commands/tokens.ts';
 import {
+  type FakeApi,
   runCommand,
   startFakeApi,
   writeConfig,
   writeRunner,
-  type FakeApi,
 } from './support/account-cli-harness.ts';
 
 const ACCOUNT = 'account_1';
@@ -241,7 +241,12 @@ describe('kortix tokens', () => {
     expect(r.code).toBe(0);
     const sent = api!.requests[0]!;
     expect(sent).toMatchObject({ method: 'POST', path: '/v1/accounts/tokens' });
-    const body = sent.body as { name: string; account_id: string; expires_at: string; project_id: string };
+    const body = sent.body as {
+      name: string;
+      account_id: string;
+      expires_at: string;
+      project_id: string;
+    };
     // account_id must ride in the body: this route resolves the account from
     // the body, not the query string.
     expect(body.account_id).toBe(ACCOUNT);
@@ -334,7 +339,10 @@ describe('kortix tokens', () => {
     expect(ls.stdout).toContain('(unverified)');
     expect(ls.stdout).toContain('app_verified');
 
-    const json = await runCommand(runner, ['apps', 'ls', '--json'], { cwd: tmp, configFile: config });
+    const json = await runCommand(runner, ['apps', 'ls', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
     expect(json.code).toBe(0);
     expect(JSON.parse(json.stdout)).toHaveLength(2);
 
@@ -343,7 +351,7 @@ describe('kortix tokens', () => {
       configFile: config,
     });
     expect(rm.code).toBe(0);
-    expect(api!.requests.at(-1)).toMatchObject({
+    expect(api?.requests.at(-1)).toMatchObject({
       method: 'DELETE',
       path: '/v1/oauth/grants/app_verified',
     });

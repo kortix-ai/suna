@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 /**
  * `kortix connectors` — the agent's interface to every configured connector
  * (Composio / Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), absorbed from the old in-sandbox
@@ -17,8 +19,6 @@
  * host/update notices for machine-oriented connector subcommands.
  */
 import { ApiError } from '@kortix/sdk';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import {
   attachmentRef,
   attachmentSlot,
@@ -32,7 +32,13 @@ import {
   mintConnectLink,
   removeConnector,
 } from '../connector-gateway/gateway.ts';
-import { CliError, connectorErrorPayload, out, parseExecArgs, stringValue } from '../connector-gateway/io.ts';
+import {
+  CliError,
+  connectorErrorPayload,
+  out,
+  parseExecArgs,
+  stringValue,
+} from '../connector-gateway/io.ts';
 import { runConnectorMcpServer } from '../connector-gateway/mcp.ts';
 import { saveResult } from '../connector-gateway/result-spill.ts';
 
@@ -82,10 +88,7 @@ async function readCallArgs(rawArgs: string | undefined): Promise<Record<string,
     try {
       text = await readFile(path, 'utf8');
     } catch (error) {
-      throw new CliError(
-        `cannot read args file ${path}: ${(error as Error).message}`,
-        'BAD_ARGS',
-      );
+      throw new CliError(`cannot read args file ${path}: ${(error as Error).message}`, 'BAD_ARGS');
     }
   }
   let parsed: unknown;

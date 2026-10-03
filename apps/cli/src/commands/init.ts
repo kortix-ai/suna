@@ -1,6 +1,6 @@
-import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema/layout';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
@@ -8,20 +8,20 @@ import {
   type StarterTemplateId,
 } from '@kortix/starter';
 
-import { applyScaffold } from '../scaffold.ts';
-import { prompt, confirm } from '../prompts.ts';
-import { selectMultiFromList } from '../tui-select.ts';
-import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import {
-  wireCodingAgents,
-  SUPPORTED_AGENTS,
-  DEFAULT_PRIMARY,
   type CodingAgent,
+  DEFAULT_PRIMARY,
+  SUPPORTED_AGENTS,
+  wireCodingAgents,
 } from '../agents.ts';
 import { printBanner, printGetStarted } from '../banner.ts';
-import { C, help, status } from '../style.ts';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
+import { confirm, prompt } from '../prompts.ts';
+import { applyScaffold } from '../scaffold.ts';
+import { C, help, status } from '../style.ts';
+import { selectMultiFromList } from '../tui-select.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
@@ -97,7 +97,9 @@ const isStarterTemplate = (value: string): value is StarterTemplateId =>
 function normalizeProjectName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return 'kortix-project';
-  return trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project';
+  return (
+    trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project'
+  );
 }
 
 function dirIsGitRepo(path: string): boolean {
@@ -217,7 +219,9 @@ async function initNewProject(flags: InitFlags): Promise<number> {
   if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
-    process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
+    process.stderr.write(
+      `kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`,
+    );
     return 2;
   } else {
     projectName = normalizeProjectName(await prompt(`Project name`, 'my-kortix-project'));
@@ -304,8 +308,8 @@ function initExistingProject(flags: InitFlags): number {
   );
   if (!hasManifest || !hasRuntime) {
     process.stderr.write(
-      "kortix init --force: this directory is not a cloned Kortix project.\n" +
-        "Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n",
+      'kortix init --force: this directory is not a cloned Kortix project.\n' +
+        'Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n',
     );
     return 1;
   }

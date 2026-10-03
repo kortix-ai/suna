@@ -2,12 +2,16 @@ import type { AppAccessMode } from '@kortix/sdk';
 
 import { emitJson, fail, takeFlagValue } from '../command-helpers.ts';
 import { C } from '../style.ts';
-import { context, csv, resolveApp, scoped, type ContextOptions } from './apps-deploy.ts';
+import { type ContextOptions, context, csv, resolveApp, scoped } from './apps-deploy.ts';
 
 // `kortix apps access` and `access-link` — who may open an App, and the
 // short-lived browser URL that bypasses the check.
 
-export async function accessCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+export async function accessCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('access needs an App id or slug');
   rest.splice(rest.indexOf(target), 1);
@@ -29,23 +33,36 @@ export async function accessCommand(rest: string[], options: ContextOptions, jso
     // `--viewer` alone keeps the current mode and principals: the route
     // replaces the whole policy, so they are read back and sent again.
     const current = viewer && !mode ? await ctx.apps.access.get(app.app_id) : null;
-    const access = mode || viewer
-      ? await ctx.apps.access.update(app.app_id, {
-          mode: mode ?? current!.mode,
-          ...(password ? { password } : {}),
-          ...(memberIds ? { member_ids: memberIds } : current ? { member_ids: current.member_ids } : {}),
-          ...(groupIds ? { group_ids: groupIds } : current ? { group_ids: current.group_ids } : {}),
-          ...(viewer ? { viewer_token_scope: viewer as 'off' | 'identity' | 'api' } : {}),
-        })
-      : await ctx.apps.access.get(app.app_id);
+    const access =
+      mode || viewer
+        ? await ctx.apps.access.update(app.app_id, {
+            mode: mode ?? current!.mode,
+            ...(password ? { password } : {}),
+            ...(memberIds
+              ? { member_ids: memberIds }
+              : current
+                ? { member_ids: current.member_ids }
+                : {}),
+            ...(groupIds
+              ? { group_ids: groupIds }
+              : current
+                ? { group_ids: current.group_ids }
+                : {}),
+            ...(viewer ? { viewer_token_scope: viewer as 'off' | 'identity' | 'api' } : {}),
+          })
+        : await ctx.apps.access.get(app.app_id);
     if (mode || viewer) app = await ctx.apps.get(app.app_id);
     return { app, access };
   });
   if (json) emitJson(result);
   else {
-    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n  viewer  ${result.access.viewer_token_scope}\n`);
-    if (result.access.member_ids.length) process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);
-    if (result.access.group_ids.length) process.stdout.write(`  groups  ${result.access.group_ids.join(', ')}\n`);
+    process.stdout.write(
+      `\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n  viewer  ${result.access.viewer_token_scope}\n`,
+    );
+    if (result.access.member_ids.length)
+      process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);
+    if (result.access.group_ids.length)
+      process.stdout.write(`  groups  ${result.access.group_ids.join(', ')}\n`);
     process.stdout.write('\n');
   }
   return 0;

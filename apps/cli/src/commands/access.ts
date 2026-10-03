@@ -1,4 +1,5 @@
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
+import { type ApiClient, clientFromAuth } from '../api/client.ts';
+import type { ProjectSummary } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -11,7 +12,10 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import {
+  type IamAssignment,
+  type IamRole,
   OBJECT_GRANT_ROLE,
+  UUID_RE,
   expiresLabel,
   fetchRoles,
   iamBase,
@@ -22,14 +26,11 @@ import {
   resolveUserId,
   roleRefBody,
   scopeLabel,
-  UUID_RE,
-  type IamAssignment,
-  type IamRole,
 } from '../iam.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { C, help, pad, status } from '../style.ts';
-import type { ProjectSummary } from '../api/types.ts';
 import {
+  type ProjectRole,
   ROLES,
   accessCancel,
   accessGrantMember,
@@ -38,7 +39,6 @@ import {
   accessPending,
   accessResend,
   accessRevoke,
-  type ProjectRole,
 } from './access-projects.ts';
 
 // `kortix access` — the CLI face of the ONE grant table.
@@ -334,9 +334,7 @@ async function accessRequests(
       emitJson(resp);
       return 0;
     }
-    process.stdout.write(
-      `${status.ok(`Rejected request ${C.bold}${requestId}${C.reset}`)}\n`,
-    );
+    process.stdout.write(`${status.ok(`Rejected request ${C.bold}${requestId}${C.reset}`)}\n`);
     return 0;
   }
   return fail(`unknown requests action "${action}" — use ls, approve, or reject`);
@@ -448,7 +446,9 @@ async function grantAssignment(
       ? { type: 'connection', id: f.connection }
       : null;
   if (object && opts.accountScope) {
-    return fail('An object grant is project-scoped — drop --account, or name a project with --project.');
+    return fail(
+      'An object grant is project-scoped — drop --account, or name a project with --project.',
+    );
   }
   if (f.everyone && !object) {
     process.stderr.write(

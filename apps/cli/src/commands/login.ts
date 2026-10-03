@@ -16,13 +16,13 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
+import { openInBrowser } from '../browser.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
+import { fail, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { webDashboardUrl } from '../web-url.ts';
-import { openInBrowser } from '../browser.ts';
 
 const HELP = help`Usage: kortix login [options]
 

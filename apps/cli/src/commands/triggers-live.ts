@@ -1,7 +1,13 @@
 import { formatDurationSeconds } from '@kortix/manifest-schema';
-import { emitJson, fail, missing, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
 import type { ProjectTriggersResponse } from '../api/types.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveProjectContext,
+  surfaceApiError,
+} from '../command-helpers.ts';
+import { C, status } from '../style.ts';
 import { parseMonitorFlags } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────

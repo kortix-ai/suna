@@ -2,14 +2,14 @@ import type { ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
 } from '../command-helpers.ts';
-import { iamBase, resolveUserId, UUID_RE } from '../iam.ts';
+import { UUID_RE, iamBase, resolveUserId } from '../iam.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -161,7 +161,14 @@ export async function runGroups(argv: string[]): Promise<number> {
         return await groupsMembers(ctx.client, ctx.accountId, base, positional[0], json);
 
       case 'add':
-        return await groupsAdd(ctx.client, ctx.accountId, base, positional[0], positional.slice(1), json);
+        return await groupsAdd(
+          ctx.client,
+          ctx.accountId,
+          base,
+          positional[0],
+          positional.slice(1),
+          json,
+        );
 
       case 'remove':
         return await groupsRemove(ctx.client, ctx.accountId, base, positional[0], positional[1]);
@@ -262,7 +269,10 @@ async function groupsSet(
   if (name !== undefined) body.name = name;
   if (description !== undefined) body.description = description;
   if (clearDescription) body.description = null;
-  const updated = await client.patch<GroupRow>(`${base}/${encodeURIComponent(group.group_id)}`, body);
+  const updated = await client.patch<GroupRow>(
+    `${base}/${encodeURIComponent(group.group_id)}`,
+    body,
+  );
   if (json) {
     emitJson(updated);
     return 0;
@@ -323,9 +333,7 @@ async function groupsMembers(
   const label = (m: GroupMemberRow) => emails.get(m.user_id) ?? m.user_id;
   const w = Math.max(...members.map((m) => label(m).length), 6);
   process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.dim}${pad('MEMBER', w)}   ${pad('ADDED', 10)}   USER ID${C.reset}\n`,
-  );
+  process.stdout.write(`  ${C.dim}${pad('MEMBER', w)}   ${pad('ADDED', 10)}   USER ID${C.reset}\n`);
   for (const m of members) {
     process.stdout.write(
       `  ${pad(label(m), w)}   ${pad(m.added_at.slice(0, 10), 10)}   ${C.faded}${m.user_id}${C.reset}\n`,

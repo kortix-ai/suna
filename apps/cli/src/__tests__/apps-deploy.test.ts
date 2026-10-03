@@ -11,6 +11,7 @@ const APP_ID = '99999999-8888-4777-8666-555555555555';
 
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
+let serverPort = 0;
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let uploaded: Uint8Array | null = null;
 
@@ -139,18 +140,27 @@ function startServer(): string {
       if (path === `/v1/projects/${PROJECT}/apps/artifacts` && req.method === 'POST') {
         const input = body as { kind: string; image?: string };
         if (input.kind === 'oci_image') {
-          return Response.json({ artifact: artifact('oci_image', input.image ?? null), upload: null });
+          return Response.json({
+            artifact: artifact('oci_image', input.image ?? null),
+            upload: null,
+          });
         }
         return Response.json({
           artifact: artifact('archive', null),
-          upload: { url: `http://127.0.0.1:${server!.port}/upload-bucket/source.tar.gz`, max_bytes: 10_000_000 },
+          upload: {
+            url: `http://127.0.0.1:${serverPort}/upload-bucket/source.tar.gz`,
+            max_bytes: 10_000_000,
+          },
         });
       }
       if (path === '/upload-bucket/source.tar.gz' && req.method === 'PUT') {
         uploaded = body as Uint8Array;
         return new Response(null, { status: 200 });
       }
-      if (path === `/v1/projects/${PROJECT}/apps/artifacts/art-1/finalize` && req.method === 'POST') {
+      if (
+        path === `/v1/projects/${PROJECT}/apps/artifacts/art-1/finalize` &&
+        req.method === 'POST'
+      ) {
         return Response.json(artifact('archive', null));
       }
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'POST') {
@@ -162,6 +172,7 @@ function startServer(): string {
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
+  serverPort = server?.port ?? 0;
   return `http://127.0.0.1:${server.port}`;
 }
 
@@ -242,11 +253,16 @@ describe('kortix apps deploy (characterization)', () => {
       ].join('\n'),
     );
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'deploy', '--output-dir', 'build', '--project', PROJECT], config);
+    const r = await runCli(
+      ['apps', 'deploy', '--output-dir', 'build', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(0);
     // No --manifest-app needed: a single apps block is the default. The App is
     // provisioned from the manifest's identity + resources.
-    const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
+    const create = calls.find(
+      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
+    );
     expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4 });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
     expect(deploymentCall()?.body).toEqual({
@@ -265,9 +281,13 @@ describe('kortix apps deploy (characterization)', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
+    const create = calls.find(
+      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
+    );
     expect(create?.body).toEqual({ slug: 'site', name: 'site' });
-    const register = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps/artifacts`);
+    const register = calls.find(
+      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps/artifacts`,
+    );
     expect(register?.body).toEqual({ kind: 'archive', media_type: 'application/gzip' });
     // The directory went up as a gzip archive, not raw.
     expect(uploaded?.[0]).toBe(0x1f);
@@ -322,7 +342,9 @@ describe('kortix apps deploy (characterization)', () => {
       config,
     );
     expect(r.code).toBe(0);
-    const register = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps/artifacts`);
+    const register = calls.find(
+      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps/artifacts`,
+    );
     expect(register?.body).toEqual({ kind: 'oci_image', image: 'registry.example.test/app:7' });
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     expect(deploymentCall()?.body).toEqual({
@@ -352,7 +374,10 @@ describe('kortix apps deploy (characterization)', () => {
       'kortix_version: 2\napps:\n  storefront:\n    path: web\n    type: static\n',
     );
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'deploy', '--manifest-app', 'nope', '--project', PROJECT], config);
+    const r = await runCli(
+      ['apps', 'deploy', '--manifest-app', 'nope', '--project', PROJECT],
+      config,
+    );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('kortix.yaml has no apps.nope block');
   });

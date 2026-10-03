@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseExecArgs } from '../connector-gateway/io';
 import { parseConnectorCallInput } from '../commands/connector-gateway';
+import { parseExecArgs } from '../connector-gateway/io';
 
 describe('kortix connectors call input', () => {
   test('accepts the dotted tool reference returned by discovery', () => {
@@ -29,7 +29,9 @@ describe('kortix connectors call input', () => {
   });
 
   test('rejects an agent override because session identity is token-bound', () => {
-    expect(() => parseConnectorCallInput(['google_drive.list_files', '{}'], { as: 'mike' })).toThrow(
+    expect(() =>
+      parseConnectorCallInput(['google_drive.list_files', '{}'], { as: 'mike' }),
+    ).toThrow(
       '`--as` is not supported. Connector identity is fixed by the session token. Start a new session to use another agent.',
     );
   });

@@ -1,7 +1,7 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 // Characterization of `kortix whoami`'s two HUMAN-facing renderings, black-box
 // against a real local API: the `--token-only` block and the human summary's
@@ -21,7 +21,12 @@ const ACCOUNT_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
 
 const ACCOUNTS = [
   { account_id: ACCOUNT_ID, slug: 'acme', name: 'Acme', role: 'owner' },
-  { account_id: 'bbbbbbbb-2222-4222-8222-222222222222', slug: 'beta', name: 'Beta', role: 'member' },
+  {
+    account_id: 'bbbbbbbb-2222-4222-8222-222222222222',
+    slug: 'beta',
+    name: 'Beta',
+    role: 'member',
+  },
 ];
 
 // One /accounts/me payload per bearer token, so every case gets its own
