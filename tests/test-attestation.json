@@ -1,11 +1,11 @@
 {
-  "source_hash": "1a1b8293687b73725bb6cbeaa1a73c552480cdf5c8d80cfa8898a14d0d54ee90",
-  "head": "05959e602fb36c8eb1fc632e76d498f4e6322c44",
-  "passed": true,
+  "source_hash": "92e01260b7c0c9507e0c8c76812b65db620054d40b525070fd8704bd424cee1a",
+  "head": "b06bffd397e0719c81a957782ee3f40dab6fa71e",
+  "passed": false,
   "lanes": {
-    "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T01:01:17.720Z"
+  "at": "2026-10-03T07:12:47.205Z"
 }
