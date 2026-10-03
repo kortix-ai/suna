@@ -125,9 +125,10 @@ function setupCapture(deps) {
     const granted = capture.grantedPermissions(permissions);
     if (lastGranted !== null && granted.some((key) => !lastGranted.includes(key)) && recorder.state().running) recorder.stop();
     lastGranted = granted;
-    if (want.recorder) recorder.run();
+    // A sign-in rewrites the library's sync settings: nothing runs meanwhile.
+    if (want.recorder && !pending) recorder.run();
     else recorder.stop();
-    if (want.actions) actions.run();
+    if (want.actions && !pending) actions.run();
     else actions.stop();
     return {
       ...capture.captureStatusFrom({
