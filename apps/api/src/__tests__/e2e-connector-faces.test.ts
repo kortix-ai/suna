@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +27,7 @@ const ACCOUNT = 'acct-faces';
 const PROJECT = 'proj-faces';
 const USER = 'user-faces';
 const TOKEN = 'kortix_test_connector_faces';
+const hermeticHome = mkdtempSync(join(tmpdir(), 'kortix-faces-home-'));
 const DENIED_TOKEN = 'kortix_test_connector_faces_no_email';
 const SERVER_SECRET = 'server_side_secret';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -347,6 +349,7 @@ function makeDeps(): ConnectorRouterDeps {
     // The flag itself has its own unit coverage; this fake reports every flag on.
     featureFlagEnabled: async () => true,
     resolvePrincipal: async (c) => {
+      if (process.env.FACES_DEBUG) console.log('PRIN-DEBUG', c.req.method, c.req.url, 'auth=', c.req.header('authorization'));
       const authorization = c.req.header('authorization');
       if (authorization === `Bearer ${TOKEN}`) return principal();
       if (authorization === `Bearer ${DENIED_TOKEN}`) {
@@ -361,6 +364,7 @@ function makeDeps(): ConnectorRouterDeps {
     // path (the production impl accepts a logged-in user token here — this is the
     // local-connector unlock). Authorize only the matching project.
     resolveProjectPrincipal: async (c, projectId) => {
+      if (process.env.FACES_DEBUG) console.log('PROJ-DEBUG', c.req.method, c.req.url, 'projectId=', projectId, 'expected=', PROJECT);
       if (projectId !== PROJECT) return null;
       const authorization = c.req.header('authorization');
       if (authorization === `Bearer ${TOKEN}`) return principal();
@@ -386,9 +390,13 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     cwd: REPO_ROOT,
     env: {
       PATH: process.env.PATH,
-      HOME: process.env.HOME,
+      // A hermetic HOME: the sandbox's real ~/.kortix auth must never reach
+      // the mock (its real token is not the test's, so every request 403s).
+      HOME: hermeticHome,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
+      KORTIX_URL: apiUrl,
+      KORTIX_PROJECT_ID: PROJECT,
       ...extraEnv,
     },
     stdout: 'pipe',
@@ -399,6 +407,7 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
+  if (exitCode !== 0) console.log('FACES-DEBUG', JSON.stringify({ args, exitCode, stderr: stderr.slice(0, 300), stdout: stdout.slice(0, 300) }));
   expect(stderr).toBe('');
   expect(exitCode).toBe(0);
   return JSON.parse(stdout);
@@ -674,9 +683,11 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
-        HOME: process.env.HOME,
+        HOME: hermeticHome,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        KORTIX_URL: apiUrl,
+        KORTIX_PROJECT_ID: PROJECT,
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -768,7 +779,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
-        HOME: process.env.HOME,
+        HOME: hermeticHome,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
@@ -840,7 +851,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
-        HOME: process.env.HOME,
+        HOME: hermeticHome,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
