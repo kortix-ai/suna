@@ -1,0 +1,10 @@
+{
+  "repo": "kortix-ai/capture",
+  "version": null,
+  "platforms": {
+    "darwin-arm64": null,
+    "darwin-x64": null,
+    "win32-x64": null,
+    "linux-x64": null
+  }
+}

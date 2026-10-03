@@ -126,6 +126,7 @@ jobs:
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
             KORTIX_DESKTOP_SENTRY_DSN?
+            CAPTURE_RELEASES_TOKEN?
 
       # Decide whether this platform can SIGN. We never hard-fail on missing
       # certs — a build should always produce an installer. If the platform's

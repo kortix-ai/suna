@@ -670,6 +670,7 @@ jobs:
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
             KORTIX_DESKTOP_SENTRY_DSN?
+            CAPTURE_RELEASES_TOKEN?
 
       # Never hard-fail on missing certs — a release should always ship an
       # installer. Sign (+ notarize on macOS) when the platform's secrets are

@@ -38,6 +38,7 @@ const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
+const { setupCapture } = require('./capture-host');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -244,6 +245,8 @@ let mainWindow = null;
 let splashWindow = null;
 /** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
 let computerShell = null;
+/** Kortix Capture (capture-host.js). Set once the app is ready. */
+let captureShell = null;
 
 function launchSize() {
   // ~85% of the primary display, clamped to [1280,1700] × [820,1080] — same as
@@ -1108,6 +1111,9 @@ function registerIpc() {
         if (typeof cmd === 'string' && cmd.startsWith('computer_') && computerShell) {
           return computerShell.invoke(cmd, args);
         }
+        if (typeof cmd === 'string' && cmd.startsWith('capture_') && captureShell) {
+          return captureShell.invoke(cmd, args);
+        }
         throw new Error(`Unknown command: ${cmd}`);
     }
   });
@@ -1248,6 +1254,20 @@ if (!gotLock) {
       getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
       openMainWindow,
       backgroundColor: currentBackgroundColor,
+      captureItems: () => captureShell?.trayItems() ?? [],
+      captureKeepsRunning: () => captureShell?.keepRunning() ?? false,
+    });
+    captureShell = setupCapture({
+      backend: () => computerShell.backend(),
+      onChange: () => computerShell.renderTray(),
+      // Tray "Capture Settings…": the page opens its Capture dialog.
+      openSettings: () => {
+        const opened = needsMainWindow(mainWindow);
+        if (opened) openMainWindow();
+        revealMainWindow(mainWindow);
+        if (opened) mainWindow?.webContents.once('did-finish-load', () => sendDesktopCommand('capture-settings'));
+        else sendDesktopCommand('capture-settings');
+      },
     });
     registerIpc();
     nativeTheme.themeSource = readTheme();
@@ -1288,6 +1308,7 @@ if (!gotLock) {
 
     // Tray + state watch. After the window, so a slow status never delays it.
     computerShell.start();
+    captureShell.start();
   });
 
   // With a paired computer the app stays in the tray on every platform; the
