@@ -572,7 +572,6 @@ export const projectGitConnections = kortixSchema.table(
   (table) => [
     index('idx_project_git_connections_account').on(table.accountId),
     uniqueIndex('idx_project_git_connections_project').on(table.projectId),
-    index('idx_project_git_connections_provider_repo').on(table.provider, table.externalRepoId),
     index('idx_project_git_connections_status').on(table.status),
   ],
 );
