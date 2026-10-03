@@ -253,4 +253,17 @@ Its first corrected rerun stopped before execution because Docker was unavailabl
 It reported one passed test, zero skipped, and zero flaky results; root duration was 86.3 seconds.
 Target startup took 33.40 seconds, and the test including teardown took 47.26 seconds.
 The browser agent used three model calls and approximately 14,800 tokens.
-The cache comparison, deterministic baseline, and seeded false-pass checks remain pending.
+Three executions with the corrected fixture produced these measurements:
+
+| Mode | Agent step | Model calls | Model tokens | Root duration | Overall result |
+| --- | --- | --- | --- | --- | --- |
+| Fresh, `--no-cache` | 16.98 s | 3 | 14,844 | 86.3 s | Passed, including cleanup |
+| Cache enabled, first recording | 27.09 s | 4 | 19,823 | 110.2 s | Passed, including cleanup |
+| Warm action replay | 16.63 s | 0 | 0 | 163.9 s | Prompt assertions passed; repository cleanup failed |
+
+The warm run reported one replayed step, not a provider token-cache hit.
+Every request, transcript, and reload assertion passed. Each of its three repository purge attempts timed out upstream after 15 seconds.
+Both cloud removals were confirmed; recovery records remained available.
+This is evidence that replay can avoid browser-agent inference. It is not evidence of a reliable gate or an end-to-end speedup.
+Only three corrected-fixture executions were measured on one loaded machine.
+The deterministic baseline, seeded false-pass checks, and 20-run reliability criteria remain pending.
