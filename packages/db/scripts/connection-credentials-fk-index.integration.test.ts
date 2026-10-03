@@ -6,7 +6,7 @@
  * columns cover it: the two single-column indexes and both partial unique
  * indexes on the table cannot serve the RI lookup, so every
  * connector_connections delete scanned kortix.connection_credentials. The
- * migration 20261002212941248 builds the covering index CONCURRENTLY; this
+ * migration 20261003002921129 builds the covering index CONCURRENTLY; this
  * test fails on a database migrated without it.
  */
 import { describe, expect, test } from 'bun:test';
