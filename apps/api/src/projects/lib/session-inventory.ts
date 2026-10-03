@@ -154,13 +154,10 @@ export function selectSessionRowsForViewer(input: {
     // sessions the manager can open, including warm and soft-deleted rows, but
     // never return an inaccessible session as a redacted breadcrumb.
     //
-    // A soft-deleted WARM DRAFT is the one exception. It was never prompted, so
-    // its tombstone holds no conversation or work to audit — keeping it listed
-    // is what made the Sessions page's empty state unreachable on a fresh
-    // project: every deleted "New session" row stayed listed forever. See
-    // lib/warm-sessions.ts. A warm row that dropped its marker (the user
-    // prompted it) deletes like any other real session and keeps its
-    // tombstone here.
+    // A soft-deleted warm draft is the one exception: it was never prompted, so
+    // its tombstone holds no conversation or work to audit, and listing it kept
+    // the Sessions page's empty state unreachable on a fresh project. A warm
+    // row that dropped its marker deletes like any other real session.
     return {
       authorized: true,
       items: items.filter(

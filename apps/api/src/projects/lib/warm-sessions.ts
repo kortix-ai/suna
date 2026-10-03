@@ -20,9 +20,8 @@
  * bills compute from creation (warmPoolGrantMs), and a billed session must
  * stay listed so its owner can see and stop it. The manager `project` scope
  * keeps a live warm row for lifecycle inspection too, and drops a soft-deleted
- * warm draft in every scope: it was never prompted, so its tombstone holds
- * nothing to audit, and keeping it listed left the Sessions page unable to
- * ever reach its empty state on a fresh project. `recordSessionActivity`
+ * warm draft in every scope: never prompted, nothing to audit, and listing the
+ * tombstone left the Sessions page's empty state unreachable. `recordSessionActivity`
  * DELETES it in the same statement that stamps the first accepted turn
  * (projects/session-activity.ts), so "used" and "last active" are one fact
  * written once and cannot drift apart. From that moment the row lists like
