@@ -16,16 +16,16 @@
  * Both writes assert `project.customize.write`.
  */
 
-import type { ModelDefaultsResponse } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
+import type { ModelDefaultsResponse } from '@kortix/sdk';
 import {
   emitJson,
-  fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status, trim } from '../style.ts';
 
@@ -167,9 +167,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     if (on) enabledCount += 1;
     const isDefault = id === picker.defaultModel;
     const marker = isDefault ? `${C.green}●${C.reset} ` : '  ';
-    const state = on
-      ? `${C.green}${pad('on', 6)}${C.reset}`
-      : `${C.faded}${pad('off', 6)}${C.reset}`;
+    const state = on ? `${C.green}${pad('on', 6)}${C.reset}` : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
       `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
@@ -191,10 +189,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
 }
 
 /** How a model is paid for: a ChatGPT subscription, a provider API key, or Kortix. */
-export function paidVia(
-  id: string,
-  provider: string | undefined,
-): 'ChatGPT' | 'API key' | 'Kortix' {
+export function paidVia(id: string, provider: string | undefined): 'ChatGPT' | 'API key' | 'Kortix' {
   if (id.startsWith('codex/') || provider === 'codex') return 'ChatGPT';
   if (!id.includes('/') || provider === 'kortix') return 'Kortix';
   return 'API key';
@@ -319,3 +314,4 @@ function row(label: string, value: string | null): void {
     `  ${C.dim}${pad(label, 9)}${C.reset} ${value ? `${C.cyan}${value}${C.reset}` : `${C.faded}unset${C.reset}`}\n`,
   );
 }
+

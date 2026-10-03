@@ -9,17 +9,17 @@ import type {
   ProjectSecret,
 } from '../api/types.ts';
 import { openInBrowser } from '../browser.ts';
+import { readSecret, readVisible } from '../prompts.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
-  fail,
-  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
+  missing,
 } from '../command-helpers.ts';
-import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
@@ -242,8 +242,7 @@ async function providersLogin(
   enterpriseUrl: string | undefined,
   opts: CtxOpts,
 ): Promise<number> {
-  if (!provider)
-    return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
+  if (!provider) return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
   if (!OAUTH_PROVIDERS.has(provider)) {
     process.stderr.write(
       `${status.err(`OAuth not supported for "${provider}".`)}\n` +
@@ -460,3 +459,4 @@ function formatDuration(ms: number): string {
   const d = Math.floor(h / 24);
   return `${d}d`;
 }
+

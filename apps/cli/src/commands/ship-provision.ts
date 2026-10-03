@@ -7,14 +7,14 @@
  */
 
 import type { Auth } from '../api/auth.ts';
-import { type ApiClient, ApiError } from '../api/client.ts';
 import { activeHostName } from '../api/config.ts';
-import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
-import { loadLocalManifest } from '../manifest.ts';
-import { saveLink } from '../project-link.ts';
-import { confirm } from '../prompts.ts';
+import { ApiError, type ApiClient } from '../api/client.ts';
 import { C, status } from '../style.ts';
+import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
+import { saveLink } from '../project-link.ts';
+import { loadLocalManifest } from '../manifest.ts';
 import { selectFromList } from '../tui-select.ts';
+import { confirm } from '../prompts.ts';
 
 /** The ship flags the provisioning helpers read. */
 interface ProvisionFlags {
@@ -78,20 +78,13 @@ export async function linkGitHubBackedProject(
           `  ${C.dim}Or skip the app with a token: ${C.reset}${C.cyan}kortix ship --github-token <PAT>${C.reset}\n\n`,
       );
       if (opts.yes) {
-        throw new Error(
-          'GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.',
-        );
+        throw new Error('GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.');
       }
       const again = await confirm('Installed it? Retry the link', true);
-      if (!again)
-        throw new Error(
-          'Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.',
-        );
+      if (!again) throw new Error('Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.');
     }
   }
-  throw new Error(
-    'GitHub App still not detected after several tries — install it, or use --github-token <PAT>.',
-  );
+  throw new Error('GitHub App still not detected after several tries — install it, or use --github-token <PAT>.');
 }
 
 /** Write `.kortix/link.json` so this folder is bound to the cloud project.
@@ -145,7 +138,9 @@ export async function resolveShipAccount(
   }
 
   if (flags.account) {
-    const match = accounts.find((a) => a.account_id === flags.account || a.slug === flags.account);
+    const match = accounts.find(
+      (a) => a.account_id === flags.account || a.slug === flags.account,
+    );
     if (!match) {
       const known = accounts.map((a) => a.slug).join(', ') || '(none)';
       throw new Error(`No account "${flags.account}" — you belong to: ${known}`);

@@ -1,3 +1,15 @@
+import { splitHelp } from '../command-argv.ts';
+import {
+  emitJson,
+  resolveProjectContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+  fail,
+  missing,
+} from '../command-helpers.ts';
+import { UUID_RE } from '../iam.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
   ChangeRequestDetailResponse,
@@ -7,18 +19,6 @@ import type {
   ChangeRequestStatus,
   ChangeRequestsListResponse,
 } from '../api/types.ts';
-import { splitHelp } from '../command-argv.ts';
-import {
-  emitJson,
-  fail,
-  missing,
-  resolveProjectContext,
-  surfaceApiError,
-  takeFlagBool,
-  takeFlagValue,
-} from '../command-helpers.ts';
-import { UUID_RE } from '../iam.ts';
-import { C, help, pad, status } from '../style.ts';
 
 /** GET /projects/:id/version-diff — a summary, no patch body. */
 interface VersionDiffPreview {
@@ -226,8 +226,7 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
     return fail((err as Error).message);
   }
   const filter = (statusFilter ?? 'open').toLowerCase();
-  if (!['open', 'merged', 'closed', 'all'].includes(filter))
-    return fail('--status must be open|merged|closed|all');
+  if (!['open', 'merged', 'closed', 'all'].includes(filter)) return fail('--status must be open|merged|closed|all');
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -307,16 +306,12 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
   const head = displayBranch(cr.head_ref);
   const base = displayBranch(cr.base_ref);
   const headSha = cr.head_commit_sha ? cr.head_commit_sha.slice(0, 7) : '';
-  process.stdout.write(
-    `  ${C.dim}Head ${C.reset}${head}${headSha ? `  ${C.faded}${headSha}${C.reset}` : ''}\n`,
-  );
+  process.stdout.write(`  ${C.dim}Head ${C.reset}${head}${headSha ? `  ${C.faded}${headSha}${C.reset}` : ''}\n`);
   process.stdout.write(`  ${C.dim}Base ${C.reset}${base}\n`);
   process.stdout.write(`  ${C.dim}Opened ${C.reset}${relativeTime(cr.created_at)}\n`);
   if (cr.merged_at) {
     const m = cr.merge_commit_sha?.slice(0, 7);
-    process.stdout.write(
-      `  ${C.dim}Merged ${C.reset}${relativeTime(cr.merged_at)}${m ? `  ${C.faded}${m}${C.reset}` : ''}\n`,
-    );
+    process.stdout.write(`  ${C.dim}Merged ${C.reset}${relativeTime(cr.merged_at)}${m ? `  ${C.faded}${m}${C.reset}` : ''}\n`);
   }
   if (cr.closed_at && cr.status === 'closed') {
     process.stdout.write(`  ${C.dim}Closed ${C.reset}${relativeTime(cr.closed_at)}\n`);
@@ -562,7 +557,11 @@ async function crMergePreview(
  * records the note on the CR (CRs have no comment table) and delivers it to
  * the agent that opened the change, which then revises it.
  */
-async function crRequestChanges(argv: string[], opts: CtxOpts, json = false): Promise<number> {
+async function crRequestChanges(
+  argv: string[],
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
   let message: string | undefined;
   try {
     message = takeFlagValue(argv, ['--message', '--feedback', '-m']);
@@ -635,7 +634,9 @@ async function crVersionDiff(argv: string[], opts: CtxOpts, json = false): Promi
     return 0;
   }
   process.stdout.write('\n');
-  process.stdout.write(`  ${displayBranch(diff.from)} → ${displayBranch(diff.into)}\n`);
+  process.stdout.write(
+    `  ${displayBranch(diff.from)} → ${displayBranch(diff.into)}\n`,
+  );
   if (diff.is_same_ref) {
     process.stdout.write(`  ${C.dim}Same version — nothing to compare.${C.reset}\n\n`);
     return 0;

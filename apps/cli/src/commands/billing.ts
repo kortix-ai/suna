@@ -1,17 +1,17 @@
 import { writeFile } from 'node:fs/promises';
 import { fetchCostExportCsv } from '@kortix/sdk';
-import { dollarsToCredits, formatCreditsWithSign, formatDollarsAsCredits } from '@kortix/shared';
+import { dollarsToCredits, formatDollarsAsCredits, formatCreditsWithSign } from '@kortix/shared';
 
 import { withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
-  type AccountContext,
   emitJson,
   fail,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  type AccountContext,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -204,10 +204,7 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
   const sub = state.subscription ?? {};
   process.stdout.write(`\n  ${C.bold}Billing — ${ctx.accountId}${C.reset}\n\n`);
   process.stdout.write(
-    row(
-      'plan',
-      `${plan}${state.plan?.sublabel ? ` ${C.dim}${state.plan.sublabel}${C.reset}` : ''}`,
-    ),
+    row('plan', `${plan}${state.plan?.sublabel ? ` ${C.dim}${state.plan.sublabel}${C.reset}` : ''}`),
   );
   process.stdout.write(row('state', state.billing_state ?? sub.status ?? '—'));
   process.stdout.write(row('credits', credits(state.credits?.total)));
@@ -220,8 +217,7 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
       row('seats', `${state.seats.count} × ${money(state.seats.price_per_seat_usd)}/mo`),
     );
   }
-  if (state.member_count !== undefined)
-    process.stdout.write(row('members', String(state.member_count)));
+  if (state.member_count !== undefined) process.stdout.write(row('members', String(state.member_count)));
   if (sub.billing_period) process.stdout.write(row('period', sub.billing_period));
   if (sub.current_period_end) {
     process.stdout.write(row('renews', new Date(sub.current_period_end * 1000).toISOString()));
@@ -266,13 +262,9 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
       emitJson(data);
       return 0;
     }
-    process.stdout.write(
-      `\n  ${C.bold}${f.summary ? 'Transaction summary' : 'Usage history'}${C.reset}\n\n`,
-    );
+    process.stdout.write(`\n  ${C.bold}${f.summary ? 'Transaction summary' : 'Usage history'}${C.reset}\n\n`);
     for (const [key, value] of Object.entries(data)) {
-      process.stdout.write(
-        row(key, key === 'totalCredits' || key === 'totalDebits' ? credits(value) : String(value)),
-      );
+      process.stdout.write(row(key, key === 'totalCredits' || key === 'totalDebits' ? credits(value) : String(value)));
     }
     process.stdout.write('\n');
     return 0;
@@ -308,9 +300,7 @@ async function transactionsCommand(ctx: AccountContext, f: Flags): Promise<numbe
     return 0;
   }
   const typeW = Math.max(4, ...page.transactions.map((t) => t.type.length));
-  process.stdout.write(
-    `\n  ${C.bold}${pad('WHEN', 20)}  ${pad('TYPE', typeW)}  ${pad('CREDITS', 10)}  BALANCE (CREDITS)${C.reset}\n`,
-  );
+  process.stdout.write(`\n  ${C.bold}${pad('WHEN', 20)}  ${pad('TYPE', typeW)}  ${pad('CREDITS', 10)}  BALANCE (CREDITS)${C.reset}\n`);
   for (const t of page.transactions) {
     const when = String(t.created_at).slice(0, 19).replace('T', ' ');
     const amount = formatCreditsWithSign(dollarsToCredits(t.amount), { showDecimals: true });
@@ -417,11 +407,7 @@ async function costsCommand(ctx: AccountContext, f: CostsFlags): Promise<number>
  *  cap — surface it so a truncated finance export is never silent. `by` is
  *  already validated to project|session; `name_asc` to the project rollup, so
  *  the two option shapes narrow without a cast. */
-async function costsCsv(
-  ctx: AccountContext,
-  f: CostsFlags,
-  kind: 'projects' | 'sessions',
-): Promise<number> {
+async function costsCsv(ctx: AccountContext, f: CostsFlags, kind: 'projects' | 'sessions'): Promise<number> {
   const window = { accountId: ctx.accountId, projectId: f.project, from: f.since, to: f.until };
   // costsCommand validated --sort against COST_SORTS (and name_asc onto the
   // project rollup), so the literal union narrows both option shapes without a

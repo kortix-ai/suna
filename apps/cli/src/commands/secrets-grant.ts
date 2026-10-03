@@ -7,8 +7,8 @@
  */
 
 import {
-  emitJson,
   fail,
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -28,6 +28,7 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
  * it. It only widens the named agent's list; it never replaces it.
  */
 export async function secretsGrant(argv: string[], opts: CtxOpts, json = false): Promise<number> {
+
   let agent: string | undefined;
   try {
     agent = takeFlagValue(argv, ['--agent']);

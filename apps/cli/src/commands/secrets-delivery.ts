@@ -8,16 +8,16 @@
 
 import { readFileSync } from 'node:fs';
 import {
+  brokerProjectSecretRequest,
+  setProjectSecretStrategy,
   type SecretBrokerRequest,
   type SecretEgressPolicy,
   type SecretInjectionSlot,
-  brokerProjectSecretRequest,
-  setProjectSecretStrategy,
 } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import {
-  emitJson,
   fail,
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -139,8 +139,7 @@ const hasHttpPolicyOptions = (f: DeliveryFlags): boolean =>
 
 /** The legacy http_broker row: host rules + exactly one injection slot. */
 function buildBrokerPolicy(f: DeliveryFlags): PolicyResult {
-  if (f.allowedHosts.length === 0)
-    return { error: 'A legacy http-broker row requires --allow-host.' };
+  if (f.allowedHosts.length === 0) return { error: 'A legacy http-broker row requires --allow-host.' };
   const injectionValues = [f.injectHeader, f.injectQuery, f.injectJson].filter(
     (value): value is string => value !== undefined,
   );
@@ -223,11 +222,7 @@ function buildEgressPolicy(f: DeliveryFlags): PolicyResult {
   };
 }
 
-export async function secretsDelivery(
-  args: string[],
-  opts: CtxOpts,
-  json = false,
-): Promise<number> {
+export async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Promise<number> {
   const [identifier, strategyRaw] = args;
   const options = args.slice(2);
   if (!identifier || !IDENTIFIER_RE.test(identifier)) {
@@ -260,8 +255,8 @@ export async function secretsDelivery(
   }
   if (strategy !== 'broker' && f.consumerFlag !== undefined) {
     return fail(
-      '--consumer names the Kortix service that spends a none-exposure secret. Pass it with the `broker` alias.',
-    );
+        '--consumer names the Kortix service that spends a none-exposure secret. Pass it with the `broker` alias.',
+      );
   }
   if (strategy !== 'broker' && strategy !== 'egress' && hasHttpPolicyOptions(f)) {
     return fail(

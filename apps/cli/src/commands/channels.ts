@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { ApiError } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -10,10 +9,11 @@ import {
   takeFlagValue,
   takeFlagValues,
 } from '../command-helpers.ts';
+import { ApiError } from '../api/client.ts';
 import { C, help, pad, status } from '../style.ts';
-import { bindingsLs, bindingsPatch } from './channels-bindings.ts';
-import { emailCommand } from './channels-email.ts';
 import { teamsConnect, teamsDisconnect, teamsManifest, teamsStatus } from './channels-teams.ts';
+import { emailCommand } from './channels-email.ts';
+import { bindingsLs, bindingsPatch } from './channels-bindings.ts';
 
 const HELP = help`Usage: kortix channels <subcommand> [options]
 
@@ -413,10 +413,9 @@ function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: str
   );
 }
 
-async function channelsDisconnect(ctxOpts: {
-  projectArg?: string;
-  hostArg?: string;
-}): Promise<number> {
+async function channelsDisconnect(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
@@ -428,10 +427,9 @@ async function channelsDisconnect(ctxOpts: {
   return 0;
 }
 
-async function channelsManifest(ctxOpts: {
-  projectArg?: string;
-  hostArg?: string;
-}): Promise<number> {
+async function channelsManifest(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
@@ -492,11 +490,7 @@ async function channelsManifest(ctxOpts: {
   return 0;
 }
 
-function resolveSecret(
-  label: string,
-  flagValue: string | undefined,
-  envName: string,
-): string | null {
+function resolveSecret(label: string, flagValue: string | undefined, envName: string): string | null {
   let value = flagValue?.trim() ?? '';
   if (value === '-') {
     value = readFileSync(0, 'utf-8').trim();

@@ -46,10 +46,7 @@ interface BindFlags {
 /** `#general`, a person's name for a Slack DM, or the id when nothing names it. */
 function bindingLabel(b: ChannelBinding): string {
   if (b.platform === 'slack') {
-    if (b.channelName)
-      return b.channelType === 'im' || b.channelType === 'mpim'
-        ? b.channelName
-        : `#${b.channelName}`;
+    if (b.channelName) return b.channelType === 'im' || b.channelType === 'mpim' ? b.channelName : `#${b.channelName}`;
     if (b.channelUnavailable) return `unavailable (${b.channelId})`;
   }
   if (b.threadTitle) return `${b.channelName ?? b.channelId} · ${b.threadTitle}`;

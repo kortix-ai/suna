@@ -15,7 +15,7 @@
  */
 import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
 import { loadAuth } from '../api/auth.ts';
-import { type ApiClient, clientFromAuth } from '../api/client.ts';
+import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { CliError } from './io.ts';
@@ -279,8 +279,7 @@ export async function setSecrets(opts: {
   projectOverride?: string;
 }): Promise<string[]> {
   const entries = Object.entries(opts.values);
-  if (entries.length === 0)
-    throw new CliError('at least one NAME: value pair is required', 'USAGE');
+  if (entries.length === 0) throw new CliError('at least one NAME: value pair is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
   const saved: string[] = [];
   for (const [name, value] of entries) {

@@ -10,7 +10,7 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, fail, missing, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, takeFlagBool, takeFlagValue, fail, missing } from '../command-helpers.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -182,7 +182,9 @@ function hostsLs(json = false): number {
   // Auth-status column: "✓ signed in as <user/email>" vs "○ not signed in".
   // Width is measured on the visible text (glyph + label), ANSI stripped.
   const statusText = (r: (typeof rows)[number]): string =>
-    r.host.token ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}` : '○ not signed in';
+    r.host.token
+      ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}`
+      : '○ not signed in';
   const statusW = Math.max(...rows.map((r) => statusText(r).length), 8);
 
   process.stdout.write('\n');
@@ -507,3 +509,4 @@ function hostJson(name: string, host: Host, active: boolean) {
     active,
   };
 }
+

@@ -1,5 +1,4 @@
-import { type ApiClient, clientFromAuth } from '../api/client.ts';
-import type { ProjectSummary } from '../api/types.ts';
+import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -11,10 +10,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import {
-  type IamAssignment,
-  type IamRole,
   OBJECT_GRANT_ROLE,
-  UUID_RE,
   expiresLabel,
   fetchRoles,
   iamBase,
@@ -25,9 +21,13 @@ import {
   resolveUserId,
   roleRefBody,
   scopeLabel,
+  UUID_RE,
+  type IamAssignment,
+  type IamRole,
 } from '../iam.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { C, help, pad, status } from '../style.ts';
+import type { ProjectSummary } from '../api/types.ts';
 
 // `kortix access` — the CLI face of the ONE grant table.
 //
@@ -291,170 +291,160 @@ interface AccessCall {
 }
 async function accessLs(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const resp = await ctx.client.get<{ members: AccessMember[]; can_manage: boolean }>(
-    `${base}/access`,
-  );
-  if (json) {
-    emitJson(resp);
+    const resp = await ctx.client.get<{ members: AccessMember[]; can_manage: boolean }>(`${base}/access`);
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    const emailW = Math.max(...resp.members.map((m) => (m.email ?? m.user_id).length), 6);
+    process.stdout.write('\n');
+    process.stdout.write(`  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`);
+    for (const m of resp.members) {
+      const eff = m.effective_project_role ?? '—';
+      const src = m.effective_source ?? (m.has_implicit_access ? 'implicit' : '—');
+      process.stdout.write(
+        `  ${pad(m.email ?? m.user_id, emailW)}   ${pad(m.account_role, 7)}   ${pad(eff, 12)}   ${C.faded}${src}${C.reset}\n`,
+      );
+    }
+    process.stdout.write(`\n  ${C.dim}${resp.members.length} member${resp.members.length === 1 ? '' : 's'}${resp.can_manage ? '' : ` ${C.faded}(read-only — you can't manage)${C.reset}`}${C.reset}\n\n`);
     return 0;
-  }
-  const emailW = Math.max(...resp.members.map((m) => (m.email ?? m.user_id).length), 6);
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`,
-  );
-  for (const m of resp.members) {
-    const eff = m.effective_project_role ?? '—';
-    const src = m.effective_source ?? (m.has_implicit_access ? 'implicit' : '—');
-    process.stdout.write(
-      `  ${pad(m.email ?? m.user_id, emailW)}   ${pad(m.account_role, 7)}   ${pad(eff, 12)}   ${C.faded}${src}${C.reset}\n`,
-    );
-  }
-  process.stdout.write(
-    `\n  ${C.dim}${resp.members.length} member${resp.members.length === 1 ? '' : 's'}${resp.can_manage ? '' : ` ${C.faded}(read-only — you can't manage)${C.reset}`}${C.reset}\n\n`,
-  );
-  return 0;
 }
 
 async function accessInvite(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const email = positional[0];
-  if (!email) return missing('an email');
-  if (!checkRole()) return 2;
-  const resp = await ctx.client.post<{
-    status?: string;
-    /** False when no email left the building — every deployment without
-     *  MAILTRAP_API_TOKEN, which is every self-hosted one. */
-    email_sent?: boolean;
-    email_skip_reason?: string | null;
-    /** The only remaining delivery channel when the email was skipped. */
-    invite_url?: string;
-    message?: string;
-  }>(`${base}/access/invite`, {
-    email,
-    role,
-    ...(f.expires ? { expires_at: f.expires } : {}),
-  });
-  if (json) {
-    emitJson(resp);
-    return 0;
-  }
-  const pending = resp.status === 'invited' ? ' (pending signup)' : '';
-  // The server tells us whether an email actually went out, and hands back
-  // an invite_url precisely so this case is recoverable. Printing a green
-  // tick regardless left the inviter waiting for a delivery that never
-  // happened — and threw away the only link that would have worked. The
-  // web dashboard already warns and offers the link for this same payload,
-  // so a CLI user and a web user were told opposite things.
-  //
-  // `email_sent === undefined` is an older API that predates the field;
-  // keep the previous wording rather than inventing a warning.
-  if (resp.email_sent === false) {
-    process.stdout.write(
-      `${status.warn(`Invited ${C.bold}${email}${C.reset} as ${role}${pending} — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
-    );
-    if (resp.invite_url) {
-      process.stdout.write(
-        `  Share this link with them:\n  ${C.bold}${resp.invite_url}${C.reset}\n`,
-      );
+    const email = positional[0];
+    if (!email) return missing('an email');
+    if (!checkRole()) return 2;
+    const resp = await ctx.client.post<{
+      status?: string;
+      /** False when no email left the building — every deployment without
+       *  MAILTRAP_API_TOKEN, which is every self-hosted one. */
+      email_sent?: boolean;
+      email_skip_reason?: string | null;
+      /** The only remaining delivery channel when the email was skipped. */
+      invite_url?: string;
+      message?: string;
+    }>(`${base}/access/invite`, {
+      email,
+      role,
+      ...(f.expires ? { expires_at: f.expires } : {}),
+    });
+    if (json) {
+      emitJson(resp);
+      return 0;
     }
+    const pending = resp.status === 'invited' ? ' (pending signup)' : '';
+    // The server tells us whether an email actually went out, and hands back
+    // an invite_url precisely so this case is recoverable. Printing a green
+    // tick regardless left the inviter waiting for a delivery that never
+    // happened — and threw away the only link that would have worked. The
+    // web dashboard already warns and offers the link for this same payload,
+    // so a CLI user and a web user were told opposite things.
+    //
+    // `email_sent === undefined` is an older API that predates the field;
+    // keep the previous wording rather than inventing a warning.
+    if (resp.email_sent === false) {
+      process.stdout.write(
+        `${status.warn(`Invited ${C.bold}${email}${C.reset} as ${role}${pending} — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
+      );
+      if (resp.invite_url) {
+        process.stdout.write(`  Share this link with them:\n  ${C.bold}${resp.invite_url}${C.reset}\n`);
+      }
+      return 0;
+    }
+    process.stdout.write(`${status.ok(`Invited ${C.bold}${email}${C.reset} as ${role}${pending}`)}\n`);
     return 0;
-  }
-  process.stdout.write(
-    `${status.ok(`Invited ${C.bold}${email}${C.reset} as ${role}${pending}`)}\n`,
-  );
-  return 0;
 }
 
 async function accessGrantMember(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const userId = positional[0];
-  if (!userId) {
-    process.stderr.write(
-      `${status.err('Pass a user id, or use the assignment form.')}\n` +
-        `   ${C.dim}e.g. ${C.cyan}kortix access grant --user alice@corp.com --role manager${C.reset}\n`,
-    );
-    return 2;
-  }
-  if (!checkRole()) return 2;
-  await ctx.client.put(`${base}/access/${encodeURIComponent(userId)}`, {
-    role,
-    ...(f.expires ? { expires_at: f.expires } : {}),
-  });
-  process.stdout.write(`${status.ok(`${C.bold}${userId}${C.reset} → ${role}`)}\n`);
-  return 0;
+    const userId = positional[0];
+    if (!userId) {
+      process.stderr.write(
+        `${status.err('Pass a user id, or use the assignment form.')}\n` +
+          `   ${C.dim}e.g. ${C.cyan}kortix access grant --user alice@corp.com --role manager${C.reset}\n`,
+      );
+      return 2;
+    }
+    if (!checkRole()) return 2;
+    await ctx.client.put(`${base}/access/${encodeURIComponent(userId)}`, {
+      role,
+      ...(f.expires ? { expires_at: f.expires } : {}),
+    });
+    process.stdout.write(`${status.ok(`${C.bold}${userId}${C.reset} → ${role}`)}\n`);
+    return 0;
 }
 
 async function accessRevoke(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const userId = positional[0];
-  if (!userId) return missing('an assignment id (see `kortix access assignments`) or a user id');
-  await ctx.client.delete(`${base}/access/${encodeURIComponent(userId)}`);
-  process.stdout.write(`${status.ok(`Revoked access for ${C.bold}${userId}${C.reset}`)}\n`);
-  return 0;
+    const userId = positional[0];
+    if (!userId) return missing('an assignment id (see `kortix access assignments`) or a user id');
+    await ctx.client.delete(`${base}/access/${encodeURIComponent(userId)}`);
+    process.stdout.write(`${status.ok(`Revoked access for ${C.bold}${userId}${C.reset}`)}\n`);
+    return 0;
 }
 
 async function accessPending(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const resp = await ctx.client.get<{ pending: PendingInvite[] }>(`${base}/access/pending-invites`);
-  if (json) {
-    emitJson(resp);
+    const resp = await ctx.client.get<{ pending: PendingInvite[] }>(`${base}/access/pending-invites`);
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    if (resp.pending.length === 0) {
+      process.stdout.write(`  ${C.dim}No pending invites.${C.reset}\n`);
+      return 0;
+    }
+    process.stdout.write('\n');
+    for (const p of resp.pending) {
+      process.stdout.write(
+        `  ${p.email}  ${C.faded}${p.project_role}${C.reset}  ${C.dim}${p.invite_id}${p.invite_expired ? ` ${C.red}(expired)${C.reset}` : ''}${C.reset}\n`,
+      );
+    }
+    process.stdout.write(`\n  ${C.dim}${resp.pending.length} pending${C.reset}\n\n`);
     return 0;
-  }
-  if (resp.pending.length === 0) {
-    process.stdout.write(`  ${C.dim}No pending invites.${C.reset}\n`);
-    return 0;
-  }
-  process.stdout.write('\n');
-  for (const p of resp.pending) {
-    process.stdout.write(
-      `  ${p.email}  ${C.faded}${p.project_role}${C.reset}  ${C.dim}${p.invite_id}${p.invite_expired ? ` ${C.red}(expired)${C.reset}` : ''}${C.reset}\n`,
-    );
-  }
-  process.stdout.write(`\n  ${C.dim}${resp.pending.length} pending${C.reset}\n\n`);
-  return 0;
 }
 
 async function accessCancel(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const inviteId = positional[0];
-  if (!inviteId) return missing('an invite id');
-  await ctx.client.delete(`${base}/access/pending-invites/${encodeURIComponent(inviteId)}`);
-  process.stdout.write(`${status.ok(`Cancelled invite ${C.bold}${inviteId}${C.reset}`)}\n`);
-  return 0;
+    const inviteId = positional[0];
+    if (!inviteId) return missing('an invite id');
+    await ctx.client.delete(`${base}/access/pending-invites/${encodeURIComponent(inviteId)}`);
+    process.stdout.write(`${status.ok(`Cancelled invite ${C.bold}${inviteId}${C.reset}`)}\n`);
+    return 0;
 }
 
 async function accessResend(call: AccessCall): Promise<number> {
   const { ctx, base, role, json, positional, f, checkRole } = call;
-  const inviteId = positional[0];
-  if (!inviteId) return missing('an invite id (see `kortix access pending`)');
-  const resp = await ctx.client.post<{
-    ok: boolean;
-    expires_at: string;
-    invite_url: string;
-    /** False on every deployment with no email provider configured. */
-    email_sent: boolean;
-    email_skip_reason: string | null;
-  }>(`${base}/access/pending-invites/${encodeURIComponent(inviteId)}/resend`, {});
-  if (json) {
-    emitJson(resp);
+    const inviteId = positional[0];
+    if (!inviteId) return missing('an invite id (see `kortix access pending`)');
+    const resp = await ctx.client.post<{
+      ok: boolean;
+      expires_at: string;
+      invite_url: string;
+      /** False on every deployment with no email provider configured. */
+      email_sent: boolean;
+      email_skip_reason: string | null;
+    }>(`${base}/access/pending-invites/${encodeURIComponent(inviteId)}/resend`, {});
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    // Same rule as `invite`: the server says whether an email left the
+    // building, and hands back the link precisely so a skipped send is
+    // recoverable. Never print a green tick over a delivery that did not
+    // happen.
+    if (resp.email_sent === false) {
+      process.stdout.write(
+        `${status.warn(`Invite ${C.bold}${inviteId}${C.reset} refreshed — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
+      );
+    } else {
+      process.stdout.write(
+        `${status.ok(`Re-sent invite ${C.bold}${inviteId}${C.reset}`)} ${C.dim}(expires ${resp.expires_at})${C.reset}\n`,
+      );
+    }
+    process.stdout.write(`  ${C.bold}${resp.invite_url}${C.reset}\n`);
     return 0;
-  }
-  // Same rule as `invite`: the server says whether an email left the
-  // building, and hands back the link precisely so a skipped send is
-  // recoverable. Never print a green tick over a delivery that did not
-  // happen.
-  if (resp.email_sent === false) {
-    process.stdout.write(
-      `${status.warn(`Invite ${C.bold}${inviteId}${C.reset} refreshed — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
-    );
-  } else {
-    process.stdout.write(
-      `${status.ok(`Re-sent invite ${C.bold}${inviteId}${C.reset}`)} ${C.dim}(expires ${resp.expires_at})${C.reset}\n`,
-    );
-  }
-  process.stdout.write(`  ${C.bold}${resp.invite_url}${C.reset}\n`);
-  return 0;
 }
 
 // ─── Access requests ────────────────────────────────────────────────────────
@@ -541,12 +531,12 @@ async function accessRequests(
       emitJson(resp);
       return 0;
     }
-    process.stdout.write(`${status.ok(`Rejected request ${C.bold}${requestId}${C.reset}`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Rejected request ${C.bold}${requestId}${C.reset}`)}\n`,
+    );
     return 0;
   }
-  process.stderr.write(
-    `${status.err(`unknown requests action "${action}" — use ls, approve, or reject`)}\n`,
-  );
+  process.stderr.write(`${status.err(`unknown requests action "${action}" — use ls, approve, or reject`)}\n`);
   return 2;
 }
 
@@ -646,7 +636,9 @@ async function grantAssignment(
     f.everyone && '--everyone',
   ].filter(Boolean) as string[];
   if (chosen.length > 1) {
-    process.stderr.write(`${status.err(`Pass one principal — got ${chosen.join(' and ')}.`)}\n`);
+    process.stderr.write(
+      `${status.err(`Pass one principal — got ${chosen.join(' and ')}.`)}\n`,
+    );
     return 2;
   }
   if (f.agent && f.connection) {
@@ -691,9 +683,7 @@ async function grantAssignment(
   if (f.everyone) {
     // Everyone with access to the project: the principal id is the project.
     if (!scope.projectId) {
-      process.stderr.write(
-        `${status.err('--everyone needs a project: link one or pass --project.')}\n`,
-      );
+      process.stderr.write(`${status.err('--everyone needs a project: link one or pass --project.')}\n`);
       return 2;
     }
     principalType = 'project';

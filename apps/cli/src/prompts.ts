@@ -21,7 +21,7 @@ export async function prompt(label: string, defaultValue?: string): Promise<stri
       rl.question(`${label}${suffix}: `, (answer) => resolve(answer)),
     );
     const trimmed = raw.trim();
-    return trimmed !== '' ? trimmed : (defaultValue ?? '');
+    return trimmed !== '' ? trimmed : defaultValue ?? '';
   } finally {
     rl.close();
   }

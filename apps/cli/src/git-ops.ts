@@ -8,11 +8,11 @@
  * resolver every command shares.
  */
 
-import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
-import type { Auth } from './api/auth.ts';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import type { ApiClient } from './api/client.ts';
+import type { Auth } from './api/auth.ts';
 import type { ProjectSummary } from './api/types.ts';
-import { type ProjectGitTarget, projectIsManaged } from './project-git.ts';
+import { projectIsManaged, type ProjectGitTarget } from './project-git.ts';
 import { C, status } from './style.ts';
 
 export interface GitTokenResponse {
@@ -100,9 +100,7 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
   }
   const commit = run('git', ['commit', '-m', msg]);
   if (!commit.ok && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
-    process.stderr.write(
-      `${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`,
-    );
+    process.stderr.write(`${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`);
     return 'error';
   }
   if (commit.ok) process.stdout.write(`${status.ok(`Committed: ${C.bold}${msg}${C.reset}`)}\n`);

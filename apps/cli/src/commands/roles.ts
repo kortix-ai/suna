@@ -3,23 +3,23 @@ import { stringify as stringifyToml } from 'smol-toml';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
-  fail,
   missing,
   resolveAccountContext,
   surfaceApiError,
-  takeFlagBool,
   takeFlagValue,
+  takeFlagBool,
+  fail,
 } from '../command-helpers.ts';
-import { type IamRole, findRole } from '../iam.ts';
-import { C, help, pad, status } from '../style.ts';
+import { findRole, type IamRole } from '../iam.ts';
 import {
-  type RolesCall,
   notFound,
   rolesAssign,
   rolesAssignments,
   rolesUnassign,
+  type RolesCall,
 } from './roles-policies.ts';
 import { rolesExport, rolesImport } from './roles-port.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // Account-scoped IAM roles. `ls` / `show` / `permissions` read the whole
 // catalog — the seeded SYSTEM roles (owner/admin/member, manager/member,
@@ -101,197 +101,169 @@ Examples:
 
 async function rolesLs(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
-  if (json) return emitJson(roles), 0;
-  const keyW = Math.max(...roles.map((r) => r.key.length), 4);
-  const nameW = Math.max(...roles.map((r) => r.name.length), 4);
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.dim}${pad('KEY', keyW)}   ${pad('NAME', nameW)}   SCOPE      KIND${C.reset}\n`,
-  );
-  for (const r of roles) {
-    const kind = r.is_system ? `${C.faded}system${C.reset}` : `${C.cyan}custom${C.reset}`;
-    process.stdout.write(
-      `  ${pad(r.key, keyW)}   ${pad(r.name, nameW)}   ${pad(r.resource_type, 8)}   ${kind}\n`,
-    );
-  }
-  process.stdout.write(
-    `\n  ${C.dim}${roles.length} role${roles.length === 1 ? '' : 's'}${C.reset}\n\n`,
-  );
-  return 0;
+    const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+    if (json) return emitJson(roles), 0;
+    const keyW = Math.max(...roles.map((r) => r.key.length), 4);
+    const nameW = Math.max(...roles.map((r) => r.name.length), 4);
+    process.stdout.write('\n');
+    process.stdout.write(`  ${C.dim}${pad('KEY', keyW)}   ${pad('NAME', nameW)}   SCOPE      KIND${C.reset}\n`);
+    for (const r of roles) {
+      const kind = r.is_system ? `${C.faded}system${C.reset}` : `${C.cyan}custom${C.reset}`;
+      process.stdout.write(
+        `  ${pad(r.key, keyW)}   ${pad(r.name, nameW)}   ${pad(r.resource_type, 8)}   ${kind}\n`,
+      );
+    }
+    process.stdout.write(`\n  ${C.dim}${roles.length} role${roles.length === 1 ? '' : 's'}${C.reset}\n\n`);
+    return 0;
 }
 
 async function rolesShow(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  const ref = positional[0];
-  if (!ref) return missing('a role key or id');
-  const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
-  const role = findRole(roles, ref);
-  if (!role) return notFound(`role "${ref}"`);
-  const perms = await ctx.client.get<{ role_id: string; key: string; actions: string[] }>(
-    `${base}/roles/${encodeURIComponent(role.role_id)}/permissions`,
-  );
-  const usage = await ctx.client
-    .get<{ policy_count: number }>(`${base}/roles/${encodeURIComponent(role.role_id)}/usage`)
-    .catch(() => ({ policy_count: 0 }));
-  if (json) return emitJson({ ...role, actions: perms.actions, ...usage }), 0;
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.bold}${role.name}${C.reset}  ${C.faded}${role.key}${C.reset}${role.is_system ? `  ${C.faded}(system)${C.reset}` : ''}\n`,
-  );
-  if (role.description) process.stdout.write(`  ${C.dim}${role.description}${C.reset}\n`);
-  process.stdout.write(
-    `  ${C.dim}scope ${role.resource_type} · ${usage.policy_count} assignment${usage.policy_count === 1 ? '' : 's'}${C.reset}\n\n`,
-  );
-  process.stdout.write(`  ${C.dim}PERMISSIONS (${perms.actions.length})${C.reset}\n`);
-  for (const a of perms.actions.slice().sort()) process.stdout.write(`    ${a}\n`);
-  process.stdout.write('\n');
-  return 0;
+    const ref = positional[0];
+    if (!ref) return missing('a role key or id');
+    const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+    const role = findRole(roles, ref);
+    if (!role) return notFound(`role "${ref}"`);
+    const perms = await ctx.client.get<{ role_id: string; key: string; actions: string[] }>(
+      `${base}/roles/${encodeURIComponent(role.role_id)}/permissions`,
+    );
+    const usage = await ctx.client
+      .get<{ policy_count: number }>(`${base}/roles/${encodeURIComponent(role.role_id)}/usage`)
+      .catch(() => ({ policy_count: 0 }));
+    if (json) return emitJson({ ...role, actions: perms.actions, ...usage }), 0;
+    process.stdout.write('\n');
+    process.stdout.write(`  ${C.bold}${role.name}${C.reset}  ${C.faded}${role.key}${C.reset}${role.is_system ? `  ${C.faded}(system)${C.reset}` : ''}\n`);
+    if (role.description) process.stdout.write(`  ${C.dim}${role.description}${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}scope ${role.resource_type} · ${usage.policy_count} assignment${usage.policy_count === 1 ? '' : 's'}${C.reset}\n\n`);
+    process.stdout.write(`  ${C.dim}PERMISSIONS (${perms.actions.length})${C.reset}\n`);
+    for (const a of perms.actions.slice().sort()) process.stdout.write(`    ${a}\n`);
+    process.stdout.write('\n');
+    return 0;
 }
 
 async function rolesPermissions(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  // Just the leaf actions, no usage round-trip — the shape `roles
-  // create --actions` / `set-actions --actions` consume.
-  const ref = positional[0];
-  if (!ref) return missing('a role key or id');
-  const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
-  const role = findRole(roles, ref);
-  if (!role) return notFound(`role "${ref}"`);
-  const perms = await ctx.client.get<{ role_id: string; key: string; actions: string[] }>(
-    `${base}/roles/${encodeURIComponent(role.role_id)}/permissions`,
-  );
-  const actions = perms.actions.slice().sort();
-  if (json)
-    return (
-      emitJson({ role_id: role.role_id, key: role.key, is_system: role.is_system, actions }), 0
+    // Just the leaf actions, no usage round-trip — the shape `roles
+    // create --actions` / `set-actions --actions` consume.
+    const ref = positional[0];
+    if (!ref) return missing('a role key or id');
+    const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+    const role = findRole(roles, ref);
+    if (!role) return notFound(`role "${ref}"`);
+    const perms = await ctx.client.get<{ role_id: string; key: string; actions: string[] }>(
+      `${base}/roles/${encodeURIComponent(role.role_id)}/permissions`,
     );
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.bold}${role.key}${C.reset}  ${C.faded}${role.resource_type} scope${role.is_system ? ' · system' : ''}${C.reset}\n\n`,
-  );
-  for (const a of actions) process.stdout.write(`  ${a}\n`);
-  process.stdout.write(
-    `\n  ${C.dim}${actions.length} permission${actions.length === 1 ? '' : 's'} · \`kortix permissions show <action>\` for one${C.reset}\n\n`,
-  );
-  return 0;
+    const actions = perms.actions.slice().sort();
+    if (json) return emitJson({ role_id: role.role_id, key: role.key, is_system: role.is_system, actions }), 0;
+    process.stdout.write('\n');
+    process.stdout.write(
+      `  ${C.bold}${role.key}${C.reset}  ${C.faded}${role.resource_type} scope${role.is_system ? ' · system' : ''}${C.reset}\n\n`,
+    );
+    for (const a of actions) process.stdout.write(`  ${a}\n`);
+    process.stdout.write(
+      `\n  ${C.dim}${actions.length} permission${actions.length === 1 ? '' : 's'} · \`kortix permissions show <action>\` for one${C.reset}\n\n`,
+    );
+    return 0;
 }
 
 async function rolesActions(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  const { actions } = await ctx.client.get<{ actions: ActionCatalogEntry[] }>(`${base}/actions`);
-  if (json) return emitJson(actions), 0;
-  const actW = Math.max(...actions.map((a) => a.action.length), 6);
-  process.stdout.write('\n');
-  for (const a of actions) {
-    process.stdout.write(`  ${pad(a.action, actW)}   ${C.dim}${a.label}${C.reset}\n`);
-  }
-  process.stdout.write(`\n  ${C.dim}${actions.length} actions${C.reset}\n\n`);
-  return 0;
+    const { actions } = await ctx.client.get<{ actions: ActionCatalogEntry[] }>(`${base}/actions`);
+    if (json) return emitJson(actions), 0;
+    const actW = Math.max(...actions.map((a) => a.action.length), 6);
+    process.stdout.write('\n');
+    for (const a of actions) {
+      process.stdout.write(`  ${pad(a.action, actW)}   ${C.dim}${a.label}${C.reset}\n`);
+    }
+    process.stdout.write(`\n  ${C.dim}${actions.length} actions${C.reset}\n\n`);
+    return 0;
 }
 
 async function rolesCreate(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  const key = positional[0];
-  if (!key) return missing('a role key (e.g. "support_agent")');
-  // Match the backend rule client-side so the error is friendly + offline.
-  if (!/^[a-z0-9_]{2,64}$/.test(key)) {
-    const suggestion = key
-      .toLowerCase()
-      .replace(/[^a-z0-9_]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 64);
-    process.stderr.write(
-      `${status.err(`Role key must be 2–64 chars of [a-z0-9_] (lowercase, digits, underscore — no hyphens or spaces).`)}\n` +
-        (suggestion.length >= 2 ? `   ${C.dim}Try: ${C.cyan}${suggestion}${C.reset}\n` : ''),
+    const key = positional[0];
+    if (!key) return missing('a role key (e.g. "support_agent")');
+    // Match the backend rule client-side so the error is friendly + offline.
+    if (!/^[a-z0-9_]{2,64}$/.test(key)) {
+      const suggestion = key.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
+      process.stderr.write(
+        `${status.err(`Role key must be 2–64 chars of [a-z0-9_] (lowercase, digits, underscore — no hyphens or spaces).`)}\n` +
+          (suggestion.length >= 2 ? `   ${C.dim}Try: ${C.cyan}${suggestion}${C.reset}\n` : ''),
+      );
+      return 2;
+    }
+    if (!f.name) return missing('--name <display name>');
+    const resourceType = (f.scope ?? 'project') as ResourceType;
+    const actions = (f.actions ?? '').split(',').map((a) => a.trim()).filter(Boolean);
+    const role = await ctx.client.post<IamRole>(`${base}/roles`, {
+      key,
+      name: f.name,
+      ...(f.desc ? { description: f.desc } : {}),
+      resourceType,
+      actions,
+    });
+    process.stdout.write(
+      `${status.ok(`Created role ${C.bold}${role.key}${C.reset} (${actions.length} permission${actions.length === 1 ? '' : 's'}, scope ${resourceType})`)}\n`,
     );
-    return 2;
-  }
-  if (!f.name) return missing('--name <display name>');
-  const resourceType = (f.scope ?? 'project') as ResourceType;
-  const actions = (f.actions ?? '')
-    .split(',')
-    .map((a) => a.trim())
-    .filter(Boolean);
-  const role = await ctx.client.post<IamRole>(`${base}/roles`, {
-    key,
-    name: f.name,
-    ...(f.desc ? { description: f.desc } : {}),
-    resourceType,
-    actions,
-  });
-  process.stdout.write(
-    `${status.ok(`Created role ${C.bold}${role.key}${C.reset} (${actions.length} permission${actions.length === 1 ? '' : 's'}, scope ${resourceType})`)}\n`,
-  );
-  return 0;
+    return 0;
 }
 
 async function rolesEdit(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  // Rename / re-describe only. The key is the stable identifier every
-  // exported policy file and grant references, so it is not editable —
-  // change it by creating a new role and re-binding.
-  const ref = positional[0];
-  if (!ref) return missing('a role key or id');
-  if (f.name === undefined && f.desc === undefined && !clearDesc) {
-    return missing('--name, --desc or --no-desc');
-  }
-  if (f.desc !== undefined && clearDesc)
-    return fail('--desc and --no-desc are mutually exclusive.');
-  const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
-  const role = findRole(roles, ref);
-  if (!role) return notFound(`role "${ref}"`);
-  if (role.is_system)
-    return fail('Built-in roles cannot be edited — clone it as a custom role instead.');
-  const body: Record<string, unknown> = {};
-  if (f.name !== undefined) body.name = f.name;
-  if (f.desc !== undefined) body.description = f.desc;
-  if (clearDesc) body.description = null;
-  const updated = await ctx.client.patch<IamRole>(
-    `${base}/roles/${encodeURIComponent(role.role_id)}`,
-    body,
-  );
-  if (json) return emitJson(updated), 0;
-  process.stdout.write(
-    `${status.ok(`Updated role ${C.bold}${updated.key}${C.reset} — ${updated.name}`)}\n`,
-  );
-  return 0;
+    // Rename / re-describe only. The key is the stable identifier every
+    // exported policy file and grant references, so it is not editable —
+    // change it by creating a new role and re-binding.
+    const ref = positional[0];
+    if (!ref) return missing('a role key or id');
+    if (f.name === undefined && f.desc === undefined && !clearDesc) {
+      return missing('--name, --desc or --no-desc');
+    }
+    if (f.desc !== undefined && clearDesc) return fail('--desc and --no-desc are mutually exclusive.');
+    const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+    const role = findRole(roles, ref);
+    if (!role) return notFound(`role "${ref}"`);
+    if (role.is_system) return fail('Built-in roles cannot be edited — clone it as a custom role instead.');
+    const body: Record<string, unknown> = {};
+    if (f.name !== undefined) body.name = f.name;
+    if (f.desc !== undefined) body.description = f.desc;
+    if (clearDesc) body.description = null;
+    const updated = await ctx.client.patch<IamRole>(
+      `${base}/roles/${encodeURIComponent(role.role_id)}`,
+      body,
+    );
+    if (json) return emitJson(updated), 0;
+    process.stdout.write(
+      `${status.ok(`Updated role ${C.bold}${updated.key}${C.reset} — ${updated.name}`)}\n`,
+    );
+    return 0;
 }
 
 async function rolesSetActions(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  const ref = positional[0];
-  if (!ref) return missing('a role key or id');
-  if (f.actions === undefined) return missing('--actions <comma,separated,list>');
-  const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
-  const role = findRole(roles, ref);
-  if (!role) return notFound(`role "${ref}"`);
-  if (role.is_system)
-    return fail('System roles are read-only — clone it as a custom role instead.');
-  const actions = f.actions
-    .split(',')
-    .map((a) => a.trim())
-    .filter(Boolean);
-  await ctx.client.put(`${base}/roles/${encodeURIComponent(role.role_id)}/permissions`, {
-    actions,
-  });
-  process.stdout.write(
-    `${status.ok(`${C.bold}${role.key}${C.reset} → ${actions.length} permission${actions.length === 1 ? '' : 's'}`)}\n`,
-  );
-  return 0;
+    const ref = positional[0];
+    if (!ref) return missing('a role key or id');
+    if (f.actions === undefined) return missing('--actions <comma,separated,list>');
+    const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+    const role = findRole(roles, ref);
+    if (!role) return notFound(`role "${ref}"`);
+    if (role.is_system) return fail('System roles are read-only — clone it as a custom role instead.');
+    const actions = f.actions.split(',').map((a) => a.trim()).filter(Boolean);
+    await ctx.client.put(`${base}/roles/${encodeURIComponent(role.role_id)}/permissions`, { actions });
+    process.stdout.write(`${status.ok(`${C.bold}${role.key}${C.reset} → ${actions.length} permission${actions.length === 1 ? '' : 's'}`)}\n`);
+    return 0;
 }
 
 async function rolesRemove(call: RolesCall): Promise<number> {
   const { ctx, base, json, positional, f, clearDesc } = call;
-  const ref = positional[0];
-  if (!ref) return missing('a role key or id');
-  const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
-  const role = findRole(roles, ref);
-  if (!role) return notFound(`role "${ref}"`);
-  if (role.is_system) return fail('System roles cannot be deleted.');
-  await ctx.client.delete(`${base}/roles/${encodeURIComponent(role.role_id)}`);
-  process.stdout.write(`${status.ok(`Deleted role ${C.bold}${role.key}${C.reset}`)}\n`);
-  return 0;
+    const ref = positional[0];
+    if (!ref) return missing('a role key or id');
+    const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+    const role = findRole(roles, ref);
+    if (!role) return notFound(`role "${ref}"`);
+    if (role.is_system) return fail('System roles cannot be deleted.');
+    await ctx.client.delete(`${base}/roles/${encodeURIComponent(role.role_id)}`);
+    process.stdout.write(`${status.ok(`Deleted role ${C.bold}${role.key}${C.reset}`)}\n`);
+    return 0;
 }
 
 export async function runRoles(argv: string[]): Promise<number> {

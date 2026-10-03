@@ -152,7 +152,11 @@ interface RoutingPolicyDoc {
   capabilities: { write: boolean };
 }
 
-async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayRouting(
+  rest: string[],
+  opts: CtxOpts,
+  json: boolean,
+): Promise<number> {
   const action = takeAction(rest, 'get');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
