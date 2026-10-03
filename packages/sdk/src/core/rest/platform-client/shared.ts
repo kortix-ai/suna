@@ -96,7 +96,8 @@ export function projectSessionToSandboxInfo(
   session: ProjectSession,
   runtime?: ProjectSessionSandbox | null,
 ): SandboxInfo {
-  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  // '' when the session has no sandbox yet: the same falsy value callers test.
+  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id || '';
   return {
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,

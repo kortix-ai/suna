@@ -54,6 +54,9 @@ export interface KortixAccount {
   account_id: string;
   name: string;
   slug?: string;
+  /** Absent from APIs older than these fields. */
+  created_at?: string;
+  updated_at?: string;
   account_role?: string;
   is_primary_owner?: boolean;
   /** Effective branding for members: the stored record when the account is
