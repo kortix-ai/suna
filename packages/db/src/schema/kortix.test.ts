@@ -54,6 +54,7 @@ import {
   connectors,
   providerEvents,
   sessionLifecycleCommands,
+  voiceJoinLinks,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -449,6 +450,24 @@ describe('warm project sessions', () => {
   test('declares no partial unique index on the warm marker', () => {
     const index = getTableConfig(projectSessions).indexes.find(
       (candidate) => candidate.config.name === 'idx_project_sessions_one_available_warm',
+    );
+
+    expect(index).toBeUndefined();
+  });
+});
+
+describe('dormant voice_join_links table', () => {
+  // `idx_voice_join_links_call` was built with the table (20260726150239771)
+  // and never served a read — Supabase performance advisor `unused_index`, prod
+  // `pg_stat_user_indexes.idx_scan` 0 over the table's whole life. No
+  // application code reads `voice_join_links` (dormant compatibility table for
+  // the removed experimental voice runtime), so the drop is read-path safe.
+  // Dropped by migrations/20261003060642649_drop_voice_join_links_unused_index.
+  // Re-declaring it would make `db:generate` emit a CREATE against a dropped
+  // index, so the schema must stay free of it.
+  test('declares no call_id index', () => {
+    const index = getTableConfig(voiceJoinLinks).indexes.find(
+      (candidate) => candidate.config.name === 'idx_voice_join_links_call',
     );
 
     expect(index).toBeUndefined();

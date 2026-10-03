@@ -14,6 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: a log-line rate limiter, not state. Each replica writes its
+// own log stream, so suppressing repeated dead-credential warn lines is
+// per-process by design; the header above documents counts as best-effort,
+// and a shared store would put a DB round-trip on the log path.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one

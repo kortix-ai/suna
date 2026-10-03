@@ -2033,18 +2033,14 @@ export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors'
  * Dormant compatibility table for the removed experimental voice runtime.
  * A later contract migration removes it after every old API pod is retired.
  */
-export const voiceJoinLinks = kortixSchema.table(
-  'voice_join_links',
-  {
-    tokenHash: text('token_hash').primaryKey(),
-    callId: text('call_id').notNull(),
-    projectId: uuid('project_id').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index('idx_voice_join_links_call').on(table.callId)],
-);
+export const voiceJoinLinks = kortixSchema.table('voice_join_links', {
+  tokenHash: text('token_hash').primaryKey(),
+  callId: text('call_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const teamsPendingUploads = kortixSchema.table(
   'teams_pending_uploads',
