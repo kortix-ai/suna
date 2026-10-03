@@ -25,7 +25,7 @@ describe('marketplace HTTP contract', () => {
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
     server = Bun.serve({ port: 0, fetch: app.fetch });
-    baseUrl = `http://${server.hostname}:${server.port}/v1`;
+    baseUrl = `http://127.0.0.1:${server.port}/v1`;
   });
 
   afterAll(() => {

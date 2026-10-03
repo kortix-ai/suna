@@ -129,13 +129,18 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain(
+    // The hermetic env wrapper (scripts/hermetic-test-env.sh) owns the
+    // environment; the bun invocation it execs is still the proven one.
+    expect(cliPackage.scripts.test).toBe('pnpm lint:sdk-boundary && bash scripts/test.sh');
+    expect(readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    // Same timeout contract as the CLI above: process-heavy git fixtures sit
-    // above bun's 5 s default on slower boxes, and the packages lane already
-    // sets KORTIX_TEST_TIMEOUT_MS=30000 for every workspace suite.
-    expect(agentPackage.scripts.test).toBe(
+    // The hermetic env wrapper (scripts/hermetic-test-env.sh) owns the
+    // environment; the bun invocation it execs keeps the timeout contract the
+    // packages lane sets (process-heavy git fixtures sit above bun's 5 s
+    // default on slower boxes).
+    expect(agentPackage.scripts.test).toBe('bash scripts/test.sh');
+    expect(readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/scripts/test.sh'), 'utf8')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
     );
     const gatewayPackage = JSON.parse(
