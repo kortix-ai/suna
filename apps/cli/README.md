@@ -62,13 +62,20 @@ Projects created before 2026-09 keep agents and skills under
 `.kortix/opencode/` and memory under `.kortix/memory/`. Every command reads
 both layouts.
 
+A pi session reads `agents/`, `skills/` and `memory/` too. Its own files go in
+`harnesses/pi/` (`pi.config_dir`): `settings.json`, `extensions/`, `prompts/`,
+`skills/`. The starter does not create that directory.
+
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
 receive native discovery links to the canonical sources: `skills/`,
 `agents/`, and `harnesses/opencode/`. OpenCode uses `.opencode`. Claude Code
 uses `.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
 `.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
 
-The public starter uses `kortix_version: 2`. Cloud sessions run OpenCode REST.
+The public starter uses `kortix_version: 2`. A cloud session runs one of two
+harnesses: OpenCode (the default) or pi (`runtime: pi` in `kortix.yaml`, or the
+`pi_harness` project flag; pi needs the LLM gateway). The CLI talks to the same
+Kortix routes on both.
 
 Create a project with:
 
@@ -76,7 +83,7 @@ Create a project with:
 kortix init my-project --yes --no-git
 ```
 
-Agents can retrieve the deployed platform manual from OpenCode:
+Agents can retrieve the deployed platform manual from inside a session, on either harness:
 
 ```sh
 kortix system-skills

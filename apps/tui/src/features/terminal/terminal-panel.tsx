@@ -4,7 +4,7 @@
  * Data path, all SDK:
  *   `useSession(...)` points the SDK's runtime at THIS session's sandbox once
  *   `/start` reports ready (`switched`). Every PTY hook below then resolves
- *   that same runtime: `useOpenCodePtyList` reuses the session's ambient
+ *   that same runtime: `useRuntimePtyList` reuses the session's ambient
  *   shell, `useCreatePty` spawns one when there is none, `useUpdatePty` sends
  *   the size, and `getPtyWebSocketUrl` mints the token-bearing socket URL.
  *   None of them is given a URL by hand.
@@ -29,7 +29,7 @@ import { isSandboxNotReadyError, listKortixPty } from '@kortix/sdk';
 import {
   getPtyWebSocketUrl,
   useCreatePty,
-  useOpenCodePtyList,
+  useRuntimePtyList,
   useUpdatePty,
 } from '@kortix/sdk/react';
 import type { useSession } from '@kortix/sdk/react';
@@ -158,7 +158,7 @@ export function TerminalPanel({
   const cols = Math.max(width - 4, 20);
   const rows = Math.max(height - 2 - HINT_ROWS, 3);
 
-  const ptyList = useOpenCodePtyList({ enabled: ready });
+  const ptyList = useRuntimePtyList({ enabled: ready });
   const createPty = useCreatePty({ onError: () => {} });
   const updatePty = useUpdatePty({ onError: () => {} });
 

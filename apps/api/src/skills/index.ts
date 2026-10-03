@@ -33,7 +33,6 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { callerOverlayFlags } from '../runtime-assets/caller-flags';
 import type { AppEnv } from '../types';
 import { getManagedSkill, getManagedSkillFile, listManagedSkills } from './catalog';
 
@@ -85,8 +84,8 @@ skillsApp.openapi(
       ...errors(401),
     },
   }),
-  async (c) => {
-    const skills = listManagedSkills(await callerOverlayFlags(c));
+  (c) => {
+    const skills = listManagedSkills();
     return c.json({ skills, count: skills.length });
   },
 );
@@ -110,11 +109,11 @@ skillsApp.openapi(
       ...errors(400, 401, 404),
     },
   }),
-  async (c) => {
+  (c) => {
     const name = c.req.param('name');
     const path = c.req.query('path');
     if (!path) return c.json({ error: true, message: 'path is required', status: 400 }, 400);
-    const file = getManagedSkillFile(name, path, await callerOverlayFlags(c));
+    const file = getManagedSkillFile(name, path);
     if (!file) {
       return c.json(
         { error: true, message: `No file "${path}" in Kortix skill "${name}"`, status: 404 },
@@ -144,9 +143,9 @@ skillsApp.openapi(
       ...errors(401, 404),
     },
   }),
-  async (c) => {
+  (c) => {
     const name = c.req.param('name');
-    const skill = getManagedSkill(name, await callerOverlayFlags(c));
+    const skill = getManagedSkill(name);
     if (!skill) {
       return c.json(
         { error: true, message: `No Kortix system skill named "${name}"`, status: 404 },

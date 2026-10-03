@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { SandboxExecResult } from '../../platform/providers';
 import {
+  FIRST_CONVERGENCE_GRACE_S,
   LEGACY_BOOTSTRAP_COOLDOWN_MS,
   LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
   LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
@@ -145,6 +146,70 @@ describe('classifyDaemonHealth', () => {
     expect(c.klass).toBe('stale');
     expect(c.staleReasons).toEqual(['running_assets_stale']);
     expect(c.detail[0]).toContain('cli_sha256');
+  });
+
+  // Dev 2026-10-02, template kortix-default-6bacca9b52cc (the agent-swap fast
+  // path): what a fresh box answered 3 s after boot, before its first pass.
+  // The record is the predecessor image's bake (agent efd19aa3…, cli 9ba28976…)
+  // while the box already ran the manifest's agent. Open relaunched it: +17 s.
+  const SWAPPED_FIRST_BOOT = {
+    daemon: 'ok',
+    status: 'ok',
+    runtimeReady: false,
+    opencode: 'starting',
+    uptime_s: 3,
+    capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
+    runtime: {
+      build: null,
+      at: null,
+      components: {},
+      agentSwapPending: false,
+      pinned: false,
+      running: {
+        cli_sha256: 'baked-predecessor-cli',
+        managed_skills_hash: MANIFEST.managed_skills_hash,
+        agent_sha256: 'baked-predecessor-agent',
+        agent_path: '/usr/local/bin/kortix-agent',
+        staged_agent_sha256: null,
+        build: null,
+      },
+    },
+  };
+
+  test('a fresh box still answering with its image bake record is awaiting its first pass, not stale', () => {
+    const c = classifyDaemonHealth(SWAPPED_FIRST_BOOT, MANIFEST);
+    expect(c.klass).toBe('current');
+    expect(c.staleReasons).toEqual([]);
+    expect(c.runtimeBuild).toBeNull(); // bootstrapLegacyRuntime reads this as "convergence pending"
+    expect(c.detail[0]).toContain('awaiting the first convergence pass');
+  });
+
+  test('once the first pass has run, the same mismatch is stale again', () => {
+    const afterPass = {
+      ...SWAPPED_FIRST_BOOT,
+      runtime: { ...SWAPPED_FIRST_BOOT.runtime, build: 1790968504, running: { ...SWAPPED_FIRST_BOOT.runtime.running, build: 1790968504 } },
+    };
+    expect(classifyDaemonHealth(afterPass, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+    // A relaunch keeps the persisted build: the in-process pass resets, the record does not.
+    const relaunched = {
+      ...SWAPPED_FIRST_BOOT,
+      runtime: { ...SWAPPED_FIRST_BOOT.runtime, running: { ...SWAPPED_FIRST_BOOT.runtime.running, build: 1790968504 } },
+    };
+    expect(classifyDaemonHealth(relaunched, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+  });
+
+  test('the bake record stops excusing a mismatch once the grace has passed, so a stuck first pass cannot hide a stale agent', () => {
+    const late = { ...SWAPPED_FIRST_BOOT, uptime_s: FIRST_CONVERGENCE_GRACE_S };
+    expect(classifyDaemonHealth(late, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+    const unknownUptime = { ...SWAPPED_FIRST_BOOT, uptime_s: undefined };
+    expect(classifyDaemonHealth(unknownUptime, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+  });
+
+  test('every other stale reason still applies during the grace', () => {
+    const swapPending = { ...SWAPPED_FIRST_BOOT, runtime: { ...SWAPPED_FIRST_BOOT.runtime, agentSwapPending: true } };
+    expect(classifyDaemonHealth(swapPending, MANIFEST).staleReasons).toEqual(['agent_swap_pending']);
+    const noCapability = { ...SWAPPED_FIRST_BOOT, capabilities: [] };
+    expect(classifyDaemonHealth(noCapability, MANIFEST).staleReasons).toEqual(['missing_capability']);
   });
 
   test('without an expected manifest passed in, the sha compare is skipped but `running` absence still catches it', () => {

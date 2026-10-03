@@ -38,6 +38,7 @@ import {
   appDeployments,
   appRuntimes,
   appDeploymentEvents,
+  accountTokens,
   creditAccounts,
   creditLedger,
   usageEvents,
@@ -203,13 +204,24 @@ describe('canonical audit ledger', () => {
   test('indexes ordered session reads and idempotent source-ledger projections', () => {
     expect(indexNames(auditEvents)).toEqual(
       expect.arrayContaining([
-        'idx_audit_events_account_project_sequence',
-        'idx_audit_events_account_session_sequence',
         'idx_audit_events_session_sequence',
         'idx_audit_events_source_phase',
         'idx_audit_events_action_pattern',
       ]),
     );
+  });
+
+  test('does not re-add the audit indexes no read path uses', () => {
+    // Dropped by 20261001214716390_drop_unused_audit_events_indexes. Each one is
+    // an index write on every audit row. No query orders by session_sequence
+    // under an account/project predicate, and none filters resource_id.
+    for (const dropped of [
+      'idx_audit_events_account_project_sequence',
+      'idx_audit_events_account_session_sequence',
+      'idx_audit_events_resource',
+    ]) {
+      expect(indexNames(auditEvents)).not.toContain(dropped);
+    }
   });
 
   test('serves the bare session-scoped audit read from an index', () => {
@@ -334,6 +346,28 @@ describe('connectors', () => {
   });
 });
 
+describe('account_tokens foreign-key coverage', () => {
+  // The Supabase performance advisor (unindexed_foreign_keys) flags a foreign
+  // key whose referencing column is not the leading column of any index: every
+  // ON DELETE CASCADE / SET NULL walk over that column seq-scans the table.
+  // account_tokens carries four FKs — three declared here (account_id,
+  // project_id, service_account_id) plus the SQL-only
+  // account_tokens_on_behalf_of_user_fk (auth.users is outside this schema;
+  // added NOT VALID by 20260922135103135_agent_session_on_behalf_of). The
+  // advisor reported service_account_id and on_behalf_of_user_id unindexed in
+  // prod (KRTX-1091); account_id and project_id were already covered.
+  // Regression guard: every FK column must lead some index on the table.
+  test('indexes every foreign key column the table carries', () => {
+    const leading = getTableConfig(accountTokens).indexes.map((i) => {
+      const first = i.config.columns[0];
+      return first && 'name' in first ? first.name : undefined;
+    });
+    for (const fk of ['account_id', 'project_id', 'service_account_id', 'on_behalf_of_user_id']) {
+      expect(leading).toContain(fk);
+    }
+  });
+});
+
 describe('project session connector bindings', () => {
   test('store whether connector bindings were configured explicitly', () => {
     const column = getTableConfig(projectSessions).columns.find(
@@ -387,6 +421,15 @@ describe('Kortix Apps schema', () => {
     expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
     expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
     expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('covers the app_deployment_events runtime foreign key with an index', () => {
+    // The FK runtime_id -> app_runtimes.runtime_id is ON DELETE set null: a
+    // runtime delete scans app_deployment_events for referencing rows. The
+    // advisor (supabase:advisor:unindexed-foreign-keys:kortix.app_deployment_events)
+    // flags the FK when no index leads with runtime_id; the deployment_idx
+    // leads with deployment_id and cannot serve it.
+    expect(indexNames(appDeploymentEvents)).toContain('app_deployment_events_runtime_idx');
   });
 
   test('attributes compute windows to App runtimes', () => {
@@ -491,9 +534,10 @@ describe('account membership', () => {
 
   test('account_memberships declares the indexes the database has', () => {
     // The primary key leads with user_id, so account-only reads need their own index.
+    // idx_account_members_user_account duplicated the primary key and was dropped
+    // by 20261003020000100_drop_duplicate_account_memberships_index.
     expect(indexNames(accountMemberships).sort()).toEqual([
       'idx_account_members_account_id',
-      'idx_account_members_user_account',
     ]);
   });
 });

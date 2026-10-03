@@ -179,11 +179,13 @@ const handleSessionSnapshot = async (c: any) => {
               accountMayUseManagedModels(accountId),
             ]);
             const freeTier = !mayUseManaged;
+            // The project-level resolution, exactly as `GET .../model-defaults`
+            // computes it (no session scope): the SDK seeds that query from
+            // this leg, so the two answers must be the same answer.
             const resolved = await resolveEffectiveModel({
               userId,
               accountId,
               projectId,
-              sessionId,
               explicit: null,
               freeModelsOnly: freeTier,
             });

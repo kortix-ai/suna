@@ -2,10 +2,10 @@
  * `/start` must never replay a stamped failure as a terminal answer.
  *
  * SampleCo 2026-08-26, two live captures:
- *   - session e06ad0c4 answered `open-session:failed` in 47ms — no provider
+ *   - one session answered `open-session:failed` in 47ms — no provider
  *     call — because a wake that ran out of its FIXED 240s budget had stamped
  *     `runtime_wake_failed`. The manual restart reached ready in 10s.
- *   - session 9c8749ac / box i67m4fhw2t3nesssgl4yf replayed
+ *   - another session, on an E2B box, replayed
  *     `{"stage":"failed","retriable":false,…"stopReason":"runtime_boot_failed",
  *       "lastInitError":null}` on every open for 10+ hours from a 03:37Z stamp.
  *
@@ -28,12 +28,12 @@ function stoppedRow(
   metadata: Record<string, unknown>,
 ): typeof sessionSandboxes.$inferSelect {
   return {
-    sandboxId: 'sess-9c8749ac',
-    sessionId: 'sess-9c8749ac',
-    projectId: 'proj-e7170bf8',
+    sandboxId: 'sess-5a1e0c01',
+    sessionId: 'sess-5a1e0c01',
+    projectId: 'proj-5a1e0c02',
     accountId: 'acct-1',
     provider: 'e2b',
-    externalId: 'i67m4fhw2t3nesssgl4yf',
+    externalId: 'i000000synthetic0box1',
     baseUrl: null,
     status: 'stopped',
     config: {},

@@ -49,7 +49,7 @@ Learn this once and most questions answer themselves.
 **The bridge between them is session readiness.** A session runtime does not
 exist until its sandbox is provisioned or resumed. That is what `ensureReady()`
 (and `start()`, and implicitly `send()`) does: boots or resumes the sandbox and
-resolves this session's OpenCode identity.
+resolves this session's runtime identity (`runtime_session_id`).
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken })   // ← one client, one auth seam
@@ -90,7 +90,8 @@ react/                                 ← optional glue. Nothing below this lin
 `./event-stream`, `./server-store`, …). They re-export from `core/` and stay
 until the next major. Add nothing new there.
 
-`core/turns/` deserves a note: the opencode wire format has ~50 part variants.
+`core/turns/` deserves a note: the transcript (`kortix.transcript.v1`, the same
+wire from OpenCode and pi) has ~50 part variants.
 It collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
 renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
 It is framework-free on purpose — `examples/04` renders a transcript to plain
@@ -128,6 +129,15 @@ Follow the grain. Almost every feature is this shape:
 - **Hosts reach the runtime through the session verbs** (`messages`, `pending`,
   `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`,
   `stream`). `session.runtime` is deprecated; no host imports `@opencode-ai/sdk`.
+- **A harness difference is a capability, never a harness check.** The daemon
+  lists what the runtime serves in `GET /kortix/health` `capabilities`
+  (`session.rewind`, `session.compact`, `session.commands`, `session.fork`,
+  `session.subagents`, `session.mcp`, `session.todo`, `session.shell`,
+  `session.attach`, `session.config`). OpenCode lists all ten; pi lists
+  `session.subagents`. A hook or a host gates on
+  `runtimeSupports(capabilities, capability)` (`core/session/health.ts`). New
+  SDK code never branches on the harness id and never assumes an OpenCode
+  route answers.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
   to the SDK.
 - **The core never imports a framework.** Enforced statically. See the tripwire.
@@ -410,7 +420,7 @@ is the single most breakable surface in this package, because it is the only one
 that depends on **streaming-body support in the host's `fetch`** — a thing that
 differs across every runtime we claim to support.
 
-The transport is **not** `EventSource`. It is `eventStream` in
+The default transport is **not** `EventSource`. It is `fetchEventTransport` in
 `src/core/runtime/runtime-rest-client.ts`:
 
 ```js
@@ -418,10 +428,17 @@ const response = await fetchFn(new Request(url, { method: 'GET', headers, signal
 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 ```
 
-So streaming requires `fetch` with a real `ReadableStream` body, plus
-`TextDecoderStream`. Reconnect, backoff, heartbeat, and event coalescing live in
-`src/core/stream/event-stream.ts`, which asks the transport for exactly one
+So the default needs `fetch` with a real `ReadableStream` body, plus
+`TextDecoderStream`. Reconnect, backoff, `Last-Event-ID` resume, heartbeat, and
+event coalescing live in `eventStream` (same file) and
+`src/core/stream/event-stream.ts`, which ask the transport for exactly one
 connection attempt per connect (`sseMaxRetryAttempts: 1`).
+
+**The transport is injectable.** A host whose `fetch` cannot stream supplies
+`configureKortix({ eventStreamTransport })` (`RuntimeEventTransport`): one
+connection's messages, and nothing else. The SDK adds the auth headers and keeps
+every reconnect decision. `apps/mobile/lib/session/sse-transport.ts` is the one
+host transport today: `react-native-sse` (XHR) behind that seam.
 
 | Target | Streams? | Notes |
 |---|---|---|
@@ -429,26 +446,26 @@ connection attempt per connect (`sseMaxRetryAttempts: 1`).
 | Node ≥ 18 | ✅ | `fetch` + `TextDecoderStream` are global |
 | Bun | ✅ | |
 | Cloudflare Workers | ✅ | |
-| **React Native / Expo** | ❌ **not supported** | RN's `fetch` has no `response.body`; Hermes has no `TextDecoderStream`. The SDK's streaming **cannot run on RN today.** |
+| **React Native / Expo** | ✅ with a host transport | `apps/mobile` injects `react-native-sse`. Observed delivering events on an Android emulator (Hermes) on 2026-10-01. Not observed on iOS or on a physical device. The default fetch transport on RN is unproven: Expo 56 installs a streaming `fetch` and `TextDecoderStream` globally, and nobody has run the SDK on it. |
 
 **This SDK ships to three hosts: `apps/web`, `apps/mobile` (RN/Expo), and
 `apps/whitelabel-demo`.** A change that works on web and breaks the others is a
-broken change, not a partial one.
+broken change, not a partial one. `apps/mobile` runs `useSession` from
+`@kortix/sdk/react`: a browser global used unguarded in that import graph
+(`document`, `window.location`, `sessionStorage`, `crypto.randomUUID`) is a
+crash on a phone. A host with no DOM events reports foreground, online and a
+manual retry through `notifyHostSignal`; it observes the stream for sounds,
+haptics and a live-updates indicator through `subscribeRuntimeStream`.
 
-> **Do not claim React Native streaming support** — in the README, the docs, or a
-> PR description. It does not work. `apps/mobile` streams today only because it
-> **bypasses the SDK entirely**: `apps/mobile/lib/opencode/event-stream.ts` is
-> **655 lines** reimplementing reconnect/backoff/heartbeat/coalescing on
-> `react-native-sse`'s `EventSource`, beside the SDK's own
-> `src/core/stream/event-stream.ts`. Two divergent copies of the most
-> failure-prone logic in the product.
+> **Do not add a second reconnect loop.** Before the seam existed, mobile kept
+> 856 lines reimplementing reconnect/backoff/heartbeat/coalescing beside the
+> SDK's own. If a host needs a different wire, it writes a transport: how bytes
+> arrive, never when to reconnect.
 >
-> It happened because the SDK left **no transport seam**. The fix — extracting an
-> injectable `EventStreamTransport`, so the platform-specific part is only *how
-> bytes arrive* and never the reconnect logic — is understood and deliberately
-> deferred.
->
-> **Do not add a third copy.** If a host needs a different wire, build the seam.
+> **`useSession({ chatEngine: false })` mounts `useSessionSync('')`.** Mobile is
+> the first host to do that. Everything keyed by a runtime session id must be a
+> no-op for `''` (`canQueryRuntimeSession`): an unguarded path once polled
+> `GET /session//message` every 15 s.
 
 Streaming is not "done" because a unit test passes. It is done when it has been
 observed delivering events in **each distribution target you claim** — the ESM

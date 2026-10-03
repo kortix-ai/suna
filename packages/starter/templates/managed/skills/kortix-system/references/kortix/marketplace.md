@@ -3,7 +3,7 @@
 The Kortix Marketplace is the project skill library. It lets agents and humans
 discover, install, inspect, remove, and update reusable skills without copying
 files by hand. In the launch scope, the visible marketplace is skills-first:
-OpenCode agents, tools, plugins, and bundles may exist in the registry model,
+Agents, tools, plugins, and bundles may exist in the registry model,
 but normal browse/install flows should treat Marketplace as the skill surface.
 
 Use Marketplace before writing a new skill. Search first, inspect the candidate,

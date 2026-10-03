@@ -129,6 +129,10 @@ slack step "Cross-referencing the timeline" \
   --output "Tied to <https://github.com/acme/api/commit/a3f1|api@a3f1> — auth middleware"
 ```
 
+### People and channels in a step
+
+A step never notifies anyone. `<@U0123ABCD>` in a step's title, `--detail` or `--output` shows as the person's name (`@Sam Rivera`), and `<!here>` shows as text. `<#C0123ABCD>` shows as the channel. To notify someone, mention them in `slack send`.
+
 ### `--source URL|TITLE` — citation footer (repeatable)
 
 Attach structured citations to the *closing* task. Slack renders them as a sources strip under that task's card. Pass multiple `--source` lines separated by newlines (use shell heredoc or repeat the flag in a wrapper).
@@ -319,14 +323,10 @@ Each turn finalizes exactly one stream. Don't call `slack send` twice — the se
 A `slack send` with no `--channel` is the turn's answer. When it cannot be delivered into a Slack turn it exits 1 with `{"ok": false, "code": "ANSWER_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}` — it never prints `ok: true` for an undelivered answer. `no_open_turn` means this run was not started from Slack, or the turn was closed before you answered; if the user is waiting in a thread, deliver the same answer with `slack send --channel <id> --thread <ts>` (the channel and thread are in the prompt header and in `$SLACK_CHANNEL_ID` / `$SLACK_THREAD_TS`). `relay_request_failed` is a Kortix API failure, not a missing turn: retry once, then post with `--channel/--thread`.
 
 **A reminder fire is not a Slack turn either.** When you set a reminder (`kortix remind`) from a Slack thread, write the channel id and thread ts into the reminder text — e.g. `kortix remind "Check whether the deploy finished; post the result with slack send --channel C0123ABCD --thread 1727600000.000100" --in 30m` — and answer the fire with `slack send --channel <id> --thread <ts>`. A plain `slack send` on that turn exits 1 with `no_open_turn`.
-
-<!-- flag:human_messaging -->
-**An answer from another session is not a Slack turn either.** When you ask someone who is not in this thread (`kortix send <email> "…"`) or message another session, their answer comes back later as a `[MESSAGE from session …]` prompt with no open Slack turn. Put the channel id and thread ts in your question's context or your notes before you end the turn, and post the answer with `slack send --channel <id> --thread <ts>`. When the person you need is already in the thread, ask there instead (the `question` tool below).
-<!-- /flag:human_messaging -->
 </final-answer>
 
 <asking-the-user>
-### Use opencode's built-in `question` tool — Slack renders the buttons
+### Use the built-in `question` tool — Slack renders the buttons
 
 **Rule: if your reply asks the user to choose, call the `question` tool. Never put a list of choices inside `slack send`.**
 
@@ -349,7 +349,7 @@ The answer arrives as your NEXT turn, with full context:
 
 ### Calling the `question` tool
 
-Per opencode's schema, every option has a `label` (1–5 words) and a `description`:
+Per the tool's schema, every option has a `label` (1–5 words) and a `description`:
 
 ```jsonc
 {
@@ -405,9 +405,11 @@ Reach for these only when the task explicitly asks for them.
 ### Read prior thread context
 
 ```sh
-slack history --channel "$SLACK_CHANNEL_ID" --thread "$SLACK_THREAD_TS"
-slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
+slack history --channel "$SLACK_CHANNEL_ID" --limit 20            # the channel's recent messages
+slack thread  --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_THREAD_TS"  # this thread's replies
 ```
+
+Each message carries `user`, the author's id, and `user_name`, the author's display name when Slack has one. Write people's names from `user_name` in an answer. Use `<@user>` only to mention someone, because a mention notifies them.
 
 ### Reads and writes stay inside this project
 
@@ -451,7 +453,7 @@ slack search --query "deploy api@"
 
 ```sh
 slack users
-slack user        --user "U0123ABCD"
+slack user        --id "U0123ABCD"
 slack channels
 slack channel-info --channel "C0123ABCD"
 slack me

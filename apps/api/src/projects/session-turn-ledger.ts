@@ -661,35 +661,6 @@ export function endedTurnLedger(
 }
 
 /**
- * The rows a ledger INSERT is allowed to create a turn from: the sandbox that
- * still holds this exact token's authority, locked.
- *
- * Both writers that OPEN a ledger row do it in a SECOND round trip after their
- * authority write, and a stop can commit in that gap. The stop erases
- * `activeTurns` and settles the sandbox's open rows in one transaction, so a
- * row created after it commits can never be closed by anything: every
- * token-scoped settle CASes against the entry the stop deleted, and the
- * sandbox-scoped one has already run. That row would claim a turn is running
- * for ever on a parked box.
- *
- * `FOR UPDATE` is what closes the window rather than narrowing it. A plain
- * predicate reads its own snapshot and happily passes while the stop is
- * mid-commit; the lock makes this statement WAIT for that transaction and then
- * re-evaluate against the row it wrote, so the two orderings are the only two
- * outcomes: the INSERT lands first and the stop settles it, or the stop lands
- * first and the INSERT writes nothing. Lock order is unchanged
- * (session_sandboxes, then session_turns), so this adds no deadlock edge.
- */
-export function openableTurnOwner(sandboxId: string, token: string): SQL {
-  return sql`SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
-               FROM kortix.session_sandboxes s
-              WHERE s.sandbox_id = ${sandboxId}::uuid
-                AND s.status IN ('active', 'provisioning')
-                AND s.metadata->'activeTurns'->${token} IS NOT NULL
-              FOR UPDATE`;
-}
-
-/**
  * Settle every still-open ledger row of one sandbox.
  *
  * The stop writer (reaping/sandbox-state-sync.ts) erases `activeTurn` /
@@ -817,7 +788,7 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
 
 /**
  * A second end frame for a turn that is already closed may still be the only one
- * that says WHY. Session ad02e053 (2026-09-18): OpenCode's own "Aborted" frame
+ * that says WHY. A session on 2026-09-18: OpenCode's own "Aborted" frame
  * closed the turn 476 ms before the memory guard's frame named the cause. Same
  * identity match as `wasSandboxTurnAlreadyClosed`; touches `failed` rows only,
  * and only to replace a missing or abort-only error with a named cause.

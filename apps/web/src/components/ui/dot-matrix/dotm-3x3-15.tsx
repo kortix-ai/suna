@@ -2,10 +2,9 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm3x3Component } from '@/lib/dotmatrix-core';
 
-export type Dotm3x3_15Props = DotMatrixCommonProps;
 
 const animationResolver: DotAnimationResolver = ({
   isActive,

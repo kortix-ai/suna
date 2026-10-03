@@ -15,7 +15,7 @@ import { isQuestionTool } from '../session-activity-groups';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useTranslations } from '@/i18n/use-translations';
-import { type SessionMessageAuthor, type SessionPrompt, groupShowSegments } from '@kortix/sdk';
+import { type SessionMessageAuthor, type SessionPrompt, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, toolKind } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CheckCircleIcon as CheckCircle,
@@ -390,10 +390,6 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
-  headerTrusted?: boolean;
-  /** `human_messaging` is on: ask / from-session cards may draw. Off draws a plain bubble. */
-  messagingCards?: boolean;
-  viewerEmail?: string;
   /** What the control plane recorded about how THIS session's turns ended. */
   turnOutcome: SessionTurnOutcome;
   /**
@@ -584,7 +580,7 @@ export function resolveTurnError(turn: Turn): string | undefined {
   if (msgError) return msgError;
   for (const msg of turn.assistantMessages) {
     for (const part of msg.parts) {
-      if (part.type !== 'tool') continue;
+      if (!isToolPart(part)) continue;
       const tool = part as ToolPart;
       if (isQuestionTool(tool.tool) && tool.state.status === 'error' && 'error' in tool.state) {
         return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
@@ -639,12 +635,11 @@ const allParts = useMemo(() => collectTurnParts(turn), [turn]);
 // (todowrite, task, question) don't count as "steps".
 const hasSteps = useMemo(() => {
   return allParts.some(({ part }) => {
-    if (part.type === 'compaction' || part.type === 'snapshot' || part.type === 'patch')
-      return true;
+    if (isCompactionPart(part) || isSnapshotPart(part) || isPatchPart(part)) return true;
     if (isToolPart(part)) {
       // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
       // both spellings, and the plan card owns both (see plan-anchor.ts).
-      if (isPlanWriteTool(part.tool) || part.tool === 'task' || isQuestionTool(part.tool))
+      if (isPlanWriteTool(part.tool) || toolKind(part.tool) === 'task' || isQuestionTool(part.tool))
         return false;
       return shouldShowToolPart(part);
     }
@@ -848,7 +843,7 @@ function collectAnsweredQuestions(
     const msg = assistantMessages[mi];
     for (let pi = 0; pi < msg.parts.length; pi++) {
       const part = msg.parts[pi];
-      if (part.type !== 'tool') continue;
+      if (!isToolPart(part)) continue;
       const tool = part as ToolPart;
       if (!isQuestionTool(tool.tool)) continue;
       questionInfos.push({
@@ -871,7 +866,7 @@ function collectAnsweredQuestions(
       const msg = assistantMessages[msgIndex];
       for (let pi = partIndex + 1; pi < msg.parts.length; pi++) {
         const p = msg.parts[pi];
-        if (p.type === 'step-finish' || p.type === 'step-start') continue;
+        if (isStepPart(p)) continue;
         return true;
       }
       // Check for later messages in the turn
@@ -1526,7 +1521,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
 /** The user side of a turn: the report card, the system-pill line, and the
  *  user bubble (hidden for notification-only turns). */
 function TurnUserBlock(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'headerTrusted' | 'messagingCards' | 'viewerEmail' | 'isLast' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
     model: TurnModelState;
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
@@ -1548,14 +1543,14 @@ function TurnUserBlock(
 
 /** The user message bubble — dimmed while the prompt waits in the queue. */
 function TurnUserBubble(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'headerTrusted' | 'messagingCards' | 'viewerEmail' | 'isLast' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
   },
 ) {
   const { hasVisibleUserContent } = props.userContent;
   const {
-    turn, author, showAuthor, headerTrusted, messagingCards, viewerEmail, isLast, pending, pendingPrompt, interruptedBeforeRun,
+    turn, author, showAuthor, pending, pendingPrompt, interruptedBeforeRun,
     pendingAttachments, uploadStatus, pendingText, agentNames,
     commandMessages, commands, sessionId, ownsPlan, onRewind, rewindDisabled,
     editingText, editPending, onEditCancel, onEditSend,
@@ -1579,10 +1574,6 @@ function TurnUserBubble(
           message={turn.userMessage}
           author={author}
           showAuthor={showAuthor}
-          headerTrusted={headerTrusted}
-          messagingCards={messagingCards}
-          viewerEmail={viewerEmail}
-          isLastMessage={isLast}
           pendingAttachments={pendingAttachments}
           uploadStatus={uploadStatus}
           pendingText={pendingText}

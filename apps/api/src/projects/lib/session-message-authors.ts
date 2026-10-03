@@ -7,11 +7,10 @@
 import { projectSessions, sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { namedAgent } from './session-participants';
 import { resolveUserIdentities } from './user-identity';
 
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null }
+  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url: string | null }
   | { kind: 'session'; session_id: string; name: string; agent?: string };
 
 export interface SessionMessageAuthors {
@@ -20,6 +19,11 @@ export interface SessionMessageAuthors {
   /** A spawned session's first message came from its parent's agent through
    *  `initial_prompt`, which leaves no ledger row. Null otherwise. */
   initial_author: SessionMessageAuthor | null;
+}
+
+/** The agent a session runs, unless it is the column's `'default'` placeholder. */
+function namedAgent(agentName: string | null | undefined): agentName is string {
+  return !!agentName && agentName !== 'default';
 }
 
 function sessionTitle(metadata: unknown): string {
@@ -86,6 +90,7 @@ export async function sessionMessageAuthors(session: {
           user_id: row.userId,
           name: identity.displayName?.trim() || identity.email || 'Member',
           email: identity.email,
+          avatar_url: identity.avatarUrl ?? null,
         };
       }
     }

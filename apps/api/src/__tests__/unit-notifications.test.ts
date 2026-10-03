@@ -58,7 +58,54 @@ describe('notification emails', () => {
     expect(payload.html).toContain('https://app.example.test/invites/invite-account-123');
     expect(payload.html).toContain('Acme &lt;Labs&gt;');
     expect(payload.html).toContain('owner@example.test');
-    expect(payload.html).toContain('ADMIN');
+    // Brand voice 5.5: a chip is sentence case, and an invite closes with
+    // what to do when the reader did not expect it.
+    expect(payload.html).toContain('>Admin</span>');
+    expect(payload.html).not.toContain('ADMIN');
+    expect(payload.text).toContain('Role: Admin');
+    expect(payload.html).toContain('If you were not expecting this invitation, you can ignore this email.');
+    expect(payload.text).toContain('If you were not expecting this invitation, you can ignore this email.');
+    // Accepting requires the invited address (email_matches_caller), so the
+    // email says which address the invitation is for.
+    expect(payload.html).toContain('This invitation is for teammate@kortix.com. Sign in with that address');
+    expect(payload.text).toContain('This invitation is for teammate@kortix.com. Sign in with that address');
+  });
+
+  test('an invite without an inviter email names the account as the inviter', async () => {
+    await sendAccountInviteEmail({
+      email: 'teammate@kortix.com',
+      accountName: 'Acme',
+      inviterEmail: null,
+      inviteId: 'invite-no-inviter',
+      role: 'member',
+      projectName: 'kaab-demo',
+    });
+
+    const payload = sentPayload();
+    expect(payload.html).toContain('>Acme</span> invited you to join the');
+    expect(payload.text).toContain('Acme invited you to join the kaab-demo project on Kortix.');
+    expect(payload.html).not.toContain("You've been invited");
+  });
+
+  // SpamAssassin's html_image_only(min, max) compares the RAW HTML part length
+  // (markup included) with byte windows up to 3200 and scores an HTML part that
+  // has an <img> and falls inside one: HTML_IMAGE_ONLY_28 is 0.726 to 2.799
+  // points (rules/72_scores.cf). Dev seed test 2026-10-02: the invite was 2746
+  // bytes and lost 0.726 on mail-tester for it.
+  test.each([
+    ['a project invite with no inviter email', { inviterEmail: null, projectName: 'p', accountName: 'A', role: 'member' }],
+    ['an account invite', { inviterEmail: 'o@example.org', projectName: null, accountName: 'A', role: 'admin' }],
+  ])('%s stays above the image-only HTML window', async (_name, opts) => {
+    // Worst case: the shortest real origin and address, one-letter names.
+    mockConfig.FRONTEND_URL = 'https://kortix.com';
+    try {
+      await sendAccountInviteEmail({ email: 'a@b.co', inviteId: 'i', ...opts });
+    } finally {
+      mockConfig.FRONTEND_URL = 'https://app.example.test';
+    }
+    const html: string = sentPayload().html;
+    expect(html).toContain('<img');
+    expect(html.length).toBeGreaterThan(3200);
   });
 
   test('does not call Mailtrap when email delivery is not configured', async () => {

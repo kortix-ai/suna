@@ -66,7 +66,6 @@ export const FeatureFlagMapSchema = z.object({
   config_releases: z.boolean(),
   agent_principal: z.boolean(),
   us_region: z.boolean(),
-  human_messaging: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -980,13 +979,6 @@ export const SessionCreateInputSchema = z
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
-    /**
-     * Email addresses of project members to open a conversation with
-     * (feature flag `human_messaging`). `initial_prompt` is posted to them
-     * from the caller, no turn runs, and the session is shared with them. The
-     * agent runs when one of them replies.
-     */
-    participants: z.array(z.string().min(3).max(254)).min(1).max(20).optional(),
     session_id: z
       .string()
       .regex(
@@ -1078,11 +1070,8 @@ export const ProjectSessionSchema = z.object({
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
+  owner_avatar_url: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
-  /** The people a conversation was opened with, resolved to names. Single-session read only; `[]` elsewhere. */
-  participant_people: z
-    .array(z.object({ user_id: z.string(), name: z.string().nullable(), email: z.string().nullable() }))
-    .optional(),
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
@@ -1198,7 +1187,7 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
  * A negative is a claim, and only a source that could have known may make it.
  * Before this, `/start` could answer `stage:"failed"` from a stamp written
  * hours earlier without touching a provider on the call (SampleCo 2026-08-26,
- * session 9c8749ac: a 03:37Z `runtime_boot_failed` replayed for 10+ hours with
+ * one session: a 03:37Z `runtime_boot_failed` replayed for 10+ hours with
  * `lastInitError:null`). Every failure now carries its evidence.
  */
 export const SessionStartFailureEvidenceSchema = z
@@ -1347,6 +1336,13 @@ export const SessionStartResultSchema = z.object({
    */
   runtime_url: z.string().nullable().optional(),
   reason: z.string().optional(),
+  /**
+   * What the session's runtime serves (`RUNTIME_CAPABILITIES`), as the daemon
+   * lists it in `GET /kortix/health`. Present with `stage: ready` when the API
+   * could read it; a client that gets it knows the list before its own first
+   * health probe answers.
+   */
+  capabilities: z.array(z.string()).optional(),
 
   // ── The session-open envelope. Additive; every field describes THIS call. ──
   /** ONE clock for the whole answer. */

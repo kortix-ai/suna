@@ -1153,3 +1153,53 @@ describe('editablePromptText for a /command', () => {
     expect(editablePromptText('TEMPLATE BODY', { name: 'webapp' })).toBe('/webapp');
   });
 });
+
+describe('UserMessage member author', () => {
+  const MEMBER = {
+    kind: 'member' as const,
+    user_id: 'member',
+    name: 'Marko',
+    email: 'member@example.test',
+    avatar_url: null,
+  };
+  const renderWith = (author: typeof MEMBER | undefined, showAuthor: boolean, msg: MessageWithParts = message) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+          <TooltipProvider>
+            <UserMessage
+              message={msg}
+              sessionId="session-1"
+              ownsPlan={false}
+              onRewind={() => {}}
+              author={author}
+              showAuthor={showAuthor}
+            />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a shown member author is an avatar above the bubble, not a name line', () => {
+    const markup = renderWith(MEMBER, true);
+    const text = markup.indexOf('ship the thing');
+    const avatar = markup.indexOf('data-slot="avatar"');
+    // Above the bubble: the avatar comes before the message text.
+    expect(avatar).toBeGreaterThan(-1);
+    expect(avatar).toBeLessThan(text);
+    expect(markup).not.toContain('>Marko<');
+    expect(markup).not.toContain('data-testid="message-author"');
+    expect(markup).toContain('Sent by Marko');
+  });
+
+  test('under the avatar, the bubble top-right corner is less rounded; without one it stays round', () => {
+    expect(renderWith(MEMBER, true)).toContain('rounded-tr-[calc(var(--radius)-6px)]');
+    expect(renderWith(MEMBER, false)).not.toContain('rounded-tr-[calc(var(--radius)-6px)]');
+  });
+
+  test('an author that is not shown, or no author: the message is unchanged', () => {
+    expect(renderWith(MEMBER, false)).not.toContain('Sent by');
+    expect(renderWith(MEMBER, false)).not.toContain('data-slot="avatar"');
+    expect(renderWith(undefined, true)).toBe(renderWith(undefined, false));
+  });
+});

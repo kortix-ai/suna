@@ -30,20 +30,20 @@ import {
   EnvelopeIcon,
   KeyIcon,
   LightningIcon,
-  SlackLogoIcon,
   WebhooksLogoIcon,
   type AppIcon,
 } from '@/lib/icons';
+import { SlackIcon } from '@/components/icons/slack-icon';
 import { useSessionChildren } from '@/lib/projects/hooks';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { sessionDisplayTitle } from '@/lib/session/session-list';
 import type { SessionStarter, StarterIcon } from '@/lib/session/session-tree';
 
-const STARTER_ICONS: Record<NonNullable<StarterIcon>, AppIcon> = {
+// Slack is drawn with its own four-color mark (`SlackIcon`), as on web.
+const STARTER_ICONS: Record<Exclude<NonNullable<StarterIcon>, 'slack'>, AppIcon> = {
   clock: ClockIcon,
   webhook: WebhooksLogoIcon,
   lightning: LightningIcon,
-  slack: SlackLogoIcon,
   envelope: EnvelopeIcon,
   chat: ChatCircleIcon,
   key: KeyIcon,
@@ -53,7 +53,11 @@ const STARTER_ICONS: Record<NonNullable<StarterIcon>, AppIcon> = {
 export function StarterLabel({ starter }: { starter: SessionStarter }) {
   return (
     <View className="flex-row items-center gap-1" accessible accessibilityLabel={`Started by ${starter.label}`}>
-      {starter.icon ? <Icon as={STARTER_ICONS[starter.icon]} size={12} className="text-muted-foreground" /> : null}
+      {starter.icon === 'slack' ? (
+        <SlackIcon size={12} />
+      ) : starter.icon ? (
+        <Icon as={STARTER_ICONS[starter.icon]} size={12} className="text-muted-foreground" />
+      ) : null}
       <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1} className="shrink">
         {starter.label}
       </Text>

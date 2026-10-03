@@ -8,12 +8,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
  * values through `mock.module('@/lib/dotmatrix-hooks')` and pin the exact
  * inline opacities the resolver returns for each sample.
  *
- * At rest the mock mirrors today's real SSR defaults — cycle phase 0, step
- * 0, phase 'loadingRipple', reduced motion off — which renders byte-identical
- * markup to the unmocked server output (verified across the whole catalog
- * at origin/main 41b2a206b). The catalog-wide unmocked pin lives in
- * session-dot-matrix.snapshot.test.tsx, which uses no mocks.
- *
  * Opacity extraction: every active dot's resolver style carries `opacity:<n>`
  * inline; inactive dots have none (class-driven). Document order is
  * row-major, so the sequences below are position-pinned.

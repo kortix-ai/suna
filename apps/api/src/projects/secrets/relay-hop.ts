@@ -32,6 +32,7 @@ import {
   substituteStream,
   tapPrefix,
 } from './relay-stream';
+import { logger } from '../../lib/logger';
 
 type RelayUpstream = Awaited<ReturnType<typeof openUpstream>>;
 type RelayAuditBase = RelayHopRequest['auditBase'];
@@ -611,7 +612,9 @@ function auditRelayCompletion(frame: HopFrame, responseBytes: number) {
     complete: true,
     ...(spent && { substituted }),
   };
-  void recordAuditEvent({ ...base, action: 'secret.broker.streamed', outcome: 'success', after });
+  recordAuditEvent({ ...base, action: 'secret.broker.streamed', outcome: 'success', after }).catch((err) =>
+    logger.error('[secret-relay] completion audit failed', { error: err instanceof Error ? err.message : String(err) }),
+  );
 }
 
 async function buildRelayResponse(frame: HopFrame & { redactable: string[] }): Promise<Response> {

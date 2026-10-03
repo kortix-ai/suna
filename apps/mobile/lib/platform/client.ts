@@ -2,7 +2,7 @@
  * Platform API Client for Kortix Computer Mobile
  *
  * Communicates with the Computer backend to manage sandbox lifecycle
- * and provides the sandbox URL for OpenCode session operations.
+ * and provides the sandbox URL for runtime session operations.
  *
  * All sandbox operations are proxied through:
  *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
@@ -26,9 +26,8 @@ import {
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
-// `sandboxRuntimeReload` and `/pty` stay mobile-native: the SDK's
-// `systemReload` targets the globally-active runtime URL, not an explicit
-// sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
+// `sandboxRuntimeReload` stays mobile-native: the SDK's `systemReload`
+// targets the globally-active runtime URL, not an explicit sandboxUrl.
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -97,7 +96,7 @@ interface ProjectSessionSandbox {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the OpenCode server URL for a sandbox.
+ * Build the runtime URL for a sandbox.
  * Pattern: {BACKEND_URL}/p/{externalId}/8000
  */
 export function getSandboxUrl(sandboxExternalId: string): string {
@@ -120,24 +119,17 @@ function normalizeSessionStatus(status: string | undefined): string {
   return status || 'unknown';
 }
 
-function toSandboxInfo(
-  project: ProjectSummary,
-  session: ProjectSessionSummary,
-  runtime?: ProjectSessionSandbox | null
-): SandboxInfo {
-  const externalId =
-    runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
-  const status = normalizeSessionStatus(runtime?.status || session.status);
+// Derived from the session row alone: the listing never calls /start (that would
+// wake every sandbox), so no runtime record exists here.
+function toSandboxInfo(project: ProjectSummary, session: ProjectSessionSummary): SandboxInfo {
   return {
-    sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
-    external_id: externalId,
+    sandbox_id: session.sandbox_id || session.session_id,
+    external_id:
+      session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id,
     name: session.name || `${project.name} session`,
-    provider: runtime?.provider || session.sandbox_provider || 'daytona',
-    base_url:
-      runtime?.base_url ||
-      session.sandbox_url ||
-      (runtime?.external_id ? getSandboxUrl(runtime.external_id) : ''),
-    status,
+    provider: session.sandbox_provider || 'daytona',
+    base_url: session.sandbox_url || '',
+    status: normalizeSessionStatus(session.status),
     version: null,
     metadata: {
       ...(session.metadata || {}),
@@ -145,10 +137,9 @@ function toSandboxInfo(
       session_id: session.session_id,
       project_name: project.name,
       error: session.error,
-      runtime_status: runtime?.status,
     },
-    created_at: runtime?.created_at || session.created_at,
-    updated_at: runtime?.updated_at || session.updated_at,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
   };
 }
 
@@ -201,7 +192,7 @@ async function listProjectSessionSandboxes(): Promise<
         project,
         session,
         runtime,
-        sandbox: toSandboxInfo(project, session, runtime),
+        sandbox: toSandboxInfo(project, session),
       });
     }
   });

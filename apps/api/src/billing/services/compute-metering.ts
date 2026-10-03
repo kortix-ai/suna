@@ -282,6 +282,11 @@ async function settleComputeWindow(
   // The release path below is now a genuine error path rather than the steady
   // state it used to be: a drained account no longer bounces every window
   // forever, it records the overdraft once and blocks the next admission.
+  // The session that ran the box is named in the description only when the row
+  // has one (a bare App box does not), so a ledger charge reads the same as it
+  // always has and a session charge is traceable to its session — the same
+  // identifier the Session costs tab shows.
+  const sessionLabel = row.sessionId ? `${row.sessionId} · ` : '';
   try {
     await settleAndCheckAutoTopup({
       accountId: row.accountId,
@@ -289,7 +294,7 @@ async function settleComputeWindow(
       // The multiplier is named in the description only when it is not list
       // price, so a custom-priced debit is self-explaining in the ledger and an
       // ordinary one reads exactly as it always has.
-      description: `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
+      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
         rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
       }`,
       kind: 'compute_debit',

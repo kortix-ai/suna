@@ -23,13 +23,15 @@
  * No React import. Every rule here is unit-tested in plan-anchor.test.ts.
  */
 import { isToolPart, type MessageWithParts } from '@/ui';
+import { shouldShowToolPart, toolKind } from '@kortix/sdk';
 
 /**
- * Both spellings reach the UI — the registry registers `todowrite` and
- * `todo_write`, and `action-panel/shared/narration.ts` maps both to "plan".
+ * A tool call that writes the plan. The runtime emits more than one spelling
+ * (`todowrite`, `todo_write`); `toolKind` owns them. The todo READ shares the
+ * kind and never renders (`shouldShowToolPart`), so it is not a plan write.
  */
 export function isPlanWriteTool(tool: string): boolean {
-  return tool === 'todowrite' || tool === 'todo_write';
+  return toolKind(tool) === 'todowrite' && shouldShowToolPart({ tool });
 }
 
 export function planAnchorMessageId(allMessages: ReadonlyArray<MessageWithParts>): string | null {

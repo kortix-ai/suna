@@ -12,11 +12,11 @@ import {
   CommandPopoverTrigger,
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -132,7 +132,6 @@ export function AgentSelector({
         // pointing at neither.
         className={cn('items-start gap-2 py-2', isSelected && 'bg-primary/[0.06]')}
         onSelect={() => {
-          if (disabled) return;
           onSelect(agent.name);
           setOpen(false);
         }}
@@ -198,8 +197,30 @@ export function AgentSelector({
     );
   }
 
+  /**
+   * An inert picker: this host offered the roster but the control is read-only
+   * (a settings form the caller cannot write). The trigger stays — the agent
+   * that would run must remain visible — but it stops pretending to be
+   * interactive: no caret (the one cue that read as "opens a menu"), the muted
+   * text every inert control on this rail wears, and the disabled attribute.
+   */
+  if (disabled) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled
+        className="text-muted-foreground rounded-lg"
+      >
+        {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
+        <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+      </Button>
+    );
+  }
+
   return (
-    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
+    <CommandPopover open={open} onOpenChange={setOpen}>
       <CommandPopoverTrigger>
         <Button
           type="button"

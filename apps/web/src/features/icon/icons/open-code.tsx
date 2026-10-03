@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils';
  * convention for this exact rename (`ProjectOpenCodeSession as
  * ProjectRuntimeSession` in `packages/sdk/src/index.ts`), not "Harness":
  * this codebase already uses "harness" for the pluggable-agent-runtime
- * concept (OpenCode vs. the Claude Code / Codex / Pi harnesses behind
- * `KORTIX_ACP_RUNTIME`), so reusing it here for an unrelated brand mark
+ * concept (OpenCode and pi, the two session harnesses), so reusing it here
+ * for an unrelated brand mark
  * would collide with a real domain term. Import this as `import { RuntimeMark
  * as OpenCode } from '@/features/icon/icons/open-code'` to keep call sites
  * unchanged.

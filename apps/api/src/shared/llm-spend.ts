@@ -1,3 +1,4 @@
+import { numberValue, type NumericValue } from './cost-values';
 import { gatewayRequestLogs } from '@kortix/db';
 import { sql, type SQL } from 'drizzle-orm';
 
@@ -31,9 +32,6 @@ import { sql, type SQL } from 'drizzle-orm';
  * so no surface publishes the Kortix margin on a managed request.
  */
 
-/** Numeric columns come back from postgres as strings; usage hints arrive as numbers. */
-type NumericValue = number | string | null | undefined;
-
 export interface LlmSpendRow {
   billingMode: string | null | undefined;
   upstreamCost: NumericValue;
@@ -47,11 +45,6 @@ export interface LlmSpendBreakdown {
   provider_cost: number;
   /** `kortix_cost + provider_cost` — every dollar this request cost you. */
   total_cost: number;
-}
-
-function numberValue(value: NumericValue): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 /**

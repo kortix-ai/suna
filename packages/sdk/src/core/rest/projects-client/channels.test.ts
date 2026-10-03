@@ -21,6 +21,7 @@ import {
   updateChannelBinding,
   updateEmailPolicy,
   uploadSlackChannelFile,
+  type ChannelBinding,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -302,6 +303,57 @@ test('listChannelBindings hits the bindings collection', async () => {
   expect(result.projectDefaultAgent).toBe('support');
   expect(result.bindings).toHaveLength(1);
   expect(result.bindings[0]?.effectiveAgent).toEqual({ agent: 'support', source: 'project' });
+});
+
+// A deleted Slack channel, or one the bot left, has no name to show. The
+// server says so, so the settings page can say "Unavailable channel" instead
+// of a bare `C0…` id.
+test('listChannelBindings carries whether Slack still has the conversation', async () => {
+  const gone: ChannelBinding = {
+    bindingId: 'b2',
+    platform: 'slack',
+    workspaceId: 'W1',
+    channelId: 'C0GONE',
+    channelName: null,
+    channelType: null,
+    channelUnavailable: true,
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [gone] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.channelUnavailable).toBe(true);
+});
+
+// Every thread of a Teams channel is its own binding, named `Team › Channel`.
+// The server adds the thread's session title so the threads can be told apart.
+test('listChannelBindings carries a Teams channel thread\'s title', async () => {
+  const thread: ChannelBinding = {
+    bindingId: 'b3',
+    platform: 'teams',
+    workspaceId: 'tenant-1',
+    channelId: '19:general@thread.tacv2;messageid=1700000000001',
+    channelName: 'Eng › General',
+    channelType: 'channel',
+    threadTitle: 'Deploy review',
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [thread] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.threadTitle).toBe('Deploy review');
 });
 
 test('updateChannelBinding PATCHes the binding by id', async () => {

@@ -554,9 +554,10 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
 
     await waitForRunningTool(r, root)
-    // The first running tool can be the printf itself, before it has written.
-    await waitFor(() => existsSync(join(r.workspace, 'note.txt')))
-    expect(readFileSync(join(r.workspace, 'note.txt'), 'utf8')).toBe('kortix')
+    // The first running tool can be the printf itself. The shell creates
+    // note.txt empty before printf writes it, so wait for the content.
+    const note = join(r.workspace, 'note.txt')
+    await waitFor(() => existsSync(note) && readFileSync(note, 'utf8') === 'kortix')
     const message = (await r.user(`/kortix/runtime/messages/${root}/${messageId}`).then((res) => res.json())) as { info: { id: string; role: string } }
     expect(message.info).toMatchObject({ id: messageId, role: 'user' })
     expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`)).status).toBe(404)
@@ -582,7 +583,7 @@ describe('pi harness', () => {
       expect({ path, status: (await r.user(path)).status }).toEqual({ path, status: 404 })
     }
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -600,8 +601,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 8 },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 8 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 13 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 13 },
     ])
   })
 
@@ -1758,14 +1759,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'question', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {

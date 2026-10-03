@@ -122,6 +122,11 @@ export interface SessionReminderFields {
   /** Recurring period in seconds, or null for a cron or one-shot reminder. */
   everySeconds: number | null;
   createdAt: string;
+  /** Set when a person created the reminder, not the session's own agent: a
+   *  fire is that person's deferred prompt, so its turn acts as them (the
+   *  session token rebinds at delivery, like a queued prompt). Absent for an
+   *  agent-created reminder, whose fire leaves the token's identity as is. */
+  promptAuthorUserId?: string;
 }
 
 export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';

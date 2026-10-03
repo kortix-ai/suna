@@ -1,6 +1,7 @@
 # {{projectName}}
 
-This project runs OpenCode through its REST API.
+A session of this project runs one agent harness: OpenCode (the default) or pi
+(`runtime: pi` in `kortix.yaml`). Both read the same agents, skills and memory.
 
 ## Layout
 
@@ -11,10 +12,12 @@ This project runs OpenCode through its REST API.
 | `skills/<name>/SKILL.md` | Skills. Every agent harness loads them. |
 | `memory/` | The project brain. Load the `kortix-memory` skill to work with it. |
 | `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. |
+| `harnesses/pi/` | Files only pi reads: `extensions/`, `prompts/`, `settings.json`. Not created by default. |
 
 ## Authentication
 
-OpenCode can use Kortix-managed models or project provider credentials.
+OpenCode can use Kortix-managed models or project provider credentials. pi uses
+Kortix-managed models through the LLM gateway.
 
 ## Verify the project
 

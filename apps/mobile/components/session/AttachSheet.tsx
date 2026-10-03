@@ -52,7 +52,8 @@ export interface AttachSheetProps {
   children?: React.ReactNode;
 }
 
-export const AttachSheet = React.forwardRef<AttachSheetRef, AttachSheetProps>(
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const AttachSheet = React.memo(React.forwardRef<AttachSheetRef, AttachSheetProps>(
   ({ onPick, children }, ref) => {
     const sheetRef = React.useRef<SheetRef>(null);
     const { deferAfterClose, takeAfterClose, clearAfterClose } = useCloseThen();
@@ -133,7 +134,7 @@ export const AttachSheet = React.forwardRef<AttachSheetRef, AttachSheetProps>(
       </>
     );
   },
-);
+));
 AttachSheet.displayName = 'AttachSheet';
 
 /** One source: 24pt icon over its label on a `bg-secondary` tile, a third of the row. */

@@ -39,14 +39,13 @@ describe('visibleCapabilityTabs', () => {
     );
   });
 
-  // Review Center graduated out of the flag system: Review follows its read
-  // leaf like every other tab, with no flag in front of it.
-  test('Review is visible with no flag, and only its read leaf hides it', () => {
-    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toContain('review');
+  // Review left the bar for a project page of its own (2026-10-02). Losing
+  // its read leaf hides no tab.
+  test('Review is not a tab, so its read leaf hides nothing on the bar', () => {
     const keys = visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_REVIEW_READ)).map(
       (t) => t.key,
     );
-    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
+    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key));
   });
 
   // The whole point. A member holds project.read, project.trigger.read and

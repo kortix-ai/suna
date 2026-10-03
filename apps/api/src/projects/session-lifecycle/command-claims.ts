@@ -3,7 +3,7 @@ import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { currentInstanceId } from '../instance-scope';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
-import { inboxLaneSql, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferSelect;
 
@@ -37,8 +37,14 @@ export async function claimDueLifecycleCommands(input: {
   const now = input.now ?? new Date();
   const staleRunningBefore = new Date(now.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS);
   const instanceId = currentInstanceId();
-  const rows = await db
-    .select()
+  // ONE statement. The inner SELECT takes the row locks and skips rows another
+  // claim holds; a row whose status another claim changed meanwhile is
+  // rechecked against this predicate and drops out. It ran as a SELECT plus
+  // one compare-and-set UPDATE per row: 1 + n round trips per drain, on the
+  // path of every prompt. `ARRAY(...)` makes the subquery run exactly once, so
+  // `LIMIT` holds.
+  const due = db
+    .select({ commandId: sessionLifecycleCommands.commandId })
     .from(sessionLifecycleCommands)
     .where(
       and(
@@ -71,45 +77,24 @@ export async function claimDueLifecycleCommands(input: {
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
       ),
     )
-    .orderBy(
-      asc(sessionLifecycleCommands.availableAt),
-      asc(inboxLaneSql),
-      asc(inboxSentAtSql),
-      asc(inboxWireIdSql),
-      asc(sessionLifecycleCommands.commandId),
-    )
-    .limit(input.limit);
-
-  const claimed: SessionLifecycleCommandRow[] = [];
-  for (const row of rows) {
-    const [locked] = await db
-      .update(sessionLifecycleCommands)
-      .set({
-        status: 'running',
-        attempts: row.attempts + 1,
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
-        lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
-        updatedAt: now,
-      })
-      // CAS on the exact state this row was read in — its status AND its lock
-      // OWNER. For a `queued` row the status flip alone is exclusive, as it
-      // always was. For a reclaimed `running` row there is no flip to rely on,
-      // so the owner is what makes it exclusive: the first worker to write its
-      // own id takes the row, and the second no longer matches. (The lock
-      // TIMESTAMP cannot serve here — Postgres keeps microseconds that a JS
-      // `Date` has already rounded away, so an equality on it never matches.)
-      .where(
-        and(
-          eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, row.status),
-          row.lockedBy
-            ? eq(sessionLifecycleCommands.lockedBy, row.lockedBy)
-            : isNull(sessionLifecycleCommands.lockedBy),
-        ),
-      )
-      .returning();
-    if (locked) claimed.push(locked);
-  }
-  return claimed;
+    .orderBy(asc(sessionLifecycleCommands.availableAt), ...inboxOrderBy())
+    .limit(input.limit)
+    .for('update', { skipLocked: true });
+  const claimed = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'running',
+      attempts: sql`${sessionLifecycleCommands.attempts} + 1`,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
+      lockedBy: input.workerId,
+      lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+      updatedAt: now,
+    })
+    .where(sql`${sessionLifecycleCommands.commandId} = ANY(ARRAY(${due}))`)
+    .returning();
+  // RETURNING has no order. Restore the queue's.
+  return claimed.sort(
+    (left, right) =>
+      left.availableAt.getTime() - right.availableAt.getTime() || compareInboxSendOrder(left, right),
+  );
 }

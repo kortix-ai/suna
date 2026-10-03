@@ -1,10 +1,9 @@
 'use client';
 
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmSquare20Props = DotMatrixCommonProps;
 
 /** Clockwise perimeter: one closed loop you can trace with your eye. */
 const PERIMETER_PATH: readonly number[] = [
