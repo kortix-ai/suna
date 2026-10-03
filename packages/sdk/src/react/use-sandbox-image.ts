@@ -91,9 +91,8 @@ export function useSandboxImage({
   filePath: string;
   enabled: boolean;
 }) {
-  const rawUrl = sandboxUrl && filePath
-    ? `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}`
-    : null;
+  const rawUrl =
+    sandboxUrl && filePath ? `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}` : null;
   const [phase, setPhase] = useState<SandboxImagePhase>('probing');
   const [token, setToken] = useState<string | null>(null);
   const [sizeBytes, setSizeBytes] = useState<number | null>(null);

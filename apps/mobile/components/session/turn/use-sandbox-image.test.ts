@@ -3,7 +3,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { configureKortix } from '@kortix/sdk';
 
-let sandboxUrl = 'https://image.example/v1/p/synthetic/8000';
+const sandboxUrl = 'https://image.example/v1/p/synthetic/8000';
 let getToken: () => Promise<string | null> = async () => 'initial';
 mock.module('@/contexts/SandboxContext', () => ({ useSandboxContext: () => ({ sandboxUrl }) }));
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
