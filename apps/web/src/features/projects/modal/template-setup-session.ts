@@ -1,8 +1,5 @@
 import { errorToast } from '@/components/ui/toast';
-import {
-  buildProjectOnboardingPrompt,
-  buildTemplateSetupPrompt,
-} from '@/features/marketplace/marketplace-setup-prompt';
+import { buildTemplateSetupPrompt } from '@/features/marketplace/marketplace-setup-prompt';
 import { createProjectSession, type KortixProject } from '@kortix/sdk';
 
 /**
@@ -28,30 +25,6 @@ export async function startTemplateSetupSession(
     return session.session_id;
   } catch (error) {
     console.error('Failed to start template setup session', error);
-    errorToast(errorMessage);
-    return null;
-  }
-}
-
-/**
- * The "agent creation" default for a brand-new (non-cloned) project: start a
- * first session that onboards + personalizes the starter to the user instead of
- * dropping them on an empty project. Returns the session id, or `null` on
- * failure (the caller falls back to the plain project home).
- */
-export async function startProjectOnboardingSession(
-  project: KortixProject,
-  errorMessage: string,
-): Promise<string | null> {
-  try {
-    const session = await createProjectSession(project.project_id, {
-      initial_prompt: buildProjectOnboardingPrompt(project.name),
-      name: 'Get started',
-      metadata: { kind: 'project-onboarding' },
-    });
-    return session.session_id;
-  } catch (error) {
-    console.error('Failed to start onboarding session', error);
     errorToast(errorMessage);
     return null;
   }

@@ -1914,7 +1914,6 @@
     "messageInput": "Nachrichteneingabe",
     "attachFiles": "Dateien anhängen",
     "selectAgent": "Agent auswählen",
-    "agentLockedHint": "In einer bereits gestarteten Session lässt sich der Agent nicht wechseln.",
     "noModel": "Kein Modell",
     "thinkingEffort": "Denkaufwand",
     "sessionOverrides": "Sitzungsüberschreibungen",
@@ -17197,7 +17196,6 @@
       "textdf80c0ee2f08": "Agenten & Skills",
       "textdf8e32d18dbd": "Alles, was Sie erreichen können",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Bitte gib den 6-stelligen Code aus deiner E-Mail ein",
       "textdfa16aeaca13": "Das Repository dieses Arbeitsbereichs wird auf {value0} gehostet, das keine Mitarbeitereinladungen von Kortix unterstützt. Verwalten Sie den Zugriff dort, wo sich das Repository befindet.",
       "textdfa2cff42f0c": "Keine Systemtiefe",
       "textdfad83e7eb69": "{value0} sind implizite Manager für jedes aktive Projekt im Konto.",
@@ -19204,7 +19202,8 @@
       "textd4586396b9ba": "Können Agenten die CLI selbst nutzen?",
       "text9e52157faaab": "Ja. Dieselbe Kortix CLI läuft vorab authentifiziert in jeder Sandbox, sodass Agenten genau dieselben Befehle verwenden wie du.",
       "text48b78a9ab65b": "Wie bleiben Läufe isoliert?",
-      "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt."
+      "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
+      "text39207bf34111": "Ähnliche Fähigkeiten"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

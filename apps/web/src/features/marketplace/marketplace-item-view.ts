@@ -1,3 +1,5 @@
+import type { FileTreeNode } from '@/components/ui/file-tree';
+import { buildFileTree } from '@/features/workspace/capabilities/shared/entity/entity-files';
 import type { UiTranslator } from '@/i18n/translator';
 import type { DependencyItem, ItemCapabilities, MarketplaceItem } from '@/lib/marketplace-client';
 import { typeMeta } from './marketplace-meta';
@@ -147,4 +149,35 @@ export function groupCapabilities(
 export function totalCapabilityCount(caps: ItemCapabilities | undefined | null): number {
   if (!caps) return 0;
   return caps.secrets.length + caps.connectors.length + caps.tools.length + caps.network.length;
+}
+
+/** The deepest directory every target shares (`@skills/pdf` for
+ *  `@skills/pdf/SKILL.md` + `@skills/pdf/scripts/x.py`), or `''` when none. */
+function commonDirectory(targets: readonly string[]): string {
+  if (targets.length === 0) return '';
+  const dirs = targets.map((t) => t.split('/').slice(0, -1));
+  const first = dirs[0];
+  let shared = first.length;
+  for (const dir of dirs) {
+    let i = 0;
+    while (i < shared && dir[i] === first[i]) i++;
+    shared = i;
+  }
+  return first.slice(0, shared).join('/');
+}
+
+/**
+ * An item's install targets as file-tree rows — the same ordering and
+ * indentation as the capability entity modal (`buildFileTree`: SKILL.md first,
+ * a directory's own files above its subdirectories), rooted at the directory
+ * all targets share so the rows read as the skill's own files. When the
+ * targets share no directory and some are nested, `buildFileTree` would drop
+ * the nested ones, so they list flat by full path instead.
+ */
+export function marketplaceFileNodes(targets: readonly string[]): FileTreeNode[] {
+  const dir = commonDirectory(targets);
+  if (!dir && targets.some((t) => t.includes('/'))) {
+    return [...targets].sort().map((path) => ({ path, name: path, depth: 0 }));
+  }
+  return buildFileTree(targets, dir);
 }
