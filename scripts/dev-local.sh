@@ -116,6 +116,12 @@ ensure_dev_tunnel() {
   local api_origin="http://localhost:${api_port}"
   local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
 
+  # Callers below (the watchdog and the supervised API loop) read
+  # TUNNEL_URL_FILE on every dev run: every exit path leaves the current
+  # callback URL on disk — the quick-tunnel URL when we manage one, else the
+  # effective KORTIX_URL itself (a preset URL or the localhost skip path).
+  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
+
   # Respect an explicit public KORTIX_URL (named tunnel, staging API, …) — but
   # only if it actually ANSWERS. FAA: a stale/bogus value (e.g. a dead quick-
   # tunnel URL or a leftover like https://api.trycloudflare.com baked into .env)
@@ -126,6 +132,7 @@ ensure_dev_tunnel() {
   if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
     if curl -fsS -m 6 "${KORTIX_URL%/}/health" >/dev/null 2>&1; then
       echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+      printf '%s' "$KORTIX_URL" > "$TUNNEL_URL_FILE"
       return 0
     fi
     echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is set but UNREACHABLE (sandboxes would get a dead callback URL → blank session UI) — ignoring it and starting a fresh tunnel."
@@ -136,6 +143,7 @@ ensure_dev_tunnel() {
   # Honor an explicit opt-out too.
   if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
     export KORTIX_URL="$api_origin"
+    printf '%s' "$api_origin" > "$TUNNEL_URL_FILE"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
     if [[ "$default_provider" == "daytona" ]]; then
       echo "[dev] ⚠️  Default sandbox provider is Daytona (cloud) but the tunnel is off —"
@@ -178,7 +186,6 @@ ensure_dev_tunnel() {
   fi
 
   export KORTIX_URL="$url"
-  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
   printf '%s' "$url" > "$TUNNEL_URL_FILE"
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
 }
@@ -821,7 +828,10 @@ PYC
     fi
   ) &
 
-  start_tunnel_watchdog
+  # Only a quick tunnel this script started can rot and rotate — a preset
+  # KORTIX_URL or the localhost skip path never gets a watchdog (and never
+  # rotates, so the supervised loop below just runs the API once).
+  [[ -n "${TUNNEL_PID:-}" ]] && start_tunnel_watchdog
 
   echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
   cd "$ROOT_DIR"

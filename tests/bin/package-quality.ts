@@ -190,6 +190,7 @@ await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
   run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+  run(['node', '--test', 'scripts/dev-local.test.mjs']),
   run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
 ]);
 await rejectFocusedTests();
