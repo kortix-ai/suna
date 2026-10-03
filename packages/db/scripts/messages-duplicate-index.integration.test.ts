@@ -9,6 +9,10 @@ const client = new pg.Client({ connectionString: databaseUrl });
 
 beforeAll(async () => {
   await client.connect();
+  // The suite owns its migration ledger, so a reused database starts clean
+  // (the db-suites lane gives every file a fresh one; local runs may not).
+  await client.query('DROP SCHEMA IF EXISTS messages_index_test_migrations CASCADE');
+  await client.query('DROP TABLE IF EXISTS public.messages');
   // The DB-suite runner provides an isolated database. Legacy messages is not
   // created by the Kortix baseline; build its relevant shape with synthetic data.
   await client.query(`CREATE TABLE public.messages (
