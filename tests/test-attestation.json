@@ -1,5 +1,5 @@
 {
-  "source_hash": "ab8c16de71c91a51603c4ee4e97a3cd4ff246d29df210583b7bb14fc11214cd4",
+  "source_hash": "02b57befe0f754a2a0c1559772a3c74fd71cc7895d23cef655d1a81b58c5d59f",
   "diff_files": [
     ".agents/skills/testing/SKILL.md",
     "AGENTS.md",
@@ -13,13 +13,13 @@
     "tests/unit/test-attestation.test.ts",
     "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "56b2c1f1ee78d6b731f2e03e2e14e08cb55ebf2391c773cd5abf3c7bb708da9b",
-  "head": "252ff6fff00651a22dcdd730efee744530768558",
+  "diff_hash": "2565d1ef19300f9e93c1a00e865e617f5457408aabe656d4c6dc22cc521f11c8",
+  "head": "1265114fe2d2e7802376591abc152b308975f1d3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T16:29:18.055Z"
+  "at": "2026-10-03T18:08:59.641Z"
 }
