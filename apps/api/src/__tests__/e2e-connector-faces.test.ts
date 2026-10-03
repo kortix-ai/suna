@@ -386,6 +386,7 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     cwd: REPO_ROOT,
     env: {
       PATH: process.env.PATH,
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
@@ -674,6 +675,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
@@ -768,6 +770,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
@@ -840,6 +843,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
