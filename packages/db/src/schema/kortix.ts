@@ -3130,7 +3130,7 @@ export const oauthAuthorizationCodes = kortixSchema.table(
     uniqueIndex('idx_oauth_codes_code').on(table.code),
     // No index on client_id or expires_at (KRTX-1188): the advisor's
     // unused_index lint flagged both at idx_scan = 0 since creation, so
-    // 20261003091224043_drop_unused_oauth_codes_indexes drops them. The
+    // 20261003122811000_drop_unused_oauth_codes_indexes drops them. The
     // client_id FK cascade then seq-scans a table that holds one row in prod;
     // the same client FKs on oauth_consents and oauth_authorization_requests
     // already run unindexed. Code exchange reads by `code` (the unique index

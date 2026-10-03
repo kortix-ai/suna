@@ -9,7 +9,7 @@
  * (apps/api/src/oauth/index.ts:816, WHERE code = ? AND client_id = ?) — is
  * served by the unique `idx_oauth_codes_code`, and no reader filters
  * expires_at. The migration
- * `20261003091224043_drop_unused_oauth_codes_indexes.concurrent.ts` drops both
+ * `20261003122811000_drop_unused_oauth_codes_indexes.concurrent.ts` drops both
  * with `DROP INDEX CONCURRENTLY IF EXISTS`.
  *
  * A lane database has already applied every migration, so the migration's own
