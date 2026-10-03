@@ -11,6 +11,7 @@
 import { afterEach, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import React from 'react';
+import type { Command } from '@/lib/session/runtime-data';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 (globalThis as any).__DEV__ = true;
@@ -91,7 +92,10 @@ mock.module('./use-mention-file-search', () => moduleMocks['./use-mention-file-s
 let SessionChatInput: typeof import('./SessionChatInput').SessionChatInput;
 let tree: ReactTestRenderer | undefined;
 const onSend = (...args: any[]) => sent.push(args);
-const commands = [{ name: 'review', description: 'Review', source: 'skill' }, { name: 'build', description: 'Build', source: 'skill' }] as any[];
+const commands: Command[] = [
+  { name: 'review', description: 'Review', source: 'skill', template: '', hints: [] },
+  { name: 'build', description: 'Build', source: 'skill', template: '', hints: [] },
+];
 
 beforeAll(async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
