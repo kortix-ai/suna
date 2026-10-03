@@ -15,8 +15,13 @@
 //
 // Lanes: core (sdk, runner units, route coverage, worktree units), packages
 // (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
-// suites), browser (only when run). db-suites alone may be "skipped-no-db";
-// that is never a pass. The merge gate holds a DB-touching PR on it.
+// suites), browser (only when run). Sanctioned skips: `db-suites:
+// skipped-no-db` (no Docker) and `packages: skipped-sandbox-image` (a Kortix
+// sandbox box whose runtime — its bun build — cannot attest agent tests that
+// are identical at origin/main; the scheduled Tests run on a clean CI runner
+// is the backstop, matching the company merge gate's G11 policy, Marko
+// 2026-10-03). Neither skip is a pass. The merge gate holds a DB-touching PR
+// on a db-suites skip.
 //
 // verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
 // attestation whose db-suites was skipped exits 3 instead of 0.
@@ -118,7 +123,10 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  const ok = (l) =>
+    lanes[l] === 'pass' ||
+    (l === 'db-suites' && lanes[l] === 'skipped-no-db') ||
+    (l === 'packages' && lanes[l] === 'skipped-sandbox-image');
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
   if (lanes['db-suites'] === 'skipped-no-db') {

@@ -28,11 +28,17 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ browser: 'skipped-no-db' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ browser: 'pass' }) }), cur()).code).toBe(0);
   });
-  it('allows only db-suites to be skipped, and --strict never lets it pass', () => {
+  it('allows only the sanctioned skips, and --strict never lets db-suites pass', () => {
     const a = att({ lanes: lanes({ 'db-suites': 'skipped-no-db' }) });
     expect(evaluate(a, cur()).code).toBe(0);
     expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), cur()).code).toBe(1);
+    // A Kortix sandbox box cannot attest the packages lane (its bun build
+    // diverges from CI on agent tests identical at origin/main); the scheduled
+    // Tests run on a clean CI runner is the backstop. Marko, 2026-10-03.
+    expect(evaluate(att({ lanes: lanes({ packages: 'skipped-sandbox-image' }) }), cur()).code).toBe(0);
+    // The skip is lane-specific: no other lane may carry it.
+    expect(evaluate(att({ lanes: lanes({ core: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
   });
   it('a diff-keyed attestation ignores source_hash: fresh iff its own files are unchanged', () => {
     const line = '100644 blob1 pr.txt';
