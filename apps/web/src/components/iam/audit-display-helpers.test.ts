@@ -482,10 +482,27 @@ describe('describeAuditAction — fallbacks', () => {
 
   test('an action with no family detail carries no detail key', () => {
     // The wrapper this file used to call asserted detail-absence by exact
-    // object equality. `describeAuditAction` keeps the same contract — the
-    // detail key exists only when the catalog or route produced one — so the
-    // audit row renders no empty secondary descriptor.
-    for (const action of ['iam.group.create', 'session.created', 'garbage']) {
+    // object equality on these fifteen cases; `describeAuditAction` keeps the
+    // same contract — the detail key exists only when the catalog or route
+    // produced one — so the audit row renders no empty secondary descriptor.
+    const noDetailCases = [
+      'iam.group.create',
+      `POST /v1/projects/${UID}/group-grants`,
+      `PATCH /v1/projects/${UID}/group-grants/${UID2}`,
+      `DELETE /v1/projects/${UID}/group-grants/${UID2}`,
+      `DELETE /v1/accounts/${UID}`,
+      'iam.policy_template.apply',
+      `POST /v1/projects/${UID}/sessions`,
+      `POST /v1/projects/${UID}/secrets`,
+      `POST /v1/accounts/${UID}/iam/policies`,
+      'iam.policy.create',
+      'session.created',
+      'connector.approval.denied',
+      'garbage',
+      'secret.consumer.used',
+      'iam.assignment.expired',
+    ];
+    for (const action of noDetailCases) {
       expect('detail' in describeAuditAction(action, testUiTranslator), action).toBe(false);
     }
   });

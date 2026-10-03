@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { accessVia, agentsMetaPart, distinctAgentGrants, isDirectGrant } from './access-projects-tab';
+import {
+  accessVia,
+  agentsMetaPart,
+  directProjectPolicy,
+  distinctAgentGrants,
+  isDirectGrant,
+} from './access-projects-tab';
 
 const grant = (resource_id: string, source: 'direct' | 'group' | 'project') => ({
   grant_id: `${source}-${resource_id}`,
@@ -78,5 +84,26 @@ describe('a mocked access response passes through the row derivations', () => {
     expect(agentsMetaPart(0, undefined, false)).toBe('Agents: none');
     expect(agentsMetaPart(3, undefined)).toBe('Agents: 3');
     expect(agentsMetaPart(3, 5)).toBe('Agents: 3 of 5');
+  });
+
+  test('a member row shows its DIRECT custom policy, never a group-inherited one', () => {
+    const direct = {
+      policy_id: 'p1',
+      role_id: 'r1',
+      role_key: 'auditor',
+      role_name: 'Auditor',
+      scope_type: 'project' as const,
+      expires_at: null,
+      source: 'direct' as const,
+    };
+    const viaGroup = { ...direct, policy_id: 'p2', source: 'group' as const, group_id: 'g1' };
+    const accountScoped = { ...direct, policy_id: 'p3', scope_type: 'account' as const };
+    expect(directProjectPolicy([viaGroup, accountScoped, direct])).toEqual(direct);
+    // A group's own row carries its binding without a source — that one is
+    // the group's to show; a member row with no policies resolves to none.
+    const groupRowOwn = { ...direct, source: undefined, expires_at: null };
+    expect(directProjectPolicy([groupRowOwn])).toEqual(groupRowOwn);
+    expect(directProjectPolicy([])).toBeUndefined();
+    expect(directProjectPolicy(undefined)).toBeUndefined();
   });
 });
