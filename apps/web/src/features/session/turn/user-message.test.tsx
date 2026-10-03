@@ -674,6 +674,22 @@ describe('UserMessage inline edit-from-here editor', () => {
     expect((markup.match(/title="(shot\.png|report\.pdf)"/g) ?? []).length).toBe(2);
   });
 
+  test('an edit with no text cannot send, even with attachments kept', () => {
+    // A text-less replacement prompt does not commit the staged rewind: the
+    // runtime keeps the original turn and appends a new one (KRTX-962 preview).
+    const ref = `kortix-attachment://${UUID(1)}/${UUID(2)}/${UUID(3)}`;
+    const text = uploadedFileRefXml({
+      path: '/workspace/uploads/.kortix-inbox/shot.png',
+      mime: 'image/png',
+      filename: 'shot.png',
+      attachment: ref,
+    });
+    const markup = renderText(text, { ...editProps, editingText: '   ' });
+    expect(markup).toContain('aria-label="Remove shot.png"');
+    // Send only: Cancel stays live.
+    expect((markup.match(/disabled=""/g) ?? []).length).toBe(1);
+  });
+
   test('a message without attachments draws no strip in the editor', () => {
     const markup = renderText('ship the thing', editProps);
     expect(markup).not.toContain('aria-label="Remove ');

@@ -717,8 +717,9 @@ export function UserMessageEditor({
     start: initialText.length,
     end: initialText.length,
   });
-  // The composer's rule: text or at least one attachment.
-  const canSend = (Boolean(draft.trim()) || kept.length > 0) && !pending;
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
+  const canSend = Boolean(draft.trim()) && !pending;
 
   return (
     <View

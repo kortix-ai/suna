@@ -1,7 +1,7 @@
 /**
  * `UserMessageEditor` keeps a sent message's attachments (KRTX-962): a tile
  * and a remove dot per attachment, Send carries the kept ones, and an
- * attachment-only edit can send, as in the composer. Native modules and leaf
+ * edit still needs text. Native modules and leaf
  * UI primitives are mocked; the editor's own state runs for real.
  */
 import { beforeAll, beforeEach, expect, mock, test } from 'bun:test';
@@ -120,13 +120,12 @@ test('shows a tile and a remove control per attachment; Send carries the kept on
   expect(sent).toEqual([['edit me', ['f1']]]);
 });
 
-test('an attachment-only edit can send; with no text and no attachment it cannot', async () => {
+test('an edit with no text cannot send, even with attachments kept', async () => {
+  // A text-less replacement prompt does not commit the staged rewind: the
+  // runtime keeps the original turn and appends a new one (KRTX-962 preview).
   const sent: Array<[string, string[]]> = [];
-  const tree = await mount('', (text, kept) => sent.push([text, kept.map((file) => file.key)]));
-  expect(sendButton(tree).props.disabled).toBe(false);
-
-  await act(async () => removeButtons['a.png']!());
-  await act(async () => removeButtons['b.pdf']!());
+  const tree = await mount('   ', (text, kept) => sent.push([text, kept.map((file) => file.key)]));
+  expect(tiles).toEqual(['a.png', 'b.pdf']);
   expect(sendButton(tree).props.disabled).toBe(true);
   await act(async () => sendButton(tree).props.onPress());
   expect(sent).toEqual([]);

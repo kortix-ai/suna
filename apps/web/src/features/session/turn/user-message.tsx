@@ -1053,8 +1053,9 @@ export function UserMessageEditor({
   const [draft, setDraft] = useState(initialText);
   const [kept, setKept] = useState(attachments);
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  // The composer's rule: text or at least one attachment.
-  const canSend = (Boolean(draft.trim()) || kept.length > 0) && !pending;
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
+  const canSend = Boolean(draft.trim()) && !pending;
 
   // Focus with the caret at the END on mount — autofocus alone puts it at the
   // start, and an edit almost always continues the sentence.
