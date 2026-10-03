@@ -1,0 +1,3 @@
+[test]
+# Keep `localhost` reachable on a locked-down runtime (see the script's doc).
+preload = ["../../scripts/isolated-localhost.ts"]
