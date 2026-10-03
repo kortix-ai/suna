@@ -91,6 +91,7 @@ function legacyFixture(): string {
     CREATE INDEX idx_credit_usage_account_id ON public.credit_usage USING btree (account_id);
     CREATE INDEX idx_credit_usage_created_at ON public.credit_usage USING btree (created_at DESC);
     CREATE INDEX idx_credit_usage_thread_id ON public.credit_usage USING btree (thread_id);
+    INSERT INTO public.accounts (account_id) VALUES (gen_random_uuid());
     INSERT INTO public.messages (message_id, payload)
       SELECT gen_random_uuid(), 'seed' FROM generate_series(1, 5);
     INSERT INTO public.credit_usage (account_id, amount_dollars, message_id)
@@ -232,13 +233,15 @@ describe.skipIf(!dockerAvailable)(
       dockerPsql('fk_db', legacyFixture());
       // RED: the exact condition the Supabase advisor reports on prod.
       expect(uncoveredForeignKeys('fk_db')).toEqual(['credit_usage_message_id_fkey']);
-      expect(indexCount('fk_db')).toBe('3');
+      // pg_indexes counts the pkey index too (verified against prod: 4 rows,
+      // credit_usage_pkey included).
+      expect(indexCount('fk_db')).toBe('4');
 
       // GREEN: the real migration, applied the way `pnpm migrate` applies it.
       await applyMigration('fk_db');
       expect(uncoveredForeignKeys('fk_db')).toEqual([]);
       expect(messageIndex('fk_db')).toBe('1');
-      expect(indexCount('fk_db')).toBe('4');
+      expect(indexCount('fk_db')).toBe('5');
       // Nothing else changed: the three FK constraints survive.
       expect(
         dockerPsql(
@@ -251,7 +254,7 @@ describe.skipIf(!dockerAvailable)(
     test('a second run is a no-op', async () => {
       await expect(applyMigration('fk_db')).resolves.toBeUndefined();
       expect(messageIndex('fk_db')).toBe('1');
-      expect(indexCount('fk_db')).toBe('4');
+      expect(indexCount('fk_db')).toBe('5');
     }, 60_000);
 
     test('is a safe no-op on a fresh database that never had the legacy table', async () => {
