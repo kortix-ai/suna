@@ -204,6 +204,24 @@ describe.skipIf(!dockerAvailable)(
       expect(legacyState('reader_db')).toBe('true,true,2');
     }, 60_000);
 
+    test('refuses and drops nothing while another add_credits overload reads the table', () => {
+      // The guard excludes the dropped (uuid, numeric, uuid) overload BY OID;
+      // a sibling overload is a surviving caller, not a self-reference.
+      freshDatabase(
+        'overload_db',
+        `${legacyFixture()}
+         CREATE FUNCTION public.add_credits(p_user_id uuid, p_amount numeric)
+           RETURNS numeric LANGUAGE plpgsql AS $$
+         BEGIN
+           RETURN (SELECT balance_dollars FROM public.credit_balance WHERE account_id = p_user_id);
+         END $$;`,
+      );
+      expect(() => applyMigration('overload_db')).toThrow(
+        /drop refused, a function body still references it/,
+      );
+      expect(legacyState('overload_db')).toBe('true,true,2');
+    }, 60_000);
+
     test('refuses and drops nothing while another table has a policy referencing either name', () => {
       freshDatabase(
         'policy_db',

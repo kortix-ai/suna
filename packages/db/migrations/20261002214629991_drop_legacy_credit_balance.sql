@@ -48,10 +48,16 @@ set statement_timeout = '30s';
 DO $$
 DECLARE
   blocker text;
+  v_self oid;
 BEGIN
   IF to_regclass('public.credit_balance') IS NULL THEN
     RETURN; -- baseline database: nothing to retire
   END IF;
+
+  -- Exclude the overload this migration drops BY IDENTITY, never by name:
+  -- another add_credits overload whose body reads the table is a surviving
+  -- caller the drop must refuse, not a self-reference.
+  v_self := to_regprocedure('public.add_credits(uuid, numeric, uuid)');
 
   -- SQL or PL/pgSQL function bodies record no pg_depend row. Scan for both
   -- dropped names: a body that only CALLS public.add_credits mentions neither
@@ -64,7 +70,7 @@ BEGIN
   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
     AND l.lanname IN ('sql', 'plpgsql')
     AND p.prosrc ~ '\mcredit_balance\M|\madd_credits\M'
-    AND NOT (n.nspname = 'public' AND p.proname = 'add_credits');
+    AND (v_self IS NULL OR p.oid <> v_self);
   IF blocker IS NOT NULL THEN
     RAISE EXCEPTION 'public.credit_balance drop refused, a function body still references it: %', blocker;
   END IF;
