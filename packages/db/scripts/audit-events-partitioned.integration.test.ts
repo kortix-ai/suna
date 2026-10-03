@@ -265,7 +265,7 @@ describe.skipIf(!databaseUrl)('kortix.audit_events — weekly range partitions o
     const triggers = await q(`SELECT tgname FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal ORDER BY 1`, [`kortix.${newest}`]);
     expect(triggers.rows.map((r) => r.tgname)).toEqual(['audit_events_append_only', 'audit_events_enqueue_webhooks', 'audit_events_prepare']);
     const indexes = await q<{ n: number }>(`SELECT count(*)::int AS n FROM pg_indexes WHERE tablename = $1`, [newest]);
-    expect(indexes.rows[0]!.n).toBe(11); // 10 secondary + the primary key
+    expect(indexes.rows[0]!.n).toBe(12); // 11 secondary + the primary key (the actor aggregate index is inherited by every partition)
   });
 
   test('the new table has the grants the legacy table has', async () => {
