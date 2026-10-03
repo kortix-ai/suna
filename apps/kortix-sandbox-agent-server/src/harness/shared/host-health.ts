@@ -14,10 +14,20 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
 const PT_ENV_PATH = process.env.KORTIX_PT_ENV_PATH || '/etc/pt-env'
+// A unit rig must read its own boot env, never the box's /etc/pt-env: a Kortix
+// sandbox image carries KORTIX_PROJECT_AUTO_CLONE=1, which made runtimeReady
+// false for a rig with no repo. The module-load env override above cannot be
+// re-pointed once the module is imported, so tests use the setter.
+let ptEnvPath = PT_ENV_PATH
+
+/** @internal test hook — mirrors `__setScaffoldRepoPathForTests`. */
+export function __setPtEnvPathForTests(path?: string): void {
+  ptEnvPath = path ?? PT_ENV_PATH
+}
 
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync(PT_ENV_PATH, 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(ptEnvPath, 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -35,7 +45,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(PT_ENV_PATH, 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(ptEnvPath, 'utf8'))
   } catch {
     return false
   }

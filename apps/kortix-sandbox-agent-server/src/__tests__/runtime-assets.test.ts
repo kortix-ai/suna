@@ -123,12 +123,6 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     agentStateDir: join(ws.root, 'agent-state'),
     agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
-    // The local chunk store must stay inside the fixture: a box that runs the
-    // real /usr/local/bin/kortix-agent (every Kortix sandbox image) would
-    // otherwise be indexed chunk-by-chunk at the test's 8-byte chunk size —
-    // millions of reads for one assertion.
-    agentStateDir: ws.root,
-    agentBakedPath: join(ws.root, 'bin', 'no-baked-agent'),
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
     // that check says "it ran". See `ExecProbe` in ../runtime-assets.ts.
