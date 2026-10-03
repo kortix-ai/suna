@@ -109,7 +109,7 @@ Before a `main` merge, run the narrowest relevant command first, then
 | --- | --- | --- |
 | anything | `Tests` core + packages lanes | `pnpm test` (core) and `pnpm test -- --packages-only` |
 | browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
-| `apps/api` | `CI` → API typecheck | `pnpm --filter kortix-api typecheck` |
+| `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
 | `apps/kortix-sandbox-agent-server` | `CI` → Sandbox agent build | `bun run typecheck && bun run lint && bun run test:architecture` in that directory |
 | `packages/db/migrations` | `DB Migrations` | the four commands in `packages/db/MIGRATIONS.md` → "CI gates" |

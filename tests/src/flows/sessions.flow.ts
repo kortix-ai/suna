@@ -1738,7 +1738,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/turn'],
   },
   async (ctx) => {
-    // Session ad02e053: the sandbox memory guard stopped two turns and the
+    // A 2026-09-18 session: the sandbox memory guard stopped two turns and the
     // ledger dropped the reason, so the UI said nothing under four failed
     // sub-agent tasks. This pins what `/turn` reports about how turns died,
     // straight off seeded ledger rows: no runtime is needed to read history.
