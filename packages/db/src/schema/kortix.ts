@@ -301,8 +301,6 @@ export const accountMemberships = kortixSchema.table(
     // Account-only reads (member lists, seat counts, cache invalidation). The
     // primary key leads with user_id, so it serves user-only reads.
     index('idx_account_members_account_id').on(table.accountId),
-    // Duplicates the primary key; kept until a drop migration retires it.
-    uniqueIndex('idx_account_members_user_account').on(table.userId, table.accountId),
   ],
 );
 
@@ -4804,10 +4802,6 @@ export const accessRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_access_requests_email').on(table.email),
-    index('idx_access_requests_status').on(table.status),
-  ],
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────
@@ -6028,7 +6022,7 @@ export const connectionOAuthApplications = kortixSchema.table(
     uniqueIndex('idx_connection_oauth_applications_connection').on(table.connectionId),
     index('idx_connection_oauth_applications_project').on(table.projectId),
     // Covers the connection_tenant FK (connection_oauth_applications_connection_tenant_fk,
-    // built by 20261003120915220_connection_oauth_applications_tenant_fk_index.concurrent.ts): a
+    // built by 20261003143832136_connection_oauth_applications_tenant_fk_index.concurrent.ts): a
     // connector_connections row delete/update RI-checks this table by the FK's leading
     // columns, and that lookup otherwise seq-scans the table (Supabase advisor:
     // unindexed_foreign_keys, columns 2-5). Named after the FK it serves.
