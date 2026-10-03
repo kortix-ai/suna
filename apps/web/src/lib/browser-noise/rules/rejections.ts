@@ -466,7 +466,86 @@ export function isAnonymousAuthRefreshRace(input: {
     !frames.some((frame) => isFirstPartyResolvedSource(frame.filename));
 }
 
+// An `HTMLMediaElement.play()` promise the browser's autoplay policy denied.
+// The HTML spec fixes the DOMException message: `NotAllowedError: The play
+// method is not allowed by the user agent or the platform in the current
+// context, possibly because the user denied permission.` Firefox and Safari
+// emit exactly this string; it is the UA policy state, not app logic. Better
+// Stack pattern
+// 3fcd960e70b449ebba706970a7b6dc43d89258e52785dea78693c955e6337225
+// (Kortix Frontend prod, application_id 2346967): `NotAllowedError`, 1
+// occurrence, 0 identified users, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT global unhandledrejection, never reached a React error boundary),
+// release `84a0bc48…`, first=last 2026-10-03 03:55:02Z, Firefox 157 on
+// macOS 10.15, request URL `https://kortix.com/` (the marketing/landing
+// page). NO stacktrace, NO `call_site_file`/`call_site_function`, NO
+// `call_stack_hash` — the browser rejected the play promise without a stack,
+// so no call site is attributable. Breadcrumbs: only the landing-page boot
+// (`[runtime-env]` console log, the navigation to `/`, the i18n bundle
+// fetch) within ~0.4 s — no user or script media action, and no first-party
+// `.play()` call exists on that route (every first-party play promise is
+// handled: `film.tsx` and `sounds.ts` attach `.catch`, the video renderer's
+// two calls were hardened in the same change). Same frameless-rejection
+// family as `isNonErrorUndefinedRejectionNoise` (pattern `5cfc90e5…`) and
+// `isOperationErrorPopErrorScopeNoise` (pattern `5e1aca20…`).
+//
+// The message is the spec's canonical play() denial, so matching it alone is
+// already narrow — but a first-party `play()` call that misses a `.catch`
+// would reject with the SAME message. Require the frameless shape as the
+// positive guard and keep the two negative guards of the family: any
+// resolved first-party `apps/web/src/…` frame or any other resolvable frame
+// location → keep reporting, so an unhandled first-party play call with a
+// stack still surfaces and its call site can be fixed. Deliberately NOT
+// added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has
+// no frame context, so a bare-string match there would swallow an
+// attributable first-party play rejection the negative guards exist to
+// preserve; the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const PLAY_NOT_ALLOWED_PATTERN =
+  /^The play method is not allowed by the user agent or the platform in the current context, possibly because the user denied permission\.$/;
+
+/**
+ * Whether a Sentry event is the frameless `HTMLMediaElement.play()`
+ * `NotAllowedError` autoplay-policy rejection: the play promise denied by
+ * the UA's autoplay policy and nobody attached a `.catch`, so the global
+ * `onunhandledrejection` captured it. Requires the spec's exact play
+ * denial message AND the frameless shape (the production pattern carries no
+ * stack); with any first-party `apps/web/src/…` frame or any other
+ * resolvable frame location the event keeps reporting. See
+ * `PLAY_NOT_ALLOWED_PATTERN` for the full rationale.
+ */
+export function isAutoplayNotAllowedRejectionNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!PLAY_NOT_ALLOWED_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means
+  // our own code left a play promise unhandled → actionable; keep reporting
+  // so the call site can be found + given its `.catch`.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable rejection with a real stack; keep reporting.
+  // Only the frameless capture (the production noise pattern) remains →
+  // drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export const REJECTION_RULES: readonly NoiseRule[] = [
+  {
+    id: 'autoplay-not-allowed',
+    appliesTo: 'sentry',
+    match: isAutoplayNotAllowedRejectionNoise,
+  },
   {
     id: 'non-error-undefined-rejection',
     appliesTo: 'sentry',

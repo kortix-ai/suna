@@ -301,8 +301,6 @@ export const accountMemberships = kortixSchema.table(
     // Account-only reads (member lists, seat counts, cache invalidation). The
     // primary key leads with user_id, so it serves user-only reads.
     index('idx_account_members_account_id').on(table.accountId),
-    // Duplicates the primary key; kept until a drop migration retires it.
-    uniqueIndex('idx_account_members_user_account').on(table.userId, table.accountId),
   ],
 );
 
@@ -4804,10 +4802,6 @@ export const accessRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_access_requests_email').on(table.email),
-    index('idx_access_requests_status').on(table.status),
-  ],
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────
