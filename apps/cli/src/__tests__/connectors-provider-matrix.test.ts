@@ -42,6 +42,13 @@ async function runProviderCase(input: {
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_CONFIG_FILE: join(directory, 'config.json'),
       KORTIX_TOKEN: undefined,
+      // The expected host line is the logged-out `cloud` default. Pin every
+      // env-derived input the notice reads, so a sibling test file that sets
+      // one in the same worker cannot leak into this spawn (process.env wins
+      // over the disabled sandbox-env file in sandboxEnvValue).
+      KORTIX_API_URL: undefined,
+      KORTIX_SESSION_ID: undefined,
+      KORTIX_SUPERVISED: undefined,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },
