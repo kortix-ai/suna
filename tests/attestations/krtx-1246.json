@@ -9,12 +9,12 @@
     "tests/unit/local-runner.test.ts"
   ],
   "diff_hash": "66d323f96ae57c6e7d4674866c1041bbdf4f676f42454232da1f4c1a9b409f81",
-  "head": "643253d099e5422b64ac597d5d1a818dc2578edf",
+  "head": "fb1ba4b63becac0dc6886df22f12a73c18061667",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:31:41.499Z"
+  "at": "2026-10-03T23:07:42.784Z"
 }
