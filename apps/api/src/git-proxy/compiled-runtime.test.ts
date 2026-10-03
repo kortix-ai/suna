@@ -3,7 +3,19 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { compileOpenCodeRuntime } from './compiled-runtime';
+import { COMPILED_RUNTIME_IDENTITY_ENV_VARS, compileOpenCodeRuntime } from './compiled-runtime';
+
+/** Child env without the compiled-identity vars the generated runtime compares
+ *  against its baked manifest. A Kortix sandbox image exports the session's
+ *  own KORTIX_PROJECT_ID and KORTIX_COMPILED_AGENT_CONFIG; a laptop or CI
+ *  runner exports none. The spawn must see the CI/laptop state, so the
+ *  runtime's fail-closed identity check stays a property of the runtime, not
+ *  of the machine running the test. */
+function childEnv(extra: Record<string, string> = {}): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  for (const name of COMPILED_RUNTIME_IDENTITY_ENV_VARS) delete env[name];
+  return { ...env, ...extra };
+}
 
 const roots: string[] = [];
 const INPUT = {
@@ -91,11 +103,10 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
 }));
 `);
     const child = Bun.spawn([process.execPath, runtimePath], {
-      env: {
-        ...process.env,
+      env: childEnv({
         CAPTURE_PATH: capturePath,
         KORTIX_TOKEN: 'runtime-only-token',
-      },
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -146,11 +157,10 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     await writeFile(runtimePath, artifact.source, { mode: 0o700 });
 
     const child = Bun.spawn([process.execPath, runtimePath], {
-      env: {
-        ...process.env,
+      env: childEnv({
         CAPTURE_PATH: capturePath,
         KORTIX_COMPILED_CONFIG_ROOT: extractionRoot,
-      },
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -178,11 +188,10 @@ import { writeFileSync } from "node:fs";
 writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
 `);
     const child = Bun.spawn(['node', runtimePath], {
-      env: {
-        ...process.env,
+      env: childEnv({
         CAPTURE_PATH: capturePath,
         KORTIX_BUN_BIN: process.execPath,
-      },
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     });
