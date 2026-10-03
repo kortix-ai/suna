@@ -59,7 +59,7 @@ import {
   type QueuedPromptState,
 } from '@/lib/session/user-message';
 import { MentionChip } from '../mention-chip';
-import { AttachmentOverflowTile, AttachmentTile } from '../attachment-tile';
+import { AttachmentOverflowTile, AttachmentRemoveButton, AttachmentTile } from '../attachment-tile';
 import { useSandboxImage } from './use-sandbox-image';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
@@ -196,7 +196,7 @@ export function UserMessage({
   /** Opens the editor on this message with its prompt text. */
   onEditStart?: (messageId: string, text: string) => void;
   onEditCancel?: () => void;
-  onEditSend?: (messageId: string, text: string) => void;
+  onEditSend?: (messageId: string, text: string, kept: MessageAttachment[]) => void;
   /** Hides Edit (busy session, queued prompts, a rewind in flight). Copy stays. */
   rewindDisabled?: boolean;
   /** Dims the column; `interrupted` also shows a status line. */
@@ -292,9 +292,10 @@ export function UserMessage({
         <UserMessageEditor
           isDark={isDark}
           initialText={editingText}
+          attachments={attachments}
           pending={editPending}
           onCancel={onEditCancel}
-          onSend={(text) => onEditSend(messageId, text)}
+          onSend={(text, kept) => onEditSend(messageId, text, kept)}
         />
       </View>
     );
@@ -686,8 +687,9 @@ export function UserMessageBubble({
 
 /**
  * Replaces the column while a message is edited: the bubble surface at full
- * width (`w-full gap-2 py-3`), the text, then secondary Cancel + primary Send.
- * Send rewinds the session to this message and sends the edited text.
+ * width (`w-full gap-2 py-3`), the message's attachments (each with a remove
+ * dot), the text, then secondary Cancel + primary Send. Send rewinds the
+ * session to this message and sends the edited text with the kept attachments.
  *
  * A raw `TextInput`, not `Textarea`: the editor must focus with the caret at
  * the end, and `Textarea` is not `forwardRef` and draws a border.
@@ -695,22 +697,28 @@ export function UserMessageBubble({
 export function UserMessageEditor({
   isDark,
   initialText,
+  attachments = [],
   pending,
   onCancel,
   onSend,
 }: {
   isDark: boolean;
   initialText: string;
+  /** The message's attachments. The user keeps or removes each; Send carries the kept ones. */
+  attachments?: MessageAttachment[];
   pending?: boolean;
   onCancel: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, kept: MessageAttachment[]) => void;
 }) {
   const palette = paletteFor(isDark);
   const [draft, setDraft] = useState(initialText);
+  const [kept, setKept] = useState(attachments);
   const [selection, setSelection] = useState<{ start: number; end: number } | undefined>({
     start: initialText.length,
     end: initialText.length,
   });
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
   const canSend = Boolean(draft.trim()) && !pending;
 
   return (
@@ -724,6 +732,20 @@ export function UserMessageEditor({
         paddingVertical: webSpace(3),
       }}
     >
+      {kept.length > 0 ? (
+        <View className="flex-row flex-wrap" style={{ gap: webSpace(2) }}>
+          {kept.map((file) => (
+            <View key={file.key} style={{ position: 'relative' }}>
+              <MessageAttachmentTile file={file} />
+              <AttachmentRemoveButton
+                filename={file.filename}
+                disabled={pending}
+                onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
+              />
+            </View>
+          ))}
+        </View>
+      ) : null}
       <TextInput
         value={draft}
         onChangeText={setDraft}
@@ -746,7 +768,7 @@ export function UserMessageEditor({
         <Button variant="secondary" size="sm" disabled={pending} onPress={onCancel}>
           <Text>Cancel</Text>
         </Button>
-        <Button size="sm" disabled={!canSend} onPress={() => canSend && onSend(draft)}>
+        <Button size="sm" disabled={!canSend} onPress={() => canSend && onSend(draft, kept)}>
           {pending ? <KortixLoader customSize={14} /> : null}
           <Text>Send</Text>
         </Button>

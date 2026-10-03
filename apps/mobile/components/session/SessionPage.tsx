@@ -150,9 +150,11 @@ import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
   buildSessionRefsBlock,
+  editResendAttachments,
   interruptedTurnIds,
   rewindHiddenMessageIds,
   webSpace,
+  type MessageAttachment,
 } from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
@@ -922,7 +924,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string, kept: MessageAttachment[] = []) => {
       const current = runtimeRef.current;
       if (!current || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
@@ -951,7 +953,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (agent?.name) options.agent = agent.name;
       if (modelKey) options.model = modelKey;
       if (variant) options.variant = variant;
-      await handleSend(text, options);
+      // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+      const { fileParts, text: sendText } = editResendAttachments(kept, text);
+      await handleSend(sendText, options, undefined, { fileParts, files: [] });
     },
     [runtimeReady, sessionId, handleSend, toast],
   );
