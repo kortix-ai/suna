@@ -6190,24 +6190,20 @@ export const connectionPolicies = kortixSchema.table(
  * across ALL connectors in the project; evaluated BEFORE any connector-scoped
  * rule.
  */
-export const connectorProjectPolicies = kortixSchema.table(
-  'connector_project_policies',
-  {
-    policyId: uuid('policy_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    /** Glob over fully-qualified tool paths (e.g. `stripe.charges.create`). */
-    match: varchar('match', { length: 512 }).notNull(),
-    action: connectorPolicyActionEnum('action').notNull(),
-    /** Authoring order — evaluated top-to-bottom, first match wins. */
-    position: integer('position').default(0).notNull(),
-    /** Optional ARGUMENT conditions — see `connectorPolicyConditions`. */
-    conditions: jsonb('conditions').$type<ConnectorPolicyCondition[] | null>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index('idx_connector_project_policies_project').on(table.projectId)],
-);
+export const connectorProjectPolicies = kortixSchema.table('connector_project_policies', {
+  policyId: uuid('policy_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  /** Glob over fully-qualified tool paths (e.g. `stripe.charges.create`). */
+  match: varchar('match', { length: 512 }).notNull(),
+  action: connectorPolicyActionEnum('action').notNull(),
+  /** Authoring order — evaluated top-to-bottom, first match wins. */
+  position: integer('position').default(0).notNull(),
+  /** Optional ARGUMENT conditions — see `connectorPolicyConditions`. */
+  conditions: jsonb('conditions').$type<ConnectorPolicyCondition[] | null>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const connectorDefaultModeEnum = kortixSchema.enum('connector_default_mode', [
   'risk',
