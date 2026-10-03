@@ -156,12 +156,8 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       await oniguruma.loadLanguage((await LANGUAGE_LOADERS[lang]()).default);
       // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
-      // crossed that limit and failed the parity check below. The warm-up run
-      // is CACHED, and on a box slow enough to cross the limit on a cold
-      // grammar that cached result is the broken one — drop it so the asserted
-      // runs tokenize warm.
+      // crossed that limit and failed the parity check below.
       highlightToTokens(sample, lang, 'light');
-      __testing.tokenCache.clear();
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
