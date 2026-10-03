@@ -451,11 +451,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             !!(session.runtime_session_id ?? session.opencode_session_id)
           }
           isForking={
-            forkSession.isPending && forkSession.variables?.sessionId === session.session_id
+            forkSession.isPending &&
+            forkSession.variables?.sessionId ===
+            (session.runtime_session_id ?? session.opencode_session_id)
           }
-          onFork={(id, href) =>
+          onFork={(runtimeSessionId, href) =>
             forkSession.mutate(
-              { sessionId: id },
+              { sessionId: runtimeSessionId },
               {
                 onSuccess: (fork) => router.push(childSessionHref(href, fork.id)),
                 onError: (err) => {
@@ -1110,7 +1112,9 @@ interface ProjectSessionRowProps {
    *  you are viewing, whose box is the runtime the client is bound to. */
   canFork?: boolean;
   isForking?: boolean;
-  onFork: (sessionId: string, href: string) => void;
+  /** Fork a conversation — the first argument is the RUNTIME conversation id
+   *  (`session.runtime_session_id`), not the project-session id. */
+  onFork: (runtimeSessionId: string, href: string) => void;
   childCount?: number;
   /** Sessions this one spawned (`child_count`), and whether they are shown. */
   spawnedCount?: number;
@@ -1166,6 +1170,10 @@ function ProjectSessionRow({
 
   const source = sessionSource(session, tI18nComplete);
   const isMeta = isMetaCoordinatorSession(session);
+  // The conversation the runtime can fork: the pinned root conversation id,
+  // not the project-session id — `POST /session/{id}/fork` addresses the
+  // runtime's own id space (`ses_…`). canFork already guarantees one.
+  const runtimeRootId = session.runtime_session_id ?? session.opencode_session_id;
   // The starter of the RUN, from the server's `initiator`. The viewer's own
   // runs show no mark: it is everyone else's and the automations' that need one.
   const starter = useSessionStarter(session);
@@ -1433,11 +1441,11 @@ function ProjectSessionRow({
                 {tI18nComplete.raw('textcae7d57bc067')}
               </DropdownMenuItem>
             )}
-            {canFork && (
+            {canFork && runtimeRootId && (
               <DropdownMenuItem
                 className="cursor-pointer"
                 disabled={isForking}
-                onSelect={() => deferAfterClose(() => onFork(session.session_id, href))}
+                onSelect={() => deferAfterClose(() => onFork(runtimeRootId, href))}
               >
                 {isForking ? <Loading className="size-4 shrink-0" /> : <GitForkIcon />}
                 {tI18nComplete.raw('text0e5f7f6732e0')}
