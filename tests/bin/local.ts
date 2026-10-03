@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runLocalTests } from '../src/core/local-runner';
+import { RUNNER_CONTROLS } from '../src/core/runner-controls';
 
 const root = resolve(import.meta.dir, '../..');
 // The Agent Computer Tunnel reads its owner's answer from ~/.agent-tunnel
@@ -19,11 +20,14 @@ process.env.AGENT_TUNNEL_HOME ||= mkdtempSync(join(tmpdir(), 'ke2e-agent-tunnel-
 // product: the compiled runtimes fail their own baked-identity checks, the
 // CLI scopes every connector call at the sandbox's project, and the
 // supervised self-update gates fire. Delete every KORTIX_* var the suite does
-// not pass through on purpose so every lane runs exactly what CI runs.
+// not pass through on purpose so every lane runs exactly what CI runs, except
+// the runner knobs themselves (tests/src/core/runner-controls.ts): a
+// KORTIX_DB_SUITE_WORKERS or KORTIX_API_TEST_WORKERS set for the run must
+// survive, or the lanes silently run their defaults instead.
 // Tests that exercise the sandbox behavior set the vars themselves
 // (supervised-binaries.test.ts) or opt back in explicitly.
 for (const name of Object.keys(process.env)) {
-  if (name.startsWith('KORTIX_') && name !== 'KORTIX_PACKAGE_SKIP_SDK_TESTS') {
+  if (name.startsWith('KORTIX_') && !RUNNER_CONTROLS.has(name)) {
     delete process.env[name];
   }
 }

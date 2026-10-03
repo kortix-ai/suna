@@ -6,7 +6,8 @@ const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 
 /**
- * Runner controls that must survive the hermetic scrub below.
+ * The runner knobs that must survive the hermetic scrub below, shared with the
+ * process-env scrub in tests/bin/local.ts (tests/src/core/runner-controls.ts).
  *
  * A Kortix-managed sandbox exports the agent session's own identity into the
  * environment (KORTIX_TOKEN, KORTIX_PROJECT_ID, KORTIX_SUPERVISED, …) and
@@ -21,11 +22,7 @@ const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
  * KORTIX_DISABLE_SANDBOX_ENV_FILE=1, matching the flag every spawn harness
  * in the repo already sets.
  */
-const RUNNER_CONTROLS = new Set([
-  'KORTIX_API_TEST_WORKERS',
-  'KORTIX_MIN_TEST_FILES',
-  'KORTIX_PACKAGE_SKIP_SDK_TESTS',
-]);
+import { RUNNER_CONTROLS } from '../src/core/runner-controls';
 
 function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
