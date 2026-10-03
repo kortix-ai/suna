@@ -3,7 +3,6 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
 const root = resolve(import.meta.dirname, '../..');
 
 /**
@@ -18,7 +17,9 @@ const root = resolve(import.meta.dirname, '../..');
  * scripts/dev-local.sh is a launcher, not a library — sourcing it boots the
  * whole stack. The harness therefore lifts the named warmup functions out of
  * the file and runs them in a real bash process with a stub curl on PATH
- * (black-box, the same rule the testing skill sets for CLI changes).
+ * (black-box, the same rule the testing skill sets for CLI changes). A third
+ * leg re-runs the harness under a bash < 4 binary via BASH32_BIN, where the
+ * old empty-array expansion aborted; it skips when the variable is unset.
  */
 function extractFunction(name: string): string {
   const lines = readFileSync(join(root, 'scripts/dev-local.sh'), 'utf8').split('\n');
@@ -61,7 +62,7 @@ function envWithout(...keys: string[]): NodeJS.ProcessEnv {
   return env;
 }
 
-function runWarmup(functions: string[], env: NodeJS.ProcessEnv) {
+function runWarmup(functions: string[], env: NodeJS.ProcessEnv, bashBin = 'bash') {
   const dir = mkdtempSync(join(tmpdir(), 'dev-local-warmup-'));
   writeFileSync(join(dir, 'curl'), STUB_CURL);
   chmodSync(join(dir, 'curl'), 0o755);
@@ -71,7 +72,7 @@ function runWarmup(functions: string[], env: NodeJS.ProcessEnv) {
     `#!/usr/bin/env bash\nset -euo pipefail\n${functions.join('\n\n')}\nwarm_frontend_routes\n`,
   );
   const log = join(dir, 'curl.log');
-  const result = spawnSync('bash', [script], {
+  const result = spawnSync(bashBin, [script], {
     encoding: 'utf8',
     env: { ...env, PATH: `${dir}:${env.PATH}`, WEB_PORT: '3111', CURL_LOG: log },
   });
@@ -129,6 +130,44 @@ describe('dev-local route warmup', () => {
       ).toBe(true);
     } finally {
       run.cleanup();
+    }
+  });
+
+  // The crash class is bash < 4 only: modern bash stopped treating an empty
+  // array as unset under set -u, and that change is a bugfix no compat shopt
+  // restores. When a bash < 4 binary is available (macOS ships 3.2.57; set
+  // BASH32_BIN to its path), run the same harness under it — the scalar
+  // header must keep both paths completing there. Skipped otherwise, the
+  // same way the db-suites lane records its documented skip.
+  it('does both under a bash < 4 binary when BASH32_BIN names one', (ctx) => {
+    const bash32 = process.env.BASH32_BIN;
+    if (!bash32) {
+      ctx.skip();
+      return;
+    }
+    for (const env of [
+      envWithout('SUPABASE_SERVICE_ROLE_KEY'),
+      {
+        ...envWithout('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+        SUPABASE_SERVICE_ROLE_KEY: 'srk-test',
+        SUPABASE_ANON_KEY: 'anon-test',
+      },
+    ]) {
+      const run = runWarmup(
+        [extractFunction('mint_warm_cookie'), extractFunction('warm_frontend_routes')],
+        env,
+        bash32,
+      );
+      try {
+        expect(run.status).toBe(0);
+        expect(run.stderr).toBe('');
+        expect(run.stdout).toMatch(/pre-rendered AUTHED|pre-compiled \(unauthed/);
+        expect(
+          run.calls.filter((call) => call.includes('http://localhost:3111/projects')),
+        ).toHaveLength(4);
+      } finally {
+        run.cleanup();
+      }
     }
   });
 });
