@@ -34,7 +34,6 @@ mock.module('./db', () => ({
 }));
 
 const NOW = new Date('2026-10-02T22:00:00.000Z');
-const SLOT = 5 * 60_000;
 
 const { countPass, pendingSlotStarts, slotStartOf, SLOT_MS, GRACE_SLOTS, MAX_SLOTS_PER_TICK } =
   await import('./audit-event-count-worker');
@@ -71,11 +70,11 @@ describe('pendingSlotStarts', () => {
   test('skips slots that already have a count', () => {
     const counted = new Set([
       slotStart(-GRACE_SLOTS * 5),
-      slotStart(-GRACE_SLOTS * 5 - SLOT / 60_000),
+      slotStart(-GRACE_SLOTS * 5 - SLOT_MS / 60_000),
     ]);
     const pending = pendingSlotStarts(NOW.getTime(), counted);
     expect(pending).not.toContain(slotStart(-GRACE_SLOTS * 5));
-    expect(pending).toContain(slotStart(-GRACE_SLOTS * 5 - 2 * (SLOT / 60_000)));
+    expect(pending).toContain(slotStart(-GRACE_SLOTS * 5 - 2 * (SLOT_MS / 60_000)));
   });
 
   test('stops at the lookback window, not at history the dashboard never reads', () => {
