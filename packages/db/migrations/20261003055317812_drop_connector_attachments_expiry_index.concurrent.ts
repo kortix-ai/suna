@@ -24,10 +24,11 @@
 // mixed-version-safe: the index is plain, non-unique, and backs no constraint,
 // ON CONFLICT clause, view or policy (pg_depend on prod shows only the
 // automatic table dependency). No code names it (a repo grep finds it only in
-// the kortix.ts declaration this PR removes and the drizzle snapshots), and
-// dropping it cannot change any query plan: it was never scanned. A
-// still-running older image plans the sweeper through the same Seq Scan as
-// before.
+// the kortix.ts declaration this PR removes, the drizzle snapshots, and the
+// cutover migration's rename map that created the name — an immutable,
+// already-applied file ordered strictly before this one), and dropping it
+// cannot change any query plan: it was never scanned. A still-running older
+// image plans the sweeper through the same Seq Scan as before.
 
 export const shorthands = undefined;
 
