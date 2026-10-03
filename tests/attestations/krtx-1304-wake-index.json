@@ -8,13 +8,13 @@
     "packages/db/scripts/session-sandboxes-wake-fence-index.integration.test.ts",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "6de5331d7795a401116ba595227f853cf7ac5f39179660b5455ecba9bfabf3de",
-  "head": "3327668a62700f471cfffcc0f372ce7674be628e",
+  "diff_hash": "cbaecec6a933066744c140fb69663ba3a3235b29a2c114ec715bde7fb25b7e08",
+  "head": "fa3ce69ee6f9917e923e059340bf9f5b1d4f6fa6",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:10:02.148Z"
+  "at": "2026-10-03T22:20:46.113Z"
 }
