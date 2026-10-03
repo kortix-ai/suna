@@ -32,4 +32,25 @@ fi
 # No customer data in the pushed commits, their messages, or the ref names.
 printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
 
+# Tests ran locally on exactly this source. `pnpm test` writes
+# tests/test-attestation.json; verify-attestation.mjs recomputes source_hash
+# from the pushed commit's tree. Exit 3 = green except lanes skipped for lack
+# of Docker: fine for a PR branch, never for main (the merge gate sends it to
+# the staging CI backstop). Deletions, tags, and scratch/* branches are exempt.
+root=$(cd "$(dirname "$0")/.." && pwd)
+bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
+  [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
+  case "$remote_ref" in refs/heads/scratch/*) continue ;; refs/heads/*) ;; *) continue ;; esac
+  rc=0
+  node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" >&2 || rc=$?
+  if [ "$rc" = 1 ] || { [ "$rc" = 3 ] && [ "$remote_ref" = refs/heads/main ]; }; then
+    echo "$remote_ref"
+  fi
+done)
+if [ -n "$bad" ]; then
+  echo "pre-push: tests/test-attestation.json is stale or red — run \`pnpm test\` and commit the attestation before pushing." >&2
+  echo "  Rejected: $bad. Do not bypass with --no-verify: the merge gate runs \`pnpm test:verify\` on the PR head." >&2
+  exit 1
+fi
+
 exec $DX ext precommit

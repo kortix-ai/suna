@@ -275,9 +275,22 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
+| Push to `main` (after the merge) | `Deploy Dev`, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
+
+**Tests are attested, not run by CI.** `pnpm test` writes
+`tests/test-attestation.json` on a green run: `source_hash` (sha256 of every
+file the commit would contain, minus the attestation itself), `head`, `passed`,
+per-lane results, `at`. Commit it. The `.githooks/pre-push` hook recomputes the
+hash from the pushed commit and rejects the push when the attestation is stale,
+red, or missing. Never bypass it with `--no-verify`: the merge gate runs
+`pnpm test:verify` (exit `0` green, `1` stale/red/missing, `3` green except
+lanes skipped with no Docker) on the PR head and blocks a merge on `1`. Any
+source edit, including a merge of `main`, makes the attestation stale: re-run
+`pnpm test`. With no Docker (a factory sandbox) the `api-cli-flows` and
+`db-suites` lanes record `skipped-no-db`. That is never a pass: exit `3` sends
+the PR to the staging CI backstop instead of auto-merge.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
@@ -294,7 +307,7 @@ Never add a label by default or from automation. CI otherwise runs in two places
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
    - the relevant local checks ran with real inputs and outputs (rule 2), and
-     they passed;
+     they passed, and `pnpm test:verify` exits `0` on the branch head;
    - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
    A failing check blocks the merge until you fix it or state why it is

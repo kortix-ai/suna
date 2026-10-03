@@ -494,8 +494,27 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   }
 }
 
+/** Lanes that start the local Supabase, so they need Docker. */
+const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
+/** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
+const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
+
+function dockerAvailable(): boolean {
+  return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+}
+
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
+  // No Docker (a factory sandbox): the DB lanes cannot run. Record them as
+  // skipped-no-db. verify-attestation.mjs never counts a skip as a pass.
+  const skipped: string[] = [];
+  if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode) && !dockerAvailable()) {
+    for (const lane of plan.lanes.filter((l) => DOCKER_LANES.has(l.name))) skipped.push(lane.name);
+    plan.lanes = plan.lanes.filter((l) => !skipped.includes(l.name));
+    plan.stages = plan.stages.map((stage) => stage.filter((l) => !skipped.includes(l.name)));
+    console.log(`[test] SKIP ${skipped.join(',')}: Docker is not available (skipped-no-db, not a pass)`);
+    if (plan.lanes.length === 0) return 1;
+  }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
   let localStack: LocalStackHandle | null = null;
@@ -578,5 +597,19 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     );
   }
   console.log(`[test] benchmark ${outputPath}`);
+  // A filtered (--id, path filter) or sharded run proves less than its lane
+  // name says, so it never writes an attestation.
+  const MODE_FLAGS = ['--', '--full', '--flows-only', '--sdk-only', '--db-only', '--browser-only', '--packages-only'];
+  const partial = args.some((a) => !MODE_FLAGS.includes(a));
+  if (ATTESTED_MODES.has(plan.mode) && !partial) {
+    const lanes = Object.fromEntries([
+      ...results.map((r) => [r.name, r.exitCode === 0 ? 'pass' : 'fail']),
+      ...skipped.map((name) => [name, 'skipped-no-db']),
+    ]);
+    Bun.spawnSync(
+      ['node', 'tests/verify-attestation.mjs', 'write', ...Object.entries(lanes).map(([k, v]) => `${k}=${v}`)],
+      { cwd: root, stdout: 'inherit', stderr: 'inherit' },
+    );
+  }
   return failed.length === 0 ? 0 : 1;
 }
