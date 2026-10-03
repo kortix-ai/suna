@@ -138,13 +138,15 @@ function AuthCardForm({
   >(null);
   const { isLoading: authBootstrapping } = useAuth();
   // Every submit waits for the auth bootstrap to settle. The bootstrap's
-  // dead-session check (getUser → AuthSessionMissingError → signOut) tears
-  // down every stored PKCE verifier (auth-js removeAllPKCEVerifiers), and all
-  // of that runs before isLoading clears. A sign-in submitted while the
-  // bootstrap is still resolving could have its verifier cookies deleted by
-  // that teardown, and the emailed link then exchanges with no verifier —
-  // GoTrue answers 400 and the callback reports an expired link. A visitor
-  // with no session skips the check, so the gate costs one local cookie read.
+  // dead-session verdict (getUser → AuthSessionMissingError → signOut) tears
+  // down every stored PKCE verifier (auth-js removeAllPKCEVerifiers), and it
+  // all runs before isLoading clears — so a submit that waits for isLoading
+  // cannot race it. Without the wait, a verifier written by the send-email
+  // action gets deleted, the emailed link exchanges with no verifier, and the
+  // callback reports an expired link. A visitor with no session skips the
+  // validation round trip, so this costs one local cookie read. Ceiling: the
+  // bootstrap deadline only stops WAITING — a verdict that lands after 15 s
+  // can still tear down after a submit (see auth-teardown-vs-pkce.test.ts).
   const pending = pendingAction !== null || authBootstrapping;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -267,6 +269,8 @@ function AuthCardForm({
 
   const sendMagic = async (to?: string, source: 'continue' | 'link' | 'resend' = 'link') => {
     const target = (to ?? email).trim();
+    // Second layer under the disabled buttons: Enter-key submission on the
+    // entry form reaches this handler regardless of button state.
     if (!target || authBootstrapping) return;
     clearNotices();
     setPendingAction(source);

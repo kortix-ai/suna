@@ -1,18 +1,17 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "0600eb95ce677cfb1f78c908a3552a160f22695c00d5c54e006fcbe8527ce4d2",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/web/src/app/[locale]/(auth)/auth/page-auth-gate.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
+    "apps/web/src/features/providers/auth-teardown-vs-pkce.test.ts"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
-  "passed": true,
+  "diff_hash": "0186cd11f1d48dad7a48897a8e3dc5bdcc8126f8ed38e0275686d38412565bbc",
+  "head": "c5734282bb4bf20e1f3a6631f72e369b27509cc5",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "fail",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T17:43:13.208Z"
 }

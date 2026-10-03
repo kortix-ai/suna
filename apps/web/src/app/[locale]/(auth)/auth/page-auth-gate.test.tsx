@@ -57,6 +57,14 @@ mock.module('@/lib/env-config', () => ({
 }));
 mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
 const { default: AuthPage } = await import('./page');
+function renderAuthPage() {
+  // The same createElement shape the sibling auth page tests use; its TS2769
+  // (children required inside the provider's props type) is pre-existing there.
+  return create(
+    createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
+  );
+}
+
 
 async function submitEntry(root: NonNullable<ReturnType<typeof create>>) {
   const email = root.root.findByProps({ autoComplete: 'email' });
@@ -72,9 +80,7 @@ test('the sign-in submit waits for the auth bootstrap to settle', async () => {
   let root: ReturnType<typeof create> | undefined;
   try {
     await act(async () => {
-      root = create(
-        createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
-      );
+      root = renderAuthPage();
     });
     if (!root) throw new Error('Auth page did not render');
     // The form itself renders immediately; only the submit waits.
@@ -89,9 +95,7 @@ test('the sign-in submit waits for the auth bootstrap to settle', async () => {
   // Bootstrap settled (here: no session to validate, so it answers at once).
   authState = { user: null, session: null, isLoading: false, supabase: {} };
   await act(async () => {
-    root = create(
-      createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
-    );
+    root = renderAuthPage();
   });
   try {
     if (!root) throw new Error('Auth page did not render');
@@ -107,9 +111,7 @@ test('the submit button is disabled while the bootstrap runs, enabled after', as
   let root: ReturnType<typeof create> | undefined;
   try {
     await act(async () => {
-      root = create(
-        createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
-      );
+      root = renderAuthPage();
     });
     if (!root) throw new Error('Auth page did not render');
     const submit = root.root.findByProps({ type: 'submit' });
@@ -121,9 +123,7 @@ test('the submit button is disabled while the bootstrap runs, enabled after', as
   authState = { user: null, session: null, isLoading: false, supabase: {} };
   try {
     await act(async () => {
-      root = create(
-        createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
-      );
+      root = renderAuthPage();
     });
     if (!root) throw new Error('Auth page did not render');
     const submit = root.root.findByProps({ type: 'submit' });
