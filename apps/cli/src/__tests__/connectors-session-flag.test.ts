@@ -1,5 +1,5 @@
-import { join, resolve } from 'node:path';
 import { expect, test } from 'bun:test';
+import { join, resolve } from 'node:path';
 
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 
@@ -12,12 +12,27 @@ for (const command of ['ls', 'list']) {
         fetch(request) {
           const url = new URL(request.url);
           requests.push(url.pathname + url.search);
-          return Response.json({ connectors: [{ slug: 'synthetic', provider: 'http', status: 'active', actions: [{ path: 'read' }] }] });
+          return Response.json({
+            connectors: [
+              {
+                slug: 'synthetic',
+                provider: 'http',
+                status: 'active',
+                actions: [{ path: 'read' }],
+              },
+            ],
+          });
         },
       });
       try {
         const proc = Bun.spawn({
-          cmd: [process.execPath, join(CLI_ROOT, 'src/index.ts'), 'connectors', command, ...sessionFlag],
+          cmd: [
+            process.execPath,
+            join(CLI_ROOT, 'src/index.ts'),
+            'connectors',
+            command,
+            ...sessionFlag,
+          ],
           cwd: CLI_ROOT,
           env: {
             ...process.env,
@@ -31,11 +46,21 @@ for (const command of ['ls', 'list']) {
           stdout: 'pipe',
           stderr: 'pipe',
         });
-        const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+        const [code, stdout, stderr] = await Promise.all([
+          proc.exited,
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+        ]);
         expect(code).toBe(0);
         expect(stderr).toBe('');
-        expect(JSON.parse(stdout)).toEqual({ connectors: [{ slug: 'synthetic', provider: 'http', status: 'active', tools: ['synthetic.read'] }] });
-        expect(requests).toEqual(['/v1/connectors/projects/synthetic-project/catalog?include_schemas=false']);
+        expect(JSON.parse(stdout)).toEqual({
+          connectors: [
+            { slug: 'synthetic', provider: 'http', status: 'active', tools: ['synthetic.read'] },
+          ],
+        });
+        expect(requests).toEqual([
+          '/v1/connectors/projects/synthetic-project/catalog?include_schemas=false',
+        ]);
       } finally {
         server.stop(true);
       }
