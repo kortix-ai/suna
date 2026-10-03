@@ -164,7 +164,11 @@ export function registerMemberInviteRoute(): void {
         `);
 
         // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
-        void onMemberAdded(accountId, targetUserId).catch(() => {});
+        void onMemberAdded(accountId, targetUserId).catch((err) =>
+        // No seat reconciler exists: a failure here leaves the Stripe seat count
+        // (and the member's YOLO token) wrong until the next member change.
+        console.error('[billing] seat sync FAILED after member added', { accountId: accountId, userId: targetUserId }, err),
+      );
 
         for (const g of projectGrants) {
           await grantProjectRole({

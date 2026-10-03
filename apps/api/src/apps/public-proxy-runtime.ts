@@ -183,7 +183,10 @@ export async function ensureAppRuntimeRunning(
     return await publishWake(app, loaded, leased, owner, hosting);
   } catch (error) {
     const stoppedAt = await stopWakingRuntime(loaded.runtime.runtimeId, owner);
-    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch(() => {});
+    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch((pauseErr) =>
+      // compute-invariant-sweep closes it later; until then the window bills.
+      console.error(`[apps] failed wake left the compute window open for ${loaded.runtime.runtimeId}:`, pauseErr),
+    );
     throw error;
   }
 }

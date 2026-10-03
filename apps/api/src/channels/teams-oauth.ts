@@ -49,7 +49,12 @@ async function runCatalogPublish(input: {
   tenantId: string;
 }): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'unconfigured'>> {
   const { projectId } = input;
-  await setTeamsPublishState(projectId, 'publishing').catch(() => {});
+  // The install row is the only record of the publish: a write lost here
+  // leaves the status at 'publishing' or the catalog id unset, and nothing
+  // repairs it but another install. Never swallow it silently.
+  const storeFailed = (step: string) => (err: unknown) =>
+    console.error(`[teams-oauth] install state write failed (${step}) for project ${projectId}:`, err);
+  await setTeamsPublishState(projectId, 'publishing').catch(storeFailed('setTeamsPublishState'));
   let published: Awaited<ReturnType<typeof publishTeamsAppToCatalog>>;
   try {
     published = await publishTeamsAppToCatalog({
@@ -65,17 +70,17 @@ async function runCatalogPublish(input: {
   let status: 'connected' | 'review' | 'failed';
   if (published.published) {
     status = 'connected';
-    await setTeamsOrgInstalled(projectId, true).catch(() => {});
-    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
-    if (published.version) await setTeamsAppVersion(projectId, published.version).catch(() => {});
-    await setTeamsPublishState(projectId, 'published').catch(() => {});
+    await setTeamsOrgInstalled(projectId, true).catch(storeFailed('setTeamsOrgInstalled'));
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(storeFailed('setTeamsCatalogAppId'));
+    if (published.version) await setTeamsAppVersion(projectId, published.version).catch(storeFailed('setTeamsAppVersion'));
+    await setTeamsPublishState(projectId, 'published').catch(storeFailed('setTeamsPublishState'));
   } else if (published.pendingReview) {
     status = 'review';
-    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
-    await setTeamsPublishState(projectId, 'review').catch(() => {});
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(storeFailed('setTeamsCatalogAppId'));
+    await setTeamsPublishState(projectId, 'review').catch(storeFailed('setTeamsPublishState'));
   } else {
     status = 'failed';
-    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(() => {});
+    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(storeFailed('setTeamsPublishState'));
   }
 
   console.info('[teams-oauth] install complete', {

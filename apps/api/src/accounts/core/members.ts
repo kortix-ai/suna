@@ -418,7 +418,11 @@ export function registerMemberRoutes(): void {
       });
 
       // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
-      void onMemberRemoved(accountId, targetUserId).catch(() => {});
+      void onMemberRemoved(accountId, targetUserId).catch((err) =>
+        // No seat reconciler exists: a failure here leaves the Stripe seat count
+        // (and the member's YOLO token) wrong until the next member change.
+        console.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: targetUserId }, err),
+      );
 
       return c.json({ ok: true });
     },
@@ -573,7 +577,11 @@ export function registerMemberRoutes(): void {
       });
 
       // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
-      void onMemberRemoved(accountId, userId).catch(() => {});
+      void onMemberRemoved(accountId, userId).catch((err) =>
+        // No seat reconciler exists: a failure here leaves the Stripe seat count
+        // (and the member's YOLO token) wrong until the next member change.
+        console.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: userId }, err),
+      );
 
       return c.json({ ok: true });
     },

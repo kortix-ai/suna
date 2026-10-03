@@ -486,7 +486,11 @@ accountInvitesRouter.openapi(
   // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
   // legacy accounts (guarded inside the service). Idempotent on re-accept.
   // Fire-and-forget so Stripe hiccups don't block invite acceptance.
-  void onMemberAdded(invite.accountId, userId).catch(() => {});
+  void onMemberAdded(invite.accountId, userId).catch((err) =>
+        // No seat reconciler exists: a failure here leaves the Stripe seat count
+        // (and the member's YOLO token) wrong until the next member change.
+        console.error('[billing] seat sync FAILED after member added', { accountId: invite.accountId, userId: userId }, err),
+      );
 
   // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
   // self-healing. Previously grants ran only on the first accept, AFTER
