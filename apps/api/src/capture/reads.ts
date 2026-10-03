@@ -221,6 +221,22 @@ export async function frameOf(projectId: string, userId: string, frameId: string
   return { frame, chunk: chunk ?? null };
 }
 
+/**
+ * Where a frame sits in its chunk video. The format records the video at 1 fps
+ * with frame i at t = i s (capture-format.md, `chunk`), whatever the capture
+ * interval was, so the offset is `frame_index` seconds, not the wall-clock gap.
+ * A frame without an index sits at its position among the chunk's frames.
+ */
+export async function frameVideoOffsetMs(frame: Record<string, unknown>): Promise<number> {
+  if (typeof frame.frame_index === 'number') return frame.frame_index * 1000;
+  const [row] = Array.from(
+    await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM kortix.timeline_frames WHERE chunk_id = ${frame.chunk_id as string}::uuid AND ts < ${frame.ts as string}::timestamptz`,
+    ),
+  );
+  return (row?.n ?? 0) * 1000;
+}
+
 export async function chunkOf(projectId: string, userId: string, chunkId: string): Promise<Chunk | null> {
   const [chunk] = await db
     .select()

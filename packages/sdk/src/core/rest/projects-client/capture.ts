@@ -240,7 +240,7 @@ export interface CaptureMediaUrl extends CaptureSignedUrl {
 
 export interface CaptureFrameDetail {
   frame: CaptureFrame;
-  /** The frame's video chunk; seek to `offset_ms`. */
+  /** The frame's video chunk; seek to `offset_ms` (`frame_index` seconds: the chunk video is 1 fps). */
   video: (CaptureMediaUrl & { offset_ms: number }) | null;
 }
 

@@ -24,10 +24,11 @@ export function FrameViewer({
   const t = useTranslations('capture.timeline');
   const videoRef = useRef<HTMLVideoElement>(null);
   const video = detail?.video ?? null;
-  // The Kortix Capture format encodes a chunk at 1 fps with frame i at i seconds,
-  // so the frame index is the seek position; `offset_ms` (wall time) is the fallback.
-  const index = detail?.frame.frame_index ?? frame?.frame_index ?? null;
-  const offset = index !== null ? index : (video?.offset_ms ?? 0) / 1000;
+  // The Kortix Capture format encodes a chunk at 1 fps with frame i at i seconds.
+  // The API's `offset_ms` is that position (frame_index seconds, or the frame's
+  // place in the chunk when it has no index); the frame index covers the moment
+  // before the detail loads.
+  const offset = video ? video.offset_ms / 1000 : (frame?.frame_index ?? 0);
 
   // Seek whenever the moment moves inside the same chunk, and once the metadata of a new chunk loads.
   useEffect(() => {

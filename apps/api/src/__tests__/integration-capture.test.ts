@@ -46,7 +46,7 @@ const { ingestManifest, extendDetectedRange } = await import('../capture/ingest'
 const { processRange, applyIdleWindows, computeIdleWindows, normalizeSegments } = await import('../capture/processing');
 const { applyRetention, closeQuietRanges, pollDevice } = await import('../capture/workers');
 const { writeProjectPolicy } = await import('../capture/policy');
-const { recordedDays } = await import('../capture/reads');
+const { frameOf, frameVideoOffsetMs, recordedDays } = await import('../capture/reads');
 const { DEFAULT_POLICY, projectPrefix } = await import('../capture/format');
 const { vendoredDevice } = await import('../../../../tests/src/fixtures/capture');
 
@@ -138,6 +138,20 @@ describe('ingestion', () => {
     }
     expect(await recordedDays(PROJECT, crypto.randomUUID(), { tz: 'UTC' })).toEqual([]);
     expect(await recordedDays(PROJECT, MEMBER, { tz: 'UTC', deviceId: crypto.randomUUID() })).toEqual([]);
+  });
+
+  test('a frame seeks to frame_index seconds in its 1 fps chunk video, not to its wall-clock offset; without an index, to its position', async () => {
+    const rows = Array.from(await db.execute<{ frame_id: string; frame_index: number | null }>(sql`SELECT frame_id, frame_index FROM kortix.timeline_frames WHERE device_id = ${deviceId}::uuid AND frame_index = 2 LIMIT 1`));
+    const frameId = rows[0]!.frame_id;
+    // The recorder samples every ~2 s, but the chunk video holds frame i at t = i s (capture-format.md).
+    await db.execute(sql`UPDATE kortix.timeline_frames f SET ts = c.start_at + interval '4.7 seconds' FROM kortix.timeline_chunks c WHERE f.frame_id = ${frameId}::uuid AND c.chunk_id = f.chunk_id`);
+    const found = await frameOf(PROJECT, MEMBER, frameId);
+    expect(await frameVideoOffsetMs(found!.frame)).toBe(2000);
+    await db.execute(sql`UPDATE kortix.timeline_frames SET frame_index = NULL WHERE frame_id = ${frameId}::uuid`);
+    const unindexed = await frameOf(PROJECT, MEMBER, frameId);
+    const [{ n }] = Array.from(await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM kortix.timeline_frames WHERE chunk_id = ${unindexed!.frame.chunk_id as string}::uuid AND ts < ${unindexed!.frame.ts as string}::timestamptz`));
+    expect(await frameVideoOffsetMs(unindexed!.frame)).toBe(n * 1000);
+    await db.execute(sql`UPDATE kortix.timeline_frames SET frame_index = 2 WHERE frame_id = ${frameId}::uuid`);
   });
 
   test('the fixture minute is one detected range; activity within 15 minutes grows it, a later session starts another, a bridge merges them', async () => {

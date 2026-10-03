@@ -33,6 +33,7 @@ import {
   deviceInProject,
   deviceView,
   frameOf,
+  frameVideoOffsetMs,
   listDevices,
   mediaUrl,
   peopleSummary,
@@ -441,7 +442,7 @@ projectsApp.openapi(
     const found = await frameOf(access.projectId, access.subject!, c.req.valid('param').frameId);
     if (!found) return c.json({ error: 'Not found' }, 404);
     const video = found.chunk ? await mediaUrl(found.chunk, 'video') : null;
-    const offset = found.chunk ? new Date(found.frame.ts as string).getTime() - found.chunk.startAt.getTime() : 0;
+    const offset = await frameVideoOffsetMs(found.frame);
     return c.json({ frame: found.frame, video: video && { ...video, offset_ms: offset } }, 200);
   },
 );

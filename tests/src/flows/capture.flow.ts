@@ -288,10 +288,12 @@ flow(
       (await asMember.get(path(R.search), { params, query: { q: '"incident review"', kinds: 'screen' } })).status(200).body().has('$.hits[0].app', 'Editor');
     });
 
-    await ctx.step('a frame opens with its full on-screen text and a signed URL whose bytes match the uploaded video', async () => {
+    await ctx.step('a frame opens with its full on-screen text, a signed URL whose bytes match the uploaded video, and offset_ms = frame_index seconds', async () => {
       const frameId = hits.find((h) => h.kind === 'screen')!.id;
       const detail = (await asMember.get(path(R.frame), { params: { ...params, frameId } })).status(200).json<any>();
       if (!detail.frame.ocr_text.includes('quarterly roadmap')) throw new Error('frame text');
+      // The chunk video is 1 fps, frame i at t = i s: the seek position is the frame index.
+      if (detail.video.offset_ms !== detail.frame.frame_index * 1000) throw new Error(`offset_ms ${detail.video.offset_ms} for frame_index ${detail.frame.frame_index}`);
       const video = await fetch(detail.video.url);
       const uploaded = day.objects.find((o) => o.key.endsWith('.mp4') && detail.video.url.includes(o.key.split('/').pop()!))!;
       const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
