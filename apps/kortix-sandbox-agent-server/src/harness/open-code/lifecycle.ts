@@ -109,6 +109,7 @@ import { access, constants, open, readdir, readFile, realpath, stat } from 'node
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
+import { BAKED_LLM_CATALOG_PATH } from '../shared/box-paths'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -827,12 +828,6 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
     models,
   }
 }
-
-// Well-known path the snapshot builder bakes the full org model catalog to (see
-// dockerfile-layer.ts `COPY ${catalogPath} /opt/kortix/llm-catalog.json`). Present
-// on every modern image; used as the fast, always-available fallback so a slow or
-// down gateway never collapses the picker to the ~13-model minimal set.
-const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
  *  Returns null when missing, unreadable, or empty so callers can fall through. */

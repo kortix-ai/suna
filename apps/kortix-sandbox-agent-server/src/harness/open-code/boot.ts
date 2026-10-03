@@ -14,6 +14,7 @@ import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-g
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
+import { BAKED_LLM_CATALOG_PATH } from '../shared/box-paths'
 import { runSandboxOnBoot } from '../shared/on-boot'
 import { bootstrapRuntimeSessionRequested, loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import {
@@ -563,7 +564,7 @@ export async function reconcileManagedModels(
       return
     }
     const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
       targetCatalogFile:
         opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
       managed: live,

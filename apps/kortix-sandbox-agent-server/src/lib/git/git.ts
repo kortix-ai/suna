@@ -1009,7 +1009,10 @@ export function scheduleHistoryBackfill(cfg: Config, target: string): void {
   })()
 }
 
-const DEFAULT_SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+// Overridable so the test suite can present a developer box: on a runtime
+// image the real baked scaffold exists, and the suite's fixtures assume none.
+const DEFAULT_SCAFFOLD_REPO_PATH =
+  (process.env.KORTIX_SCAFFOLD_REPO_PATH ?? '').trim() || '/opt/kortix/scaffold.git'
 let scaffoldRepoPath = DEFAULT_SCAFFOLD_REPO_PATH
 
 export function __setScaffoldRepoPathForTests(path?: string): void {

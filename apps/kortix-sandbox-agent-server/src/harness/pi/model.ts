@@ -24,9 +24,8 @@ import {
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
+import { BAKED_LLM_CATALOG_PATH } from '../shared/box-paths'
 
-/** Staged unconditionally by apps/api's snapshot build-context. */
-export const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 export const KORTIX_PROVIDER_ID = 'kortix'
 const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 

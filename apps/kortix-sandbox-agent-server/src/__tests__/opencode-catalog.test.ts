@@ -77,6 +77,12 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  // A prefetch left in flight keeps its retry loop running into the NEXT
+  // test's fetch stub — its attempt is recorded there, which a "never touches
+  // the network" test then reports as a fetch that never happened. Wait out
+  // the loop (bounded: only the hanging-gateway stub outlives this), then
+  // reset. Its resolve writes no cache, so a straggler stays inert.
+  await Promise.race([settleManagedModelsPrefetch(), Bun.sleep(1_000)])
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()

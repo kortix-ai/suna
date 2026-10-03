@@ -130,6 +130,12 @@ const USER = () => ({
 })
 
 describe('auth', () => {
+  // The repo-work expectations below need a project target with NO repo — the
+  // tests assume a developer box, where the default `/workspace` is not a git
+  // repository. A runtime box's `/workspace` IS one (the session's checkout),
+  // so every auth test here points the target at a fresh empty dir.
+  const emptyTarget = mkdtempSync(join(tmpdir(), 'kortix-refresh-auth-'))
+
   it('rejects a request with no signed user context and no bearer', async () => {
     const res = await app({}).request('/kortix/refresh', { method: 'POST' })
     expect(res.status).toBe(401)
@@ -159,7 +165,7 @@ describe('auth', () => {
 
   it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
     // No repo here, so the repo work answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
+    const res = await app({ projectTarget: emptyTarget }).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
     expect(body.error).toBe('refresh failed')
@@ -170,7 +176,7 @@ describe('auth', () => {
     // Only the destructive flag needs the direct call: a user pulling their own
     // workspace keeps working without it. No repo here, so the repo work
     // answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh', {
+    const res = await app({ projectTarget: emptyTarget }).request('/kortix/refresh', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
     })
