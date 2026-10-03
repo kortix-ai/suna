@@ -1,4 +1,7 @@
 import { createHmac } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -39,13 +42,18 @@ export const TEST_SANDBOX_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 /** A complete OpenCode daemon config for tests: no clone, fixed ports. */
 export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCodeConfig {
+  // A real /workspace carries a git repo on a dev box and inside a Kortix
+  // platform sandbox; every test needs a workspace with none (a CI runner has
+  // no repo there). Fresh empty dir per config, same value for both fields —
+  // they mirror each other, and an override of one pins only that field.
+  const emptyWorkspace = mkdtempSync(join(tmpdir(), 'kortix-test-workspace-'))
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
-    workspace: '/workspace',
-    projectTarget: '/workspace',
+    workspace: over.workspace ?? emptyWorkspace,
+    projectTarget: over.projectTarget ?? emptyWorkspace,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,

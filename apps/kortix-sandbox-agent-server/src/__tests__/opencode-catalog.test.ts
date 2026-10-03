@@ -71,15 +71,22 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
   return (JSON.parse(raw!) as ProviderConfig).provider.kortix.models
 }
 
+// Inside a Kortix platform sandbox the image-baked catalog
+// (/opt/kortix/llm-catalog.json) exists; these tests prove the no-catalog
+// fallback, so mask the baked path the way an image without it would read.
+const REAL_BAKED_CATALOG_FILE = process.env.KORTIX_BAKED_LLM_CATALOG_FILE
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  process.env.KORTIX_BAKED_LLM_CATALOG_FILE = join(tmpdir(), 'kortix-absent-baked-catalog.json')
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  if (REAL_BAKED_CATALOG_FILE === undefined) delete process.env.KORTIX_BAKED_LLM_CATALOG_FILE
+  else process.env.KORTIX_BAKED_LLM_CATALOG_FILE = REAL_BAKED_CATALOG_FILE
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

@@ -129,8 +129,18 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
    * ini: `(^[\t ]+)?(?=;)` … `end: (?!\G)` — the engine's `\G` emulation ends
    * the zero-width begin at once, so a `;` comment AFTER a value on the same
    * line stays base colour. Comments at the start of a line still colour.
+   *
+   * php names a scheme when the engines differ on ONE theme only: under
+   * min-light the engine scopes the `php` text of the `<?php` open tag with
+   * the tag's own colour, where Oniguruma paints it base; under min-dark both
+   * engines agree. The divergence stays self-verifying per scheme - a Shiki
+   * upgrade that converges either theme fails this test and the entry gets
+   * revisited.
    */
-  const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = { ini: [2] };
+  const KNOWN_ENGINE_DIFFERENCES: Record<string, Record<'light' | 'dark', number[]>> = {
+    ini: { light: [2], dark: [2] },
+    php: { light: [0], dark: [] },
+  };
 
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
@@ -160,7 +170,7 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
           );
         const ours = paint(tokens!);
         const theirs = paint(reference);
-        const differing = KNOWN_ENGINE_DIFFERENCES[lang] ?? [];
+        const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
         for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
         const keep = (_: string, i: number) => !differing.includes(i);
         expect(ours.filter(keep)).toEqual(theirs.filter(keep));

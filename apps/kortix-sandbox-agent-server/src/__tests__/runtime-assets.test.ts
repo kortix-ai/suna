@@ -40,6 +40,11 @@ async function workspace() {
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'opt', 'runtime-assets-state.json'),
     configDir: join(dir, 'config'),
+    // Mask the platform's chunk-store binaries (the real /usr/local/bin/kortix-agent
+    // inside a Kortix platform sandbox): the chunk indexer reads every local
+    // source one chunkSize at a time, and a CI box has no agent binaries at all.
+    agentStateDir: join(dir, 'opt', 'agent-state'),
+    agentBakedPath: join(dir, 'opt', 'absent-agent'),
   }
 }
 
@@ -116,6 +121,8 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    agentStateDir: ws.agentStateDir,
+    agentBakedPath: ws.agentBakedPath,
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

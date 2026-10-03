@@ -33,7 +33,12 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+    // Overridable per call for tests: inside a Kortix platform sandbox
+    // /etc/pt-env exists and says KORTIX_PROJECT_AUTO_CLONE=1, which a test
+    // that turns autoClone off must be able to mask (the same pattern as
+    // KORTIX_MANAGED_SKILLS_DIR). Unset in production — the real file is read.
+    const path = (process.env.KORTIX_PT_ENV_FILE ?? '').trim() || '/etc/pt-env'
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(path, 'utf8'))
   } catch {
     return false
   }

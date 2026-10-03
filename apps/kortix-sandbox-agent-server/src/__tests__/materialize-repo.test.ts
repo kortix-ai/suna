@@ -77,7 +77,11 @@ function createDetachedWarmCheckout(prefix: string): {
 const tempDirs: string[] = []
 
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  // Inside a Kortix platform sandbox the image-baked scaffold
+  // (/opt/kortix/scaffold.git) exists; these tests prove plain-clone and
+  // delta-bundle behavior, so mask the scaffold the way a CI runner — where
+  // the default path does not exist — reads it.
+  __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-absent-scaffold'))
 })
 
 afterEach(() => {
