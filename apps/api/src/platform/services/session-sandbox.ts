@@ -412,6 +412,10 @@ export async function provisionSessionSandbox(opts: {
     (await import('../../drives/service')
       .then((m) => m.sessionDrivesEnabled(projectId))
       .catch(() => false));
+  // Drive sync (operator switch): a session off Platinum gets its drives
+  // copied in and synced by the box's daemon instead of failing to boot.
+  const drivesSyncAllowed =
+    drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));
   // Ephemeral sandboxes: set once a box booted an image that cannot keep the
   // session's state on its volume (the last ready image served while a newer
   // build bakes). The retry then waits for the current image instead.
@@ -699,7 +703,33 @@ export async function provisionSessionSandbox(opts: {
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
-      if (drivesRequirePlatinum && providerName !== 'platinum') {
+      // Drive sync: on any other provider the session's drives are copied
+      // into the box and kept in sync by its daemon over the Kortix API, so
+      // the session still boots with every drive it is entitled to.
+      // A failover onto Platinum mounts natively: the sync switch must not follow it.
+      if (providerCreateInput.envVars?.KORTIX_DRIVE_SYNC) {
+        const { KORTIX_DRIVE_SYNC: _sync, ...rest } = providerCreateInput.envVars;
+        providerCreateInput.envVars = rest;
+      }
+      if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
+        if (!driveMountsResolved) {
+          driveMounts = await import('../../drives/service').then(({ sessionVolumeMounts }) =>
+            sessionVolumeMounts({
+              accountId,
+              projectId,
+              sessionId: sandbox.sandboxId,
+              bootingUserId: userId,
+              agentName: opts.agentName ?? 'default',
+            }),
+          );
+          driveMountsResolved = true;
+        }
+        if (driveMounts?.mounts.length) {
+          const { DRIVE_SYNC_ENV } = await import('../../drives/sync');
+          providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), [DRIVE_SYNC_ENV]: '1' };
+        }
+      }
+      if (drivesRequirePlatinum && providerName !== 'platinum' && !drivesSyncAllowed) {
         const { DriveMountError } = await import('../../drives/service');
         throw new DriveMountError(
           'This project’s sessions mount drives, and drives run on Platinum only. Platinum is not available for this session right now, so it did not start. Try again in a minute.',
@@ -934,11 +964,16 @@ export async function provisionSessionSandbox(opts: {
         }
       }
       // What this sandbox really mounted: the session's drive chip reads it back.
-      const mountedDrives = providerCreateInput.volumes && driveMounts ? driveMounts.mounts : [];
+      const mountedDrives =
+        driveMounts && (providerCreateInput.volumes || (providerName !== 'platinum' && drivesSyncAllowed))
+          ? driveMounts.mounts
+          : [];
       // And the drives that did not fit, which the chip and the agent's notes name.
-      const driveAdmission = providerCreateInput.volumes && driveMounts
+      const driveAdmission = mountedDrives.length && driveMounts
         ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
         : { driveMountsSkipped: [] };
+      // A synced box: its daemon copies the drives in and keeps them in sync.
+      const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
       const timeline = tl.summary();
 
       const [currentSession] = await db
@@ -1000,6 +1035,7 @@ export async function provisionSessionSandbox(opts: {
                 providerExternalId: result.externalId,
                 driveMounts: mountedDrives,
                 ...driveAdmission,
+                ...driveSyncMeta,
                 ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
               },
               attempts,
@@ -1063,6 +1099,7 @@ export async function provisionSessionSandbox(opts: {
             providerExternalId: result.externalId,
             driveMounts: mountedDrives,
             ...driveAdmission,
+            ...driveSyncMeta,
             ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
             runtimeArtifact: {
               artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
@@ -1210,7 +1247,8 @@ export async function provisionSessionSandbox(opts: {
       {
         const next = nextFailoverProvider({
           // Drives run on Platinum only: no hand-off to another provider.
-          providerLocked: providerWasExplicitlySelected || drivesRequirePlatinum,
+          // (With drive sync on, any provider can carry the drives.)
+          providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed),
           fallbackAttempted,
           fallbackEnabled: providerFallbackSetting().enabled,
           current: providerName,
@@ -1258,7 +1296,7 @@ export async function provisionSessionSandbox(opts: {
       // A project with drives runs on Platinum only: when Platinum cannot be
       // reached at all, say that, instead of a generic provider failure.
       const failure = classifySandboxProvisioningFailure(
-        drivesRequirePlatinum && PLATINUM_UNREACHABLE.test(bgMessage)
+        drivesRequirePlatinum && !drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage)
           ? new Error(
               '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
                 'The session did not start. Try again in a minute.',

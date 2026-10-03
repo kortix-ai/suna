@@ -116,6 +116,44 @@ export async function abortLiveTurnBeforeStop(input: {
   }
 }
 
+/** The daemon's last push of a synced box's drives; bounded, a big backlog keeps the rest local. */
+const DRIVE_SYNC_FLUSH_TIMEOUT_MS = 30_000;
+
+/**
+ * Drive sync: before a box off Platinum powers down, ask its daemon to push
+ * the drive changes it has not sent yet. Best effort, like the abort above;
+ * the daemon also pushes on SIGTERM, and a resumed box pushes what is left.
+ */
+export async function flushDriveSyncBeforeStop(input: {
+  sandboxId: string;
+  externalId: string;
+  provider: string;
+  metadata?: unknown;
+}): Promise<void> {
+  const { isDriveSyncBox } = await import('../../drives/sync');
+  if (!isDriveSyncBox({ provider: input.provider, metadata: input.metadata })) return;
+  try {
+    const serviceKey = await resolveServiceKey(input.externalId);
+    if (!serviceKey) return;
+    const ingress = await resolveSandboxIngress(input.externalId, { port: DAEMON_PORT, transport: 'http' });
+    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/drive-sync/flush`, {
+      method: 'POST',
+      headers: {
+        ...ingress.headers,
+        Authorization: `Bearer ${serviceKey}`,
+        [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
+          { userId: 'system:stop', sandboxId: input.sandboxId, sandboxRole: 'platform_admin', scopes: ['*'] },
+          serviceKey,
+        ),
+      },
+      signal: AbortSignal.timeout(DRIVE_SYNC_FLUSH_TIMEOUT_MS),
+    });
+    if (!res.ok) console.warn(`[stop] drive sync flush declined for sandbox ${input.sandboxId}: ${res.status}`);
+  } catch (err) {
+    console.warn(`[stop] drive sync flush failed for sandbox ${input.sandboxId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
 /**
  * Ephemeral sandboxes: a stop commits the session volume and DELETES the box.
  *
@@ -176,7 +214,8 @@ export async function retireEphemeralOnStop(input: {
 export type StoppableBox = Pick<
   ReapCandidate,
   'sandboxId' | 'sessionId' | 'externalId' | 'provider'
->;
+> &
+  Partial<Pick<ReapCandidate, 'metadata'>>;
 
 /**
  * `stopReason` is REQUIRED, not defaulted. It used to default to
@@ -205,6 +244,7 @@ export async function stopExpiredBox(
   // came from `reapCandidatePredicate` (status = 'active'), so the box can
   // plausibly still be running one — best-effort, never gates the stop below.
   await abortLiveTurnBeforeStop({ sandboxId: row.sandboxId, externalId: row.externalId });
+  await flushDriveSyncBeforeStop(row);
 
   const retired = await retireEphemeralOnStop({
     sandboxId: row.sandboxId,

@@ -140,15 +140,68 @@ export async function writeVolumeFile(
   path: string,
   body: Uint8Array<ArrayBuffer>,
   opts: { overwrite: boolean },
-): Promise<{ path: string; size: number }> {
+): Promise<{ path: string; size: number; version?: string }> {
   const q = new URLSearchParams({ path, overwrite: String(opts.overwrite) });
-  const r = await callJson<{ path: string; size: number }>(`${v(volume)}/files/content?${q}`, {
+  const r = await callJson<{ path: string; size: number; version?: string }>(`${v(volume)}/files/content?${q}`, {
     method: 'PUT',
     body,
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     headers: { 'Content-Type': 'application/octet-stream' },
   });
-  return { path: r.path ?? path, size: Number(r.size ?? body.byteLength) };
+  return { path: r.path ?? path, size: Number(r.size ?? body.byteLength), ...(r.version ? { version: String(r.version) } : {}) };
+}
+
+/** One page of a listing, for callers that walk a whole drive (drive sync). */
+export async function listVolumeFilesPage(
+  volume: string,
+  path: string,
+  opts: { recursive: boolean; cursor?: string; signal?: AbortSignal },
+): Promise<{ entries: VolumeEntry[]; next_cursor: string | null }> {
+  const q = new URLSearchParams({ path, recursive: String(opts.recursive), limit: '5000' });
+  if (opts.cursor) q.set('cursor', opts.cursor);
+  const r = await callJson<{ entries: VolumeEntry[]; next_cursor?: string | null }>(
+    `${v(volume)}/files?${q}`,
+    opts.signal ? { signal: opts.signal } : {},
+  );
+  return { entries: r.entries ?? [], next_cursor: r.next_cursor ?? null };
+}
+
+export interface VolumeFileStat extends VolumeEntry {
+  version: string | null;
+}
+
+export async function statVolumeFile(volume: string, path: string): Promise<VolumeFileStat> {
+  const q = new URLSearchParams({ path });
+  const r = await callJson<VolumeFileStat>(`${v(volume)}/files/stat?${q}`, { signal: AbortSignal.timeout(30_000) });
+  return { path: r.path, type: r.type, size: Number(r.size ?? 0), mtime: Number(r.mtime ?? 0), version: r.version ?? null };
+}
+
+/**
+ * The block upload protocol, for files too large for one PUT: plan (the
+ * store answers which 1 MiB blocks it lacks), send only those, commit.
+ */
+export async function planVolumeUpload(volume: string, plan: unknown): Promise<unknown> {
+  return callJson<unknown>(`${v(volume)}/files/upload`, {
+    method: 'POST',
+    body: JSON.stringify(plan),
+    signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
+  });
+}
+
+export async function putVolumeUploadBlock(volume: string, uploadId: string, sha: string, body: Uint8Array<ArrayBuffer>): Promise<void> {
+  await call(`${v(volume)}/files/upload/${encodeURIComponent(uploadId)}/blocks/${encodeURIComponent(sha)}`, {
+    method: 'PUT',
+    body,
+    signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+}
+
+export async function commitVolumeUpload(volume: string, uploadId: string): Promise<unknown> {
+  return callJson<unknown>(`${v(volume)}/files/upload/${encodeURIComponent(uploadId)}/commit`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
+  });
 }
 
 export async function moveVolumeFile(volume: string, src: string, dst: string): Promise<void> {
