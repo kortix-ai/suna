@@ -39,7 +39,6 @@ export function AgentSelector({
   disabled = false,
   triggerLabelClassName,
   unavailableHint,
-  disabledHint,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
@@ -54,14 +53,6 @@ export function AgentSelector({
    * says nothing, because there is nothing true to say yet.
    */
   unavailableHint?: string | null;
-  /**
-   * Why the picker is locked while agents exist — shown as the tooltip on the
-   * inert trigger. The session composer sets it: a started session binds ONE
-   * agent, and the agent that will run must stay visible, so the trigger stays
-   * but stops looking like a dropdown. Unset means "disabled for another
-   * reason" (a read-only form): the trigger renders inert with no tooltip.
-   */
-  disabledHint?: string | null;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
@@ -219,35 +210,24 @@ export function AgentSelector({
   }
 
   /**
-   * A locked picker: the session binds one agent, so there is no menu to open.
-   *
-   * The trigger stays — the agent that will run must remain visible — but it
-   * stops pretending to be interactive: no caret (the one cue that read as
-   * "opens a menu"), the muted text every inert control on this rail wears,
-   * the disabled attribute, and a tooltip that says why. The tooltip hangs
-   * off a `<span>` rather than the button, same as the empty roster above: a
-   * disabled button takes no pointer events, so a `Hint` wrapped straight
-   * around it would never open — in exactly the state where its words matter.
+   * An inert picker: this host offered the roster but the control is read-only
+   * (a settings form the caller cannot write). The trigger stays — the agent
+   * that would run must remain visible — but it stops pretending to be
+   * interactive: no caret (the one cue that read as "opens a menu"), the muted
+   * text every inert control on this rail wears, and the disabled attribute.
    */
   if (disabled) {
-    const trigger = (
+    return (
       <Button
         type="button"
         variant="ghost"
         size="sm"
         disabled
-        aria-label={disabledHint ?? undefined}
         className="text-muted-foreground rounded-lg"
       >
         {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
         <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
       </Button>
-    );
-    if (!disabledHint) return trigger;
-    return (
-      <Hint side="top" label={disabledHint}>
-        <span className="inline-flex">{trigger}</span>
-      </Hint>
     );
   }
 

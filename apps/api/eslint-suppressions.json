@@ -1325,11 +1325,6 @@
       "count": 2
     }
   },
-  "src/projects/change-request-governance.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/projects/disk-quota-guard.ts": {
     "no-console": {
       "count": 3

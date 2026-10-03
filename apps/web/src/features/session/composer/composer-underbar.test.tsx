@@ -35,14 +35,12 @@ const messages = {
   threads: {
     attachFiles: 'Attach files',
     selectAgent: 'Select agent',
-    agentLockedHint: "You can't switch agents in an already started session.",
   },
 };
 
 function render(props?: {
   noAccessibleAgents?: boolean;
   agents?: Agent[];
-  locked?: boolean;
 }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
@@ -58,7 +56,6 @@ function render(props?: {
             onAttachClick={noop}
             agents={props?.agents ?? []}
             selectedAgent={props?.agents?.[0]?.name ?? null}
-            agentSelectorLocked={props?.locked ?? false}
             noAccessibleAgents={props?.noAccessibleAgents}
             messages={[]}
             models={[]}
@@ -256,37 +253,27 @@ function buttonMarkup(html: string, name: string): string {
 }
 
 /**
- * A started session binds ONE agent, and the picker is locked. It used to keep
- * the caret and the enabled chrome, so it read as a dropdown while opening
- * nothing — the reported bug. The agent that will run must stay visible, so
- * the control stays; it just stops pretending to be interactive.
+ * A started session keeps agent switching (KRTX-1290). The picker must read as
+ * a live dropdown even when the session already has an agent — the pre-2026-09
+ * lock (`agentSelectorLocked`) used to render this trigger inert with a
+ * "you can't switch" tooltip, which is the exact restriction this issue
+ * removes. A populated roster renders the enabled trigger, caret included.
  */
-describe('ComposerUnderbar — the locked session picker reads inert', () => {
+describe('ComposerUnderbar — the session picker stays switchable', () => {
   const KORTIX = [{ name: 'kortix', mode: 'primary' } as unknown as Agent];
 
-  test('says why in the tooltip, on the trigger itself', () => {
-    // The locked hint is the button's accessible name — screen readers get
-    // the reason, and the static-markup assertion pins the wiring.
-    const html = render({ agents: KORTIX, locked: true });
-    expect(html).toContain('switch agents in an already started session');
-  });
-
-  test('no caret inside the locked trigger — nothing may suggest a menu opens', () => {
-    const inner = buttonMarkup(render({ agents: KORTIX, locked: true }), 'You can');
-    expect(inner).not.toContain('<svg');
-  });
-
-  test('the locked trigger is actually disabled and still shows the agent name', () => {
-    const inner = buttonMarkup(render({ agents: KORTIX, locked: true }), 'You can');
-    expect(inner).toMatch(/\sdisabled=""/);
-    expect(inner).toContain('Kortix');
-  });
-
-  test('the unlocked picker keeps its caret and stays enabled', () => {
-    // Control for the two assertions above: same trigger, unlocked state.
+  test('the trigger for a populated roster is enabled and carries the caret', () => {
     const inner = buttonMarkup(render({ agents: KORTIX }), 'Select agent');
     expect(inner).toContain('<svg');
     expect(inner).not.toMatch(/\sdisabled=""/);
+    expect(inner).toContain('Kortix');
+  });
+
+  test('no locked-session tooltip exists anywhere in the row', () => {
+    // The lock used to speak through a hover hint naming started sessions.
+    // Its words must not survive the lock anywhere on this rail.
+    const html = render({ agents: KORTIX });
+    expect(html).not.toContain('switch agents in an already started session');
   });
 });
 

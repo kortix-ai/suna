@@ -1910,7 +1910,6 @@
     "messageInput": "Campo de mensagem",
     "attachFiles": "Anexar arquivos",
     "selectAgent": "Selecionar agente",
-    "agentLockedHint": "Não é possível trocar de agente numa sessão já iniciada.",
     "noModel": "Nenhum modelo",
     "thinkingEffort": "Esforço de raciocínio",
     "sessionOverrides": "Substituições da sessão",
@@ -19199,7 +19198,9 @@
       "textd4586396b9ba": "Os agentes podem usar a CLI por conta própria?",
       "text9e52157faaab": "Sim. A mesma CLI do Kortix roda em cada sandbox, já autenticada, então os agentes usam exatamente os mesmos comandos que você.",
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
-      "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções."
+      "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
+      "text39207bf34111": "Habilidades relacionadas",
+      "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20185,7 +20186,7 @@
     "ceilingDefault": "Teto padrão de agentes",
     "changeCeiling": "Alterar",
     "humanOnly": "Só pessoas",
-    "humanOnlyHelp": "Gerir membros, excluir o projeto e emitir credenciais ficam com pessoas.",
+    "humanOnlyHelp": "A emissão de credenciais do projeto fica com as pessoas.",
     "humanOnlyValue": "Nunca concedida",
     "effective": "Permissões efetivas",
     "effectiveHelp": "Permissões Kortix dentro da função teto, menos as permissões só para pessoas. project.read é sempre concedida.",

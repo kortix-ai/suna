@@ -46,8 +46,9 @@ describe('kortix_permissions / kortix_cli parse to the same grant', () => {
     expect(loaded.errors.map((e) => e.name)).toContain('w');
   });
 
-  test('the ungrantable-action message names kortix_permissions', () => {
-    const loaded = extractAgents(v2('    kortix_permissions: [billing.read]\n'));
-    expect(loaded.errors[0]?.error).toContain('kortix_permissions');
+  test('an ungrantable action drops out; the agent keeps the rest of its grant', () => {
+    const loaded = extractAgents(v2('    kortix_permissions: [billing.read, project.read]\n'));
+    expect(loaded.errors).toEqual([]);
+    expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.read']);
   });
 });
