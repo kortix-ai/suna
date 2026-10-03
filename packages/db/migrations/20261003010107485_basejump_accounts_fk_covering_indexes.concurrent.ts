@@ -53,14 +53,33 @@ export const up = async (pgm) => {
     );
     return;
   }
-  pgm.sql(`
-    create index concurrently if not exists accounts_created_by_fkey
-      on basejump.accounts using btree (created_by)
-  `);
-  pgm.sql(`
-    create index concurrently if not exists accounts_updated_by_fkey
-      on basejump.accounts using btree (updated_by)
-  `);
+  // Column-presence guard: older environments carry a narrower legacy
+  // basejump.accounts whose shape predates the created_by / updated_by audit
+  // columns (the advisor finding comes from prod's current shape). Index only
+  // the columns the table actually has, so the same migration batch serves
+  // both shapes; the FK itself lives only where its column does.
+  const {
+    rows: [cols],
+  } = await pgm.db.query(
+    `select
+       bool_or(column_name = 'created_by') as created_by,
+       bool_or(column_name = 'updated_by') as updated_by
+     from information_schema.columns
+     where table_schema = 'basejump' and table_name = 'accounts'
+       and column_name in ('created_by', 'updated_by')`,
+  );
+  if (cols?.created_by) {
+    pgm.sql(`
+      create index concurrently if not exists accounts_created_by_fkey
+        on basejump.accounts using btree (created_by)
+    `);
+  }
+  if (cols?.updated_by) {
+    pgm.sql(`
+      create index concurrently if not exists accounts_updated_by_fkey
+        on basejump.accounts using btree (updated_by)
+    `);
+  }
 };
 
 export const down = false;
