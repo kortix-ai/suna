@@ -33,7 +33,7 @@ mock.module('@kortix/sdk/react', () => ({
 
 const { useChatGptConnectFlow } = await import('./chatgpt-subscription-connect');
 
-Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const startBody = {
   flow_id: 'flow-1',
