@@ -259,6 +259,10 @@ export interface RuntimeAssetsOptions {
   cliFallbackPath?: string
   /** Test seam for `replaceCli`'s directory-unlock escalation. See `ReplaceCliDeps.unlockDir`. */
   unlockCliDir?: (dir: string) => Promise<boolean>
+  /** The chunk store this pass may reuse bytes from. Defaults to the box's own
+   *  binaries (see {@link chunkStoreSources}); injectable for tests, whose box
+   *  can carry real multi-megabyte binaries the indexer would hash for minutes. */
+  localChunkSources?: string[]
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */

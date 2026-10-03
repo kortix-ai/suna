@@ -123,6 +123,11 @@ export const MAX_HIGHLIGHT_LENGTH = 20_000;
 /** A single line longer than this is left unhighlighted (minified code). */
 const MAX_LINE_LENGTH = 2_000;
 
+/** Shiki's default per-line tokenize budget is 500 ms; a loaded phone crossed
+ *  it and silently painted the line's rest base-coloured. MAX_LINE_LENGTH
+ *  already bounds the work per line, so give the budget real headroom. */
+const TOKENIZE_TIME_LIMIT_MS = 5_000;
+
 const CACHE_MAX = 64;
 
 export interface HighlighterOptions {
@@ -285,11 +290,6 @@ export function highlightToTokens(
   code: string,
   language: string,
   scheme: CodeScheme,
-  /** Extra `codeToTokensBase` options, e.g. a raised `tokenizeTimeLimit` for
-   *  a test that must not depend on wall-clock scheduling. Production callers
-   *  keep shiki's 500 ms per-line budget. Not part of the cache key: a caller
-   *  that changes the budget clears `__testing.tokenCache` first. */
-  overrides?: { tokenizeTimeLimit?: number },
 ): CodeLine[] | null {
   const lang = normalizeLanguage(language);
   if (isPlainOnly(code, lang)) return plainTokens(code, scheme);
@@ -304,7 +304,11 @@ export function highlightToTokens(
       lang,
       theme: codeThemeFor(scheme),
       tokenizeMaxLineLength: MAX_LINE_LENGTH,
-      ...overrides,
+      // Shiki's 500 ms default per line leaves the rest of a slow line base-
+      // coloured — a loaded phone or CI runner crossed it on cold cpp/php
+      // grammars (the parity test's own comment). MAX_LINE_LENGTH already
+      // bounds the work per line; give it real headroom instead.
+      tokenizeTimeLimit: TOKENIZE_TIME_LIMIT_MS,
     });
     lines = toCodeLines(raw, CODE_THEME_FOREGROUND[scheme]);
   } catch {
@@ -371,6 +375,7 @@ export function highlightToTokensAsync(
             theme,
             grammarState: state,
             tokenizeMaxLineLength: MAX_LINE_LENGTH,
+            tokenizeTimeLimit: TOKENIZE_TIME_LIMIT_MS,
           });
           state = core.getLastGrammarState(raw);
           lines.push(...toCodeLines(raw, fallback));
