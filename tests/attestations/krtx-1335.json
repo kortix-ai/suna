@@ -1,0 +1,16 @@
+{
+  "source_hash": "31cba31f3a48d0acd871635161f30bdaf0acca058f2ea5b00c36149eadf3034a",
+  "diff_files": [
+    "apps/cli/src/__tests__/channels.test.ts",
+    "apps/cli/src/commands/channels.ts"
+  ],
+  "diff_hash": "9e5d8deb906e0877625b45ce6452cb926a4e907952aa07cf0583cacab322f7c7",
+  "head": "a5cb30040db7794222d98ee14df631aaf313d132",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:00:03.776Z"
+}
