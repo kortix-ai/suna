@@ -27,6 +27,21 @@ const databaseUrl =
 const authOptions = { supabaseUrl, password: "E2eCaptureUi123!" };
 const api = createApiJsonClient(apiBase);
 
+/** A device's anonymous call (the RFC 8628 sign-in): no Authorization header. */
+async function anon<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const res = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok)
+    throw new Error(`POST ${path} → ${res.status} ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
 test.describe("38 — Capture UI", () => {
   test("gates on the flag; a recorded day plays, searches, saves a range; devices and the policy read back", async ({
     page,
@@ -93,9 +108,7 @@ test.describe("38 — Capture UI", () => {
         { policy: { layers: { screen: true, actions: true, audio: true } } },
       );
       const machineKey = syntheticMachineKey(`capture-ui-${runId}`);
-      const started = await api<{ device_code: string; user_code: string }>(
-        null,
-        "POST",
+      const started = await anon<{ device_code: string; user_code: string }>(
         "/capture/device/authorize",
         {
           client_id: "kortix-capture",
@@ -117,9 +130,7 @@ test.describe("38 — Capture UI", () => {
         `/capture/device/grants/${started.user_code}/approve`,
         { project_id: projectId },
       );
-      const device = await api<{ device_id: string; prefix: string }>(
-        null,
-        "POST",
+      const device = await anon<{ device_id: string; prefix: string }>(
         "/capture/device/token",
         {
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
@@ -193,7 +204,7 @@ test.describe("38 — Capture UI", () => {
         r.url().includes("/capture/search?q=%22incident+review%22"),
       );
       await page
-        .getByRole("searchbox", { name: "Search the timeline" })
+        .getByRole("textbox", { name: "Search the timeline" })
         .fill('"incident review"');
       expect((await searched).status()).toBe(200);
       const hit = page
