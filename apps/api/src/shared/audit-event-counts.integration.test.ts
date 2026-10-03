@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import pg from 'pg';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { SLOT_MS, countPass } from './audit-event-count-worker';
+import { SLOT_MS, countPass, slotStartOf } from './audit-event-count-worker';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
@@ -30,9 +30,8 @@ const firstRow = <T extends pg.QueryResultRow>(result: pg.QueryResult<T>): T => 
   return row;
 };
 
-/** The 5-minute slot an instant belongs to (UTC, epoch-aligned — the same
- * alignment the worker counts with). */
-const slotStartOf = (ms: number) => Math.floor(ms / SLOT) * SLOT;
+/** The 5-minute slot an instant belongs to (UTC, epoch-aligned) — the worker's
+ * own floor, imported so the fixtures and the counted slots cannot drift. */
 const iso = (ms: number) => new Date(ms).toISOString();
 
 const slot = (start: number) =>
