@@ -387,6 +387,11 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
+      // Platform-managed sandboxes inject KORTIX_* (a real project id)
+      // through /dev/shm/kortix/agent-env.sh, which the child reads behind
+      // this test's explicit env. Disable that file so the child resolves
+      // its project exactly like a laptop or CI box: from this object alone.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
       ...extraEnv,
@@ -675,6 +680,11 @@ describe('MCP face', () => {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Platform-managed sandboxes inject KORTIX_* (a real project id)
+        // through /dev/shm/kortix/agent-env.sh, which the child reads behind
+        // this test's explicit env. Disable that file so the child resolves
+        // its project exactly like a laptop or CI box: from this object alone.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
       },
@@ -769,6 +779,11 @@ describe('MCP face', () => {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Platform-managed sandboxes inject KORTIX_* (a real project id)
+        // through /dev/shm/kortix/agent-env.sh, which the child reads behind
+        // this test's explicit env. Disable that file so the child resolves
+        // its project exactly like a laptop or CI box: from this object alone.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
@@ -841,6 +856,11 @@ describe('MCP face', () => {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Platform-managed sandboxes inject KORTIX_* (a real project id)
+        // through /dev/shm/kortix/agent-env.sh, which the child reads behind
+        // this test's explicit env. Disable that file so the child resolves
+        // its project exactly like a laptop or CI box: from this object alone.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
