@@ -15,6 +15,7 @@ import { grantForPaidProrationInvoice } from './proration-grants';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { logger } from '../../lib/logger';
 
 /** True for Stripe's "No such customer" (resource_missing). */
 function isStripeNoSuchCustomer(err: unknown): boolean {
@@ -773,7 +774,7 @@ async function releaseSchedule(stripe: Stripe, scheduleId: string): Promise<void
     await stripe.subscriptionSchedules.release(scheduleId);
   } catch (err: any) {
     if (err?.statusCode !== 400 && err?.statusCode !== 404) throw err;
-    console.warn(`[Billing] Schedule ${scheduleId} not releasable (${err.statusCode}): ${err.message}`);
+    logger.warn('[Billing] schedule not releasable', { scheduleId, status: err.statusCode, error: err.message });
   }
 }
 

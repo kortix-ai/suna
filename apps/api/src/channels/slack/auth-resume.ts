@@ -3,6 +3,7 @@ import { chatPendingAuthMessages } from '@kortix/db';
 import { db } from '../../shared/db';
 import { respondViaUrl } from './util';
 import type { SlackEnvelope, SlackEvent } from './types';
+import { logger } from '../../lib/logger';
 
 const PENDING_AUTH_TTL_MS = 10 * 60 * 1000;
 
@@ -101,7 +102,7 @@ export async function createPendingSlackPickerMessage(input: {
       .returning({ pendingId: chatPendingAuthMessages.pendingId });
     return rows[0]?.pendingId ?? null;
   } catch (err) {
-    console.warn('[slack-picker] failed to store pending picker message', err);
+    logger.warn('[slack-picker] failed to store pending picker message', { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -128,7 +129,7 @@ export async function consumePendingSlackPickerMessage(input: {
       .returning({ envelope: chatPendingAuthMessages.envelope });
     return (row?.envelope as unknown as SlackEnvelope | undefined) ?? null;
   } catch (err) {
-    console.warn('[slack-picker] failed to consume pending picker message', err);
+    logger.warn('[slack-picker] failed to consume pending picker message', { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }

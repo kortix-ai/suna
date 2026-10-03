@@ -47,6 +47,7 @@ import {
   preserveEstablishedRuntime,
 } from '../runtime-identity';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import { logger } from '../../lib/logger';
 
 /** How many parked rows one pass may examine. */
 const PARKED_VERIFY_BATCH = 60;
@@ -332,7 +333,7 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
       })
       .where(and(inArray(sessionSandboxes.sandboxId, rows.map((row) => row.sandboxId)), eq(sessionSandboxes.status, 'stopped')))
       .catch((error) =>
-        console.warn('[parked-verify] batch stamp failed:', error instanceof Error ? error.message : error),
+        logger.warn('[parked-verify] batch stamp failed', { error: error instanceof Error ? error.message : String(error) }),
       );
   }
 

@@ -11,6 +11,7 @@ import {
 import { publishTeamsAppToCatalog } from './teams/catalog';
 import { signChannelState, verifyChannelState } from './core/signed-state';
 import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './core/install-completion';
+import { logger } from '../lib/logger';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -53,7 +54,7 @@ async function runCatalogPublish(input: {
   // leaves the status at 'publishing' or the catalog id unset, and nothing
   // repairs it but another install. Never swallow it silently.
   const storeFailed = (step: string) => (err: unknown) =>
-    console.error(`[teams-oauth] install state write failed (${step}) for project ${projectId}:`, err);
+    logger.error('[teams-oauth] install state write failed', { step, projectId, error: err instanceof Error ? err.message : String(err) });
   await setTeamsPublishState(projectId, 'publishing').catch(storeFailed('setTeamsPublishState'));
   let published: Awaited<ReturnType<typeof publishTeamsAppToCatalog>>;
   try {

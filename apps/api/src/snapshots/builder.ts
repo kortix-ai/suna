@@ -35,6 +35,7 @@ import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMe
 import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
+import { logger } from '../lib/logger';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
@@ -344,7 +345,7 @@ export async function ensureSandboxImage(
         });
       } finally {
         await releaseSnapshotBuild(buildKey).catch((err) =>
-          console.warn(`[snapshots] build claim release failed for ${buildKey} (expires on its own):`, err),
+          logger.warn('[snapshots] build claim release failed (expires on its own)', { buildKey, error: err instanceof Error ? err.message : String(err) }),
         );
       }
     })().finally(() => inflightBuilds.delete(buildKey));

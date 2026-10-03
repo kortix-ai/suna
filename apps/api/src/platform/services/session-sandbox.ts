@@ -81,6 +81,7 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import { logger } from '../../lib/logger';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -1016,9 +1017,9 @@ export async function provisionSessionSandbox(opts: {
       }).catch((sessionErr) =>
         // No sweep repairs this: stuck-sessions skips a session whose sandbox
         // row is active. Log it so it is at least visible.
-        console.error(
+        logger.error(
           `[session-sandbox] ${sandbox.sandboxId} is active but its session row was not marked provisioned:`,
-          sessionErr instanceof Error ? sessionErr.message : sessionErr,
+          { error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr) },
         ),
       );
 
@@ -1118,9 +1119,9 @@ export async function provisionSessionSandbox(opts: {
           if (bgExternalId) {
             const failedBox = bgExternalId;
             await provider.remove(failedBox).catch((removeErr) =>
-              console.error(
+              logger.error(
                 `[session-sandbox] failover could not remove ${providerName} box ${failedBox} for ${sandbox.sandboxId}; the orphan sweep stops it:`,
-                removeErr instanceof Error ? removeErr.message : removeErr,
+                { error: removeErr instanceof Error ? removeErr.message : String(removeErr) },
               ),
             );
             bgExternalId = null;
@@ -1134,9 +1135,9 @@ export async function provisionSessionSandbox(opts: {
           }).then(
             () => true,
             (switchErr) => {
-              console.error(
+              logger.error(
                 `[session-sandbox] failover to ${next} aborted for ${sandbox.sandboxId}: the provider switch was not written:`,
-                switchErr instanceof Error ? switchErr.message : switchErr,
+                { error: switchErr instanceof Error ? switchErr.message : String(switchErr) },
               );
               return false;
             },
@@ -1205,9 +1206,9 @@ export async function provisionSessionSandbox(opts: {
           }),
         });
         await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch((sessionErr) =>
-          console.error(
+          logger.error(
             `[session-sandbox] ${sandbox.sandboxId} failed but its session row was not marked failed (stuck-sessions stops it after its TTL):`,
-            sessionErr instanceof Error ? sessionErr.message : sessionErr,
+            { error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr) },
           ),
         );
       } catch (markErr) {

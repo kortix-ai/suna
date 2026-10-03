@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { runWorkerTick } from '../shared/audit-scope';
+import { logger } from '../lib/logger';
 
 // The hourly billing sweeps. bootstrap.ts starts them with the other singleton
 // workers, so they run on the elected leader only, not on every replica.
@@ -8,7 +9,7 @@ let timers: ReturnType<typeof setInterval>[] = [];
 
 function hourly(name: string, tick: () => Promise<unknown>): ReturnType<typeof setInterval> {
   return setInterval(() => {
-    tick().catch((err) => console.error(`[BillingApp] ${name} tick failed:`, err));
+    tick().catch((err) => logger.error('[BillingApp] sweep tick failed', { sweep: name, error: err instanceof Error ? err.message : String(err) }));
   }, HOUR_MS);
 }
 

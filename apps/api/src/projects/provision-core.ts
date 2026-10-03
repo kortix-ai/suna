@@ -764,18 +764,18 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       try {
         await backend.deleteRepo(connRef);
       } catch (deleteError) {
-        console.error(
+        appLogger.error(
           `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
-            `${rollbackContext} stage=seed_rollback:`,
-          deleteError instanceof Error ? deleteError.message : deleteError,
+            `${rollbackContext} stage=seed_rollback`,
+          { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },
         );
       }
       // A surviving row points at a deleted repo, and a retry with the same
       // idempotency key would replay it as a success.
       await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch((deleteError) => {
-        console.error(
+        appLogger.error(
           `[projects] provision rollback left the project row ${rollbackContext}:`,
-          deleteError instanceof Error ? deleteError.message : deleteError,
+          { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },
         );
       });
       return {

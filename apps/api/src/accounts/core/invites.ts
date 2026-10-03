@@ -13,6 +13,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { buildInviteUrl, sendAccountInviteEmail } from '../email';
 import { AccountIdParam, AccountInviteSchema, type AccountRole, OkSchema, accountsRouter, getMembership, normalizeEmail, parseRole } from './app';
 import { grantAccountRole } from './member-role-write';
+import { logger } from '../../lib/logger';
 
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
@@ -167,7 +168,7 @@ export function registerMemberInviteRoute(): void {
         void onMemberAdded(accountId, targetUserId).catch((err) =>
         // No seat reconciler exists: a failure here leaves the Stripe seat count
         // (and the member's YOLO token) wrong until the next member change.
-        console.error('[billing] seat sync FAILED after member added', { accountId: accountId, userId: targetUserId }, err),
+        logger.error('[billing] seat sync FAILED after member added', { accountId: accountId, userId: targetUserId, error: err instanceof Error ? err.message : String(err) }),
       );
 
         for (const g of projectGrants) {

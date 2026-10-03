@@ -62,6 +62,7 @@ let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
 
+// replica-local: a waiter waits in this process; the NOTIFY reaches every replica.
 const settleWaiters = new Map<string, Set<() => void>>();
 
 /**
