@@ -1,0 +1,27 @@
+{
+  "source_hash": "1867ca4b524588fd124d58c120fd0ba13a18d9104f097c9ede695e5dc96cd222",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-03T060228Z-land-every-new-lint-visible-pattern-with-its-inline-justific.md",
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
+    "apps/api/src/shared/platinum.test.ts",
+    "apps/cli/src/__tests__/ship-host.blackbox.test.ts",
+    "apps/cli/src/commands/projects.ts",
+    "apps/cli/src/commands/ship.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "tests/bin/package-quality.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "20208b201cc6046a90f94ac905c573b89b5b5e84c56cde46a5caf95e67f69fde",
+  "head": "067debd9375d5015820ca4cc7d991f17b0de5f0e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:35:37.710Z"
+}
