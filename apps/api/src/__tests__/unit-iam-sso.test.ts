@@ -25,11 +25,11 @@ describe('extractSsoProviderId', () => {
     expect(
       extractSsoProviderId({
         app_metadata: {
-          provider: 'sso:464651b7-6157-46b1-afaa-5bbd7fa37599',
-          providers: ['sso:464651b7-6157-46b1-afaa-5bbd7fa37599'],
+          provider: 'sso:5a1e0c05-0000-4000-8000-000000000550',
+          providers: ['sso:5a1e0c05-0000-4000-8000-000000000550'],
         },
       }),
-    ).toBe('464651b7-6157-46b1-afaa-5bbd7fa37599');
+    ).toBe('5a1e0c05-0000-4000-8000-000000000550');
   });
 
   test('reads the id out of the providers[] array when provider is absent', () => {
