@@ -73,7 +73,7 @@ describe('drop_trigger_session_access_grants_index migration — node-pg-migrate
     expect(texts.some((t) => /set statement_timeout = '30min'/i.test(t))).toBe(true);
   });
 
-  test('when the index is already absent the drop is still issued (IF EXISTS no-op) and the migration marks itself applied', async () => {
+  test('the IF EXISTS drop is still issued when the index is absent, and the migration marks itself applied', async () => {
     const texts = await runMigrationInBatch(recordingClient());
 
     expect(texts.some((t) => /drop index concurrently/i.test(t))).toBe(true);
