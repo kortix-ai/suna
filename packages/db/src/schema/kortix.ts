@@ -2171,7 +2171,6 @@ export const sessionEnvironments = kortixSchema.table(
   (table) => [
     index('idx_session_environments_project').on(table.projectId),
     index('idx_session_environments_account').on(table.accountId),
-    index('idx_session_environments_status').on(table.status),
     index('idx_session_environments_external_id').on(table.externalId),
   ],
 );
