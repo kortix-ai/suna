@@ -42,6 +42,8 @@ interface ProjectContextOpts {
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
+export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg'>;
+
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
 ): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
@@ -188,7 +190,7 @@ export function emitJson(data: unknown): void {
 // browser flow) — so the failure message prints ready-to-run
 // `login && retry --host <name>` one-liners for those hosts instead.
 
-export interface LocatedSession {
+interface LocatedSession {
   client: ApiClient;
   auth: Auth;
   projectId: string;
@@ -281,7 +283,7 @@ export async function locateSessionAnywhere(
   return { located: found, switched: true };
 }
 
-export interface LocatedProject {
+interface LocatedProject {
   client: ApiClient;
   auth: Auth;
   project: ProjectSummary;
@@ -569,6 +571,39 @@ export function missing(what: string): number {
 /** The first dash-separated segment of an id — `3f2a…-…` prints as `3f2a…`. */
 export function shortId(id: string): string {
   return id.split('-')[0] ?? id;
+}
+
+/** Relative span → milliseconds: minutes, hours, days, weeks or years. */
+const SPAN_MS: Record<string, number> = {
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+  y: 31_536_000_000,
+};
+
+const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w|y)$/i;
+
+/**
+ * Resolve a timestamp argument to an ISO instant: a relative span (`24h`,
+ * `7d`, `30m`, `2w`, `1y`) resolved `sign` seconds from `now` (audit reads the
+ * past with -1, token expiry looks ahead with +1), or an absolute instant
+ * passed through normalized. Returns null for anything it cannot parse, so
+ * the caller can reject instead of coercing garbage to now.
+ */
+export function resolveSpanInstant(input: string, now: Date, sign: 1 | -1): string | null {
+  const value = input.trim();
+  if (!value) return null;
+  const relative = RELATIVE_SPAN.exec(value);
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = (relative[2] ?? '').toLowerCase();
+    const ms = SPAN_MS[unit];
+    if (!Number.isFinite(amount) || amount <= 0 || ms === undefined) return null;
+    return new Date(now.getTime() + sign * amount * ms).toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 /** Find and pull out a flag value from argv (`--project foo` or
