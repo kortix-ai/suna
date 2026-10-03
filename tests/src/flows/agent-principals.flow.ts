@@ -963,6 +963,9 @@ flow(
       'POST /v1/projects/:projectId/change-requests/:crId/merge',
       'POST /v1/projects/:projectId/change-requests/:crId/close',
       'GET /v1/projects/:projectId/change-requests/:crId',
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/secrets/:identifier/grant',
+      'GET /v1/projects/:projectId/agents/:agentName/config',
     ],
   },
   async (ctx) => {
@@ -975,18 +978,52 @@ flow(
     const base = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.merge', 'project.agent.write', 'project.trigger.create'] };
     const pushOnly = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push'] };
     const mergeOnly = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.merge', 'project.gitops.ref.any'] };
+    // Every permission a default-branch push asks for, but not everything a grant can confer.
+    const pushAll = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.ref.any', 'project.agent.write', 'project.trigger.create', 'project.trigger.update', 'project.trigger.delete', 'project.customize.write'] };
+    const agents = (courierSecrets: string[]) => ({
+      builder: { kortix_permissions: [...base.kortix_permissions] },
+      drafter: { kortix_permissions: [...pushOnly.kortix_permissions] },
+      merger: { kortix_permissions: [...mergeOnly.kortix_permissions] },
+      pusher: { kortix_permissions: [...pushAll.kortix_permissions] },
+      keeper: { kortix_permissions: ['project.read', 'project.agent.write', 'project.secret.read'], secrets: ['AGP_KEEP'] },
+      courier: { kortix_permissions: ['project.read'], secrets: courierSecrets },
+    });
     try {
       await ctx.step('commit `builder`, which may push its branch and merge its own change requests', async () => {
         await world.localRepoPath();
-        await world.writeManifest(manifest({
-          builder: { kortix_permissions: [...base.kortix_permissions] },
-          drafter: { kortix_permissions: [...pushOnly.kortix_permissions] },
-          merger: { kortix_permissions: [...mergeOnly.kortix_permissions] },
-        }));
+        await world.writeManifest(manifest(agents([])));
       });
       const run = await world.mintAgentSession({ agent: 'builder', launcher: ctx.P.OWNER });
       const drafter = await world.mintAgentSession({ agent: 'drafter', launcher: ctx.P.OWNER });
       const merger = await world.mintAgentSession({ agent: 'merger', launcher: ctx.P.OWNER });
+      const pusher = await world.mintAgentSession({ agent: 'pusher', launcher: ctx.P.OWNER });
+      const keeper = await world.mintAgentSession({ agent: 'keeper', launcher: ctx.P.OWNER });
+      // The secret-grant route commits the manifest itself, so it runs while the
+      // project still points at its local repository (the HTTP fixture below has
+      // no write credential for the API).
+      const secretsPath = '/v1/projects/:projectId/secrets';
+      const grantPath = '/v1/projects/:projectId/secrets/:identifier/grant';
+      await ctx.step('the owner creates secrets AGP_KEEP and AGP_OTHER', async () => {
+        for (const name of ['AGP_KEEP', 'AGP_OTHER']) {
+          (await world.owner.post(secretsPath, { name, value: `${name.toLowerCase()}-value` }, { params: { projectId: project.id } }))
+            .status(200).body().has('$.identifier', name);
+        }
+      });
+      await ctx.step('`keeper` (secrets [AGP_KEEP]) granting itself AGP_OTHER → 403 agent_grant_escalation', async () => {
+        const r = await keeper.client.post(grantPath, { agent: 'keeper' }, { params: { projectId: project.id, identifier: 'AGP_OTHER' } });
+        r.status(403).body().has('$.code', 'agent_grant_escalation');
+      });
+      await ctx.step('`keeper` granting `courier` AGP_KEEP, which it holds → 200, written', async () => {
+        const r = await keeper.client.post(grantPath, { agent: 'courier' }, { params: { projectId: project.id, identifier: 'AGP_KEEP' } });
+        r.status(200).body().has('$.agent', 'courier').has('$.already_granted', false);
+        const config = await world.owner.get('/v1/projects/:projectId/agents/:agentName/config', { params: { projectId: project.id, agentName: 'courier' } });
+        config.status(200);
+        if (!JSON.stringify(config.json<any>().block?.secrets ?? []).includes('AGP_KEEP')) {
+          throw new Error(`courier's committed grant lacks AGP_KEEP: ${JSON.stringify(config.json<any>().block)}`);
+        }
+        // The route re-serialized kortix.yaml; restore the layout the edits below match.
+        await world.writeManifest(manifest(agents(['AGP_KEEP'])));
+      });
       server = await serveFixtureRepoLocally(ctx, world.db, project.id, 'AGP-10');
       const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
       const auth = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${run.secret}` };
@@ -1018,17 +1055,17 @@ flow(
         await agentGit(['pull', '--ff-only', 'origin', 'main']);
       });
 
-      await ctx.step('a CR widening agents.builder.kortix_permissions: the agent merges it (200); main carries the change', async () => {
+      await ctx.step('a CR granting `merger` project.trigger.create, which builder holds: the agent merges it (200); main carries the change', async () => {
         const manifestPath = join(work, 'kortix.yaml');
         const current = await readFile(manifestPath, 'utf8');
-        await writeFile(manifestPath, current.replace('"project.trigger.create"]', '"project.trigger.create","project.secret.read"]'));
+        await writeFile(manifestPath, current.replace(/(merger:\n {4}kortix_permissions: \[[^\]]*)\]/, '$1,"project.trigger.create"]'));
         if ((await readFile(manifestPath, 'utf8')) === current) throw new Error('manifest edit did not apply');
-        await commitAndPush('agents: widen builder');
-        const crId = await openCr('Widen builder');
+        await commitAndPush('agents: let merger create triggers');
+        const crId = await openCr('Merger creates triggers');
         const r = await mergeAs(run.client, crId);
         r.status(200).body().has('$.change_request.status', 'merged');
         await agentGit(['pull', '--ff-only', 'origin', 'main']);
-        if (!(await readFile(manifestPath, 'utf8')).includes('project.secret.read')) {
+        if (!/merger:\n {4}kortix_permissions: \[[^\]]*"project\.trigger\.create"\]/.test(await readFile(manifestPath, 'utf8'))) {
           throw new Error('main lacks the merged manifest change');
         }
       });
@@ -1042,6 +1079,21 @@ flow(
         r.status(200).body().has('$.change_request.status', 'merged');
         await agentGit(['pull', '--ff-only', 'origin', 'main']);
         if (!(await readFile(manifestPath, 'utf8')).includes('agp-hourly')) throw new Error('main lacks the merged trigger');
+      });
+      // From here on every CR from builder's branch is refused, so its commits stay unmerged.
+      await ctx.step('an agent grants only what it holds: builder cannot merge a CR making itself `all` → 403 agent_grant_escalation; main unchanged', async () => {
+        const manifestPath = join(work, 'kortix.yaml');
+        const current = await readFile(manifestPath, 'utf8');
+        const widened = current.replace(/builder:\n {4}kortix_permissions: \[[^\]]*\]/, 'builder:\n    kortix_permissions: "all"');
+        if (widened === current) throw new Error('manifest edit did not apply');
+        await writeFile(manifestPath, widened);
+        await commitAndPush('agents: make builder all');
+        const crId = await openCr('Make builder all');
+        const before = await mainSha();
+        const r = await mergeAs(run.client, crId);
+        r.status(403).body().has('$.code', 'agent_grant_escalation');
+        if ((await mainSha()) !== before) throw new Error('a refused merge moved main');
+        (await world.owner.post(`${crPath}/:crId/close`, {}, { params: { projectId: project.id, crId } })).status(200);
       });
       await ctx.step('an agent without project.gitops.merge cannot merge a CR widening itself: 403 agent_scope_insufficient; main unchanged', async () => {
         const manifestPath = join(work, 'kortix.yaml');
@@ -1081,6 +1133,20 @@ flow(
         if (pushed) throw new Error('merger pushed straight to main without the manifest-write permissions');
         if ((await mainSha()) !== before) throw new Error('a refused push moved main');
       });
+      await ctx.step('ref.any and every manifest-write permission, but not every grant: `pusher` pushing straight to main is refused; main unchanged', async () => {
+        const pusherAuth = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${pusher.secret}` };
+        const before = await mainSha();
+        let pushed = false;
+        try {
+          await git(['push', 'origin', 'HEAD:refs/heads/main'], { cwd: work, env: pusherAuth });
+          pushed = true;
+        } catch (err) {
+          if (!/grants only what it holds/.test(String((err as Error).message))) throw err;
+        }
+        if (pushed) throw new Error('pusher landed a manifest on main without the grant review');
+        if ((await mainSha()) !== before) throw new Error('a refused push moved main');
+      });
+
     } finally {
       if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
       await rm(work, { recursive: true, force: true });

@@ -148,13 +148,22 @@ a person:
    `default_agent` → `project.customize.write`. A person's role holds these
    through `project.gitops.merge`. An agent's `kortix_permissions` must list
    them, or be `all`. So an agent that may only merge cannot widen itself.
-3. A push straight to the default branch skips the change request. An agent
-   session needs `project.gitops.ref.any` and every permission in item 2.
-4. A refusal answers `403` with `code: "agent_scope_insufficient"` (agent) or
+3. An agent grants only what it holds. When an agent writes any agent's grant
+   (the agent editor, the scope and secret-grant routes, or a change request
+   it merges), every permission, connector, secret and App the write adds must
+   be in the writing agent's own effective grant. Granting `all` needs every
+   one of them. Narrowing or removing a grant is always allowed. A refusal
+   answers `403` with `code: "agent_grant_escalation"`.
+4. A push straight to the default branch skips the change request. An agent
+   session needs `project.gitops.ref.any` and every permission in item 2. The
+   pushed manifest cannot be checked before it lands, so the agent must also
+   hold every grant (`all` permissions, connectors, secrets and Apps).
+   Otherwise it opens a change request.
+5. A refusal answers `403` with `code: "agent_scope_insufficient"` (agent) or
    `"project_role_insufficient"` (person) and the missing `action`. When the
    manifest cannot be read, the merge answers `503` with
    `code: "CR_GOVERNANCE_UNVERIFIED"` and `Retry-After`. Retry it.
-5. The ceiling is admin-only IAM state. The manifest never exceeds it.
+6. The ceiling is admin-only IAM state. The manifest never exceeds it.
 
 ## Read a denial
 
@@ -165,6 +174,7 @@ Every `403` from an authorization check carries `code` and `action`:
 | `agent_scope_insufficient` | `action` is not in the agent's Kortix permissions | Add it to `agents.<name>.kortix_permissions` |
 | `agent_ceiling_insufficient` | `action` is outside the agent's ceiling role | An admin raises the ceiling |
 | `agent_not_accessible` | The person may not run this agent | Grant them the agent |
+| `agent_grant_escalation` | The write gives an agent something the writing agent does not hold | Grant only what the writer holds, or have a person make the change |
 | `project_role_insufficient` | The person's own role denies `action` | Change their project role |
 
 ## Audit

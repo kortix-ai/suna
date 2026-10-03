@@ -19190,7 +19190,9 @@
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
       "text39207bf34111": "Competenze correlate",
-      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo."
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
+      "text85b7a59cdbd5": "Agente della piattaforma",
+      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
