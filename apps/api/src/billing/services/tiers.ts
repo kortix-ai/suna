@@ -230,7 +230,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 50,
+    appLimit: 50,
     entitlements: SELF_SERVE,
   },
 
@@ -244,7 +244,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 50,
+    appLimit: 50,
     entitlements: SELF_SERVE,
   },
 
@@ -258,7 +258,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 200,
+    appLimit: 200,
     entitlements: SELF_SERVE,
   },
 
@@ -267,7 +267,7 @@ const TIERS: Record<string, TierConfig> = {
   // grantForSeats() and applied at subscription create + renew.
   //
   // GRANDFATHERED (billing v3). Existing per-seat customers keep this tier
-  // exactly as it is — same price, same $25/seat grant, same 200-session cap,
+  // exactly as it is — same price, same $25/seat grant, same 200 Apps,
   // and `models: ['all']` so their managed-model access is NOT withdrawn under
   // them. It is `hidden` only so the self-serve grid stops offering it to new
   // customers; every existing subscription resolves it unchanged.
@@ -281,7 +281,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 200,
+    appLimit: 200,
     entitlements: SELF_SERVE,
   },
 
@@ -311,7 +311,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 3,
+    appLimit: 3,
     entitlements: SELF_SERVE,
   },
 
@@ -325,7 +325,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 10,
+    appLimit: 10,
     entitlements: SELF_SERVE,
   },
 
@@ -339,7 +339,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: false,
-    concurrentSessionLimit: 30,
+    appLimit: 30,
     entitlements: SELF_SERVE,
   },
 
@@ -360,7 +360,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 5000,
+    appLimit: 5000,
     entitlements: ALL_ENTERPRISE,
   },
 
@@ -377,7 +377,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 200,
+    appLimit: 200,
     entitlements: SELF_SERVE,
   },
   tier_6_50: {
@@ -390,7 +390,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 300,
+    appLimit: 300,
     entitlements: SELF_SERVE,
   },
   tier_12_100: {
@@ -403,7 +403,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 400,
+    appLimit: 400,
     entitlements: SELF_SERVE,
   },
   tier_25_200: {
@@ -416,7 +416,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 500,
+    appLimit: 500,
     entitlements: SELF_SERVE,
   },
   tier_50_400: {
@@ -429,7 +429,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 750,
+    appLimit: 750,
     entitlements: SELF_SERVE,
   },
   tier_125_800: {
@@ -442,7 +442,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 1000,
+    appLimit: 1000,
     entitlements: SELF_SERVE,
   },
   tier_200_1000: {
@@ -455,7 +455,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 1500,
+    appLimit: 1500,
     entitlements: SELF_SERVE,
   },
   tier_150_1200: {
@@ -468,7 +468,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: true,
-    concurrentSessionLimit: 2000,
+    appLimit: 2000,
     entitlements: SELF_SERVE,
   },
 };

@@ -4,16 +4,16 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { agentGovernanceMergeRefusal } from './change-request-governance';
+import { manifestChangeRequiredActions } from './change-request-governance';
 import { refreshMirror } from './git/mirror';
 import type { GitBackedProject } from './git/types';
 
 // Release gate GH-17 / AGP-10 (v0.13.31): an agent session pushed its branch,
 // opened a change request, and merged it seconds later. The merge landed on an
 // API replica whose mirror had refreshed less than the refresh interval ago,
-// so the just-pushed head branch did not resolve. The guard failed closed and
-// answered 403 CR_AGENT_GOVERNANCE_CHANGE for a README-only change. This suite
-// reproduces that replica: a warm mirror with a long refresh interval.
+// so the just-pushed head branch did not resolve, and a README-only change was
+// refused. This suite reproduces that replica: a warm mirror with a long
+// refresh interval.
 
 const exec = promisify(execFile);
 
@@ -91,44 +91,31 @@ afterEach(async () => {
   await rm(testRoot, { recursive: true, force: true });
 });
 
-describe('agentGovernanceMergeRefusal on a warm mirror', () => {
-  test('a branch pushed after the mirror warmed, changing only README, is not refused', async () => {
+describe('manifestChangeRequiredActions on a warm mirror', () => {
+  test('a branch pushed after the mirror warmed, changing only README, needs nothing extra', async () => {
     await pushBranch('session-readme', { 'README.md': '# seed\n\nagent note\n' });
-
-    const refusal = await agentGovernanceMergeRefusal(project, {
-      number: 1,
-      baseRef: 'main',
-      headRef: 'session-readme',
-    });
-
-    expect(refusal).toBeNull();
+    expect(await manifestChangeRequiredActions(project, { baseRef: 'main', headRef: 'session-readme' })).toEqual([]);
   });
 
-  test('a branch pushed after the mirror warmed, adding a trigger, is refused with CR_AGENT_GOVERNANCE_CHANGE', async () => {
+  test('a branch pushed after the mirror warmed, adding a trigger, needs project.trigger.create', async () => {
     await pushBranch('session-trigger', {
       'kortix.yaml': `${MANIFEST}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 0 * * * *"\n    prompt: run\n`,
     });
-
-    const refusal = await agentGovernanceMergeRefusal(project, {
-      number: 2,
-      baseRef: 'main',
-      headRef: 'session-trigger',
-    });
-
-    expect(refusal?.status).toBe(403);
-    expect(refusal?.body.code).toBe('CR_AGENT_GOVERNANCE_CHANGE');
-    expect(refusal?.body.action).toBe('project.gitops.merge');
+    expect(await manifestChangeRequiredActions(project, { baseRef: 'main', headRef: 'session-trigger' })).toEqual([
+      'project.trigger.create',
+    ]);
   });
 
-  test('a head ref that does not exist on the remote fails closed with CR_GOVERNANCE_UNVERIFIED, not a false governance claim', async () => {
-    const refusal = await agentGovernanceMergeRefusal(project, {
-      number: 3,
-      baseRef: 'main',
-      headRef: 'session-never-pushed',
-    });
+  test('a branch widening its own agent needs project.agent.write', async () => {
+    await pushBranch('session-widen', { 'kortix.yaml': MANIFEST.replace('[project.gitops.push, project.gitops.merge]', 'all') });
+    expect(await manifestChangeRequiredActions(project, { baseRef: 'main', headRef: 'session-widen' })).toEqual([
+      'project.agent.write',
+    ]);
+  });
 
-    expect(refusal?.status).toBe(503);
-    expect(refusal?.retryAfter).toBe(5);
-    expect(refusal?.body.code).toBe('CR_GOVERNANCE_UNVERIFIED');
+  test('a head ref that does not exist on the remote throws (the route answers 503), never a guess', async () => {
+    await expect(
+      manifestChangeRequiredActions(project, { baseRef: 'main', headRef: 'session-never-pushed' }),
+    ).rejects.toThrow();
   });
 });

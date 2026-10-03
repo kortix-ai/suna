@@ -258,9 +258,17 @@ describe('permission-denial identity footer', () => {
     expect(out).not.toContain('kortix_permissions');
   });
 
-  test('any other code keeps the existing manifest hint', async () => {
+  test('any other code names the code and never sends the agent to kortix.yaml', async () => {
     const out = await footerFor({ code: 'project_role_insufficient', action: 'project.file.read' });
-    expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');
+    expect(out).toContain('project_role_insufficient');
+    expect(out).toContain('kortix whoami --token-only');
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('CR_AGENT_GOVERNANCE_CHANGE from an older server says a person must merge it', async () => {
+    const out = await footerFor({ code: 'CR_AGENT_GOVERNANCE_CHANGE', action: 'project.gitops.merge' });
+    expect(out).toMatch(/ask a person to merge it/i);
+    expect(out).not.toContain('kortix_permissions');
   });
 
   test('prints nothing when no call was refused', async () => {

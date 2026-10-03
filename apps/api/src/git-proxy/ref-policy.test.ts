@@ -7,6 +7,7 @@
  * `main` to its root commit — and must now be refused.
  */
 import { describe, expect, test } from 'bun:test';
+import { MANIFEST_WRITE_ACTIONS } from '../projects/change-request-policy';
 import { evaluateRefUpdates, principalLabel, type GitPrincipal } from './ref-policy';
 import type { RefUpdate } from './receive-pack';
 
@@ -60,6 +61,7 @@ describe('session principal', () => {
     expect(denials).toHaveLength(1);
     expect(denials[0]!.ref).toBe(ref);
     expect(denials[0]!.reason).toContain('own branch');
+    expect(denials[0]!.reason).toContain(SESSION_ID);
   });
 
   test('may NOT force-rewind main — the exact push that succeeded on dev', () => {
@@ -92,8 +94,21 @@ describe('session principal', () => {
     // Defensive: nothing mints such a session today, but the rule must not
     // accidentally widen if one ever appears.
     const odd: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: 'main' };
-    expect(evaluateRefUpdates(odd, ctx, [update('refs/heads/main')])).toEqual([]);
+    // Its own ref, but the default branch: the manifest-write permissions apply.
+    const [onMain] = evaluateRefUpdates(odd, ctx, [update('refs/heads/main')]);
+    expect(onMain!.requires).toEqual([...MANIFEST_WRITE_ACTIONS]);
+    expect(onMain!.reason).toContain('skips change-request review');
     expect(evaluateRefUpdates(odd, ctx, [update('refs/heads/dev')])).toHaveLength(1);
+  });
+
+  test('a push to the default branch needs ref.any AND every manifest-write permission', () => {
+    // It skips the change-request merge, where a change to agents/triggers
+    // needs project.agent.write / project.trigger.*. An agent with ref.any
+    // alone must not land a grant widening straight on main.
+    const [denial] = evaluateRefUpdates(session, ctx, [update('refs/heads/main')]);
+    expect(denial!.requires).toEqual(['project.gitops.ref.any', ...MANIFEST_WRITE_ACTIONS]);
+    const [other] = evaluateRefUpdates(session, ctx, [update('refs/heads/dev')]);
+    expect(other!.requires).toEqual(['project.gitops.ref.any']);
   });
 });
 

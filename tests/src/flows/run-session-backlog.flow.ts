@@ -664,79 +664,36 @@ flow(
   },
 );
 
-// ─── SESS-2: concurrency cap — second session at limit 1 → 429 + headers ────
+// ─── SESS-2: no session cap — creates past the old Starter cap (3) → 201 ────
 flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['admin', 'funded', 'daytona'],
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 300_000,
-    routes: [
-      'POST /v1/admin/api/accounts/:id/session-limit',
-      'POST /v1/projects/:projectId/sessions',
-    ],
+    routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    if (!ctx.env.adminToken) {
-      throw new Error('SESS-2 requires the run-scoped platform-admin token');
-    }
-    const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
-    let previousLimit: number | null | undefined;
     const team = await ctx.fixtures.team();
-
-    await ctx.step('fund the isolated session-limit account', async () => {
+    await ctx.step('fund the isolated account', async () => {
       await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
     });
+    const project = await team.project({ seed: true });
 
-    await ctx.step('set the run account concurrent-session override to 1', async () => {
-      const r = await admin.post(
-        '/v1/admin/api/accounts/:id/session-limit',
-        { max_concurrent_sessions: 1 },
-        { params: { id: team.id } },
-      );
-      r.status(200);
-      previousLimit = r.json<{ previous: number | null }>().previous;
-    });
-
-    try {
-      const project = await team.project({ seed: true });
-      await ctx.step('first session at limit 1 → 201', async () => {
+    for (let n = 1; n <= 4; n += 1) {
+      await ctx.step(`session ${n} of 4 → 201 with no X-RateLimit headers`, async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions',
-            { initial_prompt: 'noop' },
-            { params: { projectId: project.id } },
-          );
+          .post('/v1/projects/:projectId/sessions', {}, { params: { projectId: project.id } });
         r.status(201);
+        const limit = r.header('x-ratelimit-limit');
+        if (limit !== undefined) throw new Error(`session create still sends X-RateLimit-Limit: ${limit}`);
         const body = r.json<{ session_id?: string; id?: string }>();
         const id = body.session_id ?? body.id;
         if (!id) throw new Error(`session create returned no id: ${r.text()}`);
         ctx.track('session', id, { projectId: project.id });
       });
-
-      await ctx.step('second session over limit 1 → 429 + X-RateLimit headers', async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions',
-            { initial_prompt: 'noop' },
-            { params: { projectId: project.id } },
-          );
-        r.status(429).headerExists('x-ratelimit-limit').headerExists('x-ratelimit-remaining');
-      });
-    } finally {
-      if (previousLimit !== undefined) {
-        await ctx.step('restore the previous concurrent-session override', async () => {
-          const r = await admin.post(
-            '/v1/admin/api/accounts/:id/session-limit',
-            { max_concurrent_sessions: previousLimit },
-            { params: { id: team.id } },
-          );
-          r.status(200);
-        });
-      }
     }
   },
 );

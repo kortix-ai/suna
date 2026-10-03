@@ -1,7 +1,28 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+
+// GitHub is stubbed: the suite asserts the redirect, not GitHub's latency. A
+// live call timed out the packages and core lanes at bun's 5 s default.
+const realFetch = globalThis.fetch;
+const asset = (name: string) => ({
+  name,
+  browser_download_url: `https://github.com/kortix-ai/suna/releases/download/v1.0.0/${name}`,
+  size: 1,
+});
+const release = {
+  tag_name: 'v1.0.0',
+  assets: [asset('Kortix-1.0.0-universal.dmg'), asset('Kortix-Setup-1.0.0.exe'), asset('Kortix-1.0.0-x86_64.AppImage')],
+};
+let githubFetch: typeof fetch;
+beforeEach(() => {
+  githubFetch = (async () => Response.json(release)) as unknown as typeof fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => githubFetch(input, init)) as typeof fetch;
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
 
 const call = (platform: string) =>
   GET(new NextRequest(`https://kortix.com/download/${platform}`), {
@@ -17,10 +38,20 @@ describe('GET /download/<platform>', () => {
     ] as const) {
       const res = await call(platform);
       expect(res.status).toBe(302);
-      const location = res.headers.get('location') ?? '';
-      // Either the resolved asset, or the releases page if GitHub was unreachable.
-      expect(location.endsWith(suffix) || location.includes('/releases/latest')).toBe(true);
+      expect(res.headers.get('location') ?? '').toEndWith(suffix);
     }
+  });
+
+  test('falls back to the releases page when GitHub does not answer', async () => {
+    // A request that only ends when its signal aborts: without a fetch
+    // timeout, the visitor's download click hangs with it.
+    githubFetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+      })) as unknown as typeof fetch;
+    const res = await call('macos');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('/releases/latest');
   });
 
   test('accepts the aliases old links used', async () => {
