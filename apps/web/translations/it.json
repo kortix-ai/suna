@@ -260,10 +260,6 @@
       "fallbackName": "questo spazio",
       "confetti": "Lancia coriandoli"
     },
-    "runtime": {
-      "metaLabel": "Runtime Meta",
-      "metaDescription": "Meta usa una sandbox minima fissa e avvia sessioni specializzate per il lavoro sul progetto."
-    },
     "sandbox": {
       "label": "Modello sandbox",
       "agentEnvironment": "Ambiente dell’agente",
@@ -1914,7 +1910,6 @@
     "messageInput": "Campo messaggio",
     "attachFiles": "Allega file",
     "selectAgent": "Seleziona agente",
-    "agentLockedHint": "Non è possibile cambiare agente in una sessione già avviata.",
     "noModel": "Nessun modello",
     "thinkingEffort": "Livello di ragionamento",
     "sessionOverrides": "Override della sessione",
@@ -17197,7 +17192,6 @@
       "textdf80c0ee2f08": "Agenti e skill",
       "textdf8e32d18dbd": "Qualsiasi cosa tu possa raggiungere",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Inserisci il codice di 6 cifre ricevuto via email",
       "textdfa16aeaca13": "Il repository di questo spazio di lavoro è ospitato su {value0}, che non supporta gli inviti di collaboratori da Kortix. Gestisci l'accesso dove risiede il repository.",
       "textdfa2cff42f0c": "Nessuna esperienza approfondita nei sistemi",
       "textdfad83e7eb69": "{value0} sono Manager impliciti su ogni progetto attivo nell'account.",
@@ -19204,7 +19198,9 @@
       "textd4586396b9ba": "Gli agenti possono usare la CLI da soli?",
       "text9e52157faaab": "Sì. La stessa CLI di Kortix gira in ogni sandbox, già autenticata, così gli agenti usano esattamente i tuoi stessi comandi.",
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
-      "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni."
+      "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
+      "text39207bf34111": "Competenze correlate",
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20190,7 +20186,7 @@
     "ceilingDefault": "Limite predefinito per agenti",
     "changeCeiling": "Cambia",
     "humanOnly": "Solo persone",
-    "humanOnlyHelp": "Gestire i membri, eliminare il progetto ed emettere credenziali restano alle persone.",
+    "humanOnlyHelp": "L’emissione delle credenziali del progetto resta alle persone.",
     "humanOnlyValue": "Mai concesso",
     "effective": "Permessi effettivi",
     "effectiveHelp": "Permessi Kortix entro il ruolo limite, esclusi i permessi solo per persone. project.read è sempre concesso.",

@@ -256,6 +256,8 @@ async function enqueueTriggerPrompt(input: {
   idempotencyKey?: string | null;
   /** The trigger's configured model; carried on the prompt for a re-prompted session. */
   model?: string | null;
+  /** `actor` is a person whose deferred prompt this is: the turn acts as them. */
+  bindTurnIdentity?: boolean;
 }): Promise<'queued' | 'no-session' | 'failed'> {
   // Scoped to the trigger's own project and account. A pinned `session_id` is
   // manifest text, so a session of any other project is "no session" here and
@@ -288,6 +290,7 @@ async function enqueueTriggerPrompt(input: {
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
     overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
+    ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
@@ -349,11 +352,13 @@ async function fireSessionReminder(
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project } = input;
   const sessionId = spec.pinnedSessionId;
+  const author = spec.reminder?.promptAuthorUserId;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
+        bindTurnIdentity: !!author,
       })
     : 'no-session';
   if (outcome === 'queued') {

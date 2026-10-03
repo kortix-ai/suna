@@ -170,7 +170,7 @@ import {
   getWorkingState,
   groupMessagesIntoTurns,
 } from '@/ui';
-import { isAbortError } from '@kortix/sdk';
+import { isAbortError, turnEndNotice } from '@kortix/sdk';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -4404,6 +4404,39 @@ export function SessionChat({
                       </div>
                     )}
 
+                    {/* Persisted failures can precede any transcript message (for
+                        example, a marketplace install rejected at admission). */}
+                    {[
+                      ...(turnOutcome.recent_failures ?? []),
+                      ...(turnOutcome.last_ended?.end_reason === 'failed' &&
+                      !turnOutcome.recent_failures?.some(
+                        (failure) => failure.message_id === turnOutcome.last_ended?.message_id,
+                      )
+                        ? [turnOutcome.last_ended]
+                        : []),
+                    ].filter((failure) =>
+                      !isAbortError(failure.error) &&
+                      !turns.some((turn) => turn.userMessage.info.id === failure.message_id) &&
+                      (!failure.error?.message || failure.error.message !== commandError?.message),
+                    ).map((failure) => {
+                      const messageId = failure.message_id ?? 'persisted-turn-failure';
+                      // Use the SDK's settle window for a cause that may arrive
+                      // one frame later, including an unnamed failed last turn.
+                      const notice = turnEndNotice({
+                        ...turnOutcome,
+                        recent_failures: [{ ...failure, message_id: messageId, error: failure.error ?? null }],
+                      }, messageId, { hasError: false, isAbort: false });
+                      return notice ? (
+                        <TurnErrorDisplay
+                          key={messageId}
+                          errorText={notice.kind === 'unexplained'
+                            ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
+                            : failure.error?.message ?? undefined}
+                          className="mt-2"
+                        />
+                      ) : null;
+                    })}
+
                     {/* Busy indicator when no turns yet but session is busy */}
                     {commandError && (
                       <TurnErrorDisplay
@@ -4547,8 +4580,7 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={boundAgentName ? undefined : handleAgentChange}
-                agentSelectorLocked={!!boundAgentName}
+                onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}

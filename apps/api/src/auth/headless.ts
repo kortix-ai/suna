@@ -30,6 +30,7 @@ import { config } from '../config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
+// replica-local: limit × API replicas (shared/rate-limit.ts).
 const limiter = new TokenBucketRateLimiter('headless-auth');
 /** Per client IP: generous for a human, tight enough to blunt credential stuffing. */
 const IP_POLICY = { limit: 30, windowMs: 60_000 };

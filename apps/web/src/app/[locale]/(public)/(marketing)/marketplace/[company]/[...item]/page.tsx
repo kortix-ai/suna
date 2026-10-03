@@ -9,6 +9,7 @@ import {
   listPublicMarketplaceItems,
   listPublicMarketplaces,
 } from '@/lib/marketplace-public';
+import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { pathPartsToItemId } from '@/lib/marketplace-slug';
 import { socialMetadata } from '@/lib/seo/metadata';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
@@ -24,6 +25,23 @@ import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 // so nothing was pre-rendered anyway). Force dynamic to match reality: SSR each
 // request, no static-generation pass to conflict with.
 export const dynamic = 'force-dynamic';
+
+/** How many related cards the detail page shows (three rows of two). */
+const RELATED_LIMIT = 6;
+
+async function loadRelatedItems(detail: MarketplaceItemDetail): Promise<MarketplaceItem[]> {
+  try {
+    const isProject = detail.type === 'registry:project';
+    const { items } = await listPublicMarketplaceItems(
+      isProject
+        ? { type: 'project' }
+        : { type: 'skill', source: detail.marketplaceId, limit: RELATED_LIMIT + 1 },
+    );
+    return items.filter((it) => it.id !== detail.id).slice(0, RELATED_LIMIT);
+  } catch {
+    return [];
+  }
+}
 
 interface PageParams {
   company: string;
@@ -74,19 +92,17 @@ export default async function MarketplaceItemPage({ params }: { params: Promise<
 
   const companySummary = marketplacesPage.marketplaces.find((m) => m.id === detail.marketplaceId);
 
-  // Cross-link discovery for a whole-project item: server-rendered (not
-  // client-fetched) so "Other projects" is part of the same static/ISR page.
-  const otherProjects =
-    detail.type === 'registry:project'
-      ? (await listPublicMarketplaceItems({ type: 'project' })).items.filter((it) => it.id !== id)
-      : [];
+  // Related items, server-rendered so they are part of the page HTML: other
+  // projects for a project, otherwise other skills from the same source. A
+  // failed read only drops the section.
+  const related = await loadRelatedItems(detail);
 
   return (
     <PublicMarketplaceProvider>
       <MarketplaceDetailPublic
         data={detail}
         company={companySummary}
-        otherProjects={otherProjects}
+        related={related}
       />
     </PublicMarketplaceProvider>
   );

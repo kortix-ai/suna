@@ -1,14 +1,7 @@
-/**
- * `kortix marketplace <subcommand>` - browse the Kortix marketplace. This is
- * intentionally a discovery-only surface: no build, validate, or publish
- * commands live here, and no deterministic install/update/remove machinery
- * either — adding a marketplace item to a project is an agent import
- * (start/continue a session and ask it to bring the item in), not a CLI
- * write path.
- */
+/** Marketplace discovery and agent-driven, verified installs. */
 
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
+import { clientFromAuth, createApiClient, type ApiClient } from '../api/client.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -51,6 +44,7 @@ interface MarketplaceFlags {
   type?: string;
   source?: string;
   json: boolean;
+  timeout?: string;
 }
 
 const HELP = help`Usage: kortix marketplace <subcommand> [options]
@@ -61,7 +55,7 @@ Subcommands:
   search [query]       Search marketplace items.
   list                 List marketplace items.
   show <id|name>       Show one marketplace item.
-  install <id|name>    Start an agent session that imports the item.
+  install <id|name>    Wait for an agent import and verify default-branch files.
 
 Options:
   --query <text>       Search text (same as search [query]).
@@ -69,6 +63,7 @@ Options:
   --source <source>    Filter by marketplace/source, e.g. kortix.
   --host <name>        Use a configured Kortix host.
   --project <id>       Install into this project id (default: linked).
+  --timeout <seconds>  Install deadline (default: 300).
   --json               Machine-readable output.
   -h, --help           Show this help.
 
@@ -78,6 +73,7 @@ what fits, and opens a change request.
 
 function parseFlags(argv: string[]): MarketplaceFlags {
   return {
+    timeout: takeFlagValue(argv, ['--timeout']),
     host: takeFlagValue(argv, ['--host']),
     project: takeFlagValue(argv, ['--project']),
     query: takeFlagValue(argv, ['--query', '-q']),
@@ -95,24 +91,86 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
     );
     return 2;
   }
+  const timeout = Number(flags.timeout ?? '300');
+  if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483) {
+    process.stderr.write(`${status.err('--timeout must be positive seconds (at most 2147483).')}\n`);
+    return 2;
+  }
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
+  let sessionId: string | undefined;
+  let turnId: string | undefined;
+  let promptId: string | undefined;
+  const finish = (code: number, outcome: string, message: string): number => {
+    if (flags.json) emitJson({ outcome, project_id: ctx.projectId, item_id: itemId,
+      session_id: sessionId, turn_id: turnId, prompt_id: promptId, message });
+    if (code !== 0) process.stderr.write(`${status.err(message)}\n`);
+    else if (!flags.json) process.stdout.write(`${status.ok(message)}\n`);
+    return code;
+  };
+  const deadline = Date.now() + timeout * 1000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout * 1000);
+  const client = createApiClient({ apiBase: ctx.auth.api_base, token: ctx.auth.token, signal: controller.signal });
   try {
-    const result = await ctx.client.post<{ session_id: string }>(
-      `/projects/${ctx.projectId}/marketplace/install-session`,
-      { id: itemId },
-    );
-    const output = { ...result, project_id: ctx.projectId, item_id: itemId };
-    if (flags.json) emitJson(output);
-    else {
-      process.stdout.write(
-        `${status.ok(`Started install session ${C.bold}${result.session_id}${C.reset}`)}\n` +
-          `  ${C.dim}Item:${C.reset} ${itemId}\n`,
-      );
+    const result = await client.post<{ session_id: string }>(
+      `/projects/${ctx.projectId}/marketplace/install-session`, { id: itemId });
+    sessionId = result.session_id;
+    const base = `/projects/${ctx.projectId}/sessions/${sessionId}`;
+    while (!controller.signal.aborted) {
+      const session = await client.get<{ status: string; error: string | null }>(base);
+      if (session.status === 'failed' || session.status === 'error')
+        return finish(1, 'failed', `Install session ${sessionId} failed: ${session.error ?? 'No cause recorded'}. Inspect kortix sessions info ${sessionId}.`);
+      const turn = await client.get<{ turns: unknown[]; last_ended?: {
+        turn_token: string; end_reason: string | null; error?: { message: string | null; name?: string | null }
+      }; recent_failures?: Array<{ message_id: string; error: { message: string | null; name?: string | null } | null }> }>(`${base}/turn`);
+      const inbox = await client.get<{ prompts: Array<{ prompt_id: string; state: string; last_error: string | null }> }>(`${base}/prompts`);
+      turnId = turn.last_ended?.turn_token;
+      const failedPrompt = inbox.prompts.find(p => p.state === 'failed');
+      if (failedPrompt) {
+        promptId = failedPrompt.prompt_id;
+        return finish(1, 'failed', `Install prompt ${promptId} failed: ${failedPrompt.last_error ?? 'No cause recorded'}. Inspect session ${sessionId} and retry the prompt after fixing the cause.`);
+      }
+      const failure = turn.recent_failures?.[0];
+      if (failure || turn.last_ended?.end_reason === 'failed')
+        return finish(1, 'failed', `Install turn ${turnId ?? failure?.message_id} failed: ${failure?.error?.message ?? turn.last_ended?.error?.message ?? 'No cause recorded'}. Inspect session ${sessionId} before retrying.`);
+      if (turn.turns.length === 0 && inbox.prompts.length === 0 && turn.last_ended) {
+        if (turn.last_ended.end_reason === 'completed') {
+          try {
+            const item = await client.get<{ name: string; type: string; files: Array<{ target: string }> }>(`/marketplace/items/${encodeURIComponent(itemId)}`);
+            const targets = item.files.map(f => f.target.replace(/^@(skills|agents|tools|commands)\//, '$1/'));
+            const conventional = targets.length > 0 && targets.every(t =>
+              !t.startsWith('/') && !t.includes('..') && !t.includes('@') && !t.includes('~'));
+            if (item.type === 'registry:skill' && conventional) {
+              const detail = await client.get<{ config: { skills: Array<{ name: string }> } }>(`/projects/${ctx.projectId}/detail`);
+              let filesPresent = true;
+              for (const target of targets) {
+                const files = await client.get<Array<{ path: string; type: string }>>(
+                  `/projects/${ctx.projectId}/files?path=${encodeURIComponent(target)}`);
+                if (!files.some(file => file.path === target && file.type === 'file')) {
+                  filesPresent = false;
+                  break;
+                }
+              }
+              if (detail.config.skills.some(skill => skill.name === item.name) && filesPresent)
+                return finish(0, 'installed', `Installed ${itemId}: skill is configured and all catalog file targets are present on the default branch.`);
+            }
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            // Completion is not proof: unavailable catalog/files require review.
+          }
+        }
+        return finish(3, 'awaiting_approval_or_setup', `Install session ${sessionId} ended, but default-branch installation is not proven. Review its change request for approval or finish setup; no change request was merged automatically.`);
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(0, deadline - Date.now()))));
     }
-    return 0;
+    throw new Error('Install deadline elapsed');
   } catch (error) {
-    return surfaceApiError(error);
+    if (controller.signal.aborted) return finish(124, 'timeout',
+      `Install timed out after ${timeout}s. Inspect session ${sessionId ?? '(not yet created)'}; the agent may still be running.`);
+    return finish(1, 'failed', `Install failed${sessionId ? ` in session ${sessionId}` : ''}: ${error instanceof Error ? error.message : String(error)}. Inspect the session before retrying.`);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -249,7 +307,12 @@ export async function runMarketplace(argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return 0;
   }
-  const flags = parseFlags(rest);
+  let flags: MarketplaceFlags;
+  try { flags = parseFlags(rest); }
+  catch (error) {
+    process.stderr.write(`${status.err(error instanceof Error ? error.message : String(error))}\n`);
+    return 2;
+  }
 
   switch (sub) {
     case 'search':
