@@ -40,4 +40,29 @@ describe('/blog is served by the blog app', () => {
     );
     expect(response.headers.get('x-middleware-rewrite')).toBeNull();
   });
+
+  test('a /blog request reaches the blog app without the session cookie or Authorization', async () => {
+    // The rewrite proxies the request to another deployment; a kortix.com
+    // session must never cross to it. Next forwards the headers listed in
+    // x-middleware-override-headers, each as x-middleware-request-<name>.
+    for (const path of ['/blog', '/blog/some-post']) {
+      const response = await middleware(
+        new NextRequest(
+          new Request(`http://localhost:3000${path}`, {
+            headers: {
+              accept: 'text/html',
+              cookie: 'sb-kortix-auth-token=base64-session; other=1',
+              authorization: 'Bearer token',
+            },
+          }),
+        ),
+      );
+      const forwarded = (response.headers.get('x-middleware-override-headers') ?? '').split(',');
+      expect(forwarded, path).toContain('accept');
+      expect(forwarded, path).not.toContain('cookie');
+      expect(forwarded, path).not.toContain('authorization');
+      expect(response.headers.get('x-middleware-request-cookie'), path).toBeNull();
+      expect(response.headers.get('x-middleware-request-authorization'), path).toBeNull();
+    }
+  });
 });
