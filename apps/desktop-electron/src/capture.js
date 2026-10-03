@@ -126,10 +126,9 @@ function parseSignInChallenge(text) {
   return code && url ? { userCode: code[1], verificationUrl: url[1] } : null;
 }
 
-/** The engine's last error line, without its `Error: ` prefix. */
+/** The engine's last `Error:` line, without the prefix; else `fallback`. */
 function lastError(stderr, fallback) {
-  const lines = String(stderr || '').trim().split('\n').filter(Boolean);
-  const line = lines.reverse().find((l) => l.startsWith('Error:')) || lines[0];
+  const line = String(stderr || '').split('\n').reverse().find((l) => l.startsWith('Error:'));
   return line ? line.replace(/^Error:\s*/, '').slice(0, 500) : fallback;
 }
 

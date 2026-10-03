@@ -287,7 +287,8 @@ available.
   directory instead of the lock (build time) and runs it (dev runtime). The
   directory holds the files in the table above.
 - **Pin a release.** `node scripts/fetch-capture-engine.js pin <tag>` reads the
-  release, downloads each asset, computes its SHA-256, checks every listed
+  release, downloads each asset, computes its SHA-256 (and refuses an asset
+  whose bytes differ from its GitHub release `digest`), checks every listed
   file, and rewrites the lock. Commit the lock.
 
 ### Releasing the engine (kortix-ai/capture)

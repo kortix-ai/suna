@@ -214,7 +214,13 @@ async function pin(tag, { env = process.env, fetchFn = fetch, repo = 'kortix-ai/
         continue;
       }
       const pinned = [];
-      for (const item of entry) pinned.push({ ...item, sha256: sha256(await release.download(item.asset)) });
+      for (const item of entry) {
+        const hash = sha256(await release.download(item.asset));
+        // GitHub records each asset's SHA-256 at upload: the bytes must match it.
+        const digest = (await release.assets()).find((a) => a.name === item.asset)?.digest;
+        if (digest && digest !== `sha256:${hash}`) throw new Error(`capture engine: ${item.asset} does not match its release digest ${digest}`);
+        pinned.push({ ...item, sha256: hash });
+      }
       const dir = path.join(scratch, key);
       fs.mkdirSync(dir);
       // Proves every listed file exists (the hashes were just computed from the same bytes).
