@@ -41,9 +41,9 @@ export const up = (pgm) => {
   pgm.noTransaction();
   pgm.sql(`set lock_timeout = '180s'`);
   pgm.sql(`set statement_timeout = '30min'`);
-  pgm.sql(`drop index concurrently if exists kortix.idx_review_items_project`);
-  pgm.sql(`drop index concurrently if exists kortix.idx_review_items_project_status`);
-  pgm.sql(`drop index concurrently if exists kortix.idx_review_items_created`);
+  pgm.sql('drop index concurrently if exists kortix.idx_review_items_project');
+  pgm.sql('drop index concurrently if exists kortix.idx_review_items_project_status');
+  pgm.sql('drop index concurrently if exists kortix.idx_review_items_created');
 };
 
 // Forward-only. Re-creating never-scanned indexes would re-impose their write
