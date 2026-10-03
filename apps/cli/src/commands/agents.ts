@@ -1,5 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { splitHelp } from '../command-argv.ts';
+import type {
+  AgentConfigBlock,
+  AgentConfigResponse,
+  AgentGrantSetV2,
+  ProjectDetail,
+} from '@kortix/sdk';
 
 import {
   emitJson,
@@ -35,47 +41,6 @@ interface DeclaredAgent {
     /** @deprecated Same value as `kortix_permissions`. */
     kortix_cli: string[] | 'all';
   };
-}
-
-interface ProjectDetail {
-  project_id: string;
-  config: { agents?: DeclaredAgent[]; default_agent?: string | null };
-}
-
-/** `'all'` | `'none'` | an explicit list — AgentGrantSetV2 in the SDK. */
-type GrantSet = 'all' | 'none' | string[];
-
-/**
- * The full agent block on the wire — `AgentConfigBlock`
- * (the SDK agent-config module). `behavior`
- * is the agent's `.md` half, merged in by the API. `opencode` is its pre-W4
- * name: the API answers both and accepts either.
- */
-interface AgentConfigBlock {
-  enabled?: boolean;
-  sandbox?: string;
-  connectors?: GrantSet;
-  connectors_required?: string[];
-  secrets?: GrantSet;
-  skills?: GrantSet;
-  /** Kortix App slugs this agent may open when the App is restricted or
-   *  private. Deny by default, like `connectors`. */
-  apps?: GrantSet;
-  kortix_permissions?: GrantSet;
-  /** @deprecated Pre-rename name of `kortix_permissions`. */
-  kortix_cli?: GrantSet;
-  workspace?: 'runtime' | 'read' | 'branch';
-  behavior?: Record<string, unknown>;
-  /** @deprecated Pre-W4 name of `behavior`. */
-  opencode?: Record<string, unknown>;
-}
-
-interface AgentConfigResponse {
-  agent: string;
-  schema_version: number;
-  editable?: boolean;
-  default_agent: string | null;
-  block: AgentConfigBlock | null;
 }
 
 /** PUT /projects/:id/agents/:name/scope response (agent-scope.ts:166). */
@@ -316,7 +281,7 @@ function parseGrantSet(raw: string): 'all' | string[] {
     .filter(Boolean);
 }
 
-function renderGrantSet(value: GrantSet | undefined, fallback: string): string {
+function renderGrantSet(value: AgentGrantSetV2 | undefined, fallback: string): string {
   if (value === undefined) return fallback;
   if (value === 'all') return 'all';
   if (value === 'none') return 'none';

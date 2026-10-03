@@ -180,3 +180,50 @@ export async function selectMany<T extends string>(
     rl.close();
   }
 }
+/**
+ * Read a plain (non-secret) value with normal echoed input — e.g. a region,
+ * which isn't sensitive and is easier to verify visibly. Unlike `prompt` this
+ * does NOT require a TTY: a piped stdin answers it.
+ */
+export async function readVisible(label: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(label, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Read a secret with input echo suppressed when possible, with the same mute
+ * strategy as `promptSecret`: let the label through, mute every keystroke
+ * after it. Falls back to normal readline (echoed) if stdin is not a TTY —
+ * a piped stdin has nothing to hide the value from.
+ */
+export async function readSecret(label: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  if (process.stdin.isTTY) {
+    let muted = false;
+    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = function (
+      this: { output: NodeJS.WritableStream },
+      str: string,
+    ) {
+      if (!muted) this.output.write(str);
+    };
+    const value = await new Promise<string>((resolve) => {
+      rl.question(label, (answer) => resolve(answer));
+      muted = true; // question() writes the prompt synchronously above
+    });
+    process.stdout.write('\n'); // the muted Enter never printed a newline
+    rl.close();
+    return value;
+  }
+  return new Promise((resolve) => {
+    rl.question(label, (answer) => {
+      rl.close();
+      process.stdout.write('\n');
+      resolve(answer);
+    });
+  });
+}

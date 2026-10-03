@@ -133,6 +133,62 @@ Examples:
   kortix access grant --service-account <id> --role member --project 1a2b…
 `;
 
+/** `kortix tokens apps` — the OAuth grants other apps hold on the account. */
+async function connectedApps(
+  ctx: NonNullable<ReturnType<typeof resolveAccountContext>>,
+  positional: string[],
+  opts: { json: boolean; yes: boolean },
+): Promise<number> {
+  const { json, yes } = opts;
+  const action = positional[0] ?? 'ls';
+  if (action === 'ls' || action === 'list') {
+    const { grants } = await ctx.client.get<{ grants: ConnectedApp[] }>('/oauth/grants');
+    if (json) {
+      emitJson(grants);
+      return 0;
+    }
+    if (grants.length === 0) {
+      process.stdout.write(`\n  ${C.dim}No connected apps.${C.reset}\n\n`);
+      return 0;
+    }
+    const label = (g: ConnectedApp) => (g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name);
+    const nameW = Math.max(...grants.map((g) => visibleWidth(label(g))), 4);
+    process.stdout.write('\n');
+    process.stdout.write(`  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`);
+    for (const g of grants) {
+      process.stdout.write(
+        `  ${pad(label(g), nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
+          `${pad((g.last_active_at ?? g.granted_at ?? '-').slice(0, 10), 11)}   ${C.faded}${g.client_id}${C.reset}\n`,
+      );
+    }
+    process.stdout.write(`\n  ${C.dim}${grants.length} app${grants.length === 1 ? '' : 's'}${C.reset}\n\n`);
+    return 0;
+  }
+  if (action === 'rm' || action === 'revoke') {
+    const clientId = positional[1];
+    if (!clientId) return missing('a client id (see `kortix tokens apps ls`)');
+    if (!yes) {
+      const ok = await confirm(
+        `Revoke ${C.bold}${clientId}${C.reset}? It loses access to your account at once.`,
+        false,
+        { onEndOfInput: false },
+      );
+      if (!ok) {
+        process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+        return 0;
+      }
+    }
+    const r = await ctx.client.delete<{ revoked_tokens: number }>(`/oauth/grants/${encodeURIComponent(clientId)}`);
+    if (json) {
+      emitJson(r);
+      return 0;
+    }
+    process.stdout.write(`${status.ok(`Revoked ${C.bold}${clientId}${C.reset} (${r.revoked_tokens} live token${r.revoked_tokens === 1 ? '' : 's'})`)}\n`);
+    return 0;
+  }
+  return fail(`Unknown \`tokens apps\` action "${action}". Use ls or rm.`);
+}
+
 export async function runTokens(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
@@ -239,57 +295,8 @@ export async function runTokens(argv: string[]): Promise<number> {
         }
         return 0;
       }
-
-      case 'apps': {
-        const action = positional[0] ?? 'ls';
-        if (action === 'ls' || action === 'list') {
-          const { grants } = await ctx.client.get<{ grants: ConnectedApp[] }>('/oauth/grants');
-          if (json) {
-            emitJson(grants);
-            return 0;
-          }
-          if (grants.length === 0) {
-            process.stdout.write(`\n  ${C.dim}No connected apps.${C.reset}\n\n`);
-            return 0;
-          }
-          const label = (g: ConnectedApp) => (g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name);
-          const nameW = Math.max(...grants.map((g) => visibleWidth(label(g))), 4);
-          process.stdout.write('\n');
-          process.stdout.write(`  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`);
-          for (const g of grants) {
-            process.stdout.write(
-              `  ${pad(label(g), nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
-                `${pad((g.last_active_at ?? g.granted_at ?? '-').slice(0, 10), 11)}   ${C.faded}${g.client_id}${C.reset}\n`,
-            );
-          }
-          process.stdout.write(`\n  ${C.dim}${grants.length} app${grants.length === 1 ? '' : 's'}${C.reset}\n\n`);
-          return 0;
-        }
-        if (action === 'rm' || action === 'revoke') {
-          const clientId = positional[1];
-          if (!clientId) return missing('a client id (see `kortix tokens apps ls`)');
-          if (!yes) {
-            const ok = await confirm(
-              `Revoke ${C.bold}${clientId}${C.reset}? It loses access to your account at once.`,
-              false,
-              { onEndOfInput: false },
-            );
-            if (!ok) {
-              process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
-              return 0;
-            }
-          }
-          const r = await ctx.client.delete<{ revoked_tokens: number }>(`/oauth/grants/${encodeURIComponent(clientId)}`);
-          if (json) {
-            emitJson(r);
-            return 0;
-          }
-          process.stdout.write(`${status.ok(`Revoked ${C.bold}${clientId}${C.reset} (${r.revoked_tokens} live token${r.revoked_tokens === 1 ? '' : 's'})`)}\n`);
-          return 0;
-        }
-        return fail(`Unknown \`tokens apps\` action "${action}". Use ls or rm.`);
-      }
-
+      case 'apps':
+        return connectedApps(ctx, positional, { json, yes });
       case 'rm':
       case 'revoke':
       case 'delete': {

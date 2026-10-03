@@ -15,7 +15,7 @@ import { C, status } from '../style.ts';
 import type { IamPolicy, RolesCall } from './roles-policies.ts';
 
 /** The portable doc `roles export` writes and `roles import` reads. */
-export interface RolesDoc {
+interface RolesDoc {
   roles?: Array<{
     key: string;
     name?: string;

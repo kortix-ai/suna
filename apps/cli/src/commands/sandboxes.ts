@@ -164,8 +164,7 @@ Options:
 Pinning a provider needs the \`project.customize.write\` permission.
 `;
 
-
-/** The sandbox flags, typed once for every subcommand. */
+/** The sandbox flags of every subcommand. */
 interface SandboxFlags {
   timeout?: string;
   project?: string;
@@ -206,31 +205,25 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  // ── Template definitions live in kortix.yaml `[[sandbox.templates]]` (source of
-  //    truth). add/update/rm edit the LOCAL file — `kortix ship` applies +
-  //    builds. Only build/rebuild/health/builds/fix are cloud actions. ────────
+  // Template definitions live in kortix.yaml `[[sandbox.templates]]` (source of
+  // truth): add/update/rm edit the LOCAL file; the rest are cloud actions.
   if (sub === 'add' || sub === 'create') return sandboxAddLocal(positional[0], f);
   if (sub === 'update' || sub === 'edit') return sandboxUpdateLocal(positional[0], f);
   if (sub === 'rm' || sub === 'remove' || sub === 'delete') return sandboxRmLocal(positional[0]);
-  // `build --local` is the same kind of thing: it reads kortix.yaml + a
-  // Dockerfile and talks to the local Docker daemon. No token, no linked
-  // project, no network — so it must route above resolveProjectContext, which
-  // would otherwise dead-end a logged-out developer on a pre-push check.
-  // (It takes its own flags out of `rest` and reads the slug positional itself —
-  // `positional` above was computed before --platform/--tag were stripped, so it
-  // would mistake a flag VALUE for a slug.)
+  // `build --local` reads kortix.yaml + a Dockerfile and talks to the local
+  // Docker daemon: no token, no network — so it routes above
+  // resolveProjectContext, which would dead-end a logged-out developer. It
+  // takes its own flags out of `rest` (the `positional` above was computed
+  // before --platform/--tag were stripped, so it would mistake a flag VALUE
+  // for a slug).
   if (sub === 'build' && local) return runSandboxBuildLocal(rest, { json });
-  // `--local` was consumed above, so an unhandled one would otherwise vanish
-  // and the command would quietly do the CLOUD thing instead — `sandboxes
-  // rebuild --local` silently rebuilding a live snapshot is not a mistake
-  // anyone should be able to make by typo.
+  // `--local` was consumed above: an unhandled one would quietly do the CLOUD thing.
   if (local) return fail(`--local only applies to \`sandboxes build\`, not "${sub}".`);
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}`;
 
-  // Resolve a slug to a project-scoped template_id (needed for PATCH/DELETE/build).
   const findTemplateId = async (slug: string): Promise<string | null> => {
     const resp = await ctx.client.get<{ items: SandboxTemplate[] }>(`${base}/sandbox-templates`);
     return resp.items.find((t) => t.slug === slug)?.template_id ?? null;
@@ -372,8 +365,7 @@ async function sandboxesHealth(call: SandboxCall): Promise<number> {
     process.stdout.write('\n');
     return 0;
 }
-/** What the read-model handlers receive: the resolved project context, the
- *  request base, the slug resolver and the parsed invocation. */
+/** What the read-model handlers receive. */
 interface SandboxCall {
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
   base: string;
