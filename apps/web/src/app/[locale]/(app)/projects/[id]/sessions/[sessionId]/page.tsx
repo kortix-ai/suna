@@ -416,7 +416,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
-  // mid-wake on a box that was seconds from ready (SampleCo 29861dfa, box
+  // mid-wake on a box that was seconds from ready (a SampleCo session, box
   // daemon logged `opencode ready` right after the budget ran out).
   const wakeSilentMs = wake.msSinceProgress;
   // A BOOLEAN, not the raw millisecond count, because this is an effect
@@ -1026,8 +1026,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // 409 forever), and this session cannot be reconstructed.
     //
     // It must NOT fall through to the generic stopped card below, which offers
-    // a Restart button whose only possible outcome is that 409 — the loop prod
-    // session ad4b63ac hit on 2026-08-13. It must also NEVER silently continue
+    // a Restart button whose only possible outcome is that 409 — the loop a prod
+    // session hit on 2026-08-13. It must also NEVER silently continue
     // into a fresh session: the server deliberately preserved this identity
     // instead of attaching a replacement box, and the UI must not undo that.
     // Say what happened, name the id, and stop.

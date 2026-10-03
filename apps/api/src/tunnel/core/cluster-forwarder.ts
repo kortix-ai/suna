@@ -40,6 +40,10 @@ let forwarderStopped = true;
 let forwarderWoken = false;
 let lastExpirySweepAt = 0;
 /** One entry per forward this replica waits on, keyed by request id. */
+// replica-local: the pg broadcast routes each "done" payload to the exact
+// replica that issued the request (the payload IS that replica's id), so a
+// waiter is only ever woken in the process that created it. A replica that
+// misses the notify falls back to its own LISTEN/poll loop below.
 const resultWaiters = new Map<string, () => void>();
 
 /** The poll interval of a loop whose LISTEN-backed fallback is `fallbackMs`. */

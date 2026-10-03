@@ -1,5 +1,6 @@
 import { projectSessions, projects } from '@kortix/db';
 import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
@@ -421,10 +422,8 @@ export async function runProjectMaintenance(): Promise<void> {
       // database holds as unservable (App deleted, deployment failed/deleted),
       // after removing any runtime that still pins one. Bounded per pass.
       () => reclaimAppDeploymentImages().catch((err) => {
-        console.warn(
-          '[project-maintenance] App image reclaim failed:',
-          err instanceof Error ? err.message : err,
-        );
+        logger.warn('[project-maintenance] App image reclaim failed:',
+          err instanceof Error ? err.message : err);
         return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
       }),
       // Private Connector email attachments expire after 24 hours. Successful
