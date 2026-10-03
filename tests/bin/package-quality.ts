@@ -209,7 +209,12 @@ await runAll([
       '!./apps/mobile',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],
-    2,
+    // Concurrency 1: two concurrent bun --isolate workers wedged twice in this
+    // sandbox (the parent spun at 100% CPU with idle workers; both runs were
+    // killed, 2026-10-03), and the wave's memory footprint is what trips the
+    // JSC regex JIT fallback behind the mobile cpp parity check. The wave is
+    // the lane's tail; the serial cost is minutes.
+    1,
   ),
 ]);
 // Strictly after the wave: a parallel slot of it still shares the box with
