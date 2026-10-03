@@ -260,10 +260,6 @@
       "fallbackName": "este espaço",
       "confetti": "Jogar confete"
     },
-    "runtime": {
-      "metaLabel": "Ambiente Meta",
-      "metaDescription": "O Meta usa uma sandbox mínima fixa e inicia sessões especializadas para o trabalho do projeto."
-    },
     "sandbox": {
       "label": "Modelo de sandbox",
       "agentEnvironment": "Ambiente do agente",

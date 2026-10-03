@@ -260,10 +260,6 @@
       "fallbackName": "ihm",
       "confetti": "Konfetti werfen"
     },
-    "runtime": {
-      "metaLabel": "Meta-Laufzeit",
-      "metaDescription": "Meta verwendet eine feste minimale Sandbox. Für Projektarbeit startet Meta spezialisierte Sitzungen."
-    },
     "sandbox": {
       "label": "Sandbox-Vorlage",
       "agentEnvironment": "Agentenumgebung",

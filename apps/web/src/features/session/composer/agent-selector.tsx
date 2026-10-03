@@ -10,13 +10,14 @@ import {
   CommandPopover,
   CommandPopoverContent,
   CommandPopoverTrigger,
+  CommandSeparator,
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
-import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { CaretDownIcon, CheckIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -109,7 +110,11 @@ export function AgentSelector({
   // matching the resolver's own first-accessible pre-selection.
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent);
   const displayedName = currentAgent?.name ?? selectedAgent ?? primaryAgents[0]?.name;
-  const displayName = displayedName ? capitalizeWords(displayedName) : 'Agent';
+  const displayName = displayedName
+    ? isMetaAgentName(displayedName)
+      ? META_AGENT_DISPLAY_NAME
+      : capitalizeWords(displayedName)
+    : 'Agent';
   const metaSelected = isMetaAgentName(displayedName);
 
   /**
@@ -145,10 +150,17 @@ export function AgentSelector({
           setOpen(false);
         }}
       >
+        {meta && (
+          // Meta is the platform agent that runs the others, so its row leads
+          // with its own mark instead of reading as one more peer in the list.
+          <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
+            <SparkleIcon weight="fill" className="text-foreground size-4" />
+          </span>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="text-foreground truncate text-sm font-medium">
-              {capitalizeWords(agent.name)}
+              {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             </span>
             {meta && (
               <Badge variant="outline" size="xs" className="shrink-0 font-normal">
@@ -227,7 +239,7 @@ export function AgentSelector({
         aria-label={disabledHint ?? undefined}
         className="text-muted-foreground rounded-lg"
       >
-        {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
+        {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
         <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
       </Button>
     );
@@ -249,7 +261,7 @@ export function AgentSelector({
           aria-label={t('selectAgent')}
           className="text-foreground/70 rounded-lg"
         >
-          {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
+          {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
           <CaretDownIcon
             className={cn(
@@ -314,6 +326,9 @@ export function AgentSelector({
           {filteredPrimary.length > 0 && (
             <CommandGroup forceMount>
               {filteredMeta.map((agent) => renderAgentItem(agent, true))}
+              {filteredMeta.length > 0 && filteredProject.length > 0 && (
+                <CommandSeparator className="my-1" />
+              )}
               {filteredProject.map((agent) => renderAgentItem(agent, false))}
             </CommandGroup>
           )}

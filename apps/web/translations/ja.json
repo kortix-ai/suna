@@ -260,10 +260,6 @@
       "fallbackName": "このワークスペース",
       "confetti": "紙吹雪を投げる"
     },
-    "runtime": {
-      "metaLabel": "Meta ランタイム",
-      "metaDescription": "Meta は固定の最小サンドボックスを使用し、プロジェクト作業用の専門セッションを開始します。"
-    },
     "sandbox": {
       "label": "サンドボックステンプレート",
       "agentEnvironment": "エージェント環境",
