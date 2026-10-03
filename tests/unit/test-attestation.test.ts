@@ -23,10 +23,23 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ browser: 'skipped-no-db' }) }), 'h').code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ browser: 'pass' }) }), 'h').code).toBe(0);
   });
-  it('allows only db-suites to be skipped, and --strict never lets it pass', () => {
+  it('allows the sanctioned db-suites skip, and --strict never lets it pass', () => {
     const a = att({ lanes: lanes({ 'db-suites': 'skipped-no-db' }) });
     expect(evaluate(a, 'h').code).toBe(0);
     expect(evaluate(a, 'h', REQUIRED_LANES, true).code).toBe(3);
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), 'h').code).toBe(1);
+  });
+  it('allows the sanctioned packages skip, and --strict never lets it pass', () => {
+    const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image' }) });
+    expect(evaluate(a, 'h').code).toBe(0);
+    expect(evaluate(a, 'h', REQUIRED_LANES, true).code).toBe(3);
+    expect(
+      evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), 'h').code,
+    ).toBe(1);
+    expect(evaluate(att({ lanes: lanes({ packages: 'fail' }) }), 'h').reason).toBe('red');
+  });
+  it('does not mistake a missing lane for a sanctioned skip', () => {
+    const { packages: _packages, ...rest } = lanes();
+    expect(evaluate(att({ lanes: rest }), 'h').code).toBe(1);
   });
 });

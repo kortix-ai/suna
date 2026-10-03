@@ -1,6 +1,57 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import {
+  attestationLaneValues,
+  buildLocalTestPlan,
+  waitForLocalWeb,
+} from '../src/core/local-runner';
+
+describe('attestation lane values', () => {
+  const pass = (name: string) => ({ name, exitCode: 0 });
+  const coreRan = ['sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'].map(pass);
+
+  it('writes pass when every member ran green', () => {
+    expect(attestationLaneValues(coreRan, {})).toEqual({ core: 'pass' });
+  });
+
+  it('writes the sanctioned skip instead of a lane that did not run', () => {
+    expect(attestationLaneValues(coreRan, { 'package-quality': 'skipped-sandbox-image' })).toEqual({
+      core: 'pass',
+      packages: 'skipped-sandbox-image',
+    });
+    expect(
+      attestationLaneValues(coreRan, {
+        'api-cli-flows': 'skipped-no-db',
+        'db-suites': 'skipped-no-db',
+      }),
+    ).toEqual({
+      core: 'pass',
+      'db-suites': 'skipped-no-db',
+    });
+  });
+
+  it('writes fail when a member failed; skipped members never mask it', () => {
+    expect(
+      attestationLaneValues(
+        [
+          pass('sdk'),
+          { name: 'flow-runner-unit', exitCode: 1 },
+          pass('route-coverage'),
+          pass('worktree-unit'),
+        ],
+        { 'package-quality': 'skipped-sandbox-image' },
+      ),
+    ).toEqual({ core: 'fail', packages: 'skipped-sandbox-image' });
+  });
+
+  it('omits a group whose members neither ran nor were skipped, and passes the recorded reason through', () => {
+    expect(attestationLaneValues([pass('sdk')], {})).toEqual({});
+    expect(attestationLaneValues(coreRan, { 'package-quality': 'skipped-no-db' })).toEqual({
+      core: 'pass',
+      packages: 'skipped-no-db',
+    });
+  });
+});
 
 describe('local test runner', () => {
   it('runs the REST flows, SDK, DB suites, runner unit tests, and route coverage concurrently by default', () => {

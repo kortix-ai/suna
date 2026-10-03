@@ -34,9 +34,11 @@ printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check
 
 # Tests ran locally on exactly this source. `pnpm test` writes
 # tests/test-attestation.json; verify-attestation.mjs recomputes source_hash
-# from the pushed commit's tree. db-suites may be skipped-no-db (no Docker):
-# fine for a PR branch, never for main (--strict). The merge gate holds a
-# DB-touching PR on it. Deletions, tags, and scratch/* branches are exempt.
+# from the pushed commit's tree. Sanctioned skips: db-suites may be
+# skipped-no-db (no Docker) and packages may be skipped-sandbox-image (a Kortix
+# sandbox image) — fine for a PR branch, never for main (--strict). The merge
+# gate holds a DB-touching PR on the db skip. Deletions, tags, and scratch/*
+# branches are exempt.
 root=$(cd "$(dirname "$0")/.." && pwd)
 bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
