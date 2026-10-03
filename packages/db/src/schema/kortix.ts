@@ -3375,6 +3375,12 @@ export const auditEvents = kortixSchema.table(
     // and the dedupe index below carry occurred_at.
     primaryKey({ name: 'audit_events_pkey', columns: [table.eventId, table.occurredAt] }),
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
+    // Drizzle has no INCLUDE syntax; the concurrent migration covers actor_user_id.
+    index('idx_audit_events_account_actor_type_time').on(
+      table.accountId,
+      table.actorType,
+      table.occurredAt,
+    ),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_account_project_time').on(
       table.accountId,
