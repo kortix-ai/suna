@@ -28,7 +28,7 @@ The sandbox itself carries a separate `status` in its own row, with its own enum
 | `error` | The provider reports a boot or runtime failure. |
 | `archived` | Terminal. You deleted the session and the provider destroyed the sandbox, not paused it. |
 
-Kortix enforces a concurrent-session limit per account. Exceeding your tier's limit returns `429`.
+Kortix does not cap how many sessions run at once, per account or per project. Running sessions bill compute; an account out of credit gets `402` on create.
 
 ### Active-turn protection
 

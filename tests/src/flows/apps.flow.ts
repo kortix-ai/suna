@@ -988,8 +988,11 @@ flow(
         if (unknown.exitCode === 0 || !/Deployment v9 not found \(deployments: v1\)/.test(unknown.stderr + unknown.stdout)) {
           throw new Error(`unknown deployment was not named: ${unknown.exitCode} ${unknown.stderr} ${unknown.stdout}`);
         }
+        // v1 is still building on the local stack. On a deployed target the
+        // build can finish first, and the API then refuses for the other
+        // reason: v1 serves live traffic. Either 409 must reach the user.
         const inProgress = await cli.run(["apps", "delete", slug, "--deployment", "v1", "--yes", "--project", project.id]);
-        if (inProgress.exitCode === 0 || !/still in progress \(status: [a-z]+\)/.test(inProgress.stderr + inProgress.stdout)) {
+        if (inProgress.exitCode === 0 || !/still in progress \(status: [a-z]+\)|serves live traffic/.test(inProgress.stderr + inProgress.stdout)) {
           throw new Error(`in-progress delete was not refused: ${inProgress.exitCode} ${inProgress.stderr} ${inProgress.stdout}`);
         }
         const list = await owner.get(

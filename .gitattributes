@@ -12,5 +12,5 @@ apps/web/translations/*.json merge=i18n-catalog
 # `.agents/skills/learnings/scripts/index.sh` restores the order after a merge.
 .agents/skills/learnings/MEMORY.md merge=union
 
-# Written by `pnpm test`. On a merge conflict take either side and re-run `pnpm test`.
-tests/test-attestation.json linguist-generated=true -diff
+# Written by `pnpm test`, one file per branch (tests/verify-attestation.mjs).
+tests/attestations/** linguist-generated=true -diff

@@ -29,10 +29,11 @@ export function localizedPathname(locale: RoutingLocale, pathname: string): stri
 
 /**
  * Paths that are not pages and must reach Next without a locale prefix:
- * Route Handlers outside `app/[locale]`, the `next.config.ts` rewrite sources,
- * and the static `/docs` site in `public/docs`. A new top-level Route Handler
- * must be listed here; `middleware-locale-routing.test.ts` scans `src/app`
- * and fails when one is missing.
+ * Route Handlers outside `app/[locale]`, the `next.config.ts` rewrite sources
+ * (including `/blog`, the separate blog app), and the static `/docs` site in
+ * `public/docs`. A new top-level Route Handler must be listed here;
+ * `middleware-locale-routing.test.ts` scans `src/app` and fails when one is
+ * missing.
  */
 const NON_PAGE_PREFIXES = [
   '/_next/',
@@ -41,6 +42,7 @@ const NON_PAGE_PREFIXES = [
   '/scim/',
   '/supabase/',
   '/ingest/',
+  '/blog',
   '/monitoring',
   '/_betterstack',
   '/docs',

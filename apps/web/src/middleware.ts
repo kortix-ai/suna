@@ -38,7 +38,6 @@ const MARKETING_ROUTES = [
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
-  '/blog',
   '/careers',
   '/channels',
   '/changelog',
@@ -74,7 +73,6 @@ const SELF_HOST_MARKETING_ONLY = [
   '/self-hosted',
   '/company-as-code',
   '/careers',
-  '/blog',
   '/changelog',
   '/contact',
   '/developers',
@@ -114,7 +112,6 @@ const PUBLIC_ROUTES = [
   '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
-  '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
   '/mcp', // Public read-only MCP server and server card
@@ -164,10 +161,7 @@ const AGENT_DISCOVERY_LINK_HEADER =
 function supportsMarkdownNegotiation(pathname: string): boolean {
   if (MARKDOWN_NEGOTIATION_ROUTES.has(pathname)) return true;
   return (
-    pathname === '/docs' ||
-    pathname.startsWith('/docs/') ||
-    /^\/blog\/[^/]+$/.test(pathname) ||
-    /^\/use-cases\/[^/]+$/.test(pathname)
+    pathname === '/docs' || pathname.startsWith('/docs/') || /^\/use-cases\/[^/]+$/.test(pathname)
   );
 }
 
@@ -307,6 +301,16 @@ export async function middleware(request: NextRequest) {
         request: { headers: requestHeaders },
       }),
     );
+  }
+
+  // /blog is proxied to a separate deployment (the blog app, next.config.ts
+  // rewrites). It serves public pages only, so a kortix.com session never
+  // crosses to it: the Supabase cookie and any Authorization header stay here.
+  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete('cookie');
+    requestHeaders.delete('authorization');
+    return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
   }
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
