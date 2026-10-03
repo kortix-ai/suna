@@ -16,7 +16,7 @@ const deadCredentials = new WeakSet<HTTPException>();
 type Window = { loggedAt: number; suppressed: number };
 // replica-local: the rate limit caps warn lines per process by design — the file
 // header says "per process per hour" — and exact refusal accounting comes from
-// request-completion logs and auth audits, not these counts.
+// request-completion logs and auth audits, not these counts. — replica-local: a log-noise limiter; each replica rate-limits its own lines.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one

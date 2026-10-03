@@ -8,7 +8,7 @@ import pg from 'pg';
 import { databaseConnectionUrl, migrationOptions } from './upgrade-test-helpers';
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
-const migration = '20261003045411159_audit_events_actor_aggregate_index.concurrent.ts';
+const migration = '20261003150053416_audit_events_actor_aggregate_index.concurrent.ts';
 
 describe.skipIf(!adminUrl)('audit actor aggregate covering index', () => {
   test('covers range and default partitions, preserves aggregates and indexes future partitions', async () => {

@@ -1,10 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  // A pinned loopback host: vite's buildStart resolves `localhost` via DNS and
-  // an unresolvable localhost (a locked-down runtime's hosts file) rejects the
-  // whole startup. 127.0.0.1 needs no lookup and serves the same interface.
-  server: { host: '127.0.0.1' },
+  // A literal IP, never 'localhost': vite@7's buildStart resolves 'localhost'
+  // through DNS on every startup, and a container without a readable
+  // /etc/hosts (the factory worker sandboxes) crashes the whole lane before a
+  // single test runs. vite@8 already skips that probe under a verbatim
+  // result order; pinning the host skips it everywhere.
+  server: {
+    host: '127.0.0.1',
+  },
   test: {
     name: 'unit',
     root: import.meta.dirname,

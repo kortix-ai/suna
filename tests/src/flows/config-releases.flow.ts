@@ -211,26 +211,24 @@ async function gitBlobId(bytes: Buffer): Promise<string> {
 
 /** Extract a tar.gz and return every regular file and symlink with its bytes. */
 async function extract(archive: Buffer): Promise<Map<string, Buffer>> {
-  const { mkdtemp, readFile, readlink, rm, lstat } = await import('node:fs/promises');
+  const { mkdtemp, readFile, readlink, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const dir = await mkdtemp(join(tmpdir(), 'ke2e-cfg-archive-'));
+  // `find -type` names each entry's kind, so no stat precedes the read.
+  const list = async (type: 'f' | 'l') => (await run('find', ['.', '-type', type], dir))
+    .toString()
+    .split('\n')
+    .filter(Boolean)
+    .map((p) => p.replace(/^\.\//, ''))
+    // A commit archive carries a pax global header; tar does not extract it
+    // as a file, but guard against implementations that do.
+    .filter((p) => p !== 'pax_global_header');
   try {
     await run('tar', ['-xzf', '-', '-C', dir], dir, archive);
-    const listed = (await run('find', ['.', '(', '-type', 'f', '-o', '-type', 'l', ')'], dir))
-      .toString()
-      .split('\n')
-      .filter(Boolean)
-      .map((p) => p.replace(/^\.\//, ''))
-      // A commit archive carries a pax global header; tar does not extract it
-      // as a file, but guard against implementations that do.
-      .filter((p) => p !== 'pax_global_header');
     const files = new Map<string, Buffer>();
-    for (const path of listed) {
-      const full = join(dir, path);
-      const stat = await lstat(full);
-      files.set(path, stat.isSymbolicLink() ? Buffer.from(await readlink(full)) : await readFile(full));
-    }
+    for (const path of await list('f')) files.set(path, await readFile(join(dir, path)));
+    for (const path of await list('l')) files.set(path, Buffer.from(await readlink(join(dir, path))));
     return files;
   } finally {
     await rm(dir, { recursive: true, force: true });

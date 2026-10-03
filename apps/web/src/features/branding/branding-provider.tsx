@@ -15,7 +15,7 @@
  *   2. hand that `AccountBranding | null` to every consumer through context.
  *
  * It reads the same `useAccountsList()` query every other surface already holds
- * (`useEnsureSelectedAccount`, `AccountSwitcher`, `UserMenu`, …), so branding
+ * (`useEnsureSelectedAccount`, `AccountSwitcher`, …), so branding
  * costs no extra request. It renders nothing itself; `KortixLogo` swaps its
  * SVG for the org marks, and `BrandingDocumentEffect` (below) swaps the tab
  * icon and title once the account resolves. Before that — and on every
@@ -118,11 +118,6 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
  */
 export function useBranding(): AccountBranding | null {
   return useContext(BrandingContext);
-}
-
-/** The product name to show in place of "Kortix". */
-export function useAppName(): string {
-  return useBranding()?.app_name ?? 'Kortix';
 }
 
 // ─── Document effect: favicon + title ───────────────────────────────────────

@@ -1,11 +1,25 @@
 {
-  "source_hash": "ffe0f15dd3cbd7e2d4a50b8501d79b3c2fe50c9c448201d5275cb46e0ddf2bc0",
-  "head": "0257ee7e730a1087189e26f21cf0403c698537c6",
+  "source_hash": "ab8c16de71c91a51603c4ee4e97a3cd4ff246d29df210583b7bb14fc11214cd4",
+  "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
+    "packages/db/drizzle/meta/20261003151721_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003150053416_audit_events_actor_aggregate_index.concurrent.ts",
+    "packages/db/scripts/audit-events-actor-index.integration.test.ts",
+    "packages/db/scripts/audit-events-partitioned.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "56b2c1f1ee78d6b731f2e03e2e14e08cb55ebf2391c773cd5abf3c7bb708da9b",
+  "head": "252ff6fff00651a22dcdd730efee744530768558",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T17:55:45.749Z"
+  "at": "2026-10-03T16:29:18.055Z"
 }

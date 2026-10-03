@@ -5,6 +5,48 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 
+/**
+ * Runner controls that must survive the hermetic scrub below.
+ *
+ * A Kortix-managed sandbox exports the agent session's own identity into the
+ * environment (KORTIX_TOKEN, KORTIX_PROJECT_ID, KORTIX_SUPERVISED, …) and
+ * writes it to /dev/shm/kortix/agent-env.sh, which the CLI reads through
+ * `sandboxEnvValue()`. Workspace suites inherit that identity and then fail
+ * on tests that need a CI-shaped env (a compiled runtime rejects a foreign
+ * KORTIX_PROJECT_ID; a supervised box refuses binary downloads; a direct
+ * KORTIX_REPO_URL is refused). On a laptop or a GitHub runner none of these
+ * vars exist, so dropping them here reproduces exactly what CI sees. Suites
+ * that need a value set it themselves (apps/api/scripts/test.env, per-test
+ * setup); the Kortix-shared `sandboxEnvValue()` path is cut off with
+ * KORTIX_DISABLE_SANDBOX_ENV_FILE=1, matching the flag every spawn harness
+ * in the repo already sets.
+ */
+const RUNNER_CONTROLS = new Set([
+  'KORTIX_API_TEST_WORKERS',
+  'KORTIX_MIN_TEST_FILES',
+  'KORTIX_PACKAGE_SKIP_SDK_TESTS',
+]);
+
+function hermeticWorkspaceEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name.startsWith('KORTIX_') && !RUNNER_CONTROLS.has(name)) continue;
+    env[name] = value;
+  }
+  env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
+  // the session env file the daemon's readiness gate reads, and the image's
+  // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
+  // suites are written against their absence; point the overrides at paths
+  // that do not exist instead of asking every suite to know about them.
+  env.KORTIX_PT_ENV_PATH = '/nonexistent/kortix-test-pt-env';
+  env.KORTIX_BAKED_LLM_CATALOG_PATH = '/nonexistent/kortix-test-llm-catalog.json';
+  // Same rule for the image's baked managed-skills dir: suites assert the
+  // exact skill lists their fixtures create, and CI has no baked dir.
+  env.KORTIX_MANAGED_SKILLS_DIR = '/nonexistent/kortix-test-managed-skills';
+  return env;
+}
+
 async function run(
   command: string[],
   options: { cwd?: string; env?: Record<string, string | undefined> } = {},
@@ -131,7 +173,7 @@ async function runWorkspaceTests(
     ],
     {
       env: {
-        ...process.env,
+        ...hermeticWorkspaceEnv(),
         // The CLI includes an intentional 11-second idle-stream contract.
         // Concurrent API and agent workers can push it past 15 seconds.
         KORTIX_TEST_TIMEOUT_MS: '30000',

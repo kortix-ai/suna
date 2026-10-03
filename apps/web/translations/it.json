@@ -19205,7 +19205,8 @@
       "text9e52157faaab": "Sì. La stessa CLI di Kortix gira in ogni sandbox, già autenticata, così gli agenti usano esattamente i tuoi stessi comandi.",
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
-      "text73112526c03a": "Il turno dell’agente non è riuscito. Nessun motivo è stato segnalato."
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
+      "text39207bf34111": "Competenze correlate"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
