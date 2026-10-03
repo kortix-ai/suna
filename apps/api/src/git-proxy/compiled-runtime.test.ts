@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compileOpenCodeRuntime } from './compiled-runtime';
+import { outsideEnv } from './test-child-env';
 
 const roots: string[] = [];
 const INPUT = {
@@ -92,7 +93,7 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
 `);
     const child = Bun.spawn([process.execPath, runtimePath], {
       env: {
-        ...process.env,
+        ...outsideEnv(process.env),
         CAPTURE_PATH: capturePath,
         KORTIX_TOKEN: 'runtime-only-token',
       },
@@ -147,7 +148,7 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
 
     const child = Bun.spawn([process.execPath, runtimePath], {
       env: {
-        ...process.env,
+        ...outsideEnv(process.env),
         CAPTURE_PATH: capturePath,
         KORTIX_COMPILED_CONFIG_ROOT: extractionRoot,
       },
@@ -179,7 +180,7 @@ writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
 `);
     const child = Bun.spawn(['node', runtimePath], {
       env: {
-        ...process.env,
+        ...outsideEnv(process.env),
         CAPTURE_PATH: capturePath,
         KORTIX_BUN_BIN: process.execPath,
       },
