@@ -58,7 +58,7 @@ export type ComposerAgentReason =
   | 'loading'
   /** The caller's own pick is accessible and stands. */
   | 'selected'
-  /** No pick; the session's immutable creation agent stands. */
+  /** No pick; the agent the session was created with stands. */
   | 'bound'
   /** No pick (or an inaccessible one); the project default is accessible. */
   | 'default'
@@ -91,10 +91,12 @@ export function resolveComposerAgent(input: {
   /** The accessible roster. `undefined` means the query is still in flight. */
   agents: Agent[] | undefined;
   /**
-   * The session's immutable creation agent, when this composer belongs to an
-   * existing project session. It is what the server RUNS for this session
-   * regardless of roster membership, so with no explicit pick it is the truth
-   * to display — never `selectable[0]`, which is somebody else's first grant.
+   * The agent the session was created with, when this composer belongs to an
+   * existing project session. It is the picker's starting value with no
+   * explicit pick — the truth to display then, never `selectable[0]`, which is
+   * somebody else's first grant. A pick made in the picker outranks it: agent
+   * switching stays available in a started session (KRTX-1290), and the send
+   * carries the picked name for the server to authorize and re-scope.
    */
   boundAgent?: string | null;
   /** The project's declared default agent, accessible or not. */
@@ -126,9 +128,9 @@ export function resolveComposerAgent(input: {
     return { selected: picked, disabled: false, reason: 'selected' };
   }
 
-  // No pick: the session's own agent outranks the project default — an
-  // existing session must never re-prompt under a different agent than the
-  // one it was created with just because a default or grant order says so.
+  // No pick: the session's own agent outranks the project default — the agent
+  // the session was created with is what runs when the user has not picked one,
+  // whatever a default or grant order says.
   if (bound) {
     return { selected: bound, disabled: false, reason: 'bound' };
   }

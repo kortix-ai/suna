@@ -69,7 +69,6 @@ const localizedSiteConfigText = generatedTranslationText(
 const localizedAuditTitleText = generatedTranslationText(
   'components/iam/audit-title-translation-keys.generated.ts',
 );
-const localizedBlogText = generatedTranslationText('i18n/blog-translation-keys.generated.ts');
 const localizedPublicMetadataText = generatedTranslationText(
   'i18n/public-metadata-translation-keys.generated.ts',
 );
@@ -845,7 +844,7 @@ function scanFile(file) {
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        ['USE_CASE_OPTIONS', 'STARTER_PROMPTS'].includes(catalogRoot);
+        catalogRoot === 'USE_CASE_OPTIONS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
@@ -855,8 +854,6 @@ function scanFile(file) {
       const coveredSnapshotsFallbackCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/snapshots-tab.tsx') &&
         catalogRoot === 'DEFAULT_SNAPSHOTS_COPY';
-      const coveredBlogMetadata =
-        file === path.join(srcDir, 'lib/blog-posts.ts') && localizedBlogText.has(node.text);
       const coveredPublicMetadata =
         file === path.join(srcDir, 'lib/seo/public-content.ts') &&
         localizedPublicMetadataText.has(node.text);
@@ -1119,7 +1116,6 @@ function scanFile(file) {
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&
         !coveredSnapshotsFallbackCopy &&
-        !coveredBlogMetadata &&
         !coveredPublicMetadata &&
         !coveredWallpaperDownload &&
         !coveredDesignToken &&

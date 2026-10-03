@@ -13,7 +13,6 @@ import { creditsRouter } from './routes/credits';
 import { paymentsRouter } from './routes/payments';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { webhooksRouter } from './routes/webhooks';
-import { billingRotationIntervalsEnabled } from './rotation-schedule';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -164,38 +163,5 @@ billingApp.openapi(
     return c.json({ expired, monthly_regrants: monthlyRegrants });
   },
 );
-
-if (billingRotationIntervalsEnabled(config)) {
-  const TRIAL_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(() => void runWorkerTick('billing-trial-expiry', async () => {
-    try {
-      const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
-      await sweepExpiredTrials();
-      await sweepTrialMonthlyGrants();
-    } catch (err) {
-      console.error('[BillingApp] Trial-expiry sweep interval error:', err);
-    }
-  }), TRIAL_EXPIRY_SWEEP_INTERVAL_MS);
-
-  const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(() => void runWorkerTick('billing-yearly-rotation', async () => {
-    try {
-      const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
-      await processYearlyCreditRotation();
-    } catch (err) {
-      console.error('[BillingApp] Yearly rotation interval error:', err);
-    }
-  }), YEARLY_ROTATION_INTERVAL_MS);
-
-  const FREE_TIER_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(() => void runWorkerTick('billing-free-tier-rotation', async () => {
-    try {
-      const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
-      await processFreeTierCreditRotation();
-    } catch (err) {
-      console.error('[BillingApp] Free-tier rotation interval error:', err);
-    }
-  }), FREE_TIER_ROTATION_INTERVAL_MS);
-}
 
 export { billingApp, accountDeletionApp };
