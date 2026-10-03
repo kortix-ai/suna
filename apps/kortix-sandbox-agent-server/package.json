@@ -1,7 +1,7 @@
 {
   "name": "kortixd",
   "version": "0.1.0",
-  "description": "kortixd — the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
+  "description": "kortixd \u2014 the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
   "type": "module",
   "main": "src/main.ts",
   "engines": {
@@ -18,7 +18,7 @@
     "typecheck": "bun tsc --noEmit",
     "lint": "eslint src",
     "test:architecture": "node --test scripts/check-architecture.mjs",
-    "test": "bun test"
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",

@@ -564,6 +564,15 @@ describe('reconcileRuntimeAssets over chunks', () => {
     Buffer.concat([...letters].map((ch) => Buffer.alloc(CHUNK, ch.charCodeAt(0))))
   const shaBytes = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
 
+  // A real box's chunk-store sources include the ~90 MB running agent binary;
+  // indexing it at this fixture's 8-byte chunk size is millions of hashes. The
+  // fixtures pin the CHUNK logic, not the indexer's throughput: point the
+  // agent paths at absent files so the only source is the fixture CLI.
+  const noAgentPaths = async () => ({
+    agentStateDir: await mkdtemp(join(tmpdir(), 'kortix-ra-state-')),
+    agentBakedPath: join(tmpdir(), 'kortix-absent-agent'),
+  })
+
   function chunkAwareStub(oldCli: Buffer, newCli: Buffer) {
     const chunks: string[] = []
     for (let o = 0; o < newCli.length; o += CHUNK) {
@@ -611,7 +620,7 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, oldCli)
     const stub = chunkAwareStub(oldCli, newCli)
 
-    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, await noAgentPaths())
 
     expect(result.cli).toBe('updated')
     expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)
