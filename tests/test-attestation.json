@@ -1,18 +1,9 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
-  "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
-  ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "source_hash": "d98ae4822c7e50fdb04b37fb6c2bdcf62fcc0efad1d6d105bd8205e651235c4c",
+  "head": "1cf6d6ed0cc07cf942c26422fcc32d9a616568ec",
   "passed": true,
   "lanes": {
-    "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "pass"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T17:03:19.753Z"
 }
