@@ -606,6 +606,35 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 | `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
 | `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'project'` (immediate) or `kind:'preparation'` (poll `getProjectSandboxProviderTransition()` until `activated`/`failed`) |
 
+#### `p.capture` — Kortix Capture
+
+The Kortix Capture desktop app writes a member's screen (app, window title, URL,
+on-screen text), input actions and, when the policy allows, audio to the
+project's capture store in the Kortix Capture format (schema 2). Kortix indexes
+it into a timeline. Every call needs the project's `capture` feature flag (off
+by default). A member reads only their own devices and timeline. A project
+manager may pass `userId` for another member, or read the whole project
+(`devices.list({ scope: 'project' })`, `people()`); each such read writes a
+`capture.member_view` or `capture.project_view` audit event. An agent session
+reads only the timeline of the person its private session acts for
+(`capture.agent_read`); a session without a person gets `403 capture_no_human`.
+
+| method | what |
+| --- | --- |
+| `devices.list({ userId?, scope? })` · `devices.revoke(deviceId)` · `devices.sync(deviceId)` | devices with live status (`live.state`: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status) · revoke a device's token · read its index and status now and queue new items |
+| `devices.setPolicy(deviceId, policy \| null)` · `devices.assetUrl(deviceId, name)` | a manager's per-device policy override (null clears it) · a 5-minute signed URL of an action screenshot |
+| `policy.get()` · `policy.set(policy)` | the project policy (`layers`, `privacy`, `retention`, `recording`, `notice`); a manager's write also publishes `<prefix>/policy.json` for devices |
+| `timeline.get({ day?, from?, to?, userId?, deviceId? })` · `timeline.items(query)` | activity runs (app and window), indexed items and ranges for a UTC day or a window up to 31 days · frames, actions and audio lines in a window (500 of each) |
+| `search({ q, kinds?, app?, from?, to?, limit?, userId? })` | full-text search over screen, actions and audio, newest first, one screen hit per window |
+| `frame(frameId)` · `media(chunkId)` | one frame with its on-screen text and a 5-minute signed URL of its video chunk (`offset_ms`) · signed URLs of an item's video or audio |
+| `ranges.list(query)` · `ranges.save({ start_at, end_at, title?, device_id? })` · `ranges.get(rangeId)` · `ranges.process(rangeId)` | detected activity sessions and saved spans · save your own span (at most 24 h) · a range with its outputs (`segmentation`, `transcript`, `annotation`, each with `model` and `usage.cost_usd`) · run its pipelines again |
+| `people({ day?, from?, to? })` | managers: per member, active seconds, seconds per app, ranges and devices |
+
+The person half of the device sign-in is not project-scoped:
+`kortix.capture.deviceGrant(userCode)`, `kortix.capture.approveDevice(userCode, projectId)`
+and `kortix.capture.denyDevice(userCode)`. React: `useCaptureDeviceGrant`,
+`useApproveCaptureDevice`, `useDenyCaptureDevice`.
+
 ### Escape hatch
 
 `kortix.runtime()` returns the typed OpenCode REST client for the active

@@ -289,6 +289,13 @@ for DB modes) and the optional `cloudflared`, then flags any worktree whose dir
 is missing, isn't a registered git worktree, or has orphaned isolated-DB
 containers. `--yes` auto-installs missing deps.
 
+## Kortix Capture in a worktree
+
+A worktree's API stores Kortix Capture objects in its own Supabase Storage
+(bucket `kortix-capture`). Device credentials need STS, which Supabase Storage
+lacks: run MinIO and point the API at it with
+[references/capture-local-store.md](references/capture-local-store.md).
+
 ## What each worktree isolates
 
 | Resource | Primary `pnpm dev` | Worktree slot N |
