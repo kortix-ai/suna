@@ -46,6 +46,7 @@ import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-he
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
+import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
@@ -461,6 +462,14 @@ export function SecurityTab() {
       errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
 
+  // Remove factor and sign-out-other-devices end a factor or sessions, so an
+  // aal1 session with a verified TOTP factor asks for the code first
+  // (KRTX-1386): requestMfaStepUp opens the global challenge dialog and runs
+  // the action once the code verifies. A verified session runs the action
+  // directly.
+  const runWithStepUp = (action: () => void) =>
+    requestMfaStepUp(mfa.challengeRequired, action);
+
   return (
     <SecurityTabView
       factors={mfa.factors}
@@ -471,7 +480,9 @@ export function SecurityTab() {
       removeFactorTarget={mfa.removeFactorTarget}
       onRequestRemoveFactor={mfa.setRemoveFactorTarget}
       onCancelRemoveFactor={() => mfa.setRemoveFactorTarget(null)}
-      onConfirmRemoveFactor={mfa.confirmRemoveFactor}
+      onConfirmRemoveFactor={() => {
+        if (mfa.removeFactorTarget) runWithStepUp(mfa.confirmRemoveFactor);
+      }}
       isRemovingFactor={mfa.isRemovingFactor}
       enrolling={mfa.enrolling}
       enrollCode={mfa.enrollCode}
@@ -481,7 +492,7 @@ export function SecurityTab() {
       onVerifyEnroll={mfa.verifyEnroll}
       isVerifyingEnroll={mfa.isVerifyingEnroll}
       onCancelEnroll={mfa.cancelEnroll}
-      onSignOutOtherDevices={() => signOutOthers.mutate()}
+      onSignOutOtherDevices={() => runWithStepUp(() => signOutOthers.mutate())}
       isSigningOutOtherDevices={signOutOthers.isPending}
       copy={copy}
     />
