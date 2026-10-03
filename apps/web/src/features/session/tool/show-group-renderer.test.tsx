@@ -98,10 +98,18 @@ describe('ShowGroupRenderer file viewers', () => {
     expect(html).not.toMatch(FILE_NAME_ROW);
   });
 
-  test('a single file show keeps its name row', () => {
+  test('every file tab is a hover-card trigger', () => {
+    const html = renderToStaticMarkup(withProviders(<ShowGroupRenderer parts={[TXT_A, TXT_B]} />));
+
+    expect(html.match(/role="tab"[^>]*data-slot="hover-card-trigger"/g)).toHaveLength(2);
+  });
+
+  test('a single file show draws no name row; its header is the hover-card trigger', () => {
     const html = renderToStaticMarkup(withProviders(<ToolPartRenderer part={TXT_A} />));
 
-    expect(html).toMatch(FILE_NAME_ROW);
+    expect(html).not.toMatch(FILE_NAME_ROW);
+    expect(html).not.toContain('>q1.txt<');
+    expect(html).toContain('data-slot="hover-card-trigger"');
   });
 });
 

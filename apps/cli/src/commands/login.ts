@@ -109,9 +109,14 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   }
 
   // Pick the API base URL with this priority:
-  //   --api flag → existing host's URL → KORTIX_API_URL env → default
+  //   --api flag → KORTIX_API_URL env (active host only, as `activeHost()`
+  //   does) → existing host's URL → default. Built-in hosts always exist, so
+  //   an existing host's URL must not outrank the env override: the token
+  //   would go to the default API instead of the one the caller named.
   const existing = getHost(hostName);
-  const apiBase = opts.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+  const envApiBase =
+    hostName === (activeHostName() ?? DEFAULT_HOST_NAME) ? process.env.KORTIX_API_URL : undefined;
+  const apiBase = opts.api ?? envApiBase ?? existing?.url ?? DEFAULT_API_BASE;
 
   // If this host already has a working token + caller didn't pass
   // --token or --api, treat that as a no-op login.

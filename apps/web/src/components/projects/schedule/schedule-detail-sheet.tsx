@@ -50,10 +50,10 @@ import { SharingPicker, type SharingSelection } from '@/features/workspace/share
 import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import {
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
   listProjectSessions,
-  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   updateProjectTrigger,
 } from '@kortix/sdk';
 import {
@@ -117,6 +117,39 @@ const lastRunFormatter = new Intl.DateTimeFormat(undefined, {
   minute: 'numeric',
   second: 'numeric',
 });
+
+/**
+ * The one trigger-update lifecycle the editable panels share: post the
+ * payload, toast the success line, then invalidate through `onMutated`; on
+ * failure toast the fallback without invalidating. Each panel keeps its own
+ * payload builder and success copy. `afterSave` runs between the toast and
+ * the invalidation — the timing editor closes its editing state there, so a
+ * failed save leaves the editor open. The header's enable/disable toggle
+ * stays a separate mutation: it maps the `enabled` argument to its own copy
+ * instead of a fixed one.
+ */
+function useTriggerUpdate<TInput = void>(
+  projectId: string,
+  trigger: ProjectTrigger,
+  onMutated: () => void,
+  update: {
+    success: string;
+    errorFallback: string;
+    payload: (input: TInput) => UpdateProjectTriggerInput;
+    afterSave?: () => void;
+  },
+) {
+  return useMutation({
+    mutationFn: (input: TInput) =>
+      updateProjectTrigger(projectId, trigger.slug, update.payload(input)),
+    onSuccess: () => {
+      successToast(update.success);
+      update.afterSave?.();
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || update.errorFallback),
+  });
+}
 
 /** A copy-pasteable request for whoever is wiring the other end up. */
 function buildSampleRequest(url: string): string {
@@ -400,17 +433,10 @@ function WhatItDoesPanel({
     setInstruction(trigger.prompt_template);
   }, [trigger.prompt_template]);
 
-  const save = useMutation({
-    mutationFn: () =>
-      updateProjectTrigger(projectId, trigger.slug, {
-        name: name.trim(),
-        prompt_template: instruction,
-      }),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('textb5c120b316c2'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text16efcd21d74f')),
+  const save = useTriggerUpdate(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('textb5c120b316c2'),
+    errorFallback: tI18nComplete.raw('text16efcd21d74f'),
+    payload: () => ({ name: name.trim(), prompt_template: instruction }),
   });
 
   if (!canWrite) {
@@ -505,23 +531,16 @@ function WhenItRunsPanel({
     setTimezone(trigger.timezone);
   }, [trigger.cron, trigger.run_at, trigger.timezone, editing]);
 
-  const save = useMutation({
-    mutationFn: () =>
-      updateProjectTrigger(
-        projectId,
-        trigger.slug,
-        // `run_at` and `cron` are mutually exclusive, so switching between
-        // them means explicitly clearing the other.
-        runAt
-          ? { run_at: runAt, cron: null, timezone }
-          : { cron: cron.trim(), run_at: null, timezone },
-      ),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('text5e2e76e79516'));
-      setEditing(false);
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text0aef01b447e9')),
+  const save = useTriggerUpdate(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('text5e2e76e79516'),
+    errorFallback: tI18nComplete.raw('text0aef01b447e9'),
+    // `run_at` and `cron` are mutually exclusive, so switching between
+    // them means explicitly clearing the other.
+    payload: () =>
+      runAt
+        ? { run_at: runAt, cron: null, timezone }
+        : { cron: cron.trim(), run_at: null, timezone },
+    afterSave: () => setEditing(false),
   });
 
   const action = !canWrite ? null : editing ? (
@@ -612,14 +631,10 @@ function AddressPanel({
     setSecretName(trigger.secret_env ?? '');
   }, [trigger.secret_env]);
 
-  const save = useMutation({
-    mutationFn: () =>
-      updateProjectTrigger(projectId, trigger.slug, { secret_env: secretName.trim() }),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('textd5c147e93f23'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text966761671cbc')),
+  const save = useTriggerUpdate(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('textd5c147e93f23'),
+    errorFallback: tI18nComplete.raw('text966761671cbc'),
+    payload: () => ({ secret_env: secretName.trim() }),
   });
 
   const dirty = secretName.trim().length > 0 && secretName.trim() !== (trigger.secret_env ?? '');
@@ -718,14 +733,10 @@ function ConditionsPanel({
     setRows(conditionsToRows(JSON.parse(saved) as Record<string, string>));
   }, [saved]);
 
-  const save = useMutation({
-    mutationFn: () =>
-      updateProjectTrigger(projectId, trigger.slug, { filter: rowsToConditions(rows) }),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('textfc62a0071f66'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text2371acc8f6df')),
+  const save = useTriggerUpdate(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('textfc62a0071f66'),
+    errorFallback: tI18nComplete.raw('text2371acc8f6df'),
+    payload: () => ({ filter: rowsToConditions(rows) }),
   });
 
   if (!canWrite) {
@@ -791,25 +802,16 @@ function AgentPanel({
     ? storedModelRefToKey(trigger.model, llmGatewayFlag.enabled === true)
     : null;
 
-  const saveAgent = useMutation({
-    mutationFn: (agent: string) => updateProjectTrigger(projectId, trigger.slug, { agent }),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('textd24a95381c8e'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textc617ab4ba83d')),
+  const saveAgent = useTriggerUpdate<string>(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('textd24a95381c8e'),
+    errorFallback: tI18nComplete.raw('textc617ab4ba83d'),
+    payload: (agent) => ({ agent }),
   });
 
-  const saveModel = useMutation({
-    mutationFn: (model: ModelKey | null) =>
-      updateProjectTrigger(projectId, trigger.slug, {
-        model: model ? modelKeyToWire(model) : null,
-      }),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('text4c658b4e952e'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text6ff3502ac059')),
+  const saveModel = useTriggerUpdate<ModelKey | null>(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('text4c658b4e952e'),
+    errorFallback: tI18nComplete.raw('text6ff3502ac059'),
+    payload: (model) => ({ model: model ? modelKeyToWire(model) : null }),
   });
 
   if (!canWrite) {
@@ -913,14 +915,10 @@ function MemoryPanel({
     ...contract('inventory'),
   });
 
-  const save = useMutation({
-    mutationFn: (input: UpdateProjectTriggerInput) =>
-      updateProjectTrigger(projectId, trigger.slug, input),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('text3a5ecca188c0'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text43ec39943667')),
+  const save = useTriggerUpdate<UpdateProjectTriggerInput>(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('text3a5ecca188c0'),
+    errorFallback: tI18nComplete.raw('text43ec39943667'),
+    payload: (input) => input,
   });
 
   if (!canWrite) {
@@ -1001,13 +999,10 @@ function AccessPanel({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [selection, setSelection] = useState<SharingSelection>(trigger.session_access);
 
-  const save = useMutation({
-    mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { session_access: selection }),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('text416476d59f76'));
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text68d66e06fd0f')),
+  const save = useTriggerUpdate(projectId, trigger, onMutated, {
+    success: tI18nComplete.raw('text416476d59f76'),
+    errorFallback: tI18nComplete.raw('text68d66e06fd0f'),
+    payload: () => ({ session_access: selection }),
   });
 
   if (!canWrite) {
