@@ -4579,13 +4579,14 @@ export const tunnelPermissions = kortixSchema.table(
   ],
 );
 
+// No application code reads or writes this table, so it carries no FK and no
+// secondary index: Postgres keeps the primary key only. See KRTX-1211 and the
+// two migrations that drop the legacy FK and the three never-scanned indexes.
 export const tunnelPermissionRequests = kortixSchema.table(
   'tunnel_permission_requests',
   {
     requestId: uuid('request_id').defaultRandom().primaryKey(),
-    tunnelId: uuid('tunnel_id')
-      .notNull()
-      .references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
+    tunnelId: uuid('tunnel_id').notNull(),
     accountId: uuid('account_id').notNull(),
     capability: tunnelCapabilityEnum('capability').notNull(),
     requestedScope: jsonb('requested_scope').default({}).$type<TunnelPermissionScope>(),
@@ -4594,11 +4595,6 @@ export const tunnelPermissionRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_tunnel_perm_requests_tunnel').on(table.tunnelId),
-    index('idx_tunnel_perm_requests_account').on(table.accountId),
-    index('idx_tunnel_perm_requests_status').on(table.status),
-  ],
 );
 
 export const tunnelAuditLogs = kortixSchema.table(
