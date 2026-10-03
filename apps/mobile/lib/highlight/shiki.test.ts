@@ -139,7 +139,12 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       await oniguruma.loadLanguage((await LANGUAGE_LOADERS[lang]()).default);
       // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
-      // crossed that limit and failed the parity check below.
+      // crossed that limit and failed the parity check below. A cold scan can
+      // also mis-scope its first line outright (observed on php under a strict
+      // engine: the cold result diverges from Oniguruma and, being cached,
+      // would poison the comparison forever). Warm on a line that is not the
+      // compared sample, so the sample's cached result is a warm, correct one.
+      highlightToTokens(`${sample.split('\n')[0]}\n`, lang, 'light');
       highlightToTokens(sample, lang, 'light');
 
       for (const scheme of ['light', 'dark'] as const) {
