@@ -106,11 +106,12 @@ export function DevelopersCli() {
 
   const groups = filterGroups(cli.groups, value);
   const flat = groups.flatMap((g) => g.cmds.map(([c]) => c));
+  // POSIX single quotes: nothing inside is special; a ' is closed, escaped, reopened.
   const asPrompt = value
     .replace(/^\s*kortix\s*/i, '')
     .trim()
-    .replace(/"/g, '\\"');
-  const promptCmd = `kortix chat --prompt "${asPrompt}"`;
+    .replace(/'/g, "'\\''");
+  const promptCmd = `kortix chat --prompt '${asPrompt}'`;
   const activeIndex = Math.min(active, Math.max(flat.length - 1, 0));
 
   const pick = async (cmd: string) => {

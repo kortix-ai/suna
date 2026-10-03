@@ -107,7 +107,6 @@ import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
-import { bakedLlmCatalogPath } from '@/lib/platform-paths'
 
 /** The projection relay pushes OpenCode's `/kortix/runtime/state` document. */
 function registerOpenCodeStateReader(): void {
@@ -564,7 +563,7 @@ export async function reconcileManagedModels(
       return
     }
     const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? bakedLlmCatalogPath(),
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
       targetCatalogFile:
         opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
       managed: live,

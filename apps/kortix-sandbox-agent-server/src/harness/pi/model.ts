@@ -22,10 +22,14 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
-import { bakedLlmCatalogPath } from '@/lib/platform-paths'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 
+/** Staged unconditionally by apps/api's snapshot build-context. A host that
+ *  really bakes one (every Kortix sandbox image) can hide it from the test
+ *  suite through KORTIX_BAKED_LLM_CATALOG_PATH. */
+export const BAKED_LLM_CATALOG_PATH =
+  process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
 export const KORTIX_PROVIDER_ID = 'kortix'
 const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
@@ -40,7 +44,7 @@ export interface CatalogModel {
   reasoning_options?: Array<{ type?: string }>
 }
 
-export function readCatalogFile(path: string = process.env.KORTIX_LLM_CATALOG_FILE || bakedLlmCatalogPath()): Record<string, CatalogModel> {
+export function readCatalogFile(path: string = process.env.KORTIX_LLM_CATALOG_FILE || BAKED_LLM_CATALOG_PATH): Record<string, CatalogModel> {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { models?: Record<string, CatalogModel> } | Record<string, CatalogModel>
     const models = (parsed && typeof parsed === 'object' && 'models' in parsed ? (parsed as { models?: Record<string, CatalogModel> }).models : (parsed as Record<string, CatalogModel>)) ?? {}

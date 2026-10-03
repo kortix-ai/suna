@@ -8,7 +8,6 @@ import { pipeline } from 'node:stream/promises'
 import type { Config } from '../config/config'
 import { materializeCompiledCheckoutToStage } from './compiled-checkout'
 import { logger } from '../log/logger'
-import { scaffoldRepoPath as scaffoldRepoPathOverride } from '../platform-paths'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
 type GitIdentityConfig = Pick<Config, 'gitUserName' | 'gitUserEmail'>
@@ -1010,10 +1009,11 @@ export function scheduleHistoryBackfill(cfg: Config, target: string): void {
   })()
 }
 
-let scaffoldRepoPath = scaffoldRepoPathOverride()
+const DEFAULT_SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+let scaffoldRepoPath = DEFAULT_SCAFFOLD_REPO_PATH
 
 export function __setScaffoldRepoPathForTests(path?: string): void {
-  scaffoldRepoPath = path ?? scaffoldRepoPathOverride()
+  scaffoldRepoPath = path ?? DEFAULT_SCAFFOLD_REPO_PATH
 }
 
 /**

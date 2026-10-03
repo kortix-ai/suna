@@ -1,14 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  // Bind the Vite server vitest runs to an explicit loopback address. Vite's
-  // default host is `localhost`, and resolveHostname() dns-probes it during
-  // buildStart — on a box where `localhost` does not resolve (/etc/hosts
-  // unreadable by the suite's user) that probe throws ENOTFOUND and kills the
-  // run before a single test starts. An explicit host skips the probe; on a
-  // normal machine it changes nothing: the server stays in middleware mode and
-  // never listens.
-  server: { host: '127.0.0.1' },
+  // A literal IP, never 'localhost': vite@7's buildStart resolves 'localhost'
+  // through DNS on every startup, and a container without a readable
+  // /etc/hosts (the factory worker sandboxes) crashes the whole lane before a
+  // single test runs. vite@8 already skips that probe under a verbatim
+  // result order; pinning the host skips it everywhere.
+  server: {
+    host: '127.0.0.1',
+  },
   test: {
     name: 'unit',
     root: import.meta.dirname,

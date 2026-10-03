@@ -4,7 +4,6 @@ import type { CatalogSnapshot, HarnessDiagnosticsContext } from '../contract/dia
 import { readRepoInfo } from '@/lib/git/git'
 import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
-import { hostSessionEnvPath } from '@/lib/platform-paths'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -14,9 +13,16 @@ import { hostSessionEnvPath } from '@/lib/platform-paths'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
+const PT_ENV_PATH = '/etc/pt-env'
+
+/** The env file THIS read consults. `KORTIX_PT_ENV_PATH` is read at call time so
+ *  a test can pin it after this module has loaded: a Kortix box's own
+ *  /etc/pt-env would otherwise answer for a rig that has no session env file. */
+const ptEnvPath = () => process.env.KORTIX_PT_ENV_PATH || PT_ENV_PATH
+
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync(hostSessionEnvPath(), 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(ptEnvPath(), 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -34,7 +40,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(hostSessionEnvPath(), 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(ptEnvPath(), 'utf8'))
   } catch {
     return false
   }
