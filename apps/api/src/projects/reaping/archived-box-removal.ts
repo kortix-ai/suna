@@ -146,13 +146,14 @@ export async function attemptArchivedBoxRemoval(
   }
 }
 
-/** The maintenance lane: retry every archived row whose removal is unconfirmed. */
-export async function removeArchivedProviderBoxes(now = new Date()): Promise<{
-  examined: number;
-  removed: number;
-  failed: number;
-}> {
-  const rows = await db
+/**
+ * The reaper's batch, built once so the index test EXPLAINs what ships
+ * (archived-box-removal-plan.integration.test.ts). The partial index
+ * `idx_session_sandboxes_provider_removal_pending` covers exactly this predicate and
+ * its sort expression; the query and the index must move together.
+ */
+export function removeArchivedProviderBoxesQuery() {
+  return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
       externalId: sessionSandboxes.externalId,
@@ -169,6 +170,15 @@ export async function removeArchivedProviderBoxes(now = new Date()): Promise<{
     )
     .orderBy(sql`${sessionSandboxes.metadata}->>'providerRemovalRetryAfterAt' asc nulls first`)
     .limit(REMOVAL_BATCH);
+}
+
+/** The maintenance lane: retry every archived row whose removal is unconfirmed. */
+export async function removeArchivedProviderBoxes(now = new Date()): Promise<{
+  examined: number;
+  removed: number;
+  failed: number;
+}> {
+  const rows = await removeArchivedProviderBoxesQuery();
 
   let examined = 0;
   let removed = 0;

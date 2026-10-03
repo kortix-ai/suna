@@ -2129,6 +2129,25 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // The archived-box reaper's candidate query (removeArchivedProviderBoxes):
+    // status = 'archived' AND external_id IS NOT NULL AND metadata ?
+    // 'providerRemovalPendingAt', ORDER BY metadata->>'providerRemovalRetryAfterAt'
+    // ASC NULLS FIRST. Without this partial index every reaper tick scanned every
+    // archived row's metadata (jsonb ?) and sorted it — prod pg_stat_statements:
+    // mean 1609 ms over ~2300 calls, zero returned rows, buffer hit rate 59 %
+    // (KRTX-1309) — to usually return nothing. The predicate is the
+    // query's own, so the index only holds rows the reaper can act on, and its
+    // key carries the sort so LIMIT 50 reads the due rows in order with no sort.
+    // Built by
+    // 20261003181442876_session_sandboxes_provider_removal_pending_index.concurrent.ts.
+    index('idx_session_sandboxes_provider_removal_pending')
+      .using(
+        'btree',
+        sql`(${table.metadata} ->> 'providerRemovalRetryAfterAt') asc nulls first`,
+      )
+      .where(
+        sql`${table.status} = 'archived' and ${table.externalId} is not null and ${table.metadata} ? 'providerRemovalPendingAt'`,
+      ),
   ],
 );
 
