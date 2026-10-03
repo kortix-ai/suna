@@ -37,8 +37,8 @@ process.env.KORTIX_MANAGED_SKILLS_DIR = join(box, 'managed-skills')
 process.env.KORTIX_AGENT_STATE_DIR = join(box, 'agent-state')
 process.env.KORTIX_AGENT_BIN = join(box, 'agent-bin')
 process.env.KORTIX_SCAFFOLD_REPO_PATH = join(box, 'scaffold.git')
-process.env.KORTIX_BAKED_LLM_CATALOG = join(box, 'llm-catalog.json')
-process.env.KORTIX_PT_ENV_FILE = join(box, 'pt-env')
+process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(box, 'llm-catalog.json')
+process.env.KORTIX_PT_ENV_PATH = join(box, 'pt-env')
 
 // 4. `localhost`. On a locked-down runtime the hosts file is not readable by
 //    the test user, so name resolution of `localhost` fails before any dial —

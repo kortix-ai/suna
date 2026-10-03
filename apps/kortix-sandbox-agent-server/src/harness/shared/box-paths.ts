@@ -16,9 +16,9 @@
  *  Present on every modern image; the fast, always-available fallback so a slow
  *  or down gateway never collapses the picker to the minimal set. */
 export const BAKED_LLM_CATALOG_PATH =
-  (process.env.KORTIX_BAKED_LLM_CATALOG ?? '').trim() || '/opt/kortix/llm-catalog.json'
+  (process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? '').trim() || '/opt/kortix/llm-catalog.json'
 
 /** The host-written env file carrying the live session's variables
  *  (`KORTIX_BRANCH_NAME`, `KORTIX_PROJECT_AUTO_CLONE`, …). Absent on a
  *  developer box; every reader treats that as "not a session sandbox". */
-export const PT_ENV_PATH = (process.env.KORTIX_PT_ENV_FILE ?? '').trim() || '/etc/pt-env'
+export const PT_ENV_PATH = (process.env.KORTIX_PT_ENV_PATH ?? '').trim() || '/etc/pt-env'

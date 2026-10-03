@@ -14,9 +14,10 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
-// replica-local: the rate limit caps warn lines per process by design — the file
-// header says "per process per hour" — and exact refusal accounting comes from
-// request-completion logs and auth audits, not these counts. — replica-local: a log-noise limiter; each replica rate-limits its own lines.
+// replica-local: a log-noise limiter; each replica rate-limits its own lines. The
+// rate limit caps warn lines per process by design — the file header says "per
+// process per hour" — and exact refusal accounting comes from request-completion
+// logs and auth audits, not these counts.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
