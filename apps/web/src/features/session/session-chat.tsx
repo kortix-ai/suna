@@ -4580,8 +4580,7 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={boundAgentName ? undefined : handleAgentChange}
-                agentSelectorLocked={!!boundAgentName}
+                onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}
