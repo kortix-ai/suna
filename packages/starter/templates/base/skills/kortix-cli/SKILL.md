@@ -57,6 +57,7 @@ kortix sessions new --json --wait --with-file data.csv --prompt "…"   # files 
 kortix sessions wait-for <id> --timeout 300     # block until the agent finishes (0=done, 3=blocked on an ask, 124=timeout) — never sleep-poll
 kortix sessions pending <id>                    # see what a blocked agent is asking; answer with approve/answer
 kortix sessions cp <id>:out/result.pdf .        # pull deliverables; also local→session and session→session, -r for dirs
+kortix run -- pnpm test                         # run one command in a FRESH sandbox booted from your working tree; exit code is the command's, its file changes come back here
 ```
 
 ## Labels and metadata (classify sessions)

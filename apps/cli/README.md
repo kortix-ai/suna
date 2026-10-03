@@ -17,6 +17,8 @@ makes an initial commit.
 kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
 kortix ship                  # create the cloud project (first run) + push your code
+kortix claude --dangerously-skip-permissions   # Claude Code in a cloud sandbox of this folder
+kortix run -- pnpm test      # any command in a cloud sandbox; its file changes come back
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
 
