@@ -191,3 +191,102 @@ a new warm session with a sandbox: stop it after a capture.
 Comparison with 2026-09-19 (same method and 50 ms RTT, before / after PR #7430,
 which is merged): POST /prompts 1,057 / 562 ms, delivery 5,516 / 3,617 ms,
 POST→busy 5.6–7.4 / 3.9–5.1 s. Today's 50 ms arm: 861 ms, 3,796 ms, 4.6 s p50.
+
+## After R1 (hot path), 2026-10-02
+
+Same machine, provider, harness and model as the baseline above. The baseline
+was measured again on the day, at `39df4d0379` (`main`), because the prompt
+path changed after 2026-09-29. "R1" is branch `api-hot-path` with `main`
+`ee857c9aca` merged. All 45 turns answered correctly. Values in ms, p50 / p90.
+50 ms arms: 4 sessions and 12 turns each. Direct arm: 3 sessions and 9 turns
+(baseline direct: 1 session, 3 turns, p50 only).
+
+Restart the stack before every arm (`pnpm worktree stop`, then `start`): with
+`BENCH_API_LOG` set (a local API) the bench fails a run that crosses a hot
+reload, and a stack that reloaded before the run is slow for another reason
+(learnings, 2026-10-02).
+
+| Metric | Baseline, 50 ms | R1, 50 ms | R1 + prepared, 50 ms | Baseline, direct | R1, direct |
+| --- | --- | --- | --- | --- | --- |
+| POST /sessions wall | 1,833 / 2,444 | 818 / 1,645 | 593 / 1,140 | 911 | 66 / 93 |
+| POST /sessions db dur | 956 / 1,396 | 647 / 935 | 488 / 957 | 14 | 7 / 13 |
+| POST /sessions git runs | 4 of 4 creates | 1 of 4 | 0 of 4 | 1 of 1 | 0 of 3 |
+| POST /prompts wall | 825 / 1,041 | 748 / 861 | 369 / 494 | 26 | 52 / 56 |
+| POST /prompts db dur | 746 / 953 | 652 / 761 | 276 / 396 | 5 | 6 / 9 |
+| delivery: `deliver` total | 3,670 / 4,548 | 1,919 / 3,300 | 1,262 / 2,090 | 931 | 240 / 1,705 |
+| delivery: `proxy` total | 2,654 / 3,314 | 1,203 / 2,618 | 768 / 1,642 | 868 | 232 / 1,686 |
+| delivery: created→forwarded (DB) | 4,305 / 5,151 | 2,188 / 3,498 | 1,406 / 2,237 | 1,192 | 242 / 1,706 |
+| POST→busy | 4,484 / 5,096 | 2,667 / 3,776 | 1,655 / 2,457 | 1,173 | 576 / 3,488 |
+| POST→idle | 6,940 / 8,718 | 5,576 / 6,586 | 3,381 / 5,048 | 3,740 | 2,258 / 5,269 |
+
+Delivery stages at 50 ms RTT, p50:
+
+| Stage | Baseline | R1 | R1 + prepared | What moved it |
+| --- | --- | --- | --- | --- |
+| `deliver` admission | 217 | 219 | 162 | not changed by R1 |
+| `deliver` delivered | 3,124 | 1,331 | 876 | the `proxy` line below |
+| `proxy` load-sandbox | 106 | 0 | 0 | R1.6: the delivery hands its row over |
+| `proxy` env-sync | 1,732 | 536 | 336 | R1.1 tip proof, R1.8 shared reads |
+| `proxy` turn-begin | 216 | 113 | 59 | R1.5: one statement |
+| `proxy` upstream (API→sandbox) | 210 | 229 | 221 | not the API |
+| `proxy` turn-accept | 323 | 223 | 121 | R1.5: one statement, then the inbox confirm |
+
+Notes:
+
+- The 250 ms burst wait and the landing read-back are not stage rows. They sat
+  between `created` and `deliver` and inside `delivered`: the gap between
+  created→forwarded and `deliver` total is 635 ms on the baseline and 269 ms
+  after R1.
+- One prompt, statement trace at 50 ms RTT. The request ran 14 statements in 8
+  sequential waves and runs 15 in 6 (project row, IAM in 2, the visibility
+  reads with the inbox state, agent grants, insert). The delivery ran 49
+  statements in 27 waves with 2 git calls (a fetch and an `ls-remote`). With
+  the tip proof warm it runs 32 statements in 15 waves and no git call. A
+  prompt sent 70 s after the last one finds the proof expired: 42 statements in
+  19 waves and 1 `ls-remote`, created→forwarded 3,800 ms against 5,646 ms.
+- `session ready` p50 read 33.6 s on the baseline and 13.1 s after R1. Do not
+  attribute it: the merged `main` changed the default image and the Platinum
+  control-plane routing on the same day. The first session after a stack
+  restart took 155.9 s (image build).
+- "R1 + prepared" is `DB_PREPARE_STATEMENTS=true` in `apps/api/.env.local`:
+  2,280 of 3,080 traced statements took one round trip (50 ms) instead of two.
+  It is off by default. See `packages/db/src/client.ts` before turning it on in
+  a deployed environment.
+- The bench sends `client_sent_at_ms`, as the web composer does. Without it the
+  prompt route keeps the 250 ms burst wait.
+
+### On dev, after the merge
+
+`68f98e566e` (#8765) on `dev-api.kortix.com`, 2026-10-02 18:23–18:45 UTC. Same
+laptop, provider Platinum, harness OpenCode, model `deepseek-v4.1-flash`.
+"Before" is dev at `d137b8a749`, the commit dev served until the deploy,
+measured in the 10 minutes before it: 3 sessions and 9 turns. "After": 9 sessions and
+27 turns. All 36 turns answered correctly. Values in ms, p50 / p90.
+
+| Metric | Dev, 2026-09-29 | Dev before, same day | Dev after R1 |
+| --- | --- | --- | --- |
+| POST /sessions wall | 2,477 / 3,343 | 2,655 / 3,885 | 2,345 / 5,931 |
+| POST /sessions db dur | 1,477 / 2,495 | 1,284 / 3,134 | 1,766 / 4,720 |
+| POST /sessions git runs | 5 of 12 creates timed | 3 of 3 | 3 of 9 |
+| POST /prompts wall | 1,568 / 3,234 | 1,866 / 3,900 | 1,403 / 2,601 |
+| POST /prompts db dur | 1,321 / 2,943 | 1,556 / 3,575 | 1,077 / 2,278 |
+| POST /prompts db n | 16 / 19 | 15 / 18 | 14 / 16 |
+| delivery: created→forwarded (DB) | 5,977 / 12,139 | 7,759 / 13,387 | 3,879 / 7,819 |
+| POST→busy | 6,687 / 13,681 | 8,611 / 14,979 | 4,887 / 9,454 |
+| POST→idle | 13,358 / 20,607 | 16,190 / 25,231 | 9,538 / 14,080 |
+
+- Delivery moved as the 50 ms arm predicted: created→forwarded is 50% lower
+  than the same day's "before" and 35% lower than 2026-09-29.
+- `POST /sessions` did not move on dev. The git call is gone from 6 of 9
+  creates, but a create still runs 13–22 statements for 1.0–2.9 s of database
+  time. The cause is not measured. One difference is known: dev runs with
+  billing on and the local arms do not. Trace the route's statements on a
+  stack started with `--billing` before the next change to it.
+- The tip proof is per API process and lasts 60 s. Dev has 2 API replicas and
+  the bench creates one session every 1–3 minutes, so 3 of 9 creates still paid
+  the `ls-remote`.
+- `session ready` read 36.5 s, 44.7 s and 20.2 s in the 3 columns. Not
+  attributed, as above.
+- The `deliver` and `proxy` log lines are in CloudWatch and were not read for
+  this run.
+

@@ -85,13 +85,16 @@ mock.module('@/features/session/session-permission-prompt', () => ({
 mock.module('@/features/session/composer/composer', () => ({
   COMPOSER_SHELL_CLASS: '',
   Composer: ({
+    aboveSlot,
     inputSlot,
     lockForApproval,
   }: {
+    aboveSlot?: React.ReactNode;
     inputSlot?: React.ReactNode;
     lockForApproval?: boolean;
   }) => (
     <div>
+      {aboveSlot}
       {inputSlot}
       <textarea aria-label="Message" disabled={lockForApproval} />
       <button type="button" disabled={lockForApproval}>

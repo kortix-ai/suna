@@ -101,14 +101,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import Loading from '@/components/ui/loading';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
@@ -128,6 +121,8 @@ import {
   channelSettingsPatch,
 } from '@/features/workspace/customize/sections/view/channel-settings-patch';
 import { slackConversationName } from '@/features/session/turn/channel-message';
+import { bindingTabs } from '@/features/workspace/customize/sections/view/channel-binding-tabs';
+import { AccessRow } from '@/features/workspace/shared/access/access-row';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -160,6 +155,7 @@ import {
 } from '@kortix/sdk/react';
 import {
   AtIcon,
+  CaretLeftIcon,
   CaretRightIcon,
   EnvelopeIcon,
   MagnifyingGlassIcon,
@@ -210,6 +206,16 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
+  // Each platform's row shows how many conversations it has bound and opens
+  // the bindings dialog on that platform's tab. A new `session` per opening
+  // remounts the dialog, so its tab, search and selection start fresh.
+  const bindingsQuery = useChannelBindings(projectId);
+  const channelCounts = new Map(
+    bindingTabs(bindingsQuery.data?.bindings ?? []).map((tab) => [tab.platform, tab.count]),
+  );
+  const [channelsDialog, setChannelsDialog] = useState({ open: false, platform: 'slack', session: 0 });
+  const openChannels = (platform: string) =>
+    setChannelsDialog((dialog) => ({ open: true, platform, session: dialog.session + 1 }));
 
   // Once Slack is connected it stops being the headline and becomes a peer of
   // Email and Teams — same row, same list. So the "More channels" label only
@@ -264,6 +270,8 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
                   projectId={projectId}
                   installation={install}
                   canWrite={canWrite}
+                  channelCount={channelCounts.get('slack') ?? 0}
+                  onOpenChannels={() => openChannels('slack')}
                 />
               ) : null}
               {emailChannelEnabled ? (
@@ -273,21 +281,27 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
                   canWrite={canWrite}
                 />
               ) : null}
-              <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+              <TeamsChannelRow
+                projectId={projectId}
+                canWrite={canWrite}
+                channelCount={channelCounts.get('teams') ?? 0}
+                onOpenChannels={() => openChannels('teams')}
+              />
             </ul>
             {teamsInstall?.appUpdateAvailable ? (
               <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
             ) : null}
           </section>
 
-          {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
-          {/* Bindings are per conversation on EVERY platform (Slack channels, Teams
-              chats/channels). The table used to hang off the Slack nudge, so a
-              Teams-only project could not see or change its agent / model /
-              join policy at all. */}
-          {!install && teamsInstall ? (
-            <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
-          ) : null}
+          {install ? <SlackFollowUp projectId={projectId} /> : null}
+          <ChannelBindingsDialog
+            key={channelsDialog.session}
+            projectId={projectId}
+            canWrite={canWrite}
+            platform={channelsDialog.platform}
+            open={channelsDialog.open}
+            onOpenChange={(open) => setChannelsDialog((dialog) => ({ ...dialog, open }))}
+          />
 
           <TeamsChannelPanel projectId={projectId} />
         </>
@@ -301,10 +315,14 @@ function SlackChannelRow({
   projectId,
   installation,
   canWrite,
+  channelCount,
+  onOpenChannels,
 }: {
   projectId: string;
   installation: SlackInstallation;
   canWrite: boolean;
+  channelCount: number;
+  onOpenChannels: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectSlack();
@@ -317,55 +335,56 @@ function SlackChannelRow({
       detail={installation.workspaceName ?? installation.workspaceId}
       pitch={tI18nComplete.raw('text9bd1c37ed121')}
       actions={
-        canWrite ? (
-          <ChannelDisconnectButton
-            pending={disconnect.isPending}
-            onConfirm={(done) =>
-              disconnect.mutate(projectId, {
-                onSuccess: () => {
-                  done();
-                  successToast(tI18nComplete.raw('textd948c285986a'));
-                },
-              })
-            }
-          />
-        ) : null
+        <>
+          {channelCount > 0 ? <ChannelsButton count={channelCount} onOpen={onOpenChannels} /> : null}
+          {canWrite ? (
+            <ChannelDisconnectButton
+              pending={disconnect.isPending}
+              onConfirm={(done) =>
+                disconnect.mutate(projectId, {
+                  onSuccess: () => {
+                    done();
+                    successToast(tI18nComplete.raw('textd948c285986a'));
+                  },
+                })
+              }
+            />
+          ) : null}
+        </>
       }
     />
   );
 }
 
+/** "12 channels" on a connected platform's row: opens the bindings dialog on its tab. */
+function ChannelsButton({ count, onOpen }: { count: number; onOpen: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <Button size="sm" variant="secondary" className="gap-1" onClick={onOpen}>
+      {tI18nComplete('text5dae52a3f448', { count })}
+      <CaretRightIcon className="size-3.5 shrink-0" />
+    </Button>
+  );
+}
+
 /**
- * What follows a connected Slack: the one-time "now do this in Slack" nudge,
- * then the per-channel bindings table.
- *
- * The nudge is the old permanent `InfoBanner` turned into a next step. It
- * retires itself as soon as `bindings.length > 0` — a bound channel is proof
- * the user already invited the bot and mentioned it, so restating the
- * instruction forever is a banner they read past on every visit. The two
- * blocks are mutually exclusive in practice: no bindings means the nudge and
- * no table, and bindings mean the table and no nudge.
+ * What follows a connected Slack before its first channel: the one-time "now
+ * do this in Slack" nudge. It retires itself as soon as `bindings.length > 0`:
+ * a bound channel is proof the user already invited the bot and mentioned it,
+ * and from then on the Slack row's "N channels" opens the bindings dialog.
  */
-function SlackFollowUp({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+function SlackFollowUp({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const bindingsQuery = useChannelBindings(projectId);
   const bindings = bindingsQuery.data?.bindings ?? [];
 
-  return (
-    <div className="space-y-4">
-      {bindings.length === 0 && !bindingsQuery.isLoading ? (
-        <InfoBanner tone="neutral" icon={AtIcon} title={tI18nComplete.raw('textd63af8edd3d6')}>
-          {tI18nComplete.raw('text1fd9ae1607aa')}{' '}
-          <span className="text-foreground font-medium">
-            {tI18nComplete.raw('text476b90bdc143')}
-          </span>{' '}
-          {tI18nComplete.raw('textb81b729b4538')}
-        </InfoBanner>
-      ) : null}
-
-      <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
-    </div>
-  );
+  return bindings.length === 0 && !bindingsQuery.isLoading ? (
+    <InfoBanner tone="neutral" icon={AtIcon} title={tI18nComplete.raw('textd63af8edd3d6')}>
+      {tI18nComplete.raw('text1fd9ae1607aa')}{' '}
+      <span className="text-foreground font-medium">{tI18nComplete.raw('text476b90bdc143')}</span>{' '}
+      {tI18nComplete.raw('textb81b729b4538')}
+    </InfoBanner>
+  ) : null;
 }
 
 /**
@@ -374,20 +393,36 @@ function SlackFollowUp({ projectId, canWrite }: { projectId: string; canWrite: b
  * manageable"). The in-chat `/kortix agent|model|policy` commands edit the
  * same row; this edits it through `PATCH …/channels/bindings/:id`.
  *
- * The table is read-only and a row opens `ChannelSettingsModal`. It used to
- * carry three live pickers per row: with ~30 conversations (a real project's
- * count) that was ~90 controls, the join-policy column clipped off the right
- * edge, and every pick saved at once with its own toast.
+ * One dialog with a tab per platform, opened from each platform's row. It
+ * shows either the list or one channel's settings: a row swaps the content,
+ * and Back or Save returns to the list. It replaced a table of every Slack and
+ * Teams conversation on the page, which grew with each channel and DM; a list
+ * dialog that opened a second dialog would stack two modals.
+ *
+ * The list is read-only. It used to carry three live pickers per row: with ~30
+ * conversations (a real project's count) that was ~90 controls.
  */
-function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+function ChannelBindingsDialog({
+  projectId,
+  canWrite,
+  platform,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  canWrite: boolean;
+  /** The tab it opens on. */
+  platform: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const conversationPolicies = useLocalizedUiCatalog(CONVERSATION_POLICIES);
   const bindingsQuery = useChannelBindings(projectId);
   const projectDefaultAgent = bindingsQuery.data?.projectDefaultAgent ?? null;
+  const [tab, setTab] = useState(platform);
   const [query, setQuery] = useState('');
-  // Kept after close so the modal keeps its content through the exit animation.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
 
   const rows = useMemo(
     () =>
@@ -397,168 +432,156 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
           name: bindingName(binding, tI18nComplete),
           scope: bindingScope(binding, tI18nComplete),
         }))
-        // Slack, then Teams: the brand marks read as groups.
-        .sort((a, b) =>
-          a.binding.platform === b.binding.platform
-            ? a.name.localeCompare(b.name, undefined, { numeric: true })
-            : a.binding.platform.localeCompare(b.binding.platform),
+        // Threads of one Teams channel share a name; their titles order them.
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(b.name, undefined, { numeric: true }) ||
+            a.scope.localeCompare(b.scope, undefined, { numeric: true }),
         ),
     [bindingsQuery.data, tI18nComplete],
   );
-
-  if (bindingsQuery.isLoading) {
-    return (
-      <div className="space-y-1">
-        <Skeleton className="h-8 rounded-md" />
-        <Skeleton className="h-8 rounded-md" />
-      </div>
-    );
-  }
-  if (rows.length === 0) return null;
-
+  const tabs = bindingTabs(rows.map((row) => row.binding));
+  // The tab it was opened on, unless that platform has nothing bound.
+  const active = tabs.some((t) => t.platform === tab) ? tab : (tabs[0]?.platform ?? tab);
+  const inTab = rows.filter((row) => row.binding.platform === active);
   const needle = query.trim().toLowerCase();
   const visible = needle
-    ? rows.filter(({ binding, name, scope }) =>
-        [name, scope, binding.platform, binding.agentName ?? '', binding.opencodeModel ?? '']
+    ? inTab.filter(({ binding, name, scope }) =>
+        [name, scope, binding.agentName ?? '', binding.opencodeModel ?? '']
           .join(' ')
           .toLowerCase()
           .includes(needle),
       )
-    : rows;
-  const selected = rows.find((r) => r.binding.bindingId === selectedId) ?? null;
-  const open = (bindingId: string) => {
-    setSelectedId(bindingId);
-    setModalOpen(true);
-  };
+    : inTab;
+  // `selected` goes null when the conversation was removed while open.
+  const selected = rows.find((row) => row.binding.bindingId === selectedId) ?? null;
+  const back = () => setSelectedId(null);
 
   return (
-    <div className="space-y-2">
-      <Label>{tI18nComplete.raw('text5f61b63c2c4a')}</Label>
-      <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text1f2550ed44dc')}</p>
-      {rows.length >= BINDING_SEARCH_MIN ? (
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <MagnifyingGlassIcon />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            placeholder={tI18nComplete.raw('text49c266baaaa7')}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            size="sm"
-          />
-          <InputGroupSearchClear onClick={() => setQuery('')} />
-        </InputGroupSearch>
-      ) : null}
-      {visible.length === 0 ? (
-        <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-          {tI18nComplete.raw('texte8dd87902b91')}
-        </p>
+    <Modal open={open} onOpenChange={onOpenChange}>
+      {selected ? (
+        <ChannelSettingsModalContent
+          projectId={projectId}
+          binding={selected.binding}
+          name={selected.name}
+          scope={selected.scope}
+          projectDefaultAgent={projectDefaultAgent}
+          canWrite={canWrite}
+          onBack={back}
+        />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>{tI18nComplete.raw('textce4683e7013a')}</TableHead>
-              <TableHead className="hidden sm:table-cell">
-                {tI18nComplete.raw('text11b39c93777e')}
-              </TableHead>
-              <TableHead>{tI18nComplete.raw('text5e2c614c23f0')}</TableHead>
-              <TableHead className="hidden md:table-cell">
-                {tI18nComplete.raw('textb1ca871c6696')}
-              </TableHead>
-              <TableHead className="hidden w-0 sm:table-cell" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visible.map(({ binding, name, scope }) => {
-              const modelUnavailable =
-                binding.opencodeModel !== null && binding.effectiveModel.source !== 'explicit';
-              return (
-                <TableRow
-                  key={binding.bindingId}
-                  className="cursor-pointer"
-                  onClick={() => open(binding.bindingId)}
-                >
-                  <TableCell className="max-w-[15rem]">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <BindingBrandMark platform={binding.platform} />
-                      <div className="min-w-0">
-                        {/* A real button, so the row is reachable by keyboard —
-                            a click handler on the <tr> alone never is. */}
-                        <button
-                          type="button"
-                          title={binding.channelId}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            open(binding.bindingId);
-                          }}
-                          className="block max-w-full truncate text-left text-sm font-medium outline-none focus-visible:underline"
-                        >
-                          {name}
-                        </button>
-                        <p className="text-muted-foreground truncate text-xs">{scope}</p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      'hidden max-w-[10rem] truncate text-xs sm:table-cell',
-                      !binding.agentName && 'text-muted-foreground',
-                    )}
-                  >
-                    {binding.agentName ?? agentDefaultLabel(projectDefaultAgent)}
-                  </TableCell>
-                  <TableCell
-                    title={describeEffectiveModel(binding)}
-                    className={cn(
-                      'max-w-[9rem] text-xs sm:max-w-[12rem]',
-                      !binding.opencodeModel && 'text-muted-foreground',
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      {modelUnavailable ? (
-                        <WarningCircleIcon
-                          weight="fill"
-                          className="text-kortix-orange size-3.5 shrink-0"
-                        />
-                      ) : null}
-                      {/* The pin's name, not the long "(unavailable — using
-                          default)" form: truncation cut the word that mattered.
-                          The glyph says it; the title and the dialog spell it out. */}
-                      <span className="truncate">
-                        {modelUnavailable && binding.opencodeModel
-                          ? stripGatewayNamespace(binding.opencodeModel)
-                          : describeEffectiveModel(binding)}
-                      </span>
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
-                    {conversationPolicies.find((p) => p.value === binding.conversationPolicy)
-                      ?.label ?? binding.conversationPolicy}
-                  </TableCell>
-                  <TableCell className="hidden w-0 pl-0 sm:table-cell">
-                    <CaretRightIcon className="text-muted-foreground size-3.5 shrink-0" />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <ModalContent className="lg:max-w-lg">
+          <ModalHeader>
+            <ModalTitle>{tI18nComplete.raw('text5f61b63c2c4a')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text1f2550ed44dc')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody className="space-y-3 pt-4">
+            {tabs.length > 1 ? (
+              <Tabs
+                value={active}
+                onValueChange={(value) => {
+                  setTab(value);
+                  setQuery('');
+                }}
+              >
+                <TabsListCompact>
+                  {tabs.map((t) => (
+                    <TabsTriggerCompact key={t.platform} value={t.platform} className="gap-1.5">
+                      {PLATFORM_NAMES[t.platform] ?? t.platform}
+                      <span className="text-muted-foreground tabular-nums">{t.count}</span>
+                    </TabsTriggerCompact>
+                  ))}
+                </TabsListCompact>
+              </Tabs>
+            ) : null}
+            {inTab.length >= BINDING_SEARCH_MIN ? (
+              <InputGroupSearch>
+                <InputGroupSearchIcon>
+                  <MagnifyingGlassIcon />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  placeholder={tI18nComplete.raw('text49c266baaaa7')}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  size="sm"
+                />
+                <InputGroupSearchClear onClick={() => setQuery('')} />
+              </InputGroupSearch>
+            ) : null}
+            {bindingsQuery.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-12 rounded-md" />
+                <Skeleton className="h-12 rounded-md" />
+              </div>
+            ) : visible.length === 0 ? (
+              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                {tI18nComplete.raw('texte8dd87902b91')}
+              </p>
+            ) : (
+              // The list scrolls; the tabs and search above it stay put. Capped at
+              // the viewport less ~21rem of header, tabs, search and footer, so
+              // the footer stays on screen at the 720 × 480 desktop minimum,
+              // where this modal is a bottom sheet.
+              <ul className="max-h-[min(45vh,calc(100dvh-21rem))] space-y-2 overflow-y-auto">
+                {visible.map(({ binding, name, scope }) => (
+                  // The overrides ride the meta line: AccessRow's trailing slot
+                  // stops clicks for its kebab, which would leave a dead zone.
+                  <AccessRow
+                    key={binding.bindingId}
+                    title={<span title={binding.channelId}>{name}</span>}
+                    metaParts={[
+                      scope,
+                      <BindingOverrides key="overrides" binding={binding} policies={conversationPolicies} />,
+                    ]}
+                    onClick={() => setSelectedId(binding.bindingId)}
+                  />
+                ))}
+              </ul>
+            )}
+          </ModalBody>
+          <ModalFooter className="pt-2 pb-5">
+            <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
+              {tI18nComplete.raw('text11a6767d5674')}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
       )}
-      {/* `selected` goes null when the conversation was removed while open. */}
-      <Modal open={modalOpen && selected !== null} onOpenChange={setModalOpen}>
-        {selected ? (
-          <ChannelSettingsModalContent
-            projectId={projectId}
-            binding={selected.binding}
-            name={selected.name}
-            scope={selected.scope}
-            projectDefaultAgent={projectDefaultAgent}
-            canWrite={canWrite}
-            onDone={() => setModalOpen(false)}
-          />
-        ) : null}
-      </Modal>
-    </div>
+    </Modal>
+  );
+}
+
+/** Brand names, as the platform rows spell them. */
+const PLATFORM_NAMES: Record<string, string> = { slack: 'Slack', teams: 'Microsoft Teams' };
+
+/** A row's settings at a glance: only what overrides the project, else "Project default". */
+function BindingOverrides({
+  binding,
+  policies,
+}: {
+  binding: ChannelBinding;
+  policies: Array<{ value: ChannelBinding['conversationPolicy']; label: string }>;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const modelUnavailable = binding.opencodeModel !== null && binding.effectiveModel.source !== 'explicit';
+  const overrides = [
+    binding.agentName,
+    binding.opencodeModel ? stripGatewayNamespace(binding.opencodeModel) : null,
+    binding.conversationPolicy === 'project_open'
+      ? null
+      : (policies.find((p) => p.value === binding.conversationPolicy)?.label ?? binding.conversationPolicy),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <span
+      title={describeEffectiveModel(binding)}
+      className={cn('inline-flex items-center gap-1', overrides && 'text-foreground')}
+    >
+      {modelUnavailable ? (
+        <WarningCircleIcon weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
+      ) : null}
+      {overrides || tI18nComplete.raw('texte8cb80e5c5cb')}
+    </span>
   );
 }
 
@@ -631,7 +654,7 @@ function ChannelSettingsModalContent({
   scope,
   projectDefaultAgent,
   canWrite,
-  onDone,
+  onBack,
 }: {
   projectId: string;
   binding: ChannelBinding;
@@ -639,7 +662,8 @@ function ChannelSettingsModalContent({
   scope: string;
   projectDefaultAgent: string | null;
   canWrite: boolean;
-  onDone: () => void;
+  /** Back to the channel list: the Back button, and after a save. */
+  onBack: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const conversationPolicies = useLocalizedUiCatalog(CONVERSATION_POLICIES);
@@ -713,7 +737,7 @@ function ChannelSettingsModalContent({
       {
         onSuccess: () => {
           successToast(tI18nComplete.raw('text255e5c59ef00'));
-          onDone();
+          onBack();
         },
         onError: (error) => errorToastFallback(error, tI18nComplete),
       },
@@ -727,8 +751,9 @@ function ChannelSettingsModalContent({
         <ModalDescription>{tI18nComplete.raw('text95112f275fba')}</ModalDescription>
       </ModalHeader>
       <form onSubmit={save}>
-        {/* Capped so the footer stays on screen at the 720 × 480 desktop minimum. */}
-        <ModalBody className="max-h-[50vh] space-y-5 overflow-y-auto pt-4">
+        {/* The header and footer take 153px: the whole form fits from 720px tall,
+            and the footer stays on screen at the 720 × 480 desktop minimum. */}
+        <ModalBody className="max-h-[calc(100dvh-15rem)] space-y-5 overflow-y-auto pt-4">
           <div className="bg-popover flex min-w-0 items-center gap-3 rounded-md border px-3 py-2.5">
             <BindingBrandMark platform={binding.platform} />
             <div className="min-w-0">
@@ -807,8 +832,11 @@ function ChannelSettingsModalContent({
           </FieldGroup>
         </ModalBody>
         <ModalFooter className="pt-2 pb-5 sm:justify-between">
-          <Button type="button" variant="outline-ghost" onClick={onDone}>
-            {canWrite ? tI18nComplete.raw('text19766ed6ccb2') : tI18nComplete.raw('text7d9eb7acb13e')}
+          {/* The way out is back to the list, for every member; unsaved
+              picks are dropped. */}
+          <Button type="button" variant="outline-ghost" className="gap-1" onClick={onBack}>
+            <CaretLeftIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('text76900f1bfd16')}
           </Button>
           {canWrite ? (
             <Button type="submit" disabled={!dirty || update.isPending}>
@@ -828,9 +856,14 @@ function bindingName(binding: ChannelBinding, tI18nComplete: UiTranslator): stri
   return binding.channelName ?? bindingFallbackName(binding, tI18nComplete);
 }
 
-/** The line under the name: the conversation's kind. */
+/** The line under the name: the conversation's kind, or a Teams channel thread's title. */
 function bindingScope(binding: ChannelBinding, tI18nComplete: UiTranslator): string {
-  if (binding.platform === 'teams') return bindingScopeLabel(binding.channelType, tI18nComplete);
+  if (binding.platform === 'teams') {
+    // Every thread of a channel is its own binding named `Team › Channel`;
+    // its session title tells them apart.
+    if (binding.threadTitle) return tI18nComplete('text5097881a690f', { title: binding.threadTitle });
+    return bindingScopeLabel(binding.channelType, tI18nComplete);
+  }
   if (binding.platform === 'slack') return slackScopeLabel(binding, tI18nComplete);
   return binding.workspaceId;
 }
@@ -850,7 +883,8 @@ function bindingFallbackName(
   tI18nComplete: UiTranslator,
 ): string {
   if (binding.platform !== 'teams') return binding.channelId;
-  if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
+  // A thread bound before its kind was read has none stored; its id says it.
+  if (binding.channelType === 'channel' || binding.channelId.includes(';messageid=')) return tI18nComplete.raw('text5cb103d6008c');
   return tI18nComplete.raw('text31d248c44579');
 }
 
@@ -1004,7 +1038,17 @@ function TeamsAppUpdateNotice({
   );
 }
 
-function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+function TeamsChannelRow({
+  projectId,
+  canWrite,
+  channelCount,
+  onOpenChannels,
+}: {
+  projectId: string;
+  canWrite: boolean;
+  channelCount: number;
+  onOpenChannels: () => void;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: install } = useTeamsInstall(projectId);
   const { data: mode } = useTeamsMode(projectId);
@@ -1043,7 +1087,11 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
       pitch={tI18nComplete.raw('text9225e456b795')}
       badge={install ? <TeamsPublishBadge install={install} tI18nComplete={tI18nComplete} /> : null}
       actions={
-        !canWrite ? null : connected ? (
+        <>
+          {connected && channelCount > 0 ? (
+            <ChannelsButton count={channelCount} onOpen={onOpenChannels} />
+          ) : null}
+          {!canWrite ? null : connected ? (
           <>
             {deepLinkUrl ? (
               <Button size="sm" variant="secondary" asChild>
@@ -1077,7 +1125,8 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
               {tI18nComplete.raw('text1a2303ede074')}
             </Link>
           </Button>
-        ) : null
+        ) : null}
+        </>
       }
     />
   );

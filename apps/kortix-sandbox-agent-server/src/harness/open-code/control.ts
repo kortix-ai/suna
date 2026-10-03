@@ -597,13 +597,8 @@ export function createOpenCodeControlService(
             // supplies the same probe for the boot-scheduled convergence.
             turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
           }),
-        // EAGER managed-catalog repair — `POST /kortix/catalog/converge`. The
-        // API's turn-start gate calls this AWAITED, and only when the model
-        // THIS turn asked for is missing from the box's last-reported map
-        // (`missing_managed_model_id` on the request has no bearing on the
-        // daemon's own fetch-and-diff; the API decides WHETHER to call this at
-        // all, this call decides HOW to repair). One attempt, idle-gated,
-        // never ends a running turn — see `convergeManagedModelCatalog`.
+        // `POST /kortix/catalog/converge`: the API's turn-start gate awaits this
+        // for the model a turn names. See `convergeManagedModelCatalog`.
         async convergeCatalog(options) {
           const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true, model: options?.model })
           return {

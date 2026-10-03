@@ -130,7 +130,9 @@ async function runTurn(sessionId: string, spec: { label: string; text: string },
   const t0 = performance.now();
   const r = await api(`/projects/${PROJECT}/sessions/${sessionId}/prompts`, {
     method: 'POST',
-    body: JSON.stringify({ client_message_id: crypto.randomUUID(), message_id: messageId, parts: [{ type: 'text', text: spec.text }], overrides: model }),
+    // `client_sent_at_ms` as the web composer sends it: the prompt route reads it to
+    // tell a lone send from a possible burst.
+    body: JSON.stringify({ client_message_id: crypto.randomUUID(), message_id: messageId, parts: [{ type: 'text', text: spec.text }], overrides: model, client_sent_at_ms: Date.now() }),
   });
   const turn: Turn = {
     label: spec.label, status: r.status, postMs: r.ms, timing: r.timing, promptId: r.body?.prompt_id ?? null,
@@ -198,7 +200,7 @@ async function runSession(round: number): Promise<Session> {
       const h = await api(`${daemon}/kortix/health`).catch(() => null);
       if (h?.body?.runtimeReady === true) {
         s.readyMs = Math.round(performance.now() - t0);
-        s.harness = h.body.harness ?? 'opencode';
+        s.harness = h.body.harness?.id ?? h.body.harness ?? 'opencode';
       } else await sleep(250);
     }
     events = openEvents(s.sessionId, frames);
@@ -317,8 +319,18 @@ async function main(): Promise<void> {
     return;
   }
   if (!API || !TOKEN || !PROJECT) throw new Error('BENCH_API, BENCH_TOKEN and BENCH_PROJECT are required');
+  // `bun --hot` re-evaluates the API on a source change and keeps the previous
+  // instance's pool, LISTEN connection and worker loops: statements slow down
+  // 3x within an hour of edits. A run across a reload is not a measurement.
+  // Local only (BENCH_API_LOG): a deployed API has several replicas, and each
+  // answers /health with its own start time.
+  const startedAt = async () => (env.BENCH_API_LOG ? (await api('/health')).body?.started_at ?? null : null);
+  const apiStartedAt = await startedAt();
   const sessions: Session[] = [];
   for (let round = 1; round <= SESSIONS; round++) sessions.push(await runSession(round));
+  if ((await startedAt()) !== apiStartedAt) {
+    throw new Error('the API restarted or hot-reloaded during the run: restart the stack and run again');
+  }
   if (env.BENCH_API_LOG) {
     await sleep(2000); // the last delivery line flushes after its turn ends
     attachLogTimelines(sessions, env.BENCH_API_LOG);

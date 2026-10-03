@@ -1,8 +1,8 @@
 import type { QueuedDraft } from '@/stores/queued-draft-store';
-import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import type { AttachedFile } from './composer/types';
-import { cleanPromptText, composeTakeBack, projectQueueRows } from './queue-projection';
+import { cleanPromptText, projectQueueRows } from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
   return {
@@ -182,20 +182,29 @@ describe('projectQueueRows', () => {
     expect(rows[0]).toMatchObject({ text: 'as typed', attachmentCount: 2, takeBackEligible: true });
   });
 
-  test('a row with files and no draft cannot be taken back — its files would be lost', () => {
+  test('a row with files is still editable: an edit changes its text, the files stay on the row', () => {
     const { rows } = projectQueueRows({
       prompts: [
         prompt({
           prompt_id: 'files',
           attachments: [{ filename: 'a.pdf', mime: 'application/pdf' }],
         }),
-        prompt({ prompt_id: 'text' }),
       ],
     });
-    expect(rows.map((r) => [r.id, r.takeBackEligible])).toEqual([
-      ['files', false],
-      ['text', true],
-    ]);
+    expect(rows[0]).toMatchObject({ takeBackEligible: true, editText: 'say hi' });
+  });
+
+  test('an edit swaps only the words the user sees: a quote around them survives', () => {
+    const raw = '<reply_context>quoted</reply_context>\nmy reply';
+    const { rows } = projectQueueRows({ prompts: [prompt({ full_text: raw, text: raw })] });
+    expect(rows[0]).toMatchObject({ text: 'my reply', editText: 'my reply', rawText: raw });
+  });
+
+  test('words that are not one run of the raw text cannot be edited in place', () => {
+    const raw =
+      '<reply_context>a</reply_context>\nreply to a\n<reply_context>b</reply_context>\nreply to b';
+    const { rows } = projectQueueRows({ prompts: [prompt({ full_text: raw, text: raw })] });
+    expect(rows[0]).toMatchObject({ editText: null, takeBackEligible: false });
   });
 
   test('a draft still uploading has a row before the inbox does, after the server rows', () => {
@@ -231,46 +240,3 @@ describe('cleanPromptText', () => {
   });
 });
 
-describe('composeTakeBack', () => {
-  const removed = (
-    clientMessageId: string,
-    parts: RemovedSessionPrompt['parts'],
-  ): RemovedSessionPrompt => ({
-    prompt_id: `p-${clientMessageId}`,
-    client_message_id: clientMessageId,
-    message_id: `msg-${clientMessageId}`,
-    parts,
-    overrides: null,
-  });
-
-  test('one entry per line, in queue order, drafts exactly as typed with their files', () => {
-    const result = composeTakeBack({
-      removed: [
-        removed('q_1', [{ type: 'text', text: 'server copy of one' }]),
-        removed('q_2', [{ type: 'text', text: 'two, from another tab' }]),
-      ],
-      drafts: [draft('q_1', { text: 'one, as typed', files: [remoteFile] })],
-    });
-    expect(result).toEqual({
-      text: 'one, as typed\ntwo, from another tab',
-      files: [remoteFile],
-      requeue: [],
-    });
-  });
-
-  test('a prompt with no draft that carries files goes back to the queue, never into the composer half-empty', () => {
-    const withUpload = removed('q_3', [
-      {
-        type: 'text',
-        text: 'see file\n\n<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png"></file>',
-      },
-    ]);
-    const withFilePart = removed('q_4', [
-      { type: 'text', text: 'see url' },
-      { type: 'file', mime: 'image/png', url: 'https://files.test/b.png' },
-    ]);
-    const result = composeTakeBack({ removed: [withUpload, withFilePart], drafts: [] });
-    expect(result.text).toBe('');
-    expect(result.requeue).toEqual([withUpload, withFilePart]);
-  });
-});

@@ -19,6 +19,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import type { DeadlineTarget } from './sandbox-deadline';
 import { contractIdleDeadline } from './sandbox-deadline';
 import {
@@ -30,7 +31,6 @@ import {
 } from './sandbox-deadline-policy';
 import { confirmInboxPromptConsumed } from './session-lifecycle/consumption';
 import {
-  activeTurnEntries,
   ABORT_END_ERROR_NAMES,
   type ActiveTurnRenewal,
   type RuntimeTurnAdoption,
@@ -44,6 +44,7 @@ import {
   type SandboxTurnStartObservation,
   type SessionTurnEndErrorRecord,
   type SessionTurnEndReason,
+  activeTurnEntries,
   endErrorRecord,
   endedLedgerTurns,
   endedTurnLedger,
@@ -52,7 +53,6 @@ import {
   ledgerIdentity,
   ledgerText,
   normalizeRows,
-  openableTurnOwner,
   recordTurnLedger,
   refineEndedTurnError,
   removeAndReturnTurns,
@@ -158,7 +158,7 @@ export async function beginSandboxTurn(
     observedAtMs === undefined
       ? sql`now()`
       : sql`${new Date(observedAtMs).toISOString()}::timestamptz`;
-  const result = await execute(sql`
+  const grant = sql`
       UPDATE kortix.session_sandboxes s
          SET metadata = jsonb_set(
                ${metadata} - 'lifecycleStopClaim',
@@ -184,32 +184,66 @@ export async function beginSandboxTurn(
           OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from ${observedAt}) * 1000) - ${sandboxStopClaimLeaseMs()})
-      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted`);
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted`;
+  // ONE statement: the ledger row is written from the rows the grant itself
+  // returned, so a stop cannot commit between the two (it waits on the sandbox
+  // row lock and then settles this row, or lands first and the grant matches
+  // nothing). It ran as a second round trip before the prompt's upstream call.
+  const { withDbTransaction } = await import('../shared/db');
+  const result = await withDbTransaction(async () => {
+    await execute(sql`SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE ${targetPredicate(target)})
+      FOR UPDATE OF session`);
+    const result = await withLedger(
+      grant,
+      sql`WITH granted AS (${grant}), ledger AS (
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT ${turn.token}, granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                   ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
+                   ${observedAt}, now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted`,
+      `insert delivering ${turn.token}`,
+    );
+    const granted = normalizeRows(result);
+    if (granted?.[0]?.session_id) {
+      const { transitionSession } = await import('./session-lifecycle/status-transitions');
+      await transitionSession('wake', String(granted[0].session_id), { error: null });
+    }
+    return result;
+  });
   const rows = normalizeRows(result);
   if (rows === null) {
     throw new Error('sandbox turn lifecycle write returned an unsupported database result');
   }
-  if (rows.length === 0) return 'no_box';
+  return rows.length === 0 ? 'no_box' : 'granted';
+}
 
-  const owner = ledgerIdentity(rows[0]);
-  if (owner) {
-    // Identity comes from the guard row, not from the authority write's
-    // RETURNING: this INSERT must read the sandbox anyway to prove the token's
-    // authority still exists, and one read cannot disagree with itself.
-    await recordTurnLedger(
-      sql`INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT ${turn.token}, owner.session_id, owner.sandbox_id,
-                 owner.project_id, owner.account_id,
-                 ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
-                 ${observedAt}, now(), now()
-            FROM (${openableTurnOwner(owner.sandboxId, turn.token)}) owner
-          ON CONFLICT (turn_token) DO NOTHING`,
-      `insert delivering ${turn.token}`,
+/**
+ * Run an authority write together with its ledger row. The ledger is
+ * observation: when the combined statement fails, the authority write runs
+ * alone, so a ledger fault never fails a prompt or a turn acceptance.
+ */
+async function withLedger(authority: SQL, combined: SQL, context: string) {
+  try {
+    // Nested contextual transaction is a savepoint: a ledger statement error
+    // must not poison admission's outer authority + wake transaction.
+    const { withDbTransaction } = await import('../shared/db');
+    return await withDbTransaction(() => execute(combined));
+  } catch (error) {
+    logger.warn(
+      `[turn-ledger] ${context} failed with its authority write; retrying the authority write alone:`,
+      error instanceof Error ? error.message : error,
     );
+    return execute(authority);
   }
-  return 'granted';
 }
 
 /**
@@ -265,7 +299,7 @@ export async function acceptSandboxTurn(
   identity?: Partial<SandboxTurnIdentity> | null,
   grantMs = turnGrantMs(),
 ): Promise<boolean> {
-  const result = await execute(sql`
+  const promote = sql`
     UPDATE kortix.session_sandboxes s
        SET metadata = jsonb_set(
              s.metadata,
@@ -285,36 +319,41 @@ export async function acceptSandboxTurn(
        AND s.metadata->'activeTurns'->${token}->>'token' = ${token}
        AND s.metadata->'activeTurns'->${token}->>'state' IN ('delivering', 'active')
     RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
-              s.metadata->'activeTurns'->${token}->>'messageId' AS turn_message_id`);
-  const rows = normalizeRows(result);
-  const accepted = (rows?.length ?? 0) > 0;
-  if (!accepted) return false;
-
-  const owner = ledgerIdentity(rows?.[0]);
-  if (owner) {
-    // UPSERT, not UPDATE: a boot prompt is written straight into
-    // `activeTurns` by initialSandboxTurnMetadata and never passes through
-    // beginSandboxTurn, so acceptance is that turn's first ledger write — and
-    // therefore carries the same guard as beginSandboxTurn's, for the same
-    // reason: an INSERT that lands after a stop opens a row nothing can close.
-    await recordTurnLedger(
-      sql`INSERT INTO kortix.session_turns
+              s.metadata->'activeTurns'->${token}->>'messageId' AS turn_message_id`;
+  // UPSERT, not UPDATE: a boot prompt is written straight into `activeTurns`
+  // by initialSandboxTurnMetadata and never passes through beginSandboxTurn,
+  // so acceptance is that turn's first ledger write. One statement with the
+  // promotion, for the same reason as beginSandboxTurn's.
+  const result = await withLedger(
+    promote,
+    sql`WITH accepted AS (${promote}), ledger AS (
+          INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
              opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
-          SELECT ${token}, owner.session_id, owner.sandbox_id,
-                 owner.project_id, owner.account_id,
+          SELECT ${token}, accepted.session_id, accepted.sandbox_id,
+                 accepted.project_id, accepted.account_id,
                  ${identity?.runtimeSessionId ?? null}, ${identity?.messageId ?? null},
                  'active', now(), now(), now(), now()
-            FROM (${openableTurnOwner(owner.sandboxId, token)}) owner
+            FROM accepted
+           WHERE accepted.session_id IS NOT NULL
+             AND accepted.project_id IS NOT NULL
+             AND accepted.account_id IS NOT NULL
           ON CONFLICT (turn_token) DO UPDATE SET
                 state = 'active',
                 accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
                 opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
                 message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
                 updated_at = now()
-          WHERE kortix.session_turns.state <> 'ended'`,
-      `accept ${token}`,
-    );
+          WHERE kortix.session_turns.state <> 'ended')
+        SELECT * FROM accepted`,
+    `accept ${token}`,
+  );
+  const rows = normalizeRows(result);
+  const accepted = (rows?.length ?? 0) > 0;
+  if (!accepted) return false;
+
+  const owner = ledgerIdentity(rows?.[0]);
+  if (owner) {
     // ACCEPTANCE IS THE INBOX'S ANSWER. The upstream took the prompt and the
     // ledger now holds an `active` turn keyed to this exact wire id, so the
     // message belongs to the transcript rather than to the queue — whether or
@@ -534,7 +573,12 @@ export async function completeSandboxTurn(
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
   }
-  const result = await execute(sql`
+  const { withDbTransaction } = await import('../shared/db');
+  const result = await withDbTransaction(async () => {
+    // Match lifecycle writers' session -> sandbox lock order.
+    await execute(sql`SELECT session_id FROM kortix.project_sessions
+      WHERE session_id = ${sessionId} FOR UPDATE`);
+    const result = await execute(sql`
     WITH target AS (${sandboxTurnTargetCte(sessionId)})${turnSelectionCtes(identity)}
     , next_state AS (${removeAndReturnTurns()})
     UPDATE kortix.session_sandboxes s
@@ -544,11 +588,31 @@ export async function completeSandboxTurn(
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM ${activeTurnEntries(sql`next_state.metadata`)}
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
               s.session_id, s.sandbox_id, s.project_id, s.account_id,
               true AS completed`);
+    const completed = normalizeRows(result)?.[0];
+    const closed = endedLedgerTurns(completed?.ended_turns);
+    // active_turn_count is the historical pre-removal public result. Parking
+    // depends on the authority left AFTER this exact completion instead.
+    if (
+      status === 'error' &&
+      closed.length > 0 &&
+      Number(completed?.remaining_turn_count ?? 0) === 0 &&
+      !ABORT_END_ERROR_NAMES.includes(error?.name ?? '')
+    ) {
+      const cause = [error?.name, error?.message].filter(Boolean).join(': ');
+      const { transitionSession } = await import('./session-lifecycle/status-transitions');
+      await transitionSession('parkTurnError', sessionId, {
+        error: (cause ? `agent turn failed: ${cause}` : 'agent turn failed').slice(0, 1000),
+      });
+    }
+    return result;
+  });
   const rows = normalizeRows(result);
   if (!rows || rows.length === 0) {
     return { outcome: 'no_active_turn', activeTurnCount: 0, closedTurnCount: 0 };

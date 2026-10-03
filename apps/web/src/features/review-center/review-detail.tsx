@@ -9,11 +9,6 @@ import { useTranslations } from '@/i18n/use-translations';
  * Actions mutate parent state optimistically via the passed handlers.
  */
 
-import {
-  type ApprovalDecisionValue,
-  ApprovalRequest,
-  approvalReviewable,
-} from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
@@ -36,7 +31,7 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 import { ChangeFiles } from './change-files';
-import { connectorCallId, formatItemAgeLong } from './review-actions';
+import { formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -52,8 +47,7 @@ export interface ReviewActions {
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
-  /** Live-data mode. The shared Connector parameter review submits its exact
-   *  decision through `resolve()`. */
+  /** Live-data mode: verdicts go to the server through `resolve()`. */
   connected?: boolean;
   /** The review item id currently mid-mutation, if any — drives the
    *  per-item `Loading` state on Approve/Deny while connected. */
@@ -201,17 +195,8 @@ function ChangeBody({
 }
 
 // ── approval ──────────────────────────────────────────────────────────────
-/** The Connector call behind a connected approval. It is decided as one call,
- *  from the page header, like a change request. */
-function connectorApprovalAction(item: ReviewItem, actions: ReviewActions) {
-  if (item.kind !== 'approval' || !actions.connected || !connectorCallId(item.id)) return null;
-  return item.detail.actions?.[0] ?? null;
-}
-
-function pendingDecisionFor(item: ReviewItem, actions: ReviewActions) {
-  return actions.pendingId === item.id ? (actions.pendingDecision ?? null) : null;
-}
-
+// Connector calls never reach this page: the inbox opens them in
+// `ApprovalDecisionModal`. What is left here is the native multi-action approval.
 function ApprovalActionRow({
   action,
   connected,
@@ -327,53 +312,13 @@ function ApprovalBody({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const list = item.detail.actions ?? [];
-  const adaptedAction = connectorApprovalAction(item, actions);
-  if (adaptedAction) {
-    const busyDecision: ApprovalDecisionValue | null = pendingDecisionFor(item, actions);
-    return (
-      <ApprovalRequest
-        hideDecision
-        request={{
-          action: adaptedAction.actionPath ?? adaptedAction.title,
-          risk: adaptedAction.connectorRisk ?? adaptedAction.risk,
-          projectName: item.project,
-          requestedAt: item.createdAt,
-          argsPreview: adaptedAction.rawArgsPreview ?? null,
-          reviewComplete: adaptedAction.reviewComplete === true,
-          previewAuthorized: adaptedAction.previewAuthorized !== false,
-          approvalContext: adaptedAction.approvalContext ?? null,
-          pending: item.status === 'needs_you',
-          resolution:
-            item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,
-          status:
-            item.status === 'approved'
-              ? 'ok'
-              : item.status === 'rejected'
-                ? 'denied'
-                : 'pending_approval',
-        }}
-        onDecision={(decision, note) =>
-          actions.resolve(
-            item.id,
-            decision === 'approve' ? 'approved' : 'rejected',
-            decision === 'approve' ? tI18nComplete.raw('text24234d557d8d') : 'Denied',
-            note,
-          )
-        }
-        busyDecision={busyDecision}
-      />
-    );
-  }
   const openSession =
     actions.openSession && item.sessionId
       ? () => actions.openSession?.(item.sessionId as string)
       : undefined;
-  // Adapted Connector approvals return through ApprovalRequest above. This
-  // native/prototype branch keeps its existing whole-item decision behavior.
   return (
     <>
-      {/* Native multi-action approvals resolve as one item. Adapted Connector
-          approvals cannot reach this branch. */}
+      {/* Native multi-action approvals resolve as one item. */}
       {(() => {
         const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;
         const busy = actions.connected && actions.pendingId === item.id;
@@ -596,13 +541,9 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
 // ── actions ─────────────────────────────────────────────────────────────────
 /** Optional free-text feedback returned to the agent when asking for changes. */
 function FeedbackComposer({
-  placeholder,
-  sendLabel,
   onCancel,
   onSend,
 }: {
-  placeholder?: string;
-  sendLabel?: string;
   onCancel: () => void;
   onSend: (text: string) => void;
 }) {
@@ -625,8 +566,8 @@ function FeedbackComposer({
           }
         }}
         rows={3}
-        aria-label={placeholder ?? tI18nComplete.raw('text2534e74d5120')}
-        placeholder={placeholder ?? tI18nComplete.raw('text2534e74d5120')}
+        aria-label={tI18nComplete.raw('text2534e74d5120')}
+        placeholder={tI18nComplete.raw('text2534e74d5120')}
         className="placeholder:text-muted-foreground w-full resize-none bg-transparent text-sm outline-none"
       />
       <div className="flex items-center justify-end gap-2">
@@ -638,7 +579,7 @@ function FeedbackComposer({
           {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
         <Button size="sm" onClick={() => onSend(text.trim())}>
-          {sendLabel ?? tI18nComplete.raw('text77a860cbc585')}
+          {tI18nComplete.raw('text77a860cbc585')}
         </Button>
       </div>
     </div>
@@ -669,40 +610,6 @@ function ActionBar({
       <span className="text-muted-foreground text-xs">
         {reviewStatusLabel(item.status, tI18nComplete)} · {formatItemAgeLong(item.createdAt)}
       </span>
-    );
-  }
-  // A Connector call: Deny opens the note composer, as Request changes does.
-  const call = connectorApprovalAction(item, actions);
-  if (call) {
-    const busy = pendingDecisionFor(item, actions);
-    const approvable = approvalReviewable(call.rawArgsPreview ?? null, call.reviewComplete === true);
-    return (
-      <div className="flex items-center gap-2">
-        {!composing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy !== null}
-            onClick={() => setComposing(true)}
-          >
-            {busy === 'deny' ? <Loading className="size-3.5 shrink-0" /> : null}
-            {tI18nComplete.raw('text05a2d7332eb9')}
-          </Button>
-        )}
-        {approvable && (
-          <Button
-            size="sm"
-            variant={item.risk === 'high' ? 'danger' : 'success'}
-            disabled={busy !== null}
-            onClick={() =>
-              actions.resolve(item.id, 'approved', tI18nComplete.raw('text24234d557d8d'))
-            }
-          >
-            {busy === 'approve' ? <Loading className="size-3.5 shrink-0" /> : null}
-            {tI18nComplete.raw('texta1982c442ca3')}
-          </Button>
-        )}
-      </div>
     );
   }
   // Decisions and native approvals decide inside their body.
@@ -890,17 +797,6 @@ export function ReviewDetail({
       </header>
 
       <div className="mt-8 space-y-8">
-        {composing && connectorApprovalAction(item, actions) && (
-          <FeedbackComposer
-            placeholder={tI18nComplete.raw('text2edf70730233')}
-            sendLabel={tI18nComplete.raw('text05a2d7332eb9')}
-            onCancel={() => setComposing(false)}
-            onSend={(text) => {
-              setComposing(false);
-              actions.resolve(item.id, 'rejected', 'Denied', text || undefined);
-            }}
-          />
-        )}
         {composing && secondaryLabel && item.kind !== 'approval' && (
           <FeedbackComposer
             onCancel={() => setComposing(false)}

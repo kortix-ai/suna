@@ -584,6 +584,11 @@ handle.close();
 `message.part.updated`, `session.status`, `permission.*`, `question.*`, …),
 the same from OpenCode and pi. Use `useSession()` in React.
 
+Events arrive in batches, 16 ms apart. Consecutive `message.part.delta` events
+for one part field in a batch arrive as one event: `properties.delta` is their
+text joined in order, `id` is the last event's id, and `coalesced` lists the
+events it replaced.
+
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
 

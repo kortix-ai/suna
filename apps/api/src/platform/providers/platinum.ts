@@ -120,8 +120,9 @@ interface PlatinumSandbox {
   autoResume?: boolean;
   /** Public region the box was placed in (e.g. 'eu-west', 'us-east'). */
   region?: string | null;
-  /** The control plane that owns this box. `PLATINUM_API_URL` routes to it
-   *  for every call by id; kept so a later change can call it directly. */
+  /** The control plane that owns this box. shared/platinum.ts learns it from
+   *  this field (and from `x-pt-served-by`) and sends every later call by id
+   *  straight there instead of through `PLATINUM_API_URL`'s forwarding hop. */
   api_url?: string;
   /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
    *  response to an already-committed sandbox rather than a fresh create. */
@@ -473,8 +474,11 @@ export class PlatinumProvider implements SandboxProvider {
       auto_resume: workloadType === 'app',
       // The project's `us_region` flag (platform/services/sandbox-region.ts).
       // Absent ⇒ Platinum places the box in its home region, exactly as
-      // before. The one PLATINUM_API_URL forwards a regional create to that
-      // region's control plane and routes every later call by id there.
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.

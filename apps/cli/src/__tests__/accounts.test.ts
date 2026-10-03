@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { runAccounts } from '../commands/accounts.ts';
 import { runProjects } from '../commands/projects.ts';
-import { activeAccount, defaultProject } from '../api/config.ts';
+import { activeAccount, defaultProject, loadConfig } from '../api/config.ts';
 import { stripAnsi } from '../style.ts';
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -163,6 +163,26 @@ describe('kortix accounts', () => {
     expect(code).toBe(0);
     expect(stripAnsi(stdout)).toContain('Kortix');
   });
+
+  test('current --json prints the account object and exits 0', async () => {
+    mockApi();
+    await runAccounts(['use', 'kortix']);
+    stdout = '';
+    const code = await runAccounts(['current', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ account_id: 'account_2', slug: 'kortix', name: 'Kortix' });
+  });
+
+  test('current --json exits nonzero when no account is active', async () => {
+    mockApi();
+    // A `kortix login --no-project` on an account-less login leaves account_id empty.
+    writeConfig('');
+    const code = await runAccounts(['current', '--json']);
+    expect(code).toBe(1);
+    // stdout stays a valid JSON document; the failure is the exit code.
+    expect(JSON.parse(stdout)).toBeNull();
+    expect(stripAnsi(stderr)).toContain('No active account');
+  });
 });
 
 describe('kortix projects use', () => {
@@ -199,6 +219,152 @@ describe('kortix projects use', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('Default project: Beta');
     expect(out).toContain('now active');
+  });
+});
+
+describe('kortix projects use --host', () => {
+  const OTHER_PROJECT = {
+    project_id: 'proj_other',
+    account_id: 'account_9',
+    name: 'Other',
+    repo_url: 'https://github.com/x/other.git',
+    default_branch: 'main',
+    manifest_path: 'kortix.yaml',
+    status: 'active',
+    last_opened_at: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  /** Two logged-in hosts: `test` (active) and `other`, each with its own API
+   *  base, token and account — the cross-host setup the journey reports. */
+  function writeTwoHostConfig(): void {
+    const file = join(tmp, 'config.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: 'https://api.test',
+            token: 'tok_test',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'account_1',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+          other: {
+            url: 'https://api.other',
+            token: 'tok_other',
+            user_id: 'user_9',
+            user_email: 'user9@example.test',
+            account_id: 'account_9',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
+      'utf8',
+    );
+    process.env.KORTIX_CONFIG_FILE = file;
+  }
+
+  /** Serve GET /projects/proj_other on host `other`; anything else 500s, so
+   *  a call that rides the active host fails the test. */
+  function mockOtherProject(): void {
+    mockApi((url) => {
+      if (url === 'https://api.other/v1/projects/proj_other') {
+        return new Response(JSON.stringify(OTHER_PROJECT), { status: 200, headers: JSON_HEADERS });
+      }
+      return undefined;
+    });
+  }
+
+  test('routes the request and the default binding to the named host', async () => {
+    writeTwoHostConfig();
+    mockOtherProject();
+
+    const code = await runProjects(['use', 'proj_other', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+    // The default project binds to the NAMED host entry, not the active one.
+    const cfg = loadConfig();
+    expect(cfg.hosts.other?.default_project).toEqual({
+      project_id: 'proj_other',
+      account_id: 'account_9',
+      name: 'Other',
+    });
+    expect(cfg.hosts.test?.default_project).toBeUndefined();
+    expect(defaultProject()).toBeNull(); // the active host gained nothing
+  });
+
+  test('ignores the ambient sandbox env token when --host names a logged-in host', async () => {
+    writeTwoHostConfig();
+    // The platform-injected session credential: activeHost() prefers it, so
+    // before the fix the request rode the ambient session token and 403'd.
+    process.env.KORTIX_TOKEN = 'tok_sandbox';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+    mockOtherProject();
+
+    const code = await runProjects(['use', 'proj_other', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+  });
+
+  test('switches the named host active account, not the ambient one', async () => {
+    writeTwoHostConfig();
+    mockApi((url) => {
+      if (url === 'https://api.other/v1/projects/proj_other') {
+        return new Response(
+          JSON.stringify({ ...OTHER_PROJECT, account_id: 'account_10' }),
+          { status: 200, headers: JSON_HEADERS },
+        );
+      }
+      if (url === 'https://api.other/v1/accounts/me') {
+        return new Response(
+          JSON.stringify({
+            user_id: 'user_9',
+            email: 'user9@example.test',
+            accounts: [{ account_id: 'account_10', slug: 'moved', name: 'Moved', role: 'owner' }],
+          }),
+          { status: 200, headers: JSON_HEADERS },
+        );
+      }
+      return undefined;
+    });
+
+    const code = await runProjects(['use', 'proj_other', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      'https://api.other/v1/projects/proj_other',
+      'https://api.other/v1/accounts/me',
+    ]);
+    const cfg = loadConfig();
+    expect(cfg.hosts.other?.account_id).toBe('account_10');
+    expect(cfg.hosts.other?.default_project?.account_id).toBe('account_10');
+    // The ambient active host keeps its own account and default.
+    expect(cfg.hosts.test?.account_id).toBe('account_1');
+    expect(cfg.hosts.test?.default_project).toBeUndefined();
+  });
+
+  test('refuses a host that is not logged in', async () => {
+    writeTwoHostConfig();
+    mockApi();
+    const code = await runProjects(['use', 'proj_other', '--host', 'nosuch']);
+    expect(code).toBe(1);
+    expect(stripAnsi(stderr)).toContain('Host "nosuch" is not logged in');
+    expect(requests).toEqual([]);
+  });
+
+  test('unset --host clears that host entry only', async () => {
+    writeTwoHostConfig();
+    mockOtherProject();
+    await runProjects(['use', 'proj_other', '--host', 'other']);
+    stdout = '';
+
+    const code = await runProjects(['unset', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(loadConfig().hosts.other?.default_project).toBeUndefined();
+    expect(stripAnsi(stdout)).toContain('Cleared the default project');
   });
 });
 

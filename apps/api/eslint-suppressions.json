@@ -220,7 +220,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 20
+      "count": 21
     }
   },
   "src/apps/runtime-artifacts.ts": {
@@ -1587,14 +1587,8 @@
     }
   },
   "src/projects/lib/session-token-grant.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-console": {
       "count": 6
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/projects/lib/session-transcript-capture.ts": {
@@ -2270,7 +2264,7 @@
   },
   "src/projects/routes/session-prompts.ts": {
     "no-restricted-syntax": {
-      "count": 5
+      "count": 6
     }
   },
   "src/projects/routes/session-reminders.ts": {

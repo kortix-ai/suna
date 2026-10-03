@@ -680,6 +680,12 @@ export async function ensureLocalStack(
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
+          // The App deploy route kicks its worker directly, so the general
+          // switch above does not cover it. Every provider here points at an
+          // unreachable address, so a running worker only races a doomed build:
+          // on Linux it fails in milliseconds, on macOS the upload hangs. Off,
+          // a local deployment stays `queued` and APP-7 is deterministic.
+          KORTIX_APPS_WORKER_ENABLED: "false",
           KORTIX_BILLING_INTERNAL_ENABLED: "true",
           ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
           PLATINUM_API_KEY: "local-test-provider-disabled",

@@ -20,6 +20,7 @@ import {
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
+import { Slack } from '@/features/icon/icons/slack';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
@@ -167,7 +168,6 @@ import {
 import { AudienceBadge } from './view/audience-badge';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
-const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 function SaveBar({
   dirty,
@@ -2222,22 +2222,12 @@ function ChannelCatalogue({
  * The real Slack logo — the single Slack mark used everywhere across the
  * connectors + channels surface (catalogue cards, channel cards, connect flow),
  * so Slack always reads as Slack and never as a generic glyph. Sized by
- * `className`; defaults to `size-4`.
+ * `className`; defaults to `size-4`. It is the built-in four-color `Slack`
+ * icon: this used to fetch Slack's favicon from Google on every view, a blank
+ * tile on an install without internet.
  */
 export function SlackLogo({ className }: { className?: string }) {
-  return (
-    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
-      <Image
-        src={SLACK_ICON_SRC}
-        alt=""
-        referrerPolicy="no-referrer"
-        fill
-        sizes="32px"
-        className="object-contain"
-        unoptimized
-      />
-    </span>
-  );
+  return <Slack className={cn('size-4 shrink-0', className)} />;
 }
 
 function SlackIconTile() {

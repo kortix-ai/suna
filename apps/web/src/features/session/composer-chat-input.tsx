@@ -50,6 +50,7 @@ export function ComposerChatInput({
   placeholder,
   prefill,
   onPrefillApplied,
+  aboveSlot,
   inputSlot,
   toolbarSlot,
   underbarPlacement,
@@ -102,6 +103,7 @@ export function ComposerChatInput({
     submit?: boolean;
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
+  aboveSlot?: ReactNode;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -252,6 +254,7 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       onPrefillApplied={onPrefillApplied}
+      aboveSlot={aboveSlot}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}
