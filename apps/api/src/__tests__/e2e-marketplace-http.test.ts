@@ -24,7 +24,10 @@ describe('marketplace HTTP contract', () => {
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-    server = Bun.serve({ port: 0, fetch: app.fetch });
+    // Explicit loopback: `server.hostname` is "localhost", which a container
+    // without a `localhost` resolver entry cannot resolve — a transport
+    // detail, not what this contract tests.
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: app.fetch });
     baseUrl = `http://${server.hostname}:${server.port}/v1`;
   });
 

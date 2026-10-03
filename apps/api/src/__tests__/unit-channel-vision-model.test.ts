@@ -287,6 +287,7 @@ mock.module('../config', () => ({
 
 mock.module('../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'deepseek-v4-flash',
+  isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4-flash',
 }));
 
 mock.module('../llm-gateway/enablement', () => ({

@@ -87,7 +87,7 @@ import { GatewayRouting } from '@/features/workspace/customize/sections/view/gat
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { gatewayRoutingPolicyKey, useModelDefaults, useProjectModels } from '@kortix/sdk/react';
+import { gatewayRoutingPolicyKey, resolveModelDefault, useModelDefaults, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
 export const MODELS_PAGE_TITLE = 'Models';
@@ -255,11 +255,7 @@ export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
   const models = useProjectModels(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
-  const effectiveDefault =
-    modelDefaults.projectDefault ??
-    modelDefaults.accountDefault ??
-    (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
-    null;
+  const effectiveDefault = resolveModelDefault(modelDefaults.data, undefined) ?? null;
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">

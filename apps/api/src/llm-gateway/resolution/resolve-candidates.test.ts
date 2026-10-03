@@ -580,6 +580,17 @@ describe('resolveCandidates — managed model tier gating', () => {
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
+  // KRTX-1067: the platform default is the ONE managed model every tier may
+  // use — the fresh free-tier account must be able to send its first message.
+  test('a free-tier account resolves the platform default', async () => {
+    config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+
+    const candidates = await resolveCandidates(principal({ freeModelsOnly: true }), 'deepseek-v4.1-flash');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed', resolvedModel: 'deepseek-v4.1-flash' });
+  });
+
   // Both refusals keep the machine-readable `plan_upgrade_required`; clients
   // branch on the code. The copy differs: a free plan is told to upgrade, a
   // paid plan without managed models is told to bring a key, never to upgrade.
