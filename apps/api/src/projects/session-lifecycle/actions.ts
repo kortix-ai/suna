@@ -641,9 +641,9 @@ export async function restartSession(input: {
             // Incident 2026-08-14: a loss verdict requires a fresh, definitive
             // provider `removed` — nothing else may reach the terminal "computer
             // was lost" state. Neither condition that got us here is evidence of
-            // one. `isMissingRuntimeError` is a message heuristic that matches
-            // any error whose text merely contains "not found", and
-            // `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
+            // one. `isMissingRuntimeError` was a message heuristic that matched
+            // any error whose text merely contained "not found" (it is now a
+            // provider 404), and `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
             // provider that does not implement it, which is indistinguishable
             // here from a provider that tried and failed. The sibling restart
             // paths above both gate on `getStatus() === 'removed'` before they
