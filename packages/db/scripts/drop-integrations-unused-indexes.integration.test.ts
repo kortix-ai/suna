@@ -102,7 +102,6 @@ suite('drop_integrations_unused_indexes migration drops exactly the two unused i
     }
     const remaining = await indexesOnTable();
     expect(remaining.sort()).toEqual([...KEPT_INDEXES].sort());
-    expect(remaining.filter((n) => TARGET_INDEXES.includes(n))).toEqual([]);
   });
 
   test('a re-run of both statements is a no-op (IF EXISTS)', async () => {
