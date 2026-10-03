@@ -116,6 +116,14 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // The chunk store indexes every binary the box already runs. On a Kortix
+    // sandbox the defaults resolve to the real /usr/local/bin/kortix-agent
+    // (110 MB) and the daemon state dir, and indexing 110 MB in 8-byte test
+    // chunks never finishes; on CI neither path exists. Point both at the
+    // rig's own throwaway workspace so the store holds exactly what the test
+    // wrote.
+    agentStateDir: ws.root,
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

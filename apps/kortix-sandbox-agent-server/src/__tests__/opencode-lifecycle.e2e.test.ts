@@ -52,6 +52,10 @@ const ENV_KEYS = [
   'KORTIX_CONTINUATION_DISABLED',
   'KORTIX_LLM_PROXY_URL',
   'KORTIX_LLM_CATALOG_FILE',
+  // The rigs name an absent catalog file and expect the minimal fallback; on a
+  // Kortix sandbox the image-baked /opt/kortix/llm-catalog.json is real, so the
+  // baked-catalog seam must point at an absent path too.
+  'KORTIX_BAKED_LLM_CATALOG_FILE',
   'KORTIX_LLM_BASE_URL',
   'KORTIX_TOKEN',
   'KORTIX_RUNTIME_STATE_DIR',
@@ -882,6 +886,7 @@ describe('a model a turn names', () => {
     process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
     process.env.KORTIX_TOKEN = 'kortix_pat_test'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    process.env.KORTIX_BAKED_LLM_CATALOG_FILE = join(root, 'no-baked-catalog.json')
     process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
     resetManagedModelsStateForTests()
     return gateway

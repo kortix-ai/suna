@@ -698,10 +698,19 @@ function threeCommitOrigin(): string {
 describe('clone depth', () => {
   // Boot latency: a depth-1 clone is the default; history is restored off the
   // critical path by scheduleHistoryBackfill.
+  // These tests pin the CLONE path's depth behavior. On a Kortix sandbox the
+  // image-baked /opt/kortix/scaffold.git exists and materializeRepo takes the
+  // scaffold delta-fetch fast path (depth 1) before the clone is ever reached,
+  // so point the scaffold seam at an absent path for this describe and put the
+  // default back after (beforeEach/afterEach of the file reset it either way).
+  const absentScaffold = join(tmpdir(), 'kortix-no-scaffold')
   it.each([
     [1, '1', true],
     [0, '3', false],
   ] as const)('cloneDepth %i materializes %s commit(s), shallow=%p', async (cloneDepth, commits, shallow) => {
+    // The file's beforeEach resets the scaffold seam to the real image path;
+    // these two tests need it OFF (they pin the clone path), so set it here.
+    __setScaffoldRepoPathForTests(absentScaffold)
     const remote = threeCommitOrigin()
     const target = join(mkdtempSync(join(tmpdir(), 'kortix-depth-')), 'workspace')
     tempDirs.push(join(target, '..'))
@@ -719,6 +728,7 @@ describe('clone depth', () => {
   })
 
   it('isShallowRepo reports a depth-limited clone, and false once unshallowed', async () => {
+    __setScaffoldRepoPathForTests(absentScaffold)
     // It gates the session branch `--depth` and the backfill; an always-false
     // probe would re-truncate a complete repo on resume.
     const remote = threeCommitOrigin()

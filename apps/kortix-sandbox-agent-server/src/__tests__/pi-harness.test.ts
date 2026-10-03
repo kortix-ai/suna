@@ -245,11 +245,25 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  * a test, so give every rig an empty home of its own.
  */
 let homeDir: string
+let managedSkillsDirSaved: string | undefined
+let ptEnvFileSaved: string | undefined
 const realHome = process.env.HOME
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
+  // Same rule as HOME: the image's baked /opt/kortix/managed-skills carries the
+  // 11 real platform skills on a Kortix sandbox and does not exist on CI, so
+  // `GET /skill` must never read the machine. Point the resolver at a path
+  // inside the rig's own throwaway home that nothing writes.
+  managedSkillsDirSaved = process.env.KORTIX_MANAGED_SKILLS_DIR
+  process.env.KORTIX_MANAGED_SKILLS_DIR = join(homeDir, 'managed-skills-absent')
+  // And the same rule for /etc/pt-env: on a Kortix sandbox it is real and says
+  // KORTIX_PROJECT_AUTO_CLONE=1, which turns the rig (throwaway workspace, no
+  // repo) into a repo-requiring box, so `/kortix/health` reports
+  // runtime_ready=false. Point the seam at an absent path.
+  ptEnvFileSaved = process.env.KORTIX_PT_ENV_FILE
+  process.env.KORTIX_PT_ENV_FILE = join(homeDir, 'pt-env-absent')
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -257,6 +271,10 @@ afterEach(async () => {
     rmSync(rig.workspace, { recursive: true, force: true })
   }
   resetKortixEventBusForTests()
+  if (managedSkillsDirSaved === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  else process.env.KORTIX_MANAGED_SKILLS_DIR = managedSkillsDirSaved
+  if (ptEnvFileSaved === undefined) delete process.env.KORTIX_PT_ENV_FILE
+  else process.env.KORTIX_PT_ENV_FILE = ptEnvFileSaved
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
   rmSync(homeDir, { recursive: true, force: true })

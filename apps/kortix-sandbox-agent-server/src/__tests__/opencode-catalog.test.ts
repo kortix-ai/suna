@@ -56,6 +56,7 @@ const LIVE_MANAGED = {
 
 const realFetch = globalThis.fetch
 const tempDirs: string[] = []
+let bakedCatalogFileEnvSaved: string | undefined
 
 async function bakedCatalogFile(body: unknown = STALE_BAKED): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kortix-managed-'))
@@ -71,15 +72,24 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
   return (JSON.parse(raw!) as ProviderConfig).provider.kortix.models
 }
 
+// The rigs that name an ABSENT catalog file expect the minimal fallback; on a
+// Kortix sandbox the image-baked /opt/kortix/llm-catalog.json is real (thousands
+// of models), so the baked-catalog seam must point at an absent path too.
+const NO_BAKED_CATALOG = join(tmpdir(), 'kortix-absent-baked-catalog.json')
+
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  bakedCatalogFileEnvSaved = process.env.KORTIX_BAKED_LLM_CATALOG_FILE
+  process.env.KORTIX_BAKED_LLM_CATALOG_FILE = NO_BAKED_CATALOG
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  if (bakedCatalogFileEnvSaved === undefined) delete process.env.KORTIX_BAKED_LLM_CATALOG_FILE
+  else process.env.KORTIX_BAKED_LLM_CATALOG_FILE = bakedCatalogFileEnvSaved
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

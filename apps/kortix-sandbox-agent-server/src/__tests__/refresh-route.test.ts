@@ -118,7 +118,19 @@ function fakeOpencode(
 }
 
 function app(cfg: Partial<Config>, lifecycle: FakeLifecycle = fakeOpencode()) {
-  return buildOpenCodeTestApp(testOpenCodeConfig(cfg), lifecycle.opencode, Date.now())
+  // The helper's `/workspace` default is the config the production box boots
+  // with, but on a Kortix sandbox /workspace IS a real git repo with a direct
+  // origin, so the "no repo here" assertions read the machine instead of the
+  // rig. A test that passes no workspace gets a genuinely empty one; tests
+  // that name their own repo (projectTarget) keep their inputs.
+  const resolved: Partial<Config> = { ...cfg }
+  if (resolved.workspace === undefined && resolved.projectTarget === undefined) {
+    const empty = mkdtempSync(join(tmpdir(), 'kortix-refresh-empty-'))
+    roots.push(empty)
+    resolved.workspace = empty
+    resolved.projectTarget = empty
+  }
+  return buildOpenCodeTestApp(testOpenCodeConfig(resolved), lifecycle.opencode, Date.now())
 }
 
 const SERVICE = { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}`, [KORTIX_SERVICE_CALL_HEADER]: '1' }
