@@ -1,0 +1,16 @@
+{
+  "source_hash": "a95f7e034a52872acd2722687f92a523291da25e1424f45104ff988209d7a492",
+  "diff_files": [
+    "packages/agent-tunnel/src/agent/service-control.test.ts",
+    "packages/agent-tunnel/src/agent/service-control.ts"
+  ],
+  "diff_hash": "9d3a07a6634f100fcda1bf3300770e44cfedd1443a96981d8016834f06135785",
+  "head": "f6b3bdb88a8df39af3ed685bb5a665872f848290",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:12:47.161Z"
+}
