@@ -239,9 +239,9 @@ It made zero model calls and left the API healthy. An initial probe exposed an i
 
 `pnpm test -- --agentic-only tests/session-prompt.e2e.ts --no-cache` passed the final fixture and complete cleanup.
 It reported one selected pass, zero selected skips, zero flaky results, and zero run errors.
-The test took 47.94 seconds, startup took 27.75 seconds, and the root lane took 80.5 seconds.
-The agent step took 16.90 seconds, three model calls, and 14,712 tokens.
-Provider token caching was 10%; `--no-cache` disabled action replay.
+After merging main `b34c235d39`, the test took 66.01 seconds, startup took 34.16 seconds, and the root lane took 104.7 seconds.
+The agent step took 18.25 seconds, four model calls, and 19,733 tokens.
+Provider token caching was 29%; `--no-cache` disabled action replay.
 The post-run audit found zero pilot project records and zero pilot auth users.
 
 An earlier same-source pair compared identical request, UI, transcript, reload, and cleanup assertions.
@@ -303,6 +303,11 @@ The third prevented idle sleep from startup and passed all 513 REST/CLI flows, 1
 Its SDK URL guard measured 145.4 milliseconds against a 100-millisecond limit. Eight of 83 selected browser tests passed before termination.
 The cause of the process kills remains unknown. Owned app listeners and root runners were absent afterward.
 These are incomplete full gates. They do not establish that all existing browser journeys pass.
+
+The next default run completed in 703.0 seconds with six passing lanes and one failing package lane.
+The diagnostics guard measured 129.9 milliseconds; the web i18n audit found two hardcoded texts inherited from base `b043e634e6`.
+Main `b34c235d39` translates those texts. That main revision is now merged into the canonical branch.
+The latest live journey passes on the merged source. Its default gate requires a new completed run.
 
 The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.
 The final delivery status must include the most recent completed repository gate; the evidence above does not claim a green broad gate.
