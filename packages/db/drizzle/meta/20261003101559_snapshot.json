@@ -1,5 +1,5 @@
 {
-  "id": "1114a776-42a7-4995-9795-935f9b9f0403",
+  "id": "9d8c931c-ffe9-45fb-913d-83e7f43b08b2",
   "prevId": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "version": "7",
   "dialect": "postgresql",
@@ -123,7 +123,38 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_access_requests_email": {
+          "name": "idx_access_requests_email",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_requests_status": {
+          "name": "idx_access_requests_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -5467,7 +5498,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "platform": {
           "name": "platform",

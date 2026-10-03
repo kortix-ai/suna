@@ -591,16 +591,27 @@ export async function driveAppDeployment(
       ? error.code
       : disposition.code;
     const attempt = claimed.attemptCount;
+    // Each cleanup step is independent; a failed one must not hide the next,
+    // but it must be visible: an open compute window keeps billing, and a row
+    // left 'starting' hides the runtime from the compute-invariant sweep.
+    const cleanupFailed = (step: string) => (cleanupError: unknown) => {
+      logger.error('[apps] failed-deploy cleanup step failed', {
+        step,
+        deploymentId: claimed.deploymentId,
+        runtimeId,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    };
     if (runtimeId) {
       await db
         .update(appRuntimes)
         .set({ status: 'error', stoppedAt: new Date(), updatedAt: new Date() })
         .where(eq(appRuntimes.runtimeId, runtimeId))
-        .catch(() => {});
-      await pauseComputeSession(runtimeId).catch(() => {});
+        .catch(cleanupFailed('mark_runtime_error'));
+      await pauseComputeSession(runtimeId).catch(cleanupFailed('close_compute_window'));
     }
     if (runtimeProvider && runtimeExternalId) {
-      await hosting.remove(runtimeProvider, runtimeExternalId).catch(() => {});
+      await hosting.remove(runtimeProvider, runtimeExternalId).catch(cleanupFailed('remove_runtime'));
     }
     const terminal = permanent || attempt >= MAX_ATTEMPTS;
     await db
@@ -625,7 +636,7 @@ export async function driveAppDeployment(
       level: 'error',
       runtimeId: runtimeId ?? undefined,
       data: { attempt, terminal },
-    }).catch(() => {});
+    }).catch(cleanupFailed('record_event'));
     if (terminal) {
       // A retry is not an outcome; only the terminal failure is audited.
       const ref = auditRef ?? (await deploymentAuditRefFor(claimed));
