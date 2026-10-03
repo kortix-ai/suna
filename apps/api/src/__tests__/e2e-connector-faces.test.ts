@@ -385,6 +385,9 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     cmd: ['bun', CLI_ENTRY, 'connectors', ...args],
     cwd: REPO_ROOT,
     env: {
+      // A platform sandbox writes /dev/shm/kortix/agent-env.sh; without this
+      // the CLI reads the platform's token and project instead of the test's.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
@@ -673,6 +676,9 @@ describe('MCP face', () => {
       cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
       cwd: REPO_ROOT,
       env: {
+        // A platform sandbox writes /dev/shm/kortix/agent-env.sh; without this
+        // the CLI reads the platform's token and project instead of the test's.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
@@ -767,6 +773,9 @@ describe('MCP face', () => {
       cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
       cwd: REPO_ROOT,
       env: {
+        // A platform sandbox writes /dev/shm/kortix/agent-env.sh; without this
+        // the CLI reads the platform's token and project instead of the test's.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
@@ -839,6 +848,9 @@ describe('MCP face', () => {
       cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
       cwd: REPO_ROOT,
       env: {
+        // A platform sandbox writes /dev/shm/kortix/agent-env.sh; without this
+        // the CLI reads the platform's token and project instead of the test's.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,

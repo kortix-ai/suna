@@ -115,6 +115,38 @@ async function verifyAgentTunnelCli(): Promise<void> {
   }
 }
 
+/** Ambient KORTIX_* vars the test runner itself owns. Everything else is stripped. */
+const RUNNER_ENV_KEYS = new Set([
+  // Set by this lane below, or by the CI workflow for it.
+  'KORTIX_TEST_TIMEOUT_MS',
+  'KORTIX_ATTACHMENT_OFFLOAD',
+  'KORTIX_PACKAGE_SKIP_SDK_TESTS',
+  // Read by apps/api/scripts/test.sh; keep a dedicated-runner override working.
+  'KORTIX_API_TEST_WORKERS',
+  'KORTIX_MIN_TEST_FILES',
+]);
+
+/**
+ * Unit tests are written against a developer box and CI: no ambient KORTIX_*
+ * platform env. A platform-managed sandbox (a factory worker, an agent box)
+ * exports KORTIX_SUPERVISED, KORTIX_SESSION_ID, KORTIX_API_URL and friends, and
+ * every bun test process inherits them — the CLI then reports itself supervised,
+ * help output gains a session breadcrumb, and compiled-runtime identities shift.
+ * The CLI also falls back to the sandbox agent-env file
+ * (/dev/shm/kortix/agent-env.sh) for its token and project. Strip the ambient
+ * platform env and point the CLI's sandbox-env reader at nothing, so the lane
+ * runs identically here and on a laptop.
+ */
+function hermeticEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(base)) {
+    if (key.startsWith('KORTIX_') && !RUNNER_ENV_KEYS.has(key)) continue;
+    out[key] = value;
+  }
+  out.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  return out;
+}
+
 async function runWorkspaceTests(
   filters: string[],
   workspaceConcurrency: number,
@@ -131,7 +163,7 @@ async function runWorkspaceTests(
     ],
     {
       env: {
-        ...process.env,
+        ...hermeticEnv(process.env),
         // The CLI includes an intentional 11-second idle-stream contract.
         // Concurrent API and agent workers can push it past 15 seconds.
         KORTIX_TEST_TIMEOUT_MS: '30000',
