@@ -218,4 +218,15 @@ The temporary test was removed.
 Focused runner and documentation checks passed 26 tests.
 The new config, wrapper, and session test passed targeted TypeScript and Biome checks.
 
+The broader `pnpm test` run exited one after 1,151.1 seconds.
+Package quality, route coverage, and worktree tests passed.
+REST/CLI passed 510 of 513 runnable flows; `SBX-3`, `SBX-5`, and `SSO-1` returned unexpected `503` responses.
+Database suites passed 185 of 186 files; the legacy credit-ledger index test timed out.
+Runner unit tests passed 742 of 743 tests; the documentation citation search exceeded its five-second limit.
+Two SDK scan performance guards exceeded their limits during the concurrent run.
+Both SDK files passed a direct rerun: 92 tests, zero failures.
+The same 100-millisecond URL scan guard also failed on unchanged base `7703291a92`, at 102.5 milliseconds.
+These results do not establish a green repository gate or a benefit from replacing the framework.
+The pilot does not change these API handlers, migrations, or SDK implementations.
+
 The live session journey, fresh/replay comparison, seeded false-pass checks, and subscription model execution remain unverified until user sign-in confirmation.
