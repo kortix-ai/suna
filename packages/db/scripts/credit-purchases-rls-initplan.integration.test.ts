@@ -53,7 +53,8 @@ test('all four policies gain InitPlans without changing row access or service wr
     expect(row.permissive).toBe('PERMISSIVE');
     expect(row.cmd).toBe(services.includes(row.policyname) ? 'ALL' : 'SELECT');
     expect(row.with_check).toBeNull();
-    expect(row.qual.toLowerCase()).toContain('select auth.');
+    // pg_get_expr drops the schema prefix when auth is on search_path; the InitPlan assertion below proves the wrap.
+    expect(row.qual.toLowerCase()).toMatch(/select (auth\.)?(role|uid)\(\)/);
   }
   expect(JSON.stringify((await probe(own, 'authenticated', 'EXPLAIN SELECT * FROM public.credit_purchases')).rows)).toContain('InitPlan');
   expect((await probe(own, 'authenticated')).rows).toEqual([{ account_id: own }]);
