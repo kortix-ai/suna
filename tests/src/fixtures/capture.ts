@@ -1,19 +1,28 @@
 /**
- * Synthetic Kortix Capture (schema 2) device output, for the CAP flows and for
- * driving a local stack by hand. Builds exactly the objects the desktop app
- * writes under `<prefix>/<device_id>/` (kortix-ai/capture
- * `apps/recorder/docs/capture-format.md`): screen chunks (mp4 + zstd frames),
- * action segments (zstd actions + content-addressed screenshot assets), an
- * audio segment with transcript lines, one manifest per item (written last),
- * the per-day `index/<day>.jsonl`, `device.json` and `status.json`.
+ * The Kortix Capture format (schema 2) contract, vendored from kortix-ai/capture
+ * at the commit in tests/fixtures/capture-format-v2/SOURCE.json: the engine's
+ * JSON Schemas and its synthetic fixture bucket (one device, 2026-10-01: two
+ * screen chunks, two action segments with screenshots, one audio segment).
  *
- * Two activity sessions 40 minutes apart, so a reader detects two ranges.
- * Every value is synthetic. `marker` is a unique word put on screen, in an
- * action and in the audio transcript, so a search can prove all three layers.
+ * `vendoredDevice` re-roots that bucket under a Kortix prefix and device id, as
+ * a Kortix-issued device writes it: object keys and the manifests' `device_id`
+ * and object keys change; every data object is byte-identical, so each size and
+ * SHA-256 in the manifests still holds. The fixture has no index files; the
+ * index lines are built from the manifests (index-line.schema.json), and
+ * `status.json` is restamped so the device reads as live.
+ *
+ * `captureSchemas` validates any object against the vendored schemas (ajv,
+ * draft 2020-12).
  */
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import Ajv2020 from "ajv/dist/2020";
 import { readLocalSupabaseEnvironment, resolveLocalTopology } from "../core/local-stack";
+
+export const CONTRACT_DIR = resolve(import.meta.dir, "../../fixtures/capture-format-v2");
+const FIXTURE_PREFIX = "fixture-prefix";
+const FIXTURE_DEVICE = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
 export interface CaptureObject {
   key: string;
@@ -21,220 +30,108 @@ export interface CaptureObject {
   contentType: string;
 }
 
-export interface CaptureDay {
-  /** Data and assets, then each item's manifest, then index, device.json, status.json. */
+export interface VendoredDevice {
+  /** Data and assets, then the manifests, then index, device.json and status.json. */
   objects: CaptureObject[];
   manifestKeys: string[];
+  /** What indexing the whole device yields. */
   expected: { chunks: number; frames: number; actions: number; audioLines: number; ranges: number };
-  sessions: Array<{ startMs: number; endMs: number }>;
+  /** The fixture's UTC day and its span. */
+  day: string;
+  startMs: number;
+  endMs: number;
 }
 
-/** A 1×1 PNG: a valid image for the vision model when no real screenshot is supplied. */
-const PIXEL_PNG = Uint8Array.from(
-  Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
-    "base64",
-  ),
-);
-
-const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const text = (value: string) => new TextEncoder().encode(value);
-const zstd = (lines: unknown[]) =>
-  new Uint8Array(Bun.zstdCompressSync(text(lines.map((line) => JSON.stringify(line)).join("\n") + "\n")));
-const pad = (n: number) => String(n).padStart(2, "0");
-const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-const dayFolder = (ms: number) => {
-  const d = new Date(ms);
-  return `${d.getUTCFullYear()}/${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
-};
 
-export interface CaptureDayInput {
-  prefix: string;
-  deviceId: string;
-  machineKeySha256: string;
-  marker: string;
-  /** Start of the first session. Default: 3 hours ago. */
-  startMs?: number;
-  /** Real media, when a run should play a video or show the model a real screenshot. */
-  media?: { video?: Uint8Array; screenshots?: Uint8Array[] };
+function walk(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? walk(path) : [path];
+  });
 }
 
-export function buildCaptureDay(input: CaptureDayInput): CaptureDay {
-  const { prefix, deviceId, marker } = input;
-  const folder = `${prefix}/${deviceId}`;
-  const start = input.startMs ?? Date.now() - 3 * 3_600_000;
+const contentType = (key: string) =>
+  key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".m4a") ? "audio/mp4" : key.endsWith(".zst") ? "application/zstd" : key.endsWith(".png") ? "image/png" : key.endsWith(".jpg") ? "image/jpeg" : "application/json";
+
+export function vendoredDevice(input: { prefix: string; deviceId: string; machineKeySha256?: string }): VendoredDevice {
+  const root = join(CONTRACT_DIR, "bucket", FIXTURE_PREFIX, FIXTURE_DEVICE);
+  const folder = `${input.prefix}/${input.deviceId}`;
+  const rekey = (key: string) => key.replace(`${FIXTURE_DEVICE}/`, `${input.deviceId}/`);
   const data: CaptureObject[] = [];
   const manifests: CaptureObject[] = [];
   const index = new Map<string, string[]>();
-  const assets = new Map<string, Uint8Array>();
-  let id = 0;
-  const expected = { chunks: 0, frames: 0, actions: 0, audioLines: 0, ranges: 2 };
-
-  const objectInfo = (key: string, body: Uint8Array) => ({
-    key: key.slice(prefix.length + 1),
-    size: body.byteLength,
-    sha256: sha256(body),
-    plain_size: body.byteLength,
-    plain_sha256: sha256(body),
-  });
-
-  const item = (
-    kind: "chunk" | "audio" | "actions",
-    startMs: number,
-    endMs: number,
-    files: Array<{ role: string; ext: string; body: Uint8Array; contentType: string }>,
-    extra: Record<string, unknown>,
-  ) => {
-    id += 1;
-    const tag = kind === "chunk" ? `${id}` : kind === "audio" ? `a${id}` : `x${id}`;
-    const base = `${folder}/${dayFolder(startMs)}/${startMs}-${tag}`;
-    const objects: Record<string, unknown> = {};
-    for (const file of files) {
-      const key = `${base}.${file.ext}`;
-      data.push({ key, body: file.body, contentType: file.contentType });
-      objects[file.role] = objectInfo(key, file.body);
-    }
-    const manifest = {
-      schema: 2,
-      kind,
-      device_id: deviceId,
-      start_ms: startMs,
-      end_ms: endMs,
-      app_version: "0.0.0-fixture",
-      created_at_ms: endMs + 1_000,
-      encryption: null,
-      privacy: { redact_pii: false, mode: "off" },
-      objects,
-      ...extra,
-    };
-    manifests.push({ key: `${base}.manifest.json`, body: text(JSON.stringify(manifest)), contentType: "application/json" });
-    const day = dayOf(startMs);
-    index.set(day, [
-      ...(index.get(day) ?? []),
-      JSON.stringify({ op: "put", kind, base: base.slice(prefix.length + 1), start_ms: startMs, end_ms: endMs, manifest: true, at_ms: endMs + 2_000 }),
-    ]);
-  };
-
-  const asset = (bytes: Uint8Array) => {
-    const name = `sha256-${sha256(bytes)}.png`;
-    if (!assets.has(name)) assets.set(name, bytes);
-    return name;
-  };
-  const screenshots = input.media?.screenshots?.length ? input.media.screenshots : [PIXEL_PNG];
-
-  // Session A: 4 five-minute chunks in a spreadsheet and mail. Session B, 40 min later: 2 chunks in a browser.
-  const screens = [
-    { app: "Sheets", bundle: "test.example.sheets", title: "Q3 budget.xlsx", url: null, ocr: `Revenue 42,000 Forecast ${marker} quarter close` },
-    { app: "Sheets", bundle: "test.example.sheets", title: "Q3 budget.xlsx", url: null, ocr: "Revenue 42,000 Costs 18,500 Margin" },
-    { app: "Mail", bundle: "test.example.mail", title: "Inbox — vendor invoice", url: null, ocr: "Invoice 1042 due Friday from a vendor" },
-    { app: "Sheets", bundle: "test.example.sheets", title: "Q3 budget.xlsx", url: null, ocr: "Forecast updated Margin 23.5%" },
-    { app: "Browser", bundle: "test.example.browser", title: "Capture format — docs", url: "https://docs.example.test/capture", ocr: `${marker} capture format schema 2 manifests` },
-    { app: "Browser", bundle: "test.example.browser", title: "Capture format — docs", url: "https://docs.example.test/capture#policy", ocr: "policy.json layers retention notice" },
-  ];
-  const sessionA = start;
-  const sessionB = start + 20 * 60_000 + 40 * 60_000;
-  const CHUNK_MS = 5 * 60_000;
-  const FRAME_EVERY_MS = 20_000;
-  screens.forEach((screen, i) => {
-    const chunkStart = i < 4 ? sessionA + i * CHUNK_MS : sessionB + (i - 4) * CHUNK_MS;
-    const chunkEnd = chunkStart + CHUNK_MS - 1_000;
-    const frames = [];
-    for (let t = chunkStart, n = 0; t <= chunkEnd; t += FRAME_EVERY_MS, n++) {
-      frames.push({
-        frame_index: n,
-        ts_ms: t,
-        width: 1440,
-        height: 900,
-        title: screen.title,
-        url: screen.url,
-        domain: screen.url ? new URL(screen.url).hostname : null,
-        app: { bundle_id: screen.bundle, name: screen.app, version: "1.0", is_user_app: true, icon: null },
-        capture_reason: n === 0 ? "app_switch" : "fixed_interval",
-        inactive: false,
-        pii_redacted: false,
-        ocr: { foreground: screen.ocr, background: null, lines: [{ text: screen.ocr, x: 40, y: 80, w: 600, h: 24, off: 0, len: screen.ocr.length }] },
-      });
-    }
-    const video = input.media?.video ?? text(`synthetic-mp4:${deviceId}:${chunkStart}`);
-    item("chunk", chunkStart, chunkEnd, [
-      { role: "video", ext: "mp4", body: video, contentType: "video/mp4" },
-      { role: "frames", ext: "frames.jsonl.zst", body: zstd(frames), contentType: "application/zstd" },
-    ], { video_id: i + 1, frame_count: frames.length, width: 1440, height: 900 });
-    expected.chunks += 1;
-    expected.frames += frames.length;
-
-    const shot = asset(screenshots[i % screenshots.length]!);
-    const actions = [
-      { ts_ms: chunkStart + 15_000, kind: "click", app: screen.app, window: screen.title, target: { x: 0.41, y: 0.2, button: "left", role: "cell" }, screenshot: shot },
-      { ts_ms: chunkStart + 45_000, kind: "typewrite", app: screen.app, window: screen.title, target: { text: i === 0 ? `forecast ${marker}` : "42000" }, screenshot: null },
-      { ts_ms: chunkStart + 90_000, kind: "hotkey", app: screen.app, window: screen.title, target: { keys: ["Cmd", "S"] }, screenshot: null },
-      { ts_ms: chunkStart + 150_000, kind: "press", app: screen.app, window: screen.title, target: { key: "Enter" }, screenshot: null },
-      { ts_ms: chunkStart + 240_000, kind: "scroll", app: screen.app, window: screen.title, target: { x: 0.5, y: 0.5, clicks: -3 }, screenshot: null },
-    ];
-    item("actions", chunkStart, chunkEnd, [{ role: "actions", ext: "actions.jsonl.zst", body: zstd(actions), contentType: "application/zstd" }], {
-      segment_id: i + 1,
-      event_count: actions.length,
-      screenshots: [shot],
-    });
-    expected.chunks += 1;
-    expected.actions += actions.length;
-  });
-
-  const transcript = [
-    { start_ms: sessionB + 30_000, end_ms: sessionB + 36_000, text: `Let us review the ${marker} rollout plan before Friday.` },
-    { start_ms: sessionB + 40_000, end_ms: sessionB + 47_000, text: "The policy turns audio off by default for every project." },
-    { start_ms: sessionB + 60_000, end_ms: sessionB + 66_000, text: "Ship the schema two reader after the fixture bucket lands." },
-  ];
-  item("audio", sessionB, sessionB + CHUNK_MS - 1_000, [
-    { role: "audio", ext: "m4a", body: text(`synthetic-m4a:${deviceId}:${sessionB}`), contentType: "audio/mp4" },
-  ], { audio_id: 1, sources: ["microphone", "system"], transcript });
-  expected.chunks += 1;
-  expected.audioLines += transcript.length;
-
-  const assetObjects = [...assets].map(([name, body]) => ({ key: `${folder}/assets/${name}`, body, contentType: "image/png" }));
+  let startMs = Infinity;
+  let endMs = 0;
+  let frames = 0;
+  let actions = 0;
+  let audioLines = 0;
+  let device: Record<string, unknown> = {};
+  let status: Record<string, unknown> = {};
+  for (const path of walk(root)) {
+    const rel = relative(root, path);
+    const key = `${folder}/${rel}`;
+    const body = new Uint8Array(readFileSync(path));
+    if (rel === "device.json") device = JSON.parse(readFileSync(path, "utf8"));
+    else if (rel === "status.json") status = JSON.parse(readFileSync(path, "utf8"));
+    else if (rel === "policy.json") continue; // operator-written, never by a device
+    else if (rel.endsWith(".manifest.json")) {
+      const manifest = JSON.parse(readFileSync(path, "utf8"));
+      manifest.device_id = input.deviceId;
+      for (const object of Object.values(manifest.objects) as Array<{ key: string }>) object.key = rekey(object.key);
+      manifests.push({ key, body: text(JSON.stringify(manifest)), contentType: "application/json" });
+      startMs = Math.min(startMs, manifest.start_ms);
+      endMs = Math.max(endMs, manifest.end_ms);
+      if (manifest.kind === "chunk") frames += manifest.frame_count;
+      if (manifest.kind === "actions") actions += manifest.event_count;
+      if (manifest.kind === "audio") audioLines += (manifest.transcript ?? []).length;
+      const day = new Date(manifest.start_ms).toISOString().slice(0, 10);
+      const base = `${input.deviceId}/${rel.replace(/\.manifest\.json$/, "")}`;
+      index.set(day, [...(index.get(day) ?? []), JSON.stringify({ op: "put", kind: manifest.kind, base, start_ms: manifest.start_ms, end_ms: manifest.end_ms, manifest: true, at_ms: manifest.created_at_ms })]);
+    } else data.push({ key, body, contentType: contentType(key) });
+  }
+  const now = Date.now();
   const indexObjects = [...index].map(([day, lines]) => ({ key: `${folder}/index/${day}.jsonl`, body: text(lines.join("\n") + "\n"), contentType: "application/x-ndjson" }));
-  const lastFrameMs = sessionB + 2 * CHUNK_MS - 1_000;
-  const device = {
-    schema: 2,
-    device_id: deviceId,
-    machine_key_sha256: input.machineKeySha256,
-    hostname: "fixture-host",
-    computer_name: "Fixture Laptop",
-    os: "macos",
-    os_version: "15.0",
-    arch: "arm64",
-    app_version: "0.0.0-fixture",
-    member: null,
-    updated_at_ms: Date.now(),
-  };
-  const status = {
-    recording: "recording",
-    reason: null,
-    missingPermissions: [],
-    pausedUntilMs: null,
-    audio: { enabled: true, state: "recording" },
-    sync: { state: "ok", pending: 0, errorClass: null, lastUploadMs: Date.now() },
-    lastFrameMs,
-    appVersion: "0.0.0-fixture",
-    actionsRecording: true,
-    reportedAtMs: Date.now(),
-  };
+  const deviceDoc = { ...device, device_id: input.deviceId, ...(input.machineKeySha256 ? { machine_key_sha256: input.machineKeySha256 } : {}), updated_at_ms: now };
+  const statusDoc = { ...status, reportedAtMs: now };
   return {
     objects: [
-      ...assetObjects,
       ...data,
       ...manifests,
       ...indexObjects,
-      { key: `${folder}/device.json`, body: text(JSON.stringify(device)), contentType: "application/json" },
-      { key: `${folder}/status.json`, body: text(JSON.stringify(status)), contentType: "application/json" },
+      { key: `${folder}/device.json`, body: text(JSON.stringify(deviceDoc)), contentType: "application/json" },
+      { key: `${folder}/status.json`, body: text(JSON.stringify(statusDoc)), contentType: "application/json" },
     ],
     manifestKeys: manifests.map((m) => m.key),
-    expected,
-    sessions: [
-      { startMs: sessionA, endMs: sessionA + 4 * CHUNK_MS - 1_000 },
-      { startMs: sessionB, endMs: lastFrameMs },
-    ],
+    expected: { chunks: manifests.length, frames, actions, audioLines, ranges: 1 },
+    day: new Date(startMs).toISOString().slice(0, 10),
+    startMs,
+    endMs,
   };
+}
+
+/** The vendored issuer responses (`issuer/*.json`), by file name without `.json`. */
+export function vendoredIssuer(name: "device-authorization" | "device-token" | "device-token-pending" | "credentials"): Record<string, unknown> {
+  return JSON.parse(readFileSync(join(CONTRACT_DIR, "issuer", `${name}.json`), "utf8"));
+}
+
+export type CaptureSchemaName =
+  | "actions-line" | "device" | "frames-line" | "index-line" | "issuer-credentials" | "issuer-device-authorization"
+  | "issuer-device-token" | "manifest-actions" | "manifest-audio" | "manifest-chunk" | "policy" | "status";
+
+let ajv: Ajv2020 | null = null;
+
+/** Validate `value` against one vendored schema. Returns the error text, or null when valid. */
+export function captureSchemaErrors(name: CaptureSchemaName, value: unknown): string | null {
+  if (!ajv) {
+    ajv = new Ajv2020({ allErrors: true, strict: false });
+    for (const file of readdirSync(join(CONTRACT_DIR, "schemas"))) {
+      ajv.addSchema(JSON.parse(readFileSync(join(CONTRACT_DIR, "schemas", file), "utf8")), file.replace(/\.schema\.json$/, ""));
+    }
+  }
+  const validate = ajv.getSchema(name);
+  if (!validate) throw new Error(`no vendored schema ${name}`);
+  return validate(value) ? null : ajv.errorsText(validate.errors);
 }
 
 export interface S3Target {
@@ -262,7 +159,7 @@ export async function uploadCaptureObjects(target: S3Target, objects: CaptureObj
 
 /** A fresh synthetic machine key (sha256 hex), as the desktop app sends it. */
 export function syntheticMachineKey(seed: string): string {
-  return sha256(text(`kortix-capture/machine/v1\nfixture-${seed}`));
+  return createHash("sha256").update(`kortix-capture/machine/v1\nfixture-${seed}`).digest("hex");
 }
 
 /**

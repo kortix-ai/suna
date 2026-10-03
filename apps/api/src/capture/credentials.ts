@@ -26,6 +26,8 @@ export interface CaptureCredentials {
   secret_access_key: string;
   session_token: string;
   expires_at_ms: number;
+  /** Path-style URLs (MinIO and most self-hosted S3); false on AWS. */
+  path_style: boolean;
 }
 
 export interface CaptureCredentialIssuer {
@@ -103,6 +105,7 @@ const stsIssuer: CaptureCredentialIssuer = {
       secret_access_key: creds.SecretAccessKey,
       session_token: creds.SessionToken,
       expires_at_ms: creds.Expiration.getTime(),
+      path_style: config.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE,
     };
   },
 };

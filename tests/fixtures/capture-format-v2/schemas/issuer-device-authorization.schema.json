@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/issuer-device-authorization.schema.json",
+  "title": "Device authorization response",
+  "description": "200 response of POST <issuer>/v1/capture/device/authorize (RFC 8628 section 3.2).",
+  "type": "object",
+  "required": [
+    "device_code",
+    "user_code",
+    "verification_uri_complete",
+    "expires_in"
+  ],
+  "properties": {
+    "device_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verification_uri": {
+      "type": "string"
+    },
+    "verification_uri_complete": {
+      "type": "string",
+      "minLength": 1
+    },
+    "interval": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expires_in": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

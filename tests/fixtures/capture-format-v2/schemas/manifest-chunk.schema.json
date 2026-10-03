@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/manifest-chunk.schema.json",
+  "title": "Screen chunk manifest",
+  "description": "<prefix>/<device_id>/<YYYY>/<MM>/<DD>/<start_ms>-<video_id>.manifest.json. Written last; objects.video is the MP4, objects.frames the zstd JSONL of frame lines (frames-line.schema.json).",
+  "type": "object",
+  "required": [
+    "schema",
+    "kind",
+    "device_id",
+    "start_ms",
+    "end_ms",
+    "app_version",
+    "created_at_ms",
+    "encryption",
+    "privacy",
+    "objects",
+    "video_id",
+    "frame_count",
+    "width",
+    "height"
+  ],
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "kind": {
+      "const": "chunk"
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/]+$"
+    },
+    "start_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "end_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "app_version": {
+      "type": "string"
+    },
+    "created_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    },
+    "objects": {
+      "type": "object",
+      "required": [
+        "video",
+        "frames"
+      ],
+      "properties": {
+        "video": {
+          "$ref": "#/$defs/object"
+        },
+        "frames": {
+          "$ref": "#/$defs/object"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/object"
+      }
+    },
+    "video_id": {
+      "type": "integer"
+    },
+    "frame_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "width": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "height": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "video_name": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "object": {
+      "type": "object",
+      "required": [
+        "key",
+        "size",
+        "sha256",
+        "plain_size",
+        "plain_sha256"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plain_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plain_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "asset": {
+      "type": "string",
+      "pattern": "^(sha256-)?[0-9a-f]{64}\\.[a-z0-9]+$"
+    },
+    "encryption": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "alg",
+            "key_id"
+          ],
+          "properties": {
+            "alg": {
+              "type": "string"
+            },
+            "key_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "required": [
+        "redact_pii",
+        "mode"
+      ],
+      "properties": {
+        "redact_pii": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "off",
+            "patterns",
+            "model"
+          ]
+        }
+      }
+    }
+  }
+}

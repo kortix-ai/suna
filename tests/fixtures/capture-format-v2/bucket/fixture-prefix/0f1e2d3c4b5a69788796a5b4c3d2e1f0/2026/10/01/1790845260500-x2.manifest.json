@@ -1,0 +1,29 @@
+{
+  "app_version": "0.1.0",
+  "created_at_ms": 1791051488440,
+  "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "encryption": null,
+  "end_ms": 1790845272500,
+  "event_count": 6,
+  "kind": "actions",
+  "objects": {
+    "actions": {
+      "key": "0f1e2d3c4b5a69788796a5b4c3d2e1f0/2026/10/01/1790845260500-x2.actions.jsonl.zst",
+      "plain_sha256": "746dccbdb388a04c1afc9455217841071d6684798b538ad89d21bad78ce8b1dc",
+      "plain_size": 517,
+      "sha256": "746dccbdb388a04c1afc9455217841071d6684798b538ad89d21bad78ce8b1dc",
+      "size": 517
+    }
+  },
+  "privacy": {
+    "mode": "off",
+    "redact_pii": false
+  },
+  "schema": 2,
+  "screenshots": [
+    "sha256-7b6cb5121fb2067306b9a09d61076d1f762596ea41227477d7e74cf330837fc4.jpg",
+    "sha256-9b5b4d091c83719d86f2eafc74e4fbcf35189e188152638d278dc018432b2198.jpg"
+  ],
+  "segment_id": 2,
+  "start_ms": 1790845260500
+}

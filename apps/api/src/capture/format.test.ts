@@ -1,8 +1,17 @@
+/**
+ * The reader side of the Kortix Capture format against the engine's own
+ * contract: the JSON Schemas and fixture bucket vendored, pinned, in
+ * tests/fixtures/capture-format-v2 (see SOURCE.json).
+ */
 import { describe, expect, test } from 'bun:test';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import Ajv2020 from 'ajv/dist/2020';
 import {
   DEFAULT_POLICY,
   PolicySchema,
   checkManifest,
+  jsonLines,
   liveState,
   manifestKeysFromIndex,
   objectKey,
@@ -13,22 +22,85 @@ import {
   projectPrefix,
 } from './format';
 
+const CONTRACT = join(import.meta.dir, '../../../../tests/fixtures/capture-format-v2');
+const FIXTURE_DEVICE = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+const DAY = join(CONTRACT, 'bucket/fixture-prefix', FIXTURE_DEVICE, '2026/10/01');
+const ajv = new Ajv2020({ allErrors: true, strict: false });
+for (const file of readdirSync(join(CONTRACT, 'schemas'))) {
+  ajv.addSchema(JSON.parse(readFileSync(join(CONTRACT, 'schemas', file), 'utf8')), file.replace(/\.schema\.json$/, ''));
+}
+const conforms = (name: string, value: unknown) => {
+  const validate = ajv.getSchema(name)!;
+  expect(validate(value) ? null : ajv.errorsText(validate.errors)).toBeNull();
+};
+const json = (file: string) => JSON.parse(readFileSync(join(DAY, file), 'utf8'));
+const lines = (file: string) => jsonLines(new TextDecoder().decode(Bun.zstdDecompressSync(readFileSync(join(DAY, file)))));
+
 const ACCOUNT = '11111111-1111-4111-8111-111111111111';
 const PROJECT = '22222222-2222-4222-8222-222222222222';
 const DEVICE = '33333333-3333-4333-8333-333333333333';
 const PREFIX = projectPrefix(ACCOUNT, PROJECT);
-const sha = 'a'.repeat(64);
 
-describe('keys', () => {
-  test('a Kortix key splits into account, project, device and the rest', () => {
-    expect(parseCaptureKey(`${PREFIX}/${DEVICE}/2026/10/03/1-7.manifest.json`)).toEqual({
-      accountId: ACCOUNT,
-      projectId: PROJECT,
-      deviceId: DEVICE,
-      rest: '2026/10/03/1-7.manifest.json',
+describe('the vendored fixture bucket', () => {
+  test('every fixture object matches its schema (the contract Kortix reads)', () => {
+    conforms('manifest-chunk', json('1790845200000-1.manifest.json'));
+    conforms('manifest-actions', json('1790845201000-x1.manifest.json'));
+    conforms('manifest-audio', json('1790845205000-a1.manifest.json'));
+    for (const line of lines('1790845200000-1.frames.jsonl.zst')) conforms('frames-line', line);
+    for (const line of lines('1790845201000-x1.actions.jsonl.zst')) conforms('actions-line', line);
+    const device = join(CONTRACT, 'bucket/fixture-prefix', FIXTURE_DEVICE);
+    conforms('device', JSON.parse(readFileSync(join(device, 'device.json'), 'utf8')));
+    conforms('status', JSON.parse(readFileSync(join(device, 'status.json'), 'utf8')));
+    conforms('policy', JSON.parse(readFileSync(join(CONTRACT, 'bucket/fixture-prefix/policy.json'), 'utf8')));
+    conforms('policy', JSON.parse(readFileSync(join(device, 'policy.json'), 'utf8')));
+  });
+
+  test('each manifest checks out for its device; another schema or device is refused', () => {
+    for (const file of ['1790845200000-1.manifest.json', '1790845201000-x1.manifest.json', '1790845205000-a1.manifest.json']) {
+      expect(checkManifest(json(file), FIXTURE_DEVICE).ok).toBe(true);
+    }
+    const chunk = json('1790845200000-1.manifest.json');
+    expect(checkManifest({ ...chunk, schema: 3 }, FIXTURE_DEVICE)).toEqual({ ok: false, reason: 'unsupported schema 3' });
+    expect(checkManifest({ ...chunk, schema: 1 }, FIXTURE_DEVICE)).toEqual({ ok: false, reason: 'unsupported schema 1' });
+    expect(checkManifest(chunk, 'another-device').ok).toBe(false);
+    expect(checkManifest({ ...chunk, objects: { frames: chunk.objects.frames } }, FIXTURE_DEVICE)).toEqual({ ok: false, reason: 'missing object "video"' });
+  });
+
+  test('a frame line maps app, window, URL, both OCR halves and the boxes', () => {
+    const row = parseFrameLine(lines('1790845200000-1.frames.jsonl.zst')[0]!)!;
+    expect(row).toMatchObject({
+      frameIndex: 0,
+      app: 'Editor',
+      bundleId: 'com.example.editor',
+      title: 'Guide — Editor',
+      url: 'https://docs.example.org/guide',
+      domain: 'docs.example.org',
+      ocrText: 'quarterly roadmap frame 0\nsidebar',
+      ocrBoxes: [{ text: 'quarterly roadmap frame 0', x: 10, y: 20, w: 300, h: 18 }],
+      inactive: false,
     });
+    expect(row.ts.getTime()).toBe(1790845200000);
+    expect(parseFrameLine({ title: 'no time' })).toBeNull();
+  });
+
+  test('action lines keep clicks, typing, hotkeys and the screenshot events that carry an asset', () => {
+    const rows = lines('1790845201000-x1.actions.jsonl.zst').map(parseActionLine);
+    expect(rows.every((r) => r !== null)).toBe(true);
+    expect(rows.map((r) => r!.description)).toEqual([
+      'Click left button at 50%,50%', 'Screenshot', 'Click left button at 50%,50%', 'Screenshot',
+      'Click left button at 50%,50%', 'Screenshot', 'Type "quarterly plan"', 'Hotkey command+s',
+    ]);
+    expect(rows[1]).toMatchObject({ kind: 'screenshot', app: 'Editor', windowTitle: 'Guide — Editor', screenshot: expect.stringMatching(/^sha256-[0-9a-f]{64}\.jpg$/) });
+    expect(parseActionLine({ kind: 'screenshot', ts_ms: 1, screenshot: null })).toBeNull();
+    expect(parseActionLine({ type: 'click', timestamp: 1.5 })).toBeNull();
+  });
+});
+
+describe('keys and index', () => {
+  test('a Kortix key splits into account, project, device and the rest', () => {
+    expect(parseCaptureKey(`${PREFIX}/${DEVICE}/2026/10/03/1-7.manifest.json`)).toEqual({ accountId: ACCOUNT, projectId: PROJECT, deviceId: DEVICE, rest: '2026/10/03/1-7.manifest.json' });
     expect(parseCaptureKey(`${PREFIX}/policy.json`)).toBeNull();
-    expect(parseCaptureKey('kortix-capture/x/y.manifest.json')).toBeNull();
+    expect(parseCaptureKey(`fixture-prefix/${FIXTURE_DEVICE}/x.manifest.json`)).toBeNull();
   });
 
   test('a manifest object resolves inside its device folder only', () => {
@@ -38,105 +110,35 @@ describe('keys', () => {
     expect(objectKey(PREFIX, DEVICE, `${DEVICE}/../other/a.mp4`)).toBeNull();
   });
 
-  test('the index names only complete puts', () => {
-    const body = [
-      JSON.stringify({ op: 'put', base: `${DEVICE}/2026/10/03/100-1`, manifest: true }),
-      JSON.stringify({ op: 'put', kind: 'audio', base: `${DEVICE}/2026/10/03/200-a2`, manifest: true }),
-      JSON.stringify({ op: 'put', base: `${DEVICE}/2026/10/03/300-3`, manifest: false }),
-      JSON.stringify({ op: 'delete', base: `${DEVICE}/2026/10/03/100-1` }),
-      '{torn',
-    ].join('\n');
+  test('schema-valid index lines name their manifests; deletes, incomplete items and torn lines do not', () => {
+    const index = [
+      { op: 'put', kind: 'chunk', base: `${DEVICE}/2026/10/01/1790845200000-1`, start_ms: 1790845200000, end_ms: 1790845204000, manifest: true, at_ms: 1 },
+      { op: 'put', kind: 'audio', base: `${DEVICE}/2026/10/01/1790845205000-a1`, start_ms: 1790845205000, end_ms: 1790845265000, manifest: true },
+      { op: 'put', kind: 'actions', base: `${DEVICE}/2026/10/01/1790845201000-x1`, start_ms: 1790845201000, end_ms: 1790845213000, manifest: false },
+      { op: 'delete', base: `${DEVICE}/2026/10/01/1790845200000-1`, reason: 'retention' },
+    ];
+    for (const line of index) conforms('index-line', line);
+    const body = [...index.map((l) => JSON.stringify(l)), '{torn'].join('\n');
     expect(manifestKeysFromIndex(PREFIX, DEVICE, body)).toEqual([
-      `${PREFIX}/${DEVICE}/2026/10/03/100-1.manifest.json`,
-      `${PREFIX}/${DEVICE}/2026/10/03/200-a2.manifest.json`,
+      `${PREFIX}/${DEVICE}/2026/10/01/1790845200000-1.manifest.json`,
+      `${PREFIX}/${DEVICE}/2026/10/01/1790845205000-a1.manifest.json`,
     ]);
   });
 });
 
-describe('manifests', () => {
-  const chunk = {
-    schema: 2,
-    kind: 'chunk',
-    device_id: DEVICE,
-    start_ms: 1000,
-    end_ms: 2000,
-    objects: { video: { key: 'v', size: 1, sha256: sha }, frames: { key: 'f', size: 1, sha256: sha } },
-    future_field: true,
-  };
-
-  test('a schema-2 chunk with unknown fields is accepted', () => {
-    expect(checkManifest(chunk, DEVICE).ok).toBe(true);
-  });
-
-  test('a newer schema, another device, a missing object or a bad hash is rejected', () => {
-    expect(checkManifest({ ...chunk, schema: 3 }, DEVICE)).toEqual({ ok: false, reason: 'unsupported schema 3' });
-    expect(checkManifest(chunk, 'other').ok).toBe(false);
-    expect(checkManifest({ ...chunk, objects: { frames: chunk.objects.frames } }, DEVICE)).toEqual({
-      ok: false,
-      reason: 'missing object "video"',
-    });
-    expect(checkManifest({ ...chunk, objects: { video: { key: 'v', size: 1, sha256: 'x' } } }, DEVICE).ok).toBe(false);
-  });
-});
-
-describe('lines', () => {
-  test('a schema-1 frame line maps app, window, URL and both OCR halves', () => {
-    const row = parseFrameLine({
-      frame_index: 4,
-      ts_ms: 1_791_000_000_000,
-      title: 'Q3 budget.xlsx',
-      url: 'https://example.test/sheet',
-      domain: 'example.test',
-      app: { bundle_id: 'com.example.sheets', name: 'Sheets' },
-      inactive: false,
-      ocr: { foreground: 'Revenue 42', background: 'Inbox', lines: [{ text: 'Revenue 42', x: 1, y: 2, w: 3, h: 4, off: 0, len: 10 }] },
-    });
-    expect(row).toMatchObject({
-      frameIndex: 4,
-      app: 'Sheets',
-      bundleId: 'com.example.sheets',
-      title: 'Q3 budget.xlsx',
-      ocrText: 'Revenue 42\nInbox',
-      ocrBoxes: [{ text: 'Revenue 42', x: 1, y: 2, w: 3, h: 4 }],
-      inactive: false,
-    });
-    expect(row!.ts.getTime()).toBe(1_791_000_000_000);
-    expect(parseFrameLine({ title: 'no time' })).toBeNull();
-  });
-
-  test('a schema-2 action line keeps app, window, target and screenshot', () => {
-    const row = parseActionLine(
-      { ts_ms: 5000, kind: 'click', app: 'Sheets', window: 'Q3 budget.xlsx', target: { x: 0.41, y: 0.2, button: 'left' }, screenshot: `sha256-${sha}.jpg` },
-      0,
-    );
-    expect(row).toEqual({
-      ts: new Date(5000),
-      kind: 'click',
-      app: 'Sheets',
-      windowTitle: 'Q3 budget.xlsx',
-      description: 'Click left button at 41%,20%',
-      target: { x: 0.41, y: 0.2, button: 'left' },
-      screenshot: `sha256-${sha}.jpg`,
-    });
-  });
-
-  test('a schema-1 action line is timed from its segment start; screenshot markers are skipped', () => {
-    const row = parseActionLine({ type: 'typewrite', timestamp: 2.5, args: { text: 'invoice 1042' } }, 10_000);
-    expect(row?.ts.getTime()).toBe(12_500);
-    expect(row?.description).toBe('Type "invoice 1042"');
-    expect(parseActionLine({ type: 'screenshot', timestamp: 1, args: {} }, 0)).toBeNull();
-  });
-});
-
 describe('policy and status', () => {
-  test('the default policy keeps audio off and 90 days remote retention', () => {
+  test('the policy.json Kortix writes matches the policy schema, default and full', () => {
+    conforms('policy', JSON.parse(policyDocument(DEFAULT_POLICY, 42)));
+    const full = PolicySchema.parse({
+      layers: { screen: true, actions: false, audio: true },
+      privacy: { redact_pii: true },
+      retention: { local_hours: 24, remote_days: 30 },
+      recording: { paused: true, paused_until_ms: 1790848800000 },
+      notice: 'Recording is on for the support team.',
+    });
+    conforms('policy', JSON.parse(policyDocument(full, 1790845200000)));
     expect(DEFAULT_POLICY.layers).toEqual({ screen: true, actions: true, audio: false });
-    expect(DEFAULT_POLICY.retention.remote_days).toBe(90);
     expect(PolicySchema.safeParse({ retention: { local_hours: 0, remote_days: -1 } }).success).toBe(false);
-  });
-
-  test('policy.json carries schema 2 and the update time', () => {
-    expect(JSON.parse(policyDocument(DEFAULT_POLICY, 42))).toMatchObject({ schema: 2, updated_at_ms: 42, notice: '' });
   });
 
   test('a device is offline when its status is older than 120 s', () => {

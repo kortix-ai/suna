@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/issuer-device-token.schema.json",
+  "title": "Device token response",
+  "description": "POST <issuer>/v1/capture/device/token: 200 on approval; HTTP 400 with {\"error\"} (authorization_pending, slow_down, access_denied, expired_token) before.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "device_token",
+        "prefix",
+        "device_id"
+      ],
+      "properties": {
+        "device_token": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "device_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/]+$"
+        },
+        "member": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "properties": {
+        "error": {
+          "enum": [
+            "authorization_pending",
+            "slow_down",
+            "access_denied",
+            "expired_token"
+          ]
+        }
+      }
+    }
+  ]
+}

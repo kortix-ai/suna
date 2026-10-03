@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/frames-line.schema.json",
+  "title": "Frame line",
+  "description": "One line of a chunk's .frames.jsonl.zst (zstd JSONL, video order).",
+  "type": "object",
+  "required": [
+    "frame_index",
+    "ts_ms",
+    "app",
+    "display",
+    "ocr",
+    "windows",
+    "inactive",
+    "pii_redacted"
+  ],
+  "properties": {
+    "frame_index": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "width": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "height": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "domain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "app": {
+      "type": "object",
+      "required": [
+        "bundle_id",
+        "name",
+        "icon"
+      ],
+      "properties": {
+        "bundle_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_user_app": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "icon": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/asset"
+            }
+          ]
+        }
+      }
+    },
+    "domain_icon": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/asset"
+        }
+      ]
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "y": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "w": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "h": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "capture_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dhash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "image_hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "segment": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "inactive": {
+      "type": "boolean"
+    },
+    "pii_redacted": {
+      "type": "boolean"
+    },
+    "ocr": {
+      "type": "object",
+      "required": [
+        "foreground",
+        "background",
+        "lines"
+      ],
+      "properties": {
+        "foreground": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "text",
+              "x",
+              "y",
+              "w",
+              "h",
+              "off",
+              "len"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              },
+              "w": {
+                "type": "integer"
+              },
+              "h": {
+                "type": "integer"
+              },
+              "off": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "len": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "x",
+          "y",
+          "w",
+          "h",
+          "z",
+          "focused"
+        ],
+        "properties": {
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "w": {
+            "type": "integer"
+          },
+          "h": {
+            "type": "integer"
+          },
+          "z": {
+            "type": "integer"
+          },
+          "layer": {
+            "type": "integer"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "ax_tree": {
+      "type": "object"
+    },
+    "ax_partial": {
+      "type": "boolean"
+    },
+    "ax_nodes": {
+      "type": "integer"
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "string",
+      "pattern": "^(sha256-)?[0-9a-f]{64}\\.[a-z0-9]+$"
+    }
+  }
+}

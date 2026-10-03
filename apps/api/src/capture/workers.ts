@@ -99,24 +99,33 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
     if (doc) Object.assign(patch, { deviceInfo: doc, ...deviceFields(doc) });
   }
 
-  // Today's index. On the first poll of a UTC day (or of a new device), yesterday's
-  // too, once: it catches late lines and items that started before midnight.
+  // Every index day file that changed since the last poll: a device that was
+  // offline uploads its backlog into the day files of when it recorded, not today.
+  // Cursor (index_etag): {"<day>": "<bytes>:<last modified ms>"} of the files read.
   let enqueued = 0;
-  const today = utcDay(Date.now());
-  const days = device.indexDay === today ? [today] : [utcDay(Date.now() - 86_400_000), today];
-  for (const day of days) {
-    const etag = day === device.indexDay ? device.indexEtag : null;
-    const index = await getCaptureObjectIfChanged(`${folder}/index/${day}.jsonl`, day === today ? etag : null);
-    if (index.status !== 'ok') continue;
-    const keys = manifestKeysFromIndex(
-      projectPrefix(device.accountId, device.projectId),
-      device.deviceId,
-      new TextDecoder().decode(index.body),
-    );
-    enqueued += await enqueueJobs(INGEST_QUEUE, keys.map((key) => ({ key, payload: { key } })));
-    if (day === today) Object.assign(patch, { indexDay: today, indexEtag: index.etag, indexLines: keys.length });
+  let cursor: Record<string, string> = {};
+  try {
+    cursor = JSON.parse(device.indexEtag ?? '{}') ?? {};
+  } catch {
+    cursor = {};
   }
-  if (!patch.indexDay && device.indexDay !== today) Object.assign(patch, { indexDay: today, indexEtag: null, indexLines: 0 });
+  const files = await captureStore.list(`${folder}/index/`, { pageSize: 1000, maxPages: 2 });
+  const next: Record<string, string> = {};
+  for (const file of files) {
+    const day = /\/index\/(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(file.key)?.[1];
+    if (!day) continue;
+    const mark = `${file.bytes}:${file.lastModified?.getTime() ?? 0}`;
+    next[day] = mark;
+    if (cursor[day] === mark) continue;
+    const body = await captureStore.getText(file.key);
+    if (body === null) continue;
+    const keys = manifestKeysFromIndex(projectPrefix(device.accountId, device.projectId), device.deviceId, body);
+    enqueued += await enqueueJobs(INGEST_QUEUE, keys.map((key) => ({ key, payload: { key } })));
+  }
+  const days = Object.keys(next).sort();
+  if (JSON.stringify(next) !== JSON.stringify(cursor)) {
+    Object.assign(patch, { indexDay: days[days.length - 1] ?? null, indexEtag: JSON.stringify(next), indexLines: days.length });
+  }
 
   if (Object.keys(patch).length) {
     await db.update(captureDevices).set({ ...patch, updatedAt: sql`now()` }).where(eq(captureDevices.deviceId, device.deviceId));

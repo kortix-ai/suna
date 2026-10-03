@@ -1,0 +1,3 @@
+# Vendored engine fixture objects are opaque bytes (some synthetic JPEG/MP4 bodies are
+# plain text that is not UTF-8): never diff or scan them as text.
+bucket/** binary
