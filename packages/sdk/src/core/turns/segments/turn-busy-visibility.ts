@@ -25,7 +25,7 @@
  * its ticking clock claim progress that is not happening, directly above the
  * card asking them to act.
  *
- * MEASURED, local stack 2026-09-22 (session 8d807956): one prompt, the agent
+ * MEASURED, local stack 2026-09-22 (one local session): one prompt, the agent
  * answered and then asked a 2-option question. The control-plane row stayed
  * `active` for 12m22s while the question sat unanswered on screen, and the
  * transcript shimmered "Working on it" with a clock that reached 7m55s before

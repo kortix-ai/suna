@@ -1,6 +1,6 @@
 {
-  "id": "b5b49b8a-97e0-4b40-a09d-7dbe4d437b51",
-  "prevId": "e80f6c0a-4d81-4413-9a1f-9c2313f15fe1",
+  "id": "c4881c58-ee3e-4133-892d-ae18838c601c",
+  "prevId": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1697,6 +1697,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_account_secret_resources_project_id": {
+          "name": "idx_account_secret_resources_project_id",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2377,6 +2392,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_account_tokens_service_account": {
+          "name": "idx_account_tokens_service_account",
+          "columns": [
+            {
+              "expression": "service_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"service_account_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_on_behalf_of_user": {
+          "name": "idx_account_tokens_on_behalf_of_user",
+          "columns": [
+            {
+              "expression": "on_behalf_of_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"on_behalf_of_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2910,6 +2957,21 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_deployment_events_runtime_idx": {
+          "name": "app_deployment_events_runtime_idx",
+          "columns": [
+            {
+              "expression": "runtime_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5522,21 +5584,6 @@
           "columns": [
             {
               "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_chat_pending_auth_messages_project": {
-          "name": "idx_chat_pending_auth_messages_project",
-          "columns": [
-            {
-              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

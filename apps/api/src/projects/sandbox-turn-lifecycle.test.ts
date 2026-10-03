@@ -15,8 +15,10 @@ let executeErrorByIndex: Record<number, Error> = {};
 
 mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
+  withDbTransaction: async (action: () => Promise<unknown>) => action(),
   db: {
     execute: async (query: unknown) => {
+      if (render(query).startsWith('SELECT') && render(query).includes('FOR UPDATE')) return [];
       const callIndex = executed.length;
       executed.push(render(query));
       const scoped = executeErrorByIndex[callIndex];

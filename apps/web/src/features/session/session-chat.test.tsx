@@ -5,7 +5,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
-import type { SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
 import { sessionAuditKey } from './session-audit-shared';
 import { TurnErrorDisplay } from './session-error-banner';
@@ -34,9 +34,11 @@ const userFixture = (id: string, text: string) => ({
 });
 let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
+let persistedOutcome: SessionTurnOutcome = {};
 let auditPending = false;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
+  useSessionTurnOutcome: () => persistedOutcome,
   useSessionMessages: () => fixtureMessages,
   useSessionSync: () => ({
     messages: fixtureMessages,
@@ -169,6 +171,54 @@ describe('SessionChat transcript rows', () => {
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
+  test('persisted failures render without a transcript message and deduplicate last_ended', () => {
+    fixtureMessages = [];
+    persistedOutcome = {
+      recent_failures: [{ message_id: 'install-prompt', ended_at: null, error: { name: 'Error', message: 'synthetic install failure' } }],
+      last_ended: { turn_token: 'install-turn', message_id: 'install-prompt', end_reason: 'failed', ended_at: null, error: { name: 'Error', message: 'synthetic install failure' } },
+    };
+    try {
+      expect(renderChat().split('synthetic install failure').length - 1).toBe(1);
+      persistedOutcome = { last_ended: { turn_token: 'early-turn', end_reason: 'failed', ended_at: null, error: { name: 'Error', message: 'synthetic early failure' } } };
+      expect(renderChat()).toContain('synthetic early failure');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+      persistedOutcome = {};
+    }
+  });
+
+  test('unknown persisted failures render after settling even without a transcript', () => {
+    fixtureMessages = [];
+    persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'install-unknown', ended_at: new Date(0).toISOString(), error: null }] };
+    try {
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { last_ended: { turn_token: 'unknown-early', end_reason: 'failed', ended_at: null } };
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { atMs: 100001, recent_failures: [{ message_id: 'install-provisional', ended_at: new Date(100000).toISOString(), error: null }] };
+      expect(renderChat()).not.toContain('Agent turn failed. No reason was reported.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+      persistedOutcome = {};
+    }
+  });
+
+  test('persisted failures already represented by transcript rows are not repeated', () => {
+    persistedOutcome = { recent_failures: [{ message_id: 'user-fixture', ended_at: null, error: { name: 'Error', message: 'synthetic persisted failure' } }] };
+    try {
+      fixtureMessages = [];
+      expect(renderChat().split('synthetic persisted failure').length - 1).toBe(1);
+      fixtureMessages = baseFixtureMessages;
+      expect(renderChat().split('synthetic persisted failure').length - 1).toBe(1);
+      persistedOutcome = { last_ended: { turn_token: 'done', end_reason: 'completed', ended_at: null, error: { name: 'Error', message: 'stale completed error' } } };
+      expect(renderChat()).not.toContain('stale completed error');
+      persistedOutcome = { last_ended: { turn_token: 'stop', end_reason: 'failed', ended_at: null, error: { name: 'AbortError', message: 'Aborted' } } };
+      expect(renderChat()).not.toContain('Aborted');
+    } finally {
+      persistedOutcome = {};
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
   test('an audit-pending executor call leaves the editor and send enabled beside its approval action', () => {
     auditPending = true;
     busy = true;
