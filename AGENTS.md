@@ -295,7 +295,7 @@ The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
 rejects the push when the attestation is stale, red, or missing. Never bypass
 it with `--no-verify`: the merge gate runs
 `pnpm test:verify --rev <head> --branch <headRefName>`: exit `0` green, `1`
-stale/red/missing (`--strict` exits `3` when `db-suites` is skipped). Verify
+stale/red/missing (`--strict` exits `3` when a lane carries a sanctioned skip). Verify
 reads the attestation file the PR's diff adds or edits under
 `tests/attestations/` (with several, the `--branch` match, else the newest
 `at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
