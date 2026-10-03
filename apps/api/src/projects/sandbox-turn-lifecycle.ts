@@ -239,8 +239,9 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
     return await withDbTransaction(() => execute(combined));
   } catch (error) {
     logger.warn(
-      `[turn-ledger] ${context} failed with its authority write; retrying the authority write alone:`,
-      error instanceof Error ? error.message : error,
+      `[turn-ledger] ${context} failed with its authority write; retrying the authority write alone: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
     return execute(authority);
   }
