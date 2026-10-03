@@ -8,7 +8,7 @@ if (!url) throw new Error('TEST_DATABASE_URL is required');
 const client = new pg.Client({ connectionString: url });
 const migrationPath = join(
   import.meta.dir,
-  '../migrations/20261003103000000_agent_templates_auth_initplan.sql',
+  '../migrations/20261003223000000_agent_templates_auth_initplan.sql',
 );
 const owner = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
