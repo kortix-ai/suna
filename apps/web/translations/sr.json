@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "Агентски потез није успео. Разлог није пријављен."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Пређите са наплате по машини на нови план од 40 $ по месту. Отказујемо претплате за машине, неискоришћени износ примењујемо на прво место, а остатак враћамо као ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Токени при сваком захтеву наслеђују улогу налога и чланства у групама свог творца. Да бисте ограничили приступ токена, приликом креирања га ограничите на један пројекат.",
     "projectAccessBoundary": {

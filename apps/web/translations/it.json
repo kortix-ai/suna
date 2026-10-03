@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "Il turno dell'agente non è riuscito. Nessun motivo è stato riportato."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Passa dalla fatturazione per macchina al nuovo piano da 40 $ per postazione. Annulliamo gli abbonamenti delle macchine, usiamo il saldo residuo per la prima postazione e restituiamo il resto come ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "A ogni richiesta, i token ereditano il ruolo dell'account e le appartenenze ai gruppi del loro creatore. Per limitare l'accesso di un token, associalo a un solo progetto quando lo crei.",
     "projectAccessBoundary": {

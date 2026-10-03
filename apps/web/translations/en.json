@@ -2924,6 +2924,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "Agent turn failed. No reason was reported."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Move off per-machine billing to the new $40/seat plan. We cancel your machine subscriptions, put your unused balance toward your first seat, and return the rest as ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Tokens inherit their creator's account role and group memberships at request time. To limit what a token can access, scope it to one project when you create it.",
     "projectAccessBoundary": {

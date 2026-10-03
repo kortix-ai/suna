@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "Agent 回合失败。未报告任何原因。"
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "从按机器计费切换到每席位 40 美元的新方案。我们会取消你的机器订阅，将未使用的余额抵扣第一个席位，并将其余金额退还为",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "令牌会在每次请求时继承创建者的账户角色和群组成员资格。创建令牌时将其限定到单个项目，即可限制令牌的访问范围。",
     "projectAccessBoundary": {

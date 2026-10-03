@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "El turno del agente falló. No se reportó ningún motivo."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Cambia la facturación por máquina al nuevo plan de 40 $ por puesto. Cancelamos tus suscripciones de máquinas, aplicamos el saldo no utilizado al primer puesto y devolvemos el resto como ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Los tokens heredan el rol de cuenta y los grupos de su creador en cada solicitud. Para limitar el acceso de un token, restríngelo a un solo proyecto cuando lo crees.",
     "projectAccessBoundary": {

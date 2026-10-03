@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "Agent-Durchlauf fehlgeschlagen. Es wurde kein Grund gemeldet."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Wechsle von der Abrechnung pro Maschine zum neuen Tarif für 40 $ pro Sitzplatz. Wir kündigen deine Maschinenabonnements, verrechnen dein ungenutztes Guthaben mit dem ersten Sitzplatz und erstatten den Rest als ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Token übernehmen bei jeder Anfrage die Kontorolle und Gruppenmitgliedschaften ihres Erstellers. Begrenze den Zugriff eines Tokens auf ein einzelnes Projekt, wenn du es erstellst.",
     "projectAccessBoundary": {

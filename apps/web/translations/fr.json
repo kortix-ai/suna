@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "Le tour de l'agent a échoué. Aucune raison n'a été signalée."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Passez de la facturation par machine au nouveau forfait à 40 $ par siège. Nous annulons vos abonnements aux machines, appliquons votre solde inutilisé au premier siège et restituons le reste sous forme de ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Les jetons héritent du rôle de compte et des appartenances aux groupes de leur créateur lors de chaque requête. Pour limiter l'accès d'un jeton, restreignez-le à un seul projet lors de sa création.",
     "projectAccessBoundary": {

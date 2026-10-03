@@ -2911,6 +2911,9 @@
     }
   },
   "hardcodedUi": {
+    "turnFailureNotice": {
+      "unexplained": "A vez do agente falhou. Nenhum motivo foi relatado."
+    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Troque a cobrança por máquina pelo novo plano de US$ 40 por licença. Cancelamos suas assinaturas de máquinas, usamos o saldo não utilizado na primeira licença e devolvemos o restante como ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Os tokens herdam a função da conta e os grupos de seu criador no momento de cada solicitação. Para limitar o acesso de um token, restrinja-o a um projeto ao criá-lo.",
     "projectAccessBoundary": {
