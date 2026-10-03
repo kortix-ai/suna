@@ -23,8 +23,16 @@ export const execFileAsync = promisify(execFile);
 const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
 const lastRefreshAt = new Map<string, number>();
 /** projectId → branch → when that branch was last proven to be at the remote's tip. */
+// replica-local: each API replica refreshes its own bare mirror on local disk
+// (`KORTIX_GIT_CACHE_DIR`), so the proof describes that replica's copy. Every
+// base move Kortix makes or proxies broadcasts `invalidateProjectMirror` to
+// every process, so the copy expires on time; the interval only bounds pushes
+// made directly on the upstream, where a missed proof costs one
+// `git ls-remote`, never a stale read.
 const tipProvenAt = new Map<string, Map<string, number>>();
 /** Bumped by every invalidation: a refresh in flight across one records nothing. */
+// replica-local: the broadcast increments every replica's counter, so a
+// cross-replica refresh never records across an invalidation that mattered.
 const invalidations = new Map<string, number>();
 
 /**

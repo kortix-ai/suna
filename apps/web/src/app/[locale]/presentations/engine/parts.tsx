@@ -358,8 +358,6 @@ export function RowList({
   );
 }
 
-/* ── Spec strip — the four mono facts under a /security-style hero ─────── */
-
 /**
  * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns, written per index:
  * the divider a cell needs changes with the breakpoint. Cell 3 starts a new row
@@ -371,32 +369,6 @@ const GRID_4_RULES = [
   'border-t lg:border-t-0 lg:border-l',
   'border-t sm:border-l lg:border-t-0',
 ] as const;
-
-export function SpecStrip({
-  specs,
-  className,
-}: {
-  specs: readonly { readonly k: string; readonly v: string }[];
-  className?: string;
-}) {
-  return (
-    <dl
-      className={cn(
-        'border-border bg-card grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4',
-        className,
-      )}
-    >
-      {specs.map((spec, i) => (
-        <div key={spec.k} className={cn('border-border px-5 py-5', GRID_4_RULES[i])}>
-          <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-            {spec.k}
-          </dt>
-          <dd className="text-foreground mt-2 text-sm leading-snug">{spec.v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 /* ── Numbered steps — the "how work lands" 4-up ────────────────────────── */
 

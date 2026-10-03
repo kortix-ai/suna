@@ -10,6 +10,7 @@
  *   → assert an audit row was written to the live DB
  *
  * Run from apps/api/ (so Bun loads apps/api/.env) with the API up on :8008.
+ * LIVE_PROJECT_ID is required: the id of a project in the database that API uses.
  */
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +20,8 @@ import { connectors, connectorActions, connectorCalls } from '@kortix/db';
 import { createAccountToken } from '../repositories/account-tokens';
 
 const API_URL = process.env.LIVE_API_URL ?? 'http://localhost:8008/v1';
-const PROJECT_ID = process.env.LIVE_PROJECT_ID ?? '0e96d960-42ff-4f71-a65a-7026848c1d1d';
+const PROJECT_ID = process.env.LIVE_PROJECT_ID ?? '';
+if (!PROJECT_ID) throw new Error('LIVE_PROJECT_ID is required: the id of a project in the database the live API uses');
 const SLUG = 'httpbin-live';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
