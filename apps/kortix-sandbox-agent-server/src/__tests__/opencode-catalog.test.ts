@@ -245,6 +245,19 @@ describe('boot config composition', () => {
 })
 
 describe('the boot config never touches the network', () => {
+  // A Kortix platform sandbox ships /opt/kortix/llm-catalog.json (the
+  // image-baked catalog). Point the baked-catalog seam at nothing so this
+  // suite proves the no-catalog-anywhere fallback on every machine.
+  let savedBakedCatalogPath: string | undefined
+  beforeEach(() => {
+    savedBakedCatalogPath = process.env.KORTIX_BAKED_LLM_CATALOG_PATH
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(tmpdir(), 'kortix-absent-baked-catalog.json')
+  })
+  afterEach(() => {
+    if (savedBakedCatalogPath === undefined) delete process.env.KORTIX_BAKED_LLM_CATALOG_PATH
+    else process.env.KORTIX_BAKED_LLM_CATALOG_PATH = savedBakedCatalogPath
+  })
+
   // `opencode serve` cannot bind until this config exists, so the build reads
   // only disk: a catalog file, else the bundled minimal set.
   const NO_FILE_ENV = {

@@ -33,7 +33,13 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+    // The platform's box env file, overridable per environment: on a Kortix
+    // sandbox the real /etc/pt-env carries KORTIX_PROJECT_AUTO_CLONE=1, which
+    // would otherwise make the repo gate un-inert for suites that emulate a
+    // box without one. Default unchanged for every real deployment.
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(
+      readFileSync(process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env', 'utf8'),
+    )
   } catch {
     return false
   }

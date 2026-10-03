@@ -698,6 +698,15 @@ function threeCommitOrigin(): string {
 describe('clone depth', () => {
   // Boot latency: a depth-1 clone is the default; history is restored off the
   // critical path by scheduleHistoryBackfill.
+  // This suite asserts PLAIN `git clone` semantics per depth. A Kortix platform
+  // sandbox ships /opt/kortix/scaffold.git, whose scaffold fast path pre-seeds
+  // the workspace and answers every depth with the scaffold's own shape; a CI
+  // runner has no scaffold. Point the scaffold seam at nothing so every machine
+  // runs the same clone path (the scaffold behaviour has its own suites).
+  beforeEach(() => {
+    // Runs after the file-level beforeEach, so this wins for these tests only.
+    __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-scaffold-absent-for-depth-tests'))
+  })
   it.each([
     [1, '1', true],
     [0, '3', false],

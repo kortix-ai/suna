@@ -134,14 +134,33 @@ function startFakeGateway() {
 
 let gateway: ReturnType<typeof startFakeGateway>
 let catalogDir: string
+let savedPtEnvPath: string | undefined
+/** An empty managed-skills dir: on a Kortix platform sandbox
+ *  /opt/kortix/managed-skills ships the platform's own skill family, which
+ *  would otherwise leak into every rig's system prompt (a CI runner has no
+ *  baked skills, so the suites assert project skills only). */
+let emptyManagedSkillsDir: string
 beforeAll(() => {
+  // A Kortix platform sandbox carries /etc/pt-env with KORTIX_PROJECT_AUTO_CLONE=1,
+  // which turns the health endpoint's repo gate on for rigs that emulate a box
+  // without a repo. Point the box-env seam at nothing so every rig sees the
+  // CI-like starting state (the platform override has its own coverage).
+  savedPtEnvPath = process.env.KORTIX_PT_ENV_PATH
+  process.env.KORTIX_PT_ENV_PATH = join(tmpdir(), 'pi-harness-absent-pt-env')
   gateway = startFakeGateway()
+  emptyManagedSkillsDir = mkdtempSync(join(tmpdir(), 'pi-no-managed-skills-'))
+  // managedSkillsDir() reads process.env, not the rig env.
+  process.env.KORTIX_MANAGED_SKILLS_DIR = emptyManagedSkillsDir
   catalogDir = mkdtempSync(join(tmpdir(), 'pi-catalog-'))
   writeFileSync(join(catalogDir, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } } }))
 })
 afterAll(() => {
   gateway.stop()
   rmSync(catalogDir, { recursive: true, force: true })
+  rmSync(emptyManagedSkillsDir, { recursive: true, force: true })
+  delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  if (savedPtEnvPath === undefined) delete process.env.KORTIX_PT_ENV_PATH
+  else process.env.KORTIX_PT_ENV_PATH = savedPtEnvPath
 })
 
 interface Rig {

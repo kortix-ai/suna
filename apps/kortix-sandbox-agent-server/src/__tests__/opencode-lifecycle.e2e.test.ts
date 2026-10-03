@@ -790,6 +790,11 @@ describe('agent .md model refs', () => {
   function useGateway(): void {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:9/v1'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // Same masking as the catalog suites: on a Kortix platform sandbox the
+    // image-baked catalog at /opt/kortix/llm-catalog.json would satisfy the
+    // "no catalog anywhere" fallback these flows assert (a CI runner has no
+    // such file), turning an expected model-swap restart into an `unchanged`.
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
   }
 
   test('gateway mode routes every .md model through kortix, after the config dir', async () => {
