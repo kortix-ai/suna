@@ -1980,7 +1980,11 @@
       "topupWalletHint": "Top up your wallet to keep your agents running.",
       "addCredits": "Add credits",
       "billingPortal": "Billing portal",
-      "portalDescription": "Manage your subscription, payment methods, and invoices."
+      "portalDescription": "Manage your subscription, payment methods, and invoices.",
+      "cancelSubscription": "Cancel subscription",
+      "cancelSubscriptionDescription": "Your plan stays active until the end of the current billing period, then it ends. You can reactivate until then.",
+      "reactivateSubscription": "Reactivate subscription",
+      "commitmentCancelHint": "Your commitment runs through {date}. You can cancel after it ends."
     },
     "topup": {
       "minimum": "Minimum top-up is {amount}.",
