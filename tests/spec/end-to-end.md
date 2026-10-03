@@ -1446,6 +1446,7 @@ The experimental browser contract **AGENTIC-1** lives in
 `tests/session-prompt.e2e.ts`. It is not a REST/CLI catalog flow or a release gate.
 Run it through `pnpm test -- --agentic-only` in an isolated database worktree.
 
+Reject a deterministic API test profile before creating fixtures.
 Create and authenticate a synthetic owner. Fund its local credit account.
 Provision one starter project and one real cloud session. Open that session
 with the authenticated browser. Assert that an empty composer cannot send.

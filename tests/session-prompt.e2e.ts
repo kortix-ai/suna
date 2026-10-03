@@ -8,7 +8,7 @@ import { createApiJsonClient } from './e2e/helpers/http';
 import { fundAccount } from './e2e/helpers/manifest-project';
 import { createAuthUser, signIn } from './e2e/helpers/session-auth';
 import { waitForSessionReady } from './e2e/helpers/session-ready';
-import { resolveLocalTopology } from './src/core/local-stack';
+import { LOCAL_TEST_PROFILE_HEADER, resolveLocalTopology } from './src/core/local-stack';
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -29,6 +29,15 @@ test(
     const topology = resolveLocalTopology(process.cwd());
     if (topology.marker?.dbMode !== 'isolated') {
       throw new Error('AGENTIC-1 requires a worktree created with --db');
+    }
+    const health = await fetch(`${topology.apiUrl}/health`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    expect(health.ok).toBe(true);
+    if (health.headers.get(LOCAL_TEST_PROFILE_HEADER) === '1') {
+      throw new Error(
+        'AGENTIC-1 requires the live development stack; stop the deterministic test stack before running it',
+      );
     }
     const supabaseUrl = requireEnvValue('E2E_SUPABASE_URL');
     const databaseUrl = requireEnvValue('E2E_DATABASE_URL');

@@ -174,6 +174,7 @@ A full start before migrations can fail its PostgREST health check because `kort
 Do not delete another session's Docker resources.
 Capture Supabase startup output in ignored `output/` because it can print credentials.
 Independent auth/storage/work-queue state prevents another local API from claiming this session's work.
+The live journey rejects the API's deterministic-test-profile header before creating any fixtures.
 Do not stop another session's stack to make the test pass.
 The wrapper and config reject foreign web/API/gateway listeners before startup.
 The target reads this worktree's web port and starts its stack with `pnpm worktree start <name>`.
