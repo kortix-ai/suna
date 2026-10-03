@@ -39,6 +39,16 @@ test('getStatus() reports missing Platinum sandboxes as removed', async () => {
   await expect(provider.getStatus('sbx_missing')).resolves.toBe('removed');
 });
 
+test('getStatus() does not read a 500 whose text says "not found" as removed', async () => {
+  fetchStatus = 500;
+  fetchBody = { error: 'upstream sandbox record not found in cache' };
+
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  await expect(provider.getStatus('sbx_live')).resolves.toBe('unknown');
+});
+
 test('getStatus() preserves transitional Platinum failures as unknown', async () => {
   fetchStatus = 409;
   fetchBody = { error: 'sandbox not running', code: 'sandbox_not_running' };
@@ -115,7 +125,7 @@ test('recoverInPlace() starts a failed-start box that has booted before, in plac
   expect(calls).toEqual(['GET /v1/sandboxes/sbx_kept', 'POST /v1/sandboxes/sbx_kept/start']);
 });
 
-// Regression for incident 2026-08-12 (sbx_01KZP370WDB8DGYNAQM1B875VR).
+// Regression for incident 2026-08-12 (a prod <sandbox_id>).
 //
 // Platinum's reconciler deleted a sandbox that had a COMPLETED 4.87 GB backup
 // in S3. From that moment `GET /v1/sandboxes/:id` returns 404 — the same 404 a

@@ -53,11 +53,12 @@
  */
 
 import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson, platinumJsonResponse } from '../../shared/platinum';
+import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -76,6 +77,7 @@ import type {
 } from './contract';
 import {
   SandboxTemplateNotFoundError,
+  SnapshotStillBuildingError,
   assertWorkloadCredential,
   sandboxWorkloadType,
 } from './contract';
@@ -231,33 +233,15 @@ type PlatinumExecResponse = {
  * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
  * POST (the template id doesn't exist / was GC'd). ONLY a 404 qualifies: a 400
  * (bad request) or 5xx (transient outage) is NOT a GC'd pin and must NOT trigger
- * a name-boot fallback. Matches the `platinum <method> <path> -> 404 …` shape
- * platinumJson throws.
+ * a name-boot fallback.
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  return / -> 404\b/.test(message);
+  return platinumHttp(error).status === 404;
 }
 
-function isMissingSandboxError(error: unknown): boolean {
-  const err = error as
-    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
-    | null
-    | undefined;
-  if (err?.status === 404 || err?.statusCode === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
-  return (
-    message.includes('-> 404') ||
-    message.includes('"code":"not_found"') ||
-    message.includes('not found') ||
-    message.includes('no such sandbox') ||
-    message.includes('sandbox does not exist')
-  );
+/** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
+function platinumHttp(error: unknown): Partial<Pick<PlatinumHttpError, 'status' | 'code' | 'body'>> {
+  return error instanceof Error ? (error as Partial<PlatinumHttpError>) : {};
 }
 
 /**
@@ -328,15 +312,21 @@ function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: num
  * `409 template_not_resident`, with `state` 'absent', 'replicating' or
  * 'failed'. Platinum copies the template there on its own (the copy's progress
  * is what `state` reports), so this is the "image still building" condition in
- * another form, and it gets the same patient retry window: the rewritten
- * message matches `isSnapshotStillBuilding` in sandbox-init-state.ts.
+ * another form, and it gets the same patient retry window: it throws the
+ * `SnapshotStillBuildingError` that sandbox-init-state.ts waits out.
  */
 function regionalTemplateNotReady(error: unknown, template: string): Error | null {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  if (!/ -> 409\b/.test(message) || !/template_not_resident/.test(message)) return null;
-  const region = /"region"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? 'the requested region';
-  const state = /"state"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? 'absent';
-  return new Error(
+  const http = platinumHttp(error);
+  if (http.status !== 409 || http.code !== 'template_not_resident') return null;
+  let body: { region?: unknown; state?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON; keep the defaults if not
+  }
+  const region = typeof body.region === 'string' ? body.region : 'the requested region';
+  const state = typeof body.state === 'string' ? body.state : 'absent';
+  return new SnapshotStillBuildingError(
     `Sandbox image snapshot ${template} is building in ${region}: Platinum is copying the template there (state=${state})`,
   );
 }
@@ -352,9 +342,8 @@ function regionalTemplateNotReady(error: unknown, template: string): Error | nul
  * key, which the CP replays to the already-committed box).
  */
 function isNameTakenConflict(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  if (!/ -> 409\b/.test(message)) return false;
-  return /name_taken|name[_ ]?already|name.{0,24}(exists|conflict|taken)/i.test(message);
+  const http = platinumHttp(error);
+  return http.status === 409 && http.code === 'name_taken';
 }
 
 export class PlatinumProvider implements SandboxProvider {
@@ -749,14 +738,13 @@ export class PlatinumProvider implements SandboxProvider {
         // 409. Keep the provider call inside this adapter until the accepted
         // stop settles, then retry start. The control plane remains stopped and
         // unbilled until its separate provider-running confirmation succeeds.
-        const message = error instanceof Error ? error.message : String(error ?? '');
         // The CALL gave up, not Platinum: a restore it started keeps going
         // server-side. Wait on the box's real state instead of failing the wake.
-        if (/ timed out after /.test(message) && Date.now() < restoreDeadline) {
+        if (error instanceof Error && error.name === 'TimeoutError' && Date.now() < restoreDeadline) {
           if (await restored()) continue;
           return;
         }
-        if (!/ -> 409\b/.test(message)) throw error;
+        if (platinumHttp(error).status !== 409) throw error;
         firstConflict ??= error;
       }
 
@@ -975,7 +963,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
-      if (isMissingSandboxError(err)) return 'removed';
+      if (isProviderNotFound(err)) return 'removed';
       return 'unknown';
     }
   }
@@ -985,10 +973,10 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
     } catch (err) {
-      if (!isMissingSandboxError(err)) return 'recovering';
+      if (!isProviderNotFound(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, a prod <sandbox_id>:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:

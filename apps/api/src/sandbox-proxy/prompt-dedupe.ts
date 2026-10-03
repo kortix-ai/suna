@@ -202,11 +202,12 @@ export function claimPromptDelivery(key: string, now: number = Date.now()): bool
 }
 
 // Release a claim taken by claimPromptDelivery when the delivery PROVABLY never
-// reached opencode (the sandbox refused every connection, or the daemon returned
-// "opencode not ready") — so a client retry with the same key re-attempts instead
+// reached the runtime (the sandbox refused every connection, or the daemon
+// answered its not-ready 503 — `X-Kortix-Boot-Phase` / `runtime_not_ready`, on
+// either harness) — so a client retry with the same key re-attempts instead
 // of short-circuiting to a bogus 200 "duplicate", which would silently drop the
 // prompt (message loss). Only call this on a certain-not-delivered failure: on an
-// AMBIGUOUS failure (5xx/timeout/reset where opencode may already hold the
+// AMBIGUOUS failure (5xx/timeout/reset where the runtime may already hold the
 // message) the claim must stay so a retry can't double-enqueue. A no-op for a key
 // that was never claimed or already evicted.
 export function releasePromptDelivery(key: string): void {

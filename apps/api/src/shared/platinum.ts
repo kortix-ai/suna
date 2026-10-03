@@ -265,9 +265,34 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       const budget = usingDefault
         ? `${DEFAULT_CALL_TIMEOUT_MS}ms (default)`
         : 'caller-provided budget';
-      throw new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${budget}`);
+      const timeout = new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${budget}`);
+      timeout.name = 'TimeoutError';
+      throw timeout;
     }
     throw err;
+  }
+}
+
+/**
+ * A non-2xx Platinum answer. The message keeps the historical
+ * `platinum <method> <path> -> <status> <body>` shape for logs; callers
+ * classify by `status` and `code` (the JSON body's `code`), never the text.
+ */
+export class PlatinumHttpError extends Error {
+  readonly code?: string;
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body = '',
+  ) {
+    super(message);
+    this.name = 'PlatinumHttpError';
+    try {
+      const code = (JSON.parse(body) as { code?: unknown }).code;
+      if (typeof code === 'string') this.code = code;
+    } catch {
+      // not JSON: no code
+    }
   }
 }
 
@@ -281,14 +306,13 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
  * retryable 503 to the client. It is NOT a 500-worthy error and must NOT page
  * Sentry, so it gets its own typed error that `app.onError` classifies out of
  * `captureException` (mirroring the request-deadline 503 pattern). Every OTHER
- * Platinum failure (4xx/5xx, timeout, bad body) still throws the generic
- * `platinum <method> <path> -> <status> <body>` Error and is captured normally
- * — only this one expected state is special-cased, so unexpected failures stay
+ * non-2xx still throws a plain `PlatinumHttpError` and is captured normally —
+ * only this one expected state is special-cased, so unexpected failures stay
  * loud.
  */
-export class PlatinumSandboxNotRunningError extends Error {
-  constructor(message = 'sandbox is not running') {
-    super(message);
+export class PlatinumSandboxNotRunningError extends PlatinumHttpError {
+  constructor(message = 'sandbox is not running', body = '{"code":"sandbox_not_running"}') {
+    super(message, 409, body);
     this.name = 'PlatinumSandboxNotRunningError';
   }
 }
@@ -332,6 +356,7 @@ export async function platinumJsonResponse<T>(
     if (isSandboxNotRunningBody(res.status, text)) {
       throw new PlatinumSandboxNotRunningError(
         `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`,
+        text,
       );
     }
     // Surface Retry-After (seconds) on a 429 so poll-error classification can
@@ -341,8 +366,10 @@ export async function platinumJsonResponse<T>(
       const ra = res.headers.get('retry-after');
       if (ra && /^\d+$/.test(ra.trim())) suffix = ` retry-after=${ra.trim()}`;
     }
-    throw new Error(
+    throw new PlatinumHttpError(
       `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}${suffix}`,
+      res.status,
+      text,
     );
   }
   const body = (text ? JSON.parse(text) : {}) as T;
@@ -350,7 +377,7 @@ export async function platinumJsonResponse<T>(
   return { status: res.status, body };
 }
 
-/** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */
+/** GET/POST JSON. Throws `PlatinumHttpError` on non-2xx. */
 export async function platinumJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await platinumJsonResponse<T>(path, init)).body;
 }
