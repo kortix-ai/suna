@@ -113,7 +113,8 @@ export async function countPass(nowMs?: number): Promise<{ counted: number }> {
 async function tickAndRearm(): Promise<void> {
   try {
     const result = await runWorkerTick('audit-event-counts', () => countPass());
-    if (result.counted) logger.info('[audit event counts] counted slots', { counted: result.counted });
+    if (result.counted)
+      logger.info('[audit event counts] counted slots', { counted: result.counted });
   } catch (err) {
     // The next tick retries whatever is still missing; nothing waits a whole
     // cycle for a transient failure, and nothing doubles (counts are exact).

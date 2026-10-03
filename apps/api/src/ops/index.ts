@@ -259,8 +259,10 @@ opsApp.openapi(
       // pages. A slot is counted 5–10 min after it closed (the worker's
       // late-retry grace), so this reads the trailing 24 h of counted slots —
       // bounded by slot granularity, never a statement_timeout. Slots before
-      // this metric's rollout do not exist, so the number undercounts for the
-      // first ~26 h after a deploy (the worker's catch-up window).
+      // this metric's rollout do not exist, so the number undercounts only
+      // until the worker's catch-up backfills the window: 12 slots per
+      // 5-minute tick, newest first, covers the 24 h window in ~2 h (the 26 h
+      // lookback in ~2.5 h).
       sql`
         SELECT coalesce(sum(events), 0)::int AS count
         FROM kortix.audit_event_counts
