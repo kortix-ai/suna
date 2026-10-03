@@ -1,27 +1,25 @@
 {
-  "source_hash": "cde334fb1ed1471a3db454ea8cc6ce0661443d2f3721c8691d05ad180092a707",
+  "source_hash": "a42273c6dd32429ec463b5f7482d453f63d3d4d3de622e4074694a2f47c808ce",
   "diff_files": [
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
     "apps/cli/src/__tests__/access-assignments.test.ts",
     "apps/cli/src/commands/access.ts",
     "apps/kortix-sandbox-agent-server/bunfig.toml",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/static-web-credential-read.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
-    "packages/db/migrations/20261003010107485_basejump_accounts_fk_covering_indexes.concurrent.ts"
+    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts"
   ],
-  "diff_hash": "77004484fe8948bff66ce1ad5b5a6492909bd3db9439835f2d07db88af47275a",
-  "head": "4dd3aa0f15652f0deeb346acae81a0c4b643c55a",
+  "diff_hash": "95a3b1218c41a4df8ded473b57cfb6a6cb741873309e948f09956966f7bb2167",
+  "head": "4089e29032c647d7d3a554d59b64b79a0b0c50c4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:34:32.560Z"
+  "at": "2026-10-03T21:20:24.109Z"
 }
