@@ -389,9 +389,6 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
-      // The suite runs its own mock API. Inside a Kortix sandbox the CLI would
-      // otherwise fall back to the agent env file (/dev/shm/kortix/agent-env.sh)
-      // and call the real platform with real credentials.
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },
@@ -776,8 +773,8 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
-        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
         KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -849,8 +846,8 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
-        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
         KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
       },
       stdin: 'pipe',
       stdout: 'pipe',

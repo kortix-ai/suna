@@ -3,9 +3,9 @@
  * gate against actual `iam_resource_grants` rows.
  *
  * This suite owns the authorization decision, with nothing about it mocked: a
- * member scoped OUT of an agent is refused before the re-mint, a member scoped IN
- * is not on the bound session agent, switches are rejected, and an
- * account owner keeps the implicit-Manager bypass. The sibling unit test
+ * member scoped OUT of an agent is refused before the re-mint, an authorized
+ * switch re-mints, and an account owner keeps the implicit-Manager bypass.
+ * The sibling unit test
  * (sandbox-proxy/routes/preview-agent-authz.test.ts) keeps only the no-gate paths
  * and the undeclared-agent drop, with a stubbed `authorize`.
  *
@@ -258,9 +258,9 @@ beforeEach(() => {
   __resetPromptDedupe();
 });
 
-// A session bound to a concrete agent refuses any other agent with 409 before
-// authorization (KRTX-805), so the IAM agent gate is reached only by a
-// `default`-bound session: the legacy client echoes its resolved default.
+// KRTX-1290: a concrete-bound session switches agents again, so the IAM agent
+// gate is reached by every switch — a member runs another agent exactly when
+// that agent is granted to them.
 test('a member scoped OUT of the agent cannot prompt as it, and never reaches the re-mint', async () => {
   boundAgent = 'default';
   const response = await promptAs(scopedOut, SCOPED_AGENT);
@@ -281,20 +281,21 @@ test('the member an agent IS scoped to passes the gate on a default-bound sessio
   expect(upstreamCalls).toBe(1);
 });
 
-test('a grant on another agent does not permit switching a running session', async () => {
-  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
+test('the member the switched-to agent IS scoped to switches a running session and re-mints', async () => {
+  const response = await promptAs(scopedOut, OTHER_SCOPED_AGENT);
 
-  expect(response.status).toBe(409);
-  expect(remintCalls).toEqual([]);
-  expect(upstreamCalls).toBe(0);
+  expect(response.status).toBe(200);
+  expect(remintCalls).toEqual([OTHER_SCOPED_AGENT]);
+  expect(upstreamCalls).toBe(1);
 });
 
-test('a member scoped OUT is refused a switch with 409 before any grant work', async () => {
-  const response = await promptAs(scopedOut, SCOPED_AGENT);
+test('a member with no grant on the switched-to agent is refused with 403 before any grant work', async () => {
+  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
 
-  expect(response.status).toBe(409);
-  expect(await response.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
   expect(remintCalls).toEqual([]);
+  expect(envSyncCalls).toBe(0);
   expect(upstreamCalls).toBe(0);
 });
 
