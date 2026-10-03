@@ -231,12 +231,16 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
  * The sign-in gate for the `(app)` shell. When a verified TOTP factor is
  * enrolled and this session is still aal1 (a fresh magic-link sign-in), the
  * challenge renders instead of the app and stays up until the session is aal2.
- * While a session exists but the fresh AAL answer has not landed yet, the app
- * is held behind a loading frame: mounting it would fetch with an aal1 token
- * before the gate can decide. If the AAL read FAILS the gate fails open — the
- * same session is still covered by the account-wide `account_mfa_required`
- * backend gate when that policy is on, and the Security tab's own step-up
- * still guards its sensitive actions.
+ *
+ * The hold covers BOTH windows that could otherwise fetch with an aal1 token:
+ * the auth provider's bootstrap (the stored session is already live for the
+ * SDK's token cache before `isLoading` clears) and this gate's own first AAL
+ * read. During both the shell renders a neutral loading frame instead of the
+ * app. Two fail-opens, both bounded: an AAL read that ERRORS releases the app
+ * (the account-wide `account_mfa_required` backend gate still covers that
+ * session when the policy is on, and the Security tab's own step-up still
+ * guards its sensitive actions), and an auth bootstrap that never completes
+ * ends in the provider's bootstrapError path, same as before this gate.
  */
 export function MfaGate({ children }: { children?: React.ReactNode }) {
   const { session, isLoading } = useAuth();
@@ -250,13 +254,13 @@ export function MfaGate({ children }: { children?: React.ReactNode }) {
   // from the dialog's escape hatch must not leave a stale aal1 answer gating
   // the signed-out document.
   const enforced = !!session && !isLoading && mfaChallengeRequired(aalQuery.data);
-  const deciding = !!session && !isLoading && aalQuery.isPending;
+  const deciding = isLoading || (!!session && aalQuery.isPending);
 
   return (
     <>
       {deciding || enforced ? (
-        // A neutral full-screen frame for the sub-second window while the gate
-        // decides — never the app, never blank.
+        // A neutral full-screen frame for the window while the gate decides —
+        // never the app, never blank.
         <div className="bg-background grid h-dvh place-items-center">
           <Loading className="size-6" />
         </div>

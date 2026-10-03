@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import type { AALResponse, FactorInfo } from './mfa';
-// mfaChallengeRequired is imported dynamically inside its describe block so a
-// missing export fails with a clear message instead of killing the whole file.
 
 // ─── Supabase client stub ───────────────────────────────────────────────────
 // `getAAL` reads `supabase.auth.getSession`, `supabase.auth.getUser` and

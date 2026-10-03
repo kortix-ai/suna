@@ -14,9 +14,10 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
  * only after the code verifies. An already-verified session (aal2) runs the
  * action directly.
  *
- * `useMfa` is injected as a fixture (its own mutations are covered by its own
- * hook tests); this file pins the Security tab's WIRING: which action is
- * deferred, what event opens the dialog, and that the action runs once.
+ * `useMfa` is injected as a fixture (its own mutations pre-date this change
+ * and are out of scope); this file pins the Security tab's WIRING: which
+ * action is deferred, what event opens the dialog, and that the action runs
+ * once.
  */
 
 type Fixture = {

@@ -272,6 +272,16 @@ describe('MfaGate', () => {
     expect(serialize(root)).toContain('APP CONTENT');
   });
 
+  test('holds the app behind the loading frame while the auth bootstrap has not resolved', async () => {
+    verifiedTotpAal();
+    authState = { session: null, user: null, isLoading: true };
+    const root = await mount(createElement(MfaGate, null, APP));
+
+    expect(serialize(root)).not.toContain('APP CONTENT');
+    expect(serialize(root)).toContain('loading');
+    expect(input(root)).toBeUndefined();
+  });
+
   test('holds the app behind the loading frame while the AAL answer has not landed', async () => {
     verifiedTotpAal();
     aalHang = new Promise(() => {});
