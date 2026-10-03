@@ -4,7 +4,7 @@ commit: f23d422285
 ---
 # A 400 that names one parameter is never the turn's final answer
 
-*Incident (2026-08-25 19:40Z, SampleCo session 58da74d4):* the gateway
+*Incident (2026-08-25 19:40Z, a SampleCo session):* the gateway
 forwarded a reasoning field in a shape Bedrock's GPT-5.6 profile rejects
 (`400 unknown_parameter: reasoning_effort`); every turn on the model died with
 an empty assistant message until the wire shape was verified and corrected

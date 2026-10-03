@@ -88,9 +88,9 @@ export class ChatEventAdapter {
       case 'message_start': {
         // Only ASSISTANT messages translate. The worker publishes the USER
         // message itself at prompt time (pi's user message_start rendered an
-        // empty duplicate bubble — dev session ae3a07fc), and pi's 'toolResult'
+        // empty duplicate bubble on a dev session), and pi's 'toolResult'
         // messages are already carried as tool PARTS on the assistant message
-        // (dev session 7f218b0a rendered a stray toolResult row).
+        // (a dev session rendered a stray toolResult row).
         if ((event.message?.role ?? 'assistant') !== 'assistant') return [];
         this.currentMessageId = this.mint ? this.mint() : `msg-${++this.messageSeq}`;
         this.partCount = 0;

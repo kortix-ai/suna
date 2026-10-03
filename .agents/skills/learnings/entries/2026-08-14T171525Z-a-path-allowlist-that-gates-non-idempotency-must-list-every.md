@@ -25,6 +25,6 @@ adding an endpoint to one concern silently opts it into or out of the other;
 **Enforcement:** both predicates are unit-tested per endpoint in
 `prompt-dedupe.test.ts` / `preview-retry-budget.test.ts`. Black-box proof: two
 identical `/command` POSTs must yield exactly one new user message.
-*Incident:* session `9f6b0d87`, one `/webapp` submit recorded as 4 identical user
+*Incident:* one session, one `/webapp` submit recorded as 4 identical user
 messages 11.0s / 11.8s / 13.7s apart (attempt timeout + `RETRY_DELAYS_MS`
 [250, 1000, 3000]).

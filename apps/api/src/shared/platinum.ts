@@ -11,6 +11,7 @@
  */
 
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { configuredTimeoutMs } from './with-timeout';
 
 export function isPlatinumConfigured(): boolean {
@@ -53,6 +54,10 @@ const SANDBOX_ID_PATH = /^\/v1\/sandboxes\/([^/?#]+)(?=[/?#]|$)/;
 const SANDBOX_COLLECTION_PATH = /^\/v1\/sandboxes(?=[?#]|$)/;
 /** One entry per sandbox this process has called; the oldest goes first. */
 export const PLATINUM_ORIGIN_CACHE_MAX = 10_000;
+// replica-local: learned owner-origin routing. A replica that has not learned
+// an id yet routes via the configured global origin, which Platinum forwards
+// to the owner itself — one extra hop, never a wrong answer. Each replica
+// learns on its own first call.
 const sandboxOrigins = new Map<string, string>();
 
 function sandboxIdOf(path: string): string | null {
@@ -104,6 +109,8 @@ function rememberSandboxOrigin(sandboxId: string, candidate: unknown): void {
 // origin: for a US box that is Kortix → EU control plane → US control plane,
 // one transatlantic forward per create (Dev, 2026-10-02: the US create also
 // paid the EU hop while every later call for the box went direct).
+// replica-local: same contract as the sandbox origins — an unlearned replica
+// pays the extra forward through the global origin, it never mis-routes.
 const regionOrigins = new Map<string, string>();
 
 function rememberRegionOrigin(region: unknown, candidate: unknown): void {
@@ -255,7 +262,7 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       // names it again.
       if (sandboxId && sandboxOrigins.get(sandboxId) === regional) sandboxOrigins.delete(sandboxId);
       if (createRegion && regionOrigins.get(createRegion) === regional) regionOrigins.delete(createRegion);
-      console.warn(
+      logger.warn(
         `[platinum] ${method} ${path} via ${regional} failed (${err instanceof Error ? ((err as { code?: unknown }).code ?? err.message) : err}); retrying once via the global origin`,
       );
       return await send(platinumBase());
