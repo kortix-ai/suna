@@ -129,7 +129,7 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
       : [];
   const actions =
     manifest.kind === 'actions' && !encrypted
-      ? zstdLines(objects.actions!).map((line) => parseActionLine(line, manifest.start_ms)).filter((row) => row !== null)
+      ? zstdLines(objects.actions!).map(parseActionLine).filter((row) => row !== null)
       : [];
   const audio =
     manifest.kind === 'audio' && !encrypted

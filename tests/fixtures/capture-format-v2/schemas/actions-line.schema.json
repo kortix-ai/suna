@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/actions-line.schema.json",
+  "title": "Action line",
+  "description": "One line of an action segment's .actions.jsonl.zst (zstd JSONL, time order). Images are never inline: screenshot and displays[].screenshot name assets.",
+  "type": "object",
+  "required": [
+    "ts_ms",
+    "start_ms",
+    "kind",
+    "command",
+    "args",
+    "app",
+    "window",
+    "target",
+    "screenshot"
+  ],
+  "properties": {
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "start_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "kind": {
+      "enum": [
+        "click",
+        "drag",
+        "scroll",
+        "press",
+        "hotkey",
+        "typewrite",
+        "sleep",
+        "screenshot"
+      ]
+    },
+    "command": {
+      "type": "string"
+    },
+    "args": {
+      "type": "object",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "image"
+            ]
+          },
+          {
+            "required": [
+              "displays"
+            ]
+          }
+        ]
+      }
+    },
+    "app": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "bundle_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "window": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bbox": {
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "screenshot": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/asset"
+        }
+      ]
+    },
+    "displays": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "screenshot"
+        ],
+        "properties": {
+          "screenshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/asset"
+              }
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "image"
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "string",
+      "pattern": "^(sha256-)?[0-9a-f]{64}\\.[a-z0-9]+$"
+    }
+  }
+}

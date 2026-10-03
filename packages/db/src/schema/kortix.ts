@@ -6658,7 +6658,7 @@ export const captureDevices = kortixSchema.table(
     lastCredentialsAt: timestamp('last_credentials_at', { withTimezone: true }),
     /** Operator override written to `<prefix>/<device_id>/policy.json`. Null = project policy. */
     policyOverride: jsonb('policy_override').$type<Record<string, unknown>>(),
-    /** Index reader cursor: the UTC day file last read, its ETag, and lines consumed. */
+    /** Index reader cursor: the newest index day, `{"<day>": "<bytes>:<mtime>"}` of the day files read (index_etag), and their count. */
     indexDay: text('index_day'),
     indexEtag: text('index_etag'),
     indexLines: integer('index_lines').default(0).notNull(),

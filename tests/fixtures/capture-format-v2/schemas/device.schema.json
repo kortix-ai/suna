@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kortix-ai/capture/blob/main/apps/recorder/schemas/device.schema.json",
+  "title": "device.json",
+  "description": "<prefix>/<device_id>/device.json, plaintext, written by the device on start, on change and at least hourly.",
+  "type": "object",
+  "required": [
+    "schema",
+    "device_id",
+    "machine_key_sha256",
+    "hostname",
+    "computer_name",
+    "os",
+    "os_version",
+    "arch",
+    "app_version",
+    "member",
+    "updated_at_ms"
+  ],
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/]+$"
+    },
+    "machine_key_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hostname": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "computer_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "os": {
+      "enum": [
+        "macos",
+        "windows",
+        "linux"
+      ]
+    },
+    "os_version": {
+      "type": "string"
+    },
+    "arch": {
+      "type": "string"
+    },
+    "app_version": {
+      "type": "string"
+    },
+    "member": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "email"
+          ],
+          "properties": {
+            "email": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "encryption": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "alg",
+            "key_id"
+          ]
+        }
+      ]
+    },
+    "first_chunk_ms": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "last_chunk_ms": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "updated_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

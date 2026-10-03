@@ -342,11 +342,14 @@ export async function revokeCaptureDevice(projectId: string, deviceId: string) {
 /**
  * Read a device's status, description and index now, and queue every new item
  * for indexing (a "Sync now"). Without it the readers pick items up within a
- * minute. Your own device, or any device for managers.
+ * minute. `forgotten` counts the items the device deleted (the person forgot a
+ * time range, or the device's retention removed it), which Kortix retracted
+ * with the outputs of every range that overlapped them. Your own device, or
+ * any device for managers.
  */
 export async function syncCaptureDevice(projectId: string, deviceId: string) {
   return unwrap(
-    await backendApi.post<{ device_id: string; enqueued: number }>(`${base(projectId)}/devices/${deviceId}/sync`, {}),
+    await backendApi.post<{ device_id: string; enqueued: number; forgotten: number }>(`${base(projectId)}/devices/${deviceId}/sync`, {}),
   );
 }
 

@@ -2,7 +2,8 @@
  * The capture credential issuer: short-lived S3 credentials that reach exactly
  * one device's folder.
  *
- *   read/write  <bucket>/<prefix>/<device_id>/*
+ *   read/write/delete  <bucket>/<prefix>/<device_id>/*  (the engine probes with
+ *               PUT, HEAD, DELETE and removes a forgotten range's objects itself)
  *   read        <bucket>/<prefix>/policy.json
  *   list        <bucket> with s3:prefix <prefix>/<device_id>/*  (so a missing key
  *               answers 404, not 403 — learnings 2026-09-14)
@@ -26,6 +27,8 @@ export interface CaptureCredentials {
   secret_access_key: string;
   session_token: string;
   expires_at_ms: number;
+  /** Path-style URLs (MinIO and most self-hosted S3); false on AWS. */
+  path_style: boolean;
 }
 
 export interface CaptureCredentialIssuer {
@@ -41,7 +44,7 @@ export function deviceSessionPolicy(bucket: string, prefix: string, deviceId: st
       {
         Sid: 'DeviceFolder',
         Effect: 'Allow',
-        Action: ['s3:PutObject', 's3:GetObject', 's3:AbortMultipartUpload', 's3:ListMultipartUploadParts'],
+        Action: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject', 's3:AbortMultipartUpload', 's3:ListMultipartUploadParts'],
         Resource: [`arn:aws:s3:::${bucket}/${folder}/*`],
       },
       {
@@ -103,6 +106,7 @@ const stsIssuer: CaptureCredentialIssuer = {
       secret_access_key: creds.SecretAccessKey,
       session_token: creds.SessionToken,
       expires_at_ms: creds.Expiration.getTime(),
+      path_style: config.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE,
     };
   },
 };

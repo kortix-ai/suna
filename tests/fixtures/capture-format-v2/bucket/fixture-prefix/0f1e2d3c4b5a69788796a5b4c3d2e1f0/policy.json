@@ -1,0 +1,9 @@
+{
+  "notice": "Recording is paused for this computer until 10:00 UTC.",
+  "recording": {
+    "paused": true,
+    "paused_until_ms": 1790848800000
+  },
+  "schema": 2,
+  "updated_at_ms": 1790845201000
+}

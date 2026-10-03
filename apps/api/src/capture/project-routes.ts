@@ -198,10 +198,10 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/capture/devices/{deviceId}/sync',
     tags,
-    summary: 'Read a device’s status, description and index now, and queue every new item for indexing',
+    summary: 'Read a device’s status, description and index now, queue every new item for indexing, and retract every item the device deleted',
     ...auth,
     request: { params: params.extend({ deviceId: z.string().uuid() }) },
-    responses: { ...ok('The number of items queued'), ...errors(503) },
+    responses: { ...ok('The number of items queued and the number retracted'), ...errors(503) },
   }),
   async (c) => {
     const access = await captureAccess(c);
@@ -209,8 +209,8 @@ projectsApp.openapi(
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device || device.revokedAt) return c.json({ error: 'Not found' }, 404);
-    const { enqueued } = await pollDevice(device);
-    return c.json({ device_id: device.deviceId, enqueued }, 200);
+    const { enqueued, forgotten } = await pollDevice(device);
+    return c.json({ device_id: device.deviceId, enqueued, forgotten }, 200);
   },
 );
 

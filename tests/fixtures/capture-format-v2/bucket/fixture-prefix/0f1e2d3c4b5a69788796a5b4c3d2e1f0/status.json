@@ -1,0 +1,22 @@
+{
+  "actionsRecording": true,
+  "appVersion": "0.1.0",
+  "audio": {
+    "enabled": false,
+    "state": null
+  },
+  "lastFrameMs": 1790845262000,
+  "missingPermissions": [],
+  "pausedUntilMs": null,
+  "policy": {
+    "fetchedAtMs": 1790845260000,
+    "source": "fixture-prefix/policy.json",
+    "updatedAtMs": 1790845200000
+  },
+  "reason": null,
+  "recording": "recording",
+  "reportedAtMs": 1790845320000,
+  "sync": {
+    "state": "off"
+  }
+}

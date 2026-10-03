@@ -2,9 +2,11 @@
  * The reader side of the Kortix Capture format, schema 2 (the desktop app's
  * only contract: kortix-ai/capture `apps/recorder/docs/capture-format.md`).
  * Pure functions: key layout, manifest / policy / status shapes, and the
- * line parsers for frames, actions and audio transcripts. Schema 1 (screen
- * and audio only) stays readable; unknown fields are ignored; a schema newer
- * than CAPTURE_SCHEMA is rejected.
+ * line parsers for frames, actions and audio transcripts. The JSON Schemas
+ * and the fixture bucket of the contract are vendored, pinned to one engine
+ * commit, in tests/fixtures/capture-format-v2. Kortix reads schema 2 only
+ * (every Kortix prefix is written by a schema-2 engine); unknown fields are
+ * ignored.
  */
 import { z } from 'zod';
 import { isUuid } from '../shared/validate';
@@ -44,7 +46,7 @@ const TranscriptLineSchema = z.object({
 
 export const ManifestSchema = z
   .object({
-    schema: z.number().int().positive(),
+    schema: z.number().int(),
     kind: z.enum(['chunk', 'audio', 'actions']),
     device_id: z.string().min(1),
     start_ms: z.number().int().nonnegative(),
@@ -65,7 +67,7 @@ export function checkManifest(raw: unknown, deviceId: string): ManifestCheck {
   const parsed = ManifestSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, reason: `invalid manifest: ${parsed.error.issues[0]?.message ?? 'shape'}` };
   const manifest = parsed.data;
-  if (manifest.schema > CAPTURE_SCHEMA) return { ok: false, reason: `unsupported schema ${manifest.schema}` };
+  if (manifest.schema !== CAPTURE_SCHEMA) return { ok: false, reason: `unsupported schema ${manifest.schema}` };
   if (manifest.device_id !== deviceId) return { ok: false, reason: 'manifest device_id does not match its key' };
   if (manifest.end_ms < manifest.start_ms) return { ok: false, reason: 'end_ms before start_ms' };
   const required = { chunk: ['video'], audio: ['audio'], actions: ['actions'] }[manifest.kind];
@@ -76,9 +78,9 @@ export function checkManifest(raw: unknown, deviceId: string): ManifestCheck {
 }
 
 /**
- * The full key of a manifest object. Schema 1 writes keys relative to the
- * prefix; a full key is accepted too. Null when the object is outside the
- * device's own folder: a device may only index what it wrote.
+ * The full key of a manifest object (manifest keys are relative to the prefix;
+ * a full key is accepted too). Null when the object is outside the device's own
+ * folder: a device may only index what it wrote.
  */
 export function objectKey(prefix: string, deviceId: string, key: string): string | null {
   const full = key.startsWith(`${prefix}/`) ? key : `${prefix}/${key.replace(/^\/+/, '')}`;
@@ -92,9 +94,14 @@ export function isEncrypted(manifest: Manifest): boolean {
 
 // ─── Index files ─────────────────────────────────────────────────────────────
 
-/** Manifest keys named by one `index/<day>.jsonl` body (complete items only). */
-export function manifestKeysFromIndex(prefix: string, deviceId: string, body: string): string[] {
-  const keys = new Set<string>();
+/**
+ * Fold one `index/<day>.jsonl` body (capture-format.md "Index lines"): the
+ * latest `put` of a base is live until a `delete` of it. `live` holds the
+ * manifests of complete items; `deleted` holds the manifests of items the
+ * person forgot or the device's retention removed, which Kortix retracts.
+ */
+export function foldIndex(prefix: string, deviceId: string, body: string): { live: string[]; deleted: string[] } {
+  const state = new Map<string, 'live' | 'incomplete' | 'deleted'>();
   for (const line of body.split('\n')) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
@@ -103,11 +110,14 @@ export function manifestKeysFromIndex(prefix: string, deviceId: string, body: st
     } catch {
       continue;
     }
-    if (entry.op !== 'put' || entry.manifest !== true || typeof entry.base !== 'string') continue;
+    if (typeof entry.base !== 'string') continue;
     const key = objectKey(prefix, deviceId, `${entry.base}.manifest.json`);
-    if (key) keys.add(key);
+    if (!key) continue;
+    if (entry.op === 'put') state.set(key, entry.manifest === true ? 'live' : 'incomplete');
+    else if (entry.op === 'delete') state.set(key, 'deleted');
   }
-  return [...keys];
+  const keys = (want: string) => [...state].filter(([, value]) => value === want).map(([key]) => key);
+  return { live: keys('live'), deleted: keys('deleted') };
 }
 
 /** The UTC day (`YYYY-MM-DD`) of an instant. */
@@ -133,35 +143,26 @@ export interface FrameRow {
   inactive: boolean;
 }
 
-/** One frame line of `frames.jsonl.zst`. Null for a line without a timestamp. */
+const record = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+/** One line of `frames.jsonl.zst` (frames-line.schema.json). Null for a line without `ts_ms`. */
 export function parseFrameLine(line: Record<string, unknown>): FrameRow | null {
-  const tsMs = Number(line.ts_ms ?? line.timestamp_ms);
+  const tsMs = Number(line.ts_ms);
   if (!Number.isFinite(tsMs) || tsMs <= 0) return null;
-  const app = line.app;
-  const appObj = app && typeof app === 'object' ? (app as Record<string, unknown>) : null;
-  const ocr = line.ocr;
-  let ocrText: string | null = null;
-  let ocrBoxes: unknown[] | null = null;
-  if (typeof ocr === 'string') ocrText = str(ocr);
-  else if (ocr && typeof ocr === 'object') {
-    const o = ocr as Record<string, unknown>;
-    ocrText = str([o.foreground, o.background, o.text].filter((part) => typeof part === 'string').join('\n'));
-    if (Array.isArray(o.lines)) {
-      ocrBoxes = o.lines
-        .filter((l): l is Record<string, unknown> => !!l && typeof l === 'object')
-        .map(({ text, x, y, w, h }) => ({ text, x, y, w, h }));
-    }
-  }
+  const app = record(line.app);
+  const ocr = record(line.ocr);
+  const lines = Array.isArray(ocr?.lines) ? ocr.lines.map(record).filter((l) => l !== null) : null;
   return {
     ts: new Date(tsMs),
     frameIndex: Number.isInteger(line.frame_index) ? (line.frame_index as number) : null,
-    app: appObj ? str(appObj.name) : str(app),
-    bundleId: appObj ? str(appObj.bundle_id) : str(line.bundle_id),
-    title: str(line.title ?? line.window_title),
+    app: str(app?.name),
+    bundleId: str(app?.bundle_id),
+    title: str(line.title),
     url: str(line.url),
     domain: str(line.domain),
-    ocrText,
-    ocrBoxes,
+    ocrText: str([ocr?.foreground, ocr?.background].filter((part) => typeof part === 'string').join('\n')),
+    ocrBoxes: lines && lines.map(({ text, x, y, w, h }) => ({ text, x, y, w, h })),
     inactive: line.inactive === true,
   };
 }
@@ -174,17 +175,6 @@ export interface ActionRow {
   description: string;
   target: Record<string, unknown> | null;
   screenshot: string | null;
-}
-
-/** Epoch ms of an action line. Schema 1 stamps seconds since the segment start. */
-function actionTimeMs(line: Record<string, unknown>, segmentStartMs: number): number | null {
-  const explicit = Number(line.ts_ms ?? line.timestamp_ms);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const t = Number(line.timestamp);
-  if (!Number.isFinite(t) || t < 0) return null;
-  if (t > 1e12) return t; // epoch ms
-  if (t > 1e9) return t * 1000; // epoch seconds
-  return segmentStartMs + t * 1000; // seconds since the segment started
 }
 
 const pct = (v: unknown) => (typeof v === 'number' && v <= 1 ? `${Math.round(v * 100)}%` : String(v));
@@ -211,32 +201,33 @@ export function describeAction(kind: string, args: Record<string, unknown>): str
       return `Type "${String(args.text ?? '').slice(0, 120)}"`;
     case 'sleep':
       return `Wait ${args.duration ?? '?'}s`;
+    case 'screenshot':
+      return 'Screenshot';
     default:
       return kind;
   }
 }
 
-/** One line of `actions.jsonl.zst`. Null for a screenshot marker or a line without a time. */
-export function parseActionLine(line: Record<string, unknown>, segmentStartMs: number): ActionRow | null {
-  const kind = str(line.kind) ?? str(line.type);
-  if (!kind || kind === 'screenshot') return null;
-  const ms = actionTimeMs(line, segmentStartMs);
-  if (ms === null) return null;
-  const app = line.app;
-  const window = line.window;
-  const target = line.target && typeof line.target === 'object' ? (line.target as Record<string, unknown>) : null;
-  const args = line.args && typeof line.args === 'object' ? (line.args as Record<string, unknown>) : {};
+/**
+ * One line of `actions.jsonl.zst` (actions-line.schema.json). Null for a line
+ * without `ts_ms` or `kind`, and for a screenshot event without its asset.
+ */
+export function parseActionLine(line: Record<string, unknown>): ActionRow | null {
+  const kind = str(line.kind);
+  const tsMs = Number(line.ts_ms);
+  if (!kind || !Number.isFinite(tsMs) || tsMs <= 0) return null;
+  const screenshot = str(line.screenshot);
+  if (kind === 'screenshot' && !screenshot) return null;
+  const target = record(line.target);
+  const args = record(line.args) ?? {};
   return {
-    ts: new Date(ms),
+    ts: new Date(tsMs),
     kind,
-    app: app && typeof app === 'object' ? str((app as Record<string, unknown>).name) : str(app),
-    windowTitle:
-      window && typeof window === 'object'
-        ? str((window as Record<string, unknown>).title)
-        : str(window ?? line.window_title),
+    app: str(record(line.app)?.name),
+    windowTitle: str(line.window),
     description: describeAction(kind, { ...args, ...(target ?? {}) }),
     target: target ?? (Object.keys(args).length ? args : null),
-    screenshot: str(line.screenshot),
+    screenshot,
   };
 }
 
