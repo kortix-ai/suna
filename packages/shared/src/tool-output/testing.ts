@@ -29,11 +29,20 @@ export function chooser(seed: number) {
   return { next, pick, some };
 }
 
-/** A test that fails when `run` takes 100 ms or more. */
+/**
+ * A test that fails when `run` burns 250 ms of CPU or more.
+ *
+ * CPU time, not wall time: the old 100 ms wall budget sat ~1.7x over the worst
+ * legitimate case (57 ms idle) and failed under the packages lane's concurrent
+ * waves, where a loaded box costs wall time without costing work (107.8 ms CPU
+ * with GC threads at 82 ms wall). 250 ms is ~2.3x the measured worst case; a
+ * quadratic blowup is 100-1000x over, so the teeth stay.
+ */
 export function within(label: string, run: () => unknown): void {
   test(label, () => {
-    const started = performance.now();
+    const started = process.cpuUsage();
     run();
-    expect(performance.now() - started).toBeLessThan(100);
+    const cpu = process.cpuUsage(started);
+    expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
   });
 }

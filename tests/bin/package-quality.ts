@@ -193,6 +193,12 @@ await runAll([
   run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
 ]);
 await rejectFocusedTests();
+// apps/web's download-layout test launches Playwright Chromium. CI installs
+// the browser in the workflow before this lane; a worker sandbox that runs the
+// lane bare does not, and the test then fails with "Executable doesn't exist".
+// `playwright install` is idempotent (near-instant when the browser is
+// present) and honors PLAYWRIGHT_BROWSERS_PATH, so a CI cache still hits.
+await run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']);
 await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
