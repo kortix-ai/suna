@@ -1,0 +1,9 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`every registered deck renders every slide and build stage: security 1`] = `26`;
+
+exports[`every registered deck renders every slide and build stage: platform 1`] = `29`;
+
+exports[`every registered deck renders every slide and build stage: sales 1`] = `10`;
+
+exports[`Steps retains the four responsive grid hairlines and ordered content 1`] = `"<ol class="border-border grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4"><li class="border-border bg-card flex flex-col p-5 sm:p-6"><span class="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">1</span><h3 class="text-foreground mt-5 text-base leading-tight font-medium">Stage 1</h3><p class="text-muted-foreground mt-2.5 text-sm leading-relaxed">Action 1</p></li><li class="border-border bg-card flex flex-col p-5 sm:p-6 border-t sm:border-t-0 sm:border-l"><span class="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">2</span><h3 class="text-foreground mt-5 text-base leading-tight font-medium">Stage 2</h3><p class="text-muted-foreground mt-2.5 text-sm leading-relaxed">Action 2</p></li><li class="border-border bg-card flex flex-col p-5 sm:p-6 border-t lg:border-t-0 lg:border-l"><span class="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">3</span><h3 class="text-foreground mt-5 text-base leading-tight font-medium">Stage 3</h3><p class="text-muted-foreground mt-2.5 text-sm leading-relaxed">Action 3</p></li><li class="border-border bg-card flex flex-col p-5 sm:p-6 border-t sm:border-l lg:border-t-0"><span class="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">4</span><h3 class="text-foreground mt-5 text-base leading-tight font-medium">Stage 4</h3><p class="text-muted-foreground mt-2.5 text-sm leading-relaxed">Action 4</p></li></ol>"`;

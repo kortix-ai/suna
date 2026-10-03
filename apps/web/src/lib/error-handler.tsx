@@ -1,6 +1,6 @@
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { Button } from '@/components/ui/button';
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
 import {
   isGitMirrorUnavailableNoiseMessage,
@@ -393,27 +393,6 @@ export const handleApiError = (
       duration: 5000,
     });
   }
-};
-
-export const handleApiSuccess = (message: string, description?: string): void => {
-  successToast(message, {
-    description,
-    duration: 3000,
-  });
-};
-
-export const handleApiWarning = (message: string, description?: string): void => {
-  warningToast(message, {
-    description,
-    duration: 4000,
-  });
-};
-
-export const handleApiInfo = (message: string, description?: string): void => {
-  infoToast(message, {
-    description,
-    duration: 3000,
-  });
 };
 
 /**

@@ -73,9 +73,11 @@ const STATEMENT_TIMEOUT_MS = intFromEnv('DB_STATEMENT_TIMEOUT_MS', 25_000);
  * Off by default, and a per-environment decision:
  *  - it needs a direct or session-mode connection. A transaction pooler
  *    (Supavisor port 6543) multiplexes connections and breaks it;
- *  - after ~5 executions PostgreSQL may switch a statement to a generic plan,
- *    which cannot use a partial index whose predicate arrives as a parameter.
- *    Measure on dev before turning it on anywhere else;
+ *  - after ~5 executions PostgreSQL may switch a prepared statement to a
+ *    generic plan, which cannot use a partial index whose predicate arrives as
+ *    a parameter. Prepared connections therefore set `plan_cache_mode =
+ *    force_custom_plan`: every execution is planned for its own parameters, as
+ *    an unprepared one is, and only the extra round trip goes;
  *  - the per-connection statement cache has no size limit. `DB_MAX_LIFETIME_S`
  *    (30 min) bounds it.
  */
@@ -211,6 +213,7 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
     // pinning a pooled connection forever and starving the whole fleet.
     connection: {
       statement_timeout: STATEMENT_TIMEOUT_MS,
+      ...(prepare ? { plan_cache_mode: 'force_custom_plan' } : {}),
     },
     ...options,
     prepare,

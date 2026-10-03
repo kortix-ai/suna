@@ -34,6 +34,21 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
   }
   c.set('agentGrant', result.agentGrant ?? null);
   c.set('onBehalfOfUserId', result.onBehalfOfUserId ?? null);
+  // The token's IAM binding, from the row validation just read: `buildActor`
+  // uses it instead of reading the same `account_tokens` row again. Only a
+  // result that actually carries the row's `service_account_id` qualifies (a
+  // stubbed or partial result does not): seeding a missing service account
+  // would demote an agent-session token to a plain PAT, so anything less
+  // falls back to the read.
+  if (result.tokenId && result.serviceAccountId !== undefined) {
+    c.set('iamTokenBinding', {
+      tokenId: result.tokenId,
+      projectId: result.projectId ?? null,
+      agentGrant: result.agentGrant ?? null,
+      serviceAccountId: result.serviceAccountId,
+      onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+    });
+  }
   setSentryUser({ id: userId, accountId: result.accountId });
   setContextField('userId', userId);
   if (result.accountId) setContextField('accountId', result.accountId);

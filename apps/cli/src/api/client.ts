@@ -35,6 +35,7 @@ export interface ClientOptions {
    *  (and validates membership); project-id routes ignore it. Without it the
    *  server falls back to the caller's earliest-joined account. */
   accountId?: string;
+  signal?: AbortSignal;
 }
 
 /** Normalize an incoming CLI path to the SDK-relative endpoint. The SDK's
@@ -141,7 +142,7 @@ async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { auth: Auth; accountId?: string },
+  opts: { auth: Auth; accountId?: string; signal?: AbortSignal },
 ): Promise<T> {
   try {
     return await requestOnce<T>(method, path, body, opts);
@@ -156,10 +157,10 @@ async function requestOnce<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
-  opts: { auth: Auth; accountId?: string },
+  opts: { auth: Auth; accountId?: string; signal?: AbortSignal },
 ): Promise<T> {
   const endpoint = withAccountId(toEndpoint(path), opts.accountId);
-  const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS };
+  const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS, signal: opts.signal, deadlineCoversBody: Boolean(opts.signal) };
   return withKortixScope(opts.auth, async () => {
     switch (method) {
       case 'GET': {
@@ -200,7 +201,7 @@ export function createApiClient(opts: ClientOptions): ApiClient {
     account_id: accountId ?? '',
     logged_in_at: '',
   };
-  const base = { auth, accountId };
+  const base = { auth, accountId, signal: opts.signal };
   return {
     apiBase,
     get: <T>(path: string) => request<T>('GET', path, undefined, base),
