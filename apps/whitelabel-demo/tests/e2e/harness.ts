@@ -154,7 +154,12 @@ export async function startApp(
       throw new Error(`next start exited before printing a URL (code ${proc.exitCode}). Output:\n${log}`);
     }
     const m = log.match(/Local:\s+(http:\/\/localhost:\d+)/);
-    if (m) baseUrl = m[1];
+    if (m) {
+      // The loopback literal, not the printed `localhost` name: a box may
+      // resolve that name to nothing (a factory sandbox does), and every
+      // readiness probe and test request would NXDOMAIN forever.
+      baseUrl = m[1].replace('localhost', '127.0.0.1');
+    }
   }
 
   // The URL line can print a beat before the listener actually accepts
