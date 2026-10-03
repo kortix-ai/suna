@@ -158,6 +158,12 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
       // crossed that limit and failed the parity check below.
       highlightToTokens(sample, lang, 'light');
+      // A slow box's FIRST tokenization can still cross that limit
+      // (`tokenizeTimeLimit = 500`, @shikijs/primitive) and cache the fallback
+      // scopes. Clear and re-run once: the grammar is warm now, so the cache
+      // holds the tokens the parity check below asserts.
+      __testing.tokenCache.clear();
+      highlightToTokens(sample, lang, 'light');
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
