@@ -1,6 +1,8 @@
 {
-  "source_hash": "08b37677348c30cbd0e71398d749ff67c64666badc5498b7a0feebee757c78e4",
+  "source_hash": "ab8c16de71c91a51603c4ee4e97a3cd4ff246d29df210583b7bb14fc11214cd4",
   "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
     "packages/db/drizzle/meta/20261003151721_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261003150053416_audit_events_actor_aggregate_index.concurrent.ts",
@@ -11,13 +13,13 @@
     "tests/unit/test-attestation.test.ts",
     "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "5e8451c5d2e40252288ef3868dcf893ecd2cc836c6727b0cda50fa3a264cd126",
-  "head": "db4e2e9bd668129e562f5963e12024a8ebdf8385",
+  "diff_hash": "56b2c1f1ee78d6b731f2e03e2e14e08cb55ebf2391c773cd5abf3c7bb708da9b",
+  "head": "252ff6fff00651a22dcdd730efee744530768558",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:47:53.585Z"
+  "at": "2026-10-03T16:29:18.055Z"
 }
