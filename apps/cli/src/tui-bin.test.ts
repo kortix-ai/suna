@@ -14,6 +14,15 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+// Managed-sandbox hermeticity: the platform exports KORTIX_SUPERVISED=1 into
+// every process it starts, and downloadTuiBin checks that signal against the
+// process env (not the per-call env object). This suite asserts the ordinary
+// download path, so it pins the signal off for its own duration.
+delete process.env.KORTIX_SUPERVISED;
+afterEach(() => {
+  delete process.env.KORTIX_SUPERVISED;
+});
+
 import {
   cliVersion,
   downloadTuiBin,

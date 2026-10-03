@@ -17,7 +17,7 @@ const savedEnv: Record<string, string | undefined> = {};
 let scratch: string;
 
 beforeEach(() => {
-  for (const key of ['KORTIX_OPENCODE_BIN', 'KORTIX_OPENCODE_DIR']) {
+  for (const key of ['KORTIX_OPENCODE_BIN', 'KORTIX_OPENCODE_DIR', 'KORTIX_SUPERVISED']) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }

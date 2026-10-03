@@ -4,6 +4,11 @@ import { argvForInvocation } from '../invocation.ts';
 import { stripAnsi } from '../style.ts';
 import { EXPERIMENTAL_NOTICE, type TuiDeps, parseTuiFlags, runTui, tuiChildEnv } from './tui.ts';
 
+// Managed-sandbox hermeticity: the platform exports KORTIX_SUPERVISED=1 into
+// every process it starts. These tests assert the ordinary first-run flow
+// (ask, download, run), which the supervised refusal otherwise short-circuits.
+delete process.env.KORTIX_SUPERVISED;
+
 const CACHED = { bin: '/home/ada/.kortix/tui/1.2.3/kortix-tui', source: 'cache' as const };
 
 interface Harness {
