@@ -164,13 +164,27 @@ Options:
 Pinning a provider needs the \`project.customize.write\` permission.
 `;
 
+
+/** The sandbox flags, typed once for every subcommand. */
+interface SandboxFlags {
+  timeout?: string;
+  project?: string;
+  host?: string;
+  image?: string;
+  dockerfile?: string;
+  name?: string;
+  cpu?: string;
+  memory?: string;
+  disk?: string;
+}
+
 export async function runSandboxes(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  const f: Record<string, string | undefined> = {};
+  const f: SandboxFlags = {};
   let json = false;
   let local = false;
   let clear = false;
@@ -221,91 +235,17 @@ export async function runSandboxes(argv: string[]): Promise<number> {
     const resp = await ctx.client.get<{ items: SandboxTemplate[] }>(`${base}/sandbox-templates`);
     return resp.items.find((t) => t.slug === slug)?.template_id ?? null;
   };
-
   try {
+    const call: SandboxCall = { ctx, base, positional, findTemplateId, json, clear };
     switch (sub) {
       case 'ls':
-      case 'list': {
-        const resp = await ctx.client.get<{ items: SandboxTemplate[]; default_slug: string | null }>(
-          `${base}/sandbox-templates`,
-        );
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        const slugW = Math.max(...resp.items.map((t) => t.slug.length), 4);
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}${pad('SLUG', slugW)}   STATE       SOURCE     SPEC                       RESOURCES${C.reset}\n`,
-        );
-        for (const t of resp.items) {
-          const spec = t.has_image ? t.image! : t.has_dockerfile ? t.dockerfile_path! : 'platform default';
-          const marker = t.slug === resp.default_slug ? `${C.green}●${C.reset} ` : '  ';
-          process.stdout.write(
-            `${marker}${pad(t.slug, slugW)}   ${stateCell(t.daytona_state, t.ready)}  ${pad(t.source, 9)}  ${pad(trim(spec, 24), 24)}  ${C.faded}${t.cpu}cpu/${t.memory_gb}g/${t.disk_gb}g${C.reset}\n`,
-          );
-        }
-        process.stdout.write(`\n  ${C.dim}${resp.items.length} template${resp.items.length === 1 ? '' : 's'} · default: ${resp.default_slug ?? '—'}${C.reset}\n\n`);
-        return 0;
-      }
+      case 'list':
+        return sandboxesLs(call);
       case 'builds':
-      case 'log': {
-        const resp = await ctx.client.get<{ builds: SnapshotBuild[] }>(`${base}/snapshots`);
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        if (resp.builds.length === 0) {
-          process.stdout.write(`  ${C.dim}No builds yet.${C.reset}\n`);
-          return 0;
-        }
-        process.stdout.write('\n');
-        process.stdout.write(`  ${C.dim}${pad('SLUG', 12)}  STATUS    SOURCE          STARTED${C.reset}\n`);
-        for (const b of resp.builds) {
-          const sc = b.status === 'ready' ? C.green : b.status === 'failed' ? C.red : C.yellow;
-          process.stdout.write(
-            `  ${pad(b.slug, 12)}  ${sc}${pad(b.status, 8)}${C.reset}  ${pad(b.source ?? '—', 14)}  ${C.faded}${b.started_at.slice(0, 19).replace('T', ' ')}${C.reset}\n`,
-          );
-          if (b.status === 'failed' && b.error) {
-            process.stdout.write(`    ${C.red}${trim(b.error.split('\n')[0]!, 80)}${C.reset}${b.error_category ? ` ${C.faded}[${b.error_category}]${C.reset}` : ''}\n`);
-          }
-        }
-        process.stdout.write(`\n  ${C.dim}${resp.builds.length} build${resp.builds.length === 1 ? '' : 's'}${C.reset}\n\n`);
-        return 0;
-      }
-      case 'health': {
-        const h = await ctx.client.get<{
-          primary_slug: string | null;
-          ready: boolean;
-          building: boolean;
-          latest_failure: SnapshotBuild | null;
-          status?: {
-            state: 'ready' | 'building' | 'not_built' | 'degraded' | 'blocked' | 'unknown';
-            current_failure: SnapshotBuild | null;
-            stale_failure: SnapshotBuild | null;
-          } | null;
-        }>(`${base}/sandbox-health`);
-        if (json) {
-          emitJson(h);
-          return 0;
-        }
-        const currentState = h.status?.state ?? (h.ready ? 'ready' : h.building ? 'building' : 'unknown');
-        const stateColor =
-          currentState === 'ready'
-            ? C.green
-            : currentState === 'blocked' || currentState === 'degraded'
-              ? C.red
-              : C.yellow;
-        const state = `${stateColor}${currentState.replace('_', ' ')}${C.reset}`;
-        process.stdout.write(`\n  primary ${C.bold}${h.primary_slug ?? '—'}${C.reset}  ${state}\n`);
-        const currentFailure = h.status ? h.status.current_failure : h.latest_failure;
-        if (currentFailure) {
-          process.stdout.write(`  ${C.red}current failure:${C.reset} ${trim(currentFailure.error?.split('\n')[0] ?? 'unknown', 80)}\n`);
-          process.stdout.write(`  ${C.dim}Repair it with ${C.reset}${C.cyan}kortix sandboxes fix${C.reset}\n`);
-        }
-        process.stdout.write('\n');
-        return 0;
-      }
+      case 'log':
+        return sandboxesBuilds(call);
+      case 'health':
+        return sandboxesHealth(call);
       case 'build': {
         const slug = positional[0];
         if (!slug) return missing('a template slug');
@@ -349,9 +289,103 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
 }
 
+async function sandboxesLs(call: SandboxCall): Promise<number> {
+  const { ctx, base, positional, findTemplateId, json, clear } = call;
+    const resp = await ctx.client.get<{ items: SandboxTemplate[]; default_slug: string | null }>(
+      `${base}/sandbox-templates`,
+    );
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    const slugW = Math.max(...resp.items.map((t) => t.slug.length), 4);
+    process.stdout.write('\n');
+    process.stdout.write(
+      `  ${C.dim}${pad('SLUG', slugW)}   STATE       SOURCE     SPEC                       RESOURCES${C.reset}\n`,
+    );
+    for (const t of resp.items) {
+      const spec = t.has_image ? t.image! : t.has_dockerfile ? t.dockerfile_path! : 'platform default';
+      const marker = t.slug === resp.default_slug ? `${C.green}●${C.reset} ` : '  ';
+      process.stdout.write(
+        `${marker}${pad(t.slug, slugW)}   ${stateCell(t.daytona_state, t.ready)}  ${pad(t.source, 9)}  ${pad(trim(spec, 24), 24)}  ${C.faded}${t.cpu}cpu/${t.memory_gb}g/${t.disk_gb}g${C.reset}\n`,
+      );
+    }
+    process.stdout.write(`\n  ${C.dim}${resp.items.length} template${resp.items.length === 1 ? '' : 's'} · default: ${resp.default_slug ?? '—'}${C.reset}\n\n`);
+    return 0;
+}
+async function sandboxesBuilds(call: SandboxCall): Promise<number> {
+  const { ctx, base, positional, findTemplateId, json, clear } = call;
+    const resp = await ctx.client.get<{ builds: SnapshotBuild[] }>(`${base}/snapshots`);
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    if (resp.builds.length === 0) {
+      process.stdout.write(`  ${C.dim}No builds yet.${C.reset}\n`);
+      return 0;
+    }
+    process.stdout.write('\n');
+    process.stdout.write(`  ${C.dim}${pad('SLUG', 12)}  STATUS    SOURCE          STARTED${C.reset}\n`);
+    for (const b of resp.builds) {
+      const sc = b.status === 'ready' ? C.green : b.status === 'failed' ? C.red : C.yellow;
+      process.stdout.write(
+        `  ${pad(b.slug, 12)}  ${sc}${pad(b.status, 8)}${C.reset}  ${pad(b.source ?? '—', 14)}  ${C.faded}${b.started_at.slice(0, 19).replace('T', ' ')}${C.reset}\n`,
+      );
+      if (b.status === 'failed' && b.error) {
+        process.stdout.write(`    ${C.red}${trim(b.error.split('\n')[0]!, 80)}${C.reset}${b.error_category ? ` ${C.faded}[${b.error_category}]${C.reset}` : ''}\n`);
+      }
+    }
+    process.stdout.write(`\n  ${C.dim}${resp.builds.length} build${resp.builds.length === 1 ? '' : 's'}${C.reset}\n\n`);
+    return 0;
+}
+async function sandboxesHealth(call: SandboxCall): Promise<number> {
+  const { ctx, base, positional, findTemplateId, json, clear } = call;
+    const h = await ctx.client.get<{
+      primary_slug: string | null;
+      ready: boolean;
+      building: boolean;
+      latest_failure: SnapshotBuild | null;
+      status?: {
+        state: 'ready' | 'building' | 'not_built' | 'degraded' | 'blocked' | 'unknown';
+        current_failure: SnapshotBuild | null;
+        stale_failure: SnapshotBuild | null;
+      } | null;
+    }>(`${base}/sandbox-health`);
+    if (json) {
+      emitJson(h);
+      return 0;
+    }
+    const currentState = h.status?.state ?? (h.ready ? 'ready' : h.building ? 'building' : 'unknown');
+    const stateColor =
+      currentState === 'ready'
+        ? C.green
+        : currentState === 'blocked' || currentState === 'degraded'
+          ? C.red
+          : C.yellow;
+    const state = `${stateColor}${currentState.replace('_', ' ')}${C.reset}`;
+    process.stdout.write(`\n  primary ${C.bold}${h.primary_slug ?? '—'}${C.reset}  ${state}\n`);
+    const currentFailure = h.status ? h.status.current_failure : h.latest_failure;
+    if (currentFailure) {
+      process.stdout.write(`  ${C.red}current failure:${C.reset} ${trim(currentFailure.error?.split('\n')[0] ?? 'unknown', 80)}\n`);
+      process.stdout.write(`  ${C.dim}Repair it with ${C.reset}${C.cyan}kortix sandboxes fix${C.reset}\n`);
+    }
+    process.stdout.write('\n');
+    return 0;
+}
+/** What the read-model handlers receive: the resolved project context, the
+ *  request base, the slug resolver and the parsed invocation. */
+interface SandboxCall {
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+  base: string;
+  positional: string[];
+  findTemplateId: (slug: string) => Promise<string | null>;
+  json: boolean;
+  clear: boolean;
+}
+
 // ── Local kortix.yaml `[[sandbox.templates]]` edits (source of truth) ────────────────
 
-function sandboxAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
+function sandboxAddLocal(slug: string | undefined, f: SandboxFlags): number {
   if (!slug) return missing('a template slug');
   if (!f.image && !f.dockerfile) return missing('--image or --dockerfile');
   if (f.image && f.dockerfile) return fail('Pass only one of --image / --dockerfile.');
@@ -378,7 +412,7 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
   }
 }
 
-function sandboxUpdateLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
+function sandboxUpdateLocal(slug: string | undefined, f: SandboxFlags): number {
   if (!slug) return missing('a template slug');
   try {
     if (!arrayEntryExists('sandbox.templates', 'slug', slug)) {

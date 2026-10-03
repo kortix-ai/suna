@@ -18,6 +18,8 @@ const CLI_ENTRY = resolve(import.meta.dir, '..', 'index.ts');
 const HOST_NAME = 'test';
 const EMAIL = 'owner@example.test';
 const TOKEN = 'kortix_pat_machine_contract';
+const TOKEN_NO_AUTH_TYPE = 'kortix_pat_no_auth_type';
+const TOKEN_AGENT_NO_AUTH_TYPE = 'kortix_pat_agent_no_auth_type';
 const REVOKED_TOKEN = 'kortix_pat_revoked';
 
 interface MeShape {
@@ -58,7 +60,28 @@ function startApi(): void {
   server = Bun.serve({
     port: 0,
     async fetch(req) {
-      if (req.headers.get('authorization') !== `Bearer ${TOKEN}`) {
+      const auth = req.headers.get('authorization');
+      if (auth === `Bearer ${TOKEN_AGENT_NO_AUTH_TYPE}` && new URL(req.url).pathname.endsWith('/accounts/me')) {
+        return Response.json({
+          ...ME,
+          token_context: {
+            project_id: null,
+            session_id: null,
+            agent: 'osp-vision-agent',
+            connectors: [],
+            kortix_permissions: ['projects:read'],
+            kortix_cli: ['projects:read'],
+          },
+        });
+      }
+      if (auth === `Bearer ${TOKEN_NO_AUTH_TYPE}` && new URL(req.url).pathname.endsWith('/accounts/me')) {
+        // The same identity without a token_context auth_type — the fallback
+        // spelling of the token kind is what the two render modes must agree
+        // on.
+        const { auth_type: _drop, ...rest } = ME.token_context;
+        return Response.json({ ...ME, token_context: rest });
+      }
+      if (auth !== `Bearer ${TOKEN}`) {
         return Response.json({ error: 'unauthenticated' }, { status: 401 });
       }
       if (new URL(req.url).pathname.endsWith('/accounts/me')) {
@@ -217,5 +240,67 @@ describe('machine-readable output (--json) is pure JSON on stdout, silent on std
     expect(code).toBe(1);
     expect(stdout).toBe('');
     expect(stderr).toContain('Token rejected');
+  });
+});
+
+describe('the human and --token-only renderings', () => {
+  const results = new Map<string, CliResult>();
+  const dirs: string[] = [];
+
+  beforeAll(async () => {
+    startApi();
+    const cases: Array<[string, string[], string]> = [
+      ['whoami --token-only', ['whoami', '--token-only'], TOKEN],
+      ['whoami (human render)', ['whoami'], TOKEN],
+      ['whoami --token-only (no auth_type)', ['whoami', '--token-only'], TOKEN_NO_AUTH_TYPE],
+      ['whoami --token-only (agent, no auth_type)', ['whoami', '--token-only'], TOKEN_AGENT_NO_AUTH_TYPE],
+      ['whoami (human, agent, no auth_type)', ['whoami'], TOKEN_AGENT_NO_AUTH_TYPE],
+    ];
+    await Promise.all(
+      cases.map(async ([name, args, token]) => {
+        const { dir, config } = seedConfig(token);
+        dirs.push(dir);
+        results.set(name, await runCli(args, dir, config));
+      }),
+    );
+  }, 120_000);
+
+  afterAll(() => {
+    server?.stop(true);
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  const get = (name: string): CliResult => {
+    const result = results.get(name);
+    if (!result) throw new Error(`case not run: ${name}`);
+    return result;
+  };
+
+  test('--token-only prints only the token context, never the identity', () => {
+    const { code, stdout } = get('whoami --token-only');
+    expect(code).toBe(0);
+    expect(stdout).toContain('pat');
+    expect(stdout).toContain('permissions projects:read');
+    expect(stdout).not.toContain(EMAIL);
+    expect(stdout).not.toContain('account');
+  });
+
+  test('human mode renders identity, account, hosts — and no token line for a plain PAT', () => {
+    const { code, stdout } = get('whoami (human render)');
+    expect(code).toBe(0);
+    expect(stdout).toContain(EMAIL);
+    expect(stdout).toContain('Acme (acme, owner)');
+    expect(stdout).toContain('2 accounts total');
+    // A plain PAT carries no project/session/agent, so human mode prints no
+    // token line at all — --token-only is the surface that shows the context.
+    expect(stdout).not.toContain('token     ');
+  });
+
+  test('the token kind fallback is decided once: user token in both modes', () => {
+    // The two render paths used to spell the fallback differently ('user token'
+    // vs 'token'); both now read the one shared renderer.
+    expect(get('whoami --token-only (no auth_type)').stdout).toContain('user token');
+    expect(get('whoami --token-only (agent, no auth_type)').stdout).toContain('user token');
+    expect(get('whoami (human, agent, no auth_type)').stdout).toContain('token      user token');
   });
 });
