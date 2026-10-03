@@ -1,10 +1,16 @@
+import { createRoute, z } from '@hono/zod-openapi';
 import {
   OAuth2ApplicationInputSchema,
+  OAuth2ApplicationViewSchema,
   OAuth2AuthorizationStartInputSchema,
+  OAuth2AuthorizationStartResultSchema,
   OAuth2ClientRegistrationInputSchema,
+  OAuth2ConnectionStatusSchema,
   OAuth2DeviceAuthorizationStartInputSchema,
+  OAuth2DeviceAuthorizationStartResultSchema,
   OAuth2DiscoveryInputSchema,
   OAuth2ResourceDiscoveryInputSchema,
+  OAuth2ResourceDiscoverySchema,
 } from '@kortix/api-contract';
 import { connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -29,6 +35,23 @@ import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
+import { auth, errors, json, lenientBody } from '../../openapi';
+import { OkSchema } from '../lib/app';
+
+// Bodies are documented with `lenientBody` and parsed by each handler, so a bad
+// body still answers its own 400 message, and only after the 404/403 checks.
+const ConnectionParams = z.object({ projectId: z.string(), connectionId: z.string() });
+const body = (schema: z.AnyZodObject) => ({
+  body: { content: { 'application/json': { schema: lenientBody(schema.shape) } } },
+});
+const ApplicationResponse = z.object({ application: OAuth2ApplicationViewSchema });
+/** `POST .../oauth2/device/:sessionId`: one poll of a device authorization. */
+const DevicePollSchema = z.object({
+  status: z.enum(['pending', 'active', 'expired', 'error']),
+  expires_at: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  error_code: z.string().optional(),
+});
 
 function callbackUrl(requestUrl: string): string {
   return nativeOAuth2CallbackUrl(requestUrl, config.KORTIX_URL);
@@ -57,7 +80,20 @@ function allowedRedirectUri(value: string | undefined, projectId: string): strin
   return uri.href;
 }
 
-projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connectors/{slug}/oauth2/connection',
+    summary: "Get or create a connector's shared OAuth2 connection",
+    request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
+    responses: {
+      200: json(z.object({ connection_id: z.string() }), 'The connection id'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -94,7 +130,17 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c) => 
   return c.json({ connection_id: connectionId });
 });
 
-projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'put',
+    path: '/{projectId}/connections/{connectionId}/oauth2/application',
+    summary: "Save a connection's OAuth2 application",
+    request: { params: ConnectionParams, ...body(OAuth2ApplicationInputSchema.innerType()) },
+    responses: { 200: json(OkSchema, 'Saved'), ...errors(400, 403, 404) },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -109,10 +155,20 @@ projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', asyn
     );
   }
   await saveOAuth2Application(mutable.connection, parsed.data, mutable.loaded.userId);
-  return c.json({ ok: true });
+  return c.json({ ok: true as const });
 });
 
-projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'get',
+    path: '/{projectId}/connections/{connectionId}/oauth2/application',
+    summary: "Read a connection's OAuth2 application, secrets redacted",
+    request: { params: ConnectionParams },
+    responses: { 200: json(ApplicationResponse, 'The application'), ...errors(403, 404) },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -122,7 +178,20 @@ projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', asyn
   return c.json({ application: redactOAuth2Application(loaded.application) });
 });
 
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/oauth2/discover',
+    summary: 'Read OAuth2 endpoints from a discovery document',
+    request: { params: ConnectionParams, ...body(OAuth2DiscoveryInputSchema) },
+    responses: {
+      200: json(z.object({ metadata: OAuth2ResourceDiscoverySchema.shape.metadata.unwrap() }), 'The endpoints'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   if (!(await loadMutableConnection(c, projectId, connectionId))) {
@@ -144,8 +213,19 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async 
  * `WWW-Authenticate resource_metadata` → RFC 9728 → RFC 8414/OIDC, and return
  * the endpoints plus the dynamic-registration endpoint when one exists.
  */
-projectsApp.post(
-  '/:projectId/connections/:connectionId/oauth2/discover-resource',
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/oauth2/discover-resource',
+    summary: "Discover the authorization server of a connector's resource",
+    request: { params: ConnectionParams, ...body(OAuth2ResourceDiscoveryInputSchema) },
+    responses: {
+      200: json(z.object({ discovery: OAuth2ResourceDiscoverySchema }), 'What the resource advertises'),
+      ...errors(400, 403, 404),
+    },
+  }),
   async (c) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
@@ -169,7 +249,17 @@ projectsApp.post(
 
 /** RFC 7591: register Kortix with the authorization server and save the
  * issued client as this connection's OAuth2 application. */
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/oauth2/register',
+    summary: 'Register Kortix as an OAuth2 client (RFC 7591)',
+    request: { params: ConnectionParams, ...body(OAuth2ClientRegistrationInputSchema.innerType()) },
+    responses: { 200: json(ApplicationResponse, 'The registered application'), ...errors(400, 403, 404) },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -194,7 +284,20 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async 
   }
 });
 
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/oauth2/authorize',
+    summary: 'Start an OAuth2 authorization-code flow',
+    request: { params: ConnectionParams, ...body(OAuth2AuthorizationStartInputSchema) },
+    responses: {
+      200: json(OAuth2AuthorizationStartResultSchema, 'The URL to send the user to'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -221,7 +324,20 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async
   }
 });
 
-projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/oauth2/device',
+    summary: 'Start an OAuth2 device authorization',
+    request: { params: ConnectionParams, ...body(OAuth2DeviceAuthorizationStartInputSchema) },
+    responses: {
+      200: json(OAuth2DeviceAuthorizationStartResultSchema, 'The code to show the user'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   const mutable = await loadMutableConnection(c, projectId, connectionId);
@@ -249,8 +365,16 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c
   }
 });
 
-projectsApp.post(
-  '/:projectId/connections/:connectionId/oauth2/device/:sessionId',
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'post',
+    path: '/{projectId}/connections/{connectionId}/oauth2/device/{sessionId}',
+    summary: 'Poll an OAuth2 device authorization',
+    request: { params: ConnectionParams.extend({ sessionId: z.string() }) },
+    responses: { 200: json(DevicePollSchema, 'The poll result'), ...errors(400, 403, 404) },
+  }),
   async (c) => {
     const projectId = c.req.param('projectId');
     const connectionId = c.req.param('connectionId');
@@ -270,7 +394,17 @@ projectsApp.post(
   },
 );
 
-projectsApp.get('/:projectId/connections/:connectionId/oauth2/status', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    tags: ['connectors'],
+    ...auth,
+    method: 'get',
+    path: '/{projectId}/connections/{connectionId}/oauth2/status',
+    summary: "Read a connection's OAuth2 token status",
+    request: { params: ConnectionParams },
+    responses: { 200: json(OAuth2ConnectionStatusSchema, 'The token status'), ...errors(403, 404) },
+  }),
+  async (c) => {
   const projectId = c.req.param('projectId');
   const connectionId = c.req.param('connectionId');
   if (!(await loadMutableConnection(c, projectId, connectionId))) {
