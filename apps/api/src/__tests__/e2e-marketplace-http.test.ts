@@ -24,7 +24,10 @@ describe('marketplace HTTP contract', () => {
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-    server = Bun.serve({ port: 0, fetch: app.fetch });
+    // Pin the loopback address: Bun.serve() reports the default hostname as
+    // "localhost", which a locked-down runner cannot resolve (the fetch below
+    // then fails with ConnectionRefused instead of exercising the route).
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: app.fetch });
     baseUrl = `http://${server.hostname}:${server.port}/v1`;
   });
 

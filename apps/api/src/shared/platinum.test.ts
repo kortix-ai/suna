@@ -40,11 +40,16 @@ afterEach(() => {
 test('platinumJson gives up on a stalled connection instead of hanging forever', async () => {
   // Accepts the connection but never resolves the handler — simulates a
   // Daytona/Platinum-style network stall, not a fast error response.
+  // Pin the loopback address: Bun.serve() reports the default hostname as
+  // "localhost", which a locked-down runner cannot resolve — the fetch then
+  // fails with ConnectionRefused instead of stalling into the timeout under
+  // test. 127.0.0.1 keeps the premise (accepted connection, no response).
   server = Bun.serve({
     port: 0,
+    hostname: '127.0.0.1',
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -59,9 +64,10 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
 test('platinumJson respects an explicit caller-provided signal instead of the default', async () => {
   server = Bun.serve({
     port: 0,
+    hostname: '127.0.0.1',
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
