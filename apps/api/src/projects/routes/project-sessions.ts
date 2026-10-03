@@ -430,7 +430,7 @@ projectsApp.openapi(
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            mode: z.enum(['project,private,members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
+            mode: z.enum(['project', 'private', 'members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
             ownerId: z.string().optional().openapi({ description: 'For mode private: the owner user id. Defaults to the caller.' }),
             memberIds: z.array(z.string()).optional().openapi({ description: 'For mode members: user ids.' }),
             groupIds: z.array(z.string()).optional().openapi({ description: 'For mode members: group ids.' }),

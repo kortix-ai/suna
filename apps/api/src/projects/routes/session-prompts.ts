@@ -142,7 +142,7 @@ projectsApp.openapi(
           client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
           message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
           parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
-          placement: z.enum(['transcript,composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
+          placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
           overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
           remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
           client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),

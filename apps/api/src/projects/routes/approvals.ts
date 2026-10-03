@@ -257,7 +257,7 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string(), executionId: z.string() }),
       body: { content: { 'application/json': { schema: lenientBody({
-          decision: z.enum(['approve,deny']).openapi({ description: 'Approve or deny exactly this gated call.' }),
+          decision: z.enum(['approve', 'deny']).openapi({ description: 'Approve or deny exactly this gated call.' }),
           note: z.string().optional().openapi({ description: 'Note the agent receives with the decision.' }),
         }) } } },
     },
