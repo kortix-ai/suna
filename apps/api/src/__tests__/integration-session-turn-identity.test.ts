@@ -11,7 +11,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountMemberships, accountTokens, accounts, projectSessions, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { bindSessionTurnIdentity, ON_BEHALF_OF_CLEARED_KEY } from '../projects/lib/on-behalf-of';
+import {
+  bindSessionTurnIdentity,
+  channelPrompterForOnBehalfOf,
+  clearSessionOnBehalfOfForPrompt,
+  ON_BEHALF_OF_CLEARED_KEY,
+} from '../projects/lib/on-behalf-of';
 
 const ACCOUNT = crypto.randomUUID();
 const OTHER_ACCOUNT = crypto.randomUUID();
@@ -184,5 +189,27 @@ describe('bindSessionTurnIdentity', () => {
         .where(and(eq(accountMemberships.userId, outsider), eq(accountMemberships.accountId, OTHER_ACCOUNT)));
       await db.execute(sql`delete from auth.users where id = ${outsider}::uuid`);
     }
+  });
+});
+
+describe('automated turns', () => {
+  test('a trigger fire clears on_behalf_of at delivery, keeps user_id, and stamps the session', async () => {
+    const sessionId = await seedSession();
+    const token = await seedToken(sessionId);
+    await bindSessionTurnIdentity({ accountId: ACCOUNT, sessionId, prompterUserId: TAKER });
+
+    expect(
+      channelPrompterForOnBehalfOf({
+        source: 'trigger:cron',
+        userId: null,
+        slackRequiresUserIdentity: true,
+        teamsRequiresUserIdentity: true,
+      }),
+    ).toBeNull();
+    // continueSession's path for a `null` prompter.
+    expect(await clearSessionOnBehalfOfForPrompt({ accountId: ACCOUNT, sessionId, prompterUserId: null })).toBe(true);
+
+    expect(await identityOf(token)).toEqual({ userId: TAKER, onBehalfOf: null });
+    expect(typeof (await clearedStampOf(sessionId))).toBe('string');
   });
 });

@@ -14,7 +14,7 @@ mock.module('../apps/public-proxy', () => ({ loadPublicAppState: async () => nul
 
 const { createEdgeApp, edgeTlsCheckStatus, previewTlsCheckStatus } = await import('./tls-check');
 
-const LABEL = 'sbx-01m0g4hxcm32bx5r1gpyzdyc1h';
+const LABEL = 'sbx-01bbbbbbbbbbbbbbbbbbbbbbbb';
 const exists = async (label: string) => label === LABEL;
 
 beforeEach(() => {

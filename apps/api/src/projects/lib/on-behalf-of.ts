@@ -18,13 +18,12 @@
  *     service account) clears `on_behalf_of` and keeps `user_id`.
  *
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
- * middleware) or `credentialOnBehalfOf(actor)` (iam/actor.ts, 15 s memo).
+ * middleware) or the token row itself. No memo carries it: it changes per turn.
  */
 import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../config';
-import { loadTokenBinding } from '../../iam/actor';
 import { db } from '../../shared/db';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A
@@ -87,9 +86,9 @@ export function channelPrompterForOnBehalfOf(input: {
   teamsRequiresUserIdentity: boolean;
 }): string | null | undefined {
   if (typeof input.source !== 'string') return undefined;
-  // A reminder prompt is text its creator wrote earlier. The reminder create route
-  // already cleared `on_behalf_of` when that creator was another human, so a
-  // fire is like `system:connector-connected`: the session's own human caused it.
+  // A reminder the session's own agent set is that session's background work:
+  // its fire leaves the identity as is. A reminder a person set is marked
+  // `bindTurnIdentity` at fire time instead (trigger-fire.ts) and never gets here.
   if (input.source === 'trigger:reminder') return undefined;
   if (input.source.startsWith('trigger:')) return null;
   if (input.source === 'email' || input.source === 'telegram') return null;
@@ -185,9 +184,6 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
     )
     .returning({ tokenId: accountTokens.tokenId });
   if (cleared.length === 0) return false;
-  // The IAM token-binding memo carries the value for 15 s; drop it here so
-  // this replica's next request already sees NULL.
-  for (const row of cleared) loadTokenBinding.invalidate(row.tokenId);
   await db
     .update(projectSessions)
     .set({
@@ -244,7 +240,6 @@ export async function bindSessionTurnIdentity(input: {
     )
     select token_id from changed
   `);
-  for (const row of changed) loadTokenBinding.invalidate(row.token_id);
   return changed.length > 0;
 }
 
