@@ -389,6 +389,9 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
+      // Hermetic: ignore the platform sandbox's injected KORTIX_PROJECT_ID
+      // (see the MCP face env above).
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },
     stdout: 'pipe',
@@ -677,6 +680,10 @@ describe('MCP face', () => {
         HOME: process.env.HOME,
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
+        // Hermetic: a platform sandbox injects KORTIX_PROJECT_ID through
+        // /dev/shm/kortix/agent-env.sh, which sandboxEnvValue would honor
+        // and steer these faces at a project route this fake never serves.
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -772,6 +779,9 @@ describe('MCP face', () => {
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
+        // Hermetic: ignore the platform sandbox's injected KORTIX_PROJECT_ID
+        // (see the CLI face env above).
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -844,6 +854,9 @@ describe('MCP face', () => {
         KORTIX_API_URL: apiUrl,
         KORTIX_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,
+        // Hermetic: ignore the platform sandbox's injected KORTIX_PROJECT_ID
+        // (see the CLI face env above).
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       },
       stdin: 'pipe',
       stdout: 'pipe',

@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the warn budget is deliberately per process. Every replica
+// rate-limits its own log stream, so one hot replica never silences another's
+// warnings, and a restart loses only that replica's pending suppression count.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
