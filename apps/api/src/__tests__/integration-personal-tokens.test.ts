@@ -30,6 +30,10 @@ const MY_KEY = crypto.randomUUID();
 const MY_PROJECT_SCOPED_KEY = crypto.randomUUID();
 const THEIR_KEY = crypto.randomUUID();
 const MY_SESSION_TOKEN = crypto.randomUUID();
+/** The row the dogfood journey found (KRTX-1193): the runtime mints a
+ *  PROJECT-scoped token per session, so the project CLI-token list used to
+ *  show it as an ordinary token of confusing provenance. */
+const PROJECT_SESSION_TOKEN = crypto.randomUUID();
 const SERVICE_ACCOUNT_BEARER = crypto.randomUUID();
 
 /** The columns every row needs, so each case below shows only its own point. */
@@ -82,6 +86,13 @@ beforeAll(async () => {
       sessionId: crypto.randomUUID(),
       agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
     }),
+    row(PROJECT_SESSION_TOKEN, {
+      userId: ME,
+      projectId: PROJECT,
+      name: 'Session deadbeef',
+      sessionId: crypto.randomUUID(),
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
+    }),
     // A service account's bearer: minted under a human's user_id, but it is
     // the automation's identity, not the human's key.
     row(SERVICE_ACCOUNT_BEARER, {
@@ -118,7 +129,26 @@ describe('listPersonalAccountTokens', () => {
   test('the unnarrowed account list still returns every row — no existing caller changed', async () => {
     const ids = (await listAccountTokens(ACCOUNT)).map((t) => t.tokenId).sort();
     expect(ids).toEqual(
-      [MY_KEY, MY_PROJECT_SCOPED_KEY, THEIR_KEY, MY_SESSION_TOKEN, SERVICE_ACCOUNT_BEARER].sort(),
+      [
+        MY_KEY,
+        MY_PROJECT_SCOPED_KEY,
+        THEIR_KEY,
+        MY_SESSION_TOKEN,
+        PROJECT_SESSION_TOKEN,
+        SERVICE_ACCOUNT_BEARER,
+      ].sort(),
+    );
+  });
+
+  test('the project list carries the session_id discriminator key-list surfaces filter on', async () => {
+    const rows = await listAccountTokens(ACCOUNT, PROJECT);
+    const byId = new Map(rows.map((t) => [t.tokenId, t]));
+    // A hand-minted, project-scoped key: a CLI token a person manages.
+    expect(byId.get(MY_PROJECT_SCOPED_KEY)?.sessionId).toBeNull();
+    // The runtime's per-session KORTIX_TOKEN, scoped to the same project —
+    // what GET /projects/:id/cli-token hides (and reports as `session_tokens`).
+    expect(byId.get(PROJECT_SESSION_TOKEN)?.sessionId).toEqual(
+      expect.any(String),
     );
   });
 });

@@ -528,6 +528,17 @@ async function projectsRename(argv: string[]): Promise<number> {
 
 // ── Project-scoped CLI tokens ──────────────────────────────────────────────
 
+/** The API hides session-bound tokens from the CLI token list (they are the
+ *  runtime's per-session KORTIX_TOKEN, minted and revoked with the session —
+ *  a person never creates one). The count keeps their provenance visible
+ *  instead of a silent hole in the list. */
+function writeSessionTokenNote(count: number): void {
+  if (count <= 0) return;
+  process.stdout.write(
+    `${C.dim}  Not listed: ${count} session token${count === 1 ? '' : 's'} — minted by the runtime, one per session (the sandbox's KORTIX_TOKEN); each lives and dies with its session.${C.reset}\n`,
+  );
+}
+
 const CLI_TOKENS_HELP = help`Usage: kortix projects cli-tokens [ls | new | rm <token-id>] [options]
 
 Project-scoped CLI tokens (kortix_pat_…). A token is bound to ONE project —
@@ -535,7 +546,8 @@ the API rejects it on every other project. Session sandboxes use their
 session-bound KORTIX_TOKEN instead.
 
 Subcommands:
-  ls                   List this project's tokens. (--json)
+  ls                   List this project's CLI tokens. Session tokens are not
+                       listed (the count below the table). (--json)
   new                  Mint one. The secret is printed ONCE and never again.
   rm <token-id>        Revoke one.
 
@@ -563,6 +575,12 @@ interface CliTokenRow {
   last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
+}
+
+/** `session_tokens` is absent from an older API's answer; treat that as 0. */
+interface CliTokenList {
+  items: CliTokenRow[];
+  session_tokens?: number;
 }
 
 interface CreatedCliToken extends CliTokenRow {
@@ -602,13 +620,14 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
 
   if (sub === 'ls' || sub === 'list') {
     try {
-      const { items } = await ctx.client.get<{ items: CliTokenRow[] }>(path);
+      const { items, session_tokens: sessionTokens = 0 } = await ctx.client.get<CliTokenList>(path);
       if (json) {
         emitJson(items);
         return 0;
       }
       if (items.length === 0) {
         process.stdout.write(`${status.info('No CLI tokens on this project.')}\n`);
+        writeSessionTokenNote(sessionTokens);
         return 0;
       }
       const idW = Math.max(8, ...items.map((t) => t.token_id.length));
@@ -623,7 +642,9 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
           `  ${pad(t.token_id, idW)}  ${pad(t.name, nameW)}  ${pad(t.status, 8)}  ${C.faded}${used}${C.reset}\n`,
         );
       }
-      process.stdout.write(`\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
+      process.stdout.write(`\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n`);
+      writeSessionTokenNote(sessionTokens);
+      process.stdout.write('\n');
       return 0;
     } catch (err) {
       return surfaceApiError(err);

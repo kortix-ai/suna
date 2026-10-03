@@ -154,6 +154,11 @@ export interface ProjectCliToken {
 
 export interface ProjectCliTokenListResponse {
   items: ProjectCliToken[];
+  /** Session-bound tokens the list hides — the runtime mints one per session
+   *  (the sandbox's `KORTIX_TOKEN`) and revokes it with the session, so they
+   *  are not CLI credentials a person manages. The count keeps their
+   *  provenance visible instead of a silent hole in the list. */
+  session_tokens: number;
 }
 
 /** The newly minted project-scoped token — `secret_key` is returned once. */

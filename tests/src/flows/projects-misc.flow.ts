@@ -75,11 +75,11 @@ flow(
       tokenId = r.json<any>().token_id;
       ctx.track('cli-token', tokenId, { projectId: p.id });
     });
-    await ctx.step('list CLI tokens → 200 includes minted', async () => {
+    await ctx.step('list CLI tokens → 200 includes minted, hides session tokens', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/cli-token', { params: { projectId: p.id } });
-      r.status(200).body().exists('$.items');
+      r.status(200).body().exists('$.items').exists('$.session_tokens');
     });
     await ctx.step('revoke CLI token → 200', async () => {
       const r = await ctx.client

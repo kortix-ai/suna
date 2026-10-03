@@ -52,8 +52,18 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const tokens = await listAccountTokens(loaded.row.accountId, projectId);
+  // Session-bound tokens are not CLI tokens. The runtime mints one per session
+  // (the sandbox's KORTIX_TOKEN, `mintConnectorToken`) and revokes it with the
+  // session; a person never creates one, and revoking the one a live box still
+  // holds bricks that session (learnings, 2026-10-01). This is the same call
+  // the personal tokens page makes server-side (`listPersonalAccountTokens`,
+  // `session_id IS NULL`), applied to the project list the CLI reads, so no
+  // `Session <8-hex>` row of confusing provenance shows up here. The count
+  // keeps provenance visible: the CLI explains what it did not list.
+  const cliTokens = tokens.filter((t) => !t.sessionId);
   return c.json({
-    items: tokens.map((t) => ({
+    session_tokens: tokens.length - cliTokens.length,
+    items: cliTokens.map((t) => ({
       token_id: t.tokenId,
       name: t.name,
       public_key: t.publicKey,
