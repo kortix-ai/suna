@@ -392,11 +392,11 @@ describe('parseChannelMessage returns exactly what the regex version returned', 
 });
 
 describe('no channel message can freeze the tab that parses it', () => {
-  const within = (label: string, run: () => unknown) =>
+  const within = (label: string, run: () => unknown, budgetMs = 100) =>
     test(label, () => {
       const started = performance.now();
       run();
-      expect(performance.now() - started).toBeLessThan(100);
+      expect(performance.now() - started).toBeLessThan(budgetMs);
     });
 
   // Each took ~1.4 s at 60k characters with Bun, and quadrupled per doubling.
@@ -406,8 +406,12 @@ describe('no channel message can freeze the tab that parses it', () => {
   // 0.4 s at 60k characters.
   within('60k <at openers that never close', () => parseChannelMessage(`[Slack · c · message from a] ${'<at>'.repeat(60_000)}`));
   within('80k <at openers and no >', () => parseChannelMessage(`[Slack · c · message from a] ${'<at'.repeat(80_000)}`));
+  // The freeze this guards against is the ~1.4 s quadratic parse the fix
+  // removed. The 48k-line case parses in ~60 ms on a quiet box, but a suite
+  // wave that shares the box with another lane pushes it past 100 ms on
+  // scheduler jitter alone — give that one case headroom, keep the rest tight.
   within('60k <at> openers, each on its own line', () =>
-    parseChannelMessage(`[Slack · c · message from a] ${'<at>\n'.repeat(48_000)}</at>`));
+    parseChannelMessage(`[Slack · c · message from a] ${'<at>\n'.repeat(48_000)}</at>`), 250);
   within('a Slack follow-up header with 13k channel separators', () =>
     parseChannelMessage(`New message from a${' in Slack channel b'.repeat(13_000)}, thread 1:\n\nhi`));
   within('a Slack message with 80k < openers and no >', () =>
