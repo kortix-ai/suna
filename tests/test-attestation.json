@@ -1,18 +1,27 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "67609294779446e2a733b2df94012531005923885029f80b9729ca217f189c46",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-03T060228Z-land-every-new-lint-visible-pattern-with-its-inline-justific.md",
+    ".agents/skills/testing/SKILL.md",
+    "AGENTS.md",
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
+    "apps/api/src/shared/platinum.test.ts",
+    "apps/cli/src/__tests__/ship-host.blackbox.test.ts",
+    "apps/cli/src/commands/projects.ts",
+    "apps/cli/src/commands/ship.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "tests/bin/package-quality.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "2a24f8e30783cca391cbf6969c252c5a1d3f3568eb7c3f9b31c6066c633c8e2e",
+  "head": "438d831aa23ee845e76fb6304bc02ae967d0d0ef",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T17:41:11.250Z"
 }
