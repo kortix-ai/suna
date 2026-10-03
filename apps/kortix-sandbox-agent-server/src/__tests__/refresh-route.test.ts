@@ -159,7 +159,12 @@ describe('auth', () => {
 
   it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
     // No repo here, so the repo work answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
+    // The helper's default projectTarget is /workspace, which IS a git checkout
+    // on a Kortix sandbox box — an explicit empty dir is the "no repo" the
+    // assertion is about, on any machine.
+    const noRepo = mkdtempSync(join(tmpdir(), 'kortix-no-repo-'))
+    roots.push(noRepo)
+    const res = await app({ projectTarget: noRepo }).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
     expect(body.error).toBe('refresh failed')
@@ -170,7 +175,9 @@ describe('auth', () => {
     // Only the destructive flag needs the direct call: a user pulling their own
     // workspace keeps working without it. No repo here, so the repo work
     // answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh', {
+    const noRepo = mkdtempSync(join(tmpdir(), 'kortix-no-repo-'))
+    roots.push(noRepo)
+    const res = await app({ projectTarget: noRepo }).request('/kortix/refresh', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
     })

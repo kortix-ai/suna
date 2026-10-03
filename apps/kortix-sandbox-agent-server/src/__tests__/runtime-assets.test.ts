@@ -116,6 +116,11 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // The chunk-store index hashes every local source in manifest-sized
+    // chunks; a Kortix sandbox box carries a ~100 MB baked agent that would
+    // turn the 8-byte fixtures into millions of digest calls. Absent on
+    // purpose: the fixtures already carry the bytes that are reused.
+    agentBakedPath: join(ws.root, 'absent-agent-bin'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about

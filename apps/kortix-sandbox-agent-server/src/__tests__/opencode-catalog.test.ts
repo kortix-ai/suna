@@ -71,15 +71,24 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
   return (JSON.parse(raw!) as ProviderConfig).provider.kortix.models
 }
 
+// A Kortix sandbox box bakes the full catalog at /opt/kortix; the no-catalog
+// scenarios below must not read the box's file, so the baked path is a test
+// override (the same seam buildOpencodeConfigContent consults).
+const ABSENT_BAKED_CATALOG = join(tmpdir(), 'kortix-absent-baked-catalog.json')
+const realBakedCatalogPath = process.env.KORTIX_LLM_CATALOG_BAKED_PATH
+
 beforeEach(() => {
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  process.env.KORTIX_LLM_CATALOG_BAKED_PATH = ABSENT_BAKED_CATALOG
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
+  if (realBakedCatalogPath === undefined) delete process.env.KORTIX_LLM_CATALOG_BAKED_PATH
+  else process.env.KORTIX_LLM_CATALOG_BAKED_PATH = realBakedCatalogPath
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

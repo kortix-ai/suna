@@ -23,7 +23,7 @@ import type { PiBootState } from '@/harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
-import { readHostHealth } from '@/harness/shared/host-health'
+import { __setPtEnvPathForTests, readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
@@ -246,10 +246,17 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
+const realManagedSkillsDir = process.env.KORTIX_MANAGED_SKILLS_DIR
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
+  // This box can be a Kortix sandbox whose /etc/pt-env carries a live
+  // session's AUTO_CLONE and branch; a rig must read only its own env.
+  __setPtEnvPathForTests(join(homeDir, 'absent-pt-env'))
+  // The same for the image's baked managed skills: managedSkillsDir() reads
+  // process.env directly, and the /skill assertions count skills.
+  process.env.KORTIX_MANAGED_SKILLS_DIR = join(homeDir, 'absent-managed-skills')
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -260,6 +267,9 @@ afterEach(async () => {
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
   rmSync(homeDir, { recursive: true, force: true })
+  __setPtEnvPathForTests()
+  if (realManagedSkillsDir === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  else process.env.KORTIX_MANAGED_SKILLS_DIR = realManagedSkillsDir
 })
 
 /** Wait until the root's transcript shows a tool part in the running state. */
