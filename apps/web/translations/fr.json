@@ -20190,7 +20190,7 @@
     "ceilingDefault": "Plafond d'agent par défaut",
     "changeCeiling": "Modifier",
     "humanOnly": "Réservé aux humains",
-    "humanOnlyHelp": "Gérer les membres, supprimer le projet et émettre des identifiants restent aux humains.",
+    "humanOnlyHelp": "L’émission d’identifiants du projet reste réservée aux personnes.",
     "humanOnlyValue": "Jamais accordée",
     "effective": "Permissions effectives",
     "effectiveHelp": "Permissions Kortix dans le rôle plafond, moins les permissions réservées aux humains. project.read est toujours accordée.",
