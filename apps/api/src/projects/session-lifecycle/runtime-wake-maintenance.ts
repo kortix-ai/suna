@@ -76,6 +76,14 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
       and(
         eq(sessionSandboxes.status, 'stopped'),
         isNotNull(sessionSandboxes.externalId),
+        // Redundant with the fence branches below (every branch requires one of
+        // the two keys), but Postgres cannot estimate key presence from a
+        // `->>'…' IS NOT NULL` clause — it can from `?|`. Without this clause
+        // the planner seq-scans every stopped box instead of using
+        // idx_session_sandboxes_wake_fences. Keep in sync with the index's
+        // WHERE — the reasoning is canonical in
+        // packages/db/migrations/20261003204822592_session_sandboxes_wake_fence_index.concurrent.ts.
+        sql`${sessionSandboxes.metadata} ?| array['runtimeWakeId', 'runtimeWakeCleanupUntilAt']`,
         sql`(
           (
             ${sessionSandboxes.metadata}->>'runtimeWakeId' IS NOT NULL

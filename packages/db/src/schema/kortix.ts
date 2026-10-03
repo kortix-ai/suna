@@ -2129,6 +2129,19 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // The runtime wake-fence reconcile (apps/api/src/projects/session-lifecycle/
+    // runtime-wake-maintenance.ts) reads stopped boxes with an open fence —
+    // only rows whose metadata carries the `runtimeWakeId` or
+    // `runtimeWakeCleanupUntilAt` key (a few hundred out of ~58k
+    // stopped-with-external rows). The `?|` predicate and the statement's
+    // matching clause are what make the plan stable; the reasoning is
+    // canonical in
+    // 20261003204822592_session_sandboxes_wake_fence_index.concurrent.ts.
+    index('idx_session_sandboxes_wake_fences')
+      .on(table.status)
+      .where(
+        sql`${table.externalId} is not null and ${table.metadata} ?| array['runtimeWakeId', 'runtimeWakeCleanupUntilAt']`,
+      ),
   ],
 );
 
