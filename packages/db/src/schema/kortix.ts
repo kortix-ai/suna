@@ -4319,9 +4319,6 @@ export const yoloMemberTokens = kortixSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.accountId] }),
-    index('idx_yolo_member_tokens_prefix')
-      .on(table.tokenPrefix)
-      .where(sql`${table.revokedAt} IS NULL`),
     index('idx_yolo_member_tokens_account').on(table.accountId),
   ],
 );
