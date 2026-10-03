@@ -44,6 +44,7 @@ import {
   usageEvents,
   gatewayRequestLogs,
   auditEvents,
+  legacySandboxMigrations,
   auditSessionSequences,
   auditWebhookDeliveries,
   accountSsoProviders,
@@ -222,6 +223,35 @@ describe('canonical audit ledger', () => {
     ]) {
       expect(indexNames(auditEvents)).not.toContain(dropped);
     }
+  });
+
+  test('does not re-add the unused legacy_sandbox_migrations run index', () => {
+    // Dropped by 20261003055638934_drop_unused_legacy_sandbox_migrations_run_index
+    // (.concurrent.ts, DROP INDEX CONCURRENTLY). The runner that read rows by
+    // run_id is gone; the only remaining read of the table is the ops group
+    // count, which the status index serves. Supabase advisor unused_index,
+    // prod idx_scan=0 (2026-10-03). An index that is never scanned still
+    // costs an index write on every INSERT/UPDATE of the table.
+    expect(indexNames(legacySandboxMigrations)).not.toContain(
+      'idx_legacy_sandbox_migrations_run',
+    );
+  });
+
+  test('keeps the legacy_sandbox_migrations indexes the remaining reads use', () => {
+    // Prod idx_scan (2026-10-03): status 61923, sandbox 1620, account 44,
+    // heartbeat 6. The unique partial index enforces at most one live
+    // migration per sandbox (scripts/verify-live-schema.test.ts pins it);
+    // the advisor's unused_index lint skips unique indexes, so idx_scan=0
+    // alone is not a drop signal for it.
+    expect(indexNames(legacySandboxMigrations)).toEqual(
+      expect.arrayContaining([
+        'idx_legacy_sandbox_migrations_status',
+        'idx_legacy_sandbox_migrations_sandbox',
+        'idx_legacy_sandbox_migrations_account',
+        'idx_legacy_sandbox_migrations_heartbeat',
+        'idx_legacy_sandbox_migrations_active_sandbox',
+      ]),
+    );
   });
 
   test('serves the bare session-scoped audit read from an index', () => {

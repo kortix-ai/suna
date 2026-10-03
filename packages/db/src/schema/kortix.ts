@@ -2782,7 +2782,6 @@ export const legacySandboxMigrations = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_legacy_sandbox_migrations_run').on(table.runId),
     index('idx_legacy_sandbox_migrations_sandbox').on(table.sandboxId),
     index('idx_legacy_sandbox_migrations_status').on(table.status),
     index('idx_legacy_sandbox_migrations_account').on(table.accountId),
