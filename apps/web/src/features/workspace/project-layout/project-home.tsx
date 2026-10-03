@@ -26,7 +26,6 @@ import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { FirstChat } from './home/first-chat';
-import { MetaRuntimeIndicator } from './home/meta-runtime-indicator';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 
@@ -257,7 +256,6 @@ export function ProjectHome({
       }
       prefill={prefill}
       onAgentSelectionChange={setSelectedAgent}
-      toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
       sandboxSlot={sandboxSlot}
     />
   );

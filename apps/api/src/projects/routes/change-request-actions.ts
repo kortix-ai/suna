@@ -4,12 +4,11 @@ import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayPerform, assertAgentScope, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { logger } from '../../lib/logger';
 import { refusesSelfMerge } from '../change-request-policy';
-// Imported from its own module, not the `../git` barrel: several route suites
-// replace the barrel wholesale with `mock.module`, and the guard runs only with
-// the agent_principal flag on.
-import { agentGovernanceMergeRefusal } from '../change-request-governance';
+// Its own module, not the `../git` barrel: several route suites replace the
+// barrel wholesale with `mock.module`.
+import { manifestChangeRequiredActions } from '../change-request-governance';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
@@ -108,16 +107,34 @@ projectsApp.openapi(
     const customMessage = normalizeString(body.message);
     const projectForGit = await withProjectGitAuth(loaded.row);
 
-    // Governance guard (spec 2026-09-22 §2.4). Under the agent-principal model
-    // kortix.yaml `agents` and `triggers` ARE agent authority, so an agent must
-    // not widen itself (or plant an unattended run) by merging its own edit. A
-    // human with project.gitops.merge merges such a change request. Compared
-    // against the merge base, so only the CR's own changes count.
-    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal') && isProjectSessionPrincipal(c)) {
-      const refusal = await agentGovernanceMergeRefusal(projectForGit, cr);
-      if (refusal) {
-        if (refusal.retryAfter) c.header('Retry-After', String(refusal.retryAfter));
-        return c.json(refusal.body, refusal.status);
+    // A merge that changes `agents`, `triggers` or `default_agent` needs the
+    // permission the direct route for that change asserts. A person's role
+    // holds them through project.gitops.merge's `implies`; an agent's
+    // kortix_permissions list is flat, so an agent with merge alone cannot
+    // merge a change that widens itself. Same rule for every principal.
+    if (isProjectSessionPrincipal(c)) {
+      let required: string[];
+      try {
+        required = await manifestChangeRequiredActions(projectForGit, cr);
+      } catch (err) {
+        logger.warn('[cr-merge] could not read the manifest to classify the merge; refusing it', {
+          cr: cr.number,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        c.header('Retry-After', '5');
+        return c.json(
+          {
+            error:
+              `Could not read the project manifest to check what change request #${cr.number} ` +
+              'changes. The merge was not applied. Retry it.',
+            code: 'CR_GOVERNANCE_UNVERIFIED',
+            action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+          },
+          503,
+        );
+      }
+      for (const action of required) {
+        await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
       }
     }
 
