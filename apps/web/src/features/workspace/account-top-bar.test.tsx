@@ -1,46 +1,65 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
-import { AccountTopBar } from './account-top-bar';
+import { parseSettingsTab, type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 
 /**
  * What is NOT covered here, and why.
  *
  * The menu's rows live inside a Radix `DropdownMenuContent`, which renders
  * nothing until the menu is open and then renders through a portal.
- * `renderToStaticMarkup` returns an empty string for portalled content and
- * `apps/web` has no DOM harness — the same situation
- * `features/layout/user-menu.test.tsx` documents for its menu. So the rows
- * themselves are not reachable from a unit test; they are verified in the
- * browser (see the KRTX-1327 PR). What IS reachable is asserted below: the
- * trigger renders, and — per the same file's source-scan pattern, the only
- * proof of a row's target without a DOM — the source carries the Settings row
- * above Log out.
+ * `apps/web` has no DOM harness — no jsdom, no testing-library — and
+ * `renderToStaticMarkup` returns an empty string for portalled content
+ * (`features/layout/user-menu.test.tsx` documents the same limit), so the
+ * rows are not reachable from a unit test; the real menu is verified in a
+ * browser. What IS reachable is the wiring the rows are built from, which is
+ * what the source-scan tests below read. Comments are stripped before
+ * matching, so the prose in the component cannot defeat an absence assertion.
  */
-function render(): string {
-  return renderToStaticMarkup(
-    createElement(AccountTopBar, {
-      email: 'user@example.test',
-      signingOut: false,
-      onLogOut: () => {},
-    }),
-  );
-}
+describe('AccountTopBar menu rows', () => {
+  const source = async () => {
+    const text = await Bun.file(new URL('./account-top-bar.tsx', import.meta.url)).text();
+    return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  };
 
-describe('AccountTopBar', () => {
-  test('renders the identity trigger with the signed-in email', () => {
-    const html = render();
-    expect(html).toContain('Logged in as');
-    expect(html).toContain('user@example.test');
+  /**
+   * `/projects` and `/new` mount no `SettingsPanel`, so a row that pokes
+   * `useSettingsPanelStore.openSettings()` would set state with no subscriber
+   * and the click would be swallowed — the exact dead-store bug
+   * `features/layout/user-menu.tsx` documents for its own rows. `/settings/<tab>`
+   * is the account-scoped route that mounts the panel itself, so the row
+   * navigates to it.
+   */
+  test('the menu holds a Settings row that navigates to /settings/profile', async () => {
+    const code = await source();
+    expect(code).toContain('<Link href="/settings/profile" prefetch>');
+    expect(code).not.toContain('openSettings');
+    expect(code).not.toContain('router.push');
   });
 
-  test('the menu carries a Settings row pointing at /settings/profile, above Log out', async () => {
-    const source = await Bun.file(new URL('./account-top-bar.tsx', import.meta.url)).text();
-    // Comments are stripped so the prose cannot satisfy the match; the same
-    // stripping `user-menu.test.tsx` uses.
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    expect(code).toContain('href="/settings/profile"');
-    expect(code.indexOf('actions.settings')).toBeLessThan(code.indexOf('actions.logOut'));
+  /**
+   * Every tab the rows build a URL from must be a segment
+   * `app/[locale]/(app)/settings/[tab]/page.tsx` accepts, or the route silently
+   * falls back to `STANDALONE_DEFAULT_SETTINGS_TAB` and the row opens a
+   * different tab than it names (the same guard `user-menu.test.tsx` runs).
+   */
+  test('the tab the rows navigate to is a real /settings segment', async () => {
+    const code = await source();
+    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
+    expect(tabs.length).toBeGreaterThan(0);
+    for (const tab of tabs) {
+      expect(parseSettingsTab(tab)).toBe(tab as SettingsTab);
+    }
+  });
+
+  /**
+   * Log out ends something, so it keeps its own group after a separator — the
+   * row order every other user menu in the app uses (settings first, log out
+   * last, nothing below it: the last item in a menu is the one a slipped
+   * pointer lands on).
+   */
+  test('the Settings row sits above the Log out row', async () => {
+    const code = await source();
+    expect(code).toContain('actions.settings');
+    expect(code.indexOf('actions.settings')).toBeLessThan(code.indexOf('onSelect={onLogOut}'));
   });
 });
