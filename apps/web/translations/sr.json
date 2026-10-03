@@ -19194,7 +19194,8 @@
       "text0e5f7f6732e0": "Разграни разговор",
       "text32ad3abe4479": "Разгранање разговора није успело",
       "text85b7a59cdbd5": "Agent platforme",
-      "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti."    },
+      "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti."
+    },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
       "description": "Свако ко има линк може ово да види без пријаве. Линк остаје активан док га не опозовеш.",
