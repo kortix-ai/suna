@@ -23,7 +23,7 @@ where "silence" is used as a proxy for "dead."
 
 **Incident:** four days of Kortix appearing to "ignore" Slack incident
 mentions. The agent ran correctly every time (session-bound, on-topic, right
-project); its output was thrown away by the TTL reaper. Session `e58ddd55`:
+project); its output was thrown away by the TTL reaper. One session:
 a 24m40s gap between narrated steps reaped the row at 13:09:42; five more
 steps and the final answer went nowhere while the agent worked two more hours.
 The identical defect existed in the Teams channel's copy of the same code.

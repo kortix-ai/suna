@@ -38,3 +38,21 @@ test('with prepare on, a parameterized Drizzle statement is prepared once on its
 test('by default no Drizzle statement is prepared', async () => {
   expect(await preparedCount(unprepared)).toBe(0);
 });
+
+// A generic plan (PostgreSQL's choice after ~5 executions of a prepared
+// statement) cannot use a partial index whose predicate arrives as a parameter.
+// Prepared connections keep a custom plan per execution, as unprepared ones do.
+async function planCacheMode(db: typeof prepared): Promise<string | undefined> {
+  const rows = (await db.execute(sql`select current_setting('plan_cache_mode') as mode`)) as unknown as Array<{
+    mode: string;
+  }>;
+  return rows[0]?.mode;
+}
+
+test('with prepare on, every execution is planned for its own parameters', async () => {
+  expect(await planCacheMode(prepared)).toBe('force_custom_plan');
+});
+
+test('by default the server plan cache setting is untouched', async () => {
+  expect(await planCacheMode(unprepared)).toBe('auto');
+});

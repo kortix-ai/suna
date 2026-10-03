@@ -156,7 +156,7 @@ describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay',
   });
 });
 
-// Session ad02e053 (2026-09-18): the sandbox memory guard aborted a turn at 97 %
+// One session (2026-09-18): the sandbox memory guard aborted a turn at 97 %
 // box memory. The transcript only says `MessageAbortedError`, an abort renders
 // nothing, and the user saw the agent stop with no explanation. WHICH notice a
 // turn gets is the SDK's decision (`turnEndNotice`, tested there); this is only
