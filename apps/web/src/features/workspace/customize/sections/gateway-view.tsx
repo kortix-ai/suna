@@ -255,11 +255,11 @@ export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
   const models = useProjectModels(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
-  const effectiveDefault =
-    modelDefaults.projectDefault ??
-    modelDefaults.accountDefault ??
-    (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
-    null;
+  // One default-model chain, resolved by the SDK hook's own member — the same
+  // `resolveModelDefault` the composer runs, so the settings picker cannot
+  // disagree with what a session actually runs (the platform default is
+  // free-tier eligible, KRTX-1067).
+  const effectiveDefault = modelDefaults.resolveDefaultFor(undefined) ?? null;
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">

@@ -194,8 +194,10 @@ const handleSessionSnapshot = async (c: any) => {
               accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
-              resolvedForCaller:
-                resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+              // The platform default applies to every tier — it is the one
+              // managed model a free tier may run (KRTX-1067) — so an
+              // unconfigured chain resolves to it for free accounts too.
+              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
               resolvedSource: resolved.source,
               freeTier,
             };

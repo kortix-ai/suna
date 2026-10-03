@@ -27,6 +27,7 @@ import {
   isKnownManagedModelId,
   isRetiredManagedModelId,
 } from '../models/managed-models';
+import { platformDefaultModelId } from '../models/served-managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
   bedrockByokBaseUrl,
@@ -354,9 +355,17 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
     'Kortix Managed Models are disabled for this project.',
     'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
-  if (principal.freeModelsOnly) throw new GatewayResolutionError('plan_upgrade_required',
+  // The platform default is the ONE managed model a free tier may run: it is
+  // what /model-picker advertises as `defaultModel` and /model-defaults
+  // serves as `platformDefault` for a free account, so the tier gates below
+  // must admit it or a fresh free account could never send a message
+  // (KRTX-1067). Every other managed id keeps both gates. Checked before the
+  // tier reads so the hot path stays tier-lookup-free.
+  const isPlatformDefault = effectiveModel === toWireModel(platformDefaultModelId());
+  if (principal.freeModelsOnly && !isPlatformDefault) throw new GatewayResolutionError('plan_upgrade_required',
     `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
-  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(principal.accountId))) {
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !isPlatformDefault &&
+    !(await accountMayUseManagedModels(principal.accountId))) {
     const tier = await getCachedAccountTier(principal.accountId);
     throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }

@@ -14,7 +14,11 @@ import { type ModelKey, wireToModelKey } from './model-key';
 /**
  * The gateway's configured default for an agent, from
  * `GET /projects/:id/model-defaults`: agent → project → account → platform.
- * A free-tier account never resolves the platform default.
+ * The platform default is the ONE managed model a free tier may run — the API
+ * advertises it (`platformDefault`, and `defaultModel` on /model-picker) and
+ * serves it `enabled` for a free account — so the chain resolves it for every
+ * tier. `resolveComposerModel` validates the resolved key against the offered
+ * list, so a deployment that cannot serve it drops out of the chain safely.
  */
 export function resolveModelDefault(
   data: ModelDefaultsResponse | undefined,
@@ -24,7 +28,7 @@ export function resolveModelDefault(
     (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
     data?.projectDefault ??
     data?.accountDefault ??
-    (data?.freeTier ? undefined : data?.platformDefault);
+    data?.platformDefault;
   return wire ? wireToModelKey(wire) : undefined;
 }
 

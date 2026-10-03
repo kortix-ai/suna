@@ -8,7 +8,8 @@ import {
 } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { SERVED_MANAGED_MODELS, platformDefaultModelId } from './served-managed-models';
+import { toWireModel } from '../resolution/effective';
 
 // The real upstream provider id for the ChatGPT-subscription lineup served
 // under `codex/<id>` — kept as one named constant so this file, the sandbox
@@ -310,13 +311,26 @@ export function gatewayCodexModels(
 // once per request. The bundled snapshot is only the initial/last-known fallback.
 const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
 const EMPTY_CATALOG: Record<string, GatewayModel> = {};
+// The ONE managed model a free tier may run: the platform default. It is what
+// /model-picker advertises as `defaultModel` and /model-defaults serves as
+// `platformDefault` for a free account, so the picker, the sandbox boot list
+// and request-time resolution (resolveManagedCandidates' matching gate) must
+// all offer the same single model. `platformDefaultModelId()` is a deployment
+// constant (config + SERVED_MANAGED_MODELS), so the entry is resolved once.
+const PLATFORM_DEFAULT_ENTRY = (() => {
+  const id = toWireModel(platformDefaultModelId());
+  const record = MANAGED_ONLY[id];
+  return record ? ([id, record] as const) : null;
+})();
 let cachedRevision = -1;
 let cachedByokAndCodex: Record<string, GatewayModel> = {};
 let cachedFullCatalog: Record<string, GatewayModel> = MANAGED_ONLY;
+let cachedFreeTierCatalog: Record<string, GatewayModel> = EMPTY_CATALOG;
 
 function refreshedCatalogs(): {
   byokAndCodex: Record<string, GatewayModel>;
   full: Record<string, GatewayModel>;
+  freeTier: Record<string, GatewayModel>;
 } {
   const revision = runtimeModelCatalog.status().revision;
   if (revision !== cachedRevision) {
@@ -326,22 +340,35 @@ function refreshedCatalogs(): {
       ...gatewayCodexModels(catalog),
     };
     cachedFullCatalog = { ...MANAGED_ONLY, ...cachedByokAndCodex };
+    cachedFreeTierCatalog = PLATFORM_DEFAULT_ENTRY
+      ? { ...cachedByokAndCodex, [PLATFORM_DEFAULT_ENTRY[0]]: PLATFORM_DEFAULT_ENTRY[1] }
+      : cachedByokAndCodex;
     cachedRevision = revision;
   }
-  return { byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
+  return {
+    byokAndCodex: cachedByokAndCodex,
+    full: cachedFullCatalog,
+    freeTier: cachedFreeTierCatalog,
+  };
 }
 
 // `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
 // `freeManagedOnly` (a free-tier account with internal billing on) hides every
-// managed Kortix model. A free user's own connected provider keys still work,
-// but there is no unreliable platform-managed free default.
+// managed Kortix model EXCEPT the platform default — the one managed model the
+// tier may run, and the model the picker advertises as the account's default.
+// A free user's own connected provider keys still work.
 export function gatewayModelCatalog(
   projectId: string | undefined,
   opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
   const catalogs = refreshedCatalogs();
   if (opts?.freeManagedOnly) {
-    return projectId ? catalogs.byokAndCodex : EMPTY_CATALOG;
+    if (!projectId) {
+      return PLATFORM_DEFAULT_ENTRY
+        ? { [PLATFORM_DEFAULT_ENTRY[0]]: PLATFORM_DEFAULT_ENTRY[1] }
+        : EMPTY_CATALOG;
+    }
+    return catalogs.freeTier;
   }
   return projectId ? catalogs.full : MANAGED_ONLY;
 }
