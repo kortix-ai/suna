@@ -954,8 +954,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (modelKey) options.model = modelKey;
       if (variant) options.variant = variant;
       // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
-      const { fileParts, refs } = editResendAttachments(kept);
-      const sendText = refs ? (text ? `${text}\n\n${refs}` : refs) : text;
+      const { fileParts, text: sendText } = editResendAttachments(kept, text);
       await handleSend(sendText, options, undefined, { fileParts, files: [] });
     },
     [runtimeReady, sessionId, handleSend, toast],

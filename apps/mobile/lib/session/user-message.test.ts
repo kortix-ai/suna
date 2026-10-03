@@ -512,32 +512,40 @@ describe('parseUserMessageParts — an upload ref keeps its path and saved copy'
 describe('editResendAttachments — what an edited prompt sends again (KRTX-962)', () => {
   const savedCopy = { key: 'u0', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png', attachment: SAVED_COPY };
   const pathOnly = { key: 'u1', filename: 'b.pdf', mime: 'application/pdf', src: '/w/b.pdf', path: '/w/b.pdf' };
+  const PATH_ONLY_REF = '<file path="/w/b.pdf" mime="application/pdf" filename="b.pdf">\nThis file has been uploaded and is available at the path above.\n</file>';
   const nativePart = { key: 'f1', filename: 'c.txt', mime: 'text/plain', src: 'https://example.test/c.txt' };
 
   test('a saved copy resends as a URL part with the kortix-attachment ref', () => {
-    expect(editResendAttachments([savedCopy])).toEqual({
+    expect(editResendAttachments([savedCopy], '')).toEqual({
       fileParts: [{ type: 'file', mime: 'image/png', url: SAVED_COPY, filename: 'a.png' }],
-      refs: '',
+      text: '',
     });
   });
 
   test('a native file part resends as a URL part with its own url', () => {
-    expect(editResendAttachments([nativePart])).toEqual({
+    expect(editResendAttachments([nativePart], '')).toEqual({
       fileParts: [{ type: 'file', mime: 'text/plain', url: 'https://example.test/c.txt', filename: 'c.txt' }],
-      refs: '',
+      text: '',
     });
   });
 
   test('a path-only upload resends its <file> ref as text', () => {
-    expect(editResendAttachments([pathOnly])).toEqual({
+    expect(editResendAttachments([pathOnly], '')).toEqual({
       fileParts: [],
-      refs: '<file path="/w/b.pdf" mime="application/pdf" filename="b.pdf">\nThis file has been uploaded and is available at the path above.\n</file>',
+      text: PATH_ONLY_REF,
     });
   });
 
+  test('the text joins the refs: unchanged with none, trimmed text first, refs alone for blank text', () => {
+    expect(editResendAttachments([], '  hi  ').text).toBe('  hi  ');
+    expect(editResendAttachments([pathOnly], ' hi ').text).toBe(`hi\n\n${PATH_ONLY_REF}`);
+    expect(editResendAttachments([pathOnly], '   ').text).toBe(PATH_ONLY_REF);
+    expect(editResendAttachments([pathOnly], '').text).toBe(PATH_ONLY_REF);
+  });
+
   test('a tile with no source has nothing to resend; a missing mime falls back to octet-stream', () => {
-    expect(editResendAttachments([{ key: 'x', filename: 'x', localUri: 'file:///x' }])).toEqual({ fileParts: [], refs: '' });
-    expect(editResendAttachments([{ key: 'y', filename: 'y.bin', mime: '', src: 'https://example.test/y' }]).fileParts).toEqual([
+    expect(editResendAttachments([{ key: 'x', filename: 'x', localUri: 'file:///x' }], '')).toEqual({ fileParts: [], text: '' });
+    expect(editResendAttachments([{ key: 'y', filename: 'y.bin', mime: '', src: 'https://example.test/y' }], '').fileParts).toEqual([
       { type: 'file', mime: 'application/octet-stream', url: 'https://example.test/y', filename: 'y.bin' },
     ]);
   });
@@ -545,10 +553,10 @@ describe('editResendAttachments — what an edited prompt sends again (KRTX-962)
   test('a removed tile is not sent: only the kept ones go, in order', () => {
     const all = [savedCopy, pathOnly, nativePart];
     const kept = all.filter((tile) => tile.key !== 'u0');
-    const { fileParts, refs } = editResendAttachments(kept);
+    const { fileParts, text } = editResendAttachments(kept, '');
     expect(fileParts.map((part) => part.url)).toEqual(['https://example.test/c.txt']);
-    expect(refs).toContain('path="/w/b.pdf"');
-    expect(refs).not.toContain('a.png');
-    expect(editResendAttachments([])).toEqual({ fileParts: [], refs: '' });
+    expect(text).toContain('path="/w/b.pdf"');
+    expect(text).not.toContain('a.png');
+    expect(editResendAttachments([], 'hi')).toEqual({ fileParts: [], text: 'hi' });
   });
 });

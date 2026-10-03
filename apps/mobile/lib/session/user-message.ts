@@ -271,11 +271,15 @@ export function parseUserMessageParts(parts: Parameters<typeof splitUserParts>[0
  * A saved copy (`kortix-attachment://`) or a native file part rides as a URL
  * part; the API writes a saved copy into the sandbox again. An upload whose
  * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
- * as text. A tile with neither source has nothing to resend.
+ * as text, joined under the trimmed `text` (refs alone when the text is blank).
+ * A tile with neither source has nothing to resend.
  */
-export function editResendAttachments(kept: readonly MessageAttachment[]): {
+export function editResendAttachments(
+  kept: readonly MessageAttachment[],
+  text: string,
+): {
   fileParts: SessionPromptPart[];
-  refs: string;
+  text: string;
 } {
   const fileParts: SessionPromptPart[] = [];
   const refs: string[] = [];
@@ -285,7 +289,9 @@ export function editResendAttachments(kept: readonly MessageAttachment[]): {
     if (url) fileParts.push({ type: 'file', mime: type, url, filename });
     else if (path) refs.push(promptFileReferenceXml({ path, mime: type, filename }));
   }
-  return { fileParts, refs: refs.join('\n') };
+  const joined = refs.join('\n');
+  const body = text.trim();
+  return { fileParts, text: joined ? (body ? `${body}\n\n${joined}` : joined) : text };
 }
 
 /**

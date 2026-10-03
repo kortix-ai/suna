@@ -730,15 +730,20 @@ export function editablePromptText(
  * A saved copy (`kortix-attachment://`) or a native file part rides as a URL
  * part; the API writes a saved copy into the sandbox again. An upload whose
  * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
- * as text. A tile with neither source has nothing to resend.
+ * as text, joined under the trimmed `text` (refs alone when the text is blank).
+ * A tile with neither source has nothing to resend.
  */
-export function editResendAttachments(kept: readonly NormalizedAttachment[]): {
+export function editResendAttachments(
+  kept: readonly NormalizedAttachment[],
+  text: string,
+): {
   files: AttachedFile[];
-  refs: string;
+  text: string;
 } {
   const files: AttachedFile[] = [];
   const refs: string[] = [];
-  for (const { src, path, filename, mime = 'application/octet-stream' } of kept) {
+  for (const { src, path, filename, mime: kind } of kept) {
+    const mime = kind || 'application/octet-stream';
     if (src && (isSessionAttachmentRef(src) || !path)) {
       const isImage = isPreviewableImage(filename, mime);
       files.push({ kind: 'remote', url: src, filename, mime, isImage });
@@ -746,7 +751,9 @@ export function editResendAttachments(kept: readonly NormalizedAttachment[]): {
       refs.push(uploadedFileRefXml({ path, mime, filename }));
     }
   }
-  return { files, refs: refs.join('\n') };
+  const joined = refs.join('\n');
+  const body = text.trim();
+  return { files, text: joined ? (body ? `${body}\n\n${joined}` : joined) : text };
 }
 
 // ============================================================================
@@ -1080,10 +1087,12 @@ export function UserMessageEditor({
                 ) : (
                   <AttachmentTile filename={file.filename} mime={file.mime} />
                 )}
-                <AttachmentRemoveButton
-                  filename={file.filename}
-                  onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
-                />
+                {!pending && (
+                  <AttachmentRemoveButton
+                    filename={file.filename}
+                    onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
+                  />
+                )}
               </div>
             </li>
           ))}

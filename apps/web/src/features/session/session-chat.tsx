@@ -2966,8 +2966,7 @@ export function SessionChat({
         // waits behind an earlier Send still in the session's delivery chain.
         const editSend = { commitsRewind: true };
         // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
-        const { files, refs } = editResendAttachments(kept);
-        const sendText = refs ? (text ? `${text}\n\n${refs}` : refs) : text;
+        const { files, text: sendText } = editResendAttachments(kept, text);
         const resend = files.length ? files : undefined;
         await handleSend(sendText, resend, undefined, undefined, editSend).catch(() => {
           sendOk = false;

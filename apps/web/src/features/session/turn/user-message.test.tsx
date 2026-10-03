@@ -1089,9 +1089,14 @@ describe('editResendAttachments (what an edited prompt sends again)', () => {
   const ref = (n: number) => `kortix-attachment://${UUID(1)}/${UUID(2)}/${UUID(n)}`;
   const REMOTE = 'https://files.example/remote.pdf';
   const NOTES = '/workspace/uploads/.kortix-inbox/notes.md';
+  const NOTES_REF = uploadedFileRefXml({
+    path: NOTES,
+    mime: 'application/octet-stream',
+    filename: 'notes.md',
+  });
 
   test('a saved copy and a native file part ride as URLs, a path-only upload as its ref', () => {
-    const { files, refs } = editResendAttachments([
+    const { files, text } = editResendAttachments([
       {
         key: 'a',
         filename: 'shot.png',
@@ -1103,7 +1108,7 @@ describe('editResendAttachments (what an edited prompt sends again)', () => {
       { key: 'c', filename: 'notes.md', path: NOTES, src: NOTES },
       { key: 'd', filename: 'pending.txt', mime: 'text/plain' },
       { key: 'e', filename: 'data.csv', mime: 'text/csv', src: ref(4), path: '/workspace/d.csv' },
-    ]);
+    ], 'hi');
 
     expect(files).toEqual([
       { kind: 'remote', url: ref(3), filename: 'shot.png', mime: 'image/png', isImage: true },
@@ -1117,32 +1122,32 @@ describe('editResendAttachments (what an edited prompt sends again)', () => {
       { kind: 'remote', url: ref(4), filename: 'data.csv', mime: 'text/csv', isImage: false },
     ]);
     // The saved copy is missing: the runtime still holds the file at its path.
-    expect(refs).toBe(
-      uploadedFileRefXml({
-        path: NOTES,
-        mime: 'application/octet-stream',
-        filename: 'notes.md',
-      }),
-    );
+    expect(text).toBe(`hi\n\n${NOTES_REF}`);
   });
 
-  test('the POST carries every kept file and none the user removed', () => {
+  test('the text joins the refs: unchanged with none, trimmed text first, refs alone for blank text', () => {
+    const upload = [{ key: 'n', filename: 'notes.md', path: NOTES, src: NOTES }];
+    expect(editResendAttachments([], '  hi  ').text).toBe('  hi  ');
+    expect(editResendAttachments(upload, ' hi ').text).toBe(`hi\n\n${NOTES_REF}`);
+    expect(editResendAttachments(upload, '   ').text).toBe(NOTES_REF);
+    expect(editResendAttachments(upload, '').text).toBe(NOTES_REF);
+  });
+
+  test('promptFileParts maps every kept tile to a file part', () => {
     const kept = [
       { key: 'a', filename: 'shot.png', mime: 'image/png', src: ref(3) },
       { key: 'b', filename: 'remote.pdf', mime: 'application/pdf', src: REMOTE },
     ];
-    const removed = { key: 'c', filename: 'gone.png', mime: 'image/png', src: ref(5) };
 
-    const parts = promptFileParts(editResendAttachments(kept).files, []);
+    const parts = promptFileParts(editResendAttachments(kept, '').files, []);
     expect(parts).toEqual([
       { type: 'file', mime: 'image/png', url: ref(3), filename: 'shot.png' },
       { type: 'file', mime: 'application/pdf', url: REMOTE, filename: 'remote.pdf' },
     ]);
-    expect(JSON.stringify(parts)).not.toContain(removed.src);
   });
 
   test('nothing kept sends nothing', () => {
-    expect(editResendAttachments([])).toEqual({ files: [], refs: '' });
+    expect(editResendAttachments([], 'hi')).toEqual({ files: [], text: 'hi' });
   });
 });
 
