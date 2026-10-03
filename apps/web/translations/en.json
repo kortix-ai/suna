@@ -985,10 +985,6 @@
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
         },
-        "agent_principal": {
-          "name": "Agents as Principals",
-          "description": "Agents act as themselves: their Kortix permissions, capped by their role. Whoever runs an agent adds only their own accounts."
-        },
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
