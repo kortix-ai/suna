@@ -295,7 +295,7 @@ The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
 rejects the push when the attestation is stale, red, or missing. Never bypass
 it with `--no-verify`: the merge gate runs
 `pnpm test:verify --rev <head> --branch <headRefName>`: exit `0` green, `1`
-stale/red/missing (`--strict` exits `3` when `db-suites` is skipped). Verify
+stale/red/missing (`--strict` exits `3` when a lane carries a sanctioned skip). Verify
 reads the attestation file the PR's diff adds or edits under
 `tests/attestations/` (with several, the `--branch` match, else the newest
 `at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
@@ -305,8 +305,11 @@ The attestation stays green after a merge of `origin/main` that touches other
 files; it goes stale only when a file the PR itself changed is edited after the
 run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
 Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db`. It is the only lane that may skip, and it is never a pass:
-the merge gate holds a DB-touching PR (`db-wait`) on it.
+`skipped-no-db`; on a Kortix sandbox image (`/etc/pt-env` or
+`/opt/kortix/scaffold.git` present) `packages` records `skipped-sandbox-image`.
+A skip is never a pass, and only a lane's own sanctioned skip is legal: the
+merge gate holds a DB-touching PR (`db-wait`) on the db-suites skip, and CI's
+scheduled Tests run is the backstop for the packages skip.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
