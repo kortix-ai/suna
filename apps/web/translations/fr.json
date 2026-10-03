@@ -20542,7 +20542,8 @@
       "enterCodeTitle": "Saisissez le code de Kortix Capture",
       "enterCodeDescription": "L'application affiche un code de huit caractères.",
       "codeLabel": "Code",
-      "continue": "Continuer"
+      "continue": "Continuer",
+      "codePlaceholder": "ABCD-1234"
     }
   }
 }

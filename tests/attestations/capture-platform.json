@@ -1,5 +1,5 @@
 {
-  "source_hash": "dbb613d5b0c1453b2dbea8f9c53ac65be088e2c30814c04809770594710ea126",
+  "source_hash": "41ffc88cebba7b70669e4a5e853872acff053dd2e2beebe2922952cac215e78b",
   "diff_files": [
     ".agents/skills/worktree/SKILL.md",
     ".agents/skills/worktree/references/capture-local-store.md",
@@ -9,6 +9,7 @@
     "apps/api/package.json",
     "apps/api/src/__tests__/integration-capture.test.ts",
     "apps/api/src/__tests__/integration-job-queue.test.ts",
+    "apps/api/src/__tests__/unit-session-title-invariant.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
     "apps/api/src/app.ts",
     "apps/api/src/bootstrap.ts",
@@ -97,13 +98,13 @@
     "tests/src/fixtures/capture.ts",
     "tests/src/flows/capture.flow.ts"
   ],
-  "diff_hash": "27a524e609f7c8fe7a25dd478ba57222ba5ded83b5bf9f96d95290cd02e14386",
-  "head": "99ec393de14dd3275d34396e0de38e41381f22b2",
+  "diff_hash": "96717379e43160efc603783adfa32ba5510a0a2866532d57387748e9a41a12da",
+  "head": "5ca8d9d1abd9aedde57891a81f8e7b3a12e8e656",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-03T19:19:06.939Z"
+  "at": "2026-10-03T19:30:44.109Z"
 }

@@ -20542,7 +20542,8 @@
       "enterCodeTitle": "输入 Kortix Capture 中的代码",
       "enterCodeDescription": "应用会显示一个八位代码。",
       "codeLabel": "代码",
-      "continue": "继续"
+      "continue": "继续",
+      "codePlaceholder": "ABCD-1234"
     }
   }
 }

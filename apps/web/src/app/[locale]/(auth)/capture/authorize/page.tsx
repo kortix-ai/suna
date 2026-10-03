@@ -86,7 +86,7 @@ function CaptureAuthorize() {
               autoComplete="off"
               value={typedCode}
               onChange={(event) => setTypedCode(event.target.value)}
-              placeholder="ABCD-1234"
+              placeholder={t('codePlaceholder')}
               className="font-mono tracking-widest"
             />
             <Button type="submit" size="lg" className="w-full" disabled={!typedCode.trim()}>

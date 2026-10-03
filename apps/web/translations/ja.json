@@ -20542,7 +20542,8 @@
       "enterCodeTitle": "Kortix Capture のコードを入力",
       "enterCodeDescription": "アプリに 8 文字のコードが表示されます。",
       "codeLabel": "コード",
-      "continue": "続行"
+      "continue": "続行",
+      "codePlaceholder": "ABCD-1234"
     }
   }
 }

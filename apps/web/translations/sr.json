@@ -20542,7 +20542,8 @@
       "enterCodeTitle": "Unesi kod iz Kortix Capture",
       "enterCodeDescription": "Aplikacija prikazuje kod od osam znakova.",
       "codeLabel": "Kod",
-      "continue": "Nastavi"
+      "continue": "Nastavi",
+      "codePlaceholder": "ABCD-1234"
     }
   }
 }
