@@ -10,12 +10,8 @@
 
 import type { App } from '@kortix/sdk';
 
-/** An App row's runtime state, in the words web's `appStatus` uses. */
-export interface AppStatus {
-  /** Deployed and `running`: the only state that earns the live colour. */
-  live: boolean;
-  label: string;
-}
+/** The runtime-state label of an App row, in the words web's `appStatus` uses. */
+export type AppStatus = 'Not deployed' | 'Running' | 'Suspended';
 
 /**
  * Three states, the same three web's App cards show: never deployed,
@@ -24,8 +20,7 @@ export interface AppStatus {
  */
 export function appStatus(app: Pick<App, 'active_deployment_id' | 'desired_state'>): AppStatus {
   const deployed = Boolean(app.active_deployment_id);
-  const live = deployed && app.desired_state === 'running';
-  return { live, label: !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended' };
+  return !deployed ? 'Not deployed' : app.desired_state === 'running' ? 'Running' : 'Suspended';
 }
 
 /** The viewer may see this App in the list but not open it (`viewer_can_access === false`). */

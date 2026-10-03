@@ -3,19 +3,20 @@ import { describe, expect, test } from 'bun:test';
 import { AppAccessDeniedError, appStatus, openApp } from './apps';
 
 describe('appStatus', () => {
-  test('a running deployment is live', () => {
-    const status = appStatus({ active_deployment_id: 'dep-1', desired_state: 'running' });
-    expect(status).toEqual({ live: true, label: 'Running' });
+  test('a running deployment reads Running', () => {
+    expect(appStatus({ active_deployment_id: 'dep-1', desired_state: 'running' })).toBe('Running');
   });
 
-  test('a stopped deployment is suspended, not live', () => {
-    const status = appStatus({ active_deployment_id: 'dep-1', desired_state: 'stopped' });
-    expect(status).toEqual({ live: false, label: 'Suspended' });
+  test('a stopped deployment reads Suspended', () => {
+    expect(appStatus({ active_deployment_id: 'dep-1', desired_state: 'stopped' })).toBe(
+      'Suspended',
+    );
   });
 
-  test('no active deployment is not deployed', () => {
-    const status = appStatus({ active_deployment_id: null, desired_state: 'running' });
-    expect(status).toEqual({ live: false, label: 'Not deployed' });
+  test('no active deployment reads Not deployed', () => {
+    expect(appStatus({ active_deployment_id: null, desired_state: 'running' })).toBe(
+      'Not deployed',
+    );
   });
 });
 

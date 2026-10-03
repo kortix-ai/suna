@@ -18,7 +18,6 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageList } from '@/components/kortix/page-list';
 import { SettingsGroupItem, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
-import { Icon } from '@/components/ui/icon';
 import { haptics } from '@/lib/haptics';
 import { SquaresFourIcon } from '@/lib/icons';
 import { AppAccessDeniedError, appStatus, openApp } from '@/lib/projects/apps';
@@ -97,17 +96,15 @@ export function AppsPage({ page, projectId, onBack, onOpenDrawer, isDrawerOpen }
           keyExtractor={(app) => app.app_id}
           renderItem={(app, index) => {
             const denied = app.viewer_can_access === false;
-            const status = appStatus(app);
             return (
               <View className="px-4">
                 <SettingsGroupItem index={index} count={apps.length}>
                   <SettingsRow
                     icon={SquaresFourIcon}
                     label={app.name}
-                    value={denied ? 'No access' : status.label}
+                    value={denied ? 'No access' : appStatus(app)}
                     disabled={denied}
                     external={!denied}
-                    accessibilityLabel={`Open ${app.name}`}
                     onPress={() => openOne(app)}
                   />
                 </SettingsGroupItem>
