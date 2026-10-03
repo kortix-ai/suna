@@ -50,6 +50,7 @@ const setupLinksPublicApp = new Hono();
 // client IP so a flood of garbage tokens (each a distinct, never-colliding key)
 // can't allocate unbounded rate-limit buckets or dodge the limit entirely.
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
+// replica-local: limit × API replicas (shared/rate-limit.ts).
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
 function createSetupLinkRateLimitMiddleware() {

@@ -1,19 +1,19 @@
 import { writeFileSync } from 'node:fs';
-import { type AuditEvent, type AuditEventList, downloadAccountAudit } from '@kortix/sdk';
-import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { type ApiClient, clientFromAuth } from '../api/client.ts';
-import { activeAccount } from '../api/config.ts';
+import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   fail,
   missing,
+  resolveAccountContext,
   resolveSpanInstant,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  type AccountContext,
 } from '../command-helpers.ts';
-import { trim,  C, help, pad, status } from '../style.ts';
+import { trim, C, help, pad, status } from '../style.ts';
+import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
 import { printEvents } from './audit-render.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
@@ -163,35 +163,6 @@ export function buildAuditQuery(
   return { search };
 }
 
-interface AuditContext {
-  client: ApiClient;
-  accountId: string;
-  auth: NonNullable<ReturnType<typeof loadAuth>>;
-}
-
-function resolveAccountContext(accountArg?: string, hostArg?: string): AuditContext | null {
-  // --host names a logged-in host other than the active one; its own stored
-  // account is the default scope there (never the global active account).
-  const auth = hostArg ? loadAuthForHost(hostArg) : loadAuth();
-  if (!auth?.token) {
-    process.stderr.write(
-      hostArg
-        ? `${status.err(`Host "${hostArg}" is not logged in.`)} Run \`kortix login --host ${hostArg}\`.\n`
-        : `${status.err('Not logged in. Run `kortix login`.')}\n`,
-    );
-    return null;
-  }
-  const accountId =
-    accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
-  if (!accountId) {
-    process.stderr.write(
-      `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
-    );
-    return null;
-  }
-  return { client: clientFromAuth(auth, { accountId }), accountId, auth };
-}
-
 /**
  * Translate the entitlement 402 before it reaches the generic handler.
  *
@@ -231,7 +202,7 @@ function surfaceAuditError(err: unknown): number {
  * an unparseable --since, which the session route silently ignores.
  */
 async function listAuditEvents(
-  ctx: AuditContext,
+  ctx: AccountContext,
   url: (search: URLSearchParams) => string,
   f: Record<string, string | undefined>,
   all: boolean,
@@ -338,7 +309,7 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext(f.account, f.host);
+  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/accounts/${ctx.accountId}/audit`;
 

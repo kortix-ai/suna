@@ -135,7 +135,8 @@ export interface AccountContext {
  * and `kortix permissions` all need this, not `resolveProjectContext`.
  *
  * Account resolution order: `--account` → the active account → the host's
- * default account from the stored credentials.
+ * default account from the stored credentials. With `--host`, only that
+ * host's stored account is used unless `--account` explicitly overrides it.
  */
 export function resolveAccountContext(opts: {
   accountArg?: string;
@@ -155,7 +156,7 @@ export function resolveAccountContext(opts: {
     }
     return null;
   }
-  const accountId = opts.accountArg || activeAccount()?.id || auth.account_id || '';
+  const accountId = opts.accountArg || (opts.hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
   if (!accountId && !opts.accountOptional) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,

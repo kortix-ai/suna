@@ -6,6 +6,7 @@ import {
   RUNTIME_WAKE_HARD_MS,
   RUNTIME_WAKE_LEASE_MS,
   executeClaimedRuntimeWake,
+  isAmbiguousRuntimeStartError,
   runtimeStartFailurePatch,
   runtimeStartRetryDelayMs,
   runtimeWakeInProgress,
@@ -15,6 +16,7 @@ import {
   stampedRuntimeFailureState,
   waitForRuntimeWakeRunning,
 } from './runtime-wake-fence';
+import { timeoutError } from '../../__tests__/helpers/platinum-http-error';
 
 /** A fake sleep that advances a virtual clock. */
 function virtualClock() {
@@ -70,7 +72,7 @@ describe('executeClaimedRuntimeWake', () => {
     const result = await executeClaimedRuntimeWake({
       getStatus: async () => statuses.shift() ?? 'running',
       start: async () => {
-        throw new Error('platinum POST /start timed out');
+        throw timeoutError('platinum POST /start timed out');
       },
       stop: async () => {},
       finalize: async () => {
@@ -92,7 +94,7 @@ describe('executeClaimedRuntimeWake', () => {
     const result = await executeClaimedRuntimeWake({
       getStatus: async () => 'stopped',
       start: async () => {
-        throw new Error('platinum POST /start timed out');
+        throw timeoutError('platinum POST /start timed out');
       },
       stop: async () => {},
       finalize: async () => {
@@ -466,5 +468,21 @@ describe('runtimeStartFailurePatch', () => {
     const one = runtimeStartFailurePatch({}, first);
     const muchLater = new Date(first.getTime() + RUNTIME_START_FAILURE_TTL_MS + 1_000);
     expect(runtimeStartFailurePatch(one, muchLater).runtimeStartFailureCount).toBe(1);
+  });
+});
+
+describe('isAmbiguousRuntimeStartError', () => {
+  const named = (name: string, message = 'x') => Object.assign(new Error(message), { name });
+
+  test('a timeout, an abort or a lost connection may still be starting the box', () => {
+    for (const name of ['TimeoutError', 'AbortError', 'DaytonaTimeoutError', 'DaytonaConnectionError']) {
+      expect(isAmbiguousRuntimeStartError(named(name))).toBe(true);
+    }
+    expect(isAmbiguousRuntimeStartError(Object.assign(new TypeError('socket closed'), { code: 'ECONNRESET' }))).toBe(true);
+  });
+
+  test('the message text alone is not evidence', () => {
+    expect(isAmbiguousRuntimeStartError(new Error('provider timed out after 10s'))).toBe(false);
+    expect(isAmbiguousRuntimeStartError(named('DaytonaError', 'request aborted: connection reset'))).toBe(false);
   });
 });
