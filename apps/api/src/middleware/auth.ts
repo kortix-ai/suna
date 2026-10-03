@@ -13,6 +13,7 @@ import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { markDeadCredential } from '../shared/dead-credential-log';
 import { requestClientKey } from '../shared/client-ip';
 import { isOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
@@ -46,13 +47,20 @@ export { combinedAuth } from './auth-combined';
 export const SESSION_TOKEN_REVOKED_CODE = 'session_token_revoked';
 
 export function deadCredential401(message: string): HTTPException {
-  return new HTTPException(401, {
+  const err = new HTTPException(401, {
     message,
     res: new Response(
       JSON.stringify({ error: true, message, status: 401, code: SESSION_TOKEN_REVOKED_CODE }),
       { status: 401, headers: { 'content-type': 'application/json' } },
     ),
   });
+  // The body above already tells a reading client to stop. One that does not
+  // (an in-sandbox agent CLI retrying per step) would otherwise put one warn
+  // line per refusal into the API log — the KRTX-1039 spike. The mark routes
+  // this exception through the global error handler's log throttle without
+  // touching the response.
+  markDeadCredential(err);
+  return err;
 }
 
 

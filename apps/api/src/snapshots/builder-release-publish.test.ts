@@ -11,6 +11,18 @@ function emptyQuery(): unknown {
   return chain;
 }
 mock.module('../shared/db', () => ({ db: emptyQuery() }));
+// The cross-replica claim is its own DB suite (integration-snapshot-build-claim).
+let peerHolds = false;
+let peerFinishes = true;
+mock.module('./build-claim', () => ({
+  claimSnapshotBuild: async () => !peerHolds,
+  releaseSnapshotBuild: async () => {},
+  waitForSnapshotBuildRelease: async () => {
+    if (!peerFinishes) return;
+    peerHolds = false;
+    providerState = 'active';
+  },
+}));
 
 const SERVING = 'kortix-default-serving';
 const NEXT = 'kortix-default-next';
@@ -96,6 +108,26 @@ beforeEach(() => {
   providers.length = 0;
   providerState = 'missing';
   buildFails = false;
+  peerHolds = false;
+  peerFinishes = true;
+});
+
+describe('ensureSandboxImage across replicas', () => {
+  test('another replica holds the build: this one builds nothing and serves the image it finished', async () => {
+    peerHolds = true;
+    const result = await ensureSandboxImage(project, { slug: 'default', source: 'startup', provider: 'platinum' });
+    expect(built).toEqual([]);
+    expect(result).toMatchObject({ snapshotName: NEXT, built: false });
+  });
+
+  test('the claim is lost again after one wait: a clear error, never a second same-name build', async () => {
+    peerHolds = true;
+    peerFinishes = false;
+    await expect(
+      ensureSandboxImage(project, { slug: 'default', source: 'startup', provider: 'platinum' }),
+    ).rejects.toThrow('being built by another API replica');
+    expect(built).toEqual([]);
+  });
 });
 
 describe('ensureSandboxImage publication', () => {
