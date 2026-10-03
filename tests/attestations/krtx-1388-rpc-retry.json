@@ -1,0 +1,17 @@
+{
+  "source_hash": "21d7cff5df8687fd742891b88e9e750d1c623813c7426753f4858b6a23655b84",
+  "diff_files": [
+    "apps/kortix-worker/src/kortix-env.test.ts",
+    "apps/kortix-worker/src/kortix-env.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "e5432f682efd495badcb9221d8ef8d0cf081f4650fa83e3d581ef78fdd018075",
+  "head": "541fbe9a717660d3184cb52ad567330665f3b554",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:37:46.841Z"
+}
