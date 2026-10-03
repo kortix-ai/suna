@@ -34,6 +34,12 @@ export const DENY_COMMANDS: Record<string, Denial> = {
   t: { reason: 'it is an interactive terminal app', use: 'the other MCP tools' },
   connect: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   attach: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
+  ...Object.fromEntries(
+    ['run', 'claude', 'codex', 'opencode'].map((cmd) => [
+      cmd,
+      { reason: 'it boots a sandbox from a local folder and attaches a terminal to it', use: 'start_session and run_command' },
+    ]),
+  ),
   token: { reason: 'it prints the raw access token', use: '`whoami --json` names the user' },
 };
 
