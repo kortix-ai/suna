@@ -526,6 +526,10 @@ export async function recordTemplateBuilt(
   }
 }
 
+// replica-local: only reaps this process started, kept so a test can await
+// them. The reaps themselves are best-effort background deletes (quota GC
+// collects whatever is left), so nothing needs to survive a restart or be
+// visible to another replica.
 const pendingPredecessorReaps = new Set<Promise<void>>();
 
 /** Test hook: settle every predecessor reap kicked by recordTemplateBuilt. */

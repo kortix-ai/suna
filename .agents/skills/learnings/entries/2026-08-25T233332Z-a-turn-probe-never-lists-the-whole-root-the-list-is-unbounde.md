@@ -4,10 +4,10 @@ commit: ed74e34af4
 ---
 # A turn probe never lists the whole root — the list is unbounded, the budget is not
 
-*Incident (2026-08-25, SampleCo sessions 9c8749ac and 9df2a873):* the reaper
+*Incident (2026-08-25, two SampleCo sessions, A and B):* the reaper
 asks the daemon `GET /kortix/health?turn=1&turn_session_id&turn_message_id`
 and acts on `turn_in_flight`. The daemon answered it by fetching the root's
-ENTIRE OpenCode message list inside a 5 s budget. On 9c8749ac that list was
+ENTIRE OpenCode message list inside a 5 s budget. On session A that list was
 276.7 MB (inline base64 image parts; `?limit=20` alone was 26 MB). The read
 never fit, the daemon answered `turn_in_flight: null` ("could not tell") on
 every visit, the reaper drip-extended the box on that non-answer for 2.5 h
@@ -46,7 +46,7 @@ settled by hand.
    crossed, and `GET /kortix/diag` returns state + resources + runtime
    report + both log tails in one document. Ask the box before guessing.
 
-*Cost of the old probe, measured (2026-08-25 23:12Z, session 9df2a873):* the
+*Cost of the old probe, measured (2026-08-25 23:12Z, session B):* the
 reaper visited that box 345 times in one hour; every visit made OpenCode
 JSON-serialise its 140 MB root (~48 GB of serialisation per hour) for an
 answer that never fit the budget. OpenCode reached 6.48 GB RSS on an 8 GB

@@ -1,5 +1,5 @@
 {
-  "id": "dba14e1e-7d91-4eb6-a0f9-d3cf46fad18c",
+  "id": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "prevId": "f437005a-e96a-4699-9de8-5d61be349e22",
   "version": "7",
   "dialect": "postgresql",
@@ -2942,6 +2942,21 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_deployment_events_runtime_idx": {
+          "name": "app_deployment_events_runtime_idx",
+          "columns": [
+            {
+              "expression": "runtime_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -18683,23 +18698,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "idx_session_presence_leases_session_id": {
-          "name": "idx_session_presence_leases_session_id",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "session_presence_session_fk": {
           "name": "session_presence_session_fk",

@@ -45,6 +45,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const SESSION_VISIBILITY_TTL_MS = 10_000;
 const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: number }>();
 /** Verdicts in flight, by the cache key. Per process; gone when the read settles. */
+// replica-local: single-flight dedup of one burst of concurrent reads; the
+// entry dies with its promise, so there is no state to share, and another
+// replica re-reading is one redundant query, never a different verdict.
 const sessionVisibilityInFlight = new Map<string, Promise<boolean>>();
 
 /**
@@ -437,10 +440,11 @@ async function computeEntry(
 
 /**
  * Checks in flight, by the cache key. A page load fires its proxied requests
- * together, so on a cold cache each one used to run the whole check. Per
- * process, and an entry lives only as long as its check: a rejection is never
- * kept.
+ * together, so on a cold cache each one used to run the whole check. An entry
+ * lives only as long as its check: a rejection is never kept.
  */
+// replica-local: single-flight dedup within one process, same contract as the
+// session-visibility in-flight map above — nothing persists past the promise.
 const previewContextInFlight = new Map<string, Promise<CacheEntry>>();
 
 async function getOrCompute(
