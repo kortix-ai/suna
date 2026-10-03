@@ -23,6 +23,29 @@ async function materializeRuntime(agentBundle = INPUT.agentBundle) {
   return { artifact, root, runtimePath };
 }
 
+
+/** The env a production runner would provide: exactly the baked manifest identity.
+ *  Without pinning, any test in the same bun worker that promotes the platform's
+ *  agent-env.sh values into process.env (they share one process.env) flips the
+ *  runtime's identity check mid-suite. */
+function runnerEnv(artifact: { manifest: Record<string, unknown> }): Record<string, string> {
+  const m = artifact.manifest as Record<string, string>;
+  return {
+    KORTIX_COMPILED_RUNTIME_FORMAT: m.format,
+    KORTIX_COMPILED_RUNTIME_SOURCE_SHA: m.source_sha,
+    KORTIX_PROJECT_ID: m.project_id,
+    KORTIX_DEFAULT_BRANCH: m.ref,
+    KORTIX_BASE_REF: m.ref,
+    KORTIX_BASE_SHA: m.source_sha,
+    ...(m.agent_config
+      ? {
+          KORTIX_COMPILED_AGENT_CONFIG: m.agent_config,
+          KORTIX_COMPILED_AGENT_CONFIG_ETAG: m.agent_config_etag,
+        }
+      : {}),
+  };
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -77,7 +100,7 @@ describe('compileOpenCodeRuntime', () => {
   });
 
   test('runs the bundled daemon with compiled config and runtime secrets', async () => {
-    const { root } = await materializeRuntime();
+    const { artifact, root } = await materializeRuntime();
     const capturePath = join(root, 'capture.json');
     const { runtimePath } = await materializeRuntime(`
 import { writeFileSync } from "node:fs";
@@ -93,6 +116,7 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     const child = Bun.spawn([process.execPath, runtimePath], {
       env: {
         ...process.env,
+        ...runnerEnv(artifact),
         CAPTURE_PATH: capturePath,
         KORTIX_TOKEN: 'runtime-only-token',
       },
@@ -148,6 +172,7 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     const child = Bun.spawn([process.execPath, runtimePath], {
       env: {
         ...process.env,
+        ...runnerEnv(artifact),
         CAPTURE_PATH: capturePath,
         KORTIX_COMPILED_CONFIG_ROOT: extractionRoot,
       },
@@ -173,13 +198,14 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     const root = await mkdtemp(join(tmpdir(), 'kortix-compiled-runtime-'));
     roots.push(root);
     const capturePath = join(root, 'node-trampoline.txt');
-    const { runtimePath } = await materializeRuntime(`
+    const { artifact, runtimePath } = await materializeRuntime(`
 import { writeFileSync } from "node:fs";
 writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
 `);
     const child = Bun.spawn(['node', runtimePath], {
       env: {
         ...process.env,
+        ...runnerEnv(artifact),
         CAPTURE_PATH: capturePath,
         KORTIX_BUN_BIN: process.execPath,
       },
