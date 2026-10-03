@@ -1,5 +1,5 @@
 {
-  "id": "5bb34abd-8827-4252-90f8-6d00de995eba",
+  "id": "c4881c58-ee3e-4133-892d-ae18838c601c",
   "prevId": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "version": "7",
   "dialect": "postgresql",
@@ -1688,6 +1688,21 @@
             },
             {
               "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_secret_resources_project_id": {
+          "name": "idx_account_secret_resources_project_id",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -18698,23 +18713,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "idx_session_presence_leases_session_id": {
-          "name": "idx_session_presence_leases_session_id",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "session_presence_session_fk": {
           "name": "session_presence_session_fk",
