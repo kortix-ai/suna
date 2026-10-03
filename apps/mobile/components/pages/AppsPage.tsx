@@ -33,13 +33,11 @@ interface PageTabLike {
 interface AppsPageProps {
   page: PageTabLike;
   projectId: string;
-  /** Pushed as a sub-page: Go back in place of the hamburger. Apps is not one today. */
-  onBack?: () => void;
   onOpenDrawer?: () => void;
   isDrawerOpen?: boolean;
 }
 
-export function AppsPage({ page, projectId, onBack, onOpenDrawer, isDrawerOpen }: AppsPageProps) {
+export function AppsPage({ page, projectId, onOpenDrawer, isDrawerOpen }: AppsPageProps) {
   const { colorScheme } = useColorScheme();
   const bgColor = colorScheme === 'dark' ? THEME.dark.background : THEME.light.background;
   const toast = useToast();
@@ -73,12 +71,7 @@ export function AppsPage({ page, projectId, onBack, onOpenDrawer, isDrawerOpen }
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      <PageHeader
-        title={page.label}
-        onBack={onBack}
-        onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        isDrawerOpen={isDrawerOpen}
-      />
+      <PageHeader title={page.label} onOpenDrawer={onOpenDrawer} isDrawerOpen={isDrawerOpen} />
 
       <PageContent>
         <PageList<App>
