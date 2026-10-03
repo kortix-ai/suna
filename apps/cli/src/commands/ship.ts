@@ -1,10 +1,10 @@
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { basename } from 'node:path';
 
-import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
+import { loadAuthForHost, type Auth } from '../api/auth.ts';
+import { activeHostName } from '../api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
-import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
+import { isKortixProject, loadLink, saveLink } from '../project-link.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -45,6 +45,9 @@ First ship vs. after:
                  pushes. Continuous by design — re-run as often as you like.
                  The link travels in .kortix/link.json, so a teammate who
                  clones a linked repo can \`kortix ship\` from it too.
+                 Ship uses --host, the link's host, or the configured active
+                 host's saved login; injected session auth/project and global
+                 default projects do not select the workspace to ship.
 
 Branches:
   Ship pushes whatever branch you're on to the matching remote branch — on
@@ -158,10 +161,17 @@ export async function runShip(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // ── Auth (host: --host → sandbox env token → link.json → active) ──────────
-  const hostFromLink = !flags.host && !hasEnvTokenHost() ? loadLink()?.host : undefined;
-  const hostName = flags.host ?? hostFromLink;
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
+  // Ship binds this workspace, not the session that happens to run the CLI.
+  const link = loadLink();
+  const hostName = flags.host ?? link?.host ?? activeHostName() ?? undefined;
+  if (!flags.project && flags.host && link?.host && flags.host !== link.host) {
+    process.stderr.write(
+      `${status.err(`This folder is linked to host "${link.host}", not "${flags.host}".`)} ` +
+        'Pass --project or run projects link --host to rebind it.\n',
+    );
+    return 1;
+  }
+  const auth = hostName ? loadAuthForHost(hostName) : null;
   if (!auth?.token) {
     if (hostName) {
       process.stderr.write(
@@ -183,7 +193,7 @@ export async function runShip(argv: string[]): Promise<number> {
   if (!prepared.ok) return 1;
 
   // ── Resolve state: already linked (sync) vs first ship (create) ───────────
-  const linkedId = resolveProjectId(flags.project);
+  const linkedId = flags.project ?? link?.project_id;
   try {
     if (linkedId) {
       return await shipExisting(client, auth, linkedId, flags, prepared.env);
