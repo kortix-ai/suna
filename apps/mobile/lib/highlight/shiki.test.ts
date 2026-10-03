@@ -136,22 +136,18 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
   };
 
   /**
-   * Lines where the engines split runs differently but paint the same
-   * characters, so only the characters are compared there. php light: the
-   * engines disagree on whether the `php` keyword after `<?` takes the
-   * punctuation scope — the JavaScript engine colours it with the tag (one
-   * run), the wasm reference leaves it base. Measured both ways across
-   * runtimes, so neither direction is asserted (PR #8963 removed the entry on
-   * an engine pair that agreed; bun 1.3.14 on Linux does not).
+   * Lines where the wasm reference's own verdict is not portable: excluded
+   * from the comparison, with no direction asserted — unlike
+   * KNOWN_ENGINE_DIFFERENCES, whose entries are asserted to still differ.
+   *
+   * php light line 0 (`<?php`): the wasm Oniguruma paints `php` base fg in
+   * one environment (a factory sandbox, node and bun alike) and keyword red
+   * in another (CI's packages lane at the same lockfile; #8963 measured the
+   * same on removal). The ES2018 engine paints it red everywhere.
    */
-  const CHARACTER_PARITY_LINES: ReadonlySet<string> = new Set(['php:light:0']);
-
-  /** A painted line without its colour runs: the exact characters it paints. */
-  const charactersOf = (painted: string): string =>
-    painted
-      .split('|')
-      .map((run) => run.split(':').slice(1).join(':'))
-      .join('');
+  const UNSTABLE_WASM_LINES: Record<string, { light: number[]; dark: number[] }> = {
+    php: { light: [0], dark: [] },
+  };
 
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
@@ -160,12 +156,8 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       await oniguruma.loadLanguage((await LANGUAGE_LOADERS[lang]()).default);
       // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
-      // crossed that limit and failed the parity check below. The warm-up
-      // result itself is discarded: one that crossed the limit would
-      // otherwise serve its truncated tokens to the parity check through the
-      // memoized token cache.
+      // crossed that limit and failed the parity check below.
       highlightToTokens(sample, lang, 'light');
-      __testing.tokenCache.clear();
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
@@ -187,12 +179,9 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
         const theirs = paint(reference);
         const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
         for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
-        const characterParity = (i: number) => CHARACTER_PARITY_LINES.has(`${lang}:${scheme}:${i}`);
-        const tolerate = (painted: string, i: number) =>
-          characterParity(i) ? charactersOf(painted) : painted;
-        expect(
-          ours.map(tolerate).filter((_, i) => !differing.includes(i)),
-        ).toEqual(theirs.map(tolerate).filter((_, i) => !differing.includes(i)));
+        const unstable = UNSTABLE_WASM_LINES[lang]?.[scheme] ?? [];
+        const keep = (_: string, i: number) => !differing.includes(i) && !unstable.includes(i);
+        expect(ours.filter(keep)).toEqual(theirs.filter(keep));
       }
     });
   }

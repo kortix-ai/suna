@@ -28,22 +28,18 @@ describe('evaluate attestation', () => {
     expect(evaluate(att({ lanes: lanes({ browser: 'skipped-no-db' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ browser: 'pass' }) }), cur()).code).toBe(0);
   });
-  it('allows only db-suites and packages to skip, each with its own value, and --strict never lets a skip pass', () => {
+  it('allows only db-suites to be skipped, and --strict never lets it pass', () => {
     const a = att({ lanes: lanes({ 'db-suites': 'skipped-no-db' }) });
     expect(evaluate(a, cur()).code).toBe(0);
     expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
-    // The packages sandbox-image skip mirrors the merge gate's sanctionedSkip:
-    // a Kortix sandbox image whose platform state breaks tests identical at
-    // origin/main; the scheduled Tests run on a clean runner is the backstop.
-    const p = att({ lanes: lanes({ packages: 'skipped-sandbox-image' }) });
-    expect(evaluate(p, cur()).code).toBe(0);
-    expect(evaluate(p, cur(), REQUIRED_LANES, true).code).toBe(3);
-    // A skip value is lane-specific: the other lane's value (or any other
-    // lane skipping at all) is not green.
     expect(evaluate(att({ lanes: lanes({ packages: 'skipped-no-db' }) }), cur()).code).toBe(1);
-    expect(
-      evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code,
-    ).toBe(1);
+  });
+  it('packages may be skipped-sandbox-image (owner rule: the Kortix image breaks those tests at base); --strict never lets it pass', () => {
+    const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image', 'db-suites': 'skipped-no-db' }) });
+    expect(evaluate(a, cur()).code).toBe(0);
+    expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
+    expect(evaluate(att({ lanes: lanes({ core: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
+    expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
   });
   it('a diff-keyed attestation ignores source_hash: fresh iff its own files are unchanged', () => {
     const line = '100644 blob1 pr.txt';
