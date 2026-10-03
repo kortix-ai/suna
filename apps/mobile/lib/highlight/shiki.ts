@@ -191,6 +191,14 @@ export function ensureLanguage(language: string): Promise<boolean> {
     .then(async (core) => {
       const grammar = await LANGUAGE_LOADERS[lang]();
       await core.loadLanguage(grammar.default);
+      // A grammar's first tokenization can be wrong: the engine compiles its
+      // patterns lazily and the first pass through a freshly loaded grammar
+      // produced a mis-tokenized line for php (observed: `<?php` painted as
+      // one scope instead of the open tag plus the base-coloured remainder;
+      // the second pass is correct, and a throwaway first pass fixes every
+      // later one). Warm the patterns here so the user's first block — and
+      // the token cache below — never store the bad first pass.
+      core.codeToTokensBase('x', { lang, theme: codeThemeFor('light') });
       loadedLangs.add(lang);
       return true;
     })
