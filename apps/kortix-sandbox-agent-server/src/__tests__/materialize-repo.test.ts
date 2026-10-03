@@ -76,14 +76,21 @@ function createDetachedWarmCheckout(prefix: string): {
 
 const tempDirs: string[] = []
 
+// The no-arg reset restores the production default (/opt/kortix/scaffold.git),
+// which EXISTS on every Kortix image — including the box that runs this suite.
+// A clone test that never set a scaffold must not take the scaffold
+// delta-fetch fast path (it force-fetches --depth 1, so cloneDepth 0 would
+// materialize 1 commit), so the pristine state here is "no scaffold".
+const NO_SCAFFOLD = join(tmpdir(), 'kortix-tests-no-such-scaffold')
+
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(NO_SCAFFOLD)
 })
 
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(NO_SCAFFOLD)
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -247,7 +254,7 @@ describe('materializeRepo', () => {
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
       expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-fresh')
     } finally {
-      __setScaffoldRepoPathForTests()
+      __setScaffoldRepoPathForTests(NO_SCAFFOLD)
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -643,7 +650,7 @@ describe('materializeRepo', () => {
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('imported repository\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(importedSha)
     } finally {
-      __setScaffoldRepoPathForTests()
+      __setScaffoldRepoPathForTests(NO_SCAFFOLD)
       rmSync(root, { recursive: true, force: true })
     }
   })
