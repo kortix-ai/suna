@@ -400,7 +400,9 @@ export const accountGithubInstallations = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_account_github_installations_account').on(table.accountId),
+    // account_id reads use the leading column of the unique index below; the
+    // single-column btree on account_id had 0 scans in prod and was dropped by
+    // the drop_unused_account_github_installation_indexes migration.
     uniqueIndex('idx_account_github_installations_account_installation').on(
       table.accountId,
       table.installationId,
@@ -414,7 +416,6 @@ export const accountGithubInstallations = kortixSchema.table(
       table.accountId,
       table.ownerLogin,
     ),
-    index('idx_account_github_installations_owner').on(table.ownerLogin),
   ],
 );
 

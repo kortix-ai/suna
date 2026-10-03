@@ -806,6 +806,13 @@
       "when": 1791022559790,
       "tag": "20261003101559_chat_pending_picker_project_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791024415824,
+      "tag": "20261003104655_drop_unused_account_github_installation_indexes",
+      "breakpoints": true
     }
   ]
 }
