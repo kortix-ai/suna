@@ -51,7 +51,9 @@ export type FeatureFlagKey =
   | 'pi_harness'
   | 'config_releases'
   | 'agent_principal'
-  | 'mcp';
+  | 'mcp'
+  | 'drives'
+  | 'ephemeral_sandboxes';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -77,6 +79,8 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'config_releases',
   'agent_principal',
   'mcp',
+  'drives',
+  'ephemeral_sandboxes',
 ] as const;
 
 /**

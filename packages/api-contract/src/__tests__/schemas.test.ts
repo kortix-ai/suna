@@ -125,6 +125,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       config_releases: true,
       agent_principal: false,
       mcp: false,
+      drives: false,
+      ephemeral_sandboxes: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -703,6 +705,8 @@ describe('envelopes', () => {
       'config_releases',
       'agent_principal',
       'mcp',
+      'drives',
+      'ephemeral_sandboxes',
     ]);
   });
 

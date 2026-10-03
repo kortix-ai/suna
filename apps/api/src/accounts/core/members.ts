@@ -856,6 +856,10 @@ export function registerMemberRoutes(): void {
 
       // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
       void onMemberRemoved(accountId, targetUserId).catch(() => {});
+      // Their personal drives in this account pass to an owner.
+      await import('../../drives/service').then(({ releaseMemberDrives }) =>
+        releaseMemberDrives(accountId, targetUserId),
+      );
 
       return c.json({ ok: true });
     },
@@ -945,6 +949,11 @@ export function registerMemberRoutes(): void {
         await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
+      if (newRole === 'member') {
+        // An owner or admin reached every company drive; as a member they reach
+        // only what is granted, and drives they attached by role leave now.
+        await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
+      }
 
       return c.json({
         user_id: targetUserId,
@@ -1011,6 +1020,10 @@ export function registerMemberRoutes(): void {
 
       // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
       void onMemberRemoved(accountId, userId).catch(() => {});
+      // Their personal drives in this account pass to an owner.
+      await import('../../drives/service').then(({ releaseMemberDrives }) =>
+        releaseMemberDrives(accountId, userId),
+      );
 
       return c.json({ ok: true });
     },

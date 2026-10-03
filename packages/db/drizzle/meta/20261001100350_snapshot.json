@@ -1,6 +1,6 @@
 {
-  "id": "21f63a8a-1d70-4051-8b96-679d3c7d1f4d",
-  "prevId": "daca9df9-8eb4-49a2-9c56-edce8fbe538d",
+  "id": "4d14ca7c-ed33-491d-944d-76d8e2ea437c",
+  "prevId": "deb05a83-6872-4459-bb14-21d3fac22274",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8966,6 +8966,424 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.drive_grants": {
+      "name": "drive_grants",
+      "schema": "kortix",
+      "columns": {
+        "grant_id": {
+          "name": "grant_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "drive_id": {
+          "name": "drive_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_type": {
+          "name": "subject_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'project'"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_name": {
+          "name": "agent_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access": {
+          "name": "access",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'write'"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "drive_grants_project_subject": {
+          "name": "drive_grants_project_subject",
+          "columns": [
+            {
+              "expression": "drive_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"drive_grants\".\"subject_type\" = 'project'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "drive_grants_user_subject": {
+          "name": "drive_grants_user_subject",
+          "columns": [
+            {
+              "expression": "drive_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"drive_grants\".\"subject_type\" = 'user'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "drive_grants_agent_subject": {
+          "name": "drive_grants_agent_subject",
+          "columns": [
+            {
+              "expression": "drive_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"drive_grants\".\"subject_type\" = 'agent'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_drive_grants_project": {
+          "name": "idx_drive_grants_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_drive_grants_user": {
+          "name": "idx_drive_grants_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "drive_grants_drive_id_drives_drive_id_fk": {
+          "name": "drive_grants_drive_id_drives_drive_id_fk",
+          "tableFrom": "drive_grants",
+          "tableTo": "drives",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "drive_id"
+          ],
+          "columnsTo": [
+            "drive_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "drive_grants_project_id_projects_project_id_fk": {
+          "name": "drive_grants_project_id_projects_project_id_fk",
+          "tableFrom": "drive_grants",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "drive_grants_access": {
+          "name": "drive_grants_access",
+          "value": "\"kortix\".\"drive_grants\".\"access\" in ('read', 'write')"
+        },
+        "drive_grants_subject": {
+          "name": "drive_grants_subject",
+          "value": "(\"kortix\".\"drive_grants\".\"subject_type\" = 'project' and \"kortix\".\"drive_grants\".\"project_id\" is not null and \"kortix\".\"drive_grants\".\"user_id\" is null and \"kortix\".\"drive_grants\".\"agent_name\" is null)\n      or (\"kortix\".\"drive_grants\".\"subject_type\" = 'user' and \"kortix\".\"drive_grants\".\"user_id\" is not null and \"kortix\".\"drive_grants\".\"project_id\" is null and \"kortix\".\"drive_grants\".\"agent_name\" is null)\n      or (\"kortix\".\"drive_grants\".\"subject_type\" = 'agent' and \"kortix\".\"drive_grants\".\"project_id\" is not null and \"kortix\".\"drive_grants\".\"agent_name\" is not null and \"kortix\".\"drive_grants\".\"user_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.drives": {
+      "name": "drives",
+      "schema": "kortix",
+      "columns": {
+        "drive_id": {
+          "name": "drive_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_name": {
+          "name": "agent_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "platinum_volume_id": {
+          "name": "platinum_volume_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platinum_volume_name": {
+          "name": "platinum_volume_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_drives_account": {
+          "name": "idx_drives_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_drives_project": {
+          "name": "idx_drives_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "drives_default_personal": {
+          "name": "drives_default_personal",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"drives\".\"kind\" = 'personal' and \"kortix\".\"drives\".\"is_default\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "drives_agent_per_project": {
+          "name": "drives_agent_per_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"drives\".\"kind\" = 'agent'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "drives_account_id_accounts_account_id_fk": {
+          "name": "drives_account_id_accounts_account_id_fk",
+          "tableFrom": "drives",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "drives_project_id_projects_project_id_fk": {
+          "name": "drives_project_id_projects_project_id_fk",
+          "tableFrom": "drives",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "drives_platinum_volume_name_key": {
+          "name": "drives_platinum_volume_name_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "platinum_volume_name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "drives_kind": {
+          "name": "drives_kind",
+          "value": "\"kortix\".\"drives\".\"kind\" in ('personal', 'agent', 'company')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "kortix.gateway_api_keys": {
       "name": "gateway_api_keys",
       "schema": "kortix",
@@ -11439,6 +11857,74 @@
           "columns": [
             {
               "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.platinum_volume_deletions": {
+      "name": "platinum_volume_deletions",
+      "schema": "kortix",
+      "columns": {
+        "volume_name": {
+          "name": "volume_name",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "not_before": {
+          "name": "not_before",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_platinum_volume_deletions_due": {
+          "name": "idx_platinum_volume_deletions_due",
+          "columns": [
+            {
+              "expression": "not_before",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

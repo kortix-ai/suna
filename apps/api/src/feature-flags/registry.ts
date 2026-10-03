@@ -411,6 +411,27 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'The OAuth client registration and discovery documents are user-scoped and stay ' +
       'reachable; a token they produce opens no MCP endpoint on a project with the flag off.',
   },
+  {
+    key: 'drives',
+    name: 'Drive',
+    description:
+      'Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives.',
+    stability: 'experimental',
+    // Every drive is a Platinum volume; without Platinum there is nothing to
+    // store files in.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in: turning it on starts mounting drives into every new
+    // Platinum session of the project.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
+      '403 `feature_disabled` when off (drives/routes.ts). BEHAVIORAL: session ' +
+      'provisioning mounts no drive when off (drives/service.ts sessionVolumeMounts). ' +
+      'Routes addressed by drive id stay reachable so a drive keeps its files when a ' +
+      'project turns the flag off, and GET /projects/:id/sessions/:id/drives keeps ' +
+      'reporting what a running sandbox actually mounted.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

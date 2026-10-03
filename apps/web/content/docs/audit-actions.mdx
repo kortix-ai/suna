@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 688 route actions and 64 other events.
+This page lists 710 route actions and 64 other events.
 
 ## `account.`
 
@@ -305,6 +305,29 @@ This page lists 688 route actions and 64 other events.
 | `connector.setup_link.read` | Opened connector setup link | `GET /v1/setup-links/connectors/:token` |
 | `connector.setup_link.start` | Started connector setup-link authorization | `POST /v1/setup-links/connectors/:token/start` |
 | `connector.sync` | Synchronized connectors | `POST /v1/connectors/projects/:projectId/connectors/sync` |
+
+## `drive.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `drive.conflict.dismiss` | Dismissed a drive conflict notice | `POST /v1/drives/:driveId/conflicts/:conflictId/dismiss` |
+| `drive.conflict.list` | Viewed drive conflict copies | `GET /v1/drives/:driveId/conflicts` |
+| `drive.create` | Created a drive | `POST /v1/drives` |
+| `drive.delete` | Deleted a drive | `DELETE /v1/drives/:driveId` |
+| `drive.file.delete` | Deleted a drive file or folder | `DELETE /v1/drives/:driveId/files` |
+| `drive.file.list` | Browsed a drive folder | `GET /v1/drives/:driveId/files` |
+| `drive.file.move` | Moved a drive file or folder | `POST /v1/drives/:driveId/files/move` |
+| `drive.file.read` | Downloaded a drive file | `GET /v1/drives/:driveId/files/content` |
+| `drive.file.write` | Uploaded a drive file | `PUT /v1/drives/:driveId/files/content` |
+| `drive.folder.create` | Created a drive folder | `POST /v1/drives/:driveId/files/mkdir` |
+| `drive.grant.create` | Granted a drive | `POST /v1/drives/:driveId/grants` |
+| `drive.grant.list` | Viewed where a drive is granted | `GET /v1/drives/:driveId/grants` |
+| `drive.grant.revoke` | Removed a drive grant | `DELETE /v1/drives/:driveId/grants` |
+| `drive.grant.revoke` | Removed a drive grant | `DELETE /v1/drives/:driveId/grants/:grantId` |
+| `drive.list` | Listed drives | `GET /v1/drives` |
+| `drive.rename` | Renamed a drive | `PATCH /v1/drives/:driveId` |
+| `drive.version.list` | Viewed drive versions | `GET /v1/drives/:driveId/versions` |
+| `drive.version.restore` | Restored a drive version | `POST /v1/drives/:driveId/restore` |
 
 ## `file.`
 
@@ -740,6 +763,10 @@ This page lists 688 route actions and 64 other events.
 | `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
+| `session.drive.access` | Changed a session drive access | `PATCH /v1/projects/:projectId/sessions/:sessionId/drives/:driveId` |
+| `session.drive.attach` | Attached a drive to a session | `POST /v1/projects/:projectId/sessions/:sessionId/drives` |
+| `session.drive.detach` | Detached a drive from a session | `DELETE /v1/projects/:projectId/sessions/:sessionId/drives/:driveId` |
+| `session.drive.list` | Listed session drives | `GET /v1/projects/:projectId/sessions/:sessionId/drives` |
 | `session.environment.read` | Viewed session environment | `GET /v1/projects/:projectId/sessions/:sessionId/environment` |
 | `session.environment.start` | Started session environment | `POST /v1/projects/:projectId/sessions/:sessionId/environment/ensure` |
 | `session.environment.stop` | Stopped session environment | `POST /v1/projects/:projectId/sessions/:sessionId/environment/stop` |

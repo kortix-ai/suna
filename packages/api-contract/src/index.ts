@@ -68,6 +68,8 @@ export const FeatureFlagMapSchema = z.object({
   config_releases: z.boolean(),
   agent_principal: z.boolean(),
   mcp: z.boolean(),
+  drives: z.boolean(),
+  ephemeral_sandboxes: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -1132,6 +1134,9 @@ export const SessionStartFailureSchema = z
       // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
       // so never retryable.
       'snapshot-too-large',
+      // Kortix Drive: the session's drives did not mount (storage down, or a
+      // project with drives and no Platinum), so the session did not start.
+      'drives-unavailable',
       'sandbox-provider',
     ]),
     message: z.string(),
