@@ -507,13 +507,14 @@ const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
 /** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
 const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
 
-/** The Kortix agent-box marker: the platform writes the session's runtime
- *  identity to this file on every sandbox image, and nothing else writes it.
- *  The box's own state (/opt/kortix catalog, /opt/suna scaffold, /etc/pt-env)
- *  is baked into the agent-server suites, so the `packages` lane cannot attest
- *  a PR here; the scheduled Tests run on a clean CI runner is the backstop. */
-export function onKortixSandboxImage(envFile = '/dev/shm/kortix/agent-env.sh'): boolean {
-  return existsSync(envFile);
+/** The Kortix agent-box marker: the platform bakes its model catalog and the
+ *  rest of the box state (/opt/kortix/{scaffold.git,managed-skills},
+ *  /etc/pt-env) into every sandbox image, and nothing writes them elsewhere.
+ *  The agent-server suites read that state, so the `packages` lane cannot
+ *  attest a PR here; the scheduled Tests run on a clean CI runner is the
+ *  backstop. */
+export function onKortixSandboxImage(catalog = '/opt/kortix/llm-catalog.json'): boolean {
+  return existsSync(catalog);
 }
 
 function dockerAvailable(): boolean {
@@ -532,10 +533,12 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   if (plan.mode !== 'full' && ATTESTED_MODES.has(plan.mode)) {
     if (!dockerAvailable()) {
       // No Docker (a factory sandbox): the DB lanes cannot run.
-      for (const lane of plan.lanes) if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
+      for (const lane of plan.lanes)
+        if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
     }
     if (onKortixSandboxImage()) {
-      for (const lane of plan.lanes) if (lane.name === 'package-quality') skipped.set(lane.name, 'skipped-sandbox-image');
+      for (const lane of plan.lanes)
+        if (lane.name === 'package-quality') skipped.set(lane.name, 'skipped-sandbox-image');
     }
     if (skipped.size > 0) {
       plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));
