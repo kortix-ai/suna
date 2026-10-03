@@ -9,9 +9,11 @@ import {
   applyBulk,
   applyCell,
   applyLeaf,
+  areaLabel,
   buildAreaTable,
   expandFold,
   foldSelection,
+  permissionLabel,
   unmappedLeaves,
 } from './role-capability-matrix';
 
@@ -473,6 +475,90 @@ describe('applyBulk', () => {
 });
 
 // ─── Catalog-awareness ──────────────────────────────────────────────────────
+
+// ─── Synthetic catalogs: implication edges the seeded catalog lacks ────────
+
+/** A tiny hand-built catalog for implication-graph cases the seeded catalog
+ *  does not contain: cycles, gaps, unknown leaves and areas without copy. */
+function catalog(entries: Array<Partial<Permission> & { action: string }>): Permission[] {
+  return entries.map((e) => ({
+    action: e.action,
+    scope_type: e.scope_type ?? 'project',
+    resource_type: e.resource_type ?? 'project',
+    delegable: e.delegable ?? true,
+    description: e.description ?? '',
+    area: e.area ?? 'synthetic',
+    level: e.level ?? 'edit',
+    implies: e.implies ?? [],
+  }));
+}
+
+describe('implication closure on synthetic graphs', () => {
+  test('a cyclic implication graph terminates and grants the whole cycle', () => {
+    const cycle = catalog([
+      { action: 'x.a.grant', implies: ['x.b.grant'] },
+      { action: 'x.b.grant', implies: ['x.a.grant'] },
+    ]);
+    const next = applyLeaf('project', new Set(), 'x.a.grant', true, cycle);
+    expect(sorted(next)).toEqual(['x.a.grant', 'x.b.grant']);
+  });
+
+  test('an implied leaf the catalog does not publish is not granted', () => {
+    const gap = catalog([{ action: 'x.a.grant', implies: ['x.ghost.leaf'] }]);
+    const next = applyLeaf('project', new Set(), 'x.a.grant', true, gap);
+    expect([...next]).toEqual(['x.a.grant']);
+  });
+
+  test('an implied leaf missing from the catalog but already selected is kept', () => {
+    const gap = catalog([{ action: 'x.a.grant', implies: ['x.ghost.leaf'] }]);
+    const next = applyLeaf('project', new Set(['x.ghost.leaf']), 'x.a.grant', true, gap);
+    expect(sorted(next)).toEqual(['x.a.grant', 'x.ghost.leaf']);
+  });
+
+  test('a selected leaf outside the catalog stays reachable and selectable', () => {
+    // An unknown action prefix defaults to the project scope, so the grant is
+    // kept and offered in Advanced instead of being silently stripped on save.
+    const fold = foldSelection('project', CATALOG, new Set(['x.unknown.leaf']));
+    const ghost = fold.unmapped.find((leaf) => leaf.action === 'x.unknown.leaf');
+    expect(ghost?.selected).toBe(true);
+    expect(ghost?.label).toBe('X · Unknown · Leaf');
+    expect(sorted(expandFold(fold))).toEqual(['x.unknown.leaf']);
+  });
+});
+
+describe('label fallbacks', () => {
+  test('an area without display copy renders a humanized key and no hint', () => {
+    const table = buildAreaTable(
+      'project',
+      catalog([
+        { action: 'x.brand_new_area.read', level: 'view', area: 'brand_new_area' },
+        { action: 'x.brand_new_area.write', level: 'edit', area: 'brand_new_area' },
+      ]),
+    );
+    expect(table).toEqual([
+      {
+        key: 'brand_new_area',
+        label: 'Brand New Area',
+        view: ['x.brand_new_area.read'],
+        edit: ['x.brand_new_area.write'],
+      },
+    ]);
+  });
+
+  test('areaLabel: catalog copy when it exists, humanized key when it does not', () => {
+    expect(areaLabel('git')).toBe('Git & Reviews');
+    expect(areaLabel('brand_new_area')).toBe('Brand New Area');
+  });
+
+  test('permissionLabel: description first, humanized action otherwise', () => {
+    expect(permissionLabel({ action: 'x.a.b', description: 'Catalog words' })).toBe(
+      'Catalog words',
+    );
+    expect(permissionLabel({ action: 'x.a_b.c', description: '' })).toBe('X · A b · C');
+    // Whitespace-only copy counts as absent — the humanized action renders.
+    expect(permissionLabel({ action: 'x.a.b', description: '  ' })).toBe('X · A · B');
+  });
+});
 
 describe('an incomplete catalog never invents a grant', () => {
   const trimmed = CATALOG.filter((a) => a.action !== 'project.file.write');
