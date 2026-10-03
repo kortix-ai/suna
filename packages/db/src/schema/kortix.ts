@@ -3048,7 +3048,7 @@ export const oauthClients = kortixSchema.table(
   (table) => [
     // No index on account_id (KRTX-1190): the advisor's unused_index lint
     // flagged idx_oauth_clients_account (idx_scan = 0 since creation), so
-    // 20261003060354601 drops it. The account_id FK cascade then seq-scans a
+    // 20261003060012515 drops it. The account_id FK cascade then seq-scans a
     // table that stays tiny (self-registered rows are swept after 7 days).
     uniqueIndex('idx_oauth_clients_app').on(table.appId),
   ],
