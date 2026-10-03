@@ -18,6 +18,11 @@ import { scheduleSessionConfigConvergence } from '../lib/session-config-converge
 import { refreshSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  claimRetiredEphemeralRow,
+  recordedSessionStateVolume,
+  scheduleSessionStateVolumeDelete,
+} from '../../platform/services/ephemeral-sandbox';
+import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   repositoryAccessFromSessionMetadata,
@@ -164,6 +169,9 @@ export async function deleteSession(input: {
       }
     }
   }
+
+  // Ephemeral sandboxes: the session's state volume ends with the session.
+  scheduleSessionStateVolumeDelete(sessionId);
 
   // Keyed by SANDBOX id — `getOpenComputeSession` matches on
   // sandbox_compute_sessions.sandbox_id, so the sessionId this used to pass
@@ -316,6 +324,29 @@ export async function restartSession(input: {
         : undefined,
     });
   };
+
+  // Ephemeral sandboxes: a restart is a new box from the current image. The
+  // current one commits its session volume and is deleted; a box whose runtime
+  // wedged (its own disk filled, a daemon stuck on a boot error) does not come
+  // back with it, which an in-place restart of the same VM cannot promise.
+  if (existingSandbox?.externalId && recordedSessionStateVolume(existingSandbox.metadata)) {
+    const { retireEphemeralOnStop } = await import('../reaping/stop-box');
+    const retired = await retireEphemeralOnStop({
+      sandboxId: existingSandbox.sandboxId,
+      sessionId,
+      externalId: existingSandbox.externalId,
+      stopReason: 'manual',
+      now: new Date(),
+      metadata: { retiredForRestart: true },
+    });
+    if (retired === 'retired' && (await claimRetiredEphemeralRow(existingSandbox.sandboxId))) {
+      await provisionReplacementRuntime();
+      return {
+        status: 202,
+        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'ephemeral_restart' },
+      };
+    }
+  }
 
   if (
     existingSandbox?.externalId &&

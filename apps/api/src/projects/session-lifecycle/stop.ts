@@ -5,7 +5,7 @@ import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
-import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { abortLiveTurnBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -14,6 +14,9 @@ import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runti
  * path) without provisioning anything new. Session stays resumable via
  * /start, exactly like an idle auto-stop would leave it.
  */
+/** The Stop request answers within this; a stop still committing then finishes in the background (202). */
+const STOP_RESPONSE_BUDGET_MS = 15_000;
+
 export async function stopSession(input: {
   projectId: string;
   sessionId: string;
@@ -99,37 +102,67 @@ export async function stopSession(input: {
     await captureSessionTranscriptMirror(sessionId, undefined, { scope: 'tail' });
   }
 
-  try {
-    await provider.stop(sandbox.externalId);
-  } catch (err) {
-    if (!isAlreadyNotRunning(err) && !isLifecycleTransitionInProgress(err)) {
-      return {
-        status: 502,
-        body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
-      };
+  type StopResult = { status: number; body: Record<string, unknown> };
+  // Everything that powers the box off. An ephemeral box commits its session
+  // volume first, which waits on the host; a slow host must not turn a stop
+  // that completes into an error page.
+  const finish = async (): Promise<StopResult> => {
+    if (!cancellingWake) {
+      const retired = await retireEphemeralOnStop({
+        sandboxId: sandbox.sandboxId,
+        sessionId,
+        externalId: sandbox.externalId!,
+        stopReason: 'manual',
+        now,
+        metadata: { stoppedBy: userId },
+      });
+      if (retired === 'retired') {
+        return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+      }
+      if (retired === 'error') {
+        return { status: 502, body: { error: 'Failed to stop sandbox' } };
+      }
     }
-    // Already stopped/gone on the provider side — proceed to reconcile our row.
-  }
+    try {
+      await provider.stop(sandbox.externalId!);
+    } catch (err) {
+      if (!isAlreadyNotRunning(err) && !isLifecycleTransitionInProgress(err)) {
+        return {
+          status: 502,
+          body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
+        };
+      }
+      // Already stopped/gone on the provider side — proceed to reconcile our row.
+    }
 
-  // One stop writer for the whole platform (see applyStoppedState): it settles
-  // the meter against the still-active row before flipping either status, and
-  // it flips both in one transaction. This path used to inline that procedure
-  // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
-  // whole-object write built from the SELECT above, so anything a concurrent
-  // writer put in that column in between was silently dropped. Two live writers
-  // do exactly that (projects/routes/shared.ts clears and sets the
-  // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
-  // lives one table over for the same reason. Merged, never assigned.
-  if (!cancellingWake) {
-    await applyStoppedState({
-      sandboxId: sandbox.sandboxId,
-      sessionId,
-      externalId: sandbox.externalId,
-      stopReason: 'manual',
-      metadata: { stoppedBy: userId },
-      now,
-    });
-  }
+    // One stop writer for the whole platform (see applyStoppedState): it settles
+    // the meter against the still-active row before flipping either status, and
+    // it flips both in one transaction. This path used to inline that procedure
+    // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
+    // whole-object write built from the SELECT above, so anything a concurrent
+    // writer put in that column in between was silently dropped. Two live writers
+    // do exactly that (projects/routes/shared.ts clears and sets the
+    // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
+    // lives one table over for the same reason. Merged, never assigned.
+    if (!cancellingWake) {
+      await applyStoppedState({
+        sandboxId: sandbox.sandboxId,
+        sessionId,
+        externalId: sandbox.externalId,
+        stopReason: 'manual',
+        metadata: { stoppedBy: userId },
+        now,
+      });
+    }
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+  };
 
-  return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+  const run = finish();
+  const late = new Promise<null>((resolve) => setTimeout(() => resolve(null), STOP_RESPONSE_BUDGET_MS));
+  const result = await Promise.race([run, late]);
+  if (result) return result;
+  // Still committing: answer now; the stop finishes on its own and the
+  // session's status moves to stopped when it does.
+  run.catch((err) => console.error(`[projects] background stop of ${sessionId} failed:`, err));
+  return { status: 202, body: { ok: true, session_id: sessionId, status: 'stopping' } };
 }

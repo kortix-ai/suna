@@ -432,6 +432,25 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'project turns the flag off, and GET /projects/:id/sessions/:id/drives keeps ' +
       'reporting what a running sandbox actually mounted.',
   },
+  {
+    key: 'ephemeral_sandboxes',
+    name: 'Ephemeral sandboxes',
+    description:
+      'A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop.',
+    stability: 'experimental',
+    // The session state lives on a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Session provisioning mounts the session volume and sets ' +
+      'KORTIX_PERSIST_ROOT (platform/services/session-sandbox.ts); the idle reaper and ' +
+      'the Stop route commit the volume and delete the box instead of stopping it ' +
+      '(projects/reaping/stop-box.ts, projects/session-lifecycle/stop.ts); /start ' +
+      'provisions a fresh box for a retired row (projects/routes/shared.ts). A box ' +
+      'booted with the flag stays ephemeral if the flag is turned off, because its ' +
+      'state already lives on the volume.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

@@ -197,6 +197,12 @@ export interface StoppedStateWrite {
   stopReason: StopReason;
   /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
+  /**
+   * An ephemeral box was deleted, not stopped: the row gives up its external
+   * id in the same write (the identity guard admits exactly this, keyed on the
+   * `ephemeralRetiredExternalId` marker the metadata carries).
+   */
+  retiredExternalId?: boolean;
   now?: Date;
 }
 
@@ -310,7 +316,11 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     await transitionSandbox(
       'stop',
       write.sandboxId,
-      { at: now, metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch } },
+      {
+        at: now,
+        metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch },
+        ...(write.retiredExternalId ? { columns: { externalId: null, baseUrl: null } } : {}),
+      },
       tx,
     );
     // A `failed` session keeps its park (see SESSION_TRANSITIONS.stop).
