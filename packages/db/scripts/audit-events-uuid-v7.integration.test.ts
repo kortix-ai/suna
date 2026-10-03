@@ -53,11 +53,19 @@ describe.skipIf(!databaseUrl)('audit_events.event_id is a UUIDv7', () => {
   });
 
   test('kortix.uuid_v7() sets version 7, variant 10xx and a current millisecond prefix', async () => {
-    const before = Date.now();
+    // Bounds come from the database clock: a container's clock can run
+    // milliseconds ahead of the host's, which failed a Date.now() window.
+    const dbNow = async () =>
+      Number(
+        (await client!.query<{ ms: string }>(
+          `SELECT floor(extract(epoch from clock_timestamp()) * 1000)::bigint AS ms`,
+        )).rows[0]!.ms,
+      );
+    const before = await dbNow();
     const { rows } = await client!.query<{ id: string }>(
       `SELECT kortix.uuid_v7()::text AS id FROM generate_series(1, 200)`,
     );
-    const after = Date.now();
+    const after = await dbNow();
     for (const { id } of rows) {
       expect(nibbles(id).version).toBe('7');
       expect('89ab').toContain(nibbles(id).variant as string);
