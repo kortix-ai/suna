@@ -21,13 +21,13 @@
     "packages/sdk/src/react/use-opencode-sessions/sessions.test.ts",
     "packages/sdk/src/react/use-opencode-sessions/sessions.ts"
   ],
-  "diff_hash": "a4f25d9b435dd158a26208603d2bb7f2ebda0dd67d94e05618df936fe0684a60",
-  "head": "f71fa47e4415368a4d5ccce6927066825da11018",
+  "diff_hash": "3c383632a34360a32127a31fb18f06bbd87923d7acac1fa6a492eb5b84049550",
+  "head": "38178088096d2a0cd65068c80baa08c619476f36",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:37:40.651Z"
+  "at": "2026-10-03T23:45:21.128Z"
 }
