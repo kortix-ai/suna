@@ -1,16 +1,16 @@
 {
-  "source_hash": "2970b658a08f6cc5f03e217629e6b8ff9d7805e46826930e3bc58eff2e429ad9",
+  "source_hash": "737d62034a3d26a2933496f9d8f6031329c912f2ccbcb068b842e691703ac519",
   "diff_files": [
-    "packages/db/migrations/20261003143600844_public_credit_usage_policy_roles.sql",
+    "packages/db/migrations/20261003165439303_public_credit_usage_policy_roles.sql",
     "packages/db/scripts/public-credit-usage-policy-roles.integration.test.ts"
   ],
-  "diff_hash": "9c90f1a76155bd126dad5ba7a2d1fde9045b4ca9b04c42f5840d35a0eb59da5c",
-  "head": "78c0f32042af2be57b61e5bebcbb8eee2312e008",
+  "diff_hash": "aaebb9f233604ef4f096e5594e48d269e82cf2ee0f24e1a2de2d5029bf17714c",
+  "head": "b49ed92e40bf77f9f53e1f9ef25ba0c8766b5828",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:28:44.011Z"
+  "at": "2026-10-03T18:23:06.058Z"
 }
