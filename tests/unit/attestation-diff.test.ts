@@ -97,7 +97,11 @@ afterEach(() => {
   }
 });
 
-describe('attestation keyed to the PR diff', () => {
+// Each scenario runs real git processes (~1-2 s alone); under the full `pnpm test`
+// load they exceed vitest's 5 s default.
+const GIT_TIMEOUT = { timeout: 60_000 };
+
+describe('attestation keyed to the PR diff', GIT_TIMEOUT, () => {
   it('1: an unrelated origin/main merge keeps verify green', () => {
     const dir = initRepo();
     const attested = attestPrBranch(dir);
@@ -136,7 +140,7 @@ describe('attestation keyed to the PR diff', () => {
   });
 });
 
-describe('one attestation file per PR', () => {
+describe('one attestation file per PR', GIT_TIMEOUT, () => {
   it('a: two PRs off the same main stay mergeable after one of them merges', () => {
     const dir = initRepo();
     attestPrBranch(dir, GREEN, 'feat/a', 'a.txt');
