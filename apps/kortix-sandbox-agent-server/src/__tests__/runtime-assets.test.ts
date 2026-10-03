@@ -127,6 +127,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     // EXECUTED before it replaces a working one, so every case that is not about
     // that check says "it ran". See `ExecProbe` in ../runtime-assets.ts.
     execProbe: async () => 0,
+    // The chunk indexer hashes every block of every local source. The box's
+    // real agent binary (the baked-path default, ~110 MB inside a platform
+    // image; absent on CI) would join that index, so pin both agent paths to
+    // fixture locations that do not exist — the CI condition.
+    agentStateDir: join(ws.root, 'opt', 'agent-state'),
+    agentBakedPath: join(ws.root, 'opt', 'agent-baked'),
     ...extra,
   })
 }
