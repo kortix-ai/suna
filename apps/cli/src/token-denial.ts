@@ -84,6 +84,7 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
       // A route that refuses every agent session outright (e.g. granting a
       // secret to an agent). No kortix_permissions entry unlocks it.
       return 'agent sessions cannot do this — a person with project access must do this';
+    case undefined:
     case 'agent_scope_insufficient':
       return (
         `add ${actionText} to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
@@ -94,11 +95,11 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
       // an agents/triggers change. No grant unlocks it there.
       return 'this server lets only a person merge a change request that changes agents or triggers — ask a person to merge it';
     default:
-      // An unknown code is not a grant miss: never send the agent to edit
+      // Any other code is not a grant miss: never send the agent to edit
       // kortix.yaml for a refusal no grant can fix.
       return (
-        `${pending.code ? `refused with ${C.cyan}${pending.code}${C.reset} — ` : ''}` +
-        `read the error above; ${C.cyan}kortix whoami --token-only${C.reset} shows this session's permissions`
+        `refused with ${C.cyan}${pending.code}${C.reset} — read the error above; ` +
+        `${C.cyan}kortix whoami --token-only${C.reset} shows this session's permissions`
       );
   }
 }
