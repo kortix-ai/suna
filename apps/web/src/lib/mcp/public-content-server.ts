@@ -22,7 +22,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         kind: {
           type: 'string',
-          enum: ['marketing', 'blog', 'docs', 'use-case'],
+          enum: ['marketing', 'docs', 'use-case'],
           description: 'Optional content category.',
         },
         limit: {
@@ -108,7 +108,7 @@ function callTool(name: unknown, args: unknown) {
   const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
   if (name === 'list_public_content') {
     const kind = typeof input.kind === 'string' ? (input.kind as PublicContentKind) : undefined;
-    if (kind && !['marketing', 'blog', 'docs', 'use-case'].includes(kind)) {
+    if (kind && !['marketing', 'docs', 'use-case'].includes(kind)) {
       return { isError: true, ...toolText(`Unsupported kind: ${kind}`) };
     }
     const requestedLimit = typeof input.limit === 'number' ? input.limit : 25;
