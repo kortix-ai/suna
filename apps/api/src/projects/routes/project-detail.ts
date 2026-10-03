@@ -29,6 +29,18 @@ import {
   serializeProjectGitConnection,
 } from '../lib/serializers';
 
+/** `GET /:projectId/detail`: the project plus its git connection and the
+ *  manifest summary the settings pages read. */
+const ProjectDetailSchema = z
+  .object({
+    project: ProjectSchema,
+    git_connection: z.record(z.string(), z.unknown()).nullable(),
+    config: z.record(z.string(), z.unknown()),
+    file_count: z.number(),
+    files: z.array(z.record(z.string(), z.unknown())),
+  })
+  .openapi('ProjectDetail');
+
 // GET /v1/projects/:projectId
 
 projectsApp.openapi(
@@ -95,11 +107,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(ProjectSchema, 'Project detail'),
+      200: json(ProjectDetailSchema, 'Project detail'),
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -224,7 +236,7 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');

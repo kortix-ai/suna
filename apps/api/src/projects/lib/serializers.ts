@@ -6,6 +6,7 @@ import type {
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
+import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -145,10 +146,9 @@ export function serializeSession(
   // the metadata object alone would still have leaked the OpenCode-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions =
-    canAccess && Array.isArray(row.metadata?.opencode_sessions)
-      ? row.metadata.opencode_sessions
-      : [];
+  const opencodeSessions = canAccess
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from OpenCode server-side

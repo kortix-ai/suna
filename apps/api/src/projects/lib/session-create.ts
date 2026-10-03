@@ -102,15 +102,29 @@ import {
 import { checkConcurrentSessionCap } from './session-caps';
 import { buildSessionSandboxEnvVars, deriveKortixApiBase, proxyGitUrl } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
+/** Every status a failed create answers with. Routes that create a session
+ *  declare these, so the published spec lists them. */
+export const SESSION_CREATE_ERROR_STATUSES = [400, 402, 403, 404, 409, 429, 500, 503] as const;
+export type SessionCreateErrorStatus = (typeof SESSION_CREATE_ERROR_STATUSES)[number];
+
+/** A status from an HTTPException thrown inside the create, narrowed to the
+ *  declared set. Nothing in the insert throws one outside it today; an
+ *  undeclared 4xx would answer 400 rather than a status the spec omits. */
+function sessionCreateErrorStatus(status: number): SessionCreateErrorStatus {
+  return (SESSION_CREATE_ERROR_STATUSES as readonly number[]).includes(status)
+    ? (status as SessionCreateErrorStatus)
+    : 400;
+}
+
 export type SessionCreateError = {
-  status: number;
+  status: SessionCreateErrorStatus;
   body: Record<string, unknown>;
   headers?: Record<string, string>;
 };
 
 export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   for (const [key, value] of Object.entries(error.headers ?? {})) c.header(key, value);
-  return c.json(error.body, error.status as any);
+  return c.json(error.body, error.status);
 }
 
 /** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
@@ -1033,7 +1047,9 @@ export async function createProjectSession(input: {
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
     if (error instanceof HTTPException && error.status < 500) {
-      return { error: { status: error.status, body: await error.getResponse().json() } };
+      return {
+        error: { status: sessionCreateErrorStatus(error.status), body: await error.getResponse().json() },
+      };
     }
     // Never return `(error as Error).message`: postgres.js embeds the whole
     // statement and its parameters in it (see `resolveSessionInsertFailure`).

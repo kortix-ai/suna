@@ -387,7 +387,7 @@ importers:
         specifier: ^1.1.0
         version: 1.4.2
       '@types/node':
-        specifier: 20.19.43
+        specifier: ^20
         version: 20.19.43
       '@types/node-forge':
         specifier: ^1.3.11
@@ -1618,6 +1618,10 @@ importers:
         version: 4.1.8
 
   tests:
+    dependencies:
+      '@kortix/api-contract':
+        specifier: workspace:*
+        version: link:../packages/api-contract
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.10.2

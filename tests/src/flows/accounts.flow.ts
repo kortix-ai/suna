@@ -2,6 +2,7 @@
  * Accounts & identity — authenticated. Maps to spec §4 (ME-*, ACCT-*, MEM-*, TOK-*).
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
+import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
@@ -21,9 +22,9 @@ flow(
 );
 
 flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx) => {
-  await ctx.step('list memberships', async () => {
+  await ctx.step('list memberships; every row matches the contract AccountSummary', async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
-    r.status(200);
+    r.status(200).body().schema(AccountSummarySchema.array());
   });
   await ctx.step(
     "the personal account is named, never after the email (KRTX-638: no \"<email>'s Account\")",

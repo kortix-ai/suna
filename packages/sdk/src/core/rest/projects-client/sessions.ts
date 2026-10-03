@@ -67,7 +67,8 @@ export interface ProjectSession {
   branch_name: string;
   base_ref: string;
   sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
-  sandbox_id: string;
+  /** Null until the session has a sandbox. */
+  sandbox_id: string | null;
   sandbox_url: string | null;
   /** The session's root conversation in its runtime. Served by APIs since W4. */
   runtime_session_id?: string | null;
@@ -1066,6 +1067,37 @@ export type SessionOpenBundleAudit =
     })
   | SessionOpenBundleUnknown;
 
+/** = the runtime projection the daemon last pushed (or the API pulled).
+ *  `fresh: false` means the identity or age check failed: paint, then verify. */
+export type SessionOpenBundleRuntime =
+  | {
+      known: true;
+      fresh: boolean;
+      source: 'daemon_push' | 'api_pull';
+      captured_at: string;
+      age_ms: number;
+      runtime_running: boolean;
+      /** The daemon stream cursor at capture. */
+      epoch: string | null;
+      seq: number | null;
+      identity: {
+        schema: string | null;
+        harness: string | null;
+        runtime_session_id: string | null;
+        harness_version: string | null;
+        /** @deprecated The pre-W5 name of `runtime_session_id`. */
+        opencode_session_id: string | null;
+        /** @deprecated The pre-W5 name of `harness_version`. */
+        opencode_version: string | null;
+        daemon_build: number | null;
+        agent_config_etag: string | null;
+        head_seq: Record<string, number> | null;
+      };
+      /** The runtime state document, verbatim. */
+      state: Record<string, unknown>;
+    }
+  | SessionOpenBundleUnknown;
+
 export interface SessionOpenBundle {
   /** ONE clock for the whole envelope. Every leg is a snapshot at this instant,
    *  and every projection that ranks a server observation against local
@@ -1077,6 +1109,9 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
+  /** The runtime projection: the agent roster and state a stopped session
+   *  can paint without a sandbox. Absent from servers older than this leg. */
+  runtime?: SessionOpenBundleRuntime;
   audit: SessionOpenBundleAudit;
 }
 
@@ -1186,6 +1221,9 @@ export interface SessionPrompt {
   /** The sender tab's clock at Enter, when the producer supplied it. */
   client_sent_at_ms?: number | null;
   attempts: number;
+  /** Automatic re-attempts a runtime-unreachable park has spent. Absent from
+   *  servers older than this field. */
+  runtime_retries?: number;
   last_error: string | null;
   /** This prompt's files, by NAME and TYPE only — never their bytes.
    *

@@ -18,7 +18,11 @@ import {
 } from '../lib/pending-questions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
-import { normalizeRuntimeRelayBody } from '@kortix/api-contract/runtime-relay';
+import {
+  normalizeRuntimeRelayBody,
+  type TurnQuestionRelayBody,
+  TurnQuestionRelayBodySchema,
+} from '@kortix/api-contract/runtime-relay';
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -42,7 +46,8 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // Documents the relay body; the handler owns validation (its own 400s).
+      body: { content: { 'application/json': { schema: TurnQuestionRelayBodySchema.or(AnyObject) } } },
     },
     responses: {
       200: json(z.any(), 'OK'),
@@ -89,12 +94,7 @@ projectsApp.openapi(
       if (!loaded) return c.json({ error: 'Not found' }, 404);
     }
 
-    let body: {
-      session_id?: string;
-      request_id?: string;
-      runtime_session_id?: string;
-      questions?: unknown[];
-    };
+    let body: Partial<TurnQuestionRelayBody>;
     try {
       // A daemon built before W3 names the runtime session `opencode_session_id`.
       body = normalizeRuntimeRelayBody((await c.req.json()) as typeof body);
