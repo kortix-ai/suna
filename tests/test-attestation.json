@@ -1,18 +1,20 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "e20ea4bc52ac547481da9103d3fa2c69ce228af510e0d73a338a06ae2b1d2680",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/mobile/lib/session/diff-utils.test.ts",
+    "apps/mobile/lib/session/diff-utils.ts",
+    "apps/mobile/lib/session/unified-diff.ts",
+    "tests/unit/attestation-diff.test.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "c7e138dc7839b3e6354420f4db9dc8ad899a06995df925ab7a7fe06e51e3de17",
+  "head": "0a33da2a3d550a79a5679eda46af21982d377034",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T19:42:46.351Z"
 }
