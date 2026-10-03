@@ -238,6 +238,7 @@ export function createCaptureRouter() {
             secret_access_key: z.string(),
             session_token: z.string(),
             expires_at_ms: z.number(),
+            path_style: z.literal(true).optional().describe('Present when the store needs path-style URLs (MinIO, self-hosted S3)'),
           }),
           'Credentials; refresh 5 minutes before expires_at_ms',
         ),

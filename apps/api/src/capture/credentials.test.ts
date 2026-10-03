@@ -16,8 +16,10 @@ test('the session policy reaches exactly one device folder, the project policy.j
     Resource: ['arn:aws:s3:::kortix-capture'],
     Condition: { StringLike: { 's3:prefix': [`${PREFIX}/${DEVICE}/*`] } },
   });
-  // No statement names another device, the project prefix as a whole, a delete, or a wildcard action.
-  const flat = JSON.stringify(policy);
+  // The only delete: the engine's credential probe objects in this device's folder.
+  expect(byId.DeviceProbe).toMatchObject({ Action: ['s3:DeleteObject'], Resource: [`arn:aws:s3:::kortix-capture/${PREFIX}/${DEVICE}/.probe-*`] });
+  // No other statement names another device, the project prefix as a whole, a delete, or a wildcard action.
+  const flat = JSON.stringify(policy.Statement.filter((s) => s.Sid !== 'DeviceProbe'));
   expect(flat).not.toContain('DeleteObject');
   expect(flat).not.toContain('"s3:*"');
   expect(policy.Statement.every((s) => s.Effect === 'Allow')).toBe(true);

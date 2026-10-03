@@ -26,6 +26,8 @@ export interface CaptureCredentials {
   secret_access_key: string;
   session_token: string;
   expires_at_ms: number;
+  /** Path-style URLs (MinIO, most self-hosted S3); absent on AWS (capture-format.md, Credentials). */
+  path_style?: true;
 }
 
 export interface CaptureCredentialIssuer {
@@ -43,6 +45,16 @@ export function deviceSessionPolicy(bucket: string, prefix: string, deviceId: st
         Effect: 'Allow',
         Action: ['s3:PutObject', 's3:GetObject', 's3:AbortMultipartUpload', 's3:ListMultipartUploadParts'],
         Resource: [`arn:aws:s3:::${bucket}/${folder}/*`],
+      },
+      {
+        // The engine proves new credentials with a PUT, HEAD and DELETE of
+        // `<device>/.probe-<hex>` before it turns sync on (`sync setup`,
+        // `sync test`). Deletes reach only those probe objects: captured
+        // items are never deleted by a device.
+        Sid: 'DeviceProbe',
+        Effect: 'Allow',
+        Action: ['s3:DeleteObject'],
+        Resource: [`arn:aws:s3:::${bucket}/${folder}/.probe-*`],
       },
       {
         Sid: 'ProjectPolicy',
@@ -103,6 +115,7 @@ const stsIssuer: CaptureCredentialIssuer = {
       secret_access_key: creds.SecretAccessKey,
       session_token: creds.SessionToken,
       expires_at_ms: creds.Expiration.getTime(),
+      ...(config.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE ? { path_style: true as const } : {}),
     };
   },
 };
