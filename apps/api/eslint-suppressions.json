@@ -154,7 +154,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 28
+      "count": 27
     }
   },
   "src/app.ts": {
