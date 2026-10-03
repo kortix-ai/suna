@@ -13381,6 +13381,7 @@
       "text7301076e877e": "Kortix supports SCIM 2.0 Users + Groups, PATCH, and `attribute eq \"value\"` filters. Bulk operations are not supported.",
       "text73053f6025aa": "replied · 6 min",
       "text730c9f9f651f": "Previous action",
+      "text73112526c03a": "Agent turn failed. No reason was reported.",
       "text73149a51d652": "llm providers models anthropic openai openrouter google groq xai",
       "text733fee9d77dd": "Could not start enrollment",
       "text7349bf598027": "runsPoint1Title",

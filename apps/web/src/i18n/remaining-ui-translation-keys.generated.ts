@@ -41,6 +41,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Agent: 'text11b39c93777e',
   'Agent loop': 'text42d0d7ff0656',
   'Agent Runner': 'text50b33e323ff3',
+  'Agent turn failed. No reason was reported.': 'text73112526c03a',
   Agents: 'text279b44d2ab4b',
   'Agents, skills, commands': 'text96ef9c0ac0c9',
   'Aggregating finance.weekly': 'textdea2a0765c45',
