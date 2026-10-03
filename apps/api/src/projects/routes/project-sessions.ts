@@ -507,6 +507,21 @@ projectsApp.openapi(
     }
   }
 
+  // Others prompt a shared session, and a personal drive is its owner's alone:
+  // it leaves the running sandbox first, or the session stays private.
+  if (intent.mode !== 'private') {
+    const { detachPersonalDrives } = await import('../../drives/service');
+    if (!(await detachPersonalDrives(sessionId))) {
+      return c.json(
+        {
+          error: 'Your personal drive could not be removed from this session. Try again in a moment.',
+          code: 'PERSONAL_DRIVE_DETACH_FAILED',
+        },
+        409,
+      );
+    }
+  }
+
   await setSessionSharing(sessionId, intent);
 
   const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));

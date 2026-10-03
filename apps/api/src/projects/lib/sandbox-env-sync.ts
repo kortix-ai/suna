@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { and, eq, sql } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { isPrivateIp } from '../../shared/ssrf-guard';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
@@ -507,7 +510,7 @@ export async function resolveSandboxEnvSnapshot(
   };
 }
 
-function isSecureOrPrivateTarget(rawUrl: string): boolean {
+async function isSecureOrPrivateTarget(rawUrl: string): Promise<boolean> {
   let u: URL;
   try {
     u = new URL(rawUrl);
@@ -527,7 +530,17 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   if (/^172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}$/.test(h)) return true;
   if (/^169\.254(\.\d{1,3}){2}$/.test(h)) return true;
   if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
-  return false; // plain http to a public host — refuse to send secrets in cleartext
+  // Any other name is private only if it RESOLVES privately: a provider edge on
+  // a wildcard-DNS name for a loopback or tailnet address (`*.127.0.0.1.nip.io`)
+  // is as local as `localhost`. Every address must be non-public.
+  if (isIP(h) !== 0) return false;
+  try {
+    const resolved = await dnsLookup(h, { all: true });
+    // Plain http to a public host: refuse to send secrets in cleartext.
+    return resolved.length > 0 && resolved.every((r) => isPrivateIp(r.address));
+  } catch {
+    return false;
+  }
 }
 
 async function postEnvToDaemon(args: {
@@ -561,7 +574,7 @@ async function postEnvToDaemon(args: {
    */
   opencodeTurnEnded: boolean | null;
 }> {
-  if (!isSecureOrPrivateTarget(args.previewUrl)) {
+  if (!(await isSecureOrPrivateTarget(args.previewUrl))) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
   const headers: Record<string, string> = {
