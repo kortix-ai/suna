@@ -192,10 +192,18 @@ async function gitWithAuth(
 }
 
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
-  if (!cfg.repoUrl || !/\/v1\/git\//.test(cfg.repoUrl)) {
-    if (cfg.repoUrl && (cfg.repoUrl.startsWith('/') || cfg.repoUrl.startsWith('file:'))) {
-      return undefined
-    }
+  // No configured remote: the caller works on the checkout's own origin, and
+  // buildGitAuthArgs only ever attaches a credential to the Kortix Git proxy,
+  // so there is nothing to resolve and nothing to refuse. This is the shape
+  // the refresh/pull routes rely on: a materialized repo with no repoUrl in
+  // env answers its own origin (or 409s when it is not materialized), it does
+  // not turn the credential boundary into a 500.
+  if (!cfg.repoUrl) return undefined
+  if (
+    !/\/v1\/git\//.test(cfg.repoUrl) &&
+    !cfg.repoUrl.startsWith('/') &&
+    !cfg.repoUrl.startsWith('file:')
+  ) {
     throw new Error('direct Git origins are refused; KORTIX_REPO_URL must use the Kortix Git proxy')
   }
   if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
