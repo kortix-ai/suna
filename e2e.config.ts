@@ -9,6 +9,7 @@ export default {
   workers: 1,
   retries: 0,
   assertionTimeout: 30_000,
+  cleanupTimeout: 120_000,
   trace: 'retain-on-failure',
   reporters: ['list', 'markdown'],
   agents: {

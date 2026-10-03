@@ -36,6 +36,7 @@ Do not let a model redefine the expected result to make a test pass.
 The pilot uses one live session prompt.
 It observes the real request, checks one submission, waits for an assistant reply, verifies both messages in the durable transcript, and reloads the page.
 It creates only synthetic data and removes its session, managed repository, account, and auth user.
+Cleanup runs in `afterEach` with a separate two-minute budget, including after a test timeout.
 Its cloud sandbox and application inference are separate from the ChatGPT model that operates the browser.
 Both have external availability and resource costs.
 
