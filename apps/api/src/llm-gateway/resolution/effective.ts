@@ -1,4 +1,5 @@
 import { canonicalManagedModelId, isRuntimeManagedModelId } from '../models/managed-models';
+import { isPlatformDefaultModelId } from '../models/served-managed-models';
 
 // One definition of how a default model/agent is chosen across scopes. Keeping
 // the precedence here means Slack, the web picker, and the gateway agree.
@@ -71,9 +72,17 @@ export function chooseEffectiveModel(params: {
     source = 'account';
   }
   if (!candidate) return { model: null, source: 'platform' };
-  // Free tier cannot use managed Kortix models; the chosen candidate is dropped
-  // to the platform default rather than falling through to a broader layer.
-  if (params.freeModelsOnly && isManagedRef(candidate)) return { model: null, source: 'platform' };
+  // Free tier cannot use managed Kortix models beyond the platform default —
+  // the one managed model every tier may use (KRTX-1067). The chosen candidate
+  // is dropped to the platform default rather than falling through to a
+  // broader layer (see choose-default-model.test).
+  if (
+    params.freeModelsOnly &&
+    isManagedRef(candidate) &&
+    !isPlatformDefaultModelId(toWireModel(candidate))
+  ) {
+    return { model: null, source: 'platform' };
+  }
   return { model: candidate, source };
 }
 

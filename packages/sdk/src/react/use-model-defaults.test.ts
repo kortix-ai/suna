@@ -29,20 +29,22 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('does not expose the paid platform default to a free-tier caller', () => {
+  test('resolves the platform default for a free-tier caller (KRTX-1067)', () => {
+    // The gateway serves the platform default to every tier now, so a fresh
+    // free account gets a working default model instead of a dead composer.
     expect(
       resolveModelDefault(
         {
           accountDefault: null,
           projectDefault: null,
-          platformDefault: 'kortix/platform',
+          platformDefault: 'kimi-k3',
           agentDefaults: {},
-          resolvedForCaller: null,
+          resolvedForCaller: 'kimi-k3',
           freeTier: true,
         },
         undefined,
       ),
-    ).toBeUndefined();
+    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
   });
 });
 

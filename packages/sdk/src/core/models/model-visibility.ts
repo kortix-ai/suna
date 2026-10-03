@@ -1,6 +1,7 @@
 import {
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
+  PLATFORM_DEFAULT_MODEL_ID,
   defaultEnabledModelIds,
 } from '@kortix/llm-catalog/lite';
 
@@ -77,7 +78,11 @@ export function hasUsableModel(
       // from CONNECTED providers, so presence here already means usable.
       return true;
     }
-    if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
+    if (MANAGED_MODEL_IDS.has(m.modelID)) {
+      // The platform default is the ONE managed model every tier may use
+      // (KRTX-1067) — the gateway serves it to free tier, so it is usable.
+      return !freeTier || m.modelID === PLATFORM_DEFAULT_MODEL_ID;
+    }
     const sub = subProviderOf(m.modelID, m.provider);
     return sub === SUBSCRIPTION_PROVIDER_ID
       ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
@@ -122,8 +127,10 @@ export interface ModelVisibilityPin extends ModelKey {
  * the same model win. Rules, in order:
  *  • a `hide` pin hides;
  *  • gateway (`kortix`) models: a platform-managed model shows unless
- *    `freeTier`; any other shows only while its real provider is connected,
- *    then by `show` pin, newest-per-family, or the undated-flagship rule;
+ *    `freeTier` — the platform default always shows (the gateway serves it to
+ *    every tier, KRTX-1067); any other shows only while its real provider is
+ *    connected, then by `show` pin, newest-per-family, or the
+ *    undated-flagship rule;
  *  • native models: `show` pin, newest per family within the window
  *    (`computeLatestSet`), else only the flagship when undated.
  *
@@ -166,8 +173,9 @@ export function createModelVisibility(input: {
           ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
           : (connectedProviderIds?.has(sub) ?? false);
       if (MANAGED_MODEL_IDS.has(model.modelID)) {
-        if (freeTier) return false;
-        return true;
+        // The platform default is the ONE managed model every tier may use
+        // (KRTX-1067); every other managed model stays paid.
+        return !freeTier || model.modelID === PLATFORM_DEFAULT_MODEL_ID;
       }
       if (!connected) return false;
       if (state === 'show') return true;

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { platformDefaultModelId } from '../models/served-managed-models';
 import {
   chooseEffectiveAgent,
   chooseEffectiveModel,
@@ -57,6 +58,17 @@ describe('chooseEffectiveModel', () => {
     expect(
       chooseEffectiveModel({ projectDefault: 'anthropic/claude-sonnet-4.6', freeModelsOnly: true }),
     ).toEqual({ model: 'anthropic/claude-sonnet-4.6', source: 'project' });
+  });
+
+  test('free tier: the platform default managed candidate is kept (KRTX-1067)', () => {
+    const platform = platformDefaultModelId();
+    expect(platform).not.toBe('');
+    expect(
+      chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true }),
+    ).toEqual({ model: platform, source: 'account' });
+    expect(
+      chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true }),
+    ).toEqual({ model: `kortix/${platform}`, source: 'project' });
   });
 });
 
