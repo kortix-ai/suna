@@ -140,6 +140,9 @@ function hermeticEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(base)) {
     if (key.startsWith('KORTIX_') && !RUNNER_ENV_KEYS.has(key)) continue;
+    // The platform points BASH_ENV at its agent-env file; every bash a lane
+    // spawns would source it and re-export the ambient platform env right back.
+    if (key === 'BASH_ENV' || key === 'ENV') continue;
     out[key] = value;
   }
   out.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
