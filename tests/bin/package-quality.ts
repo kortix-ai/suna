@@ -20,10 +20,7 @@ const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
  * nets. On a Kortix box the lane skips the suite loudly instead of failing
  * on assertions no machine of this shape can satisfy.
  */
-const KORTIX_IMAGE_BAKED_DIR = '/opt/kortix';
-function onKortixImage(): boolean {
-  return existsSync(KORTIX_IMAGE_BAKED_DIR);
-}
+const onKortixImage = () => existsSync('/opt/kortix');
 
 async function run(
   command: string[],
@@ -193,7 +190,7 @@ await runAll([
     await runWorkspaceTests(['@kortix/cli'], 1);
     if (onKortixImage()) {
       console.log(
-        `[package-quality] SKIP kortixd: this box is a Kortix image (${KORTIX_IMAGE_BAKED_DIR} present); the suite's bare-host assumptions do not hold here. CI owns this suite (daily Tests on main, staging release gate).`,
+        "[package-quality] SKIP kortixd: this box is a Kortix image (/opt/kortix present); the suite's bare-host assumptions do not hold here. CI owns this suite (daily Tests on main, staging release gate).",
       );
     } else {
       await runWorkspaceTests(['kortixd'], 1);
