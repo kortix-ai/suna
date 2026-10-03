@@ -24,6 +24,34 @@ export interface CompiledRuntimeArtifact {
   manifest: CompiledRuntimeManifest;
 }
 
+/** The env a production runner provides to a compiled runtime: exactly the
+ *  baked manifest identity. The runtime's prelude refuses to start (exit 78)
+ *  when any of these differs from the manifest, so a runner derives them from
+ *  the manifest instead of re-stating them. */
+export function compiledRuntimeEnv(manifest: {
+  format: string;
+  source_sha: string;
+  project_id: string;
+  ref: string;
+  agent_config: string | null;
+  agent_config_etag: string | null;
+}): Record<string, string> {
+  return {
+    KORTIX_COMPILED_RUNTIME_FORMAT: manifest.format,
+    KORTIX_COMPILED_RUNTIME_SOURCE_SHA: manifest.source_sha,
+    KORTIX_PROJECT_ID: manifest.project_id,
+    KORTIX_DEFAULT_BRANCH: manifest.ref,
+    KORTIX_BASE_REF: manifest.ref,
+    KORTIX_BASE_SHA: manifest.source_sha,
+    ...(manifest.agent_config
+      ? {
+          KORTIX_COMPILED_AGENT_CONFIG: manifest.agent_config,
+          KORTIX_COMPILED_AGENT_CONFIG_ETAG: manifest.agent_config_etag ?? '',
+        }
+      : {}),
+  };
+}
+
 export interface CompileOpenCodeRuntimeInput {
   projectId: string;
   ref: string;

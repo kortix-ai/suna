@@ -8,6 +8,7 @@ import {
   compilePiRuntime,
   type CompilePiRuntimeInput,
 } from './compiled-pi-runtime';
+import { compiledRuntimeEnv } from './compiled-runtime';
 
 const roots: string[] = [];
 const INPUT: CompilePiRuntimeInput = {
@@ -37,27 +38,6 @@ async function materialize(input = INPUT) {
 }
 
 
-/** The env a production runner would provide: exactly the baked manifest identity.
- *  Without pinning, any test in the same bun worker that promotes the platform's
- *  agent-env.sh values into process.env (they share one process.env) flips the
- *  runtime's identity check mid-suite. */
-function runnerEnv(artifact: { manifest: Record<string, unknown> }): Record<string, string> {
-  const m = artifact.manifest as Record<string, string>;
-  return {
-    KORTIX_COMPILED_RUNTIME_FORMAT: m.format,
-    KORTIX_COMPILED_RUNTIME_SOURCE_SHA: m.source_sha,
-    KORTIX_PROJECT_ID: m.project_id,
-    KORTIX_DEFAULT_BRANCH: m.ref,
-    KORTIX_BASE_REF: m.ref,
-    KORTIX_BASE_SHA: m.source_sha,
-    ...(m.agent_config
-      ? {
-          KORTIX_COMPILED_AGENT_CONFIG: m.agent_config,
-          KORTIX_COMPILED_AGENT_CONFIG_ETAG: m.agent_config_etag,
-        }
-      : {}),
-  };
-}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -109,7 +89,7 @@ describe('compilePiRuntime', () => {
     const { artifact, runtimePath } = await materialize();
     const stdout = execFileSync(process.execPath, [runtimePath], {
       encoding: 'utf8',
-      env: { ...process.env, ...runnerEnv(artifact) },
+      env: { ...process.env, ...compiledRuntimeEnv(artifact.manifest) },
     });
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
@@ -143,7 +123,7 @@ describe('compilePiRuntime', () => {
     expect(artifact.manifest.agent_config_etag).toBeNull();
     const stdout = execFileSync(process.execPath, [runtimePath], {
       encoding: 'utf8',
-      env: { ...process.env, ...runnerEnv(artifact) },
+      env: { ...process.env, ...compiledRuntimeEnv(artifact.manifest) },
     });
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
