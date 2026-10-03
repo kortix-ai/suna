@@ -13368,6 +13368,7 @@
       "text7301076e877e": "Kortix 支持 SCIM 2.0 Users + Groups、PATCH 以及 `attribute eq \"value\"` 筛选器。不支持批量操作。",
       "text73053f6025aa": "已回复 · 6 分钟前",
       "text730c9f9f651f": "上一步操作",
+      "text73112526c03a": "智能体回合失败。未报告任何原因。",
       "text73149a51d652": "llm 提供商 模型 anthropic openai openrouter google groq xai",
       "text733fee9d77dd": "无法开始注册",
       "text7349bf598027": "运行点 1 标题",
@@ -17197,7 +17198,6 @@
       "textdf80c0ee2f08": "智能体与技能",
       "textdf8e32d18dbd": "任何您能访问的服务",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "请输入 email 中的 6 位代码",
       "textdfa16aeaca13": "该工作区的存储库托管在 {value0} 上，它不支持来自 Kortix 的协作者邀请。管理存储库所在位置的访问。",
       "textdfa2cff42f0c": "缺乏系统经验",
       "textdfad83e7eb69": "{value0} 是帐户中每个活动项目的隐式管理者。",
@@ -19205,7 +19205,7 @@
       "text9e52157faaab": "可以。同一个 Kortix CLI 在每个沙盒中都已预先认证，Agent 使用的命令与你完全相同。",
       "text48b78a9ab65b": "运行之间如何保持隔离？",
       "text4af0b7d8bfb1": "每个会话都运行在自己的沙盒中，位于自己的 git 分支上。运行之间不共享任何内容。",
-      "text86d46af64354": "智能体执行失败，未报告原因。"
+      "text39207bf34111": "相关技能"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

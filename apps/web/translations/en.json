@@ -13381,6 +13381,7 @@
       "text7301076e877e": "Kortix supports SCIM 2.0 Users + Groups, PATCH, and `attribute eq \"value\"` filters. Bulk operations are not supported.",
       "text73053f6025aa": "replied · 6 min",
       "text730c9f9f651f": "Previous action",
+      "text73112526c03a": "Agent turn failed. No reason was reported.",
       "text73149a51d652": "llm providers models anthropic openai openrouter google groq xai",
       "text733fee9d77dd": "Could not start enrollment",
       "text7349bf598027": "runsPoint1Title",
@@ -17210,7 +17211,6 @@
       "textdf80c0ee2f08": "Agents & Skills",
       "textdf8e32d18dbd": "Anything you can reach",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Please enter the 6-digit code from your email",
       "textdfa16aeaca13": "This workspace’s repository is hosted on {value0}, which does not support collaborator invites from Kortix. Manage access where the repository lives.",
       "textdfa2cff42f0c": "No systems depth",
       "textdfad83e7eb69": "{value0} are implicit Manager on every active project in the account.",
@@ -19218,7 +19218,7 @@
       "text9e52157faaab": "Yes. The same Kortix CLI runs inside every sandbox, pre-authenticated, so agents use the exact commands you do.",
       "text48b78a9ab65b": "How do runs stay isolated?",
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
-      "text86d46af64354": "Agent turn failed. No reason was reported."
+      "text39207bf34111": "Related skills"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

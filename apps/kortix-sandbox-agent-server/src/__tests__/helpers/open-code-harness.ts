@@ -1,6 +1,4 @@
 import { createHmac } from 'node:crypto'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -41,19 +39,13 @@ export const TEST_SANDBOX_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 /** A complete OpenCode daemon config for tests: no clone, fixed ports. */
 export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCodeConfig {
-  // An ABSENT workspace path, not `/workspace`: the literal sandbox path is a
-  // real git checkout on a Kortix runtime box, so every test that expects "no
-  // repo materialized here" (readRepoInfo → null) saw the factory's own
-  // checkout instead and failed (KRTX-1113 attestation run). A dev box has no
-  // `/workspace`, so this changes nothing there.
-  const absentWorkspace = join(tmpdir(), `kortix-absent-workspace-${process.pid}`)
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
-    workspace: absentWorkspace,
-    projectTarget: absentWorkspace,
+    workspace: '/workspace',
+    projectTarget: '/workspace',
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,

@@ -13368,6 +13368,7 @@
       "text7301076e877e": "Kortix supporta SCIM 2.0 Users + Groups, PATCH e i filtri `attribute eq \"value\"`. Le operazioni bulk non sono supportate.",
       "text73053f6025aa": "ha risposto · 6 min",
       "text730c9f9f651f": "Azione precedente",
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Nessun motivo è stato riportato.",
       "text73149a51d652": "provider llm modelli anthropic openai openrouter google groq xai",
       "text733fee9d77dd": "Impossibile avviare la registrazione",
       "text7349bf598027": "titoloRunsPoint1",
@@ -17197,7 +17198,6 @@
       "textdf80c0ee2f08": "Agenti e skill",
       "textdf8e32d18dbd": "Qualsiasi cosa tu possa raggiungere",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Inserisci il codice di 6 cifre ricevuto via email",
       "textdfa16aeaca13": "Il repository di questo spazio di lavoro è ospitato su {value0}, che non supporta gli inviti di collaboratori da Kortix. Gestisci l'accesso dove risiede il repository.",
       "textdfa2cff42f0c": "Nessuna esperienza approfondita nei sistemi",
       "textdfad83e7eb69": "{value0} sono Manager impliciti su ogni progetto attivo nell'account.",
@@ -19205,7 +19205,7 @@
       "text9e52157faaab": "Sì. La stessa CLI di Kortix gira in ogni sandbox, già autenticata, così gli agenti usano esattamente i tuoi stessi comandi.",
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
-      "text86d46af64354": "Turno dell'agente non riuscito. Nessun motivo è stato segnalato."
+      "text39207bf34111": "Competenze correlate"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

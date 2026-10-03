@@ -13368,6 +13368,7 @@
       "text7301076e877e": "O Kortix é compatível com SCIM 2.0 Users + Groups, PATCH e filtros `attribute eq \"value\"`. Operações em lote não são compatíveis.",
       "text73053f6025aa": "respondeu · 6 min",
       "text730c9f9f651f": "Ação anterior",
+      "text73112526c03a": "A rodada do agente falhou. Nenhum motivo foi relatado.",
       "text73149a51d652": "provedores de llm modelos anthropic openai openrouter google groq xai",
       "text733fee9d77dd": "Não foi possível iniciar o cadastro",
       "text7349bf598027": "título do ponto de execução 1",
@@ -17197,7 +17198,6 @@
       "textdf80c0ee2f08": "Agentes e skills",
       "textdf8e32d18dbd": "Tudo o que você puder acessar",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Insira o código de 6 dígitos enviado para seu email",
       "textdfa16aeaca13": "O repositório deste espaço de trabalho está hospedado em {value0}, que não oferece suporte a convites de colaboradores do Kortix. Gerencie o acesso onde o repositório reside.",
       "textdfa2cff42f0c": "Sem experiência em sistemas",
       "textdfad83e7eb69": "{value0} são gerentes implícitos em todos os projetos ativos na conta.",
@@ -19205,7 +19205,7 @@
       "text9e52157faaab": "Sim. A mesma CLI do Kortix roda em cada sandbox, já autenticada, então os agentes usam exatamente os mesmos comandos que você.",
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
       "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
-      "text86d46af64354": "A execução do agente falhou. Nenhum motivo foi relatado."
+      "text39207bf34111": "Habilidades relacionadas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

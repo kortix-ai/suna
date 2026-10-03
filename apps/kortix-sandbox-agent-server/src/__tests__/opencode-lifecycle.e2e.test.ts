@@ -57,18 +57,12 @@ const ENV_KEYS = [
   'KORTIX_RUNTIME_STATE_DIR',
 ] as const
 const savedEnv = new Map<string, string | undefined>()
-// This runtime box has a real baked catalog at /opt/kortix/llm-catalog.json; a
-// dev box has none. Point the baked-path override at an absent file so the
-// first-boot provider map holds only the bundled managed table (KRTX-1113
-// attestation run). Saved/restored with the other ENV_KEYS below.
-const realBakedCatalogPath = process.env.KORTIX_LLM_CATALOG_BAKED_PATH
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-opencode-lifecycle-'))
   ctl = join(root, 'ctl')
   mkdirSync(ctl)
   lifecycle = null
-  process.env.KORTIX_LLM_CATALOG_BAKED_PATH = join(tmpdir(), `kortix-absent-baked-catalog-${process.pid}`)
   for (const key of ENV_KEYS) savedEnv.set(key, process.env[key])
 })
 
@@ -84,8 +78,6 @@ afterEach(async () => {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
-  if (realBakedCatalogPath === undefined) delete process.env.KORTIX_LLM_CATALOG_BAKED_PATH
-  else process.env.KORTIX_LLM_CATALOG_BAKED_PATH = realBakedCatalogPath
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -884,22 +876,8 @@ describe('a model a turn names', () => {
   function gatewayBox(listing: () => Response) {
     const gateway = Bun.serve({
       port: 0,
-      fetch: async (req) => {
-        if (new URL(req.url).searchParams.get('scope') !== 'picker') {
-          return new Response('not found', { status: 404 })
-        }
-        // The boot prefetch races the first config build (the build never
-        // awaits it, by design). A bare 127.0.0.1 answer lands in ~1 ms and
-        // wins that race on a fast box, which turned the "first boot runs the
-        // bundled table" setup below into an accident of scheduling: on a
-        // slower disk the prefetch always landed first and the model was
-        // already present before the converge step ran (KRTX-1113 attestation
-        // run). Hold the listing past the config build — a few file ops, order
-        // of ~1 ms — so the setup is deterministic; the converge step fetches
-        // the listing itself and waits for it.
-        await Bun.sleep(250)
-        return listing()
-      },
+      fetch: (req) =>
+        new URL(req.url).searchParams.get('scope') === 'picker' ? listing() : new Response('not found', { status: 404 }),
     })
     process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
     process.env.KORTIX_TOKEN = 'kortix_pat_test'

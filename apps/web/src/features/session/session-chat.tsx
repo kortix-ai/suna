@@ -4429,9 +4429,11 @@ export function SessionChat({
                       return notice ? (
                         <TurnErrorDisplay
                           key={messageId}
-                          errorText={notice.kind === 'unexplained'
-                            ? tHardcodedUi.raw('i18nComplete.text86d46af64354')
-                            : failure.error?.message ?? undefined}
+                          errorText={
+                            notice.kind === 'unexplained'
+                              ? tHardcodedUi('i18nComplete.text73112526c03a')
+                              : (failure.error?.message ?? undefined)
+                          }
                           className="mt-2"
                         />
                       ) : null;

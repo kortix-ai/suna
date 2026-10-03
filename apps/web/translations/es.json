@@ -13368,6 +13368,7 @@
       "text7301076e877e": "Kortix admite SCIM 2.0 Users + Groups, PATCH y filtros `attribute eq \"value\"`. No se admiten operaciones masivas.",
       "text73053f6025aa": "respondió · hace 6 min",
       "text730c9f9f651f": "Acción anterior",
+      "text73112526c03a": "El turno del agente falló. No se reportó ningún motivo.",
       "text73149a51d652": "proveedores de llm modelos anthropic openai openrouter google groq xai",
       "text733fee9d77dd": "No se pudo iniciar la inscripción",
       "text7349bf598027": "runsPoint1Title",
@@ -17197,7 +17198,6 @@
       "textdf80c0ee2f08": "Agentes y habilidades",
       "textdf8e32d18dbd": "Cualquier servicio al que puedas acceder",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Introduce el código de 6 dígitos de tu email",
       "textdfa16aeaca13": "El repositorio de este espacio de trabajo está alojado en {value0}, que no admite invitaciones de colaboradores de Kortix. Gestionar el acceso donde reside el repositorio.",
       "textdfa2cff42f0c": "Sin experiencia profunda en sistemas",
       "textdfad83e7eb69": "{value0} son administradores implícitos en cada proyecto activo en la cuenta.",
@@ -19205,7 +19205,7 @@
       "text9e52157faaab": "Sí. La misma CLI de Kortix se ejecuta en cada entorno aislado, ya autenticada, así que los agentes usan exactamente los mismos comandos que tú.",
       "text48b78a9ab65b": "¿Cómo se mantienen aisladas las ejecuciones?",
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
-      "text86d46af64354": "El turno del agente falló. No se reportó ningún motivo."
+      "text39207bf34111": "Habilidades relacionadas"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

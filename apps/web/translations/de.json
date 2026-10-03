@@ -13368,6 +13368,7 @@
       "text7301076e877e": "Kortix unterstützt SCIM 2.0 Users + Groups, PATCH und `attribute eq \"value\"`-Filter. Massenoperationen werden nicht unterstützt.",
       "text73053f6025aa": "geantwortet · vor 6 Min.",
       "text730c9f9f651f": "Vorherige Aktion",
+      "text73112526c03a": "Agent-Durchlauf fehlgeschlagen. Es wurde kein Grund gemeldet.",
       "text73149a51d652": "LLM-Anbieter Modelle Anthropic OpenAI OpenRouter Google Groq xAI",
       "text733fee9d77dd": "Die Registrierung konnte nicht gestartet werden",
       "text7349bf598027": "Titel von Ausführungspunkt 1",
@@ -17197,7 +17198,6 @@
       "textdf80c0ee2f08": "Agenten & Skills",
       "textdf8e32d18dbd": "Alles, was Sie erreichen können",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Bitte gib den 6-stelligen Code aus deiner E-Mail ein",
       "textdfa16aeaca13": "Das Repository dieses Arbeitsbereichs wird auf {value0} gehostet, das keine Mitarbeitereinladungen von Kortix unterstützt. Verwalten Sie den Zugriff dort, wo sich das Repository befindet.",
       "textdfa2cff42f0c": "Keine Systemtiefe",
       "textdfad83e7eb69": "{value0} sind implizite Manager für jedes aktive Projekt im Konto.",
@@ -19205,7 +19205,7 @@
       "text9e52157faaab": "Ja. Dieselbe Kortix CLI läuft vorab authentifiziert in jeder Sandbox, sodass Agenten genau dieselben Befehle verwenden wie du.",
       "text48b78a9ab65b": "Wie bleiben Läufe isoliert?",
       "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
-      "text86d46af64354": "Agent-Durchlauf fehlgeschlagen. Es wurde kein Grund gemeldet."
+      "text39207bf34111": "Ähnliche Fähigkeiten"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
