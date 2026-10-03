@@ -14,6 +14,9 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: log rate-limit windows only dampen repeated warn lines. A
+// restart or another replica can re-log a suppressed warning, which the header
+// above already accepts for diagnostics; no correctness state lives in this Map.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
