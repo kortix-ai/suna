@@ -1,0 +1,25 @@
+{
+  "source_hash": "a8544baa4f889e5ffc5ce23367008bab2e12843dbb9738bc2a5718b1cd765511",
+  "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    ".githooks/pre-push",
+    "apps/mobile/components/session/QuestionPrompt.test.tsx",
+    "apps/mobile/components/session/QuestionPrompt.tsx",
+    "apps/mobile/components/session/SessionPage.tsx",
+    "apps/mobile/components/session/session-page-characterization.test.tsx",
+    "tests/bin/local.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/local-runner.test.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "c26b665afb243107f03304cc87f1c1ab91a6650744616fccbec049656329507a",
+  "head": "a565646b89a148b62af70ff0c7836b0cb5735658",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T19:28:42.715Z"
+}
