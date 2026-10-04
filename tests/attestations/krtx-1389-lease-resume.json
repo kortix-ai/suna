@@ -1,16 +1,16 @@
 {
-  "source_hash": "a95f7e034a52872acd2722687f92a523291da25e1424f45104ff988209d7a492",
+  "source_hash": "95dccf58ea47b52938bf5a1b8cec428298909b0b1959eee9962138d3c7be3320",
   "diff_files": [
     "packages/agent-tunnel/src/agent/service-control.test.ts",
     "packages/agent-tunnel/src/agent/service-control.ts"
   ],
-  "diff_hash": "9d3a07a6634f100fcda1bf3300770e44cfedd1443a96981d8016834f06135785",
-  "head": "f6b3bdb88a8df39af3ed685bb5a665872f848290",
+  "diff_hash": "6bb09ada9231b96e97abf2c39f20ab89d39d7e1291560ca3d547fcad53faa8d6",
+  "head": "e57d4ed68809b3e0c2a7fe52e96e2addbe0ea64c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T21:12:47.161Z"
+  "at": "2026-10-04T05:40:19.247Z"
 }
