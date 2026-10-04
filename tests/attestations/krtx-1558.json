@@ -1,0 +1,16 @@
+{
+  "source_hash": "de55e2853a57fc09cd5db428a554317a522e7c56fb78d990e89fbcfb032ca57f",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-connectors-parse.test.ts",
+    "apps/api/src/projects/connectors.ts"
+  ],
+  "diff_hash": "3c734ecf8d5e34044b049f7b82d47a1d828959793d0a0613be8d6fe82bf46de7",
+  "head": "4bd8c2c4ae84f377575402a9ac217e4855301948",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T18:02:02.432Z"
+}
