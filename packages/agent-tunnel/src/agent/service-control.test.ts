@@ -3,9 +3,15 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type ServiceDriver, serviceDriverFor, supervisor } from './service-drivers';
-import { getServicePaths, getServiceStatus, installService, runnerPartsFor, type ServicePaths } from './service';
+import {
+  type ServicePaths,
+  getServicePaths,
+  getServiceStatus,
+  installService,
+  runnerPartsFor,
+} from './service';
 import { acquireTunnelLease } from './service-control';
+import { type ServiceDriver, serviceDriverFor, supervisor } from './service-drivers';
 
 const realRun = supervisor.run;
 
@@ -31,7 +37,9 @@ describe('tunnel lease', () => {
     // test writes under the real home directory never touches a real service.
     process.env.AGENT_TUNNEL_HOME = home;
     paths = getServicePaths();
-    driver = serviceDriverFor(platform())!;
+    const resolvedDriver = serviceDriverFor(platform());
+    if (!resolvedDriver) throw new Error(`no service driver for ${platform()}`);
+    driver = resolvedDriver;
     calls = [];
     // ponytail: every supervisor command succeeds — the drivers' failure and
     // retry paths are service-drivers.test.ts's job.
