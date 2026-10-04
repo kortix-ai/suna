@@ -1,6 +1,7 @@
 import { AboutPage as AboutPageContent } from '@/features/marketing/about/about-page';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
+import { languageAlternates, localePath, metaDescription, requestLocale } from '@/lib/seo/metadata';
 import { getTranslations } from '@/i18n/get-translations';
 
 const DESCRIPTION =
@@ -10,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi.i18nComplete');
   const title = t.raw('text4efca0d10c5f');
   const socialTitle = t.raw('text18f31a325716');
-  const description = t.raw('text445cf0a2abfa');
+  const description = metaDescription(t.raw('text445cf0a2abfa'));
   return {
     title,
     description,
@@ -36,7 +37,8 @@ export async function generateMetadata(): Promise<Metadata> {
       images: ['/images/team.webp'],
     },
     alternates: {
-      canonical: `${CANONICAL_ORIGIN}/about`,
+      canonical: `${CANONICAL_ORIGIN}${localePath(await requestLocale(), '/about')}`,
+      languages: languageAlternates('/about'),
     },
   };
 }

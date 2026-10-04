@@ -1,7 +1,9 @@
-import { marketingMetadata } from '@/lib/seo/metadata';
+import { localizedMarketingMetadata } from '@/lib/seo/metadata';
 import type { ReactNode } from 'react';
 
-export const metadata = marketingMetadata('/automations');
+export function generateMetadata() {
+  return localizedMarketingMetadata('/automations');
+}
 
 export default function AutomationsLayout({ children }: { children: ReactNode }) {
   return children;
