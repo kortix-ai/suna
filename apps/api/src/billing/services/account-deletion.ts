@@ -1,5 +1,39 @@
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import {
+  accountDeletionRequests,
+  accountMembers,
+  accounts,
+  appDeploymentEvents,
+  appDeployments,
+  apps,
+  changeRequests,
+  connectorCalls,
+  connectorConnections,
+  gatewayRequestLogs,
+  impersonationGrants,
+  kortixApiKeys,
+  legacySandboxMigrations,
+  platformUserRoles,
+  projectSessionConnectorBindings,
+  projectSessions,
+  projectTriggerExecutions,
+  projectTriggerRuntime,
+  projects,
+  providerEvents,
+  reviewItems,
+  sandboxes,
+  sandboxComputeSessions,
+  sessionEnvironments,
+  sessionLifecycleCommands,
+  sessionPendingQuestions,
+  sessionSandboxes,
+  sessionTurns,
+  sunaAccountMigrations,
+  tunnelAuditLogs,
+  tunnelConnections,
+  tunnelDeviceAuthRequests,
+  usageEvents,
+} from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
@@ -98,6 +132,10 @@ export async function cancelAccountDeletion(accountId: string) {
 export async function deleteAccountImmediately(accountId: string, userId?: string) {
   const request = await getActiveDeletionRequest(accountId);
   await performDeletion(accountId, userId ?? request?.userId);
+  // The account's data goes before the auth identity: a failure here must not
+  // sign a user out of an account whose data survived (the browser signs out
+  // only when the route answered success).
+  await deleteAccountData(accountId);
   const deletingUserId = userId ?? request?.userId;
   if (deletingUserId) {
     const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId);
@@ -411,4 +449,90 @@ async function performDeletion(accountId: string, userId?: string) {
   } as any);
 
   console.log(`[AccountDeletion] Account deleted: ${accountId}`);
+}
+
+/**
+ * Delete the account row and every row the database cascade cannot reach, in
+ * one transaction: either the account and all of its data go, or nothing does.
+ *
+ * A bare `DELETE FROM accounts` aborts the moment its cascade fires a
+ * non-cascading FK edge (ON DELETE NO ACTION / RESTRICT) against rows that
+ * still exist — e.g. `project_session_connector_bindings` RESTRICTs the
+ * connector deletes, a `usage_events` row NO-ACTIONs the project deletes. The
+ * sweep therefore runs three ordered passes inside one transaction:
+ *
+ *   1. child rows whose non-cascading edges would abort the cascade, each
+ *      edge's child before its parent;
+ *   2. the pure orphans — tables keyed by `account_id` with no foreign key to
+ *      `accounts` at all;
+ *   3. the accounts row itself, whose FK cascade takes the 90+ remaining
+ *      tables (projects, sessions, memberships, IAM, PATs, OAuth, chat
+ *      threads, gateway state…) with it.
+ *
+ * Retained on purpose, matching `performDeletion`'s `paymentStatus='deleted'`
+ * marker: the audit trail (`audit_events` with its partitions, legacy store
+ * and reconciliation state) and the financial records (`billing_customers`,
+ * `credit_accounts`, `credit_ledger`, `credit_purchases`, `credit_usage`)
+ * outlive the account. `prompt_attachments` and `connector_attachments` stay
+ * with their existing TTL sweeps, which own both their rows and their Storage
+ * objects — deleting the rows here would orphan their objects forever.
+ */
+async function deleteAccountData(accountId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Scopes for the child rows that carry no account_id of their own.
+    const accountProjects = tx
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(eq(projects.accountId, accountId));
+    const accountSessions = tx
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(eq(projectSessions.accountId, accountId));
+    const accountApps = tx.select({ appId: apps.appId }).from(apps).where(eq(apps.accountId, accountId));
+    const accountDeployments = tx
+      .select({ deploymentId: appDeployments.deploymentId })
+      .from(appDeployments)
+      .where(inArray(appDeployments.appId, accountApps));
+
+    // Pass 1 — children of non-cascading FK edges, before anything they
+    // reference. (usage_events, connector_calls, review_items and the rest
+    // are cascade children of the account themselves; sweeping them early
+    // keeps their NO ACTION / RESTRICT edges into projects, project_sessions,
+    // connectors and connector_connections from aborting the final DELETE.)
+    await tx.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.accountId, accountId));
+    await tx.delete(connectorCalls).where(eq(connectorCalls.accountId, accountId));
+    await tx.delete(connectorConnections).where(eq(connectorConnections.accountId, accountId));
+    await tx.delete(changeRequests).where(eq(changeRequests.accountId, accountId));
+    await tx.delete(gatewayRequestLogs).where(eq(gatewayRequestLogs.accountId, accountId));
+    await tx.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.accountId, accountId));
+    await tx.delete(usageEvents).where(eq(usageEvents.accountId, accountId));
+    await tx.delete(reviewItems).where(inArray(reviewItems.projectId, accountProjects));
+    await tx.delete(projectTriggerExecutions).where(inArray(projectTriggerExecutions.projectId, accountProjects));
+    await tx.delete(projectTriggerRuntime).where(inArray(projectTriggerRuntime.projectId, accountProjects));
+    await tx.delete(sandboxComputeSessions).where(eq(sandboxComputeSessions.accountId, accountId));
+    await tx.delete(appDeploymentEvents).where(inArray(appDeploymentEvents.deploymentId, accountDeployments));
+    await tx.delete(appDeployments).where(inArray(appDeployments.appId, accountApps));
+
+    // Pass 2 — the orphans: account rows no foreign key can reach. Ordered by
+    // their own NO ACTION edges (tunnel device auth and the connector
+    // bindings before the tunnels, the tunnels before the sandboxes).
+    await tx.delete(tunnelDeviceAuthRequests).where(eq(tunnelDeviceAuthRequests.accountId, accountId));
+    await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
+    await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
+    await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
+    await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
+    await tx.delete(sessionEnvironments).where(eq(sessionEnvironments.accountId, accountId));
+    await tx.delete(sessionTurns).where(inArray(sessionTurns.sessionId, accountSessions));
+    await tx.delete(sessionPendingQuestions).where(inArray(sessionPendingQuestions.sessionId, accountSessions));
+    await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));
+    await tx.delete(legacySandboxMigrations).where(eq(legacySandboxMigrations.accountId, accountId));
+    await tx.delete(sunaAccountMigrations).where(eq(sunaAccountMigrations.accountId, accountId));
+    await tx.delete(platformUserRoles).where(eq(platformUserRoles.accountId, accountId));
+    await tx.delete(impersonationGrants).where(eq(impersonationGrants.targetAccountId, accountId));
+    await tx.delete(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, accountId));
+
+    // Pass 3 — the row itself: the FK cascade takes every remaining table.
+    await tx.delete(accounts).where(eq(accounts.accountId, accountId));
+  });
 }

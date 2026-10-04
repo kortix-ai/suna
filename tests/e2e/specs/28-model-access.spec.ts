@@ -77,7 +77,11 @@ test('provider and model access persists, keeps credentials, and updates control
     await selectAccountForUi(page, account.account_id);
     await page.goto(`${base}/models`);
     await dismissOnboarding(page);
-    const dismissWelcome = page.getByRole('button', { name: 'Dismiss', exact: true });
+    // Scoped to the welcome card: the sidebar's "Connect your computer" card
+    // carries a Dismiss button too, and an unscoped locator matched both.
+    const dismissWelcome = page
+      .getByRole('complementary', { name: 'Welcome from Marko' })
+      .getByRole('button', { name: 'Dismiss', exact: true });
     if (await dismissWelcome.isVisible()) await dismissWelcome.click();
     await expect(page.getByRole('heading', { name: 'Models', exact: true })).toBeVisible();
 

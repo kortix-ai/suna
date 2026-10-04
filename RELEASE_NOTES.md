@@ -1,26 +1,41 @@
-Permissions decide for agents, and an agent grants only what it holds
+Fork a conversation, cancel from billing, and one permission per topic
 
 ## New
 
-- **Permissions decide, for agents as for people.** An agent that holds a permission can do the work end to end. `kortix_permissions: all`, `"*"`, and any list that contains `"*"` mean the same thing. With `all`, an agent can also manage project members and delete the project. Creating credentials stays with people.
-- **An agent can grant only what it holds.** When an agent edits an agent's permissions, connectors, secrets, or Apps, it can add only what it holds itself. This applies through every route, change request, and push. An agent that does not hold every grant opens a change request instead of pushing the default branch directly.
-- **One authorization path.** Every agent with a `kortix_permissions` grant acts as itself, in every project. The per-project switch back to the authority of the person who started it is gone.
-- **One bad permission entry no longer empties an agent.** An entry Kortix cannot grant is skipped, and the rest of the agent's grant stays. `kortix validate` still reports it.
-- **The Meta agent is platform-owned.** It runs read-only and appears first in the agent picker.
-- **No more active-session limits.** Billing is the only limit on how many sessions run at once.
-- **The blog** is served from its own app at `/blog`.
+- **Fork a conversation.** A session's conversation offers a Fork action, so you can branch from any point.
+- **Cancel a subscription from the billing pane.**
+- **One permission per topic.** The broad `project.customize.*` permissions are replaced by `project.settings.write`, `project.sandbox.write`, and `project.model.read`/`.write`. Agent changes use `project.agent.write`. Every role keeps exactly what it had. Project members can now open Agents and Triggers read-only.
 
 ## Improved
 
-- A change-request merge that edits `agents`, `triggers`, or `default_agent` needs the same permission as the direct route.
-- The download links (`/download/macos`, `/windows`, `/linux`) fall back to the releases page after 3 seconds if GitHub does not answer.
-- Deleting a sign-in removes the accounts that only that person belonged to, and revokes all of that person's credentials.
-- The manager's session inventory no longer lists deleted warm drafts.
+- **Sign-in:** an existing account opens on the password form, and the email link is one click away. After you enroll in two-factor authentication, sign-in asks for the code. A magic link still completes when its verifier cookie is lost. A failed server sign-out is reported on the sign-in page.
+- **Security settings** list the devices that are signed in.
+- **Account deletion:** "Delete immediately" deletes the account, and the dialog reads as a choice.
+- **Creating a project** lands you on the project page.
+- **The session key panel** says whose keys a session reaches, and why a key is not available.
+- **Connectors:** Computers appear under Connected only after a machine is paired, and connector notes display the same way on every surface.
+- **The audit log:** reconciliation catches up on accounts with very large histories.
+- **The API** returns 400 for a malformed account id, and a marketplace install fails clearly when no model can serve its import.
+- **Database health:** more RLS policies evaluate the signed-in user once per query, and legacy tables gain primary keys and missing indexes.
 
 ## Fixed
 
-- `kortix validate` rejects invalid arguments.
-- The sandbox's `/turn` request is read correctly before streaming starts.
-- The mobile stop icon honors its size.
-- The infrastructure audit checks network ACL admin ports separately for IPv4 and IPv6.
+- The CLI:
+  - `sessions log` and `chat` show the real stop or failure reason.
+  - Trigger schedule updates keep their time zone.
+  - Policy conditions keep their operators.
+  - `--json` output and session listings stay stable.
+  - `projects rm --purge` reports "Purged".
+  - Project-scoped commands reach projects that have no session.
+  - The empty models state points to providers.
+- Mobile:
+  - Question answers can be retried until they are accepted.
+  - Mermaid diagrams render.
+  - Teams mentions are stripped from session titles.
+  - Diff stats keep literal escapes.
+  - App previews refresh their credentials when opened.
+- Desktop: "Allow all" adds Kortix to the macOS Screen Recording list.
+- A warm session that has not been prompted reads as starting, not running.
+- The sandbox agent's dependencies are patched against two `undici` vulnerabilities.
+- Customize tabs appear immediately, and only the page body waits for permissions.
 

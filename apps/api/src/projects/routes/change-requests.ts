@@ -31,7 +31,7 @@ import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { ChangeRequestSchema, projectsApp } from '../lib/app';
+import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -100,11 +100,11 @@ projectsApp.openapi(
       query: z.object({}).passthrough(),
     },
     responses: {
-      200: json(z.array(ChangeRequestSchema), 'Change requests'),
+      200: json(ChangeRequestListSchema, 'Change requests'),
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -168,10 +168,10 @@ projectsApp.openapi(
     },
     responses: {
       201: json(ChangeRequestSchema, 'The created change request'),
-      ...errors(400, 404, 422, 500),
+      ...errors(400, 403, 404, 422, 500),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -347,10 +347,10 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'OK'),
-      ...errors(404, 409, 502),
+      ...errors(403, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -482,11 +482,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), crId: z.string() }),
     },
     responses: {
-      200: json(ChangeRequestSchema, 'The change request'),
+      200: json(z.object({ change_request: ChangeRequestSchema }), 'The change request'),
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -523,11 +523,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      200: json(z.any(), 'OK'),
+      200: json(ChangeRequestSchema, 'The updated change request'),
       ...errors(404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const body = await readJsonObject(c);
@@ -583,7 +583,7 @@ projectsApp.openapi(
       ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const body = await readJsonObject(c);
@@ -672,7 +672,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -730,7 +730,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');

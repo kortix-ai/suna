@@ -18,6 +18,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
+// Register the tool renderers. Without this every tool part on the fixture
+// page renders the GenericTool fallback, so the parity view shows no tool
+// card, including the connector_get notes block this page exists to show.
+import '@/features/session/tool/tools/register';
+
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
 import { compactionTurnInfo } from '@/features/session/turn/compaction-state';

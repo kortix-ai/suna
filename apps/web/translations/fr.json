@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Choisissez les clés partagées que cette session peut utiliser.",
     "sessionKeyPool": "Groupe de clés de session",
     "sharedSessionKeys": "Cette session est partagée avec le projet : seules les clés partagées avec tout le projet fonctionnent ici. Les clés qui vous sont attribuées fonctionnent dans vos sessions privées.",
+    "promptedSessionKeys": "Un autre membre a écrit dans cette session, elle n’agit donc plus pour son propriétaire. Seules les clés partagées avec tout le projet fonctionnent ici.",
+    "noPersonSessionKeys": "Cette session n’agit pour personne : elle a démarré avant l’arrivée des clés personnelles, ou sans surveillance. Seules les clés partagées avec tout le projet fonctionnent ici. Démarrez une nouvelle session pour utiliser vos propres clés.",
     "projectDefaultShort": "Valeur par défaut du projet",
     "rateLimitDescription": "La passerelle passe aux autres clés sélectionnées lorsqu’un fournisseur signale une limite de débit.",
     "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
@@ -577,7 +579,7 @@
       "keepMyAccount": "Garder mon compte",
       "deleteDialogTitle": "Supprimer votre compte ?",
       "immediateWarning": "Cela supprime immédiatement votre compte. Il n’y a pas de délai de grâce ni aucun moyen de l’annuler.",
-      "gracePeriodWarning": "La suppression de votre compte est programmée après une période de grâce de 30 jours, pendant laquelle vous pouvez l'annuler.",
+      "gracePeriodWarning": "La suppression de votre compte sera programmée après une période de grâce de 30 jours, pendant laquelle vous pouvez l'annuler.",
       "whenDeleted": "Lorsque votre compte est supprimé :",
       "agentsDeleted": "Chaque agent que vous possédez est supprimé",
       "threadsDeleted": "Toutes les sessions et tous les messages sont supprimés",
@@ -638,7 +640,13 @@
       "verified": "Vérifié",
       "unverified": "Non vérifié",
       "signedOutOtherDevices": "Déconnecté de vos autres appareils",
-      "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils"
+      "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils",
+      "currentDevice": "Ce navigateur",
+      "deviceSignedInAt": "Connecté le {date}",
+      "deviceActive": "Actif",
+      "noDevices": "Aucun appareil connecté",
+      "noDevicesDescription": "Vous n’êtes connecté sur aucun appareil pour le moment.",
+      "devicesLoadFailed": "Impossible de charger vos appareils connectés"
     },
     "appearance": {
       "theme": "Thème",
@@ -1108,7 +1116,7 @@
       "noMatches": "Aucun résultat pour {query}.",
       "emptyTitle": "Aucune fonctionnalité expérimentale",
       "emptyDescription": "Cette installation ne propose aucun indicateur de fonctionnalité par projet.",
-      "permission": "Vous devez disposer de l’autorisation de modification de la personnalisation du projet pour changer une fonctionnalité.",
+      "permission": "Vous avez besoin de l’autorisation de paramètres du projet pour modifier un indicateur de fonctionnalité.",
       "updateFailed": "Impossible de mettre à jour {key}",
       "flags": {
         "marketplace": {
@@ -1972,7 +1980,11 @@
       "topupWalletHint": "Rechargez votre solde pour maintenir vos agents en fonctionnement.",
       "addCredits": "Ajouter des crédits",
       "billingPortal": "Portail de facturation",
-      "portalDescription": "Gérez votre abonnement, vos moyens de paiement et vos factures."
+      "portalDescription": "Gérez votre abonnement, vos moyens de paiement et vos factures.",
+      "cancelSubscription": "Annuler l'abonnement",
+      "cancelSubscriptionDescription": "Votre plan reste actif jusqu'à la fin de la période de facturation en cours, puis il prend fin. Vous pouvez le réactiver d'ici là.",
+      "reactivateSubscription": "Réactiver l'abonnement",
+      "commitmentCancelHint": "Votre engagement court jusqu'au {date}. Vous pourrez annuler après."
     },
     "topup": {
       "minimum": "Le rechargement minimum est de {amount}.",
@@ -9605,7 +9617,7 @@
       "text062b7c4143e2": "Sa propre branche, créée pour chaque session",
       "text062bccfdad1c": "Aucun bac à sable ne correspond à cette recherche",
       "text062dddbbb151": "Une frontière sans écosystème n’est pas stable",
-      "text06346e4d9c35": "Vous avez besoin de l'autorisation de personnalisation-écriture du projet pour modifier un indicateur de fonctionnalité.",
+      "text6d484ed8c1a0": "Vous avez besoin de l’autorisation de paramètres du projet pour modifier un indicateur de fonctionnalité.",
       "text06475633ed3e": "Dernière activité",
       "text064f6ac1a789": "Pop-up",
       "text065f04fd94d6": "Modifiez ce que {value0} {value1} peut faire dans {value2}.",
@@ -19191,8 +19203,11 @@
       "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
       "text39207bf34111": "Compétences associées",
       "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
+      "text0e5f7f6732e0": "Bifurquer la conversation",
+      "text32ad3abe4479": "Échec de la bifurcation de la conversation",
       "text85b7a59cdbd5": "Agent de la plateforme",
-      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici."
+      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici.",
+      "text6c4af31cd4ab": "Déconnecté sur cet appareil, mais le serveur n'a pas pu confirmer la déconnexion."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

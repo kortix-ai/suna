@@ -1,10 +1,13 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { UUID_RE } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
@@ -48,8 +51,6 @@ interface AccessMember {
   email: string | null;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const HELP = help`Usage: kortix grants <subcommand> [options]
 
 Assign project resources to people — the inheritance PYRAMID. Secrets and
@@ -81,11 +82,6 @@ Examples:
   kortix grants revoke 2f1a…
 `;
 
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}
-
 /** Resolve a member's user-id from an email via the project access list. */
 async function resolveMemberId(
   client: { get: <T>(p: string) => Promise<T> },
@@ -106,20 +102,10 @@ async function resolveMemberId(
 }
 
 export async function runGrants(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let group = false;

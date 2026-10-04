@@ -6,6 +6,7 @@ import type {
   SecretBrokerResponse,
 } from '@kortix/api-contract';
 import type { SecretEgressPolicy, SecretInjectionSlot } from '@kortix/db';
+import { BLOCKED_REQUEST_HEADERS } from '@kortix/api-contract/secret-relay';
 import { isPrivateIp } from '../shared/ssrf-guard';
 import { matchRule } from './strategy';
 
@@ -15,7 +16,8 @@ export const MAX_REDIRECTS = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
 export const REDACTED = Buffer.from('[REDACTED]');
 
-// FRAMING / hop-by-hop headers only. These are rejected with a 400 because the
+// `BLOCKED_REQUEST_HEADERS` (imported above) is FRAMING / hop-by-hop headers
+// only. These are rejected with a 400 because the
 // broker manages them itself (it sets `host` and `content-length`, forces
 // `accept-encoding: identity`) or because they describe THIS connection, not the
 // upstream one (`connection`, `keep-alive`, `te`, `trailer`, `transfer-encoding`,
@@ -29,20 +31,7 @@ export const REDACTED = Buffer.from('[REDACTED]');
 // headers; blocking them (as the pre-substitution broker did, 59c1f74bf8) left
 // the new substitution-only default with no working path to Bearer/token/cookie
 // auth. A legacy `inject` slot that names one of them still overwrites it, so the
-// old broker behaviour is unchanged. The shim keeps an identical copy of this
-// set (`blocked-headers.test.ts` pins the two together).
-const BLOCKED_REQUEST_HEADERS = new Set([
-  'connection',
-  'content-length',
-  'host',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'transfer-encoding',
-  'upgrade',
-]);
+// old broker behaviour is unchanged. The shim drops the same set before relaying.
 
 export const SAFE_RESPONSE_HEADERS = new Set([
   'cache-control',
