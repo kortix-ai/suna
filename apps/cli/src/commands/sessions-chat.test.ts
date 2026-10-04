@@ -51,7 +51,8 @@ describe('printMessage — a failed turn shows the real failure reason', () => {
         },
       }),
     );
-    expect(out).toContain('"premium-model" requires a paid plan.');
+    expect(out).toContain('error: APIError: "premium-model" requires a paid plan.');
+    expect(out).not.toContain('Bad Request');
     expect(out).not.toContain('error: unknown');
   });
 
@@ -62,7 +63,7 @@ describe('printMessage — a failed turn shows the real failure reason', () => {
         data: { message: '{"message":"Provided authentication token is expired.","code":401}' },
       }),
     );
-    expect(out).toContain('Provided authentication token is expired.');
+    expect(out).toContain('error: UnknownError: Provided authentication token is expired.');
     expect(out).not.toContain('error: unknown');
   });
 
@@ -73,13 +74,13 @@ describe('printMessage — a failed turn shows the real failure reason', () => {
         data: { providerID: 'anthropic', message: 'No API key found for provider "anthropic".' },
       }),
     );
-    expect(out).toContain('No API key found for provider "anthropic".');
+    expect(out).toContain('error: ProviderAuthError: No API key found for provider "anthropic".');
     expect(out).not.toContain('error: unknown');
   });
 
   test('an error with no recoverable text degrades to the generic sentence, never "unknown"', () => {
     const out = render(failedTurn({ name: 'MessageOutputLengthError', data: {} }));
-    expect(out).toContain('An error occurred');
+    expect(out).toContain('error: MessageOutputLengthError: An error occurred');
     expect(out).not.toContain('error: unknown');
   });
 });
