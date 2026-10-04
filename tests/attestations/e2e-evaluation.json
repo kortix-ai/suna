@@ -1,5 +1,5 @@
 {
-  "source_hash": "e25055b17d5c66abb443003d4e3fd37f55da8abcaa6195a17d6fd3d7ef39578a",
+  "source_hash": "994cf08996243380856fb332ba39ea139b43cf692cf9459cf5e25b5650e40470",
   "diff_files": [
     ".agents/skills/e2e/SKILL.md",
     ".agents/skills/e2e/references/agent.md",
@@ -20,14 +20,16 @@
     ".agents/skills/learnings/entries/2026-10-03T224946Z-keep-local-test-runs-awake-and-reject-sleep-affected-timings.md",
     ".agents/skills/learnings/entries/2026-10-03T225252Z-retain-incomplete-suite-evidence-after-an-unexplained-proces.md",
     ".agents/skills/learnings/entries/2026-10-03T230515Z-keep-coordination-policy-assertions-current-when-its-guide-c.md",
+    ".agents/skills/learnings/entries/2026-10-04T002837Z-apply-citation-checks-to-git-candidates-with-the-runtime-re.md",
+    ".agents/skills/learnings/entries/2026-10-04T005110Z-update-test-imports-when-a-shared-helper-is-removed.md",
     ".agents/skills/testing/SKILL.md",
     ".agents/skills/testing/references/e2e-evaluation.md",
     ".claude/skills/e2e",
     ".gitignore",
     ".mcp.json",
+    "apps/web/src/lib/menu-registry.flags.test.ts",
     "e2e.config.ts",
     "package.json",
-    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
     "pnpm-lock.yaml",
     "tests/README.md",
     "tests/bin/agentic.ts",
@@ -36,15 +38,16 @@
     "tests/spec/end-to-end.md",
     "tests/src/core/agentic-ownership.ts",
     "tests/src/core/local-runner.ts",
-    "tests/unit/local-runner.test.ts"
+    "tests/unit/local-runner.test.ts",
+    "tests/unit/no-docs-tree.test.ts"
   ],
-  "diff_hash": "5559fb0adbcd0d9b3733cfa30458b4bc20e6dbd9aaba9cd0037658555ae53653",
-  "head": "66f2317fe644a8ec156269b51fd2d921b7382145",
-  "passed": false,
+  "diff_hash": "c6c598e653d1b7277260c7e6d617ac2e63b8ade7c7c0a5505596aec7db04aca0",
+  "head": "f85072af5ec9fdd7da738156d200f571b7cdf212",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-03T23:50:39.444Z"
+  "at": "2026-10-04T01:01:12.931Z"
 }
