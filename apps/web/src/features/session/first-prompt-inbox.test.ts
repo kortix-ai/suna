@@ -24,6 +24,11 @@ function read(relative: string): string {
 const shell = read('./instant-session-shell.tsx');
 const shellSend = read('./use-instant-session-send.ts');
 const projectHome = read('../../app/[locale]/(app)/projects/[id]/page.tsx');
+// The project-home send's create-first delivery (the held-attachment block)
+// lives beside the AttachmentSubmission owner since the page split; the facts
+// below are pinned across both halves of that send path.
+const heldDelivery = read('./composer/held-first-prompt.ts');
+const homeSend = `${projectHome}\n${heldDelivery}`;
 const sessionPage = read('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
 const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts');
@@ -38,18 +43,19 @@ describe('every first-prompt producer writes a durable row, not a prompt stash',
   });
 
   test('project home hands the prompt (and its attachments) to the create', () => {
-    expect(projectHome).toContain('pending_prompt: {');
-    expect(projectHome).toContain('promptFileParts(files, attachmentParts)');
+    expect(homeSend).toContain('pending_prompt: {');
+    expect(homeSend).toContain('promptFileParts(files, attachmentParts)');
     // The navigate stash is picks-only.
-    expect(projectHome).toContain("prompt: ''");
-    expect(projectHome).not.toContain('prompt: text');
-    expect(projectHome).not.toContain('setPendingFiles');
+    expect(homeSend).toContain("prompt: ''");
+    expect(homeSend).not.toContain('prompt: text');
+    expect(homeSend).not.toContain('setPendingFiles');
   });
 
   test('both first-message producers use the shared staging contract', () => {
     expect(shell).not.toContain('attachedFilesToDataUrlParts');
     expect(shellSend).not.toContain('attachedFilesToDataUrlParts');
     expect(projectHome).not.toContain('attachedFilesToDataUrlParts');
+    expect(heldDelivery).not.toContain('attachedFilesToDataUrlParts');
   });
 
   test('configure-thread and run-upgrade hand their prompt to the create', () => {

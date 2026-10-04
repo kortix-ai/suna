@@ -1,4 +1,25 @@
 import type { UiTranslator } from '@/i18n/translator';
+
+/** The success payload of a password auth action: the client establishes the
+ * session from the tokens and hard-navigates to `redirectTo`. */
+export interface AuthSessionResult {
+  success: true;
+  redirectTo: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  mobileHandoffUrl: string | null;
+}
+
+/**
+ * Every auth server action's return shape, written down once so the page can
+ * branch on it without casts. A failure carries `message` (plus the optional
+ * structured `code` the flow uses to pick honest copy); the email-confirmation
+ * and session successes carry `success: true`.
+ */
+export type AuthActionResult =
+  | { message: string; code?: string | null }
+  | { success: true; message: string; email?: string; requiresEmailConfirmation?: true }
+  | AuthSessionResult;
 /**
  * Pure logic for the unified email-first auth flow ("one system"): the visitor
  * types an email, Continue resolves whether that address already has an

@@ -1,4 +1,5 @@
-import { defaultLocale, locales } from './catalog.mjs';
+import { type Locale } from './config';
+import { isLocale, normalizeLocale } from './locale';
 
 /**
  * Locale routing shared by the middleware and its tests.
@@ -7,23 +8,12 @@ import { defaultLocale, locales } from './catalog.mjs';
  * English (`/pricing`) and prefixed for an explicit language (`/de/pricing`).
  * The middleware rewrites each page request onto the segment. This module
  * holds the pure parts of that decision and must stay middleware-safe: it
- * imports the locale constants only, never a catalog loader.
+ * imports the locale constants only (through `./locale` → `./config`), never
+ * a catalog loader.
  */
-export type RoutingLocale = (typeof locales)[number];
-
-export function isRoutingLocale(value: unknown): value is RoutingLocale {
-  return typeof value === 'string' && (locales as readonly string[]).includes(value);
-}
-
-function normalizeRoutingLocale(value: unknown): RoutingLocale | null {
-  if (typeof value !== 'string') return null;
-  if (isRoutingLocale(value)) return value;
-  const base = value.toLowerCase().split(/[-_]/)[0];
-  return isRoutingLocale(base) ? base : null;
-}
 
 /** Internal path of a page under the `[locale]` segment. */
-export function localizedPathname(locale: RoutingLocale, pathname: string): string {
+export function localizedPathname(locale: Locale, pathname: string): string {
   return `/${locale}${pathname === '/' ? '' : pathname}`;
 }
 
@@ -70,7 +60,7 @@ const CHAT_LOGIN_PAGE = /^\/(?:slack|teams)\/login\/[^/]+$/;
 function isFilePath(pathname: string): boolean {
   if (!pathname.includes('.')) return false;
   const [, first = '', ...rest] = pathname.split('/');
-  return !CHAT_LOGIN_PAGE.test(isRoutingLocale(first) ? `/${rest.join('/')}` : pathname);
+  return !CHAT_LOGIN_PAGE.test(isLocale(first) ? `/${rest.join('/')}` : pathname);
 }
 
 export function isNonPagePath(pathname: string): boolean {
@@ -93,7 +83,7 @@ function decodeBase64Url(value: string): string | null {
   }
 }
 
-function localeFromJwt(token: unknown): RoutingLocale | null {
+function localeFromJwt(token: unknown): Locale | null {
   if (typeof token !== 'string') return null;
   const payload = token.split('.')[1];
   if (!payload) return null;
@@ -101,7 +91,7 @@ function localeFromJwt(token: unknown): RoutingLocale | null {
   if (!json) return null;
   try {
     const claims = JSON.parse(json) as { user_metadata?: { locale?: unknown } };
-    return normalizeRoutingLocale(claims.user_metadata?.locale);
+    return normalizeLocale(claims.user_metadata?.locale);
   } catch {
     return null;
   }
@@ -122,7 +112,7 @@ function localeFromJwt(token: unknown): RoutingLocale | null {
 export function unverifiedSessionLocale(
   cookies: ReadonlyArray<{ name: string; value: string }>,
   cookieName: string,
-): RoutingLocale | null {
+): Locale | null {
   const whole = cookies.find((cookie) => cookie.name === cookieName)?.value;
   let raw = whole;
   if (!raw) {
@@ -145,12 +135,9 @@ export function unverifiedSessionLocale(
       user?: { user_metadata?: { locale?: unknown } };
     };
     return (
-      normalizeRoutingLocale(session.user?.user_metadata?.locale) ??
-      localeFromJwt(session.access_token)
+      normalizeLocale(session.user?.user_metadata?.locale) ?? localeFromJwt(session.access_token)
     );
   } catch {
     return null;
   }
 }
-
-export { defaultLocale };

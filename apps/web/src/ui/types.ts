@@ -114,19 +114,6 @@ export interface TriggerTitle {
   hideSubtitleWhenOpen?: boolean;
 }
 
-/** A file entry in an apply_patch tool part's metadata. */
-export interface ApplyPatchFile {
-  filePath: string;
-  relativePath: string;
-  type: 'add' | 'update' | 'delete' | 'move';
-  diff: string;
-  before: string;
-  after: string;
-  additions: number;
-  deletions: number;
-  movePath?: string;
-}
-
 // ---------------------------------------------------------------------------
 // Permission labels (shared between web & mobile)
 // ---------------------------------------------------------------------------

@@ -105,6 +105,44 @@ export function sanitizeAuthReturnUrl(
 }
 
 /**
+ * True when the authenticated identity was created within the last minute —
+ * the shared "brand-new account" heuristic every post-auth destination
+ * decision starts from. A signup and a first sign-in minutes apart are the
+ * same situation for the demotion rule below, so every auth path asks this
+ * one question instead of re-deriving it from `created_at`.
+ */
+export function isNewAccount(
+  createdAt: string | number | undefined | null,
+  now = Date.now(),
+): boolean {
+  if (createdAt === undefined || createdAt === null) return false;
+  return now - new Date(createdAt).getTime() < 60000;
+}
+
+/**
+ * Resolve the post-auth return URL through the identity gate — the ONE
+ * canonical policy every auth path shares (callback route, email-link,
+ * password sign-in, password sign-up): a return URL the signed-in identity
+ * cannot own is demoted to the new-account rule, everything else replays
+ * verbatim. See `shouldDemoteReturnUrl` for the two cases that demote.
+ */
+export function resolveAuthReturnUrl({
+  returnUrl,
+  bouncedOwnerId,
+  signedInUserId,
+  isNewUser,
+}: {
+  returnUrl: string;
+  bouncedOwnerId?: string | null;
+  signedInUserId?: string | null;
+  isNewUser?: boolean | null;
+}): string {
+  return shouldDemoteReturnUrl({ bouncedOwnerId, signedInUserId, isNewUser })
+    ? resolveNewAccountReturnUrl(returnUrl)
+    : returnUrl;
+}
+
+/**
  * True when an (already-sanitized) return URL is one a brand-new account can
  * actually act on.
  */

@@ -1,15 +1,15 @@
+import { isAdminAccessToken } from '@/lib/admin-role';
 import { MAINTENANCE_PUBLIC_CACHE_CONTROL } from '@/lib/maintenance-client';
 import {
+  type MaintenanceConfig,
+  type MaintenanceLevel,
   getMaintenanceConfig,
   readDatabaseMaintenanceConfig,
   reconcileMaintenanceEdgeConfig,
   setMaintenanceConfig,
-  type MaintenanceConfig,
-  type MaintenanceLevel,
 } from '@/lib/maintenance-store';
 import { createClient } from '@/lib/supabase/server';
-import { getUserRolesWithToken } from '@kortix/sdk';
-import { after, NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse, after } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -79,7 +79,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const isAdmin = await checkAdminRole(accessToken);
+  const isAdmin = await isAdminAccessToken(accessToken);
   if (!isAdmin) {
     return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 });
   }
@@ -120,27 +120,5 @@ export async function PUT(request: NextRequest) {
   } catch (err) {
     console.error('[api/maintenance] PUT error:', err);
     return NextResponse.json({ error: 'Failed to update maintenance config' }, { status: 500 });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Check admin role by forwarding the user's auth cookies to the backend
- * /user-roles endpoint, matching the client-side useAdminRole hook logic.
- */
-async function checkAdminRole(accessToken: string): Promise<boolean> {
-  try {
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || '';
-
-    const data = await getUserRolesWithToken<{ isAdmin?: boolean }>({
-      backendUrl,
-      accessToken,
-    });
-    return data.isAdmin === true;
-  } catch {
-    return false;
   }
 }

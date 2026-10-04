@@ -24,60 +24,13 @@ import { Suspense, useEffect, useState } from 'react';
 
 import { AuthPendingScreen } from '@/features/auth/auth-consent';
 import {
-  PreviewAuthorizeView,
   type PreviewAuthorizeState,
+  PreviewAuthorizeView,
 } from '@/features/auth/preview-authorize-view';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
-
-/** The preview hostname shape, as `GET /v1/p/config` describes it. */
-async function fetchPreviewTemplate(backendUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${backendUrl.replace(/\/+$/, '')}/p/config`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { preview_url_template?: string | null };
-    return typeof body?.preview_url_template === 'string' ? body.preview_url_template : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * True only for a URL on a hostname this deployment serves previews on.
- *
- * The template gives the exact origin shape; we compare the host SUFFIX and the
- * label form rather than string-matching the whole URL, because the port and
- * sandbox vary. Anything else — another domain, a lookalike, a path on our own
- * app — is refused.
- */
-export function isServablePreviewUrl(candidate: string, template: string | null): boolean {
-  if (!template) return false;
-  let url: URL;
-  let shape: URL;
-  try {
-    url = new URL(candidate);
-    shape = new URL(template.replace('{port}', '1').replace('{sandbox}', 'x'));
-  } catch {
-    return false;
-  }
-  if (url.protocol !== shape.protocol) return false;
-
-  // `dev-p{port}-{sandbox}.p.kortix.com` -> suffix `.p.kortix.com`, prefix `dev-`
-  const shapeHost = shape.hostname;
-  const firstDot = shapeHost.indexOf('.');
-  if (firstDot === -1) return false;
-  const domain = shapeHost.slice(firstDot); // ".p.kortix.com"
-  const envPrefix = shapeHost.slice(0, shapeHost.indexOf('-p1-') + 1); // "dev-"
-  if (!envPrefix || !domain) return false;
-  if (!url.hostname.endsWith(domain)) return false;
-
-  const label = url.hostname.slice(0, -domain.length);
-  if (label.includes('.')) return false;
-  return new RegExp(`^${envPrefix}p\\d{1,5}-[a-z0-9-]+$`).test(label);
-}
+import { isServablePreviewUrl, loadPreviewUrlTemplate } from '@kortix/sdk';
 
 export default function PreviewAuthorizePage() {
   return (
@@ -111,7 +64,7 @@ function PreviewAuthorize() {
     let cancelled = false;
     (async () => {
       const backendUrl = getEnv().BACKEND_URL || '';
-      const template = await fetchPreviewTemplate(backendUrl);
+      const template = await loadPreviewUrlTemplate(backendUrl);
       if (cancelled) return;
 
       if (!isServablePreviewUrl(to, template)) {

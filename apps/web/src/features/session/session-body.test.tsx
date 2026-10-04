@@ -98,6 +98,19 @@ const pageSource = readFileSync(
   'utf8',
 );
 if (pageSource.length < 1000) throw new Error('session page did not load');
+// Since the page split, the crossfade/hand-off state lives in the hook and the
+// chat layer lives beside the route; the facts below are pinned wherever the
+// code now lives.
+const crossfadeSource = readFileSync(
+  resolve(import.meta.dir, '../session/use-session-crossfade.ts'),
+  'utf8',
+);
+if (crossfadeSource.length < 1000) throw new Error('crossfade hook did not load');
+const chatLayerSource = readFileSync(
+  resolve(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/active-session-chat.tsx'),
+  'utf8',
+);
+if (chatLayerSource.length < 1000) throw new Error('active session chat did not load');
 
 describe('the crossfade covers the screen at every frame', () => {
   test('only the overlay animates', () => {
@@ -119,17 +132,17 @@ describe('the crossfade covers the screen at every frame', () => {
     // The home-composer hand-off leaves the text in `useFirstPromptPreviewStore`
     // and nothing else; without reading it here the route tore the shell down
     // for a boot spinner the moment the transcript arrived.
-    expect(pageSource).toContain('useFirstPromptPreviewStore');
-    expect(pageSource).toContain('shellShowsFirstPrompt');
-    expect(pageSource).toMatch(
+    expect(crossfadeSource).toContain('useFirstPromptPreviewStore');
+    expect(crossfadeSource).toContain('shellShowsFirstPrompt');
+    expect(crossfadeSource).toMatch(
       /resolveSessionOverlay\(\{ \.\.\.surface, shellShowsFirstPrompt \}\)/,
     );
     // Read at mount as well as live: SessionChat clears the preview the instant
     // the transcript shows the text, and that clear can land in the same commit
     // as `chatReady` — a purely live read would drop the pin on the exact frame
     // the fade starts and unmount the shell instead of dissolving it.
-    expect(pageSource).toContain('handoff.firstPrompt');
-    expect(pageSource).toContain(
+    expect(crossfadeSource).toContain('handoff.firstPrompt');
+    expect(crossfadeSource).toContain(
       'const firstPrompt = !!useFirstPromptPreviewStore.getState().previewBySession[sessionId];',
     );
   });
@@ -143,13 +156,13 @@ describe('the overlay never covers a Restart the user needs', () => {
     // reachable once the overlay has faded. `sessionErrorSurfaceReady` must
     // therefore take the same two values the guards do — the ordinary path is
     // the one that waits for `onContentReady`, never these.
-    expect(pageSource).toContain('runtimePresentation.replaceSession');
-    expect(pageSource).toContain(
+    expect(chatLayerSource).toContain('runtimePresentation.replaceSession');
+    expect(chatLayerSource).toContain(
       'if (!runtimeReady && runtimeBootError && runtimePresentation.replaceSession) {',
     );
-    expect(pageSource).toContain('if (runtimeError && runtimePresentation.replaceSession) {');
+    expect(chatLayerSource).toContain('if (runtimeError && runtimePresentation.replaceSession) {');
     // Both cards restart in place rather than asking for a page reload.
-    expect(pageSource).toMatch(/runtimeBootError[\s\S]{0,700}<RestartSessionButton/);
+    expect(chatLayerSource).toMatch(/runtimeBootError[\s\S]{0,700}<RestartSessionButton/);
   });
 
   test('the composer behind the overlay does not steal focus from the shell', () => {
@@ -158,7 +171,7 @@ describe('the overlay never covers a Restart the user needs', () => {
     // the same commit the chat mounted; a live steal now that the shell is
     // pinned through the crossfade.
     expect(chatSource).toContain('autoFocus={deferComposerFocus ? false : undefined}');
-    expect(pageSource).toContain('deferComposerFocus={!chatReady}');
+    expect(chatLayerSource).toContain('deferComposerFocus={!chatReady}');
   });
 });
 
@@ -183,7 +196,7 @@ describe('a readable transcript is never covered by the boot overlay', () => {
     // "Connecting…" for the whole wake (5-240 s) with no transcript, although
     // every message existed. The server-side transcript mirror puts the thread
     // on screen from the first frame, so the overlay must step aside.
-    expect(pageSource).toContain('resolveBootPresentation({ overlay, hasTranscript })');
+    expect(crossfadeSource).toContain('resolveBootPresentation({ overlay, hasTranscript })');
     expect(pageSource).toContain('<SessionConnectingBanner');
   });
 
@@ -191,7 +204,7 @@ describe('a readable transcript is never covered by the boot overlay', () => {
     // Not a hard unmount: the chat is already painted underneath, and swapping
     // an opaque panel for the thread in one frame is the flash this route
     // spent three fixes removing.
-    expect(pageSource).toContain(
+    expect(crossfadeSource).toContain(
       "const overlayDismissed = chatReady || bootPresentation === 'banner';",
     );
     expect(pageSource).toContain(

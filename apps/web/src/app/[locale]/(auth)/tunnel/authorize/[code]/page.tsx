@@ -1,8 +1,8 @@
 'use client';
 
-import { ArrowsClockwiseIcon, CheckIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useParams, useRouter } from 'next/navigation';
+import { ArrowsClockwiseIcon, CheckIcon } from '@phosphor-icons/react';
+import { useParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import {
   useDenyDeviceAuth,
   useDeviceAuthInfo,
 } from '@/hooks/tunnel/use-tunnel';
+import { useRequireSignedIn } from '@/lib/auth/use-require-signed-in';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -48,7 +49,6 @@ function DeviceAuthorize() {
   const tSharing = useTranslations('accessSharing');
   const capabilities = useMemo(() => localizedCapabilityRegistry(tI18nComplete), [tI18nComplete]);
   const params = useParams();
-  const router = useRouter();
   const code = params.code as string;
   const { user, isLoading: authLoading } = useAuth();
 
@@ -76,15 +76,13 @@ function DeviceAuthorize() {
     [sections, projectId],
   );
   const canShare =
-    useProjectCan(project ? projectId : undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)
-      .allowed === true;
+    useProjectCan(
+      project ? projectId : undefined,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+    ).allowed === true;
   const effectiveShare: Share = canShare ? share : 'me';
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace(`/auth?returnUrl=${encodeURIComponent(`/tunnel/authorize/${code}`)}`);
-    }
-  }, [user, authLoading, router, code]);
+  useRequireSignedIn(`/tunnel/authorize/${code}`);
 
   const registered = info?.registered ?? null;
   // macOS appends " (4)" to a name another device on the network already
@@ -238,7 +236,9 @@ function DeviceAuthorize() {
                   variant="outline"
                   disabled={!canShare}
                   label={t('alsoShareWith', { project: project.name })}
-                  description={canShare ? t('everyoneDescription') : tSharing('shareRequiresManage')}
+                  description={
+                    canShare ? t('everyoneDescription') : tSharing('shareRequiresManage')
+                  }
                 />
               ) : null}
             </RadioGroup>
@@ -249,9 +249,7 @@ function DeviceAuthorize() {
               <p className="text-muted-foreground text-sm font-medium">
                 {tI18nComplete.raw('text5db4167d9f88')}
               </p>
-              <p className="text-muted-foreground text-xs text-pretty">
-                {t('accessHint')}
-              </p>
+              <p className="text-muted-foreground text-xs text-pretty">{t('accessHint')}</p>
             </div>
             <div className="divide-border divide-y overflow-hidden rounded-md border">
               {capabilities.map((cap) => {

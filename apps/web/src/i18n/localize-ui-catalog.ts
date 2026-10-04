@@ -1,6 +1,6 @@
 import type { UiTranslator } from './translator';
 
-export type UiCatalogTranslationKeys = Readonly<Record<string, string>>;
+type UiCatalogTranslationKeys = Readonly<Record<string, string>>;
 
 const DISPLAY_PROPERTIES = new Set([
   'ask',

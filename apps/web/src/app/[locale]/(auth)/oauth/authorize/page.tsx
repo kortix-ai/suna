@@ -1,9 +1,9 @@
 'use client';
 
 import type { UiTranslator } from '@/i18n/translator';
-import { CheckIcon as Check, ShieldWarningIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { CheckIcon as Check, ShieldWarningIcon } from '@phosphor-icons/react';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useRequireSignedIn } from '@/lib/auth/use-require-signed-in';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
 import { getOAuthConsentRequest, submitOAuthConsent } from '@kortix/sdk';
@@ -73,7 +74,8 @@ async function loadAndMaybeApprove(
     // The API names why ("expired or already used"); a network failure has no message.
     return {
       kind: 'error',
-      message: err instanceof Error && err.message ? err.message : tI18nComplete.raw('text9ff8cfaf7d94'),
+      message:
+        err instanceof Error && err.message ? err.message : tI18nComplete.raw('text9ff8cfaf7d94'),
     };
   }
   const request: ConsentRequestView = {
@@ -118,7 +120,6 @@ async function loadAndMaybeApprove(
 function OAuthConsent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const searchParams = useSearchParams();
-  const router = useRouter();
   const { user, isLoading } = useAuth();
   const [decision, setDecision] = useState<'allow' | 'deny' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -149,14 +150,10 @@ function OAuthConsent() {
    */
   const loadRef = useRef<{ requestId: string; promise: Promise<ConsentLoadResult> } | null>(null);
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      const currentUrl = new URL(window.location.href);
-      router.replace(
-        `/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`,
-      );
-    }
-  }, [user, isLoading, router]);
+  useRequireSignedIn(() => {
+    const currentUrl = new URL(window.location.href);
+    return currentUrl.pathname + currentUrl.search;
+  });
 
   useEffect(() => {
     if (isLoading || !user || !requestId) return;
@@ -212,7 +209,9 @@ function OAuthConsent() {
       }
     } catch (err) {
       // The API says why (expired or already used request): show it.
-      setError(err instanceof Error && err.message ? err.message : 'Network error. Please try again.');
+      setError(
+        err instanceof Error && err.message ? err.message : 'Network error. Please try again.',
+      );
       setDecision(null);
     }
   };

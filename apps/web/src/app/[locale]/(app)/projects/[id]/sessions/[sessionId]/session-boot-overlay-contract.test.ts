@@ -16,6 +16,9 @@ import { resolve } from 'node:path';
  */
 const routeDir = import.meta.dir;
 const page = readFileSync(resolve(routeDir, 'page.tsx'), 'utf8');
+// The chat layer and its crash card live beside the route since the page split;
+// the facts below are pinned wherever the code now lives.
+const chat = readFileSync(resolve(routeDir, 'active-session-chat.tsx'), 'utf8');
 const layout = readFileSync(
   resolve(routeDir, '../../../../../../../features/session/session-layout.tsx'),
   'utf8',
@@ -60,26 +63,26 @@ describe('a crashed chat lowers the overlay instead of hiding behind it', () => 
     // reported by SessionChat — so a SessionChat that throws can never report
     // it. Without this the user gets a permanent "Connecting" spinner over a
     // crash that already happened.
-    expect(page).toContain(
+    expect(chat).toContain(
       '<SessionChatCrashCard error={error} reset={reset} onSettled={onChatReady} />',
     );
-    expect(page).toContain('function SessionChatCrashCard(');
+    expect(chat).toContain('function SessionChatCrashCard(');
   });
 
   test('it renders the shared crash card rather than a second one', () => {
-    expect(page).toContain(
+    expect(chat).toContain(
       "import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';",
     );
-    expect(page).toContain('<AppErrorCard error={error} reset={reset} />');
+    expect(chat).toContain('<AppErrorCard error={error} reset={reset} />');
   });
 
   test('the settle signal fires from an effect, not during render', () => {
     // It drives a setState in ProjectSessionView. Called while rendering the
     // fallback it would be a render-phase update of a different component.
-    const cardAt = page.indexOf('function SessionChatCrashCard(');
-    const effectAt = page.indexOf('onSettled?.();', cardAt);
+    const cardAt = chat.indexOf('function SessionChatCrashCard(');
+    const effectAt = chat.indexOf('onSettled?.();', cardAt);
     expect(cardAt).toBeGreaterThan(-1);
     expect(effectAt).toBeGreaterThan(cardAt);
-    expect(page.slice(cardAt, effectAt)).toContain('useEffect(() => {');
+    expect(chat.slice(cardAt, effectAt)).toContain('useEffect(() => {');
   });
 });

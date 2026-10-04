@@ -4,17 +4,18 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { AuthPendingScreen } from '@/features/auth/auth-consent';
-import { GitHubSetupView, type GitHubSetupState } from '@/features/auth/github-setup-view';
+import { type GitHubSetupState, GitHubSetupView } from '@/features/auth/github-setup-view';
 import { useAuth } from '@/features/providers/auth-provider';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { useRequireSignedIn } from '@/lib/auth/use-require-signed-in';
 import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import {
+  type LinkableGitHubInstallation,
   linkGitHubInstallation,
   listLinkableGitHubInstallations,
   saveGitHubInstallation,
-  type LinkableGitHubInstallation,
 } from '@kortix/sdk';
 
 /**
@@ -88,14 +89,10 @@ function GitHubSetup() {
     accountId && !installState && !installationId && !failureFlag,
   );
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      const currentUrl = new URL(window.location.href);
-      router.replace(
-        `/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`,
-      );
-    }
-  }, [user, isLoading, router]);
+  useRequireSignedIn(() => {
+    const currentUrl = new URL(window.location.href);
+    return currentUrl.pathname + currentUrl.search;
+  });
 
   useEffect(() => {
     if (isLoading || !user) return;

@@ -67,7 +67,7 @@ describe('post-sign-in navigation', () => {
     // regression this pins — fails here rather than slipping in beside a
     // passing `toContain`.
     expect(navigations(establishBody())).toEqual([
-      ['assign', 'mobileHandoffUrl'],
+      ['assign', 'result.mobileHandoffUrl'],
       ['assign', 'dest'],
     ]);
   });

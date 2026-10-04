@@ -20,9 +20,18 @@ import { resolve } from 'node:path';
  */
 const routeDir = import.meta.dir;
 const page = readFileSync(resolve(routeDir, 'page.tsx'), 'utf8');
+// The route's leaf surfaces and the chat layer live beside the route since the
+// page split; every fact below is pinned wherever the code now lives.
+const cards = readFileSync(resolve(routeDir, 'session-route-cards.tsx'), 'utf8');
+const chat = readFileSync(resolve(routeDir, 'active-session-chat.tsx'), 'utf8');
 
 /** Comments stripped: a call site named only in prose is not a call site. */
-const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const strip = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+const code = strip(page);
+const cardsCode = strip(cards);
+const chatCode = strip(chat);
 
 /** Is `index` inside a `HeaderlessSessionSurface` element? */
 function insideSurface(index: number): boolean {
@@ -32,9 +41,9 @@ function insideSurface(index: number): boolean {
   return close < open;
 }
 
-function allIndexesOf(needle: string): number[] {
+function allIndexesOf(needle: string, source: string = code): number[] {
   const out: number[] = [];
-  for (let i = code.indexOf(needle); i !== -1; i = code.indexOf(needle, i + 1)) out.push(i);
+  for (let i = source.indexOf(needle); i !== -1; i = source.indexOf(needle, i + 1)) out.push(i);
   return out;
 }
 
@@ -43,7 +52,8 @@ describe('headerless session surfaces carry the sidebar opener', () => {
     // Without this every assertion below degrades to "a string is missing from
     // a file I could not find", which passes for the wrong reason.
     expect(code).toContain('function ProjectSessionView(');
-    expect(code).toContain('function HeaderlessSessionSurface(');
+    // The wrapper itself lives beside the route since the page split.
+    expect(cardsCode).toContain('function HeaderlessSessionSurface(');
   });
 
   // `relative` is load-bearing, not decoration: `placement="floating"` puts the
@@ -51,9 +61,9 @@ describe('headerless session surfaces carry the sidebar opener', () => {
   // POSITIONED ancestor. Drop it and the opener flies to whatever ancestor
   // happens to be positioned — on this route, the full-viewport shell.
   test('the wrapper is a positioned box holding the floating opener', () => {
-    const body = code.slice(
-      code.indexOf('function HeaderlessSessionSurface('),
-      code.indexOf('function InlineSessionError('),
+    const body = cardsCode.slice(
+      cardsCode.indexOf('function HeaderlessSessionSurface('),
+      cardsCode.indexOf('function InlineSessionError('),
     );
     expect(body).toContain('<SidebarToggle placement="floating" />');
     const wrapper = body.slice(body.indexOf('<div className='), body.indexOf('<SidebarToggle'));
@@ -79,10 +89,19 @@ describe('headerless session surfaces carry the sidebar opener', () => {
   // so wrapping it once covers all of them, including the two returned from
   // ActiveSessionChat before `SessionLayout` mounts.
   test('the terminal card wraps itself, so every state that uses it is covered', () => {
-    const body = code.slice(code.indexOf('function InlineSessionError('));
+    const body = cardsCode.slice(cardsCode.indexOf('function InlineSessionError('));
     const returnAt = body.indexOf('return (');
     expect(body.slice(returnAt, returnAt + 60)).toContain('<HeaderlessSessionSurface>');
-    expect(allIndexesOf('<InlineSessionError').length).toBeGreaterThanOrEqual(7);
+    // The shared card is rendered from the route (billing gate, missing
+    // session, the terminal card-or-notice pairs, the runtime error cards),
+    // from the chat layer, and — since the pairs collapsed into one presenter —
+    // once inside that presenter: six render sites at the floor, all through
+    // this one self-wrapping definition.
+    expect(
+      allIndexesOf('<InlineSessionError', code).length +
+        allIndexesOf('<InlineSessionError', chatCode).length +
+        allIndexesOf('<InlineSessionError', cardsCode).length,
+    ).toBeGreaterThanOrEqual(6);
   });
 
   // The other half of the rule. `InstantSessionShell` renders `SessionLayout` +

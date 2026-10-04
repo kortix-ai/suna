@@ -1,4 +1,5 @@
 import { defaultLocale, locales } from '@/i18n/catalog.mjs';
+import { getUserLocale } from '@/i18n/locale';
 import { isNonPagePath, localizedPathname, unverifiedSessionLocale } from '@/i18n/routing';
 import {
   authorizeEnvironment,
@@ -18,6 +19,7 @@ import {
   serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
+import { supabaseEnv } from '@/lib/supabase/env';
 import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
@@ -140,10 +142,6 @@ const PUBLIC_ROUTES = [
   ),
 ];
 
-// Visual, static public canvases do not need Supabase session reads. Keep them
-// reachable even when local encrypted env vars are not available.
-const STATIC_PUBLIC_ROUTES = ['/game-of-life', '/rauch'];
-
 const MARKDOWN_NEGOTIATION_ROUTES = new Set([
   '/',
   '/about',
@@ -164,6 +162,10 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
     pathname === '/docs' || pathname.startsWith('/docs/') || /^\/use-cases\/[^/]+$/.test(pathname)
   );
 }
+
+/** Exact-path-or-prefix match: `pathname` is `route` or anything under it. */
+const matchesRoute = (pathname: string, routes: readonly string[]) =>
+  routes.some((route) => pathname === route || pathname.startsWith(route + '/'));
 
 // Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
@@ -280,6 +282,14 @@ export async function middleware(request: NextRequest) {
     return response;
   };
 
+  // One exit for every response the gate authorized: the cookie window slides
+  // on each of them, and only on them.
+  return finalizeEnvironmentAccess(await routeRequest(request));
+}
+
+async function routeRequest(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
+
   // Public HTML pages have canonical Markdown representations. Rewrite only
   // explicit Markdown requests. Browsers keep the normal HTML representation.
   if (
@@ -296,11 +306,9 @@ export async function middleware(request: NextRequest) {
     markdownUrl.searchParams.set('path', pathname);
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-kortix-markdown-path', pathname);
-    return finalizeEnvironmentAccess(
-      NextResponse.rewrite(markdownUrl, {
-        request: { headers: requestHeaders },
-      }),
-    );
+    return NextResponse.rewrite(markdownUrl, {
+      request: { headers: requestHeaders },
+    });
   }
 
   // /blog is proxied to a separate deployment (the blog app, next.config.ts
@@ -310,7 +318,7 @@ export async function middleware(request: NextRequest) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.delete('cookie');
     requestHeaders.delete('authorization');
-    return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
@@ -328,7 +336,7 @@ export async function middleware(request: NextRequest) {
     // a locale. See i18n/routing.ts.
     isNonPagePath(pathname)
   ) {
-    return finalizeEnvironmentAccess(NextResponse.next());
+    return NextResponse.next();
   }
 
   // ── Terms of Service → public Drive file (permanent 308) ────────────────
@@ -341,7 +349,7 @@ export async function middleware(request: NextRequest) {
   // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
   const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
   if (termsDestination) {
-    return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
+    return NextResponse.redirect(termsDestination, 308);
   }
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
@@ -354,9 +362,7 @@ export async function middleware(request: NextRequest) {
   // (so admins can disable the lockdown). Everything else — /projects,
   // /accounts, /invites and the other authed product routes — still gets the
   // maintenance takeover.
-  const isPublicMaintenanceRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicMaintenanceRoute = matchesRoute(pathname, PUBLIC_ROUTES);
   const isAdminMaintenanceRoute = pathname === '/admin' || pathname.startsWith('/admin/');
   const bypassesMaintenance = isPublicMaintenanceRoute || isAdminMaintenanceRoute;
 
@@ -375,7 +381,7 @@ export async function middleware(request: NextRequest) {
           // send them back once the lockdown is lifted.
           const maintenanceUrl = new URL('/maintenance', request.url);
           maintenanceUrl.searchParams.set('from', pathname + (request.nextUrl.search || ''));
-          return finalizeEnvironmentAccess(NextResponse.redirect(maintenanceUrl));
+          return NextResponse.redirect(maintenanceUrl);
         }
       }
     } catch {
@@ -404,7 +410,7 @@ export async function middleware(request: NextRequest) {
       });
 
       console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
-      return finalizeEnvironmentAccess(NextResponse.redirect(callbackUrl));
+      return NextResponse.redirect(callbackUrl);
     }
   }
 
@@ -421,11 +427,7 @@ export async function middleware(request: NextRequest) {
     // The site root passes: the identity-aware `/` redirects below send it into
     // the remembered project, exactly as on web. The shell launches here.
     const isAllowed =
-      pathname === '/' ||
-      isAuthPath ||
-      DESKTOP_ALLOWED_ROUTES.some(
-        (route) => pathname === route || pathname.startsWith(route + '/'),
-      );
+      pathname === '/' || isAuthPath || matchesRoute(pathname, DESKTOP_ALLOWED_ROUTES);
     if (!isAllowed) {
       // Into the latest project, not the list — the desktop shell has no
       // marketing surface, so this bounce IS the user's default destination.
@@ -433,9 +435,7 @@ export async function middleware(request: NextRequest) {
       // Supabase user is fetched below, so there is no identity here to check
       // the cookie against — and an unowned cookie read is exactly the bug that
       // sent one account into another account's project. The door re-resolves.
-      return finalizeEnvironmentAccess(
-        NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url)),
-      );
+      return NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url));
     }
   }
 
@@ -472,7 +472,7 @@ export async function middleware(request: NextRequest) {
       // Do not persist it: language only changes permanently via profile settings.
       response.headers.set('x-locale', locale);
 
-      return finalizeEnvironmentAccess(response);
+      return response;
     }
   }
 
@@ -504,12 +504,6 @@ export async function middleware(request: NextRequest) {
     return response;
   };
 
-  if (
-    STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))
-  ) {
-    return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale()));
-  }
-
   // Self-host: when the landing/marketing site is disabled
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
@@ -524,13 +518,8 @@ export async function middleware(request: NextRequest) {
     (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
       process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   const isMarketingContent =
-    pathname === '/' ||
-    SELF_HOST_MARKETING_ONLY.some(
-      (route) => pathname === route || pathname.startsWith(`${route}/`),
-    );
-  const isPublicRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+    pathname === '/' || matchesRoute(pathname, SELF_HOST_MARKETING_ONLY);
+  const isPublicRoute = matchesRoute(pathname, PUBLIC_ROUTES);
 
   // Identity only where it changes the response: protected routes, `/` (a
   // signed-in visitor goes to a project), and marketing pages a self-host has
@@ -538,7 +527,7 @@ export async function middleware(request: NextRequest) {
   // page is the same for everyone: static HTML, no Supabase round trip, no
   // token refresh. The browser client refreshes its own session.
   if (isPublicRoute && pathname !== '/' && !(disableLandingPage && isMarketingContent)) {
-    return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale()));
+    return rewriteToLocale(cookieLocale());
   }
 
   // Create a single Supabase client instance that we'll reuse
@@ -554,23 +543,7 @@ export async function middleware(request: NextRequest) {
   const redirectPreservingSession = (url: URL) =>
     redirectPreservingCookies(url, supabaseResponse.cookies);
 
-  // IMPORTANT: NEXT_PUBLIC_ vars are inlined at build time by Next.js, so in
-  // Docker containers they contain placeholder values. We MUST use runtime
-  // env vars (SUPABASE_URL, SUPABASE_ANON_KEY) with fallback to NEXT_PUBLIC_.
-  //
-  // SUPABASE_SERVER_URL is the internal Docker network URL (e.g. http://supabase-kong:8000)
-  // used for server-side auth calls. SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL is the
-  // public-facing URL that the browser uses. The middleware runs server-side inside
-  // the Docker container, so it needs the internal URL to reach Supabase.
-  const supabaseUrl =
-    process.env.SUPABASE_SERVER_URL ||
-    process.env.SUPABASE_URL ||
-    process.env.KORTIX_PUBLIC_SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey =
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const { url: supabaseUrl, anonKey: supabaseAnonKey } = supabaseEnv();
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookieOptions: {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
@@ -676,25 +649,22 @@ export async function middleware(request: NextRequest) {
     user?.id,
   );
 
-  // FAST PATH: authenticated users hitting the homepage go straight to a project.
-  if (pathname === '/' && user) {
-    return finalizeEnvironmentAccess(
-      redirectPreservingSession(new URL(defaultLandingPath, request.url)),
-    );
-  }
-
-  // Desktop shell never shows the marketing homepage — bounce into the product.
-  if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return finalizeEnvironmentAccess(
-      redirectPreservingSession(new URL(defaultLandingPath, request.url)),
-    );
+  // Fast path for the homepage: an authenticated visitor goes straight to a
+  // project, and the desktop shell — which has no marketing surface — bounces
+  // into the product even when anonymous (its gate above passes `/` for
+  // exactly this handoff).
+  if (
+    pathname === '/' &&
+    (user || request.headers.get('user-agent')?.includes('KortixDesktop'))
+  ) {
+    return redirectPreservingSession(new URL(defaultLandingPath, request.url));
   }
 
   // Self-host with the landing page disabled (see disableLandingPage above).
   if (disableLandingPage) {
     if (isMarketingContent) {
-      return finalizeEnvironmentAccess(
-        redirectPreservingSession(new URL(user ? defaultLandingPath : '/auth', request.url)),
+      return redirectPreservingSession(
+        new URL(user ? defaultLandingPath : '/auth', request.url),
       );
     }
   }
@@ -707,19 +677,11 @@ export async function middleware(request: NextRequest) {
     if (pathname === '/') {
       supabaseResponse.headers.set('Link', AGENT_DISCOVERY_LINK_HEADER);
     }
-    return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale(), supabaseResponse));
+    return rewriteToLocale(cookieLocale(), supabaseResponse);
   }
 
   // Protected routes render in the verified profile locale.
-  const signedInLocale = (): Locale => {
-    const profileLocale = user?.user_metadata?.locale;
-    if (typeof profileLocale === 'string') {
-      const base = profileLocale.toLowerCase().split(/[-_]/)[0];
-      if (locales.includes(profileLocale as Locale)) return profileLocale as Locale;
-      if (base && locales.includes(base as Locale)) return base as Locale;
-    }
-    return cookieLocale();
-  };
+  const signedInLocale = (): Locale => getUserLocale(user) ?? cookieLocale();
 
   // Everything else requires authentication - reuse the user we already fetched
   try {
@@ -748,13 +710,13 @@ export async function middleware(request: NextRequest) {
           secure: process.env.NODE_ENV === 'production',
         },
       );
-      return finalizeEnvironmentAccess(bounceResponse);
+      return bounceResponse;
     }
 
-    return finalizeEnvironmentAccess(rewriteToLocale(signedInLocale(), supabaseResponse));
+    return rewriteToLocale(signedInLocale(), supabaseResponse);
   } catch (error) {
     console.error('Middleware error:', error);
-    return finalizeEnvironmentAccess(rewriteToLocale(signedInLocale(), supabaseResponse));
+    return rewriteToLocale(signedInLocale(), supabaseResponse);
   }
 }
 

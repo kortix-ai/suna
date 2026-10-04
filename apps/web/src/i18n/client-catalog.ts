@@ -1,4 +1,5 @@
 import { catalogHref } from './catalog-href';
+import { CATALOG_LOADERS } from './catalog-loaders';
 import type { Locale } from './config';
 
 export type MessageTree = Record<string, unknown>;
@@ -10,8 +11,8 @@ export type MessageTree = Record<string, unknown>;
  * preloads, so this fetch reuses the in-flight or finished preload. Fallback:
  * the same JSON as a bundler chunk, if the fetch fails. The server never calls
  * this: SSR reads the catalog that the RSC layer already loaded (see
- * `messages.ts`). The `typeof window` guard is replaced at compile time, so the
- * SSR bundle drops the chunk imports.
+ * `messages.ts`). The fallback loads from the shared `CATALOG_LOADERS` table,
+ * so the browser and server builds emit each catalog chunk once.
  */
 const loaded = new Map<Locale, MessageTree>();
 const loading = new Map<Locale, Promise<MessageTree>>();
@@ -25,29 +26,12 @@ async function fetchCatalog(locale: Locale): Promise<MessageTree> {
 }
 
 function importCatalog(locale: Locale): Promise<{ default: unknown }> {
-  // Keep every import inside this branch. On the server `typeof window` is
-  // the constant 'undefined', so the whole branch and its chunks drop out.
+  // The guard stays here, around the CALL. On the server `typeof window` is
+  // the constant 'undefined', so the whole branch drops out of the SSR bundle;
+  // the chunks themselves are emitted once per compilation by the shared
+  // table in `catalog-loaders.ts`.
   if (typeof window !== 'undefined') {
-    switch (locale) {
-      case 'de':
-        return import('../../translations/de.json');
-      case 'it':
-        return import('../../translations/it.json');
-      case 'zh':
-        return import('../../translations/zh.json');
-      case 'ja':
-        return import('../../translations/ja.json');
-      case 'pt':
-        return import('../../translations/pt.json');
-      case 'fr':
-        return import('../../translations/fr.json');
-      case 'es':
-        return import('../../translations/es.json');
-      case 'sr':
-        return import('../../translations/sr.json');
-      default:
-        return import('../../translations/en.json');
-    }
+    return CATALOG_LOADERS[locale]();
   }
   return Promise.reject(new Error('loadClientCatalog runs in the browser only'));
 }

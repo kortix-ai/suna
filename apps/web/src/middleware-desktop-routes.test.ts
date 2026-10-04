@@ -84,8 +84,13 @@ describe('desktop site root', () => {
   test('desktop `/` passes the gate to the remembered-project redirect', () => {
     const gate = source.slice(source.indexOf("includes('KortixDesktop')) {"));
     expect(gate.slice(0, gate.indexOf('if (!isAllowed)'))).toContain("pathname === '/' ||");
+    // The homepage fast path serves the signed-in visitor AND the desktop
+    // shell in one branch: both land on the remembered-project redirect.
     expect(source).toContain(
-      "if (pathname === '/' && user) {\n    return finalizeEnvironmentAccess(\n      redirectPreservingSession(new URL(defaultLandingPath",
+      "(user || request.headers.get('user-agent')?.includes('KortixDesktop'))",
+    );
+    expect(source).toContain(
+      'return redirectPreservingSession(new URL(defaultLandingPath, request.url));',
     );
   });
 

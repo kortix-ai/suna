@@ -42,13 +42,17 @@ mock.module('@/lib/supabase/server', () => ({
   }),
 }));
 
-mock.module('@/lib/public-env-server', () => ({
-  getServerPublicEnv: () => ({
+mock.module('@/lib/public-env-server', () => {
+  const env = {
     APP_URL: 'https://dev.kortix.com',
     BACKEND_URL: '',
     BILLING_ENABLED: false,
-  }),
-}));
+  };
+  return {
+    getServerPublicEnv: () => env,
+    serverBackendUrl: (fallback = '') => env.BACKEND_URL || fallback,
+  };
+});
 
 const { GET } = await import('./route');
 const { AUTH_BOUNCE_COOKIE, PROJECT_LANDING_PATH, serializeAuthBounce } =

@@ -1,15 +1,15 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
+import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { SignOutIcon } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -98,7 +98,7 @@ export default function ProjectStartPage() {
     );
   }
 
-  return <ProjectStartLoadingFrame />;
+  return <ProjectPendingScreen />;
 }
 
 /**
@@ -168,17 +168,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
 }
 
 /**
- * The first frame.
- *
- * This used to be a skeleton of the project page — header bar, title, composer,
- * chips. It was a guess: this route never renders that page, it resolves a
- * project id and replaces the URL with `/projects/<id>`, so the skeleton only
- * ever flashed a layout the user was not about to receive.
- *
- * `ProjectPendingScreen` is shared with `loading.tsx` above and with
- * `ProjectAccessBoundary` on the far side of the redirect, so the whole
- * open-a-project path paints one frame instead of three different ones.
+ * The first frame is `ProjectPendingScreen`, shared with `loading.tsx` above
+ * and with `ProjectAccessBoundary` on the far side of the redirect, so the
+ * whole open-a-project path paints one frame instead of three different ones.
  */
-function ProjectStartLoadingFrame() {
-  return <ProjectPendingScreen />;
-}

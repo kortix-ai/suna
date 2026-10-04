@@ -2,8 +2,8 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -17,6 +17,7 @@ import {
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useRequireSignedIn } from '@/lib/auth/use-require-signed-in';
 import { createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
 
@@ -48,7 +49,6 @@ type Phase = 'idle' | 'authorizing' | 'success' | 'error';
 function CliAuthorizeInner() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user, isLoading } = useAuth();
-  const router = useRouter();
   const params = useSearchParams();
 
   const callback = params.get('callback');
@@ -60,13 +60,7 @@ function CliAuthorizeInner() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isLoading) return;
-    if (!user) {
-      const target = `/cli/authorize?${params.toString()}`;
-      router.replace(`/auth?redirect=${encodeURIComponent(target)}`);
-    }
-  }, [isLoading, user, params, router]);
+  useRequireSignedIn(`/cli/authorize?${params.toString()}`);
 
   if (isLoading || !user) {
     return <AuthPendingScreen />;

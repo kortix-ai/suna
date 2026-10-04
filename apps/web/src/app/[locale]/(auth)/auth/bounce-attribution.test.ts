@@ -54,13 +54,17 @@ mock.module('@/lib/supabase/server', () => ({
 // A dead BACKEND_URL, so `checkEmailFlowMode` fails open to 'unknown' — the
 // case where the API cannot say whether the address is new. That is the exact
 // state in which only bounce attribution can still tell these apart.
-mock.module('@/lib/public-env-server', () => ({
-  getServerPublicEnv: () => ({
+mock.module('@/lib/public-env-server', () => {
+  const env = {
     APP_URL: 'https://dev.kortix.com',
     BACKEND_URL: 'http://127.0.0.1:1/v1',
     BILLING_ENABLED: false,
-  }),
-}));
+  };
+  return {
+    getServerPublicEnv: () => env,
+    serverBackendUrl: (fallback = '') => env.BACKEND_URL || fallback,
+  };
+});
 
 const { sendEmailCode, signInWithPassword, signUpWithPassword } = await import('./actions');
 const { AUTH_BOUNCE_COOKIE, serializeAuthBounce } =

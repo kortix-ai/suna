@@ -9,7 +9,10 @@
  * `GET /v1/p/config`, or the configured local backend — and never on the shape
  * of the hostname alone. Any host can be named `p3000-something.example`.
  *
- * Internal: not exported from a public entry point.
+ * Internal: not exported from a public entry point — except
+ * `isServablePreviewUrl`, which the web app's preview authorize page must
+ * apply against the SAME template before it redirects to a preview origin
+ * with a one-shot token.
  */
 import { platformConfig } from '../http/config';
 import { isSubdomainPreviewUrl } from './preview';
@@ -83,6 +86,47 @@ export function isTrustedPreviewOrigin(
   }
 
   return input.templates.some((template) => originMatchesTemplate(url.origin, template));
+}
+
+/**
+ * True only for a URL on a hostname this deployment serves previews on.
+ *
+ * The template gives the exact origin shape; we compare the host SUFFIX and the
+ * label form rather than string-matching the whole URL, because the port and
+ * sandbox vary. Anything else — another domain, a lookalike, a path on our own
+ * app — is refused.
+ *
+ * Moved verbatim from the web app's preview authorize page (its owner is this
+ * module: the same rule that decides whether a preview URL gets a credential
+ * decides whether the authorize page may redirect to one). Algorithm
+ * convergence with `isTrustedPreviewOrigin` is a follow-up — the two
+ * currently disagree on explicit candidate ports and localhost-shaped
+ * templates.
+ */
+export function isServablePreviewUrl(candidate: string, template: string | null): boolean {
+  if (!template) return false;
+  let url: URL;
+  let shape: URL;
+  try {
+    url = new URL(candidate);
+    shape = new URL(template.replace('{port}', '1').replace('{sandbox}', 'x'));
+  } catch {
+    return false;
+  }
+  if (url.protocol !== shape.protocol) return false;
+
+  // `dev-p{port}-{sandbox}.p.kortix.com` -> suffix `.p.kortix.com`, prefix `dev-`
+  const shapeHost = shape.hostname;
+  const firstDot = shapeHost.indexOf('.');
+  if (firstDot === -1) return false;
+  const domain = shapeHost.slice(firstDot); // ".p.kortix.com"
+  const envPrefix = shapeHost.slice(0, shapeHost.indexOf('-p1-') + 1); // "dev-"
+  if (!envPrefix || !domain) return false;
+  if (!url.hostname.endsWith(domain)) return false;
+
+  const label = url.hostname.slice(0, -domain.length);
+  if (label.includes('.')) return false;
+  return new RegExp(`^${envPrefix}p\\d{1,5}-[a-z0-9-]+$`).test(label);
 }
 
 /**

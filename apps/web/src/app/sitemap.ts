@@ -5,7 +5,7 @@ import {
   absoluteUrl,
   areUseCasesPublic,
   getPublicContentRecords,
-  STATIC_PUBLIC_ROUTES,
+  STATIC_PUBLIC_CONTENT_ROUTES,
 } from '@/lib/seo/public-content';
 
 type SitemapEntry = MetadataRoute.Sitemap[number];
@@ -13,7 +13,7 @@ type SitemapEntry = MetadataRoute.Sitemap[number];
 // The middleware's locale matcher is a prefix match on MARKETING_ROUTES, so
 // /de/support already rewrites and self-canonicalizes. Listing a route here is
 // what puts its per-locale URLs and hreflang set in the sitemap. The docs tree
-// is English-only and is listed through STATIC_PUBLIC_ROUTES instead.
+// is English-only and is listed through STATIC_PUBLIC_CONTENT_ROUTES instead.
 const LOCALIZED_ROUTES = ['/', '/legal', '/support'] as const;
 
 function htmlEntry(pathname: string, lastModified?: string): SitemapEntry {
@@ -39,7 +39,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const records = getPublicContentRecords({ includeUseCases });
   const entries = new Map<string, SitemapEntry>();
 
-  for (const pathname of STATIC_PUBLIC_ROUTES) {
+  for (const pathname of STATIC_PUBLIC_CONTENT_ROUTES) {
     if (pathname === '/use-cases' && !includeUseCases) continue;
     const entry = htmlEntry(pathname);
     entries.set(entry.url, entry);

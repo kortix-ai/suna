@@ -2,22 +2,25 @@
 
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
-  resolveNewAccountReturnUrl,
-  sanitizeAuthReturnUrl,
-  shouldDemoteReturnUrl,
-} from '@/lib/auth/return-url';
-import { clearAuthBounceCookie } from '@/lib/auth/sign-out-actions';
-import {
+  type AuthActionResult,
+  type AuthSessionResult,
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
   SSO_REQUIRED_MESSAGE,
   authRateLimitCopy,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
+import {
+  isNewAccount,
+  resolveAuthReturnUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
+import { clearAuthBounceCookie } from '@/lib/auth/sign-out-actions';
 import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
-import { getServerPublicEnv } from '@/lib/public-env-server';
+import { getServerPublicEnv, serverBackendUrl } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
-import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';
+import { checkAccessEmail } from '@kortix/sdk';
 import { getTranslations } from '@/i18n/get-translations';
 import type { UiTranslator } from '@/i18n/translator';
 import { cookies, headers } from 'next/headers';
@@ -31,6 +34,47 @@ async function readBouncedOwnerId(): Promise<string> {
   return parseAuthBounceOwner((await cookies()).get(AUTH_BOUNCE_COOKIE)?.value);
 }
 
+/** The shared invalid-email guard result: the same copy on every auth form. */
+function invalidEmailResult(tI18nComplete: UiTranslator): { message: string } {
+  return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
+}
+
+/** The shared too-short-password guard result. */
+function invalidPasswordResult(tI18nComplete: UiTranslator): { message: string } {
+  return { message: tI18nComplete.raw('text2005290ddda9') };
+}
+
+/** The shared password-confirmation-mismatch guard result. */
+function passwordMismatchResult(tI18nComplete: UiTranslator): { message: string } {
+  return { message: tI18nComplete.raw('textb6eb82cd3300') };
+}
+
+/** The shared success payload of a password auth action (sign-in and sign-up alike). */
+function authSessionPayload({
+  session,
+  redirectTo,
+  origin,
+  mobileState,
+}: {
+  session: { access_token?: string | null; refresh_token?: string | null } | null;
+  redirectTo: string;
+  origin: string;
+  mobileState: string | null;
+}): AuthSessionResult {
+  return {
+    success: true,
+    redirectTo,
+    accessToken: session?.access_token || null,
+    refreshToken: session?.refresh_token || null,
+    mobileHandoffUrl: buildMobileSessionHandoffUrl({
+      origin: trustedWebOrigin(origin),
+      state: mobileState,
+      accessToken: session?.access_token,
+      refreshToken: session?.refresh_token,
+    }),
+  };
+}
+
 /**
  * A GoTrue failure as the action result. Rate limits become human copy — a
  * raw Supabase string is infrastructure text a visitor cannot act on — and the
@@ -41,7 +85,7 @@ function authFailure(
   error: { code?: string | null; message?: string | null },
   fallback: string,
   tI18nComplete: UiTranslator,
-) {
+): { message: string; code?: string | null } {
   const human = authRateLimitCopy(error, tI18nComplete);
   if (human) console.warn('[auth] rate limited', error.code);
   return { message: human || error.message || fallback };
@@ -124,11 +168,10 @@ function emailRedirectUrl({
  */
 async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
   try {
-    const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
     const requestHeaders = await headers();
     const forwardedFor = requestHeaders.get('x-forwarded-for') || requestHeaders.get('x-real-ip');
     const body = await checkAccessEmail(email, {
-      backendUrl,
+      backendUrl: serverBackendUrl('http://localhost:8008/v1'),
       headers: {
         ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
       },
@@ -159,7 +202,10 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
  * signups are closed is turned away before any email goes out (previously the
  * "sign in" tab skipped this check entirely and quietly created accounts).
  */
-export async function sendEmailCode(prevState: any, formData: FormData) {
+export async function sendEmailCode(
+  prevState: AuthActionResult | null,
+  formData: FormData,
+): Promise<AuthActionResult> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const requestedReturnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
@@ -169,7 +215,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
+    return invalidEmailResult(tI18nComplete);
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -195,13 +241,12 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   //    path bounced from a named session does not get minted into an email.
   //    The password path can compare identities after authentication; the
   //    link must drop an attributed bounce before it leaves the browser.
-  const returnUrl = shouldDemoteReturnUrl({
+  const returnUrl = resolveAuthReturnUrl({
+    returnUrl: requestedReturnUrl,
     bouncedOwnerId: await readBouncedOwnerId(),
     signedInUserId: null,
     isNewUser: flowMode === 'signup',
-  })
-    ? resolveNewAccountReturnUrl(requestedReturnUrl)
-    : requestedReturnUrl;
+  });
 
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
@@ -235,42 +280,16 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   };
 }
 
-export async function requestAccess(prevState: any, formData: FormData) {
-  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
-  const email = formData.get('email') as string;
-  const company = formData.get('company') as string | undefined;
-  const useCase = formData.get('useCase') as string | undefined;
-
-  if (!email || !email.includes('@')) {
-    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
-  }
-
-  try {
-    const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
-    await submitAccessRequest(
-      {
-        email: email.trim().toLowerCase(),
-        company: company?.trim() || undefined,
-        useCase: useCase?.trim() || undefined,
-      },
-      { backendUrl },
-    );
-    return {
-      success: true,
-      message: tI18nComplete.raw('textebab65dedf4d'),
-    };
-  } catch {
-    return { message: tI18nComplete.raw('text00c6dcd85ab3') };
-  }
-}
-
-export async function forgotPassword(prevState: any, formData: FormData) {
+export async function forgotPassword(
+  prevState: AuthActionResult | null,
+  formData: FormData,
+): Promise<AuthActionResult> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const origin = formData.get('origin') as string;
 
   if (!email || !email.includes('@')) {
-    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
+    return invalidEmailResult(tI18nComplete);
   }
 
   const supabase = await createClient();
@@ -289,17 +308,20 @@ export async function forgotPassword(prevState: any, formData: FormData) {
   };
 }
 
-export async function resetPassword(prevState: any, formData: FormData) {
+export async function resetPassword(
+  prevState: AuthActionResult | null,
+  formData: FormData,
+): Promise<AuthActionResult> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
 
   if (!password || password.length < 6) {
-    return { message: tI18nComplete.raw('text2005290ddda9') };
+    return invalidPasswordResult(tI18nComplete);
   }
 
   if (password !== confirmPassword) {
-    return { message: tI18nComplete.raw('textb6eb82cd3300') };
+    return passwordMismatchResult(tI18nComplete);
   }
 
   const supabase = await createClient();
@@ -318,7 +340,10 @@ export async function resetPassword(prevState: any, formData: FormData) {
   };
 }
 
-export async function signInWithPassword(prevState: any, formData: FormData) {
+export async function signInWithPassword(
+  prevState: AuthActionResult | null,
+  formData: FormData,
+): Promise<AuthActionResult> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
@@ -327,11 +352,11 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
+    return invalidEmailResult(tI18nComplete);
   }
 
   if (!password || password.length < 6) {
-    return { message: tI18nComplete.raw('text2005290ddda9') };
+    return invalidPasswordResult(tI18nComplete);
   }
 
   // SSO enforcement: when the domain's org has flipped `enforce_sso`, the
@@ -364,7 +389,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   }
 
   // Determine if new user (for analytics)
-  const isNewUser = data.user && Date.now() - new Date(data.user.created_at).getTime() < 60000;
+  const isNewUser = data.user ? isNewAccount(data.user.created_at) : false;
   const authEvent = isNewUser ? 'signup' : 'login';
 
   // Return success — let the client redirect after auth state hydrates. An
@@ -373,30 +398,23 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   // pointing at a resource that predates it. The same rule applies when the
   // return URL was bounced here from somebody ELSE's session — an existing
   // account is exactly the case `isNewUser` alone never covered.
-  const finalReturnUrl = shouldDemoteReturnUrl({
+  const finalReturnUrl = resolveAuthReturnUrl({
+    returnUrl,
     bouncedOwnerId: await readBouncedOwnerId(),
     signedInUserId: data.user?.id ?? null,
     isNewUser,
-  })
-    ? resolveNewAccountReturnUrl(returnUrl)
-    : returnUrl;
+  });
   await clearAuthBounceCookie();
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
 
-  return {
-    success: true,
+  return authSessionPayload({
+    session: data.session,
     redirectTo: `${redirectUrl.pathname}${redirectUrl.search}`,
-    accessToken: data.session?.access_token || null,
-    refreshToken: data.session?.refresh_token || null,
-    mobileHandoffUrl: buildMobileSessionHandoffUrl({
-      origin: trustedWebOrigin(origin),
-      state: mobileState,
-      accessToken: data.session?.access_token,
-      refreshToken: data.session?.refresh_token,
-    }),
-  };
+    origin,
+    mobileState,
+  });
 }
 
 /**
@@ -411,7 +429,10 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
  * behavior is whether the inner signIn succeeds — driven by Supabase's
  * `enable_confirmations`, not by any billing flag.
  */
-export async function signUpWithPassword(prevState: any, formData: FormData) {
+export async function signUpWithPassword(
+  prevState: AuthActionResult | null,
+  formData: FormData,
+): Promise<AuthActionResult> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = (formData.get('email') as string | null)?.trim().toLowerCase();
   const password = formData.get('password') as string;
@@ -425,13 +446,13 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
+    return invalidEmailResult(tI18nComplete);
   }
   if (!password || password.length < 6) {
-    return { message: tI18nComplete.raw('text2005290ddda9') };
+    return invalidPasswordResult(tI18nComplete);
   }
   if (password !== confirmPassword) {
-    return { message: tI18nComplete.raw('textb6eb82cd3300') };
+    return passwordMismatchResult(tI18nComplete);
   }
 
   // Access control gate — same rule the email-link path enforces: a brand-new
@@ -514,25 +535,18 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   // form is a real sign-in door for anyone who already has an account, which is
   // the second-paid-account case, so it needs the same identity gate the
   // sign-in action has.
-  const redirectTo = shouldDemoteReturnUrl({
+  const redirectTo = resolveAuthReturnUrl({
+    returnUrl: requestedReturnUrl,
     bouncedOwnerId: await readBouncedOwnerId(),
     signedInUserId: signInData.user?.id ?? null,
     isNewUser: !alreadyExists,
-  })
-    ? newAccountReturnUrl
-    : requestedReturnUrl;
+  });
   await clearAuthBounceCookie();
 
-  return {
-    success: true,
+  return authSessionPayload({
+    session: signInData.session,
     redirectTo,
-    accessToken: signInData.session?.access_token || null,
-    refreshToken: signInData.session?.refresh_token || null,
-    mobileHandoffUrl: buildMobileSessionHandoffUrl({
-      origin: trustedWebOrigin(origin),
-      state: mobileState,
-      accessToken: signInData.session?.access_token,
-      refreshToken: signInData.session?.refresh_token,
-    }),
-  };
+    origin,
+    mobileState,
+  });
 }

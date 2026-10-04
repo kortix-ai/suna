@@ -127,8 +127,21 @@ export {
  * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
-export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export type {
+  RuntimeCapability,
+  SessionHealthResponse,
+  SessionHealthResult,
+} from './core/session/health';
 export { runtimeSupports } from './core/session/health';
+
+/**
+ * Preview-origin trust — the SAME predicate decides whether a preview URL may
+ * receive a credential (`shouldAttachPreviewToken`) and whether the web app's
+ * preview authorize page may redirect to one with a one-shot token. The
+ * template comes from `GET /v1/p/config` via `loadPreviewUrlTemplate`.
+ */
+export { isServablePreviewUrl } from './core/session/preview-origin-trust';
+export { loadPreviewUrlTemplate } from './core/session/preview-config';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox
@@ -485,11 +498,11 @@ export {
 // vendor type star (`export type * from './core/runtime/runtime-types'` inside
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
-export { type FileContent, type FileNode } from './core/files/types';
-export {
-  type PermissionAction,
-  type PermissionConfig,
-  type PermissionRule,
+export type { FileContent, FileNode } from './core/files/types';
+export type {
+  PermissionAction,
+  PermissionConfig,
+  PermissionRule,
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
@@ -564,7 +577,12 @@ export {
   type ComposerAgentReason,
   type ComposerAgentResolution,
 } from './core/agents/composer-agents';
-export { flattenModels, isOfferedModel, type FlatModel, type ModelOption } from './core/models/model-flatten';
+export {
+  flattenModels,
+  isOfferedModel,
+  type FlatModel,
+  type ModelOption,
+} from './core/models/model-flatten';
 export { modelRefToKey, type ModelKey } from './core/models/model-key';
 export {
   createModelVisibility,

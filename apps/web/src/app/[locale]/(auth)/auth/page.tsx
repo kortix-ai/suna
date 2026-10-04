@@ -17,7 +17,6 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
-import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,19 +29,22 @@ import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { FieldLabel, InfoStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
+  type AuthActionResult,
+  type AuthSessionResult,
   type CredentialsMode,
   type EmailFlowMode,
   credentialsCopy,
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
+import { errorMessageOf } from '@/lib/delivered-but-disconnected';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
@@ -57,7 +59,6 @@ const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 type Step = 'entry' | 'sso' | 'credentials' | 'link';
 
 const RESEND_COOLDOWN_SECONDS = 30;
-const EASE = [0.23, 1, 0.32, 1] as const;
 
 /* ─── Small shared pieces ──────────────────────────────────────────────── */
 
@@ -107,6 +108,21 @@ function PasswordInput({
 
 /* ─── The staged auth flow ─────────────────────────────────────────────── */
 
+/**
+ * Next.js control-flow redirects (a server action's `redirect()`) surface as a
+ * thrown error whose digest starts with NEXT_REDIRECT — let them reach the
+ * framework instead of painting them as failures.
+ */
+function isNextRedirect(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'digest' in error &&
+    typeof error.digest === 'string' &&
+    error.digest.startsWith('NEXT_REDIRECT')
+  );
+}
+
 function AuthCardForm({
   returnUrl,
   mobileCallbackState,
@@ -116,7 +132,6 @@ function AuthCardForm({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('auth.unified');
-  const prefersReducedMotion = useReducedMotion();
   const enabledMethods = useMemo(() => parseAuthMethods(getEnv().AUTH_METHODS), []);
   const magicLinkEnabled = enabledMethods.includes('magic');
   const passwordEnabled = enabledMethods.includes('password');
@@ -142,13 +157,6 @@ function AuthCardForm({
   const [sentEmail, setSentEmail] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
-
-  // Gentle two-part entrance per step: header first, body 60ms behind.
-  const rise = (delay = 0) => ({
-    initial: { opacity: 0, y: prefersReducedMotion ? 0 : 8 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.3, delay, ease: EASE },
-  });
 
   useEffect(() => {
     if (step !== 'link' || resendIn <= 0) return;
@@ -200,25 +208,23 @@ function AuthCardForm({
     setStep('entry');
   };
 
-  const establishSessionAndRedirect = async (result: any) => {
-    const mobileHandoffUrl = result?.mobileHandoffUrl as string | null | undefined;
-    if (mobileHandoffUrl) {
-      window.location.assign(mobileHandoffUrl);
+  const establishSessionAndRedirect = async (result: AuthSessionResult | null) => {
+    if (result?.mobileHandoffUrl) {
+      window.location.assign(result.mobileHandoffUrl);
       return;
     }
 
     // Establish the session on the CLIENT immediately so useAuth() sees the
     // user synchronously and the redirect is instant — without this the
     // client waits for a background refresh and bounces back to /auth.
-    const tokens = result as { accessToken?: string | null; refreshToken?: string | null };
-    if (tokens.accessToken && tokens.refreshToken) {
+    if (result?.accessToken && result.refreshToken) {
       try {
         const supabase = createBrowserSupabaseClient();
         await supabase.auth.setSession({
-          access_token: tokens.accessToken,
-          refresh_token: tokens.refreshToken,
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken,
         });
-        setBootstrapAuthToken(tokens.accessToken);
+        setBootstrapAuthToken(result.accessToken);
         invalidateTokenCache();
       } catch {
         // Server cookies still carry the session; fall through to redirect.
@@ -243,7 +249,6 @@ function AuthCardForm({
     const dest = result?.redirectTo || returnUrl;
     window.location.assign(dest);
   };
-
   const buildBaseFormData = (target: string) => {
     const formData = new FormData();
     formData.set('email', target);
@@ -270,16 +275,16 @@ function AuthCardForm({
 
       const result = await sendEmailCode(null, formData);
 
-      if (result && (result as any).success) {
-        setSentEmail((result as any).email || target);
+      if (result && 'success' in result) {
+        setSentEmail(('email' in result && result.email) || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
-      } else if (result && 'message' in result) {
-        failWith((result as any).message as string);
+      } else if (result) {
+        failWith(result.message);
       }
-    } catch (err: any) {
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      failWith(err?.message || t('errors.unexpected'));
+    } catch (err) {
+      if (isNextRedirect(err)) return;
+      failWith(errorMessageOf(err) || t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -479,19 +484,13 @@ function AuthCardForm({
           ? await signUpWithPassword(null, formData)
           : await signInWithPassword(null, formData);
 
-      if (
-        result &&
-        typeof result === 'object' &&
-        'message' in result &&
-        (!('success' in result) || !(result as any).success) &&
-        !(result as any).requiresEmailConfirmation
-      ) {
-        const failureCode = (result as any).code ?? null;
+      if (result && !('success' in result)) {
+        const failureCode = result.code ?? null;
         const failure = passwordFailureCopy(
           {
             mode: credMode,
             code: failureCode,
-            fallback: result.message as string,
+            fallback: result.message,
           },
           tI18nComplete,
         );
@@ -511,15 +510,15 @@ function AuthCardForm({
         return;
       }
 
-      if (result && (result as any).requiresEmailConfirmation) {
-        setInfo((result as any).message || t('errors.confirmAccount'));
+      if (result && 'requiresEmailConfirmation' in result) {
+        setInfo(result.message || t('errors.confirmAccount'));
         return;
       }
 
-      await establishSessionAndRedirect(result);
-    } catch (err: any) {
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      failWith(err?.message || t('errors.unexpected'));
+      await establishSessionAndRedirect('redirectTo' in result ? result : null);
+    } catch (err) {
+      if (isNextRedirect(err)) return;
+      failWith(errorMessageOf(err) || t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -548,7 +547,7 @@ function AuthCardForm({
   if (step === 'sso' && ssoUrl) {
     return (
       <>
-        <m.div {...rise(0)}>
+        <Rise>
           <StepHeader
             title={t('sso.title')}
             description={t.rich('sso.description', {
@@ -558,9 +557,9 @@ function AuthCardForm({
               ),
             })}
           />
-        </m.div>
+        </Rise>
 
-        <m.div {...rise(0.06)}>
+        <Rise delay={0.06}>
           {info && <InfoStrip message={info} />}
 
           <Button
@@ -613,7 +612,7 @@ function AuthCardForm({
               </button>
             </p>
           </div>
-        </m.div>
+        </Rise>
       </>
     );
   }
@@ -641,7 +640,7 @@ function AuthCardForm({
       credMode === 'signin' ? 'signin' : credMode === 'signup' ? 'signup' : 'unknown';
     return (
       <>
-        <m.div {...rise(0)}>
+        <Rise>
           <StepHeader
             title={t(`credentials.${credentialKey}.title`)}
             description={
@@ -650,9 +649,9 @@ function AuthCardForm({
                 : t(`credentials.${credentialKey}.description`)
             }
           />
-        </m.div>
+        </Rise>
 
-        <m.div {...rise(0.06)}>
+        <Rise delay={0.06}>
           {info && <InfoStrip message={info} />}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
@@ -721,7 +720,7 @@ function AuthCardForm({
               {t('emailLinkInstead')}
             </Button>
           )}
-        </m.div>
+        </Rise>
       </>
     );
   }
@@ -729,11 +728,11 @@ function AuthCardForm({
   /* ── Entry step ── */
   return (
     <>
-      <m.div {...rise(0)}>
+      <Rise>
         <StepHeader title={t('welcome')} tagline={t('tagline')} />
-      </m.div>
+      </Rise>
 
-      <m.div {...rise(0.06)}>
+      <Rise delay={0.06}>
         {info && <InfoStrip message={info} />}
         {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
@@ -795,7 +794,7 @@ function AuthCardForm({
         {/* One system: no sign-in/sign-up toggle. Continue routes new emails
             into registration and existing ones into sign-in automatically. */}
         <p className="text-muted-foreground mt-8 text-sm">{t('automaticAccount')}</p>
-      </m.div>
+      </Rise>
     </>
   );
 }

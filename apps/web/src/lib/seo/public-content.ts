@@ -48,7 +48,7 @@ function loadContentTimestamps(): Record<string, string> {
   return contentTimestamps!;
 }
 
-export const STATIC_PUBLIC_ROUTES = [
+export const STATIC_PUBLIC_CONTENT_ROUTES = [
   '/',
   '/a1o',
   '/about',

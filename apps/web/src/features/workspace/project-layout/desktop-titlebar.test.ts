@@ -532,10 +532,12 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     // Apps, Review and Reminders draw their opener through this shared header.
     'project-page-header.tsx': join(import.meta.dir, 'project-page-header.tsx'),
     // The route that had NO opener on any of its headerless surfaces, which is
-    // why the component exists. See HeaderlessSessionSurface.
-    'sessions/[sessionId]/page.tsx': join(
+    // why the component exists. See HeaderlessSessionSurface. The route's
+    // surfaces were split: the cards module renders the opener, the page and
+    // its chat/cards siblings must still not draw one of their own.
+    'sessions/[sessionId]/session-route-cards.tsx': join(
       repoRoot,
-      'apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      'apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/session-route-cards.tsx',
     ),
   };
 
@@ -557,6 +559,27 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
       expect(code).not.toContain('useShowPageSidebarOpener');
     });
   }
+
+  test('the split session page keeps no opener of its own', () => {
+    for (const name of [
+      'page.tsx',
+      'active-session-chat.tsx',
+      'session-route-cards.tsx',
+    ]) {
+      const code = codeOnly(
+        readFileSync(
+          join(
+            repoRoot,
+            `apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/${name}`,
+          ),
+          'utf8',
+        ),
+      );
+      expect(code).not.toContain('toggleSidebar');
+      expect(code).not.toContain('sidebarOpenerLabel');
+      expect(code).not.toContain('useShowPageSidebarOpener');
+    }
+  });
 
   test('only the desktop shell draws an opener in the band', () => {
     const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');

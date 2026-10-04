@@ -18,21 +18,10 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
-import {
-  acceptAccountInvite,
-  declineAccountInvite,
-  describeAccountInvite,
-  type AccountInviteDescribe,
-} from '@kortix/sdk';
-
-type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
+import { acceptAccountInvite, declineAccountInvite, describeAccountInvite } from '@kortix/sdk';
 
 /** Nothing to subscribe to — the cookie is read fresh on every render. */
 const subscribeToNothing = () => () => {};
-
-async function getUnifiedInvite(inviteId: string): Promise<UnifiedInvite> {
-  return { kind: 'account', invite: await describeAccountInvite(inviteId) };
-}
 
 export default function InvitePage() {
   const appHome = useAppHome();
@@ -64,17 +53,13 @@ export default function InvitePage() {
 
   const inviteQuery = useQuery({
     queryKey: ['invite', inviteId],
-    queryFn: () => getUnifiedInvite(inviteId!),
+    queryFn: () => describeAccountInvite(inviteId!),
     enabled: !!user && !!inviteId,
     retry: false,
   });
 
   const acceptMutation = useMutation({
-    mutationFn: async () => {
-      const current = inviteQuery.data;
-      if (!current) throw new Error('Invite is still loading');
-      return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
-    },
+    mutationFn: () => acceptAccountInvite(inviteId!),
     onSuccess: () => {
       // Land a newly-joined member straight in a project of the account they
       // just joined, not the account settings page and not the projects list.
@@ -85,12 +70,7 @@ export default function InvitePage() {
   });
 
   const declineMutation = useMutation({
-    mutationFn: async () => {
-      const current = inviteQuery.data;
-      if (!current) throw new Error('Invite is still loading');
-      await declineAccountInvite(inviteId!);
-      return { kind: 'account' as const };
-    },
+    mutationFn: () => declineAccountInvite(inviteId!),
     onSuccess: () => {
       // `/accounts` was a page; it is a modal (`?accountId=`) now, and a
       // declined invite is not a reason to open it. The landing door is where
@@ -100,12 +80,11 @@ export default function InvitePage() {
   });
 
   useEffect(() => {
-    const item = inviteQuery.data;
-    const inv = item?.invite;
+    const invite = inviteQuery.data;
     // Only auto-redirect the actual recipient. Strangers with a link hit the
     // "wrong account" state instead. Auto-claimed invites (already accepted on
     // first sign-in) use the same destination as a manual accept.
-    if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
+    if (!invite?.email_matches_caller || !invite.accepted_at) return;
     router.replace(PROJECT_LANDING_PATH);
   }, [inviteQuery.data, router]);
 
@@ -136,9 +115,8 @@ export default function InvitePage() {
     );
   }
 
-  const item = inviteQuery.data;
-  if (!item) return null;
-  const invite = item.invite;
+  const invite = inviteQuery.data;
+  if (!invite) return null;
 
   // Wrong-account check first: the server redacts identifying fields in this
   // case, and checking expiry before this would leak "this invite exists and
@@ -198,11 +176,11 @@ export default function InvitePage() {
     (acceptMutation.error instanceof Error && acceptMutation.error.message) ||
     (declineMutation.error instanceof Error && declineMutation.error.message) ||
     null;
-  const targetName = item.invite.account_name || 'Account';
+  const targetName = invite.account_name || 'Account';
   const inviterEmail = invite.inviter_email;
   const targetLabel = tHardcodedUi.raw('appInvitesInviteidPage.teamAccountLabel');
   const roleLabel =
-    item.invite.initial_role === 'admin'
+    invite.initial_role === 'admin'
       ? tHardcodedUi.raw('appInvitesInviteidPage.roleAdmin')
       : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
 

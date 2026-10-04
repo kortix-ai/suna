@@ -10,9 +10,13 @@ mock.module('next/headers', () => ({
   cookies: async () => ({ get: () => undefined, delete: () => undefined }),
   headers: async () => new Headers(),
 }));
-mock.module('@/lib/public-env-server', () => ({
-  getServerPublicEnv: () => ({ APP_URL: 'http://localhost:13000', BACKEND_URL: 'http://127.0.0.1:1/v1' }),
-}));
+mock.module('@/lib/public-env-server', () => {
+  const env = { APP_URL: 'http://localhost:13000', BACKEND_URL: 'http://127.0.0.1:1/v1' };
+  return {
+    getServerPublicEnv: () => env,
+    serverBackendUrl: (fallback = '') => env.BACKEND_URL || fallback,
+  };
+});
 mock.module('@/i18n/get-translations', () => ({
   getTranslations: async () => createTranslator({
     locale: 'de', messages, namespace: 'hardcodedUi.i18nComplete',
@@ -46,14 +50,14 @@ beforeEach(() => {
 for (const action of [sendEmailCode, signInWithPassword, signUpWithPassword]) {
   test(`${action.name} returns localized email guidance, not raw rate-limit data`, async () => {
     const result = await action(null, form());
-    expect(result.message).toBe(messages.hardcodedUi.i18nComplete.authEmailRateLimit);
+    expect('message' in result && result.message).toBe(messages.hardcodedUi.i18nComplete.authEmailRateLimit);
     expect(result).not.toHaveProperty('code', error.code);
     expect(JSON.stringify(result)).not.toContain(error.message);
   });
   test(`${action.name} returns localized request guidance without raw code`, async () => {
     error = { code: 'over_request_rate_limit', message: 'Over request rate limit' };
     const result = await action(null, form());
-    expect(result.message).toBe(messages.hardcodedUi.i18nComplete.authRequestRateLimit);
+    expect('message' in result && result.message).toBe(messages.hardcodedUi.i18nComplete.authRequestRateLimit);
     expect(result).not.toHaveProperty('code', error.code);
   });
 }

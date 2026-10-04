@@ -5,17 +5,9 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { ErrorStrip } from '@/features/auth/auth-primitives';
+import { AuthPopupShell, postToOpener } from '@/features/auth/auth-popup-shell';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { createClient } from '@/lib/supabase/client';
-
-interface AuthMessage {
-  type: 'github-auth-success' | 'github-auth-error';
-  message?: string;
-  returnUrl?: string;
-}
 
 export default function GitHubOAuthPopup() {
   const appHome = useAppHome();
@@ -34,19 +26,9 @@ export default function GitHubOAuthPopup() {
     // Get return URL from sessionStorage (set by parent component)
     const returnUrl = sessionStorage.getItem('github-returnUrl') || appHome;
 
-    const postMessage = (message: AuthMessage) => {
-      try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.postMessage(message, window.location.origin);
-        }
-      } catch (err) {
-        console.error('Failed to post message to opener:', err);
-      }
-    };
-
     const handleSuccess = () => {
       setStatus('processing');
-      postMessage({
+      postToOpener({
         type: 'github-auth-success',
         returnUrl,
       });
@@ -60,7 +42,7 @@ export default function GitHubOAuthPopup() {
     const handleError = (message: string) => {
       setStatus('error');
       setErrorMessage(message);
-      postMessage({
+      postToOpener({
         type: 'github-auth-error',
         message,
       });
@@ -179,41 +161,24 @@ export default function GitHubOAuthPopup() {
   }, [appHome, tHardcodedUi]);
 
   return (
-    <main className="bg-background flex min-h-svh flex-col items-center justify-center px-6">
-      <div className="w-full max-w-[320px]">
-        <KortixLogo variant="icon" size={22} className="text-foreground" />
-        <h1 className="text-foreground mt-6 text-2xl font-medium tracking-tight">
-          {tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}
-        </h1>
-
-        <div className="mt-6">
-          {status === 'error' ? (
-            <>
-              <ErrorStrip
-                message={errorMessage || tHardcodedUi.raw('i18nComplete.text93821eb7ce8c')}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                size="lg"
-                className="w-full"
-                onClick={() => window.close()}
-              >
-                {tHardcodedUi.raw('i18nComplete.text7d9eb7acb13e')}
-              </Button>
-            </>
-          ) : (
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Loading className="text-muted-foreground size-4 shrink-0" />
-              <span>
-                {status === 'processing'
-                  ? tHardcodedUi.raw('i18nComplete.textfc379aff8002')
-                  : tHardcodedUi.raw('i18nComplete.text502698660877')}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    </main>
+    <AuthPopupShell
+      title={tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}
+      status={status}
+      errorMessage={errorMessage}
+      errorText={tHardcodedUi.raw('i18nComplete.text93821eb7ce8c')}
+      processingText={tHardcodedUi.raw('i18nComplete.textfc379aff8002')}
+      waitingText={tHardcodedUi.raw('i18nComplete.text502698660877')}
+      errorActions={
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
+          className="w-full"
+          onClick={() => window.close()}
+        >
+          {tHardcodedUi.raw('i18nComplete.text7d9eb7acb13e')}
+        </Button>
+      }
+    />
   );
 }

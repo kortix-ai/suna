@@ -5,7 +5,7 @@ import type { Locale } from './config';
  * written to public/ at build by scripts/i18n-public-catalogs.mjs, and cached
  * immutably (next.config.ts headers).
  */
-export const CATALOG_PATH_PREFIX = '/i18n/';
+const CATALOG_PATH_PREFIX = '/i18n/';
 
 function versions(): Partial<Record<string, string>> {
   try {

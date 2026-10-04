@@ -12,7 +12,7 @@ interface ProjectLayoutProps {
  * Shell for every /projects/[id] route.
  *
  * It deliberately does NOT verify the session. Middleware default-denies every
- * dot-free /projects/* path outside PUBLIC_ROUTES and STATIC_PUBLIC_ROUTES, so
+ * dot-free /projects/* path outside PUBLIC_ROUTES, so
  * almost every unauthenticated request is already redirected to /auth before it
  * reaches this layout. Re-checking here meant a second GoTrue round-trip on
  * every project switch and hard load, in series behind the one middleware had
@@ -26,7 +26,7 @@ interface ProjectLayoutProps {
  * its data behind an authenticated `getProject` call.
  *
  * `project-layout-auth-contract.test.ts` pins the middleware invariant: adding
- * '/projects' to PUBLIC_ROUTES or STATIC_PUBLIC_ROUTES fails the suite rather
+ * '/projects' to PUBLIC_ROUTES fails the suite rather
  * than silently widening what an unauthenticated visitor can reach.
  *
  * The bare `await cookies()` stays. It is the deliberate opt-in that keeps this

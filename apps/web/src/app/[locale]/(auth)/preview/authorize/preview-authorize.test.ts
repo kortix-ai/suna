@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { isServablePreviewUrl } from './page';
+import { isServablePreviewUrl } from '@kortix/sdk';
 
 const TEMPLATE = 'https://dev-p{port}-{sandbox}.p.kortix.com';
 

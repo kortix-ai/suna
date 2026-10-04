@@ -48,8 +48,14 @@ describe('the signup destination rule is wired into every auth path', () => {
     // the way out leaves the slow-email path broken — which is the exact shape
     // of the live report.
     const source = readFileSync(join(SRC, 'app/[locale]/(auth)/auth/actions.ts'), 'utf8');
-    const ruleAt = source.indexOf('resolveNewAccountReturnUrl(requestedReturnUrl)');
-    const linkAt = source.indexOf('const emailRedirectTo = emailRedirectUrl(');
+    // Scope to the sendEmailCode action so the pin stays on the email flow
+    // even when other actions below it call the same policy helper.
+    const flow = source.slice(
+      source.indexOf('export async function sendEmailCode'),
+      source.indexOf('export async function forgotPassword'),
+    );
+    const ruleAt = flow.indexOf('resolveAuthReturnUrl({');
+    const linkAt = flow.indexOf('const emailRedirectTo = emailRedirectUrl(');
 
     expect(ruleAt).toBeGreaterThan(-1);
     expect(linkAt).toBeGreaterThan(-1);

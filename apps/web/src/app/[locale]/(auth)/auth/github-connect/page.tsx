@@ -5,13 +5,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useRef, useState } from 'react';
 
 import { setupLinkApiBase } from '@/components/setup-links/util';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { ErrorStrip } from '@/features/auth/auth-primitives';
-
-type ConnectMessage =
-  | { type: 'github-connect-success'; provider_token: string }
-  | { type: 'github-connect-error'; message: string };
+import { AuthPopupShell, postToOpener } from '@/features/auth/auth-popup-shell';
 
 export default function GitHubConnectPopup() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -41,16 +35,6 @@ export default function GitHubConnectPopup() {
         if (closeTimer) clearTimeout(closeTimer);
       };
     }
-    const post = (message: ConnectMessage) => {
-      try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.postMessage(message, window.location.origin);
-        }
-      } catch (err) {
-        console.error('Failed to post message to opener:', err);
-      }
-    };
-
     const handle = async () => {
       try {
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
@@ -71,7 +55,7 @@ export default function GitHubConnectPopup() {
         if (accessToken) {
           setStatus('processing');
           if (disposed) return;
-          post({ type: 'github-connect-success', provider_token: accessToken });
+          postToOpener({ type: 'github-connect-success', provider_token: accessToken });
           history.replaceState(null, '', window.location.pathname);
           armClose(200);
           return;
@@ -92,7 +76,7 @@ export default function GitHubConnectPopup() {
         const message = (err as Error).message || 'Failed to connect GitHub';
         setStatus('error');
         setErrorMessage(message);
-        post({ type: 'github-connect-error', message });
+        postToOpener({ type: 'github-connect-error', message });
         armClose(2200);
       }
     };
@@ -106,30 +90,13 @@ export default function GitHubConnectPopup() {
   }, []);
 
   return (
-    <main className="bg-background flex min-h-svh flex-col items-center justify-center px-6">
-      <div className="w-full max-w-[320px]">
-        <KortixLogo variant="icon" size={22} className="text-foreground" />
-        <h1 className="text-foreground mt-6 text-2xl font-medium tracking-tight">
-          {tHardcodedUi.raw('appAuthGithubConnectPage.line116JsxTextConnectGithub')}
-        </h1>
-
-        <div className="mt-6">
-          {status === 'error' ? (
-            <ErrorStrip
-              message={errorMessage || tHardcodedUi.raw('i18nComplete.text93821eb7ce8c')}
-            />
-          ) : (
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Loading className="text-muted-foreground size-4 shrink-0" />
-              <span>
-                {status === 'processing'
-                  ? tHardcodedUi.raw('i18nComplete.text4bc99680df20')
-                  : tHardcodedUi.raw('i18nComplete.text502698660877')}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    </main>
+    <AuthPopupShell
+      title={tHardcodedUi.raw('appAuthGithubConnectPage.line116JsxTextConnectGithub')}
+      status={status}
+      errorMessage={errorMessage}
+      errorText={tHardcodedUi.raw('i18nComplete.text93821eb7ce8c')}
+      processingText={tHardcodedUi.raw('i18nComplete.text4bc99680df20')}
+      waitingText={tHardcodedUi.raw('i18nComplete.text502698660877')}
+    />
   );
 }

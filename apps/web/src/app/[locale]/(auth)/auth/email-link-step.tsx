@@ -1,10 +1,7 @@
 'use client';
 
-import { InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { InfoStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
-import { m, useReducedMotion } from 'motion/react';
-
-const EASE = [0.23, 1, 0.32, 1] as const;
 
 export function EmailLinkStep({
   sentEmail,
@@ -28,15 +25,9 @@ export function EmailLinkStep({
   onPassword: () => void;
 }) {
   const t = useTranslations('auth.unified');
-  const prefersReducedMotion = useReducedMotion();
-  const rise = (delay = 0) => ({
-    initial: { opacity: 0, y: prefersReducedMotion ? 0 : 8 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.3, delay, ease: EASE },
-  });
   return (
     <>
-      <m.div {...rise(0)}>
+      <Rise>
         <StepHeader
           title={t('link.title')}
           description={t.rich('link.description', {
@@ -46,9 +37,9 @@ export function EmailLinkStep({
             ),
           })}
         />
-      </m.div>
+      </Rise>
 
-      <m.div {...rise(0.06)}>
+      <Rise delay={0.06}>
         {info && <InfoStrip message={info} />}
 
         <div className="text-muted-foreground mt-6 space-y-2 text-sm">
@@ -92,7 +83,7 @@ export function EmailLinkStep({
             )}
           </p>
         </div>
-      </m.div>
+      </Rise>
     </>
   );
 }

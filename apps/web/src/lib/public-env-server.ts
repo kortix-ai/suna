@@ -35,6 +35,22 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
 }
 
 /**
+ * The backend origin for a server-side API call. One normalization for every
+ * server entry point that talks to the API (auth actions, the auth callback's
+ * billing lookup). Server-side callers that build a URL must resolve the
+ * absolute `process.env.BACKEND_URL` first (env-schema.ts: the public value
+ * may be a root-relative same-origin preview shape like "/v1" that only the
+ * browser can fetch), then the public env's value — which folds the
+ * `KORTIX_PUBLIC_`/`NEXT_PUBLIC_` variants and the plain runtime var into one
+ * — or the caller's fallback (the auth actions degrade to the local API so
+ * local flows keep working; the callback degrades to empty and skips the
+ * call).
+ */
+export function serverBackendUrl(fallback = ''): string {
+  return process.env.BACKEND_URL || getServerPublicEnv().BACKEND_URL || fallback;
+}
+
+/**
  * Build the inline runtime-config bootstrap script.
  *
  * The payload is JSON.stringify'd, then escaped so it is safe both when inlined

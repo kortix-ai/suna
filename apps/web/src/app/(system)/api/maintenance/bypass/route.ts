@@ -1,11 +1,11 @@
+import { isAdminAccessToken } from '@/lib/admin-role';
 import {
   MAINTENANCE_BYPASS_COOKIE,
   MAINTENANCE_BYPASS_TTL_SECONDS,
   createBypassToken,
 } from '@/lib/maintenance-bypass';
 import { createClient } from '@/lib/supabase/server';
-import { getUserRolesWithToken } from '@kortix/sdk';
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -27,7 +27,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const isAdmin = await checkAdminRole();
+  // The session token is read inline above; only the role check is shared.
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const isAdmin = session?.access_token ? await isAdminAccessToken(session.access_token) : false;
   if (!isAdmin) {
     return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 });
   }
@@ -59,28 +63,4 @@ export async function DELETE() {
     maxAge: 0,
   });
   return res;
-}
-
-/**
- * Check the caller's platform admin role via the backend `/user-roles`
- * endpoint, mirroring `PUT /api/maintenance` and the client `useAdminRole` hook.
- */
-async function checkAdminRole(): Promise<boolean> {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.access_token) return false;
-
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || '';
-
-    const data = await getUserRolesWithToken<{ isAdmin?: boolean }>({
-      backendUrl,
-      accessToken: session.access_token,
-    });
-    return data.isAdmin === true;
-  } catch {
-    return false;
-  }
 }
