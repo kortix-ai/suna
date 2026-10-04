@@ -67,7 +67,9 @@ describe('sessionCreateFailure', () => {
     expect(failure.retryable).toBe(false);
     // Developer-facing upstream copy would be meaningless here: the detail is
     // this app's own, never the server text.
-    expect(sessionCreateFailure(apiError('origin_override_forbidden', 'upstream says no')).detail).toBe(
+    expect(
+      sessionCreateFailure(apiError('origin_override_forbidden', 'upstream says no')).detail,
+    ).toBe(
       'This deployment is talking to Kortix directly, where the per-session secret allowlist is not available.',
     );
   });

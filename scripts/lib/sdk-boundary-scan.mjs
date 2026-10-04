@@ -12,10 +12,7 @@ import { extname, join } from 'node:path';
  * Every source file under `root`, recursively, in directory order.
  * `skip` drops files before they are collected (web skips its test files).
  */
-export function sourceFiles(
-  root,
-  { extensions, skip = null, sort = false },
-) {
+export function sourceFiles(root, { extensions, skip = null, sort = false }) {
   const files = [];
   const visit = (directory) => {
     for (const entry of readdirSync(directory)) {
@@ -26,7 +23,7 @@ export function sourceFiles(
         continue;
       }
       if (!extensions.has(extname(path))) continue;
-      if (skip && skip(path)) continue;
+      if (skip?.(path)) continue;
       files.push(path);
     }
   };

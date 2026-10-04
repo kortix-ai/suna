@@ -177,7 +177,11 @@ function networkTargetText(node) {
 
 export function scanSdkBoundary(sourceRoot) {
   const violations = [];
-  for (const absolute of sourceFiles(sourceRoot, { extensions: SOURCE_EXTENSIONS, skip: (path) => TEST_FILE.test(path), sort: true })) {
+  for (const absolute of sourceFiles(sourceRoot, {
+    extensions: SOURCE_EXTENSIONS,
+    skip: (path) => TEST_FILE.test(path),
+    sort: true,
+  })) {
     const code = readFileSync(absolute, 'utf8');
     const sourceFile = ts.createSourceFile(
       absolute,

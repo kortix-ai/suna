@@ -1,5 +1,5 @@
-import type { ProjectSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import type { ProjectSecret } from '@kortix/sdk';
 import { pendingKeyCollision } from '../../src/lib/secret-collisions';
 import {
   buildSecretRotateInput,
@@ -68,9 +68,9 @@ describe('secretWriteIntent', () => {
   const items = [secret('GMAPS-primary', 'GOOGLE_MAPS_API_KEY')];
 
   test('a new identifier is a create', () => {
-    expect(secretWriteIntent(items, { identifier: 'STRIPE', name: 'STRIPE_KEY', value: 'v' })).toEqual(
-      { kind: 'create' },
-    );
+    expect(
+      secretWriteIntent(items, { identifier: 'STRIPE', name: 'STRIPE_KEY', value: 'v' }),
+    ).toEqual({ kind: 'create' });
   });
 
   test('the same identifier and KEY is a rotate', () => {

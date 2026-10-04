@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  MID_SESSION_CAPABILITIES,
-  classifyModelChange,
-} from '../../src/lib/mid-session-change';
+import { MID_SESSION_CAPABILITIES, classifyModelChange } from '../../src/lib/mid-session-change';
 
 describe('what can change mid-session', () => {
   test('model, secrets and connections change; agent is per-prompt', () => {
@@ -27,15 +24,14 @@ describe('what can change mid-session', () => {
 
 describe('classifyModelChange — a stored-but-not-pushed model is not a success', () => {
   test('a live application is a plain success', () => {
-    expect(
-      classifyModelChange({ model: 'kortix/claude-sonnet-4.6', appliedLive: true }),
-    ).toEqual({ kind: 'applied', message: 'Now running kortix/claude-sonnet-4.6' });
+    expect(classifyModelChange({ model: 'kortix/claude-sonnet-4.6', appliedLive: true })).toEqual({
+      kind: 'applied',
+      message: 'Now running kortix/claude-sonnet-4.6',
+    });
   });
 
   test('a cold session stores the model and says when it takes effect', () => {
-    expect(
-      classifyModelChange({ model: 'kortix/claude-opus-4.8', appliedLive: false }),
-    ).toEqual({
+    expect(classifyModelChange({ model: 'kortix/claude-opus-4.8', appliedLive: false })).toEqual({
       kind: 'stored',
       message: 'kortix/claude-opus-4.8 saved — applies when this session next starts',
     });

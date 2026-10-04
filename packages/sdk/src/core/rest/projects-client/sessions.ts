@@ -1,9 +1,9 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
-import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
-import { type ConnectorSharing, unwrap } from './shared';
 import type { AuditEvent } from './audit';
+import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -399,10 +399,7 @@ export async function listProjectSessionsPage(
  * nothing had to learn an envelope. It returns ONE page — use
  * `listProjectSessionsPage` when you need to know whether more follow.
  */
-export async function listProjectSessions(
-  projectId: string,
-  options?: ListProjectSessionsOptions,
-) {
+export async function listProjectSessions(projectId: string, options?: ListProjectSessionsOptions) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(
       `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
@@ -536,10 +533,7 @@ export interface CreateSessionPublicShareInput {
  * Pure: pass a share from `listSessionPublicShares`.
  */
 export function resolvePublicShareUrl(
-  share: Pick<
-    SessionPublicShare,
-    'public_url' | 'public_path' | 'proxy_path' | 'public_token'
-  >,
+  share: Pick<SessionPublicShare, 'public_url' | 'public_path' | 'proxy_path' | 'public_token'>,
   origin?: string,
 ): string {
   const raw = share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
@@ -1086,14 +1080,14 @@ export type SessionOpenBundleModels =
  *  audit-queue flush and answers "show me history", not "what's blocking this
  *  run"). Byte-identical to `SessionAudit` minus `events`/`next_cursor`. */
 export type SessionOpenBundleAudit =
-  | ({
+  | {
       known: true;
       session_id: string;
       agent: string | null;
       audit_access: boolean;
       count: number;
       actions: SessionAuditAction[];
-    })
+    }
   | SessionOpenBundleUnknown;
 
 export interface SessionOpenBundle {
@@ -1963,14 +1957,22 @@ export async function setProjectSessionModel(
  * project default. The pin is stored under the pre-W4 metadata key
  * `opencode_model`; read it through this function, not from `metadata`.
  */
-export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }): string | null {
+export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }):
+  | string
+  | null {
   const stored = session.metadata?.opencode_model;
   return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
 }
 
 /** Who wrote one message: a project member, or another session's agent. */
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url?: string | null }
+  | {
+      kind: 'member';
+      user_id: string;
+      name: string;
+      email: string | null;
+      avatar_url?: string | null;
+    }
   /** `name` is the session title; `agent` is the agent that session runs. */
   | { kind: 'session'; session_id: string; name: string; agent?: string };
 

@@ -105,18 +105,14 @@ function rawFetchViolations(source, client) {
   const violations = [];
   const fetchPattern = /\bfetch\s*\(/g;
   for (const match of source.matchAll(fetchPattern)) {
-    const expression = source
-      .slice((match.index ?? 0) + match[0].length)
-      .trimStart();
+    const expression = source.slice((match.index ?? 0) + match[0].length).trimStart();
     const target = staticFetchTarget(expression);
     const isAllowed =
       client &&
       target !== null &&
       ALLOWED_CLIENT_BFF_ROUTES.some(
         (route) =>
-          target === route ||
-          target.startsWith(`${route}/`) ||
-          target.startsWith(`${route}?`),
+          target === route || target.startsWith(`${route}/`) || target.startsWith(`${route}?`),
       );
     if (!isAllowed) {
       violations.push({
@@ -153,20 +149,17 @@ export function scanSource(source, options = { client: true }) {
 export function scanWhiteLabelBoundary() {
   return sourceFiles(CLIENT_ROOT, { extensions: SOURCE_EXTENSIONS }).flatMap((path) => {
     const source = readFileSync(path, 'utf8');
-    return scanSource(source, { client: isFeatureClient(path) }).map(
-      (violation) => ({
-        ...violation,
-        file: relative(APP_ROOT, path),
-        line: lineNumber(source, violation.index),
-      }),
-    );
+    return scanSource(source, { client: isFeatureClient(path) }).map((violation) => ({
+      ...violation,
+      file: relative(APP_ROOT, path),
+      line: lineNumber(source, violation.index),
+    }));
   });
 }
 
 export function scanTestSource(source) {
   const violations = [];
-  const internalSdkImportPattern =
-    /['"][^'"]*packages\/sdk\/src(?:\/[^'"]*)?['"]/g;
+  const internalSdkImportPattern = /['"][^'"]*packages\/sdk\/src(?:\/[^'"]*)?['"]/g;
   for (const match of source.matchAll(internalSdkImportPattern)) {
     violations.push({
       rule: 'test-sdk-internal-import',
@@ -175,8 +168,7 @@ export function scanTestSource(source) {
       message: 'Application tests must import the public @kortix/sdk surface.',
     });
   }
-  const directTransportPattern =
-    /\bfetch\s*\([^)]{0,500}\/api\/kortix(?:\/|['"`])/g;
+  const directTransportPattern = /\bfetch\s*\([^)]{0,500}\/api\/kortix(?:\/|['"`])/g;
   for (const match of source.matchAll(directTransportPattern)) {
     violations.push({
       rule: 'test-raw-kortix-transport',
@@ -202,31 +194,23 @@ export function scanWhiteLabelTestBoundary() {
 export function listWhiteLabelTestFiles() {
   const localTests = sourceFiles(TEST_ROOT, { extensions: SOURCE_EXTENSIONS }).filter(
     (path) =>
-      /\.test\.[cm]?[jt]sx?$/.test(path) &&
-      !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
+      /\.test\.[cm]?[jt]sx?$/.test(path) && !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
   );
   const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT, {
     extensions: SOURCE_EXTENSIONS,
-  }).filter(
-    (path) => /(?:whitelabel|sdk-only-session).*\.spec\.[cm]?[jt]sx?$/.test(path),
-  );
+  }).filter((path) => /(?:whitelabel|sdk-only-session).*\.spec\.[cm]?[jt]sx?$/.test(path));
   return [...localTests, ...repositoryTests];
 }
 
 function run() {
-  const violations = [
-    ...scanWhiteLabelBoundary(),
-    ...scanWhiteLabelTestBoundary(),
-  ];
+  const violations = [...scanWhiteLabelBoundary(), ...scanWhiteLabelTestBoundary()];
   if (violations.length === 0) {
     console.log('White-label SDK boundary: 0 violations.');
     return;
   }
 
   for (const violation of violations) {
-    console.error(
-      `${violation.file}:${violation.line} [${violation.rule}] ${violation.message}`,
-    );
+    console.error(`${violation.file}:${violation.line} [${violation.rule}] ${violation.message}`);
   }
   console.error(`White-label SDK boundary: ${violations.length} violation(s).`);
   process.exitCode = 1;
