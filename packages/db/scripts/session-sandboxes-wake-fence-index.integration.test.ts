@@ -20,7 +20,7 @@
  *  3. the statement still returns exactly the candidate rows on the real
  *     migrated schema.
  */
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import pg from 'pg';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -76,6 +76,13 @@ suite('kortix.session_sandboxes wake-fence index', () => {
     }
   };
 
+  // Seed before the catalog reads: the db-suites lane hands the file a fresh
+  // migrated database whose tables are empty, and the statistics view
+  // (pg_stats_ext) has no row for the object until an ANALYZE saw data.
+  beforeAll(async () => {
+    await withClient(seed);
+  });
+
   /**
    * Seed the two candidates and the plain-stopped bulk. Every statement is
    * idempotent (`on conflict do update` / `do nothing` on session_id): the
@@ -107,6 +114,11 @@ suite('kortix.session_sandboxes wake-fence index', () => {
        on conflict (session_id) do nothing`,
       [PLAIN_STOPPED_ROWS],
     );
+    // The migration's ANALYZE ran on an empty table (a fresh database applies
+    // the chain before any row exists), so the expression statistics hold no
+    // data until rows exist and an ANALYZE recomputes them — and the planner
+    // needs those numbers to cost the index path truthfully.
+    await client.query('analyze kortix.session_sandboxes');
   };
   test('the partial index and its expression statistics exist', async () => {
     await withClient(async (client) => {
@@ -145,9 +157,6 @@ suite('kortix.session_sandboxes wake-fence index', () => {
 
   test('the planner proves the statement implies the index predicate', async () => {
     await withClient(async (client) => {
-      // A wake candidate per OR arm, on a table with enough plain stopped rows
-      // that the wake index is the cheapest index path by orders of magnitude.
-      await seed(client);
 
       // Seq scan off: the only paths left are index paths, so the plan naming
       // the wake index is the predicate-proof proof, not a cost accident.
@@ -164,7 +173,6 @@ suite('kortix.session_sandboxes wake-fence index', () => {
 
   test('the statement returns exactly the wake candidates, in shape and in row set', async () => {
     await withClient(async (client) => {
-      await seed(client);
       const { rows } = await client.query<{ session_id: string }>(WAKE_QUERY, [
         'stopped',
         NOW_ISO,
