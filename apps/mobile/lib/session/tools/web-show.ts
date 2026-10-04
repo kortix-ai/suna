@@ -29,6 +29,7 @@ export const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
 export const SHOW_DOCX_EXT_RE = /\.docx$/i;
 export const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
 export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
+export const SHOW_MERMAID_EXT_RE = /\.(mmd|mermaid)$/i;
 
 export function getShowFileCategory(filePath: string): string {
   if (SHOW_IMAGE_EXT_RE.test(filePath)) return 'image';
@@ -40,7 +41,7 @@ export function getShowFileCategory(filePath: string): string {
   if (SHOW_DOCX_EXT_RE.test(filePath)) return 'docx';
   if (SHOW_PPTX_EXT_RE.test(filePath)) return 'pptx';
   if (SHOW_HTML_EXT_RE.test(filePath)) return 'html-file';
-  if (/\.(mmd|mermaid)$/i.test(filePath)) return 'mermaid';
+  if (SHOW_MERMAID_EXT_RE.test(filePath)) return 'mermaid';
   return 'file';
 }
 
