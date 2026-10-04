@@ -367,42 +367,12 @@ export function describeLegacyBootstrapRetry(
  * Decide, and when warranted do, the bootstrap for one sandbox. Pure over
  * `deps`; every side effect is injected so the policy is unit-testable and the
  * wiring (DB, provider, ingress, audit) lives in one place.
-/**
- * One bootstrap pass in flight: the input and deps every phase reads, the
- * strategy the script will relaunch with, and the classification the pass is
- * acting on (refined by the dead-daemon protocol). Phases take the pass
- * instead of closing over locals.
- */
+/** One bootstrap pass in flight: what every phase reads, and the refined classification it acts on. */
 interface RepairPass {
   readonly deps: LegacyBootstrapDeps;
   readonly input: LegacyBootstrapInput;
   readonly strategy: RelaunchStrategy;
   readonly classification: RuntimeClassification;
-}
-
-/**
- * The cheap gates — none of these touch the box. Returns the outcome that
- * ends the pass, or null to go on and probe the daemon.
- */
-function repairEntryGates(
-  input: LegacyBootstrapInput,
-  nowMs: number,
-): LegacyBootstrapResult | null {
-  const record = readRecord(input.metadata);
-  const check = readCheck(input.metadata);
-  if (record?.state === 'running') {
-    const startedMs = Date.parse(record.lastAttemptAt);
-    if (Number.isFinite(startedMs) && nowMs - startedMs < LEGACY_BOOTSTRAP_STALE_RUNNING_MS) {
-      return { outcome: 'skipped-in-progress' };
-    }
-  }
-  if (!input.force && check && check.klass === 'current') {
-    const atMs = Date.parse(check.at);
-    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
-      return { outcome: 'skipped-recent-check' };
-    }
-  }
-  return null;
 }
 
 /**
@@ -583,7 +553,7 @@ async function finishRepair(
   return { outcome, detail, classification: pass.classification };
 }
 
-/** Mint the repair credential, exec the script, and act on its report. */
+/** Mint the repair credential, exec the script, and act on its report (deferred, staged, or relaunched). */
 async function runRepairPass(
   pass: RepairPass,
   running: LegacyBootstrapRecord,
@@ -787,9 +757,22 @@ export async function bootstrapLegacyRuntime(
   const nowIso = new Date(nowMs).toISOString();
   const strategy = relaunchStrategyFor(input.provider);
   if (!strategy) return { outcome: 'skipped-unsupported', detail: `provider ${input.provider}` };
-  const gates = repairEntryGates(input, nowMs);
-  if (gates) return gates;
+
+  // Cheap gates first — none of these touch the box.
   const record = readRecord(input.metadata);
+  const check = readCheck(input.metadata);
+  if (record?.state === 'running') {
+    const startedMs = Date.parse(record.lastAttemptAt);
+    if (Number.isFinite(startedMs) && nowMs - startedMs < LEGACY_BOOTSTRAP_STALE_RUNNING_MS) {
+      return { outcome: 'skipped-in-progress' };
+    }
+  }
+  if (!input.force && check && check.klass === 'current') {
+    const atMs = Date.parse(check.at);
+    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
+      return { outcome: 'skipped-recent-check' };
+    }
+  }
 
   const health = await deps.fetchHealth();
   const expectedRunningAssets = (await deps.expectedRunningAssets?.()) ?? undefined;
