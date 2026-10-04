@@ -1,5 +1,5 @@
 {
-  "source_hash": "a3fe07ea499ff06b52bd1deafe15928a04234a4e15ef4813b82ea1ad34c4d4f0",
+  "source_hash": "48c33987c30206888b307d7e4d1b2a2ff9dea5cbe5a538373717f69d560b3900",
   "diff_files": [
     "apps/api/src/git-proxy/project-snapshot-build.ts",
     "apps/api/src/git-proxy/project-snapshot-ledger.ts",
@@ -7,12 +7,12 @@
     "apps/api/src/git-proxy/project-snapshot.ts"
   ],
   "diff_hash": "8988cff0b89e42fde7fb602473218e08de0793df5badec1fc7b8e1482dc5aad5",
-  "head": "36c398567e5a65c89f6e15ac805cb7f61830d5d7",
+  "head": "8a20475e6d583a02d26e462b923f02cf01919c44",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T17:47:49.902Z"
+  "at": "2026-10-04T18:23:53.898Z"
 }
