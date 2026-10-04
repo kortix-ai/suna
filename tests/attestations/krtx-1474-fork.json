@@ -1,0 +1,33 @@
+{
+  "source_hash": "7caeb71a6d2918cd1aa51a24ca9c6b18555e842ec93adda5931bcf785ac499db",
+  "diff_files": [
+    "apps/web/src/features/session/header/session-site-header.test.tsx",
+    "apps/web/src/features/session/header/session-site-header.tsx",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list-fork.test.ts",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
+    "packages/sdk/src/core/runtime/runtime-rest-client.fixture.json",
+    "packages/sdk/src/core/runtime/runtime-rest-client.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json",
+    "packages/sdk/src/react/use-opencode-sessions/sessions.test.ts",
+    "packages/sdk/src/react/use-opencode-sessions/sessions.ts"
+  ],
+  "diff_hash": "5f5463947cb521de63191258088fc6c86c001132c7eea264e9b8e0efc508a84d",
+  "head": "0c298641a5aad72f9aa7f66fcf60676dd89d098b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T00:06:19.536Z"
+}

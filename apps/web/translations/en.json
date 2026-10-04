@@ -19202,6 +19202,8 @@
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
       "text39207bf34111": "Related skills",
       "text73112526c03a": "Agent turn failed. No reason was reported.",
+      "text0e5f7f6732e0": "Fork conversation",
+      "text32ad3abe4479": "Failed to fork conversation",
       "text85b7a59cdbd5": "Platform agent",
       "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
     },

@@ -19191,6 +19191,8 @@
       "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
       "text39207bf34111": "Ähnliche Fähigkeiten",
       "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet.",
+      "text0e5f7f6732e0": "Unterhaltung abspalten",
+      "text32ad3abe4479": "Unterhaltung konnte nicht abgespalten werden",
       "text85b7a59cdbd5": "Plattform-Agent",
       "textd9c0c74b514b": "Meta ist ein Plattform-Agent, der deine Arbeit koordiniert. Seine Einrichtung ist fest: Du kannst eine Sitzung mit ihm starten, ihn hier aber nicht konfigurieren."
     },
