@@ -834,6 +834,13 @@
       "when": 1791081225637,
       "tag": "20261004023345_chat_pending_auth_messages_project_index",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1791094712913,
+      "tag": "20261004061832_drop_unused_account_invitations_indexes_snapshot",
+      "breakpoints": true
     }
   ]
 }
