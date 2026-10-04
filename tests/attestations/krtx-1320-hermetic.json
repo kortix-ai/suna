@@ -1,0 +1,28 @@
+{
+  "source_hash": "028999fe20eaafdebb5a02772dbe36fdce8a5e729111079bab43b754616be272",
+  "diff_files": [
+    "apps/api/scripts/test.sh",
+    "apps/cli/package.json",
+    "apps/cli/scripts/test.sh",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/scripts/test.sh",
+    "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
+    "scripts/hermetic-test-env.sh",
+    "tests/migration/basejump-accounts-rls-initplan.test.ts",
+    "tests/migration/credit-lifetime-rollup.test.ts",
+    "tests/migration/credit-rpc-overloads.test.ts",
+    "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
+    "tests/migration/usage-breakdown-ledger-type.test.ts",
+    "tests/migration/wallet-ledger.test.ts",
+    "tests/unit/test-runner-contract.test.ts"
+  ],
+  "diff_hash": "c7dc965cd8570a3089ec9255cac5e8f0bfcd04ff88b2f4fe4ef8e450d63b645c",
+  "head": "c9a697302870b5cd7e6dbcbf0fbb0adbe7a81316",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T08:10:31.451Z"
+}
