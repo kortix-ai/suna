@@ -144,6 +144,10 @@ describe('local test runner contract', () => {
     expect(gatewayPackage.scripts.test).toBe(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
     );
+    // Same timeout contract for the runner's own unit lane (vitest): its
+    // learnings-ledger test shells out twice over the whole ledger.
+    const vitestConfig = readFileSync(resolve(root, 'tests/unit/vitest.config.ts'), 'utf8');
+    expect(vitestConfig).toContain('testTimeout: Number(process.env.KORTIX_TEST_TIMEOUT_MS || 15_000)');
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

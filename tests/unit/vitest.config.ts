@@ -14,6 +14,10 @@ export default defineConfig({
     root: import.meta.dirname,
     environment: 'node',
     globals: true,
+    // Same timeout contract as apps/cli and the agent server: process-heavy
+    // fixtures (the learnings ledger index check shells out twice over the
+    // whole ledger) sit above the runner's default on a loaded box.
+    testTimeout: Number(process.env.KORTIX_TEST_TIMEOUT_MS || 15_000),
     include: ['**/*.test.ts'],
     reporters: ['default', ['junit', { suiteName: 'unit' }]],
     outputFile: {
