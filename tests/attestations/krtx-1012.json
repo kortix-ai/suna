@@ -1,5 +1,5 @@
 {
-  "source_hash": "d5bf1d1e2451512115102fb1d4be7a1fc1fec4de9a576b8867eb918d0ae86b80",
+  "source_hash": "e03f4bd7078dd619c27ecfa55af5e05d61d509b15516e087bc2172539b94f474",
   "diff_files": [
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/package.json",
@@ -42,12 +42,12 @@
     "pnpm-lock.yaml"
   ],
   "diff_hash": "6bee681cdcf0aad5214810e67fe0dcc5b52ac92d94965c1aab5c9a2255c19802",
-  "head": "4ad3f252ac7d8d4b0599fb15e812965a85137c96",
+  "head": "cea3e9605d2f8c8f9970be2690aff05506c7c0b9",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T07:24:32.826Z"
+  "at": "2026-10-04T07:44:19.901Z"
 }
