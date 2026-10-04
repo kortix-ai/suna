@@ -40,8 +40,7 @@ const WATCHED_FILES = ['state.json', 'config.json', 'access.json', 'access-reque
  *   getMainWindow: () => import('electron').BrowserWindow | null,
  *   openMainWindow: () => void,
  *   backgroundColor: () => string,
- *   captureItems: () => object[],
- *   captureKeepsRunning: () => boolean,
+ *   captureMenu?: () => object[],
  * }} deps
  */
 function setupComputer(deps) {
@@ -394,8 +393,10 @@ function setupComputer(deps) {
   };
 
   function renderTray() {
-    const captureItems = deps.captureItems();
-    if (!status?.paired && captureItems.length === 0) {
+    // Kortix Capture brings its own menu group (capture-host.js); the
+    // computer's menu below is unchanged and only shows while it is paired.
+    const capture = deps.captureMenu?.() ?? [];
+    if (!status?.paired && capture.length === 0) {
       tray?.destroy();
       tray = null;
       return;
@@ -406,21 +407,23 @@ function setupComputer(deps) {
       if (process.platform !== 'darwin') tray.on('click', actions.open);
     }
     tray.setToolTip(status?.paired ? `Kortix — ${computer.statusLabel(status)}` : 'Kortix');
-    tray.setContextMenu(
-      Menu.buildFromTemplate(
-        computer.trayMenuTemplate(
+    const computerMenu = status?.paired
+      ? computer.trayMenuTemplate(
           status,
           access,
           {
             openAtLogin: app.getLoginItemSettings().openAtLogin,
             loginItemSupported: process.platform === 'darwin' || process.platform === 'win32',
             keepAwakeSupported: computer.keepAwakeSupported(process.platform),
-            captureItems,
           },
           actions,
-        ),
-      ),
-    );
+        )
+      : [
+          { id: 'open', label: 'Open Kortix', click: actions.open },
+          { type: 'separator' },
+          { id: 'quit', label: 'Quit Kortix', click: actions.quit },
+        ];
+    tray.setContextMenu(Menu.buildFromTemplate(capture.length ? [...capture, { type: 'separator' }, ...computerMenu] : computerMenu));
   }
 
   function renderTraySafely() {
@@ -787,9 +790,10 @@ function setupComputer(deps) {
     start,
     invoke,
     /** Closing the last window keeps the app in the tray while a computer is paired. */
-    keepRunning: () => computer.keepRunningInTray(status) || deps.captureKeepsRunning(),
-    /** The instance's backend (Capture signs in to it). */
+    keepRunning: () => computer.keepRunningInTray(status),
+    /** The instance's backend: Kortix Capture signs in to the same one. */
     backend: () => context(),
+    /** Redraws the tray; Kortix Capture calls it when its own menu group changes. */
     renderTray: renderTraySafely,
   };
 }

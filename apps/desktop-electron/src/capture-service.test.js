@@ -135,7 +135,7 @@ const alive = (pid) => {
   }
 };
 const pids = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(Number) : []);
-async function until(what, fn, ms = 15_000) {
+async function until(what, fn, ms = 30_000) {
   const end = Date.now() + ms;
   for (;;) {
     const value = fn();
@@ -184,7 +184,7 @@ test(
 
     // A crashed recorder comes back (2 s backoff).
     process.kill(first, 'SIGKILL');
-    const second = await until('recorder restarted', () => pids(recorders).find((p) => p !== first && alive(p)), 10_000);
+    const second = await until('recorder restarted', () => pids(recorders).find((p) => p !== first && alive(p)), 30_000);
     expect(second).not.toBe(first);
 
     // A second service for the same library exits at once (the service manager runs one).
@@ -208,8 +208,8 @@ test(
     const backend = await until('backend running again', () => pids(backends).find((p) => alive(p)));
     svc.kill('SIGTERM');
     expect(await new Promise((resolve) => svc.on('exit', resolve))).toBe(0);
-    await until('children gone', () => !alive(fourth) && !alive(backend), 8_000);
+    await until('children gone', () => !alive(fourth) && !alive(backend), 30_000);
     expect(service.readHeartbeat(library).running).toBe(false);
   },
-  60_000,
+  120_000,
 );

@@ -331,8 +331,6 @@ function setupCapture(deps) {
     start,
     invoke,
     trayItems: () => capture.captureTrayItems(view, trayActions),
-    /** Capture runs as its own OS service: closing the app never stops it. */
-    keepRunning: () => false,
   };
 }
 

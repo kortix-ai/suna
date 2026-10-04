@@ -1254,13 +1254,12 @@ if (!gotLock) {
       getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
       openMainWindow,
       backgroundColor: currentBackgroundColor,
-      captureItems: () => captureShell?.trayItems() ?? [],
-      captureKeepsRunning: () => captureShell?.keepRunning() ?? false,
+      captureMenu: () => captureShell?.trayItems() ?? [],
     });
     captureShell = setupCapture({
       backend: () => computerShell.backend(),
       onChange: () => computerShell.renderTray(),
-      // Tray "Capture Settings…": the page opens its Capture dialog.
+      // Tray "Capture…": the page opens its Capture dialog (not Your computer).
       openSettings: () => {
         const opened = needsMainWindow(mainWindow);
         if (opened) openMainWindow();
