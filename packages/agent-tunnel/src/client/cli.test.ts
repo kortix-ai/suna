@@ -63,10 +63,7 @@ let mockPort = 0;
 
 beforeAll(() => {
   mockServer = Bun.serve({
-    // Pin the loopback address: the spawned CLI below talks to this URL, and
-    // a locked-down runner cannot resolve the default "localhost" name.
     port: 0,
-    hostname: '127.0.0.1',
     async fetch(req) {
       const url = new URL(req.url);
 
@@ -120,6 +117,9 @@ function runCli(
     const child = spawn('bun', cliArgs, {
       env: {
         ...process.env,
+        // The mock agent is loopback by address: `localhost` does not resolve
+        // on a platform sandbox, which turns every row here into
+        // "Unable to connect" instead of the response under test.
         TUNNEL_API_URL: `http://127.0.0.1:${mockPort}`,
         TUNNEL_TOKEN: 'test-token',
         TUNNEL_ID: '',
@@ -297,7 +297,6 @@ describe('Agent Tunnel CLI', () => {
     beforeAll(() => {
       permServer = Bun.serve({
         port: 0,
-        hostname: '127.0.0.1',
         async fetch(req) {
           const url = new URL(req.url);
 
@@ -334,7 +333,7 @@ describe('Agent Tunnel CLI', () => {
 
   describe('server unreachable', () => {
     test('status with dead server returns error JSON', async () => {
-      const r = await runCli('status', undefined, { TUNNEL_API_URL: 'http://localhost:1' });
+      const r = await runCli('status', undefined, { TUNNEL_API_URL: 'http://127.0.0.1:1' });
       expect(r.exitCode).toBe(1);
       expect(r.json!.success).toBe(false);
     });
@@ -347,7 +346,6 @@ describe('Agent Tunnel CLI', () => {
     beforeAll(() => {
       emptyServer = Bun.serve({
         port: 0,
-        hostname: '127.0.0.1',
         async fetch(req) {
           const url = new URL(req.url);
           if (url.pathname === '/v1/tunnel/connections') return Response.json([]);

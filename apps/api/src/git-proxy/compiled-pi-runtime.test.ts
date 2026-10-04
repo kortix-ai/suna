@@ -8,7 +8,6 @@ import {
   compilePiRuntime,
   type CompilePiRuntimeInput,
 } from './compiled-pi-runtime';
-import { runnerEnv } from '../__tests__/helpers/compiled-runtime-env';
 
 const roots: string[] = [];
 const INPUT: CompilePiRuntimeInput = {
@@ -37,10 +36,19 @@ async function materialize(input = INPUT) {
   return { artifact, runtimePath };
 }
 
-
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
+/** Run the compiled worker on a minimal env: the worker refuses a host env
+ *  that disagrees with its baked identity, and an earlier file in the same
+ *  test worker may have leaked a KORTIX_* variable into process.env. */
+function runWorker(runtimePath: string, args: string[] = []): string {
+  return execFileSync(process.execPath, [runtimePath, ...args], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH ?? '' },
+  });
+}
 
 describe('compilePiRuntime', () => {
   test('produces a deterministic content-addressed pi runtime', () => {
@@ -78,18 +86,13 @@ describe('compilePiRuntime', () => {
 
   test('--manifest prints the manifest without starting the worker', async () => {
     const { artifact, runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath, '--manifest'], {
-      encoding: 'utf8',
-    });
+    const stdout = runWorker(runtimePath, ['--manifest']);
     expect(JSON.parse(stdout)).toEqual(artifact.manifest);
   });
 
   test('the worker runtime receives the baked config via __KORTIX_COMPILED__', async () => {
-    const { artifact, runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath], {
-      encoding: 'utf8',
-      env: { ...process.env, ...runnerEnv(artifact) },
-    });
+    const { runtimePath } = await materialize();
+    const stdout = runWorker(runtimePath);
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
     const baked = JSON.parse(lines[1]).baked;
@@ -120,10 +123,7 @@ describe('compilePiRuntime', () => {
     });
     expect(artifact.manifest.agent_config).toBeNull();
     expect(artifact.manifest.agent_config_etag).toBeNull();
-    const stdout = execFileSync(process.execPath, [runtimePath], {
-      encoding: 'utf8',
-      env: { ...process.env, ...runnerEnv(artifact) },
-    });
+    const stdout = runWorker(runtimePath);
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
 

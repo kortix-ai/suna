@@ -99,7 +99,6 @@ import { StatGrid, StatTile } from '../_components/stat-tile';
 import { adminLedgerRows } from './ledger-rows';
 import {
   MAX_COMPUTE_RATE_MULTIPLIER,
-  MAX_CONCURRENT_SESSIONS_OVERRIDE,
   describeOverridePatch,
   draftFromOverrides,
   isEmptyPatch,
@@ -1892,30 +1891,6 @@ function OverridesCard({ account }: { account: AdminAccount }) {
             </EntitlementRow>
           </div>
         ))}
-
-        <div className="px-4 py-3">
-          <EntitlementRow
-            title={tI18nComplete.raw('textdae85d16887b')}
-            description={tI18nComplete.raw('textca41e8913ee7')}
-            titleSuffix={
-              <OverrideExpiryChip expiresAt={overrideExpiresAt(stored, 'maxConcurrentSessions')} />
-            }
-          >
-            <Input
-              type="number"
-              min={1}
-              max={MAX_CONCURRENT_SESSIONS_OVERRIDE}
-              step={1}
-              inputMode="numeric"
-              placeholder={tI18nComplete.raw('text197f9370a831')}
-              className="h-8 w-[140px] tabular-nums"
-              aria-label={tI18nComplete.raw('text016e549e6831')}
-              value={draft.maxConcurrentSessions}
-              disabled={setOverrides.isPending}
-              onChange={(e) => setRow('maxConcurrentSessions', e.target.value)}
-            />
-          </EntitlementRow>
-        </div>
 
         <div className="px-4 py-3">
           <EntitlementRow

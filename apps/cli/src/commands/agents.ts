@@ -136,8 +136,8 @@ Global:
   --json             Machine-readable output.
   -h, --help         Show this help.
 
-\`scope\` needs \`project.agent.write\`; \`default\` and \`config\` need
-\`project.customize.write\`. Model pins live in the gateway, not in the repo —
+\`scope\`, \`default\` and \`config\` need \`project.agent.write\`; model pins
+need \`project.model.write\`. Model pins live in the gateway, not in the repo —
 the declarative one is kortix.yaml's \`[[agents]].model\`.
 `;
 

@@ -6,16 +6,6 @@ import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-asse
 import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
 
 /**
- * The host-written env file the readiness gates read behind process.env.
- * `KORTIX_PT_ENV_FILE` re-points it: a test running INSIDE a Kortix sandbox
- * would otherwise inherit that box's real session env (its auto-clone flag,
- * its branch) through the file no fixture can otherwise shadow.
- */
-function ptEnvPath(): string {
-  return process.env.KORTIX_PT_ENV_FILE || '/etc/pt-env'
-}
-
-/**
  * The branch this VM's session is supposed to be on, read from the host-
  * written env file rather than process.env: warm-seed forks resume a process
  * whose env predates the session (adoption reloads it ~250ms later), but
@@ -23,6 +13,13 @@ function ptEnvPath(): string {
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
+const PT_ENV_PATH = '/etc/pt-env'
+
+/** The env file THIS read consults. `KORTIX_PT_ENV_PATH` is read at call time so
+ *  a test can pin it after this module has loaded: a Kortix box's own
+ *  /etc/pt-env would otherwise answer for a rig that has no session env file. */
+const ptEnvPath = () => process.env.KORTIX_PT_ENV_PATH || PT_ENV_PATH
+
 function wantedSessionBranch(): string {
   try {
     const m = readFileSync(ptEnvPath(), 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)

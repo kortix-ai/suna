@@ -755,7 +755,7 @@
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
           "connectors": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -768,6 +768,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -808,8 +809,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -829,6 +832,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "project.session.exec",
                     "project.gateway.routing.edit",
                     "project.schedule.read",
@@ -847,6 +852,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -887,8 +893,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -908,6 +916,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "project.session.exec",
                     "project.gateway.routing.edit",
                     "project.schedule.read",
@@ -926,6 +936,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -933,7 +944,7 @@
             "deprecated": true
           },
           "env": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -946,13 +957,14 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
           },
           "apps": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -965,6 +977,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }

@@ -26,7 +26,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { accountTokens, projectSessions, readStoredAgentGrant } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { loadTokenBinding, type Actor } from '../../iam/actor';
-import { agentPrincipalModeFor, isGovernedAgentGrant, loadAgentPrincipalFlag } from '../../iam/agent-principal';
+import { agentPrincipalModeFor, isGovernedAgentGrant } from '../../iam/agent-principal';
 import { db } from '../../shared/db';
 import type { ConnectionAgentPrincipalReach } from './connection-access';
 import type { Context } from 'hono';
@@ -58,9 +58,8 @@ export function personalResourceOwner(input: {
  *
  * `agentPrincipal` = the credential is an agent session under the
  * agent-principal model (flag ON, governed grant). `onBehalfOfUserId` prefers
- * the fresh per-request value from the auth middleware (`fresh`), because the
- * actor's copy rides a 15 s token-binding memo and a clear must take effect on
- * the next request.
+ * the per-request value from the auth middleware (`fresh`); the actor's copy is
+ * the same read when the request seeded it, and null for an out-of-band actor.
  */
 export function actorPersonalScope(
   actor: Actor | null | undefined,
@@ -105,13 +104,6 @@ export async function resolveSessionPersonalOwner(input: {
 }): Promise<string | null> {
   const legacy = input.strict ? null : input.legacyUserId;
   if (!input.sessionId) return legacy;
-  let flag = false;
-  try {
-    flag = input.strict || (await loadAgentPrincipalFlag(input.projectId));
-  } catch {
-    return legacy;
-  }
-  if (!flag) return legacy;
   try {
     // Both reads take the session id alone: they go out together.
     const [[session], [token]] = await Promise.all([

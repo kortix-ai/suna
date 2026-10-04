@@ -85,9 +85,9 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   'KORTIX_CONNECTORS_PROXY_URL',
   // Local catalog-file override; operator/dev-only, not an API-driven field.
   'KORTIX_LLM_CATALOG_FILE',
-  // Where the boot reads the image-baked catalog from when the file above is
-  // absent. Same class as KORTIX_LLM_CATALOG_FILE: a filesystem layout fact
-  // fixed at boot, never an API-driven field.
+  // Where the baked-catalog fallback reads. Test/operator-only override of the
+  // well-known image path; like KORTIX_LLM_CATALOG_FILE it points at local
+  // disk, never at an API-driven field.
   'KORTIX_BAKED_LLM_CATALOG_PATH',
   // Manual operator debug toggle (checked against `process.env` directly, not
   // part of the env-sync contract at all).

@@ -112,11 +112,7 @@ export async function startApp(
   await ensureBuilt();
 
   const proc = Bun.spawn({
-    // Pin the loopback address: `next start` binds and prints the "localhost"
-    // name by default, which a locked-down runner cannot resolve — the probe
-    // below then never gets a round-trip and every test times out. 127.0.0.1
-    // is the same address localhost resolves to on an ordinary machine.
-    cmd: [NEXT_BIN, 'start', '-p', '0', '-H', '127.0.0.1'],
+    cmd: [NEXT_BIN, 'start', '-p', '0'],
     cwd: APP_ROOT,
     env: { ...process.env, LUMEN_DATA_DIR: TEST_DATA_DIR, ...env },
     stdout: 'pipe',
@@ -157,8 +153,11 @@ export async function startApp(
     if (raced === 'exited') {
       throw new Error(`next start exited before printing a URL (code ${proc.exitCode}). Output:\n${log}`);
     }
-    const m = log.match(/Local:\s+(http:\/\/(?:localhost|127\.0\.0\.1):\d+)/);
-    if (m) baseUrl = m[1];
+    const m = log.match(/Local:\s+http:\/\/localhost:(\d+)/);
+    // Fetch the listener by address: `localhost` does not resolve on a
+    // platform sandbox, where the readiness poll below would time out against
+    // a server that is in fact up.
+    if (m) baseUrl = `http://127.0.0.1:${m[1]}`;
   }
 
   // The URL line can print a beat before the listener actually accepts

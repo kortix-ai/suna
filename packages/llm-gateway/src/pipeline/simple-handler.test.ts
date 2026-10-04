@@ -63,23 +63,22 @@ describe('simple gateway pipeline', () => {
 
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
-    // Pin the loopback address: the pool fetches `upstream.url` verbatim, and a
-    // locked-down runner cannot resolve the default "localhost" name (that
-    // reads as a network error and answers 502 instead of the 429 path).
-    const upstream = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (request) => {
+    const upstream = Bun.serve({ port: 0, fetch: (request) => {
       const key = request.headers.get('authorization') ?? '';
       keys.push(key);
       return new Response('limited', { status: 429, headers: { 'retry-after': key.includes('first') ? '7' : '120' } });
     } });
-    const upstreamBase = `http://127.0.0.1:${upstream.port}`;
     const cooldowns: string[] = [];
     try {
       const response = await handleChatCompletions({
         hooks: {
           ...hooks([], []),
           resolveUpstream: async () => [
-            { ...primary, baseUrl: upstreamBase, poolSecretId: 'first', apiKey: 'first' },
-            { ...primary, baseUrl: upstreamBase, poolSecretId: 'second', apiKey: 'second' },
+            // Loopback by address: `upstream.url` reports `localhost`, which does
+            // not resolve on a platform sandbox — the pool would answer 502
+            // (connection refused) instead of exercising the 429 failover.
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'first', apiKey: 'first' },
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'second', apiKey: 'second' },
           ],
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },

@@ -20,7 +20,7 @@
  * the right one: "why would someone convert a docx to markdown with this
  * powerful tool?" A prompt has to name a REASON, not a capability.
  *
- * Worse, that rule excluded the things that make this an AI Management System
+ * Worse, that rule excluded the things that make this an AI Operating System
  * rather than a chat box. The most valuable prompts here operate on Kortix's
  * OWN primitives — they are the first group below, and they are first on
  * purpose:
@@ -52,10 +52,6 @@
  *
  * Labels are verb-first and sentence case, capped at 32 characters so the row
  * never truncates — `starter-prompts.test.ts` enforces both the cap and rule 2.
- *
- * Worth knowing: the onboarding wizard does NOT read this list. It carries its
- * own `STARTER_PROMPTS` in `components/projects/onboarding/onboarding-profile.ts`,
- * keyed by use case. Same name, different module, no relationship.
  */
 
 import {
@@ -103,6 +99,7 @@ import {
   GraduationCapIcon,
   HandshakeIcon,
   HighlighterIcon,
+  type Icon,
   IdentificationCardIcon,
   KanbanIcon,
   LifebuoyIcon,
@@ -146,7 +143,6 @@ import {
   WalletIcon,
   WarningIcon,
   WrenchIcon,
-  type Icon,
 } from '@phosphor-icons/react';
 
 export interface StarterPrompt {

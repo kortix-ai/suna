@@ -153,6 +153,10 @@ export interface AccountState {
       can_create: boolean;
       tier_name: string;
     };
+    /**
+     * @deprecated Sessions are uncapped; the API no longer sends this field.
+     * Removed in the next major.
+     */
     concurrent_sessions?: {
       active: number;
       limit: number;

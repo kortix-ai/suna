@@ -212,9 +212,8 @@ describe('/web-proxy stays off the box control plane', () => {
   test("browsing the agent's own dev server still works", async () => {
     // The whole point of this proxy. Blocking all of loopback would have been a
     // cheaper fix and would have broken the internal browser.
-    // 127.0.0.1, not "localhost": a locked-down runner cannot resolve the
-    // loopback NAME (the refusal tests above cover that spelling — they 403
-    // before any connect), so this path is exercised by its address.
+    // Loopback by address: `localhost` does not resolve on a platform sandbox,
+    // and the proxy would answer 502 before the guard is exercised at all.
     const res = await guarded().request(
       `/web-proxy/http/127.0.0.1:${upstreamPort}/index.html`,
       { method: 'GET' },
@@ -242,11 +241,9 @@ describe('/web-proxy stays off the box control plane', () => {
  */
 describe('a vetted destination is the one we connect to', () => {
   test('the upstream sees the original Host header', async () => {
-    // Virtual hosting depends on the proxy deriving Host from the request's
-    // authority, never from its own listener or the connect target. The
-    // authority here is 127.0.0.1 rather than the loopback NAME: a locked-down
-    // runner cannot resolve "localhost", and the proxy only ever connects to a
-    // loopback destination by the name it was given.
+    // Virtual hosting on the agent's own dev server depends on it.
+    // Loopback by address (see the dev-server row above); the pinned behavior
+    // is that the host the caller named reaches the upstream as the Host.
     received = null
     const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
     const res = await open.request(`/web-proxy/http/127.0.0.1:${upstreamPort}/x`, {
