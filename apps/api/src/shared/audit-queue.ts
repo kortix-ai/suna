@@ -31,6 +31,7 @@
  */
 import { type Database, auditEvents } from '@kortix/db';
 import { errorSqlstate, innermostMessage, isAuditContentionError } from './error-cause';
+import { exponentialBackoffMs } from './backoff';
 
 export type AuditRow = typeof auditEvents.$inferInsert;
 
@@ -120,8 +121,7 @@ export function retryBackoffMs(
   maxMs: number,
   randomValue: number,
 ): number {
-  const exponent = Math.max(0, attempt - 1);
-  const capped = Math.min(maxMs, baseMs * 2 ** exponent);
+  const capped = exponentialBackoffMs({ attempt, baseMs, capMs: maxMs });
   const half = capped / 2;
   return Math.floor(half + randomValue * half);
 }

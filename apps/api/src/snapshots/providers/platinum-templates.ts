@@ -4,6 +4,7 @@ import { normalizeExistingProviderState } from './state';
 import type { BuildLogTap } from './index';
 import { shortLivedObservation } from '../observation-cache';
 import { classifyPlatinumPollError, isTerminalPollError, retryAfterMsFromError } from './platinum-poll-classify';
+import { exponentialBackoffMs } from '../../shared/backoff';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -226,7 +227,7 @@ const POLL_BACKOFF_MAX_MS = 30_000;
 
 /** Exponential backoff with full jitter for transient poll errors. */
 function pollBackoffMs(streak: number): number {
-  const ceil = Math.min(POLL_BACKOFF_MAX_MS, POLL_BACKOFF_BASE_MS * 2 ** Math.max(0, streak - 1));
+  const ceil = exponentialBackoffMs({ attempt: streak, baseMs: POLL_BACKOFF_BASE_MS, capMs: POLL_BACKOFF_MAX_MS });
   return Math.floor(Math.random() * ceil);
 }
 

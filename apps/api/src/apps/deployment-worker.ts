@@ -27,6 +27,7 @@ import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from 
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
 import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
+import { exponentialBackoffMs } from '../shared/backoff';
 
 export const APP_RUNTIME_VERSION =
   process.env.KORTIX_APP_RUNTIME_VERSION
@@ -99,7 +100,7 @@ class PermanentAppDeploymentError extends Error {
 }
 
 function retryDelayMs(attempt: number): number {
-  return Math.min(60_000, 2_000 * 2 ** Math.max(0, attempt - 1));
+  return exponentialBackoffMs({ attempt, baseMs: 2_000, capMs: 60_000 });
 }
 
 async function event(

@@ -1,6 +1,7 @@
 import { SnapshotStillBuildingError, WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
+import { exponentialBackoffMs } from '../../shared/backoff';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
 type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
@@ -239,7 +240,7 @@ export async function retrySandboxProvisionCreate(
       // provider capacity is terminal and never reaches this delay branch.
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
-        : Math.min(RETRY_DELAY_BASE_MS * 2 ** (attempt - 1), RETRY_DELAY_MAX_MS);
+        : exponentialBackoffMs({ attempt, baseMs: RETRY_DELAY_BASE_MS, capMs: RETRY_DELAY_MAX_MS });
       await Bun.sleep(delay);
     }
   }

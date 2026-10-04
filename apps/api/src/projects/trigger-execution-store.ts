@@ -4,6 +4,7 @@ import { db } from '../shared/db';
 import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
+import { exponentialBackoffMs } from '../shared/backoff';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -349,7 +350,7 @@ export async function markTriggerExecutionFailed(input: {
   terminal?: boolean;
 }): Promise<'queued' | 'dead_lettered'> {
   const terminal = input.terminal || input.row.attempts >= 5;
-  const retryDelayMs = Math.min(60_000, 2 ** Math.max(0, input.row.attempts - 1) * 2_000);
+  const retryDelayMs = exponentialBackoffMs({ attempt: input.row.attempts, baseMs: 2_000, capMs: 60_000 });
   await db
     .update(projectTriggerExecutions)
     .set({

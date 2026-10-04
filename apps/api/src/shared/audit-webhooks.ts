@@ -13,6 +13,7 @@ import { auditWebhookFailureSummary } from './audit-webhook-privacy';
 import { db } from './db';
 import { runWorkerTick } from './audit-scope';
 import { safeEgressFetch } from './ssrf-guard';
+import { exponentialBackoffMs } from './backoff';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
  *  schema_version if ever changing the shape. */
@@ -108,7 +109,7 @@ async function claimDeliveries(): Promise<string[]> {
 }
 
 function retryDelayMs(attempts: number): number {
-  return Math.min(3_600_000, 30_000 * 2 ** Math.max(0, attempts - 1));
+  return exponentialBackoffMs({ attempt: attempts, baseMs: 30_000, capMs: 3_600_000 });
 }
 
 async function processDelivery(deliveryId: string): Promise<void> {
