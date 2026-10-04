@@ -1956,16 +1956,15 @@ function parsePolicyConditions(
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
   for (const entry of raw) {
-    const negated = entry.includes('!=');
-    const separator = negated ? '!=' : '=';
-    const index = entry.indexOf(separator);
+    const index = entry.indexOf('=');
+    const negated = index > 0 && entry[index - 1] === '!';
     if (index <= 0) {
       return {
         error: `--condition must look like arg=value or arg!=value (got "${entry}")`,
       };
     }
-    const arg = entry.slice(0, index).trim();
-    const match = entry.slice(index + separator.length).trim();
+    const arg = entry.slice(0, negated ? index - 1 : index).trim();
+    const match = entry.slice(index + 1).trim();
     if (!arg) return { error: `--condition needs an argument path (got "${entry}")` };
     if (!match) return { error: `--condition needs a value to match (got "${entry}")` };
     conditions.push({ arg, match, ...(negated ? { negate: true } : {}) });
