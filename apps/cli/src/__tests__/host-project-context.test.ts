@@ -149,6 +149,18 @@ describe('resolveProjectContext with an explicit --host', () => {
     expect(ctx?.projectId).toBe(AMBIENT_PROJECT);
     expect(ctx?.auth.token).toBe(HOME_TOKEN);
   });
+
+  it('the ambient sandbox session token never overrides a named --host', async () => {
+    // The platform-injected session credential of a sandbox outranks the
+    // stored ACTIVE host, so before the host routing this was the state that
+    // sent a session-scoped principal to another deployment. A named --host
+    // must keep using that host's own stored token (KRTX-1404).
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox.test';
+    const ctx = await resolveProjectContext({ hostArg: 'other', projectArg: 'proj-on-other' });
+    expect(ctx?.auth.token).toBe(OTHER_TOKEN);
+    expect(ctx?.auth.api_base).toBe('https://api.example.test');
+  });
 });
 
 // Inside a session sandbox the platform injects KORTIX_TOKEN +
