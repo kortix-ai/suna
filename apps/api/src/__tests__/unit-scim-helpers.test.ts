@@ -106,7 +106,7 @@ import { readFileSync as readScimSource } from 'node:fs';
 import { join as joinScimPath } from 'node:path';
 
 const SCIM_USERS_SRC = readScimSource(
-  joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'),
+  joinScimPath(import.meta.dir, '..', 'http', 'scim', 'users.ts'),
   'utf8',
 );
 
@@ -136,7 +136,7 @@ describe('SCIM deprovision releases the seat', () => {
   });
 
   test('the module actually imports it', () => {
-    expect(SCIM_USERS_SRC).toContain("from '../services/billing/services/seat-management'");
+    expect(SCIM_USERS_SRC).toContain("from '../../services/billing/services/seat-management'");
   });
 });
 

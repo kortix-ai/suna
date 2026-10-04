@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 const DB_DEPS_SOURCE = (
   await Promise.all(
     ['db-deps.ts', 'db-deps-gateway.ts'].map((file) =>
-      Bun.file(new URL(`../connectors/${file}`, import.meta.url).pathname).text(),
+      Bun.file(new URL(`../services/connectors/${file}`, import.meta.url).pathname).text(),
     ),
   )
 ).join('\n');
