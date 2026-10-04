@@ -7,6 +7,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { View, Image, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
+import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -65,6 +66,7 @@ export enum FilePreviewType {
   IMAGE = 'image',
   PDF = 'pdf',
   MARKDOWN = 'markdown',
+  MERMAID = 'mermaid',
   CSV = 'csv',
   XLSX = 'xlsx',
   DOCX = 'docx',
@@ -111,6 +113,7 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   // SVG is never drawn on mobile (Jay, 2026-09-22, `lib/files/svg-policy`):
   // it reads as its markup, so Copy works, and Download hands the real file to
   // the device. The `SvgXml` renderer that briefly lived here is gone.
+  if (ext === 'mmd' || ext === 'mermaid') return FilePreviewType.MERMAID;
   if (ext === 'svg') return FilePreviewType.TEXT;
   if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
   if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
@@ -1448,7 +1451,10 @@ function TextContentPreview({
   filePath?: string;
   sandboxUrl?: string;
 }) {
+  const { colorScheme } = useColorScheme();
   switch (previewType) {
+    case FilePreviewType.MERMAID:
+      return <MermaidBlock chart={content} language="mermaid" isDark={colorScheme === 'dark'} />;
     case FilePreviewType.MARKDOWN:
       return <MarkdownPreview content={content} />;
 
@@ -1543,7 +1549,7 @@ export function FilePreview({
     <TextContentPreview
       content={textPreview.text}
       fileName={fileName}
-      previewType={previewType}
+      previewType={previewType === FilePreviewType.MERMAID && textPreview.decision === 'truncate' ? FilePreviewType.TEXT : previewType}
       filePath={filePath}
       sandboxUrl={sandboxUrl}
     />
