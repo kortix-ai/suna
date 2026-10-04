@@ -11,8 +11,17 @@
  *   sandbox row that is not `active` — it dialled nothing, the row carries the
  *   state, and the client reads the response headers. Logging it counted every
  *   parked-box read burst as route 5xx (about 40 such 503s a day on the
- *   data-path GET routes alone). A 503 the proxy dialled for, or a mutation,
- *   stays logged.
+ *   data-path GET routes alone).
+ *
+ * - KRTX-811: the same designed answer on a MUTATION. The API's own MCP
+ *   executor wakes a parked box with `POST /kortix/env-rpc`, treats the 503
+ *   (`retry: true`) as "waking", sleeps 2 s and re-posts until the row is
+ *   `active` — prod, 2026-09-29: two bursts of four 503s (2.03–2.07 s apart,
+ *   17–65 ms, no upstream dial), each followed by 200s once the box woke.
+ *   Logging them counted the wake window as a route 5xx rise on
+ *   `POST /v1/p/:id/:id/kortix/env-rpc` (8/488 in one hour against a 0.08/h
+ *   baseline). A 503 the proxy dialled for still stays logged, whatever the
+ *   method.
  *
  * - KRTX-468: the line carries the per-stage `Server-Timing` breakdown on the
  *   slow or failed tail. A p95 anomaly used to leave one opaque `duration`;
@@ -73,14 +82,46 @@ describe('shouldSuppressRequestLog', () => {
     expect(shouldSuppressRequestLog({ ...parkedRead, status: 502 })).toBe(false);
   });
 
-  test('a mutation is never suppressed, even from the control plane', () => {
+  test('the designed not-ready 503 is suppressed on a mutation too (KRTX-811)', () => {
+    // The MCP executor's wake window: the POST re-arrives every 2 s until the
+    // row is active, so the burst of designed 503s is the wake working.
     expect(
       shouldSuppressRequestLog({
         method: 'POST',
-        path: '/v1/p/<sandbox>/8000/log',
+        path: '/v1/p/<sandbox>/8000/kortix/env-rpc',
+        status: 503,
+        durationMs: 36,
+        proxyHop: 'control_plane',
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressRequestLog({
+        method: 'PUT',
+        path: '/v1/p/<sandbox>/8000/file',
         status: 503,
         durationMs: 20,
         proxyHop: 'control_plane',
+      }),
+    ).toBe(true);
+  });
+
+  test('a 503 the proxy dialled for is never suppressed, mutation included', () => {
+    expect(
+      shouldSuppressRequestLog({
+        method: 'POST',
+        path: '/v1/p/<sandbox>/8000/kortix/env-rpc',
+        status: 503,
+        durationMs: 4500,
+        proxyHop: 'daemon',
+      }),
+    ).toBe(false);
+    expect(
+      shouldSuppressRequestLog({
+        method: 'POST',
+        path: '/v1/p/<sandbox>/8000/kortix/env-rpc',
+        status: 502,
+        durationMs: 4571,
+        proxyHop: null,
       }),
     ).toBe(false);
   });

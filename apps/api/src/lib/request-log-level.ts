@@ -57,13 +57,15 @@ export function requestTimingLogField(durationMs: number, status: number): strin
  * 5xx of the route on the line, so a designed 5xx-shaped answer pages as a
  * route 5xx rise with nothing to fix. Three shapes are designed:
  *
- *   - `control_plane` 503 on a GET — the proxy answered `sandbox_not_ready`
+ *   - `control_plane` 503 on any method — the proxy answered `sandbox_not_ready`
  *     from the session-sandbox row without dialling the box (parked, stopped,
- *     or still provisioning), and a GET never wakes a box on purpose. The web
- *     app reads the response's `hop`/`code`, not this log line; the row itself
- *     carries the state. Prod, 24 h to 2026-09-29: ~40 such 503s a day on the
- *     data-path GET routes alone, each one the client's reconnect hydrate
- *     racing a park (KRTX-397).
+ *     or still provisioning). The row carries the state; the client reads the
+ *     response's `hop`/`code` and retries. A mutation never reached the box, so
+ *     a wake-retry burst re-answers it until the row is `active` (KRTX-811:
+ *     four designed 503s per wake on `POST /kortix/env-rpc` paged as a route
+ *     5xx rise; KRTX-397 fixed the GET half of the same defect). Prod,
+ *     24 h to 2026-09-29: ~40 such 503s a day on the data-path GET routes
+ *     alone, each one the client's reconnect hydrate racing a park (KRTX-397).
  *   - long-poll/SSE event-stream reads (/global/event, /session/status,
  *     /session/:id/message) timing out at ~30 s (504), or the boot window
  *     answering 502/503.
@@ -84,8 +86,12 @@ export function shouldSuppressRequestLog(input: {
   proxyHop: string | null;
 }): boolean {
   const { method, path, status, durationMs, proxyHop } = input;
-  if (method !== 'GET') return false;
+  // The proxy's designed parked-window answer, whatever the method: it dialled
+  // nothing (only `routes/preview.ts` emits `control_plane`, for the not-ready
+  // row), the client reads the response and retries the wake. A dialled 503 or
+  // give-up 502 stays logged below.
   if (status === 503 && proxyHop === 'control_plane') return true;
+  if (method !== 'GET') return false;
   const isSandboxProxyPath = path.includes('/v1/p/');
   const isProxyLongPoll =
     isSandboxProxyPath &&
