@@ -163,7 +163,14 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     return p !== 0 ? p : aId.localeCompare(bId);
   });
   if (rows.length === 0) {
-    process.stdout.write(`  ${C.dim}No models served for this project.${C.reset}\n`);
+    // Same state the web Models tab's empty state answers ("Add a key on the
+    // Providers tab"): a fresh account on internal billing serves nothing until
+    // a provider key is connected. Name the CLI path instead of a bare dead end.
+    process.stdout.write(
+      `  ${C.dim}No models yet — connect a provider key with ${C.reset}${C.cyan}kortix providers set <provider>${C.reset}` +
+        `${C.dim} or ${C.reset}${C.cyan}kortix providers login <provider>${C.reset}${C.dim}.` +
+        ` The models it unlocks show up here.${C.reset}\n`,
+    );
     return 0;
   }
   const idW = Math.min(44, Math.max(...rows.map(([id]) => id.length), 5));
@@ -224,9 +231,15 @@ async function modelsToggle(
   const known = new Set(Object.keys(picker.models ?? {}));
   const unknown = ids.filter((id) => !known.has(id));
   if (unknown.length > 0) {
+    // With nothing served, "list the ids with models ls" points at an empty
+    // list — the dead end behind KRTX-1538. Answer how to get models instead.
+    const hint =
+      known.size === 0
+        ? `This project serves no models yet — connect one with ${C.cyan}kortix providers set <provider>${C.reset} ` +
+          `or ${C.cyan}kortix providers login <provider>${C.reset}; ${C.cyan}kortix models ls${C.reset} lists what they unlock.`
+        : `List the ids with ${C.cyan}kortix models ls${C.reset}.`;
     process.stderr.write(
-      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ` +
-        `List the ids with ${C.cyan}kortix models ls${C.reset}.\n`,
+      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ${hint}\n`,
     );
     return 1;
   }
