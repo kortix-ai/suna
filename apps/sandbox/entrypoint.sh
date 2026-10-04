@@ -207,6 +207,94 @@ KORTIX_DRIVE_OWNER_PY
 }
 start_drive_owner || true
 
+# ---------------------------------------------------------------------------
+# Session state on a volume (ephemeral sandboxes).
+#
+# When KORTIX_PERSIST_ROOT is set, this box is disposable: the session's
+# durable state lives on a Platinum volume mounted at that path, and the box
+# itself is deleted when the session stops. The next wake creates a new box
+# from the newest image and mounts the same volume here.
+#
+# Package and tool caches (~/.cache, the pnpm store, ~/.npm) stay on the image
+# disk: they are rebuildable, large (about 2 GB baked in), and would be uploaded
+# on every commit. A session's installed dependencies live in /workspace.
+#
+# Each persisted directory is a bind mount from the volume onto its usual
+# path, so nothing downstream (git, OpenCode, the daemon's pins) learns a new
+# location. A directory the volume does not have yet is seeded from the image
+# first, so a brand-new session keeps the image's warm paths (the baked
+# checkout, the migrated OpenCode database).
+#
+# The volume's mount point arrives from the platform agent, possibly after this
+# script starts. Running on the image disk instead would silently throw away
+# everything the session writes, so a mount that never shows up stops the boot.
+# ---------------------------------------------------------------------------
+kortix_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+}
+
+mount_session_state() {
+  local root="$1" wait_s="${KORTIX_PERSIST_WAIT_S:-120}" start now
+  start=$(date +%s)
+  until mountpoint -q "${root}"; do
+    now=$(date +%s)
+    if [ $((now - start)) -ge "${wait_s}" ]; then
+      echo "[entrypoint] session volume never mounted at ${root} (${wait_s}s)" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+  echo "[entrypoint] session volume mounted at ${root} after $(( $(date +%s) - start ))s" >&2
+  local uid gid
+  uid=$(id -u kortix) gid=$(id -g kortix)
+  # A fresh volume's root is root:root 0755; the runtime user must own it.
+  kortix_as_root chown "${uid}:${gid}" "${root}" || return 1
+  local home=/home/kortix spec name dst src
+  for spec in \
+    "workspace:${WORKSPACE}" \
+    "opencode-data:${home}/.local/share/opencode" \
+    "opencode-state:${home}/.local/state/opencode" \
+    "kortix-state:${home}/.local/state/kortix"; do
+    name="${spec%%:*}" dst="${spec#*:}" src="${root}/${name}"
+    if mountpoint -q "${dst}" 2>/dev/null; then continue; fi
+    kortix_as_root mkdir -p "${dst}" || return 1
+    kortix_as_root chown "${uid}:${gid}" "${dst}" || return 1
+    if [ ! -d "${src}" ]; then
+      rm -rf "${src}.seed"
+      mkdir -p "${src}.seed" || return 1
+      cp -a "${dst}/." "${src}.seed/" 2>/dev/null \
+        || kortix_as_root cp -a "${dst}/." "${src}.seed/" || return 1
+      kortix_as_root chown -R "${uid}:${gid}" "${src}.seed" || return 1
+      mv "${src}.seed" "${src}" || return 1
+    fi
+    kortix_as_root mount --bind "${src}" "${dst}" || return 1
+  done
+  # Headroom: a session that filled its volume would otherwise never boot
+  # again, because OpenCode and the daemon write their state here before the
+  # agent can answer. A reserve file (allocated, never written, so it costs no
+  # upload) is released at boot when the volume is nearly full and recreated
+  # once there is room again.
+  local reserve="${root}/.kortix-reserve" reserve_mb=256 free_mb
+  free_mb=$(( $(df -Pk "${root}" | awk 'NR==2 {print $4}') / 1024 ))
+  if [ -f "${reserve}" ] && [ "${free_mb}" -lt 64 ]; then
+    rm -f "${reserve}"
+    echo "[entrypoint] session volume is full (${free_mb} MB free); released the ${reserve_mb} MB reserve" >&2
+  elif [ ! -f "${reserve}" ] && [ "${free_mb}" -gt $(( reserve_mb * 4 )) ]; then
+    fallocate -l "${reserve_mb}M" "${reserve}" 2>/dev/null || rm -f "${reserve}"
+  fi
+  # auth.json is materialized from project secrets at every OpenCode spawn. A
+  # copy left by the previous box must not outlive a rotated secret.
+  rm -f "${home}/.local/share/opencode/auth.json"
+  echo "[entrypoint] session state bound from ${root} in $(( $(date +%s) - start ))s" >&2
+}
+
+if [ -n "${KORTIX_PERSIST_ROOT:-}" ]; then
+  if ! mount_session_state "${KORTIX_PERSIST_ROOT}"; then
+    echo "[entrypoint] session state is not on its volume; refusing to boot on the image disk" >&2
+    exit 1
+  fi
+fi
+
 DEADLINE_S=120
 # Require 2 consecutive clean probes at a tight 0.25s cadence (~0.5s on the
 # common path where the dir is stable immediately) instead of 4×0.5s=2s. The

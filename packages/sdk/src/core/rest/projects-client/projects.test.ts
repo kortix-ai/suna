@@ -966,6 +966,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'config_releases',
     'connectors_api_discover',
     'drives',
+    'ephemeral_sandboxes',
     'llm_gateway',
     'marketplace',
     'meta_agent',

@@ -23,6 +23,12 @@ import {
 } from './box-queries';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
+import {
+  EPHEMERAL_RETIRED_KEY,
+  EphemeralRetireError,
+  retireEphemeralBox,
+  retireOnStopPlan,
+} from '../../platform/services/ephemeral-sandbox';
 
 export type StopBoxOutcome = 'stopped' | 'skipped' | 'errors';
 
@@ -122,6 +128,62 @@ export async function abortLiveTurnBeforeStop(input: {
   }
 }
 
+/**
+ * Ephemeral sandboxes: a stop commits the session volume and DELETES the box.
+ *
+ *   null       — not an ephemeral box; stop it normally.
+ *   'retired'  — deleted, and the row is stopped with no external id.
+ *   'fallback' — the commit (or a first-stop migration) failed with the box
+ *                untouched; stop it normally, its own final commit keeps the
+ *                volume current and the session resumes the old way once.
+ *   'error'    — the delete failed; the row stays active for a retry.
+ */
+export async function retireEphemeralOnStop(input: {
+  sandboxId: string;
+  sessionId: string;
+  externalId: string;
+  stopReason: StopReason;
+  now: Date;
+  metadata?: Record<string, unknown>;
+}): Promise<'retired' | 'fallback' | 'error' | null> {
+  const plan = await retireOnStopPlan(input.sandboxId).catch((err) => {
+    console.warn(`[ephemeral] retire plan for ${input.sandboxId} failed; stopping normally:`, err);
+    return null;
+  });
+  if (!plan) return null;
+  let timings;
+  try {
+    timings = await retireEphemeralBox({
+      externalId: input.externalId,
+      sessionId: input.sessionId,
+      metadata: plan.metadata,
+    });
+  } catch (err) {
+    const phase = err instanceof EphemeralRetireError ? err.phase : 'delete';
+    console.error(
+      `[ephemeral] retiring ${input.externalId} (session ${input.sessionId}) failed at ${phase}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return phase === 'delete' ? 'error' : 'fallback';
+  }
+  await applyStoppedState({
+    sandboxId: input.sandboxId,
+    sessionId: input.sessionId,
+    externalId: input.externalId,
+    stopReason: input.stopReason,
+    retiredExternalId: true,
+    metadata: {
+      ...(input.metadata ?? {}),
+      [EPHEMERAL_RETIRED_KEY]: input.externalId,
+      ephemeralRetiredAt: new Date().toISOString(),
+      ephemeralRetire: timings,
+    },
+    now: input.now,
+  });
+  console.info(`[ephemeral] retired ${input.externalId} for session ${input.sessionId}`, timings);
+  return 'retired';
+}
+
 /** The only fields an idle stop needs. */
 export type StoppableBox = Pick<
   ReapCandidate,
@@ -155,6 +217,19 @@ export async function stopExpiredBox(
   // came from `reapCandidatePredicate` (status = 'active'), so the box can
   // plausibly still be running one — best-effort, never gates the stop below.
   await abortLiveTurnBeforeStop({ sandboxId: row.sandboxId, externalId: row.externalId });
+
+  const retired = await retireEphemeralOnStop({
+    sandboxId: row.sandboxId,
+    sessionId: row.sessionId,
+    externalId: row.externalId,
+    stopReason,
+    now,
+  });
+  if (retired === 'retired') return 'stopped';
+  if (retired === 'error') {
+    await releaseSandboxStopClaim(row.sandboxId, claimToken);
+    return 'errors';
+  }
 
   try {
     await getProvider(row.provider).stop(row.externalId);

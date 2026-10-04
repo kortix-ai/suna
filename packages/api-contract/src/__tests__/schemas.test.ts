@@ -149,6 +149,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       config_releases: true,
       us_region: false,
       drives: false,
+      ephemeral_sandboxes: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -728,6 +729,7 @@ describe('envelopes', () => {
       'config_releases',
       'us_region',
       'drives',
+      'ephemeral_sandboxes',
     ]);
   });
 

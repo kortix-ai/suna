@@ -43,6 +43,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const configReleases = useFeatureFlag(projectId, 'config_releases');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const drives = useFeatureFlag(projectId, 'drives');
+  const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
 
   return {
     flags: {
@@ -62,8 +63,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       config_releases: configReleases.enabled,
       us_region: usRegion.enabled,
       drives: drives.enabled,
+      ephemeral_sandboxes: ephemeralSandboxes.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: drives.isLoading,
+    isLoading: ephemeralSandboxes.isLoading,
   };
 }

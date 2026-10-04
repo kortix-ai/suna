@@ -66,6 +66,7 @@ export const FeatureFlagMapSchema = z.object({
   config_releases: z.boolean(),
   us_region: z.boolean(),
   drives: z.boolean(),
+  ephemeral_sandboxes: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
