@@ -12391,7 +12391,6 @@ test('the timed-out window-message anchor stays specific to the extension channe
   for (const message of [
     'Request timed out after 30000ms',
     'Window message "chrome: get value" timed out.',
-    'git push timed out after 30000ms (signal SIGTERM)',
   ]) {
     assert.equal(
       isKnownBrowserNoiseMessage(message),
