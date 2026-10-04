@@ -23,7 +23,7 @@ another project, and nothing for other accounts.
    `Overridden for this project`.
 3. Use the switch. The change applies to the current project immediately.
 
-You need the project's `project.customize.write` permission. The route answers
+You need the project's `project.settings.write` permission. The route answers
 `403` for any other caller.
 
 ### From the CLI
@@ -178,14 +178,9 @@ refs). An explicit project choice always wins.
 
 A graduated feature is on for every project and has no switch.
 
-- **Agents as principals** is standard behavior. An agent session acts as the
-  agent itself — its Kortix permissions within its ceiling role, minus the
-  human-only permissions, whoever runs it. It is not listed on
-  **Settings → Feature flags** and there is nothing to turn on. See
-  [Agent permissions](/docs/project/permissions). One project can be put back
-  on the old launcher-role model for a single release; ask support, who set it
-  with `PATCH /v1/projects/:id/features`. That switch is removed in the release
-  after this one.
+- **Agents as principals** is standard behavior with no switch. An agent
+  session acts as the agent itself — its Kortix permissions within its ceiling
+  role, whoever runs it. See [Agent permissions](/docs/project/permissions).
 - **Review Center** graduated out of the flag system. The Review page, the
   sidebar Review row, and the command-palette row show for every project; the
   `project.review.read` and `project.review.act` permissions still apply.

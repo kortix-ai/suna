@@ -25,7 +25,7 @@ import { projectSecrets } from '@kortix/db';
 import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@kortix/api-contract';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
-import { applyAgentScope, extractAgents } from '../agents';
+import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -34,6 +34,7 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
+import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
@@ -127,6 +128,8 @@ projectsApp.openapi(
         400,
       );
     }
+    // Read before the edit below mutates `manifest.raw` (v1 in place).
+    const grantsBefore = grantsByAgent(extractAgents(manifest));
 
     // The agent must already be declared — this route SCOPES an existing agent,
     // it doesn't create the roster entry (that's the fuller /config editor). v1
@@ -177,6 +180,8 @@ projectsApp.openapi(
     const check = extractAgents(manifest);
     const problem = check.errors.find((e) => e.name === agentName);
     if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
+    // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
+    await assertNoGrantEscalation(c, projectId, grantsBefore, grantsByAgent(check));
 
     const committed = await commitManifest(
       loaded.row,
@@ -372,6 +377,14 @@ projectsApp.openapi(
         adopted_governance: false,
       });
     }
+    // An agent grants only what it holds: a governed agent cannot hand itself
+    // (or another agent) a secret outside its own `secrets:` list.
+    await assertNoGrantEscalation(
+      c,
+      projectId,
+      grantsByAgent(extractAgents(manifest)),
+      grantsByAgent(extractAgents({ ...manifest, raw: applied.raw })),
+    );
     manifest.raw = applied.raw;
 
     const committed = await commitManifest(
