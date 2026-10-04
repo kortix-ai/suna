@@ -1,5 +1,5 @@
 {
-  "source_hash": "0d3048cd9344a695375ae9ac139022ed305c2b2dc69f0332496c2975bbea586c",
+  "source_hash": "8799039510c445b5b5239c387b1dede5a4d1d586ab42c3e22948b55d4f6114b7",
   "diff_files": [
     "apps/api/src/projects/reaping/archived-box-removal-plan.integration.test.ts",
     "apps/api/src/projects/reaping/archived-box-removal.ts",
@@ -9,13 +9,13 @@
     "packages/db/migrations/20261004030607968_session_sandboxes_provider_removal_pending_index.concurrent.ts",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "063537727266416d0d6808a6d8b6e2e23152e9c3a161701180a3528e8b4b55b4",
-  "head": "15f8825bf87718fa3d1d93dd7af72d6a571003a7",
-  "passed": false,
+  "diff_hash": "2cae857c0cbeca7f26a167d38aa04215a7a4cfb764e1c6a118111b5518890be4",
+  "head": "da40095d9eaa4f90859fb87ebe043a5b753f94ac",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T03:25:38.586Z"
+  "at": "2026-10-04T03:37:22.673Z"
 }

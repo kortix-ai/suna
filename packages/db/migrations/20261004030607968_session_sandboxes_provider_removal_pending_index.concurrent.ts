@@ -31,10 +31,11 @@
 // keep a row stamped pending without an external box (unremovable) out of the
 // index, so it cannot occupy the reaper's 50-row batch forever.
 //
-// The key is declared in `packages/db/src/schema/kortix.ts` without a sort
-// clause on the expression (drizzle cannot attach ASC NULLS FIRST to an
-// expression column); the migration below is what actually builds it, with the
-// order the reaper reads.
+// The declaration in `packages/db/src/schema/kortix.ts` embeds the sort in the
+// expression text (`asc nulls first` — drizzle cannot attach a sort clause to
+// an expression column, so it lives inside the sql`...` key, exactly like the
+// parked_verified sibling index); the migration below builds the index with
+// the same order the reaper reads.
 //
 // CREATE INDEX CONCURRENTLY takes SHARE UPDATE EXCLUSIVE on the table: it
 // blocks no reader and no writer. It cannot run in a transaction, hence this
