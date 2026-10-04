@@ -76,7 +76,7 @@ const UUID_LITERAL = /\[0-9a-f\]\{8\}-/i;
 const UUID_ALLOW: Record<string, string> = {
   'shared/validate.ts': 'the one implementation',
   // TODO(follow-up): convert once each open change lands.
-  'connectors/db-deps.ts': 'open PR #7236 edits this file',
+  'connectors/db-deps-rows.ts': 'open PR #7236 edits this file',
   'iam/sso-sync.ts': 'open SSO identity work edits this file',
 };
 

@@ -745,9 +745,14 @@
       "count": 2
     }
   },
-  "src/connectors/db-deps.ts": {
+  "src/connectors/db-deps-connect.ts": {
     "no-console": {
-      "count": 2
+      "count": 1
+    }
+  },
+  "src/connectors/db-deps-principal.ts": {
+    "no-console": {
+      "count": 1
     }
   },
   "src/connectors/manifest-crud.ts": {
