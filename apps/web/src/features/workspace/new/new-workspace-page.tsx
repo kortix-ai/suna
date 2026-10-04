@@ -200,17 +200,21 @@ export function NewWorkspacePage() {
    */
   const handingOff = submitting || Boolean(onboardingProjectId);
 
-  // Only surface a name error after the field has been left once. Validating
-  // on the first keystroke would tell the user "Name is required" while they
-  // are still typing the name.
+  // The too-long message fires LIVE, before the field is ever left: the input
+  // no longer truncates typed or pasted names at the limit (there is no
+  // `maxLength` — the browser used to clip silently at 120, which made this
+  // message and the submit gate both unreachable for typing). The remaining
+  // name errors wait for the field to be left once: validating on the first
+  // keystroke would tell the user "Name is required" while they are still
+  // typing the name.
   const nameError = useMemo(() => {
-    if (!touched) return null;
     const result = validateWorkspaceName(state.name);
-    if (result.ok) return null;
-    if (result.error === 'Name is required') return t('validation.nameRequired');
-    if (result.error.startsWith('Name must be')) {
+    if (!result.ok && result.error.startsWith('Name must be')) {
       return t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
     }
+    if (!touched) return null;
+    if (result.ok) return null;
+    if (result.error === 'Name is required') return t('validation.nameRequired');
     return t('validation.nameCharacters');
   }, [state.name, t, touched]);
 
@@ -471,7 +475,10 @@ export function NewWorkspacePage() {
                       onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                       onBlur={() => setTouched(true)}
                       placeholder={t('name.placeholder')}
-                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
+                      // No `maxLength`: the browser would clip typed and pasted
+                      // names at the limit with no message, and the validation
+                      // below would stay unreachable. The limit is enforced by
+                      // `isSubmittable` (shared form model) + the live message.
                       size="md"
                       className="w-full"
                       aria-invalid={nameError ? true : undefined}
