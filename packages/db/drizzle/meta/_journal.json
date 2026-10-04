@@ -827,6 +827,13 @@
       "when": 1791051577945,
       "tag": "20261003181937_krtx1307_parked_verify_index",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791083292082,
+      "tag": "20261004030812_session_sandboxes_provider_removal_pending_index_v2",
+      "breakpoints": true
     }
   ]
 }

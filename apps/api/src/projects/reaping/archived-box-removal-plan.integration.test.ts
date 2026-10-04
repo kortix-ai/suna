@@ -10,9 +10,13 @@
  * seq-scanned every archived row and decoded its jsonb to find nothing.
  *
  * `idx_session_sandboxes_provider_removal_pending`
- * (`20261003181442876_session_sandboxes_provider_removal_pending_index.concurrent.ts`)
+ * (`20261004030607968_session_sandboxes_provider_removal_pending_index.concurrent.ts`)
  * carries the exact predicate AND the query's sort expression, so the lane
  * probes a (usually empty) partial index instead of the whole archived set.
+ * `status` is the index's leading KEY, not a partial predicate: the app binds
+ * it as a parameter, and a generic plan cannot prove `status = $1` implies
+ * `status = 'archived'` — the second plan test pins that the index still
+ * answers the prepared statement under `plan_cache_mode = force_generic_plan`.
  *
  * The plan test runs the shipped statement (`removeArchivedProviderBoxesQuery`)
  * against a 2000-row archived set the planner sees naturally, so it asserts
@@ -26,7 +30,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { removeSeeded, seedProject, type SeededProject } from '../../__tests__/helpers/integration-fixtures';
+import {
+  localTestDatabaseUrl,
+  removeSeeded,
+  seedProject,
+  type SeededProject,
+} from '../../__tests__/helpers/integration-fixtures';
 import { removeArchivedProviderBoxesQuery } from './archived-box-removal';
 
 const SESSION_PREFIX = 'krtx1309-reaper-plan-';
@@ -169,6 +178,46 @@ describe('idx_session_sandboxes_provider_removal_pending serves the provider-rem
     expect(text).not.toContain('idx_session_sandboxes_status');
     // The index key is the ORDER BY expression: no Sort node.
     expect(text).not.toContain('Sort');
+  });
+
+  test('the index survives a generic plan: status is a key, not a predicate', async () => {
+    // The app binds `status` as a parameter. A generic plan cannot prove
+    // `status = $1` implies the literal predicate, so a status-PREDICATE
+    // variant of this index drops out of the plan once the server switches to
+    // generic plans (verified against plan_cache_mode = force_generic_plan —
+    // that variant planned a Parallel Seq Scan). This index carries status as
+    // the leading key, so the same prepared statement keeps it.
+    const { Client } = await import('pg');
+    const client = new Client({ connectionString: localTestDatabaseUrl() });
+    await client.connect();
+    try {
+      await client.query('set plan_cache_mode = force_generic_plan');
+      await client.query(
+        `prepare reaper_generic_plan (kortix.session_sandbox_status, integer) as ${removeArchivedProviderBoxesQuery().toSQL().sql}`,
+      );
+      try {
+        const { rows } = await client.query(
+          'explain (format json) execute reaper_generic_plan (\'archived\', 50)',
+        );
+        const nodes: string[] = [];
+        const walk = (node: Record<string, unknown>): void => {
+          nodes.push(
+            String(node['Node Type']) +
+              (node['Index Name'] ? ` ${String(node['Index Name'])}` : ''),
+          );
+          for (const child of (node['Plans'] as Array<Record<string, unknown>>) ?? []) walk(child);
+        };
+        walk((rows[0] as { 'QUERY PLAN': Array<{ Plan: Record<string, unknown> }> })['QUERY PLAN'][0].Plan);
+        const text = nodes.join('\n');
+        expect(text).toContain('idx_session_sandboxes_provider_removal_pending');
+        expect(text).not.toContain('Seq Scan');
+        expect(text).not.toContain('idx_session_sandboxes_status');
+      } finally {
+        await client.query('deallocate reaper_generic_plan');
+      }
+    } finally {
+      await client.end();
+    }
   });
 
   test('the batch returns only stamped archived rows with an external box, nulls first, limited', async () => {
