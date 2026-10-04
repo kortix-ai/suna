@@ -190,6 +190,14 @@ export class CliSandbox {
       GIT_COMMITTER_EMAIL: 'ke2e@kortix.test',
       // Force non-TTY so prompt-driven branches take their headless path.
       CI: '1',
+      // Cut the Kortix sandbox image's own identity out of every spawn: the CLI
+      // reads /dev/shm/kortix/agent-env.sh (KORTIX_TOKEN, KORTIX_PROJECT_ID) via
+      // sandboxEnvValue() when this flag is unset, so on a Kortix sandbox the
+      // flows silently authenticate as the platform agent session against the
+      // live API instead of the ke2e temp config (every other spawn harness in
+      // the repo sets the same flag; on CI neither file exists and this is a
+      // no-op).
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     };
   }
 
