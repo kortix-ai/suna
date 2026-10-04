@@ -194,7 +194,7 @@ projectsApp.openapi(createRoute({
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE);
   const parsed = modelAccessChangeBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
   const change = parsed.data;
@@ -253,7 +253,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
     );
     const accountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
@@ -408,7 +408,7 @@ const ModelDefaultBody = z.object({
 
 // PUT and DELETE /model-defaults share one guard, in one order:
 //   1. project visible to the caller      → else 404 'Not found'
-//   2. project.customize.write            → else 403 (thrown)
+//   2. project.model.write                → else 403 (thrown)
 //   3. the project's LLM gateway enabled  → else 404 llm_gateway_disabled
 // The permission check runs before the gateway check, so a caller who may not
 // write model defaults never learns the project's gateway setting.
@@ -423,7 +423,7 @@ async function loadModelDefaultsWriter(
     loaded.userId,
     loaded.row.accountId,
     projectId,
-    PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
   );
   if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
   return { ownerAccountId: loaded.row.accountId, userId: loaded.userId };

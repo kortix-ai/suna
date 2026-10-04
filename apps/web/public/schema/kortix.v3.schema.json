@@ -306,8 +306,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -327,6 +329,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "*"
                   ]
                 }
@@ -376,8 +380,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -397,6 +403,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "*"
                   ]
                 }

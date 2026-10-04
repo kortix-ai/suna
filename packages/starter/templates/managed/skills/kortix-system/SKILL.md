@@ -755,7 +755,8 @@ project.agent.read  project.agent.write
 project.skill.read  project.skill.write
 project.command.read  project.command.write
 project.file.read  project.file.write
-project.customize.read  project.customize.write
+project.settings.write  project.sandbox.write
+project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
