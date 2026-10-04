@@ -1,8 +1,7 @@
 {
-  "source_hash": "7ea04bfb0a942260bb8e5de220c08e86281e431f323d819e62665b1fce708f7c",
+  "source_hash": "220b2b12bef84a2f8649116e693f4326a049d8ac12064c6d5aecf0429f75fb29",
   "diff_files": [
     "apps/api/src/__tests__/integration-approval-card-relay.test.ts",
-    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
     "apps/api/src/__tests__/integration-monthly-compute-accrual.test.ts",
     "apps/api/src/__tests__/integration-secret-audience.test.ts",
     "apps/api/src/__tests__/integration-slack-approval-card.test.ts",
@@ -29,16 +28,15 @@
     "apps/api/src/projects/lib/trigger-scheduler.ts",
     "apps/api/src/projects/lib/triggers.ts",
     "apps/api/src/projects/routes/approvals.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts"
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "09c18d0ee585e3e64875de3b23cd68898dbef83ae3aff583ebabd3d5549bc074",
-  "head": "3788e36a3d12645958665ab158f5531aacf85d9a",
+  "diff_hash": "1b59f893869c161e4a6e64c02172d11c7f88dfeaaa5885d1b8f321b4b5143f0b",
+  "head": "c71dfeedf8e7c357899103da80d90bacfa002592",
   "passed": true,
   "lanes": {
-    "core": "pass",
     "packages": "pass",
+    "core": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:38:39.649Z"
+  "at": "2026-10-04T06:41:38.686Z"
 }
