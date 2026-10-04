@@ -1,5 +1,5 @@
 {
-  "source_hash": "98865fa79367d411ae5e2b9ba604ef7598d501ea2d9417768507e5cb82738145",
+  "source_hash": "46d53ab18a9e4f45ea2b7005785ad4bacd33cb4b3eafa568cc1c7c7c97f3951b",
   "diff_files": [
     "apps/api/bunfig.toml",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -20,16 +20,15 @@
     "packages/shared/package.json",
     "packages/shared/src/chat-mention.ts",
     "packages/shared/src/host-config/test-sandbox-env.ts",
-    "packages/shared/src/index.ts",
-    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts"
+    "packages/shared/src/index.ts"
   ],
-  "diff_hash": "0064822a007520e2ac69f4ab6fad7bee061eb87570e7a815f8f9e79ea3f797ee",
-  "head": "f2d54f88ff994790201e4651b81df02ae6106030",
+  "diff_hash": "10bae212d047d6232f0c4a230698a111f09d0d2c01ff8cb27c292884fa2c507c",
+  "head": "c31813d4c4c3c4cd2a5d34178cf65d5e2de988de",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:57:55.859Z"
+  "at": "2026-10-04T01:30:42.139Z"
 }
