@@ -212,7 +212,8 @@ async function main(argv: string[]): Promise<number> {
     argv[0] === 'connectors' &&
     (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
-      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
+      ((argv[1] === 'ls' || argv[1] === 'list') &&
+        argv.some((arg) => arg === '--session' || arg.startsWith('--session='))));
   if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
