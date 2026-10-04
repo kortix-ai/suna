@@ -109,7 +109,10 @@ process.exit(result.status ?? 1);
     execute();
     const rows = sql(
       target.href,
-      'SELECT json_agg(t ORDER BY session_id) FROM kortix.session_sandboxes t;',
+      // COLLATE "C" pins the assertion to byte order — the suite database's
+      // collation is the environment's (the local Supabase template is ICU,
+      // where é sorts at the 'e' position, not after 'z').
+      'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;',
     );
     expect(JSON.parse(rows)).toEqual([
       { session_id: 'A-session', last_used_at: null, metadata: null, updated_at: null },
@@ -134,12 +137,18 @@ process.exit(result.status ?? 1);
     ]);
     execute();
     expect(
-      sql(target.href, 'SELECT json_agg(t ORDER BY session_id) FROM kortix.session_sandboxes t;'),
+      sql(
+        target.href,
+        'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;',
+      ),
     ).toBe(rows);
     sql(source.href, 'TRUNCATE kortix.session_sandboxes;');
     execute();
     expect(
-      sql(target.href, 'SELECT json_agg(t ORDER BY session_id) FROM kortix.session_sandboxes t;'),
+      sql(
+        target.href,
+        'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;',
+      ),
     ).toBe(rows);
     expect(
       sql(
