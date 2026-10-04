@@ -167,6 +167,11 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
   const isCancelled =
     sub?.stripeSubscriptionStatus === 'canceled' || sub?.revenuecatCancelledAt != null;
+  // Stripe is the truth; `payment_status: 'cancelling'` is its mirror —
+  // written by the customer.subscription.updated webhook and eagerly by the
+  // cancel route. This is what renders "Cancels at period end" and arms the
+  // reactivate control; it used to be hardcoded false.
+  const isCancelling = sub?.paymentStatus === 'cancelling';
   const subscriptionStatus = getSubscriptionStatus(sub, tierName, isAdmin);
   const subscriptionId =
     sub?.provider === 'revenuecat'
@@ -252,7 +257,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       provider,
       subscription_id: subscriptionId,
       current_period_end: null,
-      cancel_at_period_end: false,
+      cancel_at_period_end: isCancelling,
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
       has_scheduled_change: scheduledChange !== null,
