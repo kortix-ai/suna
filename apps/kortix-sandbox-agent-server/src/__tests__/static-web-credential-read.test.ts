@@ -166,7 +166,10 @@ describe('symlinks cannot smuggle a path back out', () => {
   })
 
   test('a link reaching outside every allowed root is refused', async () => {
-    const outside = mkdtempSync(join(process.env.TMPDIR || '/var/tmp', 'kortix-outside-'))
+    // /var/tmp unconditionally: TMPDIR is /tmp on Linux CI and in this repo's
+    // runner env, and /tmp is an allowed root, so a TMPDIR fixture would sit
+    // INSIDE the roots and the link would resolve to a servable file.
+    const outside = mkdtempSync(join('/var/tmp', 'kortix-outside-'))
     writeFileSync(join(outside, 'secret.txt'), 'SECRET-PAYLOAD')
 
     const link = join(scratch, 'escape-file.txt')
