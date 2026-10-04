@@ -31,9 +31,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    // #9017 renamed the guide title and rewrote the opening; these pin the
-    // title and the no-project-work rule, the two invariants this test guards.
-    expect(dockerfile).toContain('# Meta');
+    expect(dockerfile).toContain('# Meta\n');
     expect(dockerfile).toContain('NEVER do project work in this sandbox.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',

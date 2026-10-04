@@ -118,9 +118,8 @@ describe('AppsGrantPage: the source the component actually renders', () => {
     expect(pageBody).not.toMatch(/\bfetch\(/);
   });
 
-  test('the agent_principal flag decides whether the page says the grant is inert', () => {
-    expect(pageBody).toContain("useFeatureFlag(projectId, 'agent_principal')");
-    expect(pageBody).toContain("t('flagOffHint')");
-    expect(pageBody).toContain('agent-apps-principal-off');
+  test('the grant always gates the App: the page reads no agent_principal flag', () => {
+    expect(pageBody).not.toContain('agent_principal');
+    expect(pageBody).not.toContain('agent-apps-principal-off');
   });
 });

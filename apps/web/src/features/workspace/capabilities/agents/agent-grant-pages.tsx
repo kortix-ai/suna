@@ -56,16 +56,13 @@ import {
 import {
   contract,
   qk,
-  useFeatureFlag,
   useProjectAccountId,
   useProjectApps,
 } from '@kortix/sdk/react';
-import { ArrowRightIcon, GlobeIcon, KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
+import { GlobeIcon, KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
 import { type ReactNode, useEffect, useState } from 'react';
 import { appGrantRows } from './agent-apps-grant';
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
 
@@ -500,14 +497,10 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
  * currently load-bearing.
  *
  * Enforcement is the App gate (`agentAppAccessDecision`, apps/api/src/apps/
- * access.ts) and it runs only while the project's `agent_principal` flag is
- * on. With the flag off the grant is still written and still read back — it
- * just does not gate anything yet — so the page says that rather than letting
- * someone believe they closed a door.
+ * access.ts).
  */
 export function AppsGrantPage({ projectId, editor }: { projectId: string; editor: AgentDraft }) {
   const t = useI18nTranslations('agentApps');
-  const principal = useFeatureFlag(projectId, 'agent_principal');
   const appsQuery = useProjectApps(projectId);
   const rows = appGrantRows(appsQuery.data);
   return (
@@ -561,20 +554,6 @@ export function AppsGrantPage({ projectId, editor }: { projectId: string; editor
           }
         />
         <p className="text-muted-foreground text-xs text-pretty">{t('grantNote')}</p>
-        {principal.isLoading || principal.enabled ? null : (
-          <div
-            className="flex flex-wrap items-center justify-between gap-2"
-            data-testid="agent-apps-principal-off"
-          >
-            <p className="text-muted-foreground text-xs text-pretty">{t('flagOffHint')}</p>
-            <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
-              <Link href={projectSettingsSectionHref(projectId, 'feature-flags')} prefetch>
-                {t('featureFlags')}
-                <ArrowRightIcon className="size-3.5 shrink-0" />
-              </Link>
-            </Button>
-          </div>
-        )}
       </div>
     </EditorSection>
   );

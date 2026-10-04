@@ -1159,10 +1159,6 @@
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
         },
-        "agent_principal": {
-          "name": "Agenti come principali",
-          "description": "Gli agenti agiscono come se stessi: con i loro permessi Kortix, limitati dal loro ruolo. Chi esegue un agente aggiunge solo i propri account."
-        },
         "config_releases": {
           "name": "Release di configurazione",
           "description": "Esegue le sessioni con la configurazione agente corrente del branch di base, servita in sola lettura, così un agente, skill o strumento unito raggiunge ogni sessione attiva. Disattivato, una sessione legge la propria cartella di configurazione nel workspace."
@@ -19195,8 +19191,8 @@
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
       "text39207bf34111": "Competenze correlate",
       "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
-      "text85b7a59cdbd5": "Agente di piattaforma",
-      "textd9c0c74b514b": "Meta è un agente di piattaforma che orchestra il tuo lavoro. La sua configurazione è fissa: avvia una sessione con lui, ma non può essere configurato qui."
+      "text85b7a59cdbd5": "Agente della piattaforma",
+      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20212,9 +20208,7 @@
     "openWithoutGrant": "Nessuna concessione necessaria",
     "grantNote": "L'agente ha bisogno anche di project.app.read nei suoi permessi Kortix.",
     "emptyTitle": "Ancora nessuna App",
-    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga.",
-    "flagOffHint": "Agente come principal è disattivato per questo progetto: la concessione viene salvata ma non controlla ancora nessuna App.",
-    "featureFlags": "Feature flag"
+    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga."
   },
   "connectorsAppReturn": {
     "done": "Fatto. Torna all’app Kortix"
