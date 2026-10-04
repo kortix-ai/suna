@@ -168,6 +168,8 @@ mock.module('../projects/git', () => ({
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
+  // secrets.ts reads the barrel; the stub keeps its shape complete.
+  refreshMirror: async () => '/tmp/kortix-e2e-mirror',
   remoteBranchExists: async () => remoteBranchAfterSeed,
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),

@@ -33,6 +33,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => projectConfig,
   readManifestFromRepo: async () => null,
+  refreshMirror: async () => '/tmp/kortix-slack-selection-mirror',
 }));
 
 const {

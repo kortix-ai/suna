@@ -113,6 +113,8 @@ mock.module('../projects/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   invalidateProjectMirror: () => {},
+  // secrets.ts reads the barrel; the stub keeps its shape complete.
+  refreshMirror: async () => '/tmp/kortix-e2e-mirror',
 }));
 
 mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({

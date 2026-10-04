@@ -51,6 +51,7 @@ mock.module('../git', () => ({
   // Unused here; present so the barrel keeps its shape for other modules.
   resolveCommitSha: async () => '0'.repeat(40),
   invalidateProjectMirror: () => {},
+  refreshMirror: async () => '/tmp/kortix-compile-agent-config-mirror',
 }));
 
 const {

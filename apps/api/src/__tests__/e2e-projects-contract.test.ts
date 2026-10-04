@@ -771,6 +771,7 @@ describe('projects API contract', () => {
       getCommitDiff: async () => null,
       getFileHistory: async () => ({ entries: [], nextCursor: null }),
       invalidateProjectMirror: () => {},
+      refreshMirror: async () => '/tmp/kortix-e2e-mirror',
     }));
 
     const bad = await app.request(`/v1/projects/${PROJECT_ID}/files/archive?path=%2Fworkspace`);
