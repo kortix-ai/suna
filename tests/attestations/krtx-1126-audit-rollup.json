@@ -1,5 +1,5 @@
 {
-  "source_hash": "90675e723aeeaa2568e9037a5745ba82f2b3e59fd3195b6b2c16ef8606c83205",
+  "source_hash": "e3ff7455ddec11f70650eb7e829048fb206f89e379ff97dad116917f042fe9eb",
   "diff_files": [
     "apps/api/src/__tests__/e2e-ops-overview.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
@@ -8,19 +8,18 @@
     "apps/api/src/shared/audit-event-count-worker.test.ts",
     "apps/api/src/shared/audit-event-count-worker.ts",
     "apps/api/src/shared/audit-event-counts.integration.test.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/drizzle/meta/20261004000042_snapshot.json",
+    "packages/db/drizzle/meta/20261004030158_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261004000042370_audit_event_counts.sql",
+    "packages/db/migrations/20261004030158703_audit_event_counts.sql",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "049d17cd4459fb80431d1bb96bec31aae01d532c0fe4b19f979d6717ab511985",
-  "head": "af6d1ef183ba48080255b07b3a0bcce46b8b82dd",
+  "diff_hash": "833fb1ca048b68f5532851f054fb31c9edd734341c1c3e189ef579696618fbf7",
+  "head": "9c6bb572f48b46c6e3a48a561e011d15f66d3f3e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T01:20:32.871Z"
+  "at": "2026-10-04T03:11:40.458Z"
 }
