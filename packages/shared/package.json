@@ -22,7 +22,8 @@
     "./tool-output/testing": "./src/tool-output/testing.ts",
     "./session-fixture": "./src/session-fixture/index.ts",
     "./host-config": "./src/host-config/config.ts",
-    "./sandbox-env": "./src/host-config/sandbox-env.ts"
+    "./sandbox-env": "./src/host-config/sandbox-env.ts",
+    "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
