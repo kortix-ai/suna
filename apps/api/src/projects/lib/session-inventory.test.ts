@@ -234,7 +234,7 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items).toEqual([]);
   });
 
-  test('visible scope preserves the existing visibility and resumability filters', () => {
+  test('visible scope keeps the visibility filters and lists every stopped session', () => {
     const own = row('own');
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     // A session migrated from the old runtime: status `completed`, no runtime
@@ -265,9 +265,34 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
       'migrated',
+      'stopped-lost',
       'stopped-resumable',
     ]);
     expect(selected.items.find((item) => item.row.sessionId === 'migrated')?.canAccess).toBe(true);
+  });
+
+  // The KRTX-1452 regression (see the filter's comment): a stopped session
+  // whose runtime row is missing or still `active` must list.
+  test('visible scope lists a stopped session the runtime row does not confirm', () => {
+    const parkedAfterTurnError = row('parked-turn-error', { status: 'stopped' });
+    const stoppedWithoutRuntime = row('stopped-no-runtime', { status: 'stopped' });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [parkedAfterTurnError, stoppedWithoutRuntime],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map([['parked-turn-error', 'active']]),
+    });
+
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'parked-turn-error',
+      'stopped-no-runtime',
+    ]);
   });
 });
 
@@ -321,7 +346,8 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
-  // in place. That row must not surface through the resumable-stopped branch.
+  // in place. That row must stay hidden through the warm-marker check, not
+  // resurface as an ordinary stopped session.
   test('a reaped warm session stays hidden even though it looks resumable', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],

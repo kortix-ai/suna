@@ -1108,7 +1108,7 @@
       "noMatches": "Нема резултата за {query}.",
       "emptyTitle": "Нема експерименталних функција",
       "emptyDescription": "Ова инсталација не нуди функције које се укључују по пројекту.",
-      "permission": "Потребна вам је дозвола за измену прилагођавања пројекта да бисте променили функцију.",
+      "permission": "Potrebna vam je dozvola za podešavanja projekta da biste promenili zastavicu funkcije.",
       "updateFailed": "Није могуће ажурирати {key}",
       "flags": {
         "marketplace": {
@@ -9605,7 +9605,7 @@
       "text062b7c4143e2": "Сопственој грани, направљеној за сваку сесију",
       "text062bccfdad1c": "Ниједан сандбок не одговара овој претрази",
       "text062dddbbb151": "Граница без екосистема није стабилна",
-      "text06346e4d9c35": "Потребна вам је дозвола за прилагођавање-писање пројекта да бисте променили ознаку функције.",
+      "text6d484ed8c1a0": "Potrebna vam je dozvola za podešavanja projekta da biste promenili zastavicu funkcije.",
       "text06475633ed3e": "Последња активност",
       "text064f6ac1a789": "Искачући прозор",
       "text065f04fd94d6": "Промените шта {value0} {value1} може да уради у {value2}.",
