@@ -28,17 +28,16 @@ import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs'
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import {
-  COMPUTER_SETUP_EVENT,
-  ComputerConnectModal,
-  computerDisplayName,
-} from '@/features/tunnel/computer-connect';
+import { computerDisplayName } from '@/features/tunnel/computer-connect';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { useTunnelConnections, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { relativeTime } from '../capture-time';
-import { useDesktopCaptureStatus } from '../computer-capture-section';
+import { desktopDownloadUrl } from '@/lib/desktop';
+import Link from 'next/link';
+
+import { CaptureDialog, useDesktopCaptureStatus } from '../capture-dialog';
 import { useCaptureMembers, useCaptureViewer } from '../use-capture-viewer';
 import { computerForDevice, deviceStatus, type DeviceStatusView } from './device-status';
 
@@ -193,9 +192,10 @@ export function DevicesView({ projectId }: { projectId: string }) {
   const members = useCaptureMembers(projectId, viewer.isManager);
   const revoke = useRevokeCaptureDevice(projectId);
   const [revoking, setRevoking] = useState<CaptureDevice | null>(null);
-  const [connectOpen, setConnectOpen] = useState(false);
-  // In the Kortix desktop app with Capture: this computer turns on in Your computer.
+  // In the Kortix desktop app with Capture: "Record this computer" opens the Capture dialog.
   const desktopCapture = useDesktopCaptureStatus();
+  const [recordOpen, setRecordOpen] = useState(false);
+  const canRecordHere = Boolean(desktopCapture.data?.available);
   const computers = useTunnelConnections();
 
   const rows = (devices.data?.devices ?? []).filter((device) => !device.revoked_at);
@@ -219,6 +219,14 @@ export function DevicesView({ projectId }: { projectId: string }) {
     <CapabilityPageShell
       title={t('title')}
       description={t('description')}
+      action={
+        canRecordHere ? (
+          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setRecordOpen(true)}>
+            <LaptopIcon className="size-4 shrink-0" />
+            {t('recordThisComputer')}
+          </Button>
+        ) : undefined
+      }
       filters={
         viewer.isManager ? (
           <Tabs value={scope} onValueChange={(value) => setScope(value as 'mine' | 'project')}>
@@ -251,15 +259,18 @@ export function DevicesView({ projectId }: { projectId: string }) {
           <EmptyState
             size="sm"
             title={t('empty')}
+            description={canRecordHere ? undefined : t('openKortixHint')}
             action={
-              desktopCapture.data?.available ? (
-                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => window.dispatchEvent(new Event(COMPUTER_SETUP_EVENT))}>
+              canRecordHere ? (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setRecordOpen(true)}>
                   <LaptopIcon className="size-4 shrink-0" />
-                  {t('turnOnThisComputer')}
+                  {t('recordThisComputer')}
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => setConnectOpen(true)}>
-                  {t('openKortixOnComputer')}
+                <Button size="sm" variant="outline" asChild>
+                  <Link href={desktopDownloadUrl()} target="_blank" rel="noopener noreferrer" prefetch={false}>
+                    {t('openKortixOnComputer')}
+                  </Link>
                 </Button>
               )
             }
@@ -296,7 +307,7 @@ export function DevicesView({ projectId }: { projectId: string }) {
         <p className="text-muted-foreground text-xs text-pretty">{t('footnote')}</p>
       </div>
 
-      <ComputerConnectModal projectId={projectId} open={connectOpen} onOpenChange={setConnectOpen} />
+      {canRecordHere ? <CaptureDialog projectId={projectId} open={recordOpen} onOpenChange={setRecordOpen} /> : null}
       <ConfirmDialog
         open={!!revoking}
         onOpenChange={(open) => (open ? null : setRevoking(null))}

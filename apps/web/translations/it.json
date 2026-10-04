@@ -20604,46 +20604,6 @@
       "removeAll": "Rimuovi tutte",
       "confirmTitle": "Rimuovere tutte le connessioni precedenti?",
       "confirmDescription": "Kortix le rimuove insieme ai loro account da tutti i progetti. Un computer che ne usa ancora una può riconnettersi."
-    },
-    "capture": {
-      "title": "Capture",
-      "record": "Registra questo computer per {project}",
-      "offHint": "Disattivato. Attivalo per registrare questo computer nel progetto.",
-      "signingIn": "Accesso in corso…",
-      "state": {
-        "recording": "In registrazione",
-        "paused": "In pausa",
-        "permission_missing": "Serve un’autorizzazione",
-        "not_recording": "Non registra",
-        "starting": "Avvio…",
-        "crashed": "Fermato"
-      },
-      "layers": {
-        "screen": "Schermo",
-        "screenDescription": "Uno screenshot circa ogni 2 secondi, con il suo testo.",
-        "actions": "Azioni",
-        "actionsDescription": "Clic, tasti e testo digitato, con screenshot.",
-        "audio": "Audio",
-        "audioDescription": "Il tuo microfono e ciò che riproduce questo computer."
-      },
-      "layerOffByPolicy": "Disattivato per questo progetto. Decide chi lo gestisce.",
-      "otherProject": "Questo computer ora registra in un altro progetto. Attivarlo qui lo sposta in questo.",
-      "waitingOnPage": "Approva l’accesso nella pagina che si è aperta nel browser.",
-      "signInRequired": "Questo computer ha perso l’accesso a Capture in questo progetto. Riattivalo per registrare.",
-      "policyNotice": "Da chi gestisce questo progetto",
-      "setupHint": "Capture ne ha bisogno una volta, per Kortix. Attiva Kortix nell’elenco se si aprono le Impostazioni di Sistema.",
-      "grants": {
-        "screen": "Registrazione schermo",
-        "screenDescription": "Vedere e registrare ciò che è sullo schermo",
-        "accessibility": "Accessibilità",
-        "accessibilityDescription": "Registrare clic e tasti",
-        "microphone": "Microfono",
-        "microphoneDescription": "Registrare ciò che viene detto, solo con Audio attivo"
-      },
-      "openTimeline": "Apri cronologia",
-      "changeFailed": "Impossibile modificare Capture. Riprova.",
-      "signInCancelled": "Accesso annullato",
-      "signInFailed": "Impossibile collegare Capture. Riprova."
     }
   },
   "messageFrom": {
@@ -20878,15 +20838,16 @@
       "syncFailed": "Impossibile sincronizzare il dispositivo",
       "revoke": "Revoca computer",
       "revokeTitle": "Revocare questo computer?",
-      "revokeDescription": "{name} smette subito di registrare in questo progetto. Per registrare di nuovo, attiva Capture in Il tuo computer.",
+      "revokeDescription": "{name} smette subito di registrare in questo progetto. Per registrare di nuovo, attiva Registra questo computer su quel computer.",
       "revoked": "Computer revocato",
       "revokeFailed": "Impossibile revocare il computer",
       "loadFailed": "Impossibile caricare i computer.",
       "tryAgain": "Riprova",
       "empty": "I computer che registri appariranno qui",
-      "footnote": "Una riga per computer, con lo stesso nome di I tuoi computer.",
-      "turnOnThisComputer": "Attiva Capture per questo computer",
-      "openKortixOnComputer": "Apri Kortix sul tuo computer"
+      "footnote": "Una riga per computer, con lo stesso nome dei tuoi computer in Kortix.",
+      "openKortixOnComputer": "Scarica Kortix per desktop",
+      "recordThisComputer": "Registra questo computer",
+      "openKortixHint": "Capture registra dall’app desktop di Kortix. Installala sul tuo computer, poi attiva Registra questo computer."
     },
     "people": {
       "title": "Persone",
@@ -20971,6 +20932,66 @@
         "said": "Cosa è stato detto nello standup di oggi?"
       },
       "instructions": "Rispondi dalla mia timeline di Kortix Capture. Cercala con `kortix capture search`, leggi un giorno con `kortix capture timeline` e apri uno schermo con `kortix capture frame`. Cita ogni momento che usi come link Markdown: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cita un intervallo come [il suo titolo]({timelineUrl}/ranges/RANGE_ID). Il mio fuso orario è {tz}. Rispondi nella lingua della mia domanda."
+    },
+    "dialog": {
+      "title": "Registra questo computer",
+      "record": "Registra questo computer per {project}",
+      "offHint": "Disattivato. Attivalo per registrare questo computer nel progetto.",
+      "signingIn": "Accesso in corso…",
+      "state": {
+        "recording": "In registrazione",
+        "paused": "In pausa",
+        "permission_missing": "Serve un’autorizzazione",
+        "not_recording": "Non registra",
+        "starting": "Avvio…",
+        "crashed": "Fermato",
+        "off": "Disattivato"
+      },
+      "unavailableTitle": "Non disponibile",
+      "unavailable": "Questa app desktop non include Kortix Capture. Aggiorna Kortix all’ultima versione.",
+      "projectOff": "Capture è disattivato per questo progetto. Chi lo gestisce può attivarlo in Impostazioni → Funzionalità sperimentali.",
+      "layersTitle": "Cosa registra Capture",
+      "layers": {
+        "screen": "Schermo",
+        "screenDescription": "Uno screenshot circa ogni 2 secondi, con il suo testo.",
+        "actions": "Azioni",
+        "actionsDescription": "Clic, tasti e testo digitato, con screenshot.",
+        "audio": "Audio",
+        "audioDescription": "Il tuo microfono e ciò che riproduce questo computer."
+      },
+      "noLayers": "Nessun livello registra",
+      "layerOffByPolicy": "Disattivato per questo progetto. Decide chi lo gestisce.",
+      "otherProject": "Questo computer ora registra in un altro progetto. Attivarlo qui lo sposta in questo.",
+      "waitingOnPage": "Approva l’accesso nella pagina che si è aperta nel browser.",
+      "signInRequired": "Questo computer ha perso l’accesso a Capture in questo progetto. Riattivalo per registrare.",
+      "policyNotice": "Da chi gestisce questo progetto",
+      "setup": {
+        "title": "Completa la configurazione di Capture",
+        "hint": "macOS chiede ogni autorizzazione qui sotto una volta. Vanno a Kortix, così Capture registra senza chiedere di nuovo.",
+        "needed": "Non ancora consentito",
+        "waiting": "In attesa",
+        "allowAll": "Consenti tutto",
+        "settingsHint": "Se si aprono le Impostazioni di Sistema, attiva Kortix nell’elenco. Si aggiorna da solo."
+      },
+      "grants": {
+        "screen": "Registrazione schermo",
+        "screenDescription": "Vedere e registrare ciò che è sullo schermo",
+        "accessibility": "Accessibilità",
+        "accessibilityDescription": "Registrare clic e tasti",
+        "microphone": "Microfono",
+        "microphoneDescription": "Registrare ciò che viene detto, solo con Audio attivo"
+      },
+      "openTimeline": "Apri cronologia",
+      "showLogs": "Mostra log",
+      "signOutEllipsis": "Interrompi e disconnetti…",
+      "signOutTitle": "Smettere di registrare questo computer?",
+      "signOutDescription": "Capture si ferma su questo computer, e questo computer perde l’accesso al progetto. Le registrazioni restano nel progetto. Per registrare di nuovo, riattivalo.",
+      "signOut": "Interrompi e disconnetti",
+      "signedOut": "Capture interrotto",
+      "signOutFailed": "Impossibile interrompere Capture. Riprova.",
+      "changeFailed": "Impossibile modificare Capture. Riprova.",
+      "signInCancelled": "Accesso annullato",
+      "signInFailed": "Impossibile collegare Capture. Riprova."
     }
   }
 }

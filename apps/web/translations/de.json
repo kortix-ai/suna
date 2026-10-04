@@ -20604,46 +20604,6 @@
       "removeAll": "Alle entfernen",
       "confirmTitle": "Alle älteren Verbindungen entfernen?",
       "confirmDescription": "Kortix entfernt sie und ihre Konten aus allen Projekten. Ein Computer, der noch eine davon nutzt, kann sich erneut verbinden."
-    },
-    "capture": {
-      "title": "Capture",
-      "record": "Diesen Computer für {project} aufnehmen",
-      "offHint": "Aus. Schalte es ein, um diesen Computer in das Projekt aufzunehmen.",
-      "signingIn": "Wird angemeldet…",
-      "state": {
-        "recording": "Nimmt auf",
-        "paused": "Pausiert",
-        "permission_missing": "Braucht eine Berechtigung",
-        "not_recording": "Nimmt nicht auf",
-        "starting": "Startet…",
-        "crashed": "Gestoppt"
-      },
-      "layers": {
-        "screen": "Bildschirm",
-        "screenDescription": "Etwa alle 2 Sekunden ein Screenshot, mit seinem Text.",
-        "actions": "Aktionen",
-        "actionsDescription": "Klicks, Tasten und getippter Text, mit Screenshots.",
-        "audio": "Audio",
-        "audioDescription": "Dein Mikrofon und was dieser Computer abspielt."
-      },
-      "layerOffByPolicy": "Für dieses Projekt aus. Die Personen, die es verwalten, entscheiden.",
-      "otherProject": "Dieser Computer nimmt gerade in ein anderes Projekt auf. Einschalten hier wechselt zu diesem.",
-      "waitingOnPage": "Bestätige die Anmeldung auf der Seite, die sich in deinem Browser geöffnet hat.",
-      "signInRequired": "Dieser Computer hat den Zugriff auf Capture in diesem Projekt verloren. Schalte es wieder ein, um aufzunehmen.",
-      "policyNotice": "Von den Personen, die dieses Projekt verwalten",
-      "setupHint": "Capture braucht diese einmal, für Kortix. Schalte Kortix in der Liste ein, wenn sich die Systemeinstellungen öffnen.",
-      "grants": {
-        "screen": "Bildschirmaufnahme",
-        "screenDescription": "Sehen und aufnehmen, was auf dem Bildschirm ist",
-        "accessibility": "Bedienungshilfen",
-        "accessibilityDescription": "Deine Klicks und Tasten aufnehmen",
-        "microphone": "Mikrofon",
-        "microphoneDescription": "Aufnehmen, was gesagt wird, nur wenn Audio an ist"
-      },
-      "openTimeline": "Zeitleiste öffnen",
-      "changeFailed": "Capture konnte nicht geändert werden. Versuche es erneut.",
-      "signInCancelled": "Anmeldung abgebrochen",
-      "signInFailed": "Capture konnte nicht angemeldet werden. Versuche es erneut."
     }
   },
   "messageFrom": {
@@ -20878,15 +20838,16 @@
       "syncFailed": "Das Gerät konnte nicht synchronisiert werden",
       "revoke": "Computer widerrufen",
       "revokeTitle": "Diesen Computer widerrufen?",
-      "revokeDescription": "{name} nimmt sofort nicht mehr in dieses Projekt auf. Um wieder aufzunehmen, schalte Capture unter „Dein Computer“ ein.",
+      "revokeDescription": "{name} nimmt sofort nicht mehr in dieses Projekt auf. Um wieder aufzunehmen, schalte auf diesem Computer „Diesen Computer aufnehmen“ ein.",
       "revoked": "Computer widerrufen",
       "revokeFailed": "Computer konnte nicht widerrufen werden",
       "loadFailed": "Die Computer konnten nicht geladen werden.",
       "tryAgain": "Erneut versuchen",
       "empty": "Computer, die du aufnimmst, erscheinen hier",
-      "footnote": "Eine Zeile pro Computer, mit demselben Namen wie unter „Deine Computer“.",
-      "turnOnThisComputer": "Capture für diesen Computer einschalten",
-      "openKortixOnComputer": "Kortix auf deinem Computer öffnen"
+      "footnote": "Eine Zeile pro Computer, mit demselben Namen wie deine Computer in Kortix.",
+      "openKortixOnComputer": "Kortix für den Desktop herunterladen",
+      "recordThisComputer": "Diesen Computer aufnehmen",
+      "openKortixHint": "Capture nimmt über die Kortix-Desktop-App auf. Installiere sie auf deinem Computer und schalte dann „Diesen Computer aufnehmen“ ein."
     },
     "people": {
       "title": "Personen",
@@ -20971,6 +20932,66 @@
         "said": "Was wurde im heutigen Standup gesagt?"
       },
       "instructions": "Antworte anhand meiner Kortix-Capture-Zeitleiste. Durchsuche sie mit `kortix capture search`, lies einen Tag mit `kortix capture timeline` und öffne einen Bildschirm mit `kortix capture frame`. Belege jeden verwendeten Moment als Markdown-Link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Belege einen Zeitraum als [sein Titel]({timelineUrl}/ranges/RANGE_ID). Meine Zeitzone ist {tz}. Antworte in der Sprache meiner Frage."
+    },
+    "dialog": {
+      "title": "Diesen Computer aufnehmen",
+      "record": "Diesen Computer für {project} aufnehmen",
+      "offHint": "Aus. Schalte es ein, um diesen Computer in das Projekt aufzunehmen.",
+      "signingIn": "Wird angemeldet…",
+      "state": {
+        "recording": "Nimmt auf",
+        "paused": "Pausiert",
+        "permission_missing": "Braucht eine Berechtigung",
+        "not_recording": "Nimmt nicht auf",
+        "starting": "Startet…",
+        "crashed": "Gestoppt",
+        "off": "Aus"
+      },
+      "unavailableTitle": "Nicht verfügbar",
+      "unavailable": "Diese Desktop-App enthält kein Kortix Capture. Aktualisiere Kortix auf die neueste Version.",
+      "projectOff": "Capture ist für dieses Projekt aus. Personen, die es verwalten, können es unter Einstellungen → Feature-Flags einschalten.",
+      "layersTitle": "Was Capture aufnimmt",
+      "layers": {
+        "screen": "Bildschirm",
+        "screenDescription": "Etwa alle 2 Sekunden ein Screenshot, mit seinem Text.",
+        "actions": "Aktionen",
+        "actionsDescription": "Klicks, Tasten und getippter Text, mit Screenshots.",
+        "audio": "Audio",
+        "audioDescription": "Dein Mikrofon und was dieser Computer abspielt."
+      },
+      "noLayers": "Keine Ebene nimmt auf",
+      "layerOffByPolicy": "Für dieses Projekt aus. Die Personen, die es verwalten, entscheiden.",
+      "otherProject": "Dieser Computer nimmt gerade in ein anderes Projekt auf. Einschalten hier wechselt zu diesem.",
+      "waitingOnPage": "Bestätige die Anmeldung auf der Seite, die sich in deinem Browser geöffnet hat.",
+      "signInRequired": "Dieser Computer hat den Zugriff auf Capture in diesem Projekt verloren. Schalte es wieder ein, um aufzunehmen.",
+      "policyNotice": "Von den Personen, die dieses Projekt verwalten",
+      "setup": {
+        "title": "Capture fertig einrichten",
+        "hint": "macOS fragt jede Berechtigung unten einmal ab. Sie gehen an Kortix, damit Capture ohne erneute Nachfrage aufnehmen kann.",
+        "needed": "Noch nicht erlaubt",
+        "waiting": "Wartet auf dich",
+        "allowAll": "Alle erlauben",
+        "settingsHint": "Wenn sich die Systemeinstellungen öffnen, schalte Kortix in der Liste ein. Das aktualisiert sich von selbst."
+      },
+      "grants": {
+        "screen": "Bildschirmaufnahme",
+        "screenDescription": "Sehen und aufnehmen, was auf dem Bildschirm ist",
+        "accessibility": "Bedienungshilfen",
+        "accessibilityDescription": "Deine Klicks und Tasten aufnehmen",
+        "microphone": "Mikrofon",
+        "microphoneDescription": "Aufnehmen, was gesagt wird, nur wenn Audio an ist"
+      },
+      "openTimeline": "Zeitleiste öffnen",
+      "showLogs": "Logs anzeigen",
+      "signOutEllipsis": "Stoppen und abmelden…",
+      "signOutTitle": "Aufnahme dieses Computers stoppen?",
+      "signOutDescription": "Capture stoppt auf diesem Computer, und dieser Computer verliert den Zugriff auf das Projekt. Aufnahmen bleiben im Projekt. Um wieder aufzunehmen, schalte es wieder ein.",
+      "signOut": "Stoppen und abmelden",
+      "signedOut": "Capture gestoppt",
+      "signOutFailed": "Capture konnte nicht gestoppt werden. Versuche es erneut.",
+      "changeFailed": "Capture konnte nicht geändert werden. Versuche es erneut.",
+      "signInCancelled": "Anmeldung abgebrochen",
+      "signInFailed": "Capture konnte nicht angemeldet werden. Versuche es erneut."
     }
   }
 }

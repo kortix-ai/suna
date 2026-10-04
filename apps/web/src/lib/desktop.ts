@@ -479,8 +479,11 @@ export const desktopCaptureSet = (input: { on?: boolean } & Partial<Record<Deskt
 export const desktopCaptureRequestGrants = (input: { audio: boolean }) =>
   desktopAction<DesktopCaptureStatus>('capture_grants_request', input);
 export const desktopCaptureOpenTimeline = () => desktopAction<null>('capture_open_timeline');
+export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_logs');
+/** Removes the Capture service and forgets the device token on this computer. */
+export const desktopCaptureSignOut = () => desktopAction<DesktopCaptureStatus>('capture_sign_out');
 
-/** The desktop app's tray asks the page to open "Your computer" (Capture lives there). */
+/** The desktop app's tray ("Capture…") asks the page to open the Capture dialog. */
 export const DESKTOP_CAPTURE_SETTINGS_COMMAND = 'capture-settings';
 
 /**

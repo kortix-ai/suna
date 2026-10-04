@@ -20604,46 +20604,6 @@
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
-    },
-    "capture": {
-      "title": "Capture",
-      "record": "Record this computer for {project}",
-      "offHint": "Off. Turn it on to record this computer into the project.",
-      "signingIn": "Signing in…",
-      "state": {
-        "recording": "Recording",
-        "paused": "Paused",
-        "permission_missing": "Needs permission",
-        "not_recording": "Not recording",
-        "starting": "Starting…",
-        "crashed": "Stopped"
-      },
-      "layers": {
-        "screen": "Screen",
-        "screenDescription": "A screenshot about every 2 seconds, with its text.",
-        "actions": "Actions",
-        "actionsDescription": "Clicks, keys, and typed text, with screenshots.",
-        "audio": "Audio",
-        "audioDescription": "Your microphone and what this computer plays."
-      },
-      "layerOffByPolicy": "Off for this project. The people who manage it decide.",
-      "otherProject": "This computer records into another project now. Turning it on here moves it to this one.",
-      "waitingOnPage": "Approve the sign-in on the page that opened in your browser.",
-      "signInRequired": "This computer lost access to Capture in this project. Turn it on again to record.",
-      "policyNotice": "From the people who manage this project",
-      "setupHint": "Capture needs these once, for Kortix. Turn on Kortix in the list if System Settings opens.",
-      "grants": {
-        "screen": "Screen Recording",
-        "screenDescription": "See and record what is on the screen",
-        "accessibility": "Accessibility",
-        "accessibilityDescription": "Record your clicks and keys",
-        "microphone": "Microphone",
-        "microphoneDescription": "Record what is said, only while Audio is on"
-      },
-      "openTimeline": "Open timeline",
-      "changeFailed": "Could not change Capture. Try again.",
-      "signInCancelled": "Sign-in cancelled",
-      "signInFailed": "Could not sign in Capture. Try again."
     }
   },
   "messageFrom": {
@@ -20878,15 +20838,16 @@
       "syncFailed": "Could not sync the device",
       "revoke": "Revoke computer",
       "revokeTitle": "Revoke this computer?",
-      "revokeDescription": "{name} stops recording into this project at once. To record again, turn on Capture in Your computer.",
+      "revokeDescription": "{name} stops recording into this project at once. To record again, turn on Record this computer on that computer.",
       "revoked": "Computer revoked",
       "revokeFailed": "Could not revoke the computer",
       "loadFailed": "Could not load the computers.",
       "tryAgain": "Try again",
       "empty": "Computers you record will show up here",
-      "footnote": "One row per computer, with the same name as in Your computers.",
-      "turnOnThisComputer": "Turn on Capture for this computer",
-      "openKortixOnComputer": "Open Kortix on your computer"
+      "footnote": "One row per computer, with the same name as your computers in Kortix.",
+      "openKortixOnComputer": "Download Kortix for desktop",
+      "recordThisComputer": "Record this computer",
+      "openKortixHint": "Capture records from the Kortix desktop app. Install it on your computer, then turn on Record this computer."
     },
     "people": {
       "title": "People",
@@ -20971,6 +20932,66 @@
         "said": "What was said in today's standup?"
       },
       "instructions": "Answer from my Kortix Capture timeline. Search it with `kortix capture search`, read a day with `kortix capture timeline`, and open a screen with `kortix capture frame`. Cite every moment you use as a Markdown link: [14:32]({timelineUrl}?at=ISO-8601-TIME). Cite a range as [its title]({timelineUrl}/ranges/RANGE_ID). My time zone is {tz}. Answer in the language of my question."
+    },
+    "dialog": {
+      "title": "Record this computer",
+      "record": "Record this computer for {project}",
+      "offHint": "Off. Turn it on to record this computer into the project.",
+      "signingIn": "Signing in…",
+      "state": {
+        "recording": "Recording",
+        "paused": "Paused",
+        "permission_missing": "Needs permission",
+        "not_recording": "Not recording",
+        "starting": "Starting…",
+        "crashed": "Stopped",
+        "off": "Off"
+      },
+      "unavailableTitle": "Not available",
+      "unavailable": "This desktop app has no Kortix Capture. Update Kortix to the newest version.",
+      "projectOff": "Capture is off for this project. The people who manage it can turn it on in Settings → Feature flags.",
+      "layersTitle": "What Capture records",
+      "layers": {
+        "screen": "Screen",
+        "screenDescription": "A screenshot about every 2 seconds, with its text.",
+        "actions": "Actions",
+        "actionsDescription": "Clicks, keys, and typed text, with screenshots.",
+        "audio": "Audio",
+        "audioDescription": "Your microphone and what this computer plays."
+      },
+      "noLayers": "No layer records",
+      "layerOffByPolicy": "Off for this project. The people who manage it decide.",
+      "otherProject": "This computer records into another project now. Turning it on here moves it to this one.",
+      "waitingOnPage": "Approve the sign-in on the page that opened in your browser.",
+      "signInRequired": "This computer lost access to Capture in this project. Turn it on again to record.",
+      "policyNotice": "From the people who manage this project",
+      "setup": {
+        "title": "Finish setting up Capture",
+        "hint": "macOS asks once for each permission below. They go to Kortix, so Capture can record without asking again.",
+        "needed": "Not allowed yet",
+        "waiting": "Waiting for you",
+        "allowAll": "Allow all",
+        "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself."
+      },
+      "grants": {
+        "screen": "Screen Recording",
+        "screenDescription": "See and record what is on the screen",
+        "accessibility": "Accessibility",
+        "accessibilityDescription": "Record your clicks and keys",
+        "microphone": "Microphone",
+        "microphoneDescription": "Record what is said, only while Audio is on"
+      },
+      "openTimeline": "Open timeline",
+      "showLogs": "Show logs",
+      "signOutEllipsis": "Stop and sign out…",
+      "signOutTitle": "Stop recording this computer?",
+      "signOutDescription": "Capture stops on this computer, and this computer loses access to the project. Recordings stay in the project. To record again, turn it on again.",
+      "signOut": "Stop and sign out",
+      "signedOut": "Capture stopped",
+      "signOutFailed": "Could not stop Capture. Try again.",
+      "changeFailed": "Could not change Capture. Try again.",
+      "signInCancelled": "Sign-in cancelled",
+      "signInFailed": "Could not sign in Capture. Try again."
     }
   }
 }
