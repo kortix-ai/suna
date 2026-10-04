@@ -254,12 +254,11 @@ function setupCapture(deps) {
     if (process.platform !== 'darwin') return refresh();
     if (!systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
     if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-      // The first capture attempt shows the prompt; after a "Don't Allow" only System Settings can grant it.
-      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
-        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
-      } else {
-        void shell.openExternal(capture.PERMISSION_PANES.screen);
-      }
+      // A capture attempt is what adds Kortix to the Screen Recording list (and
+      // shows the prompt the first time); macOS 11+ reports a never-asked app as
+      // denied, so always try it, then open System Settings if still not granted.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') void shell.openExternal(capture.PERMISSION_PANES.screen);
     }
     if (audio && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
       await systemPreferences.askForMediaAccess('microphone').catch(() => false);
