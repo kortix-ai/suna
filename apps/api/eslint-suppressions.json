@@ -787,7 +787,7 @@
       "count": 3
     }
   },
-  "src/ensure-schema.ts": {
+  "src/lib/ensure-schema.ts": {
     "no-console": {
       "count": 9
     },
@@ -863,7 +863,7 @@
       "count": 4
     }
   },
-  "src/http-middleware.ts": {
+  "src/middleware/http-middleware.ts": {
     "no-restricted-properties": {
       "count": 2
     }
@@ -919,7 +919,7 @@
       "count": 3
     }
   },
-  "src/inbound-dispatch.ts": {
+  "src/sandbox-proxy/inbound-dispatch.ts": {
     "kortix-api/layers": {
       "count": 1
     },

@@ -16,8 +16,8 @@ import { resolve } from 'node:path';
 // The server-side modules the boundary spans (KRTX-347 split): the entry's
 // fetch wrapper, the inbound dispatcher, and the global middleware chain.
 const indexSource = readFileSync(resolve(import.meta.dir, '../index.ts'), 'utf8');
-const dispatchSource = readFileSync(resolve(import.meta.dir, '../inbound-dispatch.ts'), 'utf8');
-const middlewareSource = readFileSync(resolve(import.meta.dir, '../http-middleware.ts'), 'utf8');
+const dispatchSource = readFileSync(resolve(import.meta.dir, '../sandbox-proxy/inbound-dispatch.ts'), 'utf8');
+const middlewareSource = readFileSync(resolve(import.meta.dir, '../middleware/http-middleware.ts'), 'utf8');
 const source = indexSource + dispatchSource + middlewareSource;
 
 function functionBody(name: string): string {

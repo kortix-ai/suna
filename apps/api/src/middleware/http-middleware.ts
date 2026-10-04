@@ -2,31 +2,31 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
-import { config } from './lib/config';
-import { logger as appLogger } from './lib/logger';
-import { decInFlight, incInFlight, recordHttpRequest } from './lib/metrics';
-import { emitOtelSpan } from './lib/otel';
+import { config } from '../lib/config';
+import { logger as appLogger } from '../lib/logger';
+import { decInFlight, incInFlight, recordHttpRequest } from '../lib/metrics';
+import { emitOtelSpan } from '../lib/otel';
 import {
   getDiagnosticFields,
   getRequestContext,
   runWithContext,
   setContextField,
-} from './lib/request-context';
+} from '../lib/request-context';
 import {
   requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
   shouldSuppressRequestLog,
-} from './lib/request-log-level';
-import { installFetchTiming } from './lib/server-timing';
-import { addBreadcrumb } from './lib/sentry';
-import { compressResponse } from './middleware/compress';
-import { createCorsMiddleware } from './middleware/cors';
-import { requestDeadline } from './middleware/request-deadline';
-import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
-import { upstreamTiming } from './middleware/upstream-timing';
-import { auditApiRequest } from './shared/audit';
-import { isUuid } from './shared/validate';
+} from '../lib/request-log-level';
+import { installFetchTiming } from '../lib/server-timing';
+import { addBreadcrumb } from '../lib/sentry';
+import { compressResponse } from './compress';
+import { createCorsMiddleware } from './cors';
+import { requestDeadline } from './request-deadline';
+import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../sandbox-proxy/proxy-hop';
+import { upstreamTiming } from './upstream-timing';
+import { auditApiRequest } from '../shared/audit';
+import { isUuid } from '../shared/validate';
 
 // The global middleware chain, in the registration order the request sees it.
 // Every line inside installHttpMiddleware is moved verbatim from the former

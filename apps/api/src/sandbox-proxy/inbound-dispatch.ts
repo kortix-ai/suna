@@ -1,21 +1,21 @@
-import { config } from './lib/config';
-import { getRequestUrl } from './lib/request-url';
-import { runInboundAudit } from './shared/audit-edge';
-import { annotateAuditEvent, setInboundAuditEntrypoint } from './shared/audit-scope';
+import { config } from '../lib/config';
+import { getRequestUrl } from '../lib/request-url';
+import { runInboundAudit } from '../shared/audit-edge';
+import { annotateAuditEvent, setInboundAuditEntrypoint } from '../shared/audit-scope';
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { isUuid } from './shared/validate';
-import { schemaReady } from './bootstrap';
-import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
-import { prepareAppWsUpgrade } from './apps/ws-proxy';
+import { isUuid } from '../shared/validate';
+import { schemaReady } from '../bootstrap';
+import { handleAppPublicRequest, resolveAppRequest } from '../apps/public-proxy';
+import { prepareAppWsUpgrade } from '../apps/ws-proxy';
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/preview-origin.ts`.
-import { handlePreviewOriginRequest, isPreviewHost } from './sandbox-proxy/preview-origin';
+import { handlePreviewOriginRequest, isPreviewHost } from './preview-origin';
 import {
   matchPreviewWsPath,
   preparePreviewHostWsUpgrade,
   preparePreviewWsUpgrade,
-} from './sandbox-proxy/ws-proxy';
+} from './ws-proxy';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -203,8 +203,8 @@ async function handleTunnelAgentUpgrade(req: Request, url: URL, server: any): Pr
 
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
-    const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const { clientKeyFromHeaders } = await import('./shared/client-ip');
+    const { tunnelRateLimiter } = await import('../tunnel/core/rate-limiter');
+    const { clientKeyFromHeaders } = await import('../shared/client-ip');
     const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {

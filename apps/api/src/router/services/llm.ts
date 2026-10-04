@@ -1,5 +1,5 @@
 import { config, KORTIX_MARKUP } from '../../lib/config';
-import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
+import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../openrouter-attribution';
 import {
   getModel,
   getAllModels,

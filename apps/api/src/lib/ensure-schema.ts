@@ -10,8 +10,8 @@
 
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { config } from './lib/config';
-import { SCHEMA_CHECK_POOL_MAX } from './shared/database-capacity';
+import { config } from './config';
+import { SCHEMA_CHECK_POOL_MAX } from '../shared/database-capacity';
 
 export async function ensureSchema(): Promise<void> {
   if (!config.DATABASE_URL) {
@@ -40,7 +40,7 @@ export async function ensureSchema(): Promise<void> {
     return;
   }
 
-  const dbPkgRoot = join(import.meta.dir, '../../../packages/db');
+  const dbPkgRoot = join(import.meta.dir, '../../../../packages/db');
   const migratorPath = join(dbPkgRoot, 'scripts', 'migrate.ts');
 
   console.log('[schema] Local dev — applying pending migrations via migrate.ts...');

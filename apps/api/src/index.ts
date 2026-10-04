@@ -1,5 +1,5 @@
 // Expand the aggregate ECS secret before any module reads process.env.
-import './environment-secret';
+import './lib/environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
@@ -12,8 +12,8 @@ import { initModelPricing } from './llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
 import { primeDaytonaTransientClassifier } from './shared/daytona-transient';
-import { ensureSchema } from './ensure-schema';
-import { dispatchInbound } from './inbound-dispatch';
+import { ensureSchema } from './lib/ensure-schema';
+import { dispatchInbound } from './sandbox-proxy/inbound-dispatch';
 import { bootServices, markSchemaReady, shutdown } from './bootstrap';
 import { appWsHandlers } from './apps/ws-proxy';
 import { wsHandlers as tunnelWsHandlers } from './tunnel';

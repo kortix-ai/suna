@@ -14,7 +14,7 @@ import { describe, expect, test } from 'bun:test';
  * handler installed through Hono's `onError` (http-errors.ts, KRTX-347 split).
  * What has to hold is a rule about severity, and the rule is visible in the source.
  */
-const SOURCE = await Bun.file(new URL('../http-errors.ts', import.meta.url)).text();
+const SOURCE = await Bun.file(new URL('../middleware/http-errors.ts', import.meta.url)).text();
 
 function httpExceptionBranch(): string {
   const start = SOURCE.indexOf('function handleHttpException(');

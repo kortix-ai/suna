@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const repoRoot = join(import.meta.dir, '../../..');
+const repoRoot = join(import.meta.dir, '../../../..');
 const runner = readFileSync(join(repoRoot, 'tests/bin/ke2e.ts'), 'utf8');
 const reporter = readFileSync(join(repoRoot, 'tests/src/core/report.ts'), 'utf8');
 

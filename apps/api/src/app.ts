@@ -49,11 +49,11 @@ import { scimRouter } from './scim';
 import { setupApp } from './setup';
 import { skillsApp } from './skills';
 import { tunnelApp } from './tunnel';
-import { installHttpMiddleware } from './http-middleware';
-import { installHttpErrors } from './http-errors';
+import { installHttpMiddleware } from './middleware/http-middleware';
+import { installHttpErrors } from './middleware/http-errors';
 import { registerSystemRoutes } from './routes/system';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
-import { dispatchInProcess } from './inbound-dispatch';
+import { dispatchInProcess } from './sandbox-proxy/inbound-dispatch';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
