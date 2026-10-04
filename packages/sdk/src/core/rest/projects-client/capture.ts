@@ -52,6 +52,12 @@ export interface CaptureDevice {
   os_version: string | null;
   arch: string | null;
   app_version: string | null;
+  /**
+   * The computer the device runs on, as the computer agent names it (a tunnel
+   * connection's `machineInfo.machineId`). Set when the Kortix desktop app
+   * approved the device; null for other apps.
+   */
+  machine_id?: string | null;
   live: {
     state: CaptureLiveState;
     /** The device's last `status.json`, verbatim. */
@@ -482,11 +488,16 @@ export async function getCaptureDeviceGrant(userCode: string) {
   return unwrap(await backendApi.get<CaptureDeviceGrant>(`/capture/device/grants/${encodeURIComponent(userCode)}`));
 }
 
-/** Pair the device to you in one of your projects with capture on. */
-export async function approveCaptureDeviceGrant(userCode: string, projectId: string) {
+/**
+ * Pair the device to you in one of your projects with capture on.
+ * `machineId`: the computer agent's id for this computer (the Kortix desktop
+ * app passes it), so the device joins your computer.
+ */
+export async function approveCaptureDeviceGrant(userCode: string, projectId: string, options: { machineId?: string } = {}) {
   return unwrap(
     await backendApi.post<CaptureDeviceGrant>(`/capture/device/grants/${encodeURIComponent(userCode)}/approve`, {
       project_id: projectId,
+      ...(options.machineId ? { machine_id: options.machineId } : {}),
     }),
   );
 }

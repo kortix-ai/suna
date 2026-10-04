@@ -23,6 +23,7 @@ import {
   searchCapture,
   setCaptureDevicePolicy,
   setCapturePolicy,
+  type CaptureDevice,
   type CapturePolicy,
 } from './capture';
 
@@ -146,6 +147,18 @@ test('device sign-in approval: read, approve into a project, deny', async () => 
   expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/capture/device/grants/ABCD-1234/approve', body: { project_id: 'p1' } });
   await denyCaptureDeviceGrant('ABCD-1234');
   expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/capture/device/grants/ABCD-1234/deny' });
+});
+
+test('approval names the computer: { machineId } goes out as machine_id; without it the body has none', async () => {
+  const machineId = 'a'.repeat(64);
+  await approveCaptureDeviceGrant('ABCD-1234', 'p1', { machineId });
+  expect(last()).toMatchObject({ method: 'POST', body: { project_id: 'p1', machine_id: machineId } });
+  await approveCaptureDeviceGrant('ABCD-1234', 'p1');
+  expect(last().body).toEqual({ project_id: 'p1' });
+  // A device row carries the computer it runs on.
+  nextBody = { devices: [{ device_id: 'd1', machine_id: machineId }] };
+  const devices: CaptureDevice[] = (await listCaptureDevices('p1')).devices;
+  expect(devices[0]?.machine_id).toBe(machineId);
 });
 
 test('the facade binds capture to a project and exposes the sign-in approval at the top', async () => {
