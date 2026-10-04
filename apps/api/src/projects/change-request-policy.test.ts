@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  manifestGovernanceChanged,
+  MANIFEST_WRITE_ACTIONS,
   refusesSelfMerge,
+  requiredManifestActions,
   resolveChangeRequestBase,
   resolveChangeRequestOrigin,
 } from './change-request-policy';
@@ -120,31 +121,43 @@ describe('resolveChangeRequestOrigin', () => {
   });
 });
 
-describe('manifestGovernanceChanged (spec 2026-09-22 §2.4)', () => {
-  const base = 'kortix_version: 2\nagents:\n  builder:\n    kortix_permissions: ["project.write"]\n';
-  test('a change outside agents and triggers is not governance', () => {
-    expect(manifestGovernanceChanged(base, `${base}project:\n  name: renamed\n`, 'yaml')).toBe(false);
-    expect(manifestGovernanceChanged(base, base, 'yaml')).toBe(false);
-    expect(manifestGovernanceChanged(null, null, 'yaml')).toBe(false);
+
+describe('requiredManifestActions — a merge needs what the direct route asserts', () => {
+  const base = 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    kortix_permissions: ["project.read"]\n';
+  const withTrigger = `${base}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 * * * *"\n    prompt: tidy\n    agent: a\n`;
+
+  test('no governed section changed → nothing extra', () => {
+    expect(requiredManifestActions(base, `${base}project:\n  name: renamed\n`, 'yaml')).toEqual([]);
+    expect(requiredManifestActions(base, base, 'yaml')).toEqual([]);
+    expect(requiredManifestActions(null, null, 'yaml')).toEqual([]);
   });
-  test('widening agents.<a>.kortix_permissions is governance', () => {
-    expect(
-      manifestGovernanceChanged(base, base.replace('"project.write"]', '"project.write","project.secret.read"]'), 'yaml'),
-    ).toBe(true);
+
+  test('widening an agent needs project.agent.write', () => {
+    expect(requiredManifestActions(base, base.replace('["project.read"]', 'all'), 'yaml')).toEqual(['project.agent.write']);
+    expect(requiredManifestActions(base, `${base}  b: {}\n`, 'yaml')).toEqual(['project.agent.write']);
   });
-  test('adding a trigger or an agent is governance', () => {
-    expect(manifestGovernanceChanged(base, `${base}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 * * * *"\n`, 'yaml')).toBe(true);
-    expect(manifestGovernanceChanged(base, `${base}  other: {}\n`, 'yaml')).toBe(true);
+
+  test('triggers: added → create, edited → update, removed → delete', () => {
+    expect(requiredManifestActions(base, withTrigger, 'yaml')).toEqual(['project.trigger.create']);
+    expect(requiredManifestActions(withTrigger, withTrigger.replace('prompt: tidy', 'prompt: sweep'), 'yaml')).toEqual([
+      'project.trigger.update',
+    ]);
+    expect(requiredManifestActions(withTrigger, base, 'yaml')).toEqual(['project.trigger.delete']);
   });
-  test('creating a manifest that declares agents, or deleting one, is governance', () => {
-    expect(manifestGovernanceChanged(null, base, 'yaml')).toBe(true);
-    expect(manifestGovernanceChanged(base, null, 'yaml')).toBe(true);
+
+  test('switching default_agent needs project.customize.write', () => {
+    const two = `${base}  b: {}\n`;
+    expect(requiredManifestActions(two, two.replace('default_agent: a', 'default_agent: b'), 'yaml')).toEqual([
+      'project.customize.write',
+    ]);
   });
-  test('a manifest that does not parse is treated as governance (fail closed)', () => {
-    expect(manifestGovernanceChanged(base, 'agents: [unclosed', 'yaml')).toBe(true);
+
+  test('key order and formatting do not count', () => {
+    const reordered = 'agents:\n  a:\n    kortix_permissions: ["project.read"]\ndefault_agent: a\nkortix_version: 2\n';
+    expect(requiredManifestActions(base, reordered, 'yaml')).toEqual([]);
   });
-  test('key order and formatting do not count as a change', () => {
-    const reordered = 'agents:\n  builder: { kortix_permissions: ["project.write"] }\nkortix_version: 2\n';
-    expect(manifestGovernanceChanged(base, reordered, 'yaml')).toBe(false);
+
+  test('a side that does not parse needs every manifest-write permission (fail closed)', () => {
+    expect(requiredManifestActions(base, 'agents: [unclosed', 'yaml')).toEqual([...MANIFEST_WRITE_ACTIONS]);
   });
 });

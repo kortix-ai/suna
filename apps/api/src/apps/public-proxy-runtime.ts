@@ -5,7 +5,6 @@ import { pauseComputeSession, startComputeSession } from '../billing/services/co
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { agentPrincipalEnabled } from './access';
 import { assertAppComputeAllowed } from './limits';
 import { AppHostingProvider } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
@@ -41,8 +40,8 @@ export async function loadPublicAppState(routeKey: string) {
     app,
     deployment: deployment ?? null,
     runtime: runtime ?? null,
-    /** The project's `agent_principal` flag — the App gate's §2.5 switch. */
-    agentPrincipal: agentPrincipalEnabled(loaded.projectMetadata),
+    /** A governed agent is judged as itself (§2.5); there is no off switch. */
+    agentPrincipal: true,
   };
 }
 
