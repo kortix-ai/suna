@@ -37,8 +37,6 @@ import { sessionTransitionLeaves, transitionSession } from './status-transitions
 const DELIVER_DEADLINE_MS = 45_000;
 const DELIVER_RETRY_INTERVAL_MS = 1_500;
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * What one hand-off attempt proved.
  *
@@ -86,7 +84,7 @@ export async function deliverWithRetry(input: {
   intervalMs?: number;
 }): Promise<SessionDeliveryOutcome> {
   const now = input.now ?? Date.now;
-  const sleepFn = input.sleepFn ?? sleep;
+  const sleepFn = input.sleepFn ?? Bun.sleep;
   const deadlineMs = input.deadlineMs ?? DELIVER_DEADLINE_MS;
   const intervalMs = input.intervalMs ?? DELIVER_RETRY_INTERVAL_MS;
 

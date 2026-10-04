@@ -10,8 +10,6 @@ import type { SessionStartResult } from '../routes/shared';
 export const START_AWAIT_MAX_MS = 15_000;
 export const START_AWAIT_POLL_MS = 200;
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 export const isTerminalStage = (stage: string): boolean =>
   stage === 'ready' || stage === 'failed' || stage === 'stopped';
 
@@ -35,7 +33,7 @@ export async function awaitTerminalStage(
   if (opts.waitMs <= 0 || isTerminalStage(initial.stage) || initial.retriable === false)
     return initial;
   const now = opts.now ?? Date.now;
-  const sleepFn = opts.sleepFn ?? defaultSleep;
+  const sleepFn = opts.sleepFn ?? Bun.sleep;
   const pollMs = opts.pollMs ?? START_AWAIT_POLL_MS;
   const deadline = now() + Math.min(opts.waitMs, START_AWAIT_MAX_MS);
   let current = initial;

@@ -328,7 +328,7 @@ export async function findPipedreamAccount(
   } = {},
 ): Promise<PipedreamAccount | null> {
   const listAccounts = runtime.listAccounts ?? ((id: string) => getProvider().listAccounts(id));
-  const sleep = runtime.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = runtime.sleep ?? Bun.sleep;
   const attempts = runtime.attempts ?? PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS;
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) await sleep(PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS);

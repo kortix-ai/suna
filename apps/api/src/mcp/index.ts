@@ -207,7 +207,6 @@ async function sessionPath(sessionId: string): Promise<string> {
 
 /** Time budget of one MCP request, under the load balancer's 60 s idle cut. */
 const REQUEST_BUDGET_MS = 55_000;
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** `…/v1/p/<external_id>/8000` or `/p/<external_id>/8000` → the proxy path. */
 function daemonPath(url: unknown): string | null {
@@ -265,7 +264,7 @@ export async function callSandbox(
       reason = typeof booted.reason === 'string' ? booted.reason : '';
       started = true;
     }
-    await sleep(2_000);
+    await Bun.sleep(2_000);
   }
 }
 
@@ -807,14 +806,14 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       const deadline = Math.min(Date.now() + wait, ctx.deadline - 12_000);
       let activity = await sessionActivity(ctx, path);
       while (!('error' in activity) && activity.busy && Date.now() + 2_000 < deadline) {
-        await sleep(2_000);
+        await Bun.sleep(2_000);
         activity = await sessionActivity(ctx, path);
       }
       if ('error' in activity) return apiResult(activity.error!);
       const late = Symbol('late');
       const transcript = await Promise.race([
         callApi(ctx, 'GET', `${path}/transcript`, { query: { limit, chars: 1500, detail: 'full' } }),
-        sleep(Math.max(ctx.deadline - Date.now() - 2_000, 0)).then(() => late),
+        Bun.sleep(Math.max(ctx.deadline - Date.now() - 2_000, 0)).then(() => late),
       ]);
       const note = typeof transcript === 'symbol' ? 'transcript: not read inside the request budget; call again' : transcript.status >= 400 ? `transcript: HTTP ${transcript.status} ${transcript.body}` : null;
       if (note) return text(`${JSON.stringify(activity.summary, null, 2)}\n\n${note}`);
@@ -869,7 +868,7 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
           const rendered = renderJob(jobId, r.job, Date.now() - started);
           return text(finishedBefore && r.job.state === 'done' ? `job already finished (${r.job.exit === 'cancelled' ? 'cancelled' : `exit ${r.job.exit}`})\n${rendered}` : rendered);
         }
-        await sleep(delay);
+        await Bun.sleep(delay);
         delay = Math.min(delay * 2, 1_000);
       }
     }
