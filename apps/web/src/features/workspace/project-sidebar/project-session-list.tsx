@@ -7,6 +7,7 @@ import {
   isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionIsShared,
   sessionSource,
@@ -1386,7 +1387,7 @@ function ProjectSessionRow({
             </DropdownMenuItem>
             {/* Lifecycle, not sharing: a project manager keeps Stop on a
                 session they did not create. */}
-            {session.status === 'running' && session.can_manage_lifecycle !== false && (
+            {sessionCanBeStopped(session) && session.can_manage_lifecycle !== false && (
               <DropdownMenuItem
                 className="cursor-pointer"
                 disabled={isStopping}

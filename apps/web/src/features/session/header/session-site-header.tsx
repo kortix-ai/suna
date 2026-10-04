@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { Button } from '@/components/ui/button';
+import { sessionCanBeStopped } from '@/components/projects/session-label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -233,7 +234,7 @@ export function SessionSiteHeader({
       );
     },
   });
-  const canStop = !!projectSession && projectSession.status === 'running' && canManageLifecycle;
+  const canStop = !!projectSession && sessionCanBeStopped(projectSession) && canManageLifecycle;
 
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
   // dialog. `canManageLifecycle` is the client mirror of the reload route's own
