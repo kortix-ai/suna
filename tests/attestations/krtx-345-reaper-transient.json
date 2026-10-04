@@ -1,11 +1,18 @@
 {
-  "source_hash": "66ac14e16c34ef3ebdf182dd930b137f1126d33beac050e0c2c2926fe1ffa9ea",
-  "head": "cb94fcf5fad2678a91b238c263f206d2783b6bca",
+  "source_hash": "a422b86df7e9b27cdf5912566c645b9f5ce1ffc3c6949a8ec893c834680f3f7a",
+  "diff_files": [
+    "apps/api/src/projects/reaping/box-reaper.ts",
+    "apps/api/src/projects/sandbox-reaper.test.ts",
+    "apps/api/src/shared/platinum.test.ts",
+    "apps/api/src/shared/platinum.ts"
+  ],
+  "diff_hash": "6860a5a26d41d758989c8f7b08d6be570b651b5cfe07f218f64b3214324a8ba8",
+  "head": "7fe302a5ac169757f879cbbdb468d89ab7aea0db",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
+    "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T00:16:58.876Z"
+  "at": "2026-10-04T05:08:41.278Z"
 }
