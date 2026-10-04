@@ -1,13 +1,12 @@
 'use client';
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
-import { PillLink } from '@/features/marketing/os/primitives';
+import { Button } from '@/components/ui/marketing/button';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { FaqSection, type FaqItem } from '@/features/marketing/faq';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
+import Link from '@/components/site-link';
 
 const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
@@ -60,13 +59,14 @@ function PlanCard({ plan }: { plan: (typeof PRICING_PLANS)[number] }) {
     <PricingPlanCard
       plan={plan}
       action={
-        <PillLink
-          tone={plan.highlight ? 'solid' : 'outline'}
-          className="w-full justify-center"
-          href={href}
+        <Button
+          variant={plan.highlight ? 'default' : 'outline'}
+          size="lg"
+          className="w-full"
+          asChild
         >
-          {cta}
-        </PillLink>
+          <Link href={href}>{cta} </Link>
+        </Button>
       }
     />
   );
@@ -83,32 +83,26 @@ export default function PricingPage() {
   const rest = punct >= 0 ? headline.slice(punct + 1).trim() : '';
 
   return (
-    <div className="bg-background relative">
-      <section
-        data-kx-dark-hero=""
-        className="dark bg-background text-foreground relative isolate flex min-h-[50svh] items-center overflow-hidden px-6 pt-40 pb-24"
-      >
-        <div className="kx-hero-veil absolute inset-0 -z-10" aria-hidden>
-          <BeamsBackdrop fade="hero" />
-        </div>
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-6 text-center">
-          <KortixLogo size={16} />
-          <h1 className="kx-hero-text text-4xl font-normal tracking-tight text-balance sm:text-6xl">
-            <span className="text-foreground">{lead}</span>
+    <div className="bg-background relative pt-28 sm:pt-40">
+      <div className="mx-auto max-w-7xl px-4">
+        <div className="mx-auto text-left">
+          <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+            <span className="text-muted-foreground">{lead}</span>
             {rest ? (
               <>
                 <br />
-                <span className="text-foreground/75">{rest}</span>
+                <span className="text-foreground">{rest}</span>
               </>
             ) : null}
           </h1>
         </div>
-      </section>
 
-      <div className="relative z-10 mx-auto grid max-w-7xl gap-6 px-6 pt-16 pb-12 md:grid-cols-3">
-        {PRICING_PLANS.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} />
-        ))}
+        {/* ── Plan cards ───────────────────────────────────────── */}
+        <div className="mx-auto grid max-w-7xl gap-6 pt-16 md:grid-cols-3">
+          {PRICING_PLANS.map((plan) => (
+            <PlanCard key={plan.id} plan={plan} />
+          ))}
+        </div>
       </div>
 
       <FaqSection

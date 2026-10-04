@@ -100,14 +100,12 @@ capitalized only at the start of a sentence or as a UI label.
 
 | Don't say | Prefer | Why |
 | --- | --- | --- |
-| Autonomous Company Operating System, open AGI platform, self-driving companies | AI Operating System | Retired (D1). |
-| AI agent platform, agent platform | AI Operating System; "the Kortix API" (SDK) | A category, not a feature. |
-| AI command center (as category or title) | AI Operating System | D1, D10. "command center" is a descriptor inside a sentence only. |
-| AI Management System, AI management platform | AI Operating System | Retired (D10, 2026-10-04). |
-| AIOS, Ai OS, AI-OS, "the OS" alone | AI OS (after the full name) | D10. One spelling. |
+| Autonomous Company Operating System, open AGI platform, self-driving companies | AI Management System | Retired (D1). |
+| AI agent platform, agent platform | AI Management System; "the Kortix API" (SDK) | A category, not a feature. |
+| AI command center (as category or title) | AI Management System | D1. "command center" is a descriptor inside a sentence only. |
 | Chatbot, chat box | A workforce that produces real output | Real deliverables, not chat. |
 | AI assistant, copilot, AI worker, Super AI Worker | A workforce of AI agents; "an agent" | Org-scale and parallel. Legacy Suna copy. |
-| Workflow automation, automation tool | An AI Operating System you own | Not a zap. |
+| Workflow automation, automation tool | An AI Management System you own | Not a zap. |
 | Container, VM (external copy) | Cloud computer; sandbox | The sanctioned nouns. |
 | Plugins, extensions | Connectors (apps), skills (know-how) | The canonical nouns. |
 | Integrations (headline noun) | Connectors | One noun. |
@@ -232,7 +230,7 @@ example. All examples are synthetic.
 
 Tone: declarative, concrete, calm. A headline states the mechanism or the offer. The body proves it.
 
-**Rule.** Write a headline as one sentence of 12 words or fewer that states what the reader gets. — *Why:* The home H1 is "The open-source AI Operating System" (7 words). Short lines survive translation and truncation. — *Where:* marketing | deck | store listing. — *When silent:* subject, verb, object; no adjective.
+**Rule.** Write a headline as one sentence of 12 words or fewer that states what the reader gets. — *Why:* The home H1 is "The open-source AI Management System" (7 words). Short lines survive translation and truncation. — *Where:* marketing | deck | store listing. — *When silent:* subject, verb, object; no adjective.
 
 **Rule.** Follow a headline with one sentence of proof from `claims.md`. — *Why:* The hero sub names the pieces: "Your agents, their skills, your company memory and every connector". — *Where:* marketing. — *When silent:* name the three or four objects the reader gets.
 
@@ -251,7 +249,7 @@ Tone: the same as marketing. Short paragraphs. No tagline stunts.
 
 **Rule.** Build a store listing from the Standard line, the four pillars and the three ways work runs. State the status of anything not public. — *Why:* The live Play listing still says "Super AI Worker" and "genius colleague". Neither mobile app is publicly installable (`download/content.ts` gate). — *Where:* mobile | store listing. — *When silent:* subtitle = Short line; first paragraph = Standard line; then pillars as three short lines.
 
-- Approved first line: "Kortix is an open-source AI Operating System. Your agents, skills, company memory, and connectors in one git repo you own."
+- Approved first line: "Kortix is an open-source AI Management System. Your agents, skills, company memory, and connectors in one git repo you own."
 - Rejected: "Kortix: Your Super AI Worker. Forget simple chatbots. Meet your genius colleague."
 
 ### 5.3 Product UI
@@ -315,7 +313,7 @@ Tone: calm, short, safe. The reader did not expect it and may be anxious (securi
 
 **Rule.** Keep the HTML part of an email that shows the logo above 3,200 bytes. — *Why:* SpamAssassin's `html_image_only` scores an HTML part that contains an `<img>` by its raw length, markup included: 0.726 to 2.799 points between 2,400 and 2,800 bytes (`HTML_IMAGE_ONLY_28`). A dev seed test on 2026-10-02 found every Kortix email between 2,253 and 2,795 bytes. The logo must stay (`visual/brandmark.md`), so the content carries the length. `apps/api/src/__tests__/unit-notifications.test.ts` holds the invite above the window. — *Where:* email. — *When silent:* measure `html.length` of the shortest variant before you cut copy.
 
-**Rule.** End every email with the tagline footer "Kortix — The open-source AI Operating System". Never the retired line. — *Why:* D10. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.ts`) and says the tagline since 2026-10-04. — *Where:* email. — *When silent:* the tagline.
+**Rule.** End every email with the tagline footer "Kortix — The open-source AI Management System". Never the retired line. — *Why:* D1. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.ts`) and says the tagline since 2026-10-01. — *Where:* email. — *When silent:* the tagline.
 
 **Rule.** Do not write a kicker or a chip in uppercase. Write it in sentence case. — *Why:* Mono-uppercase is a Badge and deck exception (D4e), not an email style. — *Where:* email. — *When silent:* sentence case.
 

@@ -7,7 +7,7 @@ import { EMAIL_COLORS, EMAIL_FONT_MONO, EMAIL_FONT_SANS, EMAIL_LAYOUT as L } fro
 
 // Colors and fonts come from the brand kit (brand-tokens.generated.ts). Rules:
 // .agents/skills/kortix-brand/references/verbal/voice-and-tone.md section 5.5.
-export const BRAND_FOOTER = 'Kortix — The open-source AI Operating System';
+export const BRAND_FOOTER = 'Kortix — The open-source AI Management System';
 // Canonical hosted logo (symbol + wordmark, black, alpha). See visual/brandmark.md.
 const BRAND_LOGO_URL = L.logoUrl;
 // The PNG is 2001 x 399. Outlook desktop ignores CSS sizes and draws an <img>

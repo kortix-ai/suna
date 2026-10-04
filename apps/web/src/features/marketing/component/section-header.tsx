@@ -24,7 +24,7 @@ const SectionHeader = ({ eyebrow, title, description, titleClassName }: Props) =
         <h2
           data-heading="true"
           className={cn(
-            'text-foreground max-w-3xl font-sans text-3xl font-normal tracking-tight text-balance sm:text-5xl',
+            'text-foreground max-w-2xl font-sans text-2xl font-medium text-balance sm:text-3xl',
             titleClassName,
           )}
         >
@@ -32,7 +32,7 @@ const SectionHeader = ({ eyebrow, title, description, titleClassName }: Props) =
         </h2>
       </div>
 
-      <p className="text-muted-foreground mt-5 max-w-2xl text-lg leading-relaxed text-pretty">
+      <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
         {description}
       </p>
     </Reveal>
