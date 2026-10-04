@@ -1,0 +1,22 @@
+{
+  "source_hash": "fad83e1e630e225197cd0b9d272b1a6a8178adf2543d2e7a8d6e41a3ee93bf34",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/layout.tsx",
+    "apps/web/src/features/auth/mfa-step-up.test.tsx",
+    "apps/web/src/features/auth/mfa-step-up.tsx",
+    "apps/web/src/features/workspace/settings/tabs/security-tab.step-up.test.tsx",
+    "apps/web/src/features/workspace/settings/tabs/security-tab.tsx",
+    "apps/web/src/hooks/account/use-mfa.ts",
+    "apps/web/src/lib/supabase/mfa.test.ts",
+    "apps/web/src/lib/supabase/mfa.ts"
+  ],
+  "diff_hash": "6efd9bc4a8c44709f386fcc3bc4594f4ae0149ada645bfaf5e12ab33d002b2c1",
+  "head": "5b7767527780a88c7e9f7baf2fd69b1ff0c35bba",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T02:59:12.585Z"
+}

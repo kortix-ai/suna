@@ -1,0 +1,22 @@
+{
+  "source_hash": "03ace234835f19a70dca833acd3f6e581b1f64b3894a0bdc4251165fc3fa2f40",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-03T233911Z-never-let-a-test-reach-the-box-s-real-local-bin-kortix-the-w.md",
+    "apps/api/src/__tests__/unit-platinum-snapshot-size.test.ts",
+    "apps/cli/src/__tests__/channels.test.ts",
+    "apps/cli/src/commands/channels.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts"
+  ],
+  "diff_hash": "c7f13fdecb6a792858f0adb9f0a68a09b802987ec4d4adcb98169e0e9f19be2b",
+  "head": "fe1b398b5ead19a29ac599ba4c1a7fe67145c13d",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:55:59.366Z"
+}

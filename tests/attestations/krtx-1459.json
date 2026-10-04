@@ -1,0 +1,24 @@
+{
+  "source_hash": "2b64809e97cce993d3f61b1c3e9eb5ba2781ff32aae5e67b39fca13b27fdea77",
+  "diff_files": [
+    "apps/web/sentry.client.config.ts",
+    "apps/web/src/app/sentry-ignore-errors.test.ts",
+    "apps/web/src/lib/browser-error-noise.test.mts",
+    "apps/web/src/lib/browser-noise/golden-verdicts.json",
+    "apps/web/src/lib/browser-noise/rules/messages.ts",
+    "tests/migration/basejump-accounts-rls-initplan.test.ts",
+    "tests/migration/credit-lifetime-rollup.test.ts",
+    "tests/migration/credit-rpc-overloads.test.ts",
+    "tests/migration/usage-breakdown-ledger-type.test.ts",
+    "tests/migration/wallet-ledger.test.ts"
+  ],
+  "diff_hash": "f3aa1267189b499d2acaef001b7f4ca9812842177b8eee04a759f920e6eb7e36",
+  "head": "3978069d66e5f44e63b4e08153b2cb539dc485d5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:32:06.818Z"
+}

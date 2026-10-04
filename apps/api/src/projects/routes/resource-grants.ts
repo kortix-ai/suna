@@ -263,7 +263,7 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: lenientBody({
           resource_type: z.enum(['agent']).openapi({ description: 'Only agent grants can be created.' }),
           resource_id: z.string().openapi({ description: 'Agent name.' }),
-          principal_type: z.enum(['member,group']).openapi({ description: 'Who gets access.' }),
+          principal_type: z.enum(['member', 'group']).openapi({ description: 'Who gets access.' }),
           principal_id: z.string().openapi({ description: 'User id or group id (uuid).' }),
           expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
         }) } } },

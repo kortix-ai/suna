@@ -11,14 +11,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  MONITOR_LINE_MAX_BYTES,
-  MonitorRunner,
-  type MonitorSpec,
-  type MonitorWireEvent,
-  normalizeLine,
-  parseMonitorSpecs,
-} from '@/services/monitor/monitor-runner'
+import { MONITOR_LINE_MAX_BYTES, type MonitorWireEvent } from '@kortix/api-contract/runtime-relay'
+import { MonitorRunner, type MonitorSpec, normalizeLine, parseMonitorSpecs } from '@/services/monitor/monitor-runner'
 
 const API_URL = 'http://api.test/v1'
 const PROJECT_ID = 'proj-1'

@@ -1,6 +1,10 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 
+import type {
+  SessionTranscript as SessionTranscriptDigest,
+  SessionTranscriptSyncEnvelope,
+} from '@kortix/api-contract';
 import { db } from '../../shared/db';
 import { withTimeout } from '../../shared/with-timeout';
 import { logger as appLogger } from '../../lib/logger';
@@ -57,63 +61,23 @@ export type { CompactMessage, CompactToolCall };
  * Which source answered.
  *
  * A NEGATIVE IS A CLAIM, so this is never inferred from an empty array. `live`
- * is the sandbox's own OpenCode endpoint; `mirror` is the durable server-side
+ * is the sandbox's own runtime endpoint; `mirror` is the durable server-side
  * copy written at turn end (`session-transcript-mirror.ts`); `none` is the
  * honest "nothing could answer", and it is the only value that ever accompanies
  * `available: false`. Mirror and live are NEVER merged — the field says which
  * one you got.
+ *
+ * The wire shapes live in `@kortix/api-contract`: `SessionTranscript` is the
+ * compact digest, `SessionTranscriptSyncEnvelope` the sync-store window (the
+ * runtime's message envelopes verbatim, every part 1:1 except attachment bytes,
+ * see `sanitizeParts`; mirror-only, at most `limit` messages and
+ * MIRROR_WINDOW_MAX_CHARS of JSON, newest first to be kept).
  */
-export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
-
-export interface SessionTranscriptDigest {
-  available: boolean;
-  /** Why this is not a live read. Set on `mirror` too, where it carries the
-   *  reason the live path could not answer — an unavailable digest is not the
-   *  only thing worth explaining. */
-  reason: string | null;
-  source: SessionTranscriptSource;
-  /**
-   * The response contains the session's FIRST message — nothing older exists in
-   * the source that answered. For `live` that means the box returned fewer
-   * messages than the window asked for; for `mirror` it is the `head_complete`
-   * bit a capture PROVED (and retention pruning clears). False means "this is a
-   * tail", never "something is broken".
-   */
-  complete: boolean;
-  /** When the mirror was last written. Null for a live read. */
-  captured_at: string | null;
-  /** The runtime session this transcript belongs to. */
-  runtime_session_id: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
-  message_count: number;
-  messages: CompactMessage[];
-}
-
-/** The sync-store shape: OpenCode message envelopes verbatim, every part 1:1
- *  except attachment bytes (see `sanitizeParts`). Mirror-only — a running
- *  session's client reads the runtime directly. A window holds at most `limit`
- *  messages and MIRROR_WINDOW_MAX_CHARS of JSON, newest first to be kept. */
-export interface SessionTranscriptSyncEnvelope {
-  available: boolean;
-  reason: string | null;
-  source: SessionTranscriptSource;
-  complete: boolean;
-  captured_at: string | null;
-  /** The runtime session this transcript belongs to. */
-  runtime_session_id: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
-  /** Messages in THIS window. */
-  message_count: number;
-  /** Messages the mirror holds for this session, across every window.
-   *  `complete === false` says a window is partial; this says by how much. */
-  total: number;
-  /** Pass as `before` to read the window OLDER than this one. Null when this
-   *  window already reaches the oldest row the mirror holds. */
-  next_cursor: string | null;
-  messages: MirrorMessage[];
-}
+export type {
+  SessionTranscriptSource,
+  SessionTranscript as SessionTranscriptDigest,
+  SessionTranscriptSyncEnvelope,
+} from '@kortix/api-contract';
 
 /** Seam for tests: the mirror read is the one collaborator whose absence vs
  *  presence changes which branch the digest takes, and a DB is not needed to

@@ -20,6 +20,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseMonitorIngestBody } from '../lib/monitor-events';
+import { MonitorIngestRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { ingestMonitorEvents, loadMonitorBoxForToken } from '../lib/monitor-ingest';
 import { readJsonObject } from '../../shared/http-body';
 
@@ -38,7 +39,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // Documents the batch; `parseMonitorIngestBody` owns validation (its own
+      // 400s) and coerces an odd line instead of rejecting the batch.
+      body: { content: { 'application/json': { schema: MonitorIngestRelayBodySchema.or(AnyObject) } } },
     },
     responses: {
       202: json(MonitorIngestResultSchema, 'Events appended'),

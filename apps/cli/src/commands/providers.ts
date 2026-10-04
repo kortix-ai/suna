@@ -1,5 +1,3 @@
-import { createInterface } from 'node:readline';
-
 import { CATALOG, isProviderAuthSatisfied, primaryAuthEnvVars } from '@kortix/llm-catalog';
 import { formatRelative } from '@kortix/shared';
 
@@ -14,13 +12,14 @@ import { openInBrowser } from '../browser.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
-  missing,
 } from '../command-helpers.ts';
+import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
@@ -243,7 +242,8 @@ async function providersLogin(
   enterpriseUrl: string | undefined,
   opts: CtxOpts,
 ): Promise<number> {
-  if (!provider) return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
+  if (!provider)
+    return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
   if (!OAUTH_PROVIDERS.has(provider)) {
     process.stderr.write(
       `${status.err(`OAuth not supported for "${provider}".`)}\n` +
@@ -459,41 +459,4 @@ function formatDuration(ms: number): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-
-/** Read a plain (non-secret) value with normal echoed input — e.g. a region,
- *  which isn't sensitive and is easier to verify visibly. */
-async function readVisible(label: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-/** Read a secret with input echo suppressed when possible. Falls back to
- *  normal readline (echoed) if stdin is not a TTY. */
-async function readSecret(label: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const wasMuted = rl as unknown as { _writeToOutput?: unknown };
-  if (process.stdin.isTTY) {
-    // Mute echo by replacing the readline output writer.
-    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-      if (s.includes(label)) process.stdout.write(s);
-      else process.stdout.write('');
-    };
-  }
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      // Restore writer so subsequent stdout works normally.
-      if (wasMuted) {
-        (rl as unknown as { _writeToOutput?: unknown })._writeToOutput = wasMuted;
-      }
-      rl.close();
-      process.stdout.write('\n');
-      resolve(answer);
-    });
-  });
 }

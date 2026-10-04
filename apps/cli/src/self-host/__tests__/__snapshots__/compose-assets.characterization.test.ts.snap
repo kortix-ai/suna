@@ -1,0 +1,613 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Caddyfile wildcard blocks — exact render characterization (KRTX-1341) neither family configured renders the base Caddyfile byte for byte: neither 1`] = `
+"# Kortix self-host reverse proxy (opt-in). This file is only mounted into the
+# \`caddy\` service, which itself only exists in the rendered Compose file when
+# KORTIX_DOMAIN is set — see compose-assets.ts renderFullDockerCompose(). Caddy
+# resolves the {$VAR} placeholders below from its own container environment
+# (KORTIX_DOMAIN / KORTIX_API_DOMAIN / KORTIX_ACME_EMAIL), terminates TLS via
+# ACME HTTP-01, and proxies to the other services by their Compose DNS names.
+#
+# kortix-api / llm-gateway / frontend run as 2 replicas each in this mode (see
+# applyReplicaTopology() in compose-assets.ts) with no host ports published —
+# Caddy is the only thing that reaches them, over the Compose network, and it
+# is the sole load balancer in front of them. Each uses the \`dynamic a\`
+# upstream source (re-resolves the service's Docker DNS name on every
+# \`refresh\` instead of once at config load) plus an ACTIVE health check, so
+# the zero-downtime start-first rollout in updater.sh is picked up correctly:
+# a brand new replica's IP appears in DNS immediately, before its app is
+# actually ready, and the active health check is what keeps traffic off it
+# until it starts passing; \`fail_duration\` additionally ejects a replica for a
+# few seconds after any failed proxy attempt (passive check) as a second line
+# of defense, e.g. mid-way through a container being stopped.
+#
+# In-request retry (SampleCo "Bad Gateway" fix, 2026-08-21): every app upstream
+# carries \`lb_try_duration\`/\`lb_try_interval\` so a single failed pick during a
+# container recreate window — \`dial tcp: connection refused\` (an old/not-ready
+# IP) or \`no upstreams available\` (both replicas momentarily failing the active
+# check) — is retried against the healthy replica instead of returning 502 to
+# the client. Caddy retries these dial-level failures for EVERY method including
+# POST, because the upstream never received the request, so there is no
+# duplicate-turn risk. Write-side failures after bytes were sent (EOF/reset) are
+# still only retried for idempotent GET/HEAD by Caddy's default and are NOT
+# force-retried here — a re-sent chat/turn/prompt POST could double-charge.
+# Health/eject cadence is tightened (\`health_interval 3s\`, \`refresh 2s\`,
+# \`fail_duration 30s\`) so the recreate window that produces those failures is
+# small and a torn-down replica stays parked well past it.
+{
+	email {$KORTIX_ACME_EMAIL}
+}
+
+# api.<domain> (or an explicit KORTIX_API_DOMAIN): /v1/llm* -> the LLM gateway,
+# everything else -> the API.
+{$KORTIX_API_DOMAIN} {
+	# Caddy's automatic HTTPS already redirects any plain :80 request to :443
+	# for every site block below with no extra config (it's the default
+	# behavior of a domain-form site address, not opt-in) — this header is
+	# the one piece that isn't automatic. Conservative max-age (30 days), no
+	# \`preload\`: preload-list submission is a one-way door (every subdomain
+	# forever, removal takes months), not something to default on for an
+	# operator-owned domain we don't control the lifecycle of.
+	header Strict-Transport-Security "max-age=2592000"
+
+	@llm path /v1/llm*
+	handle @llm {
+		reverse_proxy {
+			dynamic a {
+				name llm-gateway
+				port 8090
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			# /health/live, NOT /health: the deep check reports 503 whenever the
+			# Kortix API is briefly unreachable, so a 2s API blip failed BOTH
+			# gateway replicas at once -> Caddy "no upstreams available" -> a
+			# real 502 for a gateway that was perfectly healthy.
+			health_uri /health/live
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name kortix-api
+				port 8008
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /v1/health
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# <domain>: the Supabase data-plane prefixes -> Kong (single instance, not
+# rolled by the auto-updater — a rare pinned-image bump just recreates it in
+# place), everything else -> the frontend (replicated + load-balanced the
+# same way as api/gateway above).
+{$KORTIX_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
+	handle @supabase {
+		reverse_proxy supabase-kong:8000 {
+			fail_duration 30s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name frontend
+				port 3000
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+"
+`;
+
+exports[`Caddyfile wildcard blocks — exact render characterization (KRTX-1341) apps-only renders base + the exact Apps wildcard block: apps-only 1`] = `
+"# Kortix self-host reverse proxy (opt-in). This file is only mounted into the
+# \`caddy\` service, which itself only exists in the rendered Compose file when
+# KORTIX_DOMAIN is set — see compose-assets.ts renderFullDockerCompose(). Caddy
+# resolves the {$VAR} placeholders below from its own container environment
+# (KORTIX_DOMAIN / KORTIX_API_DOMAIN / KORTIX_ACME_EMAIL), terminates TLS via
+# ACME HTTP-01, and proxies to the other services by their Compose DNS names.
+#
+# kortix-api / llm-gateway / frontend run as 2 replicas each in this mode (see
+# applyReplicaTopology() in compose-assets.ts) with no host ports published —
+# Caddy is the only thing that reaches them, over the Compose network, and it
+# is the sole load balancer in front of them. Each uses the \`dynamic a\`
+# upstream source (re-resolves the service's Docker DNS name on every
+# \`refresh\` instead of once at config load) plus an ACTIVE health check, so
+# the zero-downtime start-first rollout in updater.sh is picked up correctly:
+# a brand new replica's IP appears in DNS immediately, before its app is
+# actually ready, and the active health check is what keeps traffic off it
+# until it starts passing; \`fail_duration\` additionally ejects a replica for a
+# few seconds after any failed proxy attempt (passive check) as a second line
+# of defense, e.g. mid-way through a container being stopped.
+#
+# In-request retry (SampleCo "Bad Gateway" fix, 2026-08-21): every app upstream
+# carries \`lb_try_duration\`/\`lb_try_interval\` so a single failed pick during a
+# container recreate window — \`dial tcp: connection refused\` (an old/not-ready
+# IP) or \`no upstreams available\` (both replicas momentarily failing the active
+# check) — is retried against the healthy replica instead of returning 502 to
+# the client. Caddy retries these dial-level failures for EVERY method including
+# POST, because the upstream never received the request, so there is no
+# duplicate-turn risk. Write-side failures after bytes were sent (EOF/reset) are
+# still only retried for idempotent GET/HEAD by Caddy's default and are NOT
+# force-retried here — a re-sent chat/turn/prompt POST could double-charge.
+# Health/eject cadence is tightened (\`health_interval 3s\`, \`refresh 2s\`,
+# \`fail_duration 30s\`) so the recreate window that produces those failures is
+# small and a torn-down replica stays parked well past it.
+{
+	email {$KORTIX_ACME_EMAIL}
+
+	on_demand_tls {
+		ask http://kortix-api:8008/v1/apps/edge/tls-check
+	}
+}
+
+# api.<domain> (or an explicit KORTIX_API_DOMAIN): /v1/llm* -> the LLM gateway,
+# everything else -> the API.
+{$KORTIX_API_DOMAIN} {
+	# Caddy's automatic HTTPS already redirects any plain :80 request to :443
+	# for every site block below with no extra config (it's the default
+	# behavior of a domain-form site address, not opt-in) — this header is
+	# the one piece that isn't automatic. Conservative max-age (30 days), no
+	# \`preload\`: preload-list submission is a one-way door (every subdomain
+	# forever, removal takes months), not something to default on for an
+	# operator-owned domain we don't control the lifecycle of.
+	header Strict-Transport-Security "max-age=2592000"
+
+	@llm path /v1/llm*
+	handle @llm {
+		reverse_proxy {
+			dynamic a {
+				name llm-gateway
+				port 8090
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			# /health/live, NOT /health: the deep check reports 503 whenever the
+			# Kortix API is briefly unreachable, so a 2s API blip failed BOTH
+			# gateway replicas at once -> Caddy "no upstreams available" -> a
+			# real 502 for a gateway that was perfectly healthy.
+			health_uri /health/live
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name kortix-api
+				port 8008
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /v1/health
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# <domain>: the Supabase data-plane prefixes -> Kong (single instance, not
+# rolled by the auto-updater — a rare pinned-image bump just recreates it in
+# place), everything else -> the frontend (replicated + load-balanced the
+# same way as api/gateway above).
+{$KORTIX_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
+	handle @supabase {
+		reverse_proxy supabase-kong:8000 {
+			fail_duration 30s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name frontend
+				port 3000
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# *.<apps base domain>: every deployed Kortix App, served over per-App
+# on-demand TLS. Only present when KORTIX_APPS_BASE_DOMAIN is configured — see
+# renderCaddyfile() in compose-assets.ts. The global on_demand_tls \`ask\` above
+# bounds certificate issuance to real App hosts. The inbound Host header is
+# preserved (Caddy's reverse_proxy default) so the API's resolveAppHost(Host)
+# names the right App.
+*.{$KORTIX_APPS_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}
+"
+`;
+
+exports[`Caddyfile wildcard blocks — exact render characterization (KRTX-1341) preview-only renders base + the exact preview wildcard block: preview-only 1`] = `
+"# Kortix self-host reverse proxy (opt-in). This file is only mounted into the
+# \`caddy\` service, which itself only exists in the rendered Compose file when
+# KORTIX_DOMAIN is set — see compose-assets.ts renderFullDockerCompose(). Caddy
+# resolves the {$VAR} placeholders below from its own container environment
+# (KORTIX_DOMAIN / KORTIX_API_DOMAIN / KORTIX_ACME_EMAIL), terminates TLS via
+# ACME HTTP-01, and proxies to the other services by their Compose DNS names.
+#
+# kortix-api / llm-gateway / frontend run as 2 replicas each in this mode (see
+# applyReplicaTopology() in compose-assets.ts) with no host ports published —
+# Caddy is the only thing that reaches them, over the Compose network, and it
+# is the sole load balancer in front of them. Each uses the \`dynamic a\`
+# upstream source (re-resolves the service's Docker DNS name on every
+# \`refresh\` instead of once at config load) plus an ACTIVE health check, so
+# the zero-downtime start-first rollout in updater.sh is picked up correctly:
+# a brand new replica's IP appears in DNS immediately, before its app is
+# actually ready, and the active health check is what keeps traffic off it
+# until it starts passing; \`fail_duration\` additionally ejects a replica for a
+# few seconds after any failed proxy attempt (passive check) as a second line
+# of defense, e.g. mid-way through a container being stopped.
+#
+# In-request retry (SampleCo "Bad Gateway" fix, 2026-08-21): every app upstream
+# carries \`lb_try_duration\`/\`lb_try_interval\` so a single failed pick during a
+# container recreate window — \`dial tcp: connection refused\` (an old/not-ready
+# IP) or \`no upstreams available\` (both replicas momentarily failing the active
+# check) — is retried against the healthy replica instead of returning 502 to
+# the client. Caddy retries these dial-level failures for EVERY method including
+# POST, because the upstream never received the request, so there is no
+# duplicate-turn risk. Write-side failures after bytes were sent (EOF/reset) are
+# still only retried for idempotent GET/HEAD by Caddy's default and are NOT
+# force-retried here — a re-sent chat/turn/prompt POST could double-charge.
+# Health/eject cadence is tightened (\`health_interval 3s\`, \`refresh 2s\`,
+# \`fail_duration 30s\`) so the recreate window that produces those failures is
+# small and a torn-down replica stays parked well past it.
+{
+	email {$KORTIX_ACME_EMAIL}
+
+	on_demand_tls {
+		ask http://kortix-api:8008/v1/apps/edge/tls-check
+	}
+}
+
+# api.<domain> (or an explicit KORTIX_API_DOMAIN): /v1/llm* -> the LLM gateway,
+# everything else -> the API.
+{$KORTIX_API_DOMAIN} {
+	# Caddy's automatic HTTPS already redirects any plain :80 request to :443
+	# for every site block below with no extra config (it's the default
+	# behavior of a domain-form site address, not opt-in) — this header is
+	# the one piece that isn't automatic. Conservative max-age (30 days), no
+	# \`preload\`: preload-list submission is a one-way door (every subdomain
+	# forever, removal takes months), not something to default on for an
+	# operator-owned domain we don't control the lifecycle of.
+	header Strict-Transport-Security "max-age=2592000"
+
+	@llm path /v1/llm*
+	handle @llm {
+		reverse_proxy {
+			dynamic a {
+				name llm-gateway
+				port 8090
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			# /health/live, NOT /health: the deep check reports 503 whenever the
+			# Kortix API is briefly unreachable, so a 2s API blip failed BOTH
+			# gateway replicas at once -> Caddy "no upstreams available" -> a
+			# real 502 for a gateway that was perfectly healthy.
+			health_uri /health/live
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name kortix-api
+				port 8008
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /v1/health
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# <domain>: the Supabase data-plane prefixes -> Kong (single instance, not
+# rolled by the auto-updater — a rare pinned-image bump just recreates it in
+# place), everything else -> the frontend (replicated + load-balanced the
+# same way as api/gateway above).
+{$KORTIX_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
+	handle @supabase {
+		reverse_proxy supabase-kong:8000 {
+			fail_duration 30s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name frontend
+				port 3000
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# *.<preview base domain>: one origin per sandbox port, served over
+# per-hostname on-demand TLS. Only present when KORTIX_PREVIEW_BASE_DOMAIN is
+# configured — see renderCaddyfile() in compose-assets.ts. The global
+# on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
+*.{$KORTIX_PREVIEW_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}
+"
+`;
+
+exports[`Caddyfile wildcard blocks — exact render characterization (KRTX-1341) both configured renders base + apps block + preview block, one shared ask: both 1`] = `
+"# Kortix self-host reverse proxy (opt-in). This file is only mounted into the
+# \`caddy\` service, which itself only exists in the rendered Compose file when
+# KORTIX_DOMAIN is set — see compose-assets.ts renderFullDockerCompose(). Caddy
+# resolves the {$VAR} placeholders below from its own container environment
+# (KORTIX_DOMAIN / KORTIX_API_DOMAIN / KORTIX_ACME_EMAIL), terminates TLS via
+# ACME HTTP-01, and proxies to the other services by their Compose DNS names.
+#
+# kortix-api / llm-gateway / frontend run as 2 replicas each in this mode (see
+# applyReplicaTopology() in compose-assets.ts) with no host ports published —
+# Caddy is the only thing that reaches them, over the Compose network, and it
+# is the sole load balancer in front of them. Each uses the \`dynamic a\`
+# upstream source (re-resolves the service's Docker DNS name on every
+# \`refresh\` instead of once at config load) plus an ACTIVE health check, so
+# the zero-downtime start-first rollout in updater.sh is picked up correctly:
+# a brand new replica's IP appears in DNS immediately, before its app is
+# actually ready, and the active health check is what keeps traffic off it
+# until it starts passing; \`fail_duration\` additionally ejects a replica for a
+# few seconds after any failed proxy attempt (passive check) as a second line
+# of defense, e.g. mid-way through a container being stopped.
+#
+# In-request retry (SampleCo "Bad Gateway" fix, 2026-08-21): every app upstream
+# carries \`lb_try_duration\`/\`lb_try_interval\` so a single failed pick during a
+# container recreate window — \`dial tcp: connection refused\` (an old/not-ready
+# IP) or \`no upstreams available\` (both replicas momentarily failing the active
+# check) — is retried against the healthy replica instead of returning 502 to
+# the client. Caddy retries these dial-level failures for EVERY method including
+# POST, because the upstream never received the request, so there is no
+# duplicate-turn risk. Write-side failures after bytes were sent (EOF/reset) are
+# still only retried for idempotent GET/HEAD by Caddy's default and are NOT
+# force-retried here — a re-sent chat/turn/prompt POST could double-charge.
+# Health/eject cadence is tightened (\`health_interval 3s\`, \`refresh 2s\`,
+# \`fail_duration 30s\`) so the recreate window that produces those failures is
+# small and a torn-down replica stays parked well past it.
+{
+	email {$KORTIX_ACME_EMAIL}
+
+	on_demand_tls {
+		ask http://kortix-api:8008/v1/apps/edge/tls-check
+	}
+}
+
+# api.<domain> (or an explicit KORTIX_API_DOMAIN): /v1/llm* -> the LLM gateway,
+# everything else -> the API.
+{$KORTIX_API_DOMAIN} {
+	# Caddy's automatic HTTPS already redirects any plain :80 request to :443
+	# for every site block below with no extra config (it's the default
+	# behavior of a domain-form site address, not opt-in) — this header is
+	# the one piece that isn't automatic. Conservative max-age (30 days), no
+	# \`preload\`: preload-list submission is a one-way door (every subdomain
+	# forever, removal takes months), not something to default on for an
+	# operator-owned domain we don't control the lifecycle of.
+	header Strict-Transport-Security "max-age=2592000"
+
+	@llm path /v1/llm*
+	handle @llm {
+		reverse_proxy {
+			dynamic a {
+				name llm-gateway
+				port 8090
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			# /health/live, NOT /health: the deep check reports 503 whenever the
+			# Kortix API is briefly unreachable, so a 2s API blip failed BOTH
+			# gateway replicas at once -> Caddy "no upstreams available" -> a
+			# real 502 for a gateway that was perfectly healthy.
+			health_uri /health/live
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name kortix-api
+				port 8008
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /v1/health
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# <domain>: the Supabase data-plane prefixes -> Kong (single instance, not
+# rolled by the auto-updater — a rare pinned-image bump just recreates it in
+# place), everything else -> the frontend (replicated + load-balanced the
+# same way as api/gateway above).
+{$KORTIX_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
+	handle @supabase {
+		reverse_proxy supabase-kong:8000 {
+			fail_duration 30s
+		}
+	}
+	handle {
+		reverse_proxy {
+			dynamic a {
+				name frontend
+				port 3000
+				refresh 2s
+			}
+			lb_policy round_robin
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
+			health_uri /
+			health_interval 3s
+			health_timeout 2s
+		}
+	}
+}
+
+# *.<apps base domain>: every deployed Kortix App, served over per-App
+# on-demand TLS. Only present when KORTIX_APPS_BASE_DOMAIN is configured — see
+# renderCaddyfile() in compose-assets.ts. The global on_demand_tls \`ask\` above
+# bounds certificate issuance to real App hosts. The inbound Host header is
+# preserved (Caddy's reverse_proxy default) so the API's resolveAppHost(Host)
+# names the right App.
+*.{$KORTIX_APPS_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}
+
+# *.<preview base domain>: one origin per sandbox port, served over
+# per-hostname on-demand TLS. Only present when KORTIX_PREVIEW_BASE_DOMAIN is
+# configured — see renderCaddyfile() in compose-assets.ts. The global
+# on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
+*.{$KORTIX_PREVIEW_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}
+"
+`;

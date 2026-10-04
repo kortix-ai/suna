@@ -23,10 +23,6 @@ import {
   listProjectSessionSandboxes,
   projectSessionToSandboxInfo,
   normalizeSandboxId,
-  getPlatformUrl,
-  getLocalBridgeStatusUrl,
-  LOCAL_PLATFORM_CANDIDATES,
-  type LocalBridgeSandboxResponse,
 } from './shared';
 
 /**
@@ -122,36 +118,12 @@ export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]>
     );
 }
 
+/**
+ * @deprecated The API deleted `GET /v1/platform/local-bridge/status` with the
+ * local instance system. There is no local sandbox to discover: always
+ * resolves `null`, without a request. Removed in the next major.
+ */
 export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
-  if (typeof window === 'undefined') return null;
-
-  const currentPlatformUrl = getPlatformUrl();
-  const candidateBases = Array.from(new Set([currentPlatformUrl, ...LOCAL_PLATFORM_CANDIDATES]));
-
-  for (const baseUrl of candidateBases) {
-    try {
-      const response = await fetch(getLocalBridgeStatusUrl(baseUrl), {
-        method: 'GET',
-        signal: AbortSignal.timeout(1500),
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) {
-        continue;
-      }
-
-      const bridgeStatus = await response.json() as LocalBridgeSandboxResponse;
-
-      if (!bridgeStatus.success || bridgeStatus.status !== 'ready' || !bridgeStatus.data?.sandbox_id) {
-        continue;
-      }
-
-      return bridgeStatus.data;
-    } catch {
-      continue;
-    }
-  }
-
   return null;
 }
 

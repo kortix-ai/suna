@@ -164,6 +164,41 @@ describe('Discover integrations.sh catalogue', () => {
     await expect(catalog.detail('mcp/unknown')).rejects.toThrow('Connector not found');
   });
 
+  // The index lists records the surface API has no page for (the apis-guru
+  // feed carries pseudo-domains like `whatsapp.local` that integrations.sh
+  // answers 404). A 404 is an empty record, not an outage: KRTX-1442.
+  test('serves a connector whose domain has no surface page as empty variants, not an error', async () => {
+    let surfaceCalls = 0;
+    const catalog = createConnectorCatalog({
+      fetch: async (input) => {
+        if (String(input).endsWith('/api.json')) return new Response(JSON.stringify(INDEX));
+        surfaceCalls += 1;
+        return new Response('not found', { status: 404 });
+      },
+      ttlMs: 60_000,
+    });
+
+    const detail = await catalog.detail('openapi/1forge-com');
+    expect(detail.item.id).toBe('openapi/1forge-com');
+    expect(detail.variants).toEqual([]);
+
+    // The empty result caches like a success: a second view never refetches.
+    await catalog.detail('openapi/1forge-com');
+    expect(surfaceCalls).toBe(1);
+  });
+
+  test('still reports a live upstream failure as a catalogue error', async () => {
+    const catalog = createConnectorCatalog({
+      fetch: async (input) => {
+        if (String(input).endsWith('/api.json')) return new Response(JSON.stringify(INDEX));
+        return new Response('upstream exploded', { status: 500 });
+      },
+    });
+    await expect(catalog.detail('openapi/1forge-com')).rejects.toThrow(
+      'integrations.sh returned 500',
+    );
+  });
+
   test('enriches HubSpot with its official public Postman repository', async () => {
     const catalog = createConnectorCatalog({
       fetch: async (input) => {

@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Choisissez les clés partagées que cette session peut utiliser.",
     "sessionKeyPool": "Groupe de clés de session",
     "sharedSessionKeys": "Cette session est partagée avec le projet : seules les clés partagées avec tout le projet fonctionnent ici. Les clés qui vous sont attribuées fonctionnent dans vos sessions privées.",
+    "promptedSessionKeys": "Un autre membre a écrit dans cette session, elle n’agit donc plus pour son propriétaire. Seules les clés partagées avec tout le projet fonctionnent ici.",
+    "noPersonSessionKeys": "Cette session n’agit pour personne : elle a démarré avant l’arrivée des clés personnelles, ou sans surveillance. Seules les clés partagées avec tout le projet fonctionnent ici. Démarrez une nouvelle session pour utiliser vos propres clés.",
     "projectDefaultShort": "Valeur par défaut du projet",
     "rateLimitDescription": "La passerelle passe aux autres clés sélectionnées lorsqu’un fournisseur signale une limite de débit.",
     "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
@@ -577,7 +579,7 @@
       "keepMyAccount": "Garder mon compte",
       "deleteDialogTitle": "Supprimer votre compte ?",
       "immediateWarning": "Cela supprime immédiatement votre compte. Il n’y a pas de délai de grâce ni aucun moyen de l’annuler.",
-      "gracePeriodWarning": "La suppression de votre compte est programmée après une période de grâce de 30 jours, pendant laquelle vous pouvez l'annuler.",
+      "gracePeriodWarning": "La suppression de votre compte sera programmée après une période de grâce de 30 jours, pendant laquelle vous pouvez l'annuler.",
       "whenDeleted": "Lorsque votre compte est supprimé :",
       "agentsDeleted": "Chaque agent que vous possédez est supprimé",
       "threadsDeleted": "Toutes les sessions et tous les messages sont supprimés",
@@ -19201,6 +19203,8 @@
       "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
       "text39207bf34111": "Compétences associées",
       "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
+      "text0e5f7f6732e0": "Bifurquer la conversation",
+      "text32ad3abe4479": "Échec de la bifurcation de la conversation",
       "text85b7a59cdbd5": "Agent de la plateforme",
       "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici.",
       "text4ee2ff5e821c": "La principale alternative open source à Claude Cowork et ChatGPT Work",
@@ -19294,7 +19298,8 @@
       "text4e2e4291b764": "Exécutez-le sur votre propre infrastructure",
       "text5f4339690d5f": "Ce qui a été livré, et quand",
       "text72e9cb3a34a8": "L’AI Operating System",
-      "textcfc0925e41a1": "Un système d’exploitation open source pour vos agents, vos équipes et vos outils : agents, skills, mémoire, connecteurs et ordinateurs dans un dépôt git qui vous appartient."
+      "textcfc0925e41a1": "Un système d’exploitation open source pour vos agents, vos équipes et vos outils : agents, skills, mémoire, connecteurs et ordinateurs dans un dépôt git qui vous appartient.",
+      "text6c4af31cd4ab": "Déconnecté sur cet appareil, mais le serveur n'a pas pu confirmer la déconnexion."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

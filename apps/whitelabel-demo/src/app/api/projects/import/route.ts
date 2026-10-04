@@ -17,16 +17,14 @@ import {
   projectImportEnabled,
   selectImportableProjects,
 } from '@/server/project-adoption';
+import { upstreamBase } from '@/server/upstream-path';
 import { addOwnedProject, isValidProjectId, listOwnedProjects } from '@/server/users';
+import type { KortixProject } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function upstreamBase(): string {
-  return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(/\/+$/, '');
-}
 
 function disabled() {
   return Response.json(
@@ -51,15 +49,14 @@ export async function GET(req: NextRequest) {
   // The SDK's server transport, not a raw fetch — the boundary lint enforces
   // this so every server-side Kortix call goes through one audited path.
   const kortix = createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => key });
-  let rows: unknown[];
+  let rows: KortixProject[];
   try {
-    const body = (await kortix.projects.list()) as unknown;
-    rows = Array.isArray(body) ? body : [];
+    rows = await kortix.projects.list();
   } catch {
     return Response.json({ error: 'Could not read the account’s projects.' }, { status: 502 });
   }
   return Response.json({
-    projects: selectImportableProjects(rows as never, listOwnedProjects(session.userId)),
+    projects: selectImportableProjects(rows, listOwnedProjects(session.userId)),
   });
 }
 

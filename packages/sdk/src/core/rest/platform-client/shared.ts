@@ -68,21 +68,6 @@ export function normalizeSandboxId(value: unknown): string | undefined {
   return undefined;
 }
 
-export interface LocalBridgeSandboxResponse {
-  success: boolean;
-  status?: string;
-  data?: SandboxInfo | null;
-}
-
-export const LOCAL_PLATFORM_CANDIDATES = [
-  'http://localhost:8008/v1',
-  'http://127.0.0.1:8008/v1',
-];
-
-export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  return `${stripTrailingSlashes(baseUrl)}/platform/local-bridge/status`;
-}
-
 function normalizeSessionStatus(status: string | undefined): string {
   if (status === 'running' || status === 'active') return 'active';
   if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';
@@ -96,7 +81,8 @@ export function projectSessionToSandboxInfo(
   session: ProjectSession,
   runtime?: ProjectSessionSandbox | null,
 ): SandboxInfo {
-  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  // '' when the session has no sandbox yet: the same falsy value callers test.
+  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id || '';
   return {
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,

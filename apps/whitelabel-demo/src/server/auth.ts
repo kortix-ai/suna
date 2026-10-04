@@ -51,7 +51,7 @@ export function signSession(userId: string): string {
 }
 
 /** Verify a signed session token. Returns `null` on any invalid/expired/missing input. */
-export function verifySession(token: string | null | undefined): SessionPayload | null {
+function verifySession(token: string | null | undefined): SessionPayload | null {
   if (!token) return null;
   const dot = token.indexOf('.');
   if (dot < 0) return null;
@@ -80,7 +80,7 @@ export function verifySession(token: string | null | undefined): SessionPayload 
 }
 
 /** Pull the bearer token out of an `Authorization: Bearer …` header, if present. */
-function bearerFromHeader(req: Request): string | null {
+export function bearerFromHeader(req: Request): string | null {
   const header = req.headers.get('authorization');
   if (!header?.startsWith('Bearer ')) return null;
   return header.slice('Bearer '.length).trim() || null;
