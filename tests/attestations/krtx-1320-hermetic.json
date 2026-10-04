@@ -1,5 +1,5 @@
 {
-  "source_hash": "59ed486b68f9219a467bb7f29e6ad4cbfc742ea59e6115468db4859ed759ec08",
+  "source_hash": "0d720d62d1902f46b3c18274f03b94734a4a8343d6182992308f426738dedc9a",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/cli/package.json",
@@ -16,13 +16,13 @@
     "tests/migration/wallet-ledger.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "211bffa59dcab1882bc42b650f01c921fc9b1d0c86ab62d537b8a98c1c6e390b",
-  "head": "fe941b5a25edcc51c10406778177c30df2a88196",
+  "diff_hash": "4ea2d638c3bb3abe75de018be613efb1c7f7bdc4c03a8fb711736f5ec6e0793e",
+  "head": "9a25c56843adf1a8d85a375afacd5d766a8140ef",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:25:00.082Z"
+  "at": "2026-10-04T06:03:07.193Z"
 }
