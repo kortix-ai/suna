@@ -7,7 +7,7 @@
  * auto-index a foreign key, so every project deletion seq-scans the table to
  * find cascade children. The FK comes from the committed migrations on every
  * environment, fresh or deployed; the covering index is built by
- * 20261003231036339_chat_pending_auth_messages_project_index.concurrent.ts. Reads the
+ * 20261004013005331_chat_pending_auth_messages_project_index.concurrent.ts. Reads the
  * live catalog (`pg_constraint` / `pg_index`), never source text; mirrors
  * `account-secret-resources-fk-index.integration.test.ts`.
  */

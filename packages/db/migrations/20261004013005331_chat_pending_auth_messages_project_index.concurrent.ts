@@ -11,6 +11,7 @@
 // waits for every transaction that began before it, and lock_timeout governs
 // that wait. IF NOT EXISTS keeps a re-run safe; an INVALID leftover from a
 // failed build must be dropped by hand first (see packages/db/MIGRATIONS.md).
+//
 // This file exists ONLY because CREATE/DROP INDEX CONCURRENTLY (and a
 // handful of other operations: REINDEX CONCURRENTLY, DETACH PARTITION
 // CONCURRENTLY) cannot run inside a transaction -- and every plain .sql
