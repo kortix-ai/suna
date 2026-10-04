@@ -506,26 +506,28 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     const handoff = code.match(/<WorkspaceHandoff[\s\S]*?\/>/)?.[0];
     expect(handoff).toBeDefined();
     expect(handoff).toContain('workspaceName={state.name.trim()}');
-    expect(handoff).toContain('projectId={onboardingProjectId}');
   });
 
   test('the form and the handoff are mutually exclusive — never both, never neither', () => {
-    // A single ternary on one derived flag, not two independent conditionals:
-    // the second shape can render neither branch (or both) as `submitting`
-    // and `onboardingProjectId` drift relative to each other, which is exactly
-    // what happens at the moment a create succeeds.
-    expect(code).toContain('{handingOff ? (');
+    // A single ternary on the create status, not two independent conditionals:
+    // the second shape can render neither branch (or both) as conditions drift
+    // relative to each other.
+    expect(code).toContain('{submitting ? (');
     const handoffBranch = code.slice(code.indexOf('key="handoff"'), code.indexOf('key="form"'));
     const formBranch = code.slice(code.indexOf('key="form"'), code.indexOf('</AnimatePresence>'));
     expect(handoffBranch).toContain('<WorkspaceHandoff');
     expect(formBranch).toContain('<form');
   });
 
-  test('one waiting state spans BOTH windows — the create, and the wizard mounting', () => {
-    // The seam between "creating" and "onboarding" is where the old UI swapped
-    // one screen for another. Folding both into `handingOff` is what makes a
-    // successful create a visual non-event.
-    expect(code).toContain('const handingOff = submitting || Boolean(onboardingProjectId);');
+  test('the handoff covers only the in-flight create — the success navigates away (KRTX-1419)', () => {
+    // A successful create must land on `/projects/<id>`, not hold this page.
+    // The wizard that used to mount here over the handoff is gone: this page
+    // neither mounts `ProjectOnboardingWizard` nor reads the `?onboarding=`
+    // param any more — the redirect decision lives entirely in
+    // `useCreateWorkspace` (`runCreate`), which is where the behavioural
+    // regression test for it runs.
+    expect(code).not.toContain('ProjectOnboardingWizard');
+    expect(code).not.toContain('onboarding');
   });
 
   test('nothing renders phase progress — the create reports no steps to the user', () => {
