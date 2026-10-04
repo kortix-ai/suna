@@ -1972,7 +1972,11 @@
       "topupWalletHint": "为钱包充值，让智能体继续运行。",
       "addCredits": "添加积分",
       "billingPortal": "账单门户",
-      "portalDescription": "管理订阅、付款方式和发票。"
+      "portalDescription": "管理订阅、付款方式和发票。",
+      "cancelSubscription": "取消订阅",
+      "cancelSubscriptionDescription": "您的方案在当前账单周期结束前保持有效，之后结束。在此期间您可以重新启用。",
+      "reactivateSubscription": "重新启用订阅",
+      "commitmentCancelHint": "您的承诺期至 {date}。之后即可取消。"
     },
     "topup": {
       "minimum": "最低充值金额为 {amount}。",

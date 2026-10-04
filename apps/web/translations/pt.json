@@ -1972,7 +1972,11 @@
       "topupWalletHint": "Recarregue o saldo para manter seus agentes em execução.",
       "addCredits": "Adicionar créditos",
       "billingPortal": "Portal de faturamento",
-      "portalDescription": "Gerencie sua assinatura, métodos de pagamento e faturas."
+      "portalDescription": "Gerencie sua assinatura, métodos de pagamento e faturas.",
+      "cancelSubscription": "Cancelar assinatura",
+      "cancelSubscriptionDescription": "Seu plano permanece ativo até o fim do período de faturamento atual e depois encerra. Você pode reativá-lo até lá.",
+      "reactivateSubscription": "Reativar assinatura",
+      "commitmentCancelHint": "Seu compromisso vai até {date}. Você poderá cancelar depois."
     },
     "topup": {
       "minimum": "A recarga mínima é de {amount}.",
