@@ -408,9 +408,9 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
+  // project.sandbox.write so a custom role can withhold it (humans) AND the
   // agent-grant fold applies (agent sessions). Managers hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
 
   const body = await readJsonObject(c);
   const slugRaw = (typeof body.slug === 'string' && body.slug)
@@ -507,9 +507,9 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
+  // project.sandbox.write so a custom role can withhold it (humans) AND the
   // agent-grant fold applies (agent sessions). Managers hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
   const userId = c.get('userId') as string;
 
   const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
