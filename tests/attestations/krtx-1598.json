@@ -1,0 +1,18 @@
+{
+  "source_hash": "a3fe07ea499ff06b52bd1deafe15928a04234a4e15ef4813b82ea1ad34c4d4f0",
+  "diff_files": [
+    "apps/api/src/git-proxy/project-snapshot-build.ts",
+    "apps/api/src/git-proxy/project-snapshot-ledger.ts",
+    "apps/api/src/git-proxy/project-snapshot-shared.ts",
+    "apps/api/src/git-proxy/project-snapshot.ts"
+  ],
+  "diff_hash": "8988cff0b89e42fde7fb602473218e08de0793df5badec1fc7b8e1482dc5aad5",
+  "head": "36c398567e5a65c89f6e15ac805cb7f61830d5d7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T17:47:49.902Z"
+}
