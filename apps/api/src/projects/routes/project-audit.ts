@@ -185,6 +185,270 @@ function auditErrorSqlState(error: unknown): string | null {
   return null;
 }
 
+/** The live sandbox row bound to the ingesting sandbox token, joined to its session. */
+async function loadIngestSessionScope(input: { sandboxId: string; accountId: string; projectId: string }) {
+  const { sandboxId, accountId, projectId } = input;
+  const [scope] = await db
+    .select({
+      sessionId: sessionSandboxes.sessionId,
+      opencodeSessionId: projectSessions.runtimeSessionId,
+      agentName: projectSessions.agentName,
+      createdBy: projectSessions.createdBy,
+      origin: projectSessions.origin,
+      metadata: projectSessions.metadata,
+    })
+    .from(sessionSandboxes)
+    .innerJoin(
+      projectSessions,
+      and(
+        eq(projectSessions.accountId, sessionSandboxes.accountId),
+        eq(projectSessions.projectId, sessionSandboxes.projectId),
+        eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+      ),
+    )
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.accountId, accountId),
+        eq(sessionSandboxes.projectId, projectId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ),
+    )
+    .limit(1);
+  return scope;
+}
+
+/** The session agent's service account and, when one created the session, the creator's. */
+async function loadIngestServiceAccounts(input: {
+  accountId: string;
+  projectId: string;
+  scope: { agentName: string; createdBy: string | null };
+}) {
+  const { accountId, projectId, scope } = input;
+  const identityConditions = [
+    and(eq(serviceAccounts.projectId, projectId), eq(serviceAccounts.agentName, scope.agentName)),
+  ];
+  if (scope.createdBy) {
+    identityConditions.push(eq(serviceAccounts.serviceAccountId, scope.createdBy));
+  }
+  const identities = await db
+    .select({
+      serviceAccountId: serviceAccounts.serviceAccountId,
+      agentName: serviceAccounts.agentName,
+    })
+    .from(serviceAccounts)
+    .where(and(eq(serviceAccounts.accountId, accountId), or(...identityConditions)));
+  return identities;
+}
+
+function rateLimitIngestBatch(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
+}) {
+  const { accountId, projectId, sessionId, parsed } = input;
+  // Per-session ingest ceiling. A single runaway turn emitting ~1725
+  // `opencode.message.part.delta` rows/min took staging down through
+  // audit_events index contention (release-gate run 32151213430); this bounds
+  // the write rate before it reaches a 14-index table. It drops ONLY the
+  // per-token delta class and never blocks the request.
+  //
+  // Wrapped because a guard defect must never cost an audit write: any throw
+  // here falls back to persisting the batch exactly as parsed.
+  let toInsert = parsed.values;
+  let suppressed = 0;
+  try {
+    const decision = applyOpenCodeAuditRateLimit({
+      accountId,
+      projectId,
+      sessionId,
+      values: parsed.values,
+    });
+    toInsert = decision.values;
+    suppressed = decision.suppressed;
+    if (decision.flagForReaper) {
+      // Durable, best-effort marker for the maintenance sweep and for
+      // operators querying during an incident. Deliberately not awaited: the
+      // hot path must not gain a write it has to wait on.
+      void flagSessionAuditRateLimited({
+        accountId,
+        projectId,
+        sessionId,
+        consecutiveHotWindows: decision.consecutiveHotWindows,
+      });
+    }
+  } catch {
+    toInsert = parsed.values;
+    suppressed = 0;
+  }
+  return { toInsert, suppressed };
+}
+
+async function writeIngestBatch(input: {
+  c: unknown;
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  accepted: number;
+  toInsert: ReturnType<typeof parseOpenCodeAuditBatch>['values'];
+}) {
+  const { c, accountId, projectId, sessionId, toInsert } = input;
+  const parsed = { accepted: input.accepted };
+  // Write the batch in bounded statements. The first attempt carries
+  // `auditIngestChunkSize()` rows — one statement per accepted batch by
+  // default. A rejected statement rolls back only its own rows, and the relay
+  // re-sends what did not land after its backoff.
+  let attempted = 0;
+  let insertedCount = 0;
+  let contended = false;
+  let chunkSize = auditIngestChunkSize();
+  let fallbacks = 0;
+  for (let offset = 0; offset < toInsert.length; ) {
+    // Stay inside the request's own 25s deadline. A chunk must not start
+    // unless its worst case (the audit pool's
+    // statement timeout + margin) fits the remaining budget; the deadline
+    // middleware otherwise aborts mid-batch with an error-level
+    // `request exceeded the 25s server processing deadline` line, no
+    // `Retry-After: 5` pacing, and chunks that keep writing for a response
+    // nobody reads (prod 2026-09-28: the aborts were this route's dominant
+    // error class). Stop at that boundary and answer with the same
+    // controlled contended 503 the contention path returns — the relay holds the
+    // batch in its spool and retries with `Retry-After`, and committed
+    // chunks stay committed.
+    const remainingMs = remainingIngestBudgetMs(c);
+    // A chunk never starts unless its worst case (the audit pool's statement
+    // timeout plus the response margin) fits the remaining budget.
+    if (remainingMs !== null && remainingMs < AUDIT_STATEMENT_TIMEOUT_MS + AUDIT_INGEST_ATTEMPT_MARGIN_MS) {
+      appLogger.warn('[audit] ingest budget exhausted', {
+        projectId,
+        sessionId,
+        remaining_ms: remainingMs,
+        accepted: parsed.accepted,
+        attempted,
+        inserted: insertedCount,
+        remaining: toInsert.length - offset,
+        chunk: chunkSize,
+      });
+      contended = true;
+      break;
+    }
+    const chunk = toInsert.slice(offset, offset + chunkSize);
+    try {
+      const chunkWork = auditDb()
+        .insert(auditEvents)
+        .values(chunk)
+        .onConflictDoNothing()
+        .returning({ eventId: auditEvents.eventId });
+      // The chunk's own bound (the statement timeout) does not bound
+      // the wait for an audit-pool backend. Race the chunk against what is
+      // left of the request deadline so a saturated pool degrades into the
+      // controlled contended 503 instead of the deadline abort. When the
+      // guard is off (`remainingMs === null`) there is nothing to race.
+      const chunkResult =
+        remainingMs === null
+          ? { timedOut: false as const, value: await chunkWork }
+          // 1s held back so the contended 503 response itself still fits
+          // inside the deadline.
+          : await boundChunkWrite(chunkWork, remainingMs - 1_000);
+      if (chunkResult.timedOut) {
+        // The statement keeps running off the request path. Swallow its
+        // eventual rejection (a statement timeout, or the lock wait it is
+        // still queued inside) so it can never surface unhandled.
+        void chunkWork.catch(() => {});
+        appLogger.warn('[audit] ingest budget exhausted', {
+          projectId,
+          sessionId,
+          remaining_ms: remainingIngestBudgetMs(c),
+          chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
+          accepted: parsed.accepted,
+          attempted,
+          inserted: insertedCount,
+          remaining: toInsert.length - offset - chunk.length,
+          chunk: chunk.length,
+          raced_out: true,
+        });
+        contended = true;
+        break;
+      }
+      const inserted = chunkResult.value;
+      attempted += chunk.length;
+      insertedCount += inserted.length;
+      offset += chunk.length;
+    } catch (error) {
+      if (!isAuditContentionError(error)) {
+        // A write that is NOT backpressure is a defect, and until now the
+        // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
+        // query: insert into "kortix"."audit_events" …` with the whole
+        // statement and every bound parameter, and no SQLSTATE anywhere —
+        // the pg cause hangs off `error.cause`, which the wrapper does not
+        // print. PROD 2026-09-09 06:32–06:33 UTC produced 76 of these in 90
+        // seconds, alongside api_keys and account_tokens SELECT failures from
+        // the same window, and the class of fault was unreadable from the
+        // logs. Name the SQLSTATE and the session; the throw is unchanged.
+        console.error('[audit-ingest] write failed', {
+          projectId,
+          sessionId,
+          accountId,
+          chunkSize: chunk.length,
+          batchSize: toInsert.length,
+          offset,
+          sqlstate: auditErrorSqlstate(error),
+          reason: error instanceof Error ? error.message.split('\n')[0] : String(error),
+        });
+        throw error;
+      }
+      // A contended statement committed nothing, and handing the WHOLE
+      // remaining batch back to the relay makes the relay re-post every row
+      // (prod 2026-09-29, KRTX-470: 6,115 57014 statement timeouts in 3 h —
+      // each one a full 200-row statement that ran out of the audit pool's
+      // statement_timeout, rolled back all its work, and came back as another
+      // full-batch POST; the route's p95 and every other DB-bound route's
+      // rose with it). Retry the SAME rows in a smaller statement first: a
+      // statement that fits its budget lands rows instead of burning the
+      // audit pool's two backends on work that rolls back. The budget check
+      // at the top of the loop caps every further attempt the same way, so
+      // the request still answers inside its deadline; past the floor, give
+      // up as before.
+      // Halve the rows this statement actually carried, not the chunk
+      // ceiling. A 3-row batch under a 200-row ceiling used to re-send the
+      // same 3 rows at "100" and "50" — byte-identical statements that each
+      // held an audit-pool backend for the full statement timeout (prod
+      // 2026-10-01: ~20 s per 503, two of the pool's backends' worth of
+      // time, for rows no smaller statement could change).
+      if (chunk.length > AUDIT_INGEST_MIN_CHUNK) {
+        chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunk.length / 2));
+        fallbacks += 1;
+        continue;
+      }
+      // The chunk is at the floor. Pushing the remaining rows into the same
+      // lock queue would only lengthen it. Stop and tell the relay to come
+      // back — the batch is still in its spool, and every row that landed
+      // stays committed.
+      //
+      // Say WHICH SQLSTATE and how far the batch got. A 503 that logs only
+      // `-> 503 [HTTPException]` hid a 7-day convoy (prod, from 2026-08-31
+      // 19:52 UTC: ~32 sessions × one retry per ~8 s, >74,000 503s per
+      // session) behind an opaque status code.
+      appLogger.warn('[audit] ingest contended', {
+        projectId,
+        sessionId,
+        // `57xxx`/`55P03` came back from Postgres.
+        sqlstate: auditErrorSqlstate(error),
+        accepted: parsed.accepted,
+        attempted,
+        inserted: insertedCount,
+        remaining: toInsert.length - offset,
+        chunk: chunk.length,
+        fallback_statements: fallbacks,
+      });
+      contended = true;
+      break;
+    }
+  }
+  return { attempted, insertedCount, contended };
+}
+
 export function registerProjectAuditRoutes(): void {
   // GET /v1/projects/:projectId/audit
   // Canonical project slice. It returns the same event contract and cursor as
@@ -328,33 +592,7 @@ export function registerProjectAuditRoutes(): void {
       if (!accountId || !sandboxId || !sandboxTokenMayActOnSession(sandboxId, sessionId)) {
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
       }
-      const [scope] = await db
-        .select({
-          sessionId: sessionSandboxes.sessionId,
-          opencodeSessionId: projectSessions.runtimeSessionId,
-          agentName: projectSessions.agentName,
-          createdBy: projectSessions.createdBy,
-          origin: projectSessions.origin,
-          metadata: projectSessions.metadata,
-        })
-        .from(sessionSandboxes)
-        .innerJoin(
-          projectSessions,
-          and(
-            eq(projectSessions.accountId, sessionSandboxes.accountId),
-            eq(projectSessions.projectId, sessionSandboxes.projectId),
-            eq(projectSessions.sessionId, sessionSandboxes.sessionId),
-          ),
-        )
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, sandboxId),
-            eq(sessionSandboxes.accountId, accountId),
-            eq(sessionSandboxes.projectId, projectId),
-            inArray(sessionSandboxes.status, ['provisioning', 'active']),
-          ),
-        )
-        .limit(1);
+      const scope = await loadIngestSessionScope({ sandboxId, accountId, projectId });
       if (!scope || (scope.sessionId ?? sandboxId) !== sessionId) {
         return c.json({ error: 'sandbox token is not scoped to this project and session' }, 403);
       }
@@ -366,19 +604,7 @@ export function registerProjectAuditRoutes(): void {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
 
-      const identityConditions = [
-        and(eq(serviceAccounts.projectId, projectId), eq(serviceAccounts.agentName, scope.agentName)),
-      ];
-      if (scope.createdBy) {
-        identityConditions.push(eq(serviceAccounts.serviceAccountId, scope.createdBy));
-      }
-      const identities = await db
-        .select({
-          serviceAccountId: serviceAccounts.serviceAccountId,
-          agentName: serviceAccounts.agentName,
-        })
-        .from(serviceAccounts)
-        .where(and(eq(serviceAccounts.accountId, accountId), or(...identityConditions)));
+      const identities = await loadIngestServiceAccounts({ accountId, projectId, scope });
       const agentIdentity = identities.find((identity) => identity.agentName === scope.agentName);
       const initiatorIdentity = scope.createdBy
         ? identities.find((identity) => identity.serviceAccountId === scope.createdBy)
@@ -419,196 +645,20 @@ export function registerProjectAuditRoutes(): void {
       } catch (error) {
         return c.json({ error: (error as Error).message }, 400);
       }
-      // Per-session ingest ceiling. A single runaway turn emitting ~1725
-      // `opencode.message.part.delta` rows/min took staging down through
-      // audit_events index contention (release-gate run 32151213430); this bounds
-      // the write rate before it reaches a 14-index table. It drops ONLY the
-      // per-token delta class and never blocks the request.
-      //
-      // Wrapped because a guard defect must never cost an audit write: any throw
-      // here falls back to persisting the batch exactly as parsed.
-      let toInsert = parsed.values;
-      let suppressed = 0;
-      try {
-        const decision = applyOpenCodeAuditRateLimit({
-          accountId,
-          projectId,
-          sessionId,
-          values: parsed.values,
-        });
-        toInsert = decision.values;
-        suppressed = decision.suppressed;
-        if (decision.flagForReaper) {
-          // Durable, best-effort marker for the maintenance sweep and for
-          // operators querying during an incident. Deliberately not awaited: the
-          // hot path must not gain a write it has to wait on.
-          void flagSessionAuditRateLimited({
-            accountId,
-            projectId,
-            sessionId,
-            consecutiveHotWindows: decision.consecutiveHotWindows,
-          });
-        }
-      } catch {
-        toInsert = parsed.values;
-        suppressed = 0;
-      }
+      const { toInsert, suppressed } = rateLimitIngestBatch({ accountId, projectId, sessionId, parsed });
 
       if (toInsert.length === 0) {
         return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
       }
 
-      // Write the batch in bounded statements. The first attempt carries
-      // `auditIngestChunkSize()` rows — one statement per accepted batch by
-      // default. A rejected statement rolls back only its own rows, and the relay
-      // re-sends what did not land after its backoff.
-      let attempted = 0;
-      let insertedCount = 0;
-      let contended = false;
-      let chunkSize = auditIngestChunkSize();
-      let fallbacks = 0;
-      for (let offset = 0; offset < toInsert.length; ) {
-        // Stay inside the request's own 25s deadline. A chunk must not start
-        // unless its worst case (the audit pool's
-        // statement timeout + margin) fits the remaining budget; the deadline
-        // middleware otherwise aborts mid-batch with an error-level
-        // `request exceeded the 25s server processing deadline` line, no
-        // `Retry-After: 5` pacing, and chunks that keep writing for a response
-        // nobody reads (prod 2026-09-28: the aborts were this route's dominant
-        // error class). Stop at that boundary and answer with the same
-        // controlled contended 503 the contention path returns — the relay holds the
-        // batch in its spool and retries with `Retry-After`, and committed
-        // chunks stay committed.
-        const remainingMs = remainingIngestBudgetMs(c);
-        // A chunk never starts unless its worst case (the audit pool's statement
-        // timeout plus the response margin) fits the remaining budget.
-        if (remainingMs !== null && remainingMs < AUDIT_STATEMENT_TIMEOUT_MS + AUDIT_INGEST_ATTEMPT_MARGIN_MS) {
-          appLogger.warn('[audit] ingest budget exhausted', {
-            projectId,
-            sessionId,
-            remaining_ms: remainingMs,
-            accepted: parsed.accepted,
-            attempted,
-            inserted: insertedCount,
-            remaining: toInsert.length - offset,
-            chunk: chunkSize,
-          });
-          contended = true;
-          break;
-        }
-        const chunk = toInsert.slice(offset, offset + chunkSize);
-        try {
-          const chunkWork = auditDb()
-            .insert(auditEvents)
-            .values(chunk)
-            .onConflictDoNothing()
-            .returning({ eventId: auditEvents.eventId });
-          // The chunk's own bound (the statement timeout) does not bound
-          // the wait for an audit-pool backend. Race the chunk against what is
-          // left of the request deadline so a saturated pool degrades into the
-          // controlled contended 503 instead of the deadline abort. When the
-          // guard is off (`remainingMs === null`) there is nothing to race.
-          const chunkResult =
-            remainingMs === null
-              ? { timedOut: false as const, value: await chunkWork }
-              // 1s held back so the contended 503 response itself still fits
-              // inside the deadline.
-              : await boundChunkWrite(chunkWork, remainingMs - 1_000);
-          if (chunkResult.timedOut) {
-            // The statement keeps running off the request path. Swallow its
-            // eventual rejection (a statement timeout, or the lock wait it is
-            // still queued inside) so it can never surface unhandled.
-            void chunkWork.catch(() => {});
-            appLogger.warn('[audit] ingest budget exhausted', {
-              projectId,
-              sessionId,
-              remaining_ms: remainingIngestBudgetMs(c),
-              chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
-              accepted: parsed.accepted,
-              attempted,
-              inserted: insertedCount,
-              remaining: toInsert.length - offset - chunk.length,
-              chunk: chunk.length,
-              raced_out: true,
-            });
-            contended = true;
-            break;
-          }
-          const inserted = chunkResult.value;
-          attempted += chunk.length;
-          insertedCount += inserted.length;
-          offset += chunk.length;
-        } catch (error) {
-          if (!isAuditContentionError(error)) {
-            // A write that is NOT backpressure is a defect, and until now the
-            // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
-            // query: insert into "kortix"."audit_events" …` with the whole
-            // statement and every bound parameter, and no SQLSTATE anywhere —
-            // the pg cause hangs off `error.cause`, which the wrapper does not
-            // print. PROD 2026-09-09 06:32–06:33 UTC produced 76 of these in 90
-            // seconds, alongside api_keys and account_tokens SELECT failures from
-            // the same window, and the class of fault was unreadable from the
-            // logs. Name the SQLSTATE and the session; the throw is unchanged.
-            console.error('[audit-ingest] write failed', {
-              projectId,
-              sessionId,
-              accountId,
-              chunkSize: chunk.length,
-              batchSize: toInsert.length,
-              offset,
-              sqlstate: auditErrorSqlstate(error),
-              reason: error instanceof Error ? error.message.split('\n')[0] : String(error),
-            });
-            throw error;
-          }
-          // A contended statement committed nothing, and handing the WHOLE
-          // remaining batch back to the relay makes the relay re-post every row
-          // (prod 2026-09-29, KRTX-470: 6,115 57014 statement timeouts in 3 h —
-          // each one a full 200-row statement that ran out of the audit pool's
-          // statement_timeout, rolled back all its work, and came back as another
-          // full-batch POST; the route's p95 and every other DB-bound route's
-          // rose with it). Retry the SAME rows in a smaller statement first: a
-          // statement that fits its budget lands rows instead of burning the
-          // audit pool's two backends on work that rolls back. The budget check
-          // at the top of the loop caps every further attempt the same way, so
-          // the request still answers inside its deadline; past the floor, give
-          // up as before.
-          // Halve the rows this statement actually carried, not the chunk
-          // ceiling. A 3-row batch under a 200-row ceiling used to re-send the
-          // same 3 rows at "100" and "50" — byte-identical statements that each
-          // held an audit-pool backend for the full statement timeout (prod
-          // 2026-10-01: ~20 s per 503, two of the pool's backends' worth of
-          // time, for rows no smaller statement could change).
-          if (chunk.length > AUDIT_INGEST_MIN_CHUNK) {
-            chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunk.length / 2));
-            fallbacks += 1;
-            continue;
-          }
-          // The chunk is at the floor. Pushing the remaining rows into the same
-          // lock queue would only lengthen it. Stop and tell the relay to come
-          // back — the batch is still in its spool, and every row that landed
-          // stays committed.
-          //
-          // Say WHICH SQLSTATE and how far the batch got. A 503 that logs only
-          // `-> 503 [HTTPException]` hid a 7-day convoy (prod, from 2026-08-31
-          // 19:52 UTC: ~32 sessions × one retry per ~8 s, >74,000 503s per
-          // session) behind an opaque status code.
-          appLogger.warn('[audit] ingest contended', {
-            projectId,
-            sessionId,
-            // `57xxx`/`55P03` came back from Postgres.
-            sqlstate: auditErrorSqlstate(error),
-            accepted: parsed.accepted,
-            attempted,
-            inserted: insertedCount,
-            remaining: toInsert.length - offset,
-            chunk: chunk.length,
-            fallback_statements: fallbacks,
-          });
-          contended = true;
-          break;
-        }
-      }
+      const { attempted, insertedCount, contended } = await writeIngestBatch({
+        c,
+        accountId,
+        projectId,
+        sessionId,
+        accepted: parsed.accepted,
+        toInsert,
+      });
       const result = {
         accepted: parsed.accepted,
         inserted: insertedCount,
