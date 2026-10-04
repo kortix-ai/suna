@@ -47,7 +47,7 @@ const {
   isValidTier,
   tierGrantsAllModels,
 } = await import('../billing/services/tiers');
-const { maxConcurrentSessionsForTier, sessionLlmPolicyForTier } = await import(
+const { sessionLlmPolicyForTier } = await import(
   '../shared/account-limits'
 );
 const { getPlanRecord, listPlanRecords, PLAN_CATALOG, PLAN_FAMILIES, resolvePlanRecord } =
@@ -122,10 +122,8 @@ for (const key of TIER_KEYS) {
       expect(record.entitlements.managedModels).toBe(tierGrantsAllModels(key));
     });
 
-    test('concurrentSessions matches TierConfig.concurrentSessionLimit', () => {
-      expect(record.limits.concurrentSessions).toBe(tier.concurrentSessionLimit);
-      // …and therefore the number the limit layer actually enforces.
-      expect(record.limits.concurrentSessions).toBe(maxConcurrentSessionsForTier(key));
+    test('the catalog limits carry only llmRateMultiplier — no session cap', () => {
+      expect(Object.keys(record.limits)).toEqual(['llmRateMultiplier']);
     });
 
     test('llmRateMultiplier matches the multiplier sessionLlmPolicyForTier applies', () => {

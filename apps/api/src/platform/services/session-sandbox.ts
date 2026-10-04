@@ -215,7 +215,7 @@ export async function mintSessionToken(opts: {
   ]);
   if (agentPrincipal && !serviceAccountId) {
     throw new Error(
-      `agent_principal is on for project ${opts.projectId}, but agent "${opts.agentName}" has no service account; ` +
+      `project ${opts.projectId}: governed agent "${opts.agentName}" has no service account; ` +
         'refusing to mint a session credential that would authorize as the launcher',
     );
   }
