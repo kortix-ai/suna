@@ -1,5 +1,5 @@
 /**
- * An agent session's standing on one session row under the `agent_principal`
+ * An agent session's standing on one session row under the agent-principal
  * model (spec §2). The agent acts as itself, so it owns only its own session
  * and the sessions it spawned (`metadata.spawned_by_session`), never the
  * launcher's other sessions. Visibility only narrows: a private or restricted

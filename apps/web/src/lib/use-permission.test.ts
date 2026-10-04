@@ -54,8 +54,8 @@ describe('no UI gate branches on a role label', () => {
   // `effective_project_role === 'manager'` or the roster's `can_manage` flag.
   const CONVERTED: Array<[string, string]> = [
     ['features/workspace/settings/tabs/general-tab.tsx', 'PROJECT_DELETE'],
-    ['features/workspace/settings/tabs/sandbox-tab.tsx', 'PROJECT_CUSTOMIZE_WRITE'],
-    ['features/workspace/settings/tabs/snapshots-tab.tsx', 'PROJECT_CUSTOMIZE_WRITE'],
+    ['features/workspace/settings/tabs/sandbox-tab.tsx', 'PROJECT_SANDBOX_WRITE'],
+    ['features/workspace/settings/tabs/snapshots-tab.tsx', 'PROJECT_SANDBOX_WRITE'],
     ['features/workspace/customize/sections/view/git-view.tsx', 'PROJECT_WRITE'],
     ['components/projects/schedule-view.tsx', 'PROJECT_TRIGGER_UPDATE'],
     ['components/iam/access-projects-tab.tsx', 'PROJECT_MEMBERS_MANAGE'],

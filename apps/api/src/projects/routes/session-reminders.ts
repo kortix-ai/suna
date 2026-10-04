@@ -9,7 +9,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { assertAgentScope, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
@@ -48,7 +48,7 @@ async function authorizeReminderSession(c: any) {
   const disabled = requireFeatureFlag(c, loaded.row.metadata, 'reminders');
   if (disabled) return { response: disabled };
   const agentCaller = isProjectSessionPrincipal(c);
-  if (agentCaller && callerKortixSessionId(c) !== sessionId) {
+  if (isBorrowedSessionPrincipal(c) && callerKortixSessionId(c) !== sessionId) {
     return {
       response: c.json({ error: 'An agent session can manage reminders on its own session only' }, 403),
     };

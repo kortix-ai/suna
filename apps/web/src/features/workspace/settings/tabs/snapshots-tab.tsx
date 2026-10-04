@@ -56,7 +56,7 @@
  * `settings-panel.tsx` — this tab is project-scoped only, same as `sandbox`,
  * and takes no `ACCOUNT_TAB_PERMISSION` entry.
  *
- * **Gate.** `canManage` probes `project.customize.write` — the leaf the rebuild
+ * **Gate.** `canManage` probes `project.sandbox.write` — the leaf the rebuild
  * route asserts, and the same leaf `sandbox-tab.tsx` gates template CRUD on. It
  * gates only the status banner's Rebuild button; "Fix with agent" gates
  * separately on `status.fix_with_agent_available`, unchanged.
@@ -1041,7 +1041,7 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const canManage =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE).allowed === true;
 
   const snapshotsQuery = useQuery({
     queryKey: qk.project.snapshots(projectId),
