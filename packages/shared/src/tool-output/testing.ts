@@ -30,19 +30,25 @@ export function chooser(seed: number) {
 }
 
 /**
- * A test that fails when `run` burns 250 ms of CPU or more.
+ * The CPU cost of `run`, in milliseconds.
  *
- * CPU time, not wall time: the old 100 ms wall budget sat ~1.7x over the worst
- * legitimate case (57 ms idle) and failed under the packages lane's concurrent
- * waves, where a loaded box costs wall time without costing work (107.8 ms CPU
- * with GC threads at 82 ms wall). 250 ms is ~2.3x the measured worst case; a
- * quadratic blowup is 100-1000x over, so the teeth stay.
+ * CPU time, not wall time: a loaded box costs wall time without costing work
+ * (GC threads, preemption under the packages lane's concurrent waves). The
+ * worst legitimate case in these suites measures 107.8 ms CPU; 250 ms is
+ * ~2.3x headroom, and a quadratic blowup is 100-1000x over, so the teeth stay.
+ * Exported so the budget's semantics are testable (testing.test.ts pins both
+ * sides: a preempted case measures ~0 CPU, a real burn measures over budget).
  */
+export function cpuCostOf(run: () => unknown): number {
+  const started = process.cpuUsage();
+  run();
+  const cpu = process.cpuUsage(started);
+  return (cpu.user + cpu.system) / 1000;
+}
+
+/** A test that fails when `run` burns 250 ms of CPU or more. */
 export function within(label: string, run: () => unknown): void {
   test(label, () => {
-    const started = process.cpuUsage();
-    run();
-    const cpu = process.cpuUsage(started);
-    expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
+    expect(cpuCostOf(run)).toBeLessThan(250);
   });
 }

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'bun:test';
 
+import { within } from '@kortix/shared/tool-output/testing';
+
 import { parseFrontmatter } from './markdown-frontmatter';
 
 // Frontmatter is not decoration — if it is not lifted out BEFORE the markdown
@@ -109,12 +111,6 @@ describe('parseFrontmatter trims each line in linear time', () => {
     }
   });
 
-  test('a front-matter line holding 240k spaces', () => {
-    const started = process.cpuUsage();
-    parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`);
-    const cpu = process.cpuUsage(started);
-    // CPU, not wall time (same guard as packages/shared's within()): a loaded
-    // lane costs wall time without costing work.
-    expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
-  });
+  within('a front-matter line holding 240k spaces', () =>
+    parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`));
 });

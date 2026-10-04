@@ -1,3 +1,5 @@
+import { within } from '@kortix/shared/tool-output/testing';
+
 import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 import { languageFor } from '@/features/session/action-panel/easy/file-viewer';
 import { fileIconFor } from '@/lib/utils/file-utils';
@@ -136,13 +138,9 @@ describe('hasOwnMermaidConfig reads the front matter in linear time', () => {
     expect(configured).toBeGreaterThan(600);
   });
 
-  test('front matter holding 240k blank lines', () => {
-    // This guard flaked in the packages lane under concurrent load (122 ms
-    // wall). CPU, not wall time — the same guard packages/shared's within()
-    // uses: a loaded box costs wall time without costing work.
-    const started = process.cpuUsage();
-    hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`);
-    const cpu = process.cpuUsage(started);
-    expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
-  });
+  // This guard flaked in the packages lane under concurrent load (122 ms
+  // wall) as a wall-clock check. within() judges CPU, so a loaded box — which
+  // costs wall time without costing work — cannot fail it.
+  within('front matter holding 240k blank lines', () =>
+    hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`));
 });
