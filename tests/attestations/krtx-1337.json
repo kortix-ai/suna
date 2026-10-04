@@ -1,5 +1,5 @@
 {
-  "source_hash": "c72d29002de41e34fd6923c0f00ec29fb47f99411371e2eab3509d9e9ecce117",
+  "source_hash": "1a46e558bcd3e809fe7fa31e5437600c758976e073f03c8e90ef780f9ec7d9da",
   "diff_files": [
     "apps/cli/src/__tests__/access-assignments.test.ts",
     "apps/cli/src/commands/access.ts",
@@ -13,13 +13,13 @@
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/shared/src/tool-output/testing.ts"
   ],
-  "diff_hash": "32c119ec9ffdbcff508b4ce8a7b5a38a45ca61584779f160aa550c990f461417",
-  "head": "cabf1d68f75f987f9bd9d8307fed037961e2403e",
+  "diff_hash": "efcdcefb90e7b63ef91322e7d543df619fddfd3fbd5529477c70b7f4d4122702",
+  "head": "ba169ea41315faf2ff99d69ce66d15ac921f19d5",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:22:38.644Z"
+  "at": "2026-10-04T05:34:19.086Z"
 }
