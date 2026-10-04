@@ -88,15 +88,15 @@ const FIXTURE = `
 
   create policy agents_insert_own on public.agents
     for insert
-    with check (basejump.has_role_on_account(account_id, 'owner'));
+    with check (basejump.has_role_on_account(account_id, 'owner'::basejump.account_role));
 
   create policy agents_update_own on public.agents
     for update
-    using (basejump.has_role_on_account(account_id, 'owner'));
+    using (basejump.has_role_on_account(account_id, 'owner'::basejump.account_role) AND ((NOT COALESCE(((metadata ->> 'is_suna_default'::text))::boolean, false)) OR (COALESCE(((metadata ->> 'is_suna_default'::text))::boolean, false) = true)));
 
   create policy agents_delete_own on public.agents
     for delete
-    using (basejump.has_role_on_account(account_id, 'owner') and is_default = false);
+    using (basejump.has_role_on_account(account_id, 'owner'::basejump.account_role) AND (is_default = false) AND (NOT COALESCE(((metadata ->> 'is_suna_default'::text))::boolean, false)));
 
   grant select on public.agents to anon, authenticated;
 
