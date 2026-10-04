@@ -474,13 +474,8 @@ describe('each parser returns exactly what its regex returned', () => {
 
 describe('no message can freeze the tab that parses it', () => {
   // Measured on the regexes with Bun: each took ~1 s or more on these inputs,
-  // and each doubling of the text quadrupled the time.
-  const within = (label: string, run: () => unknown) =>
-    test(label, () => {
-      const started = performance.now();
-      run();
-      expect(performance.now() - started).toBeLessThan(100);
-    });
+  // and each doubling of the text quadrupled the time. within() judges CPU
+  // (the shared guard), so a loaded lane cannot fail them on wall time.
 
   within('16k <project_ref openers that never close', () => parseProjectReferences('<project_ref x>'.repeat(16_000)));
   within('20k <file_ref openers that never close', () => parseFileMentionReferences('<file_ref x>'.repeat(20_000)));
