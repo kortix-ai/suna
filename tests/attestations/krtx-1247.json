@@ -1,0 +1,16 @@
+{
+  "source_hash": "f445719b21ddcdfb5f8e39c6fef59bad87f794220e66a31852d1cea3f2a84975",
+  "diff_files": [
+    "apps/mobile/components/session/SandboxPreviewSheet.test.tsx",
+    "apps/mobile/components/session/SandboxPreviewSheet.tsx"
+  ],
+  "diff_hash": "c2b79e779ab4d25d2aa456358173be14f75c5f1e96ea94a3083c2e696b9d9264",
+  "head": "cb535fc7b97f1e515d18f85b92ded29b2b0e0d21",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T02:46:28.044Z"
+}
