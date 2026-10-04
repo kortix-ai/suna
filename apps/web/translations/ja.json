@@ -638,7 +638,13 @@
       "verified": "確認済み",
       "unverified": "未検証",
       "signedOutOtherDevices": "他のデバイスからサインアウトしました",
-      "signOutOtherDevicesFailed": "他のデバイスからサインアウトできませんでした"
+      "signOutOtherDevicesFailed": "他のデバイスからサインアウトできませんでした",
+      "currentDevice": "このブラウザー",
+      "deviceSignedInAt": "{date}にサインイン",
+      "deviceActive": "アクティブ",
+      "noDevices": "サインイン中のデバイスはありません",
+      "noDevicesDescription": "現在どのデバイスでもサインインしていません。",
+      "devicesLoadFailed": "サインイン中のデバイスを読み込めませんでした"
     },
     "appearance": {
       "theme": "テーマ",
@@ -1972,7 +1978,11 @@
       "topupWalletHint": "エージェントを稼働させるには残高をチャージしてください。",
       "addCredits": "クレジットを追加",
       "billingPortal": "請求ポータル",
-      "portalDescription": "サブスクリプション、支払い方法、請求書を管理します。"
+      "portalDescription": "サブスクリプション、支払い方法、請求書を管理します。",
+      "cancelSubscription": "サブスクリプションを解約",
+      "cancelSubscriptionDescription": "プランは現在の請求期間の終わりまで有効で、その後終了します。それまでは再開できます。",
+      "reactivateSubscription": "サブスクリプションを再開",
+      "commitmentCancelHint": "契約期間は {date} までです。その後は解約できます。"
     },
     "topup": {
       "minimum": "最低チャージ額は {amount} です。",

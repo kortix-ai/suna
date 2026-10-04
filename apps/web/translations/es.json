@@ -638,7 +638,13 @@
       "verified": "Verificado",
       "unverified": "No verificado",
       "signedOutOtherDevices": "Cerró sesión en sus otros dispositivos",
-      "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos"
+      "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos",
+      "currentDevice": "Este navegador",
+      "deviceSignedInAt": "Conectado el {date}",
+      "deviceActive": "Activo",
+      "noDevices": "No hay dispositivos conectados",
+      "noDevicesDescription": "No tienes sesión iniciada en ningún dispositivo en este momento.",
+      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados"
     },
     "appearance": {
       "theme": "Tema",
@@ -1972,7 +1978,11 @@
       "topupWalletHint": "Recarga el saldo para que tus agentes sigan funcionando.",
       "addCredits": "Añadir créditos",
       "billingPortal": "Portal de facturación",
-      "portalDescription": "Gestiona tu suscripción, métodos de pago y facturas."
+      "portalDescription": "Gestiona tu suscripción, métodos de pago y facturas.",
+      "cancelSubscription": "Cancelar suscripción",
+      "cancelSubscriptionDescription": "Tu plan permanece activo hasta el final del periodo de facturación actual y luego finaliza. Puedes reactivarlo hasta entonces.",
+      "reactivateSubscription": "Reactivar suscripción",
+      "commitmentCancelHint": "Tu compromiso dura hasta el {date}. Podrás cancelar después."
     },
     "topup": {
       "minimum": "La recarga mínima es de {amount}.",

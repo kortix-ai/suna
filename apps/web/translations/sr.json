@@ -638,7 +638,13 @@
       "verified": "Потврђено",
       "unverified": "Непотврђено",
       "signedOutOtherDevices": "Одјављени сте са других уређаја",
-      "signOutOtherDevicesFailed": "Није могуће одјавити се са других уређаја"
+      "signOutOtherDevicesFailed": "Није могуће одјавити се са других уређаја",
+      "currentDevice": "Овај прегледач",
+      "deviceSignedInAt": "Пријављен {date}",
+      "deviceActive": "Активан",
+      "noDevices": "Нема пријављених уређаја",
+      "noDevicesDescription": "Тренутно нисте пријављени ни на једном уређају.",
+      "devicesLoadFailed": "Пријављени уређаји се не могу учитати"
     },
     "appearance": {
       "theme": "Тема",
@@ -1972,7 +1978,11 @@
       "topupWalletHint": "Допуните стање да би агенти наставили да раде.",
       "addCredits": "Додај кредите",
       "billingPortal": "Портал за обрачун",
-      "portalDescription": "Управљајте претплатом, начинима плаћања и фактурама."
+      "portalDescription": "Управљајте претплатом, начинима плаћања и фактурама.",
+      "cancelSubscription": "Otkaži pretplatu",
+      "cancelSubscriptionDescription": "Vaš plan ostaje aktivan do kraja tekućeg perioda naplate, a zatim se završava. Do tada ga možete ponovo aktivirati.",
+      "reactivateSubscription": "Ponovo aktiviraj pretplatu",
+      "commitmentCancelHint": "Vaša obaveza traje do {date}. Nakon toga možete otkazati."
     },
     "topup": {
       "minimum": "Минимална допуна је {amount}.",

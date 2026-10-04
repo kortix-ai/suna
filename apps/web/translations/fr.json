@@ -638,7 +638,13 @@
       "verified": "Vérifié",
       "unverified": "Non vérifié",
       "signedOutOtherDevices": "Déconnecté de vos autres appareils",
-      "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils"
+      "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils",
+      "currentDevice": "Ce navigateur",
+      "deviceSignedInAt": "Connecté le {date}",
+      "deviceActive": "Actif",
+      "noDevices": "Aucun appareil connecté",
+      "noDevicesDescription": "Vous n’êtes connecté sur aucun appareil pour le moment.",
+      "devicesLoadFailed": "Impossible de charger vos appareils connectés"
     },
     "appearance": {
       "theme": "Thème",
@@ -1972,7 +1978,11 @@
       "topupWalletHint": "Rechargez votre solde pour maintenir vos agents en fonctionnement.",
       "addCredits": "Ajouter des crédits",
       "billingPortal": "Portail de facturation",
-      "portalDescription": "Gérez votre abonnement, vos moyens de paiement et vos factures."
+      "portalDescription": "Gérez votre abonnement, vos moyens de paiement et vos factures.",
+      "cancelSubscription": "Annuler l'abonnement",
+      "cancelSubscriptionDescription": "Votre plan reste actif jusqu'à la fin de la période de facturation en cours, puis il prend fin. Vous pouvez le réactiver d'ici là.",
+      "reactivateSubscription": "Réactiver l'abonnement",
+      "commitmentCancelHint": "Votre engagement court jusqu'au {date}. Vous pourrez annuler après."
     },
     "topup": {
       "minimum": "Le rechargement minimum est de {amount}.",

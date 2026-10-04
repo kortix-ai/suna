@@ -1,0 +1,15 @@
+{
+  "source_hash": "022fc666532bb4e76623bf78b7ba2701d6b6f2cd667092fc0ce26d80f505d72f",
+  "diff_files": [
+    "apps/api/src/projects/session-lifecycle/forwarded-sweep-index.integration.test.ts"
+  ],
+  "diff_hash": "f867c0508975e4e95474480001d9bf99412afdf4919938b32db91f7ebf83feba",
+  "head": "edfa97e728b5d84c135550a381f451cba8cfd0c3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:32:27.217Z"
+}

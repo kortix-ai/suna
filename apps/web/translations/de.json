@@ -638,7 +638,13 @@
       "verified": "Verifiziert",
       "unverified": "Nicht bestätigt",
       "signedOutOtherDevices": "Von Ihren anderen Geräten abgemeldet",
-      "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden"
+      "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden",
+      "currentDevice": "Dieser Browser",
+      "deviceSignedInAt": "Angemeldet am {date}",
+      "deviceActive": "Aktiv",
+      "noDevices": "Keine angemeldeten Geräte",
+      "noDevicesDescription": "Du bist derzeit auf keinem Gerät angemeldet.",
+      "devicesLoadFailed": "Deine angemeldeten Geräte konnten nicht geladen werden"
     },
     "appearance": {
       "theme": "Design",
@@ -1972,7 +1978,11 @@
       "topupWalletHint": "Lade dein Guthaben auf, damit deine Agenten weiterarbeiten.",
       "addCredits": "Credits hinzufügen",
       "billingPortal": "Abrechnungsportal",
-      "portalDescription": "Verwalte dein Abonnement, Zahlungsmethoden und Rechnungen."
+      "portalDescription": "Verwalte dein Abonnement, Zahlungsmethoden und Rechnungen.",
+      "cancelSubscription": "Abonnement kündigen",
+      "cancelSubscriptionDescription": "Dein Plan bleibt bis zum Ende des aktuellen Abrechnungszeitraums aktiv und endet dann. Du kannst ihn bis dahin wieder aktivieren.",
+      "reactivateSubscription": "Abonnement wieder aktivieren",
+      "commitmentCancelHint": "Deine Verpflichtung läuft bis {date}. Du kannst danach kündigen."
     },
     "topup": {
       "minimum": "Der Mindestbetrag beträgt {amount}.",
