@@ -195,8 +195,9 @@ export const BeamsShader = memo(function BeamsShader({
 const BEAMS_FADE = {
   // Copy centred on the pane: dim the top under the bar, settle into the page.
   hero: 'from-background/90 via-background/40 to-background bg-linear-to-b',
-  // Copy on the pane's floor: a calm band at the bottom, beams above.
-  floor: 'from-background/90 via-background/30 to-transparent bg-linear-to-t',
+  // Copy on the pane's floor: a calm band at the bottom, beams in the middle,
+  // and a dimmed top so the navbar reads over the brightest beam.
+  floor: 'from-background/70 via-transparent via-35% to-background to-95% bg-linear-to-b',
   // A card's caption at its foot.
   card: 'from-background via-background/60 to-transparent bg-linear-to-t',
   // A band between two dark sections: dark at both edges, beams in the middle.
