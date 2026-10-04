@@ -18,10 +18,6 @@ const RETRY_DELAY_MAX_MS = 4_000;
 const SNAPSHOT_BUILDING_MAX_ATTEMPTS = 30;
 const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -244,7 +240,7 @@ export async function retrySandboxProvisionCreate(
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
         : Math.min(RETRY_DELAY_BASE_MS * 2 ** (attempt - 1), RETRY_DELAY_MAX_MS);
-      await sleep(delay);
+      await Bun.sleep(delay);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Sandbox initialization failed');
