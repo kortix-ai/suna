@@ -4,7 +4,7 @@ import { encryptProjectSecret } from '../secrets';
 import { db } from '../../shared/db';
 
 /** A `db.transaction` handle, the type every transaction-scoped write takes. */
-export type ProjectGitWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type ProjectGitWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * The one shape of a `project_git_connections` row write.

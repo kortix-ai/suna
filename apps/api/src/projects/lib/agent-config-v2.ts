@@ -54,8 +54,10 @@ function agentsMapOf(
   return { ok: true, map: raw as Record<string, unknown> };
 }
 
-/** One agent's raw block: null when undeclared, the plain object when not —
- *  and the one malformed-entry rejection. */
+/** One agent's raw block: null when the roster does not name it or names it
+ *  with a YAML null (the writers treat both as absent — the read path pins a
+ *  null entry as malformed, see `readAgentBlockV2`), the plain object when
+ *  not — and the one malformed-entry rejection. */
 function agentBlockOf(
   agentName: string,
   entry: unknown,
@@ -225,6 +227,11 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
   const agents = agentsMapOf(manifest);
   if (!agents.ok) return agents;
+  // A YAML null entry parses past the manifest validator: the read path pins it
+  // as malformed — the editor must show the broken shape, not a blank agent.
+  if (agents.map?.[agentName] === null) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
   const entry = agentBlockOf(agentName, agents.map?.[agentName]);
   if (!entry.ok) return entry;
   if (!entry.block) {

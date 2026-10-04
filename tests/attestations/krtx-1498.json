@@ -1,9 +1,43 @@
 {
   "source_hash": "5926e1fc694cc087e549f3897a01e0be904193f9b7ccd959c20a20f7589afcbe",
-  "head": "1e6cb8773fd7cbcbf82273658cdadc312a7b9f11",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-approval-card-relay.test.ts",
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
+    "apps/api/src/__tests__/integration-monthly-compute-accrual.test.ts",
+    "apps/api/src/__tests__/integration-secret-audience.test.ts",
+    "apps/api/src/__tests__/integration-slack-approval-card.test.ts",
+    "apps/api/src/__tests__/integration-teams-approval-card.test.ts",
+    "apps/api/src/apps/budget.ts",
+    "apps/api/src/billing/services/compute-accrual.ts",
+    "apps/api/src/channels/approval-card-relay.ts",
+    "apps/api/src/channels/core/approval-decision.ts",
+    "apps/api/src/projects/index.ts",
+    "apps/api/src/projects/lib/agent-config-v2.ts",
+    "apps/api/src/projects/lib/compile-agent-config.ts",
+    "apps/api/src/projects/lib/connector-approval-decision.ts",
+    "apps/api/src/projects/lib/monitor-box.ts",
+    "apps/api/src/projects/lib/monitor-observer.ts",
+    "apps/api/src/projects/lib/project-git-write.ts",
+    "apps/api/src/projects/lib/project-registration.ts",
+    "apps/api/src/projects/lib/repository-replacement.ts",
+    "apps/api/src/projects/lib/secret-audience.ts",
+    "apps/api/src/projects/lib/secret-write-input.test.ts",
+    "apps/api/src/projects/lib/secret-write-input.ts",
+    "apps/api/src/projects/lib/trigger-manifest.ts",
+    "apps/api/src/projects/lib/trigger-scheduler-state.ts",
+    "apps/api/src/projects/lib/trigger-scheduler.ts",
+    "apps/api/src/projects/lib/triggers.ts",
+    "apps/api/src/projects/routes/approvals.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts"
+  ],
+  "diff_hash": "fdf602cd27add315b5cb23202141341d9044367627f1a1af466adee14582c497",
+  "head": "e20e2365a80bf217ed2e0efeda8ea04ed526693b",
   "passed": true,
   "lanes": {
-    "packages": "pass"
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T03:49:49.516Z"
+  "at": "2026-10-04T04:05:57.510Z"
 }
