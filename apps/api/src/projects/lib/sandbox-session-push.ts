@@ -11,7 +11,7 @@ import {
 } from './compile-agent-config';
 import { repositoryAccessFromSessionMetadata } from './session-sandbox-metadata';
 import { hasConfigReleaseCapability } from './session-config-release';
-import { resolveSandboxEnvSnapshot } from './sandbox-env-snapshot';
+import { resolveSandboxEnvSnapshot, type SandboxEnvSnapshot } from './sandbox-env-snapshot';
 import {
   SANDBOX_SERVICE_PORT,
   llmGatewayBaseUrlForProvider,
@@ -87,6 +87,68 @@ export async function daemonHasConfigReleases(
 }
 
 /**
+ * Everything the three live pushes (agent config, model, scope) do identically
+ * before their one different step: select the sandbox row by session WITHOUT
+ * the status filter so a non-active row can be NAMED, guard status, extract
+ * the service key, resolve the env snapshot and the daemon ingress. Returns
+ * either the ready target or the skip reason the push reports verbatim.
+ *
+ * The row lookup deliberately does not filter on `status = 'active'`: the
+ * filtered form returned a bare 'no active sandbox' and the caller logged
+ * nothing, so a session whose row said `stopped` while its VM was genuinely
+ * running — serving prompts the whole time — silently received no secret,
+ * config or model push for HOURS (a prod session, 2026-08-27).
+ */
+async function resolveSandboxPushTarget(
+  what: string,
+  input: { sessionId: string; projectId: string },
+  missingRowReason: string,
+): Promise<
+  | { ok: false; reason: string }
+  | {
+      ok: true;
+      externalId: string;
+      provider: string | null;
+      serviceKey: string;
+      snapshot: SandboxEnvSnapshot;
+      url: string;
+      headers: Record<string, string>;
+    }
+> {
+  const [row] = await db
+    .select({
+      externalId: sessionSandboxes.externalId,
+      provider: sessionSandboxes.provider,
+      config: sessionSandboxes.config,
+      status: sessionSandboxes.status,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, input.sessionId))
+    .limit(1);
+  if (!row?.externalId) return { ok: false, reason: missingRowReason };
+  if (row.status && row.status !== 'active') {
+    return { ok: false, reason: nonActiveSandboxSkip(what, input, row.status).reason };
+  }
+  const config = (row.config || {}) as Record<string, unknown>;
+  const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+  if (!serviceKey) return { ok: false, reason: 'sandbox has no service key' };
+  const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
+  if (!snapshot) return { ok: false, reason: 'no env snapshot' };
+  const { url, headers } = await resolveSandboxIngress(row.externalId, {
+    port: SANDBOX_SERVICE_PORT,
+    transport: 'http',
+  });
+  return { ok: true, externalId: row.externalId, provider: row.provider ?? null, serviceKey, snapshot, url, headers };
+}
+
+/** A push that throws is reported, never thrown at the caller — the row is already committed and the next boot reconciles. */
+function pushFailure(what: string, sessionId: string, err: unknown): { applied: false; reason: string } {
+  const reason = err instanceof Error ? err.message : String(err);
+  console.warn(`[env-sync] ${what} push failed for session ${sessionId}:`, reason);
+  return { applied: false, reason };
+}
+
+/**
  * Recompile this session's agent config from git and deliver it to the running box.
  *
  * The compiled agent config — agents, their prompts, permissions, model — is the
@@ -151,41 +213,13 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // downgrade to no agents at all. Leave the box as it is.
     if (!compiled) return { applied: false, reason: 'no compiled agent config' };
 
-    // Selected WITHOUT the status filter so a non-active row can be NAMED. The
-    // filtered form returned a bare 'no active sandbox' and the caller logged
-    // nothing, so a session whose row said `stopped` while its VM was genuinely
-    // running — serving prompts the whole time — silently received no secret or
-    // config push for HOURS. A prod session, 2026-08-27: every push
-    // since the secret was created was skipped this way, and the only visible
-    // symptom was an agent that could not see a secret the UI said it had.
-    const [row] = await db
-      .select({
-        externalId: sessionSandboxes.externalId,
-        config: sessionSandboxes.config,
-        status: sessionSandboxes.status,
-      })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, input.sessionId))
-      .limit(1);
-    if (!row?.externalId) return { applied: false, reason: 'no sandbox for session' };
-    if (row.status && row.status !== 'active')
-      return nonActiveSandboxSkip('agent-config push', input, row.status);
-
-    const config = (row.config || {}) as Record<string, unknown>;
-    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
-    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
-
-    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
-    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
-
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
-    });
+    const target = await resolveSandboxPushTarget('agent-config push', input, 'no sandbox for session');
+    if (!target.ok) return { applied: false, reason: target.reason };
+    const { url, headers, serviceKey, snapshot } = target;
     // Capability gate. A daemon with config releases gets governance from its
     // release; `null` (health did not answer) is not permission to push.
     const releases = await daemonHasConfigReleases(url, {
-      ...(headers as Record<string, string>),
+      ...headers,
       Authorization: `Bearer ${serviceKey}`,
     });
     if (releases !== false) {
@@ -224,9 +258,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       opencodeTurnEnded: pushed.opencodeTurnEnded,
     };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.warn(`[env-sync] agent-config push failed for session ${input.sessionId}:`, reason);
-    return { applied: false, reason };
+    return pushFailure('agent-config', input.sessionId, err);
   }
 }
 
@@ -248,30 +280,9 @@ export async function pushSessionModelToSandbox(input: {
   model: string;
 }): Promise<{ applied: boolean; reason?: string }> {
   try {
-    const [row] = await db
-      .select({
-        externalId: sessionSandboxes.externalId,
-        config: sessionSandboxes.config,
-        status: sessionSandboxes.status,
-      })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, input.sessionId))
-      .limit(1);
-    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
-    if (row.status && row.status !== 'active')
-      return nonActiveSandboxSkip('model push', input, row.status);
-
-    const config = (row.config || {}) as Record<string, unknown>;
-    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
-    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
-
-    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
-    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
-
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
-    });
+    const target = await resolveSandboxPushTarget('model push', input, 'no active sandbox');
+    if (!target.ok) return { applied: false, reason: target.reason };
+    const { url, headers, serviceKey, snapshot } = target;
     await postEnvToDaemon({
       previewUrl: url,
       providerHeaders: headers,
@@ -284,9 +295,7 @@ export async function pushSessionModelToSandbox(input: {
     });
     return { applied: true };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.warn(`[env-sync] model push failed for session ${input.sessionId}:`, reason);
-    return { applied: false, reason };
+    return pushFailure('model', input.sessionId, err);
   }
 }
 
@@ -332,35 +341,15 @@ export async function pushSessionScopeToSandbox(input: {
   sessionId: string;
 }): Promise<{ applied: boolean; reason?: string }> {
   try {
-    const [row] = await db
-      .select({
-        externalId: sessionSandboxes.externalId,
-        provider: sessionSandboxes.provider,
-        config: sessionSandboxes.config,
-        status: sessionSandboxes.status,
-      })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, input.sessionId))
-      .limit(1);
-    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
-    if (row.status && row.status !== 'active')
-      return nonActiveSandboxSkip('scope push', input, row.status);
-
-    const config = (row.config || {}) as Record<string, unknown>;
-    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
-    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
+    const target = await resolveSandboxPushTarget('scope push', input, 'no active sandbox');
+    if (!target.ok) return { applied: false, reason: target.reason };
+    const { url, headers, serviceKey, snapshot, provider } = target;
 
     // Re-derive from the row the route JUST committed — `resolveOwnerRawEnv`
     // reads `secretsAllowlist` fresh, so this reflects the new scope, not the
     // boot snapshot the daemon is still running.
-    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
-    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
 
     const llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
-    });
     await postEnvToDaemon({
       previewUrl: url,
       providerHeaders: headers,
@@ -373,14 +362,12 @@ export async function pushSessionScopeToSandbox(input: {
       refreshModels: true,
       llmGatewayEnabled,
       llmGatewayBaseUrl: llmGatewayEnabled
-        ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
+        ? llmGatewayBaseUrlForProvider(provider as ProviderName)
         : undefined,
     });
     await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
     return { applied: true };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.warn(`[env-sync] scope push failed for session ${input.sessionId}:`, reason);
-    return { applied: false, reason };
+    return pushFailure('scope', input.sessionId, err);
   }
 }
