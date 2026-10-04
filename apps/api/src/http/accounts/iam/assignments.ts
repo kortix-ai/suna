@@ -21,7 +21,7 @@ import { iamRoles } from '@kortix/db';
 import { db } from '../../../lib/db';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import {
   assignRole,
   listAssignments,
@@ -31,8 +31,8 @@ import {
 } from '../../../services/iam/assignments';
 import { loadPermissionCatalog, type ObjectType, type ScopeType } from '../../../services/iam/catalog';
 import { iamRouter, AccountIdParam } from './app';
-import { requireEntitlement } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { requireEntitlement } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 import { isUuid } from '../../../lib/validate';
 
 const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending', 'project'] as const;

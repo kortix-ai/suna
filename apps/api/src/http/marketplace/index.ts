@@ -24,7 +24,7 @@ import {
   warmMarketplaceCatalog,
 } from '../../services/marketplace/catalog';
 import { addSource, listSources, removeSource } from '../../services/marketplace/sources-store';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 // Wire DB-persisted sources into the catalog. Done here (not in catalog.ts) so
 // catalog.ts stays free of the config/db import graph for pure unit tests.

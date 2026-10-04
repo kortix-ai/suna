@@ -6,7 +6,7 @@
 // registration order is byte-identical to the original file.
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
-import { accountSessionGate } from '../../services/iam/session-gate';
+import { accountSessionGate } from '../middleware/session-gate';
 import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';

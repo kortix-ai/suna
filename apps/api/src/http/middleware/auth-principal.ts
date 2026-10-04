@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import { setSentryUser } from '../../lib/sentry';
 import { setContextField } from '../../lib/request-context';
-import { auditLoginSuccess } from '../../services/audit/auth-audit';
+import { auditLoginSuccess } from './auth-audit';
 import { jitSyncSso } from './auth-sso';
 import { setPreviewSessionCookie } from './auth-scope';
 

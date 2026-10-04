@@ -3,12 +3,13 @@ import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../services/billing/services/billing-gate';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../../services/projects/lib/access';
-import { resolveAndAuthorizeAgent } from '../../services/projects/lib/agent-access';
+import { loadVisibleSession } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../../services/sessions/prompt-model';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import {
   CreateSessionPromptResultSchema,
   SessionPromptListSchema,
@@ -19,7 +20,7 @@ import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } fr
 import { loadSandboxMetadataForSessions } from '../../services/sessions/lifecycle/instance-release';
 import { normalizeString } from '../../services/projects/lib/serializers';
 import { isUuid } from '../../lib/validate';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import {
   deleteInboxPrompt,
   editInboxPrompt,

@@ -3,7 +3,8 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { agentMayPerform, assertAgentScope, getAgentGrant, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { agentMayPerform } from '../../services/iam/agent-scope';
+import { assertAgentScope, getAgentGrant, governedAgentWriter, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { logger } from '../../lib/logger';
 import { refusesSelfMerge } from '../../services/projects/change-request-policy';
 // Its own module, not the `../../services/git` barrel: several route suites replace the
@@ -22,12 +23,12 @@ import {
   mergeBranches,
   readManifestFromRepo,
 } from '../../services/git';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { withProjectGitAuth } from '../../services/git/project-git';
 import { enqueueProjectSnapshot } from '../../services/git-proxy/project-snapshot';
 import { normalizeString } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
   // Body: { message?: string }
@@ -138,7 +139,7 @@ export function registerChangeRequestActionsRoutes(): void {
           await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
         }
         // And a merging agent grants only what it holds (services/iam/agent-grant-ceiling.ts).
-        await assertNoGrantEscalation(c, projectId, change.grantsBefore, change.grantsAfter);
+        await assertNoGrantEscalation(governedAgentWriter(c), projectId, change.grantsBefore, change.grantsAfter);
       }
 
       // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't

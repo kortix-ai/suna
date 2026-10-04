@@ -13,12 +13,12 @@ import { accounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { accountRoleFor } from '../../../services/iam/read-models';
 import { invalidateSessionOversight } from '../../../services/iam/session-oversight';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 
 const SessionOversightStatus = z.object({
   enabled: z.boolean(),

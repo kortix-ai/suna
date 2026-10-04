@@ -15,7 +15,7 @@ import { hasDatabase } from '../lib/db';
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
 import { computeEtag, etagMatches } from '../lib/http-cache';
-import { readJsonObject } from '../lib/http-body';
+import { readJsonObject } from './lib/http-body';
 import { getPlatformRole } from '../services/iam/platform-roles';
 import { createDemoRequestRateLimitMiddleware } from './middleware/rate-limit';
 

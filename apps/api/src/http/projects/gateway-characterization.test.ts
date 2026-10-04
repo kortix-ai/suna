@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realAccess from '../../services/projects/lib/access';
 
 /**
  * Characterization pins for the gateway routes, written BEFORE
@@ -67,8 +66,9 @@ mock.module('../../lib/db', () => ({
   },
   afterDbCommit: () => {},
 }));
-mock.module('../../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: USER_ID,

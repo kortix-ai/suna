@@ -22,19 +22,15 @@ import { isSessionSandboxCredential } from '../middleware/session-sandbox-creden
 import { auth, errors, json } from '../openapi';
 import { refreshMirror } from '../../services/git/mirror';
 import type { GitBackedProject } from '../../services/git/types';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  projectCapabilityAllowed,
-} from '../../services/projects/lib/access';
+import { loadVisibleSession } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from '../projects/app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
 import { repositoryAccessFromSessionMetadata } from '../../services/sessions/session-sandbox-metadata';
 import { isUuid } from '../../lib/validate';
 import { db } from '../../lib/db';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
 import { CONFIG_RELEASES_FLAG } from '../../services/config-releases/enabled';
 import { BaseRefUnresolvedError, resolveDesiredRelease } from '../../services/config-releases/desired';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from '../../services/config-releases/repoint';

@@ -20,8 +20,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // The middleware chain mounts the audit boundary, whose synchronous test-env
 // write needs a database this unit test does not own. Stub it: the boundary's
 // behavior is covered by the audit suites; this test needs only the chain.
-const realAudit = await import('../services/audit/audit');
-mock.module('../services/audit/audit', () => ({
+const realAudit = await import('../http/middleware/audit');
+mock.module('../http/middleware/audit', () => ({
   ...realAudit,
   auditApiRequest: async (_c: unknown, next: () => Promise<unknown>) => next(),
 }));

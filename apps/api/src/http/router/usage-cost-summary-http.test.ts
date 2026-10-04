@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as realAccess from '../../services/projects/lib/access';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -57,15 +56,16 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mock.module('../../services/accounts/resolve-account', () => ({
+mock.module('../lib/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (_c: TestContext, projectId: string, action: string) => {
     projectAccessInput = { projectId, action };
     return { userId: USER_ID, row: { accountId: SECONDARY_ACCOUNT_ID } };

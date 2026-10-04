@@ -36,6 +36,7 @@ import {
 import { KORTIX_TOOL, parseArgs, runCli } from '../../services/mcp/cli';
 import { CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type Host } from './connectors';
 import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from '../../services/mcp/shape';
+import { bearerToken } from '../lib/bearer';
 
 type Dispatch = (request: Request) => Promise<Response>;
 
@@ -1159,7 +1160,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
  */
 function challengeUnauthorized(c: Context, next: Next) {
   const metadata = `resource_metadata="${mcpResourceMetadataUrl(new URL(c.req.url).origin)}"`;
-  const sent = Boolean(c.req.header('Authorization')?.startsWith('Bearer '));
+  const sent = bearerToken(c.req.header('Authorization')) !== null;
   // RFC 6750 3.1: a token that was sent and refused names `invalid_token`.
   const challenge = () =>
     c.json({ error: 'unauthorized', error_description: 'Sign in with OAuth, or send a kortix_pat_ token, to use the Kortix MCP server.' }, 401, {

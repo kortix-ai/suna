@@ -1,6 +1,6 @@
 /** Create a project from a repository: link an existing GitHub repo, or create a new one. */
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { kickProjectTemplatePrebuilds } from '../../services/snapshots/builder';
 import { isSelfHostOperator } from '../../services/iam/platform-roles';
@@ -15,7 +15,7 @@ import { resolveGitHubUserToken } from '../../services/github/github-user-token'
 import { buildProjectSeedFilesFromItem } from '../../services/projects/seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../../services/projects/starter';
 import { createRoute, z } from '@hono/zod-openapi';
-import { enforceProjectQuota, resolveProjectAccount } from '../../services/projects/lib/access';
+import { enforceProjectQuota, resolveProjectAccount } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   GitHubInstallationAmbiguousError,
@@ -40,7 +40,7 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { getCatalogItemDetail } from '../../services/marketplace/catalog';
 export function registerProjectFromRepositoryRoutes(): void {
   // POST /v1/projects/link-repository

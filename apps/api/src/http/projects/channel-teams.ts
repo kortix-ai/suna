@@ -18,9 +18,9 @@ import { config } from '../../lib/config';
 import { reconcileChannelConnectors } from '../../services/connectors/sync';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json } from '../openapi';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { AnyObject, projectsApp } from './app';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { isUuid } from '../../lib/validate';
 
 function teamsPublicBaseUrl(): string | undefined {

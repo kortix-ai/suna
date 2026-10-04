@@ -59,9 +59,13 @@ mock.module('../../lib/db', () => ({
 
 mock.module('../../services/projects/lib/access', () => ({
   ...realAccess,
+  loadVisibleSession: async () => visibleSession,
+}));
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => loadedProject,
   assertProjectCapability: async () => {},
-  loadVisibleSession: async () => visibleSession,
 }));
 
 mock.module('../../services/sessions/session-runtime-transport', () => ({

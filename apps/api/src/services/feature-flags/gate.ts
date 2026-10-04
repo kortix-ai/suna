@@ -1,7 +1,7 @@
 /**
- * The one server-side gate for flag-gated HTTP surface.
- *
- * Usage, ALWAYS after membership authz (so non-members learn nothing):
+ * The one server-side gate for flag-gated HTTP surface. Routes call
+ * `requireFeatureFlag` (http/lib/feature-flag-gate.ts), ALWAYS after
+ * membership authz (so non-members learn nothing):
  *
  *   const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
  *   if (gate) return gate;
@@ -11,9 +11,8 @@
  * message, web gate screens) key off `code`, never off prose.
  * Wire shape: @kortix/api-contract FeatureDisabledErrorSchema.
  */
-import type { Context } from 'hono';
 import type { FeatureFlagKey } from '@kortix/api-contract';
-import { featureFlagDef, resolveFeatureFlag } from './registry';
+import { featureFlagDef } from './registry';
 
 export const FEATURE_DISABLED_CODE = 'feature_disabled' as const;
 
@@ -28,17 +27,4 @@ export function featureDisabledBody(key: FeatureFlagKey): {
     code: FEATURE_DISABLED_CODE,
     feature: key,
   };
-}
-
-/**
- * Returns the 403 response when the flag is off for this project, else null.
- * Fail-closed: unknown metadata shapes and unavailable flags reject.
- */
-export function requireFeatureFlag(
-  c: Context,
-  metadata: unknown,
-  key: FeatureFlagKey,
-) {
-  if (resolveFeatureFlag(metadata, key)) return null;
-  return c.json(featureDisabledBody(key), 403);
 }

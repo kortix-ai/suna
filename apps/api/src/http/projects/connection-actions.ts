@@ -21,10 +21,10 @@ import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import { isUniqueViolation } from '../../lib/postgres-errors';
 import { projectsApp } from './app';
-import { loadMutableConnection } from '../../services/projects/lib/connection-mutation';
-import { readJsonObject } from '../../lib/http-body';
+import { loadMutableConnection } from '../lib/connection-mutation';
+import { readJsonObject } from '../lib/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../../services/projects/lib/connection-view';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { requireUserCredential } from '../tunnel/auth';
 import { assignRole } from '../../services/iam/assignments';
 import {

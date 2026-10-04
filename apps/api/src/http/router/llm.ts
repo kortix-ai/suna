@@ -10,7 +10,7 @@ import {
   settleStreamUsage,
 } from '../../services/router/services/llm';
 import { getSandboxMemberCapStatus } from '../../services/router/services/member-spend';
-import { resolveActorFromRequest, type ActorContext } from '../../services/router/actor-context';
+import { requestActorContext } from './actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import {
@@ -89,7 +89,7 @@ llm.openapi(
       c.get('sandboxId') ??
       c.get('keyId');
 
-    const actor = resolveActor(c);
+    const actor = requestActorContext(c, '[LLM]');
     if (actor) {
       const status = await getSandboxMemberCapStatus(actor.sandboxId, actor.userId);
       if (status && status.capCents !== null && status.currentCents >= status.capCents) {
@@ -303,9 +303,5 @@ llm.openapi(
     });
   },
 );
-
-function resolveActor(c: Parameters<typeof resolveActorFromRequest>[0]): ActorContext | null {
-  return resolveActorFromRequest(c, { logPrefix: '[LLM]' });
-}
 
 export { llm };

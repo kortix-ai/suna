@@ -12,7 +12,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../lib/db';
-import { buildActor, type Actor } from '../services/iam/actor';
+import { type Actor } from '../services/iam/actor';
+import { buildActor } from '../http/middleware/actor';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

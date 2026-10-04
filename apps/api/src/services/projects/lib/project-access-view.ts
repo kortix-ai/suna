@@ -5,8 +5,8 @@ import { accountRoleMap, customRoleBindings, foldProjectAccess, groupProjectGran
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { eq, inArray } from 'drizzle-orm';
 import { resolveUserIdentities } from './access';
-import { loadProjectForUser } from './access';
-type AwaitedProjectAccessLoad = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
+import type { authorizeProjectAccess } from './project-access';
+type AwaitedProjectAccessLoad = Awaited<ReturnType<typeof authorizeProjectAccess>>;
 type AccessRows = Awaited<ReturnType<typeof loadProjectAccessRows>>;
 type GroupMemberRow = { groupId: string; userId: string };
 type ProjectGroupRow = { groupId: string; groupName: string; role: string };

@@ -9,15 +9,15 @@ import { connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../services/channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope } from '../../services/iam/agent-scope';
+import { assertAgentScope } from '../lib/agent-scope';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { AnyObject, projectsApp } from './app';
 import { mayResolveApproval } from '../../services/projects/lib/approval-authority';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { normalizeString } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { isAdaptedId } from '../../services/projects/review-adapters';
 import {
   type ReviewSegment,

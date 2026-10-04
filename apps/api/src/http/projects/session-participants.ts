@@ -4,16 +4,10 @@ import { inArray } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  projectCapabilityAllowed,
-  resolveUserIdentities,
-  sessionIsTombstoned,
-} from '../../services/projects/lib/access';
+import { loadVisibleSession, resolveUserIdentities, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { buildProjectAccessView } from '../../services/projects/lib/project-access-view';
 import { SESSION_PARTICIPANT_LIMIT, buildSessionParticipants, sessionAudienceIds } from '../../services/sessions/session-audience';
 

@@ -31,10 +31,10 @@ import {
 } from '../../services/connectors/oauth2-store';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { db } from '../../lib/db';
-import { loadProjectForUser, projectCapabilityAllowed } from '../../services/projects/lib/access';
+import { loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
-import { loadMutableConnection } from '../../services/projects/lib/connection-mutation';
-import { readJsonObject } from '../../lib/http-body';
+import { loadMutableConnection } from '../lib/connection-mutation';
+import { readJsonObject } from '../lib/http-body';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { OkSchema } from './app';
 

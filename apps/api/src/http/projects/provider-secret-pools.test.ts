@@ -67,12 +67,6 @@ app.use('*', async (c, next) => {
 });
 mock.module('./app', () => ({ projectsApp: app }));
 mock.module('../../services/projects/lib/access', () => ({
-  loadProjectForUser: async () => ({
-    userId: callerId,
-    row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo', defaultBranch: null, manifestPath: null },
-  }),
-  assertProjectCapability: async () => {},
-  projectCapabilityAllowed: async () => true,
   loadVisibleSession: async (_loaded: unknown, target: string, caller: string | null, bound: string | null) => {
     // `PUT /model` passes the raw context session id: a browser login's is not a Kortix session.
     if ((caller && caller !== 'browser-login' && caller !== target) || (bound && bound !== target)) return null;
@@ -82,7 +76,16 @@ mock.module('../../services/projects/lib/access', () => ({
     };
   },
 }));
-mock.module('../../services/feature-flags/gate', () => ({ requireFeatureFlag: () => null }));
+mock.module('../lib/project-access', () => ({
+  loadProjectForUser: async () => ({
+    userId: callerId,
+    row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo', defaultBranch: null, manifestPath: null },
+  }),
+  assertProjectCapability: async () => {},
+  projectCapabilityAllowed: async () => true,
+}));
+// requireFeatureFlag moved to http/lib/feature-flag-gate.
+mock.module('../lib/feature-flag-gate', () => ({ requireFeatureFlag: () => null }));
 const realRegistry = await import('../../services/feature-flags/registry');
 mock.module('../../services/feature-flags/registry', () => ({ ...realRegistry, resolveFeatureFlag: () => true }));
 const realEntitlements = await import('../../services/billing/services/entitlements');

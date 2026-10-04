@@ -32,7 +32,8 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { auditApiRequest, recordAuditEvent } = await import('../services/audit/audit');
+const { recordAuditEvent } = await import('../services/audit/audit');
+const { auditApiRequest } = await import('../http/middleware/audit');
 
 describe('audit event middleware', () => {
   beforeEach(() => {

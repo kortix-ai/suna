@@ -9,7 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { requestClientKey } from '../../lib/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -36,7 +36,7 @@ import { resolveSetupLink } from '../../services/setup-links/token';
 import { watchConnectorCompletion } from '../../services/setup-links/connector-completion-watch';
 import { composioConfigured, composioToolkitLogo } from '../../services/connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../../services/connectors/notify-session';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 // The connector half of the notification moved to services/connectors/notify-session.ts so the
 // in-session Connect button's finalize can reuse it. Re-exported: this module is where

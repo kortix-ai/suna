@@ -48,7 +48,7 @@
  * that blocks, and it is the one that means what it says.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
+import type { HeaderReader } from '../../../lib/client-ip';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../../lib/db';
 
@@ -66,12 +66,12 @@ export const EGRESS_IP_KEY = 'egress_ip';
  * `cf-connecting-ip`. The xff/x-real-ip fallback stays for deployments that do
  * not sit behind Cloudflare.
  */
-export function requestEgressIp(c: Context): string | null {
-  const cf = c.req.header('cf-connecting-ip')?.trim();
+export function egressIpFromHeaders(header: HeaderReader): string | null {
+  const cf = header('cf-connecting-ip')?.trim();
   if (cf) return cf;
-  const xff = c.req.header('x-forwarded-for');
+  const xff = header('x-forwarded-for');
   const first = xff ? xff.split(',')[0]?.trim() : undefined;
-  return first || c.req.header('x-real-ip')?.trim() || null;
+  return first || header('x-real-ip')?.trim() || null;
 }
 
 /**

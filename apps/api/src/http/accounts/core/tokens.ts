@@ -14,13 +14,14 @@ import {
   revokeAccountToken,
 } from '../../../services/repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf, type Actor } from '../../../services/iam/actor';
+import { type Actor } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { isUuid } from '../../../lib/validate';
-import { loadProjectForUser } from '../../../services/projects/lib/access';
+import { loadProjectForUser } from '../../lib/project-access';
 import { accountsRouter, AccountTokenSchema, OkSchema, MeSchema, autoClaimPendingInvites, resolveAccountForUser, resolveAccountDisplayNames } from './app';
 import { lookupEmailsByUserIds } from '../../../services/accounts/core/owner-emails';
 import { accountDisplayName } from '../../../services/accounts/core/account-name';
-import { readJsonObject } from '../../../lib/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and

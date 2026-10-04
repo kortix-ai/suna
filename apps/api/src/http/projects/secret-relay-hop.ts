@@ -9,18 +9,18 @@ import {
   classifyPresentedHandles,
   requestSurfaceText,
   summarizeHandleRefusals,
-} from './handle-substitution';
-import * as broker from './http-broker';
-import { SecretBrokerError } from './http-broker';
+} from '../../services/secrets/handle-substitution';
+import * as broker from '../../services/secrets/http-broker';
+import { SecretBrokerError } from '../../services/secrets/http-broker';
 import {
   type SecretRelayAuditContext,
   type SecretRelayAuthzOk,
   authorizeSecretRelay,
-} from './relay-authorize';
-import { openUpstream } from './relay-transport';
-import type { OutboundRequestShape } from './strategy';
-import { StreamSubstituter } from './stream-substitute';
-import { type AuditEventInput, recordAuditEvent } from '../audit/audit';
+} from '../../services/secrets/relay-authorize';
+import { openUpstream } from '../../services/secrets/relay-transport';
+import type { OutboundRequestShape } from '../../services/secrets/strategy';
+import { StreamSubstituter } from '../../services/secrets/stream-substitute';
+import { type AuditEventInput, recordAuditEvent } from '../../services/audit/audit';
 import {
   RELAY_CLASSIFY_PREFIX_MAX,
   RELAY_EXACT_LENGTH_MAX,
@@ -31,7 +31,7 @@ import {
   safeResponseHeaders,
   substituteStream,
   tapPrefix,
-} from './relay-stream';
+} from '../../services/secrets/relay-stream';
 import { logger } from '../../lib/logger';
 
 type RelayUpstream = Awaited<ReturnType<typeof openUpstream>>;

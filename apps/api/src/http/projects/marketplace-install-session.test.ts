@@ -27,7 +27,7 @@ let createSessionCalls = 0;
 
 const app = new OpenAPIHono<AppEnv>();
 mock.module('./app', () => ({ projectsApp: app }));
-mock.module('../../services/projects/lib/access', () => ({
+mock.module('../lib/project-access', () => ({
   loadProjectForUser: async () => ({
     userId,
     row: {
@@ -40,7 +40,8 @@ mock.module('../../services/projects/lib/access', () => ({
     },
   }),
 }));
-mock.module('../../services/feature-flags/gate', () => ({ requireFeatureFlag: () => null }));
+// requireFeatureFlag moved to http/lib/feature-flag-gate.
+mock.module('../lib/feature-flag-gate', () => ({ requireFeatureFlag: () => null }));
 const realEntitlements = await import('../../services/billing/services/entitlements');
 mock.module('../../services/billing/services/entitlements', () => ({
   ...realEntitlements,

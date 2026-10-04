@@ -232,6 +232,14 @@ let visibleSessionCallerIds: Array<string | null> = [];
 mock.module('../../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
 mock.module('../../services/projects/lib/access', () => ({
   ...realAccess,
+  loadVisibleSession: async (_loaded: unknown, _sessionId: string, callerSessionId: unknown) => {
+    visibleSessionCallerIds.push((callerSessionId ?? null) as string | null);
+    return visibleSession;
+  },
+}));
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (_c: unknown, projectId: string, action: string) => {
     loadProjectCalls.push({ projectId, action });
     return loadedProject;
@@ -244,10 +252,6 @@ mock.module('../../services/projects/lib/access', () => ({
     action: string,
   ) => {
     capabilityCalls.push({ accountId, projectId, action });
-  },
-  loadVisibleSession: async (_loaded: unknown, _sessionId: string, callerSessionId: unknown) => {
-    visibleSessionCallerIds.push((callerSessionId ?? null) as string | null);
-    return visibleSession;
   },
 }));
 

@@ -7,14 +7,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../services/projects/agents';
-import {
-  agentMayPerform,
-  canonicalizeGrantActions,
-  agentMayUseConnector,
-  agentMayUseEnv,
-  assertAgentScope,
-  isProjectSessionPrincipal,
-} from '../services/iam/agent-scope';
+import { agentMayPerform, canonicalizeGrantActions, agentMayUseConnector, agentMayUseEnv } from '../services/iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../http/lib/agent-scope';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function loadAgents(body: string) {

@@ -179,7 +179,8 @@ mock.module('../services/billing/stripe', () => ({
   }),
 }));
 
-const { resolveAccountId, resolveScopedAccountId } = await import('../services/accounts/resolve-account');
+const { resolveAccountId } = await import('../services/accounts/resolve-account');
+const { resolveScopedAccountId } = await import('../http/lib/resolve-account');
 const { runWithContext } = await import('../lib/request-context');
 const { setImpersonationContext } = await import('../services/iam/impersonation');
 

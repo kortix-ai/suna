@@ -6,6 +6,7 @@ import { json, mountOpenApiDocs } from './openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../services/oauth/discovery';
 import { draining, schemaReady } from '../app/bootstrap';
 import { eventLoopLagMs } from '../workers/event-loop-lag';
+import { bearerToken } from './lib/bearer';
 
 const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
 
@@ -112,8 +113,7 @@ app.get('/health/ready', readinessHandler);
 app.get('/v1/health/ready', readinessHandler);
 
 function hasInternalObservabilityAuth(c: any): boolean {
-  const authHeader = c.req.header('Authorization');
-  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const bearer = bearerToken(c.req.header('Authorization')) ?? '';
   const header = c.req.header('X-Kortix-Internal-Key') ?? '';
   const expected = config.INTERNAL_SERVICE_KEY;
   const safeEq = (a: string, b: string) => {

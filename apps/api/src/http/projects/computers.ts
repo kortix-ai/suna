@@ -8,10 +8,10 @@ import { PROJECT_ACTIONS } from '../../services/iam';
 import { accountRoleFor, isAccountManagerRole } from '../../services/iam/read-models';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { isUuid } from '../../lib/validate';
 import { requireUserCredential } from '../tunnel/auth';
-import { loadProjectForUser, projectCapabilityAllowed } from '../../services/projects/lib/access';
+import { loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
 import { parseConnectorConnectOwner } from '../../services/projects/lib/connection-access';
 import {

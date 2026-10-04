@@ -46,9 +46,9 @@ mock.module('../services/iam/cache-invalidation', () => ({
   registerProjectScopedMemo: () => {},
 }));
 
-// The routes resolve the request's principal before asking the engine; this
+// The routes resolve the request's principal (http/middleware/actor.ts) before asking the engine; this
 // suite mocks the engine to allow-all, so the actor only has to exist.
-mock.module('../services/iam/actor', () => ({
+mock.module('../http/middleware/actor', () => ({
   actorOf: async (c: { get(k: string): unknown }, accountId: string) => ({
     userId: (c.get('userId') as string | undefined) ?? 'user-1',
     accountId,

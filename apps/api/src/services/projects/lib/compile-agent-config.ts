@@ -35,7 +35,7 @@
  * byte unaffected" contract the session-env wiring depends on.
  */
 import { createHash } from 'node:crypto';
-import { z } from '@hono/zod-openapi';
+import { z } from 'zod';
 import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
 import {
   agentFileCandidates,

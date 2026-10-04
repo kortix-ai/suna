@@ -15,10 +15,10 @@
 // with no extra wiring.
 
 import type { Context } from 'hono';
-import { recordAuditEvent } from './audit';
-import { credentialFromContext } from './audit-credential';
-import { createFirstInWindow } from './audit-dedupe';
-import { requestClientIp } from '../../lib/client-ip';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { credentialFromContext } from '../../services/audit/audit-credential';
+import { createFirstInWindow } from '../../services/audit/audit-dedupe';
+import { requestClientIp } from '../lib/client-ip';
 
 function userAgent(c: Context): string | null {
   return c.req.header('user-agent') || null;

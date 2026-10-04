@@ -21,20 +21,16 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import {
-  assertAgentSessionWorkspaceAllowsRepository,
-  assertProjectCapability,
-  loadProjectForUser,
-} from '../../services/projects/lib/access';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { assertAgentSessionWorkspaceAllowsRepository, assertProjectCapability, loadProjectForUser } from '../lib/project-access';
+import { assertAgentScope, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../../services/projects/change-request-policy';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from './app';
 import { withProjectGitAuth } from '../../services/git/project-git';
 import { normalizeString } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { continueSession } from '../../services/sessions/lifecycle';
 
 // ─── Change Requests ────────────────────────────────────────────────────────

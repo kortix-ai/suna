@@ -1,10 +1,10 @@
 /** Server-side `kortix.toml` / `kortix.yaml` manifest validation. */
 import { auth, errors, json, lenientBody } from '../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser } from '../../services/projects/lib/access';
+import { loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { resolveManifestValidateFormat } from '../../services/projects/lib/manifest-format';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerManifestValidationRoutes(): void {
   // ─── Manifest validation ──────────────────────────────────────────────────
   // One schema, exercised in three places: the CLI (`kortix ship` pre-flight +

@@ -21,12 +21,12 @@ import { composioConfigured } from '../../services/connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../services/setup-links/token';
 import { isValidSecretName } from '../../services/secrets/secrets';
 import { sessionWithheldSecrets, withheldSecretsFix } from '../../services/sessions/session-secret-reach';
-import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
 import { parseConnectorConnectOwner } from '../../services/projects/lib/connection-access';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');

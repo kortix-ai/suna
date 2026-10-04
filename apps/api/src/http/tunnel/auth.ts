@@ -6,7 +6,7 @@ import {
   isImpersonationBlockedAccount,
 } from '../../services/iam/impersonation';
 import { resolveAccountId } from '../../services/accounts/resolve-account';
-import { isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { isProjectSessionPrincipal } from '../lib/agent-scope';
 import { accountRoleFor, isAccountManagerRole } from '../../services/iam/read-models';
 
 /**

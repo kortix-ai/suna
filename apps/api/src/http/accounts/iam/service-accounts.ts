@@ -7,7 +7,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import {
   createServiceAccount,
   deleteServiceAccount,
@@ -16,8 +16,8 @@ import {
   listServiceAccounts,
 } from '../../../services/repositories/service-accounts';
 import { iamRouter, AccountIdParam, ServiceAccountSchema } from './app';
-import { auditIam, isUniqueViolation } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam, isUniqueViolation } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 import { invalidateIamCacheForUser } from '../../../services/iam/cache-invalidation';
 export function registerIamServiceAccountsRoutes(): void {
   iamRouter.openapi(

@@ -30,12 +30,16 @@ const t = (name: string) => `${name}-${SANDBOX_ID}`;
 
 mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
+  loadVisibleSession: async () => ({ row: { sessionId: SESSION_ID } }),
+}));
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: USER_ID,
   }),
   assertProjectCapability: async () => undefined,
-  loadVisibleSession: async () => ({ row: { sessionId: SESSION_ID } }),
 }));
 
 const { projectsApp } = await import('../http/projects/app');

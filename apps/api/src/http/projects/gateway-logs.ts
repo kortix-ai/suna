@@ -4,7 +4,7 @@ import { gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../lib/db';
 import { auth, errors, json } from '../openapi';
 import { PROJECT_ACTIONS } from '../../services/iam/actions';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { splitLlmSpend } from '../../services/usage/llm-spend';
 import { classifyGatewayLogReference } from './gateway-log-reference';

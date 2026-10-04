@@ -8,11 +8,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Hono, type Context } from 'hono';
-import { buildActor } from '../services/iam/actor';
-import { deriveRequestContext } from '../services/iam/cache';
+import { buildActor } from '../http/middleware/actor';
+import { deriveRequestContext } from '../http/lib/iam-request-context';
 import { attachInboundAuditScope } from '../services/audit/audit-scope';
-import { requestClientIp } from '../lib/client-ip';
-import { requestAuditContext } from '../services/projects/lib/serializers';
+import { requestClientIp } from '../http/lib/client-ip';
+import { requestAuditContext } from '../http/lib/request-audit';
 
 const CALLER_WRITTEN = '192.0.2.1';
 const CLIENT = '203.0.113.9';

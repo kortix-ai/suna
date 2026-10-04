@@ -137,10 +137,7 @@ export function mockIamEngineAllowAll(
     credentialOnBehalfOf: () => null,
     loadTokenBinding: Object.assign(async () => null, { invalidate: () => {}, clear: () => {} }),
     loadServiceAccountActivation: async () => false,
-    actorOf: jwtActor,
-    actorFor: jwtActor,
-    buildActor: async (c: CtxLike, accountId?: string) =>
-      jwtActor(c, accountId ?? ((c.get('accountId') as string | undefined) ?? '')),
+    tokenCredential: async () => ({ kind: 'jwt' as const }),
     actorForUser: (userId: string, accountId: string) => ({
       userId,
       accountId,
@@ -159,6 +156,13 @@ export function mockIamEngineAllowAll(
       credential: { kind: 'service_account' as const, serviceAccountId },
       ctx: {},
     }),
+  }));
+  // The request-to-Actor bridge (http/middleware/actor.ts): every export redeclared.
+  mock.module('../../http/middleware/actor', () => ({
+    actorOf: jwtActor,
+    actorFor: jwtActor,
+    buildActor: async (c: CtxLike, accountId?: string) =>
+      jwtActor(c, accountId ?? ((c.get('accountId') as string | undefined) ?? '')),
   }));
   mock.module('../../services/iam/authorize', () => ({
     authorize: async () => ({ allowed: true, reason: 'role' }),

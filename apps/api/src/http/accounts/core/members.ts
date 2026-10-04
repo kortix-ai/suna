@@ -9,7 +9,7 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { onMemberRemoved } from '../../../services/billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { invalidateIamCacheForUser } from '../../../services/iam/cache-invalidation';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -30,7 +30,7 @@ import { grantAccountRole } from '../../../services/accounts/core/member-role-wr
 import { canSeeSensitiveMemberColumns } from '../../../services/accounts/core/member-visibility';
 import { AccountIdParam, AccountMemberSchema, OkSchema, accountsRouter, countOwners, getMembership, parseRole } from './app';
 import { lookupEmailsByUserIds } from '../../../services/accounts/core/owner-emails';
-import { readJsonObject } from '../../../lib/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { logger } from '../../../lib/logger';
 
 

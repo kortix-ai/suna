@@ -3,9 +3,9 @@ import type { AppEnv } from '../../types/app-env';
 import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } from '../../services/billing/services/account-state';
 import { hasDatabase } from '../../lib/db';
 import { config } from '../../lib/config';
-import { resolveScopedAccountId } from '../../services/accounts/resolve-account';
+import { resolveScopedAccountId } from '../lib/resolve-account';
 import { authorize } from '../../services/iam/authorize';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { ACCOUNT_ACTIONS } from '../../services/iam/actions';
 import { makeOpenApiApp, json, auth } from '../openapi';
 

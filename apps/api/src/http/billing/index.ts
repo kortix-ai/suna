@@ -13,6 +13,7 @@ import { creditsRouter } from './credits';
 import { paymentsRouter } from './payments';
 import { subscriptionsRouter } from './subscriptions';
 import { webhooksRouter } from './webhooks';
+import { bearerToken } from '../lib/bearer';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -75,8 +76,7 @@ function timingSafeStringEqual(a: string, b: string): boolean {
 }
 
 function requireInternalCronAuth(c: Context<AppEnv>): Response | null {
-  const authHeader = c.req.header('Authorization');
-  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const bearer = bearerToken(c.req.header('Authorization')) ?? '';
   const header = c.req.header('X-Kortix-Internal-Key') ?? '';
   const expected = config.INTERNAL_SERVICE_KEY;
   const ok =

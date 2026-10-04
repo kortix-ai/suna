@@ -5,7 +5,7 @@ import type { Context } from 'hono';
  */
 
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import { qualifiedColumn } from '../../lib/sql-qualified-column';
@@ -13,12 +13,14 @@ import { qualifiedColumn } from '../../lib/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser } from '../../services/projects/lib/access';
-import { canUseAnyAgent } from '../../services/projects/lib/agent-access';
+import { callerHasManagerStanding } from '../../services/projects/lib/access';
+import { loadProjectForUser } from '../lib/project-access';
+import { canUseAnyAgent } from '../lib/agent-access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from './app';
-import { normalizeString, requestAuditContext, serializeSession } from '../../services/projects/lib/serializers';
+import { normalizeString, serializeSession } from '../../services/projects/lib/serializers';
+import { requestAuditContext } from '../lib/request-audit';
 import { isUuid } from '../../lib/validate';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { createProjectSession } from '../../services/sessions/sessions';
 import { currentInstanceId } from '../../services/sessions/instance-scope';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from '../../services/sessions/warm-sessions';
@@ -27,8 +29,8 @@ import { projectSessionMetadataMerge } from '../../services/sessions/session-met
 import { drainSessionLifecycleQueue } from '../../services/sessions/lifecycle';
 import { convertPendingPromptToInboxRow } from '../../services/sessions/lifecycle/pending-prompt';
 import { ACTIVE_SESSION_STATUSES } from '../../services/sessions/session-status';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
 import { GitOperationError } from '../../services/git/mirror';
 import { resolveSessionSandboxRegion } from '../../services/platform/services/sandbox-region';
 

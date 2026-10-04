@@ -3,15 +3,11 @@ import { bodyLimit } from "hono/body-limit";
 import { MAX_SESSION_ATTACHMENT_BYTES } from "@kortix/shared";
 import { auth, errors, json } from "../openapi";
 import { PROJECT_ACTIONS } from "../../services/iam";
-import { assertAgentScope } from "../../services/iam/agent-scope";
+import { assertAgentScope } from "../lib/agent-scope";
 import { projectsApp } from "./app";
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  sessionIsTombstoned,
-} from "../../services/projects/lib/access";
-import { callerKortixSessionId } from "../../services/sessions/caller-session";
+import { loadVisibleSession, sessionIsTombstoned } from "../../services/projects/lib/access";
+import { assertProjectCapability, loadProjectForUser } from "../lib/project-access";
+import { callerKortixSessionId } from "../lib/caller-session";
 import { sessionAttachmentStore } from "../../services/sessions/session-attachments";
 import { isUuid } from '../../lib/validate';
 

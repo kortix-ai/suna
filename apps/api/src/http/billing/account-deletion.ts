@@ -10,8 +10,8 @@ import { resolveAccountId } from '../../services/accounts/resolve-account';
 import { makeOpenApiApp, json, auth } from '../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../services/iam';
 
-import { actorOf } from '../../services/iam/actor';
-import { readJsonObject } from '../../lib/http-body';
+import { actorOf } from '../middleware/actor';
+import { readJsonObject } from '../lib/http-body';
 export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
 
 async function resolveDeletionContext(c: any) {

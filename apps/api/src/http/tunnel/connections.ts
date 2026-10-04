@@ -22,7 +22,7 @@ import {
   isTunnelToken,
   verifySecretKey,
 } from '../../lib/crypto';
-import { requestClientKey } from '../../lib/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { isUuid } from '../../lib/validate';
 import { tunnelRateLimiter } from '../../services/tunnel/core/rate-limiter';
 import type { AppEnv } from '../../types/app-env';
@@ -30,9 +30,10 @@ import { makeOpenApiApp, json, errors } from '../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../../services/tunnel/core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../../services/tunnel/core/rpc-core';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { uniqueComputerLabel } from '../../services/connectors/computers';
 import { unpairMachine } from '../../services/tunnel/registrations';
+import { bearerToken } from '../lib/bearer';
 
 export {
   retireStaleUnidentifiedRegistrations,
@@ -323,8 +324,7 @@ export function createTunnelSelfRouter() {
         return c.json({ error: 'Too many requests', retryAfterMs: limited.retryAfterMs }, 429);
       }
       const tunnelId = c.req.header('x-tunnel-id') ?? '';
-      const header = c.req.header('authorization') ?? '';
-      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      const token = bearerToken(c.req.header('authorization'))?.trim() ?? '';
       if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
       // Look the machine up before the costly verifier, as the WS handshake does.
       const [machine] = isTunnelToken(token)

@@ -27,7 +27,7 @@ import { spawnAgentTurn } from '../../../services/channels/slack/dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from '../../../services/channels/slack/auth-resume';
 import { verifyLoginState } from '../../../services/channels/slack/login';
 import { chatUser, completeChatLogin } from '../../../services/channels/core/identity';
-import { readJsonObject } from '../../../lib/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { buildDenialError } from '../../../services/iam/denial-message';
 import { PROJECT_ACTIONS } from '../../../services/iam/actions';
 

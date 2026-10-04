@@ -56,7 +56,7 @@ import {
   pipedreamConnectUrl,
   verifyWebhookSig,
 } from './pipedream';
-import type { ConnectorRouterDeps } from './router-contract';
+import type { ConnectorServiceDeps } from './router-contract';
 import {
   connectorCatalogSections,
   getConnectorCatalogDetail,
@@ -85,15 +85,6 @@ import {
   readRequestingSessionId,
 } from './db-deps-connect';
 import { makeDbGatewayDeps } from './db-deps-gateway';
-import {
-  resolveAdmin,
-  resolveConnectionsManager,
-  resolvePrincipal,
-  resolveProjectPrincipal,
-  resolveReader,
-  resolveSecretBindingAdmin,
-  resolveSecretReader,
-} from './db-deps-principal';
 import { connectorConnected } from './db-deps-rows';
 
 export {
@@ -119,17 +110,11 @@ export {
   composioConnectionIsNoAuth,
 } from './db-deps-rows';
 
-export const dbConnectorRouterDeps: ConnectorRouterDeps = {
+export const dbConnectorRouterDeps: ConnectorServiceDeps = {
   attachmentStore: connectorAttachmentStore,
-  resolvePrincipal,
-  resolveProjectPrincipal,
   makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),
   listCatalog,
   featureFlagEnabled: projectFeatureFlagEnabled,
-  resolveAdmin,
-  resolveConnectionsManager,
-  resolveReader,
-  resolveSecretReader,
   listConnectors,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
@@ -146,7 +131,6 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   setConnectorCredential: (projectId, slug, input) =>
     setConnectorCredentialShared(projectId, slug, input),
   setConnectorSecretBinding,
-  resolveSecretBindingAdmin,
   deleteConnectorCredential: async (projectId, slug) => {
     const [row] = await db
       .select({ connectorId: connectors.connectorId })

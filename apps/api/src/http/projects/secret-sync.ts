@@ -6,14 +6,14 @@
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { isProjectSessionPrincipal } from '../lib/agent-scope';
 import { auth, errors, json } from '../openapi';
 import {
   propagateProjectSecretsToActiveSandboxes,
   syncSessionSecretsToSandbox,
 } from '../../services/sandboxes/sandbox-env-sync';
 import { reconcileStoredSessionAgentGrant } from '../../services/sessions/session-token-grant';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 export function registerSecretSyncRoutes(): void {
   // POST /v1/projects/:projectId/secrets/sync

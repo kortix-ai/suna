@@ -18,7 +18,7 @@
  */
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { makeOpenApiApp } from '../openapi';
-import type { ConnectorRouterDeps } from '../../services/connectors/router-contract';
+import type { ConnectorRouterDeps } from './principal';
 import { registerConnectorAdminRoutes } from './admin';
 import {
   registerConnectCatalogueRoutes,
@@ -41,7 +41,6 @@ export type {
   CatalogAccount,
   CatalogConnector,
   ConnectorPrincipal,
-  ConnectorRouterDeps,
   CrudOutcome,
   DefaultMode,
   ListCatalogOptions,
@@ -49,6 +48,7 @@ export type {
   ProjectPolicyView,
   SyncResult,
 } from '../../services/connectors/router-contract';
+export type { ConnectorRouterAuth, ConnectorRouterDeps } from './principal';
 
 export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();

@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as crypto from '../../lib/crypto';
 import * as ownership from '../../services/sessions/preview-ownership';
-import * as audit from '../../services/audit/auth-audit';
+import * as audit from './auth-audit';
 import * as sentry from '../../lib/sentry';
 import * as context from '../../lib/request-context';
 import * as sso from '../../services/iam/sso-sync';
@@ -45,11 +45,11 @@ mock.module('../../services/auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
 }));
 mock.module('../../services/sessions/preview-ownership', () => ({ ...ownership, canAccessPreviewSandbox: async () => true }));
-mock.module('../../services/audit/auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+mock.module('./auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
 mock.module('../../lib/sentry', () => ({ ...sentry, setSentryUser: () => {} }));
 mock.module('../../lib/request-context', () => ({ ...context, setContextField: () => {} }));
 mock.module('../../services/iam/sso-sync', () => ({ ...sso, syncSsoMembership: async () => {} }));
-mock.module('../../services/iam/actor', () => ({ buildActor: async () => null }));
+mock.module('./actor', () => ({ buildActor: async () => null }));
 
 const { supabaseAuth, combinedAuth, apiKeyAuth } = await import('./auth');
 

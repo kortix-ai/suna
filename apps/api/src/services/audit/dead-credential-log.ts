@@ -6,12 +6,11 @@
  * A final quiet burst, eviction or process restart can lose pending counts;
  * use request-completion logs or auth audits for exact refusal accounting.
  */
-import type { HTTPException } from 'hono/http-exception';
-
 const WINDOW_MS = 10 * 60_000;
 const MAX_TRACKED_MESSAGES = 10_000;
 
-const deadCredentials = new WeakSet<HTTPException>();
+// Holds the HTTPException instances the 401 constructor marked.
+const deadCredentials = new WeakSet<Error>();
 
 type Window = { loggedAt: number; suppressed: number };
 // replica-local: a log-noise limiter; each replica rate-limits its own lines.
@@ -19,12 +18,12 @@ const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
  *  constructor that builds the typed dead-credential 401. */
-export function markDeadCredential(err: HTTPException): void {
+export function markDeadCredential(err: Error): void {
   deadCredentials.add(err);
 }
 
 /** True for an exception `markDeadCredential` marked. */
-export function isDeadCredential(err: HTTPException): boolean {
+export function isDeadCredential(err: Error): boolean {
   return deadCredentials.has(err);
 }
 

@@ -7,7 +7,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { agentMayUseEnv, getAgentGrant, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { agentMayUseEnv } from '../../services/iam/agent-scope';
+import { getAgentGrant, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { auth, errors, json, lenientBody } from '../openapi';
 import {
   SecretConsumerSchema,
@@ -18,7 +19,7 @@ import { inferAuditSource, runAuditedTransaction } from '../../services/audit/au
 import { db } from '../../lib/db';
 import { roleAllows } from '../../services/projects/access';
 import { loadProjectConfig } from '../../services/git';
-import { requestPersonalOwner } from '../../services/projects/lib/personal-resources';
+import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   encryptProjectSecret,
   identifierKeyConflicts,
@@ -33,10 +34,7 @@ import { featureDisabledBody } from '../../services/feature-flags/gate';
 import { resolveFeatureFlag } from '../../services/feature-flags/registry';
 import { projectSecrets } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import {
-  loadProjectForUser,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { SecretSchema, projectsApp } from './app';
 import { withProjectGitAuth } from '../../services/git/project-git';
 import {
@@ -46,17 +44,11 @@ import {
   loadSecretViewsForUser,
   type SecretAgentGrantConfig,
 } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
-import {
-  SecretWriteResultSchema,
-  type SecretDeliverySync,
-  boundaryConflictBody,
-  boundaryDestinationConflict,
-  connectorSecretBindings,
-  summarizeDeliverySync,
-} from '../../services/secrets/secret-writes';
+import { readJsonObject } from '../lib/http-body';
+import { type SecretDeliverySync, boundaryConflictBody, boundaryDestinationConflict, connectorSecretBindings, summarizeDeliverySync } from '../../services/secrets/secret-writes';
+import { SecretWriteResultSchema } from './secret-write-result';
 import { resolveSecretWriteInput } from '../../services/secrets/secret-write-input';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { loadConnectionSharing } from '../../services/projects/lib/connection-sharing';
 import {
   clearSecretAudience,
@@ -457,7 +449,7 @@ export function registerSecretsRoutes(): void {
           projectId,
           actorUserId: loaded.userId,
           actorType,
-          source: inferAuditSource(c, actorType),
+          source: inferAuditSource(c.get('authType'), actorType),
           action: existing ? 'secret.updated' : 'secret.created',
           resourceType: 'project_secret',
           resourceId,
@@ -638,7 +630,7 @@ export function registerSecretsRoutes(): void {
           projectId,
           actorUserId: loaded.userId,
           actorType,
-          source: inferAuditSource(c, actorType),
+          source: inferAuditSource(c.get('authType'), actorType),
           action: 'secret.deleted',
           resourceType: 'project_secret',
           resourceId: existing.secretId,

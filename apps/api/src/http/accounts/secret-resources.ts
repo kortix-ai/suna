@@ -5,10 +5,11 @@ import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../../services/secrets/account-resource';
 import { resolveFeatureFlag } from '../../services/feature-flags/registry';
-import { actorOf, authorize, PROJECT_ACTIONS } from '../../services/iam';
+import { authorize, PROJECT_ACTIONS } from '../../services/iam';
+import { actorOf } from '../middleware/actor';
 import { resolveCatalogUpstream } from '../../services/llm-gateway/models/provider-registry';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });

@@ -20,10 +20,10 @@ import { PROJECT_ACTIONS } from '../../services/iam';
 import { isSessionSandboxCredential } from '../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { AnyObject, projectsApp } from './app';
 import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 interface SlackAuthTest {
   ok: boolean;

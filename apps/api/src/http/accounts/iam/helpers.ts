@@ -2,11 +2,11 @@
 // audit writer, the Postgres unique-violation classifier, and
 // the compact HttpError used by the policy-parser short-circuits.
 
-import { Context } from 'hono';
-import { recordAuditEvent } from '../../audit/audit';
-import { requestClientIp } from '../../../lib/client-ip';
-import { accountHasEntitlement } from '../../billing/services/entitlements';
-import type { TierEntitlements } from '../../billing/types';
+import type { Context } from 'hono';
+import { recordAuditEvent } from '../../../services/audit/audit';
+import { requestClientIp } from '../../lib/client-ip';
+import { accountHasEntitlement } from '../../../services/billing/services/entitlements';
+import type { TierEntitlements } from '../../../services/billing/types';
 
 /** Human label per entitlement, for the 402 message shown to admins. */
 const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {

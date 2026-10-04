@@ -17,9 +17,6 @@ export {
   type Reason,
 } from './authorize';
 export {
-  buildActor,
-  actorFor,
-  actorOf,
   actorForUser,
   actorForToken,
   actorForServiceAccount,

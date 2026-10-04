@@ -299,6 +299,11 @@ let capabilityCalls: string[] = [];
 
 mock.module('../../services/projects/lib/access', () => ({
   ...realAccess,
+  loadVisibleSession: async () => visibleSession,
+}));
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (_c: unknown, projectId: string, action: string) => {
     loadProjectCalls.push({ projectId, action });
     return loadedProject;
@@ -312,7 +317,6 @@ mock.module('../../services/projects/lib/access', () => ({
   ) => {
     capabilityCalls.push(action);
   },
-  loadVisibleSession: async () => visibleSession,
 }));
 
 // The prompt route re-authorizes the AGENT on every send (agents are
@@ -322,7 +326,7 @@ mock.module('../../services/projects/lib/access', () => ({
 // handler throws before enqueueing and every assertion below sees an empty
 // queue. `agentCalls` keeps the gate observable: it must still RUN.
 const agentAccessCalls: Array<{ requested: unknown; sessionAgent: unknown }> = [];
-mock.module('../../services/projects/lib/agent-access', () => ({
+mock.module('../lib/agent-access', () => ({
   resolveAndAuthorizeAgent: async (
     _c: unknown,
     _loaded: unknown,

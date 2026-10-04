@@ -38,6 +38,11 @@ let auditedAccount = false;
 
 mock.module('../../services/projects/lib/access', () => ({
   ...realAccess,
+  loadVisibleSession: async () => visibleSession,
+}));
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (_c: unknown, projectId: string, action: string) => {
     loadProjectCalls.push({ projectId, action });
     return loadedProject;
@@ -51,7 +56,6 @@ mock.module('../../services/projects/lib/access', () => ({
   ) => {
     capabilityCalls.push(action);
   },
-  loadVisibleSession: async () => visibleSession,
 }));
 mock.module('../../services/sessions/session-turn-read', () => ({
   readSessionTurnState: async () => {

@@ -79,7 +79,8 @@ mock.module('../../iam/authorize', () => ({
   authorize: async () => ({ allowed: false, reason: 'role_missing' }),
 }));
 
-const { loadProjectForUser, loadVisibleSession } = await import('./access');
+const { loadVisibleSession } = await import('./access');
+const { loadProjectForUser } = await import('../../../http/lib/project-access');
 
 /** A project row as `loadProjectForUser`'s own select returns it. */
 const projectRow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'active' };

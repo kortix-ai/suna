@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { isUuid } from '../../../lib/validate';
 import type { ProjectAccessAction } from '../../../services/projects/access';
-import { loadProjectForUser } from '../../../services/projects/lib/access';
+import { loadProjectForUser } from '../../lib/project-access';
 
 /** The shared UUID and project-load sleeve; route-specific gates stay at their original sites. */
 export async function resolveSessionBinding(

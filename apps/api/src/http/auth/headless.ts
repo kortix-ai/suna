@@ -22,10 +22,10 @@ import { db } from '../../lib/db';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../../types/app-env';
 import { TokenBucketRateLimiter } from '../middleware/rate-limit';
-import { auditLoginFail } from '../../services/audit/auth-audit';
+import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from '../../services/auth/gotrue';
 import { ssoEnforcedForEmail } from '../../services/repositories/sso';
-import { requestClientIp, requestClientKey } from '../../lib/client-ip';
+import { requestClientIp, requestClientKey } from '../lib/client-ip';
 import { config } from '../../lib/config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();

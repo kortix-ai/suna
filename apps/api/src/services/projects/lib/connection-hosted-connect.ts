@@ -11,7 +11,7 @@ import { composioConnectionMetadata } from '../../connectors/db-deps';
 import { finalizePipedreamConnectionAuthorization, pipedreamConnectUrl } from '../../connectors/pipedream';
 import { db } from '../../../lib/db';
 
-type Connection = NonNullable<Awaited<ReturnType<typeof import('./connection-mutation').loadMutableConnection>>>['connection'];
+type Connection = NonNullable<Awaited<ReturnType<typeof import('./connection-mutation').loadConnectionForMutation>>>;
 
 export function parseRedirects(body: Record<string, unknown>) {
   return body.success_redirect_uri || body.error_redirect_uri

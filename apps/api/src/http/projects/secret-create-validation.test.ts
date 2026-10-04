@@ -14,7 +14,6 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import * as realAccess from '../../services/projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -22,8 +21,9 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 // The only collaborator a pre-DB rejection can reach. Spread the real module:
 // a wholesale stub drops every export another importer in the graph needs.
-mock.module('../../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     row: {
       accountId: ACCOUNT_ID,

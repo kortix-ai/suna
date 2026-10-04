@@ -55,6 +55,8 @@ mock.module('../http/middleware/auth', () => ({
 
 mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
+}));
+mock.module('../http/lib/resolve-account', () => ({
   resolveScopedAccountId: async () => TEST_USER_ID,
 }));
 
@@ -63,11 +65,11 @@ mock.module('../services/accounts/resolve-account', () => ({
 // it through the barrel; `actorOf` is stubbed alongside because building a real
 // actor would read account_tokens through this suite's minimal db mock.
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
-// declares only `actorOf` breaks every other importer of `services/iam/actor`
-// (`loadTokenBinding`, `actingPrincipal`, …) with a missing-export SyntaxError.
-const realIamActor = await import('../services/iam/actor');
-mock.module('../services/iam/actor', () => ({
-  ...realIamActor,
+// declares only `actorOf` breaks every other importer of `http/middleware/actor`
+// (`buildActor`, `actorFor`) with a missing-export SyntaxError.
+const realActorBridge = await import('../http/middleware/actor');
+mock.module('../http/middleware/actor', () => ({
+  ...realActorBridge,
   actorOf: async (c: { get(k: string): unknown }, accountId: string) => ({
     userId: (c.get('userId') as string | undefined) ?? 'test-user',
     accountId,

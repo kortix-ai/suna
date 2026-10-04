@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
-const ACTOR_CONTEXT_HEADER = 'X-Kortix-Actor-Context';
+export const ACTOR_CONTEXT_HEADER = 'X-Kortix-Actor-Context';
 
 export interface ActorContext {
   sandboxId: string;
@@ -61,16 +61,23 @@ function verifyActorContext(
   return { ok: true, context: payload };
 }
 
+/** What `resolveActorFromRequest` reads from the request. */
+export interface ActorContextRequest {
+  /** The `X-Kortix-Actor-Context` header. */
+  actorContext: string | undefined;
+  /** The `Authorization` header. */
+  authorization: string | undefined;
+  /** The sandbox the bearer is bound to, when the auth middleware bound one. */
+  boundSandboxId: string | undefined;
+}
+
 export function resolveActorFromRequest(
-  c: {
-    req: { header: (name: string) => string | undefined };
-    get: (key: 'sandboxId') => string | undefined;
-  },
+  request: ActorContextRequest,
   options: { logPrefix?: string } = {},
 ): ActorContext | null {
-  const raw = c.req.header(ACTOR_CONTEXT_HEADER);
+  const raw = request.actorContext;
   if (!raw) return null;
-  const auth = c.req.header('Authorization') || c.req.header('authorization');
+  const auth = request.authorization;
   const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : auth;
   if (!bearer) return null;
   const result = verifyActorContext(raw, bearer);
@@ -79,7 +86,7 @@ export function resolveActorFromRequest(
     console.warn(`${prefix} ignoring ${ACTOR_CONTEXT_HEADER} (${result.reason})`);
     return null;
   }
-  const boundSandbox = c.get('sandboxId');
+  const boundSandbox = request.boundSandboxId;
   if (boundSandbox && result.context.sandboxId !== boundSandbox) {
     console.warn(
       `${prefix} sandbox mismatch: claim=${result.context.sandboxId} bearer=${boundSandbox}`,

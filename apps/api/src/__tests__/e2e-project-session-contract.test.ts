@@ -610,6 +610,8 @@ mock.module('../services/billing/repositories/credit-accounts', () => ({
 
 mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+mock.module('../http/lib/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 

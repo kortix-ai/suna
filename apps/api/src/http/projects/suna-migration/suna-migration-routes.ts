@@ -13,13 +13,13 @@
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { db } from '../../../lib/db';
-import { resolveScopedAccountId } from '../../../services/accounts/resolve-account';
+import { resolveScopedAccountId } from '../../lib/resolve-account';
 import type { AppEnv } from '../../../types/app-env';
 import { json, errors, auth, ErrorSchema } from '../../openapi';
 import { startSunaMigration, latestSunaMigration, PHASE_ORDER } from '../../../services/projects/suna-migration/suna-migration-runner';
 import { sunaAccountMigrations, type Database } from '@kortix/db';
 import { withTimeout } from '../../../lib/with-timeout';
-import { readJsonObject } from '../../../lib/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 type Row = typeof sunaAccountMigrations.$inferSelect;
 

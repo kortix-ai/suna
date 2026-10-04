@@ -14,7 +14,7 @@ import { PROJECT_ACTIONS } from '../../../services/iam/actions';
 import { verifyTeamsLoginState } from '../../../services/channels/teams/login';
 import { createOrJoinTeamsConversationSession } from '../../../services/channels/teams/session';
 import { confirmTeamsConnected } from '../../../services/channels/teams/identity';
-import { readJsonObject } from '../../../lib/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 export const teamsIdentityApp = makeOpenApiApp();
 

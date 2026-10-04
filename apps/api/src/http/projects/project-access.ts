@@ -1,22 +1,18 @@
 /** Project members: the access roster and per-member role changes and removal. */
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { invalidateIamCacheForUser } from '../../services/iam/cache-invalidation';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { revokeProjectRole } from '../../services/iam/assignments';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../services/iam/roles';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { isAccountManager, type AccountRole } from '../../services/projects/access';
 import { buildProjectAccessView } from '../../services/projects/lib/project-access-view';
 import { createRoute, z } from '@hono/zod-openapi';
-import {
-  grantProjectRole,
-  loadProjectForUser,
-  parseExpiresAtBody,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { grantProjectRole, parseExpiresAtBody } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { AccessMemberSchema, projectsApp } from './app';
 import { getAccountMembership } from '../../services/projects/lib/user-identity';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerProjectAccessRoutes(): void {
   // GET /v1/projects/:projectId/access
   // Lists every account member and their explicit/effective project access.

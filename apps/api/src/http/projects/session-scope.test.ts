@@ -93,6 +93,13 @@ app.use('*', async (c, next) => {
 
 mock.module('./app', () => ({ projectsApp: app }));
 mock.module('../../services/projects/lib/access', () => ({
+  loadVisibleSession: async () => ({
+    row: { ...sessionRow },
+    canManageLifecycle: true,
+    ownerIsMachine: false,
+  }),
+}));
+mock.module('../lib/project-access', () => ({
   loadProjectForUser: async () => ({
     userId: callerId,
     row: {
@@ -105,11 +112,6 @@ mock.module('../../services/projects/lib/access', () => ({
   }),
   assertProjectCapability: async () => {},
   projectCapabilityAllowed: async () => canReadSecretNames,
-  loadVisibleSession: async () => ({
-    row: { ...sessionRow },
-    canManageLifecycle: true,
-    ownerIsMachine: false,
-  }),
 }));
 const realMirror = await import('../../services/git/mirror');
 let staleReadCalls = 0;

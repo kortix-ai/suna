@@ -13,7 +13,7 @@
  */
 
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
-import { requestClientKey } from '../../lib/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
@@ -34,13 +34,14 @@ import { isValidCapability } from '../../services/tunnel/core/scope-validator';
 import { ensureComputerConnector } from '../../services/connectors/sync';
 import { attachComputerConnection } from '../../services/connectors/computers';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { loadProjectForUser, projectCapabilityAllowed } from '../../services/projects/lib/access';
+import { loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { parseConnectorConnectOwner } from '../../services/projects/lib/connection-access';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { isUuid } from '../../lib/validate';
 import { tunnelRelay } from '../../services/tunnel/core/relay';
 import { isTunnelConnectionLive } from '../../services/tunnel/core/cluster-forwarder';
 import { retireSupersededRegistrations } from './connections';
+import { bearerToken } from '../lib/bearer';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**
@@ -224,8 +225,7 @@ export function createDeviceAuthPublicRouter() {
     }),
     async (c: any) => {
       const code = c.req.param('code');
-      const authHeader = c.req.header('Authorization');
-      const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const bearerSecret = bearerToken(c.req.header('Authorization')) ?? undefined;
       const secret = bearerSecret;
 
       if (!secret) {

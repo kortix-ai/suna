@@ -2,9 +2,10 @@
  * Projects: list, create, managed-git status, and provision. Imported first by
  * ../index.ts: its first statement registers the global `/*` auth middleware.
  */
+import type { Context } from 'hono';
 import { projectRoleGrants } from '../../services/iam/read-models';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize, listAccessible } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../middleware/auth';
 import { auth, errors, json, lenientBody } from '../openapi';
@@ -12,11 +13,11 @@ import { db } from '../../lib/db';
 import { kickProjectTemplatePrebuilds } from '../../services/snapshots/builder';
 import { isAccountManager } from '../../services/projects/access';
 import { getBackend, hasBackend } from '../../services/git/backends';
-import { buildProvisionContext, runProvision } from '../../services/projects/provision-core';
+import { type ProvisionContext, runProvision } from '../../services/projects/provision-core';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { enforceProjectQuota, resolveProjectAccount } from '../../services/projects/lib/access';
+import { enforceProjectQuota, resolveProjectAccount } from '../lib/project-access';
 import { ProjectSchema, projectsApp } from './app';
 import {
   GitHubInstallationRequiredError,
@@ -30,7 +31,19 @@ import {
   normalizeString,
   serializeProject,
 } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
+/**
+ * Reads the request body and resolves the caller's account scope — the part
+ * of the old `POST /provision` handler that runs BEFORE the
+ * `PROJECT_CREATE` authorization check. Kept out of `runProvision` itself so
+ * a caller (either route) can still 403 before any provisioning work starts.
+ */
+async function buildProvisionContext(c: Context): Promise<ProvisionContext> {
+  const body = await readJsonObject(c);
+  const scope = await resolveProjectAccount(c, body);
+  return { body, scope };
+}
+
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);
 

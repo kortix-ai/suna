@@ -12,7 +12,7 @@ import {
   sharingChangeKeepsEditorAccess,
 } from '../../services/connectors/share';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { isAgentPrincipalActor } from '../../services/iam/actor';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
@@ -21,30 +21,28 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, or, sql } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { callerHasManagerStanding, loadVisibleSession, resolveSessionOwnerIdentities, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability, projectCapabilityAllowed } from '../lib/project-access';
 import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from './app';
-import {
-  hasOwn,
-  normalizeString,
-  requestAuditContext,
-  serializeSession,
-} from '../../services/projects/lib/serializers';
+import { hasOwn, normalizeString, serializeSession } from '../../services/projects/lib/serializers';
+import { requestAuditContext } from '../lib/request-audit';
 import { isUuid } from '../../lib/validate';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { projectSessionMetadataMerge } from '../../services/sessions/session-metadata-merge';
-import { resolveAndAuthorizeAgent } from '../../services/projects/lib/agent-access';
-import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../../services/sessions/sessions';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { SESSION_CREATE_ERROR_STATUSES } from '../../services/sessions/sessions';
+import { sendSessionCreateError } from '../lib/session-create-error';
 import { sessionHasPersonalConnectorBinding } from '../../services/sessions/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../../services/secrets/secret-audience';
 import { createSession, deleteSession } from '../../services/sessions/lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
 import { resolveFeatureFlag } from '../../services/feature-flags/registry';
 import { accountMayUseManagedModels } from '../../services/billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../../services/projects/agents';
 import { admitSessionSharingChange } from '../../services/sessions/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../services/llm-gateway/enablement';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../../services/sessions/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../../services/sessions/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../../services/sessions/session-inventory';

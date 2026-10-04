@@ -20,7 +20,6 @@
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
  * middleware) or the token row itself. No memo carries it: it changes per turn.
  */
-import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../../lib/config';
@@ -241,9 +240,4 @@ export async function bindSessionTurnIdentity(input: {
     select token_id from changed
   `);
   return changed.length > 0;
-}
-
-/** Fresh per-request value set by the auth middleware; null for non-session tokens. */
-export function getRequestOnBehalfOf(c: Context): string | null {
-  return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
 }

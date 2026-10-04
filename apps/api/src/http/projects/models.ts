@@ -29,9 +29,9 @@ import {
 } from '../../services/repositories/model-preferences';
 import { setProjectModelOverrides } from '../../services/repositories/project-routing-policies';
 import { db } from '../../lib/db';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
-import { requestPersonalOwner } from '../../services/projects/lib/personal-resources';
+import { requestPersonalOwner } from '../lib/personal-resources';
 
 const LLM_GATEWAY_DISABLED = {
   error: 'LLM gateway is disabled for this project',

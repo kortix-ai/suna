@@ -22,7 +22,8 @@ import {
   resourceTypeForAction,
   type Obj,
 } from '../../../services/iam';
-import { actorForUser, actorOf, type Actor } from '../../../services/iam/actor';
+import { actorForUser, type Actor } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { resolveBatchProbes } from '../../../services/accounts/iam/batch-probes';
 import { listGroupsForMember } from '../../../services/repositories/iam';
 import {
@@ -41,8 +42,8 @@ import {
   EffectiveBatchResultSchema,
   isResourceType,
 } from './app';
-import { auditIam } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.

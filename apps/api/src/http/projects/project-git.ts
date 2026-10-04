@@ -1,11 +1,11 @@
 /** Project git access: sandbox git token, git connection, and collaborator invites. */
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { isProjectSessionPrincipal } from '../lib/agent-scope';
 import { buildDenialError } from '../../services/iam/denial-message';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { getBackend, parseBasicAuthHeader, type GitScope } from '../../services/git/backends';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, assertProjectCapability } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   buildConnectionRef,
@@ -16,7 +16,7 @@ import {
   resolveProjectUpstream,
 } from '../../services/git/project-git';
 import { normalizeString, serializeProject } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerProjectGitRoutes(): void {
   // POST /v1/projects/:projectId/git-token
   // Mint a fresh scoped push token for a *managed* project so the CLI

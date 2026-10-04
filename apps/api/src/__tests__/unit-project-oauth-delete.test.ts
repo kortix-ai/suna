@@ -3,7 +3,6 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSecrets } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import * as realAccess from '../services/projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -43,8 +42,9 @@ mock.module('../lib/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (c: any) => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: c.get('userId'),

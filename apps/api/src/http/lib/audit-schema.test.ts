@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { AuditActorType } from './audit';
+import type { AuditActorType } from '../../services/audit/audit';
 import { AUDIT_ACTOR_TYPES, AuditActorTypeSchema, AuditEventSchema } from './audit-schema';
 
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -36,8 +36,8 @@ describe('audit actor types', () => {
   });
 
   test.each([
-    ['../../http/accounts/audit.ts', 2],
-    ['../../http/projects/project-audit.ts', 1],
+    ['../accounts/audit.ts', 2],
+    ['../projects/project-audit.ts', 1],
   ])('%s filters with the shared schema, never a local copy', (path, uses) => {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
     expect(source).not.toContain("z.enum(['human', 'agent', 'service_account', 'system'");

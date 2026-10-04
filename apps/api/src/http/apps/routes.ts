@@ -36,10 +36,10 @@ import {
   assertAppMachineWithinLimits,
   assertAppQuotaAvailable,
 } from '../../services/apps/limits';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { projectsApp } from '../projects/app';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
 import { readAgentsGrantingApp } from '../../services/apps/agent-grants';
 import {
   appAccessibleToUser,

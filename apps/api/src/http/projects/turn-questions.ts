@@ -16,17 +16,18 @@ import {
   renderAnswerPrompt,
   resolvePendingQuestion,
 } from '../../services/sessions/pending-questions';
-import { isProjectSessionPrincipal } from '../../services/iam/agent-scope';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../../services/projects/lib/access';
+import { isProjectSessionPrincipal } from '../lib/agent-scope';
+import { loadVisibleSession } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import {
   normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
   TurnQuestionRelayBodySchema,
 } from '@kortix/api-contract/runtime-relay';
 import { AnyObject, projectsApp } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../../services/sandboxes/sandbox-token-session';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { notifySessionEvent } from '../../services/notifications/session-push';
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question

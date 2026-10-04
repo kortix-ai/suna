@@ -52,14 +52,10 @@ import { sessionSandboxes } from '@kortix/db';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors } from '../openapi';
 import { db } from '../../lib/db';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  sessionIsTombstoned,
-} from '../../services/projects/lib/access';
+import { loadVisibleSession, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { isUuid } from '../../lib/validate';
 import {
   CONTROL_EPOCH,

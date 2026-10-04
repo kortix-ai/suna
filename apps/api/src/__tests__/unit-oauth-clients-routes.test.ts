@@ -22,8 +22,8 @@ mock.module('../services/iam', () => ({
     if (denyAll) throw new HTTPException(403, { message: `denied:${action}` });
   },
 }));
-mock.module('../services/iam/actor', () => ({ actorOf: async () => ({ userId: USER_ID, accountId: ACCOUNT_ID }) }));
-mock.module('../services/accounts/iam/helpers', () => ({
+mock.module('../http/middleware/actor', () => ({ actorOf: async () => ({ userId: USER_ID, accountId: ACCOUNT_ID }) }));
+mock.module('../http/accounts/iam/helpers', () => ({
   auditIam: async (_c: unknown, args: Record<string, unknown>) => {
     audits.push(args);
   },

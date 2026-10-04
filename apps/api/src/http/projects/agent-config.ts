@@ -46,13 +46,10 @@ import { db } from '../../lib/db';
 import { resolveTemplateBySlug } from '../../services/snapshots/templates';
 import { extractAgents, grantsByAgent } from '../../services/projects/agents';
 import { assertNoGrantEscalation } from '../../services/iam/agent-grant-ceiling';
+import { governedAgentWriter } from '../lib/agent-scope';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../../services/git/branches';
 import { isRemotePushPolicyRejection } from '../../services/git/mirror';
-import {
-  assertAgentSessionWorkspaceAllowsRepository,
-  assertProjectCapability,
-  loadProjectForUser,
-} from '../../services/projects/lib/access';
+import { assertAgentSessionWorkspaceAllowsRepository, assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
@@ -521,7 +518,7 @@ export function registerAgentConfigRoutes(): void {
         return c.json({ error: parseProblem.error, code: 'invalid_config' }, 400);
       }
       // An agent grants only what it holds (services/iam/agent-grant-ceiling.ts).
-      await assertNoGrantEscalation(c, projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
+      await assertNoGrantEscalation(governedAgentWriter(c), projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
 
       // Validate the behavior half (if the request touches it at all) BEFORE
       // committing anything — a bad frontmatter shape must never land a

@@ -100,9 +100,9 @@ mock.module('../../lib/db', () => ({
 }));
 
 // ── Access + capability. No DB, no IAM.
-const realAccess = await import('../../services/projects/lib/access');
-mock.module('../../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     userId: USER_ID,
     row: projectRow(),

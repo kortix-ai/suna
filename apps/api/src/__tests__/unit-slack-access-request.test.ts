@@ -35,6 +35,10 @@ mock.module('../services/projects/lib/access', () => ({
   lookupEmailsByUserIds: async () => new Map<string, string | null>(),
   grantProjectRole: async () => {},
   ensureOrgMembership: async () => 'member',
+}));
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => null,
 }));
 mock.module('../services/iam', () => ({

@@ -15,12 +15,12 @@ import {
   getProrationPreview,
   createPerSeatCheckoutSession,
 } from '../../services/billing/services/subscriptions';
-import { resolveScopedAccountId } from '../../services/accounts/resolve-account';
-import { resolveBillingWriteAccountId } from '../../services/billing/require-billing-write';
+import { resolveScopedAccountId } from '../lib/resolve-account';
+import { resolveBillingWriteAccountId } from './require-billing-write';
 import { syncSeatQuantity } from '../../services/billing/services/seat-management';
 import { maybeMigrateLegacyAccount } from '../../services/billing/services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../openapi';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 export const subscriptionsRouter = makeOpenApiApp<AppEnv>();
 

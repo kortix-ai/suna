@@ -6,15 +6,10 @@ import { resolveFeatureFlag } from '../../services/feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { listRepoFiles, loadProjectConfig } from '../../services/git';
 import { allowStaleMirrorReads } from '../../services/git/mirror';
-import {
-  assertAgentSessionWorkspaceAllowsRepository,
-  assertProjectCapability,
-  loadProjectForUser,
-  projectCapabilityAllowed,
-} from '../../services/projects/lib/access';
+import { assertAgentSessionWorkspaceAllowsRepository, assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { ProjectSchema, projectsApp } from './app';
 import { applyDetailCapabilityFilter } from '../../services/projects/lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../../services/git/project-git';

@@ -7,15 +7,15 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import {
   createScimToken,
   listScimTokens,
   revokeScimToken,
 } from '../../../services/repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
-import { auditIam, requireEntitlement } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 import { isUuid } from '../../../lib/validate';
 export function registerIamScimTokensRoutes(): void {
   iamRouter.openapi(

@@ -7,16 +7,17 @@
  * may manage reminders on its OWN session only.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { assertAgentScope, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../lib/agent-scope';
 import { auth, errors, json, lenientBody } from '../openapi';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { isUuid } from '../../lib/validate';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../../services/projects/lib/access';
-import { resolveAndAuthorizeAgent } from '../../services/projects/lib/agent-access';
+import { loadVisibleSession } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../../services/projects/lib/serializers';
 import { sessionIsTombstoned } from '../../services/projects/lib/access';
 import {

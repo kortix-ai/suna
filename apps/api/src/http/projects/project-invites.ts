@@ -10,16 +10,10 @@ import { isAccountManager } from '../../services/projects/access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accounts } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import {
-  ensureOrgMembership,
-  grantProjectRole,
-  loadProjectForUser,
-  lookupEmailsByUserIds,
-  parseExpiresAtBody,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { ensureOrgMembership, grantProjectRole, lookupEmailsByUserIds, parseExpiresAtBody } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp } from './app';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerProjectInvitesRoutes(): void {
   // PUT /v1/projects/:projectId/access/:userId
   // POST /v1/projects/:projectId/access/invite

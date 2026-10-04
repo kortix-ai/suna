@@ -15,14 +15,14 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import { AnyObject, projectsApp } from './app';
 import { parseMonitorIngestBody } from '../../services/projects/lib/monitor-events';
 import { MonitorIngestRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { ingestMonitorEvents, loadMonitorBoxForToken } from '../../services/projects/lib/monitor-ingest';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 const MonitorIngestResultSchema = z.object({
   accepted: z.number(),

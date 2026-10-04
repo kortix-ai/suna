@@ -1,6 +1,6 @@
 /** Secret delivery strategy: `PUT /:projectId/secrets/:identifier/strategy`. */
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { isBorrowedSessionPrincipal } from '../../services/iam/agent-scope';
+import { isBorrowedSessionPrincipal } from '../lib/agent-scope';
 import { auth, errors, json } from '../openapi';
 import { inferAuditSource, runAuditedTransaction } from '../../services/audit/audit';
 import { db } from '../../lib/db';
@@ -15,21 +15,12 @@ import { resolveFeatureFlag } from '../../services/feature-flags/registry';
 import { networkBoundaryPolicyError } from '../../services/secrets/network-boundary';
 import { projectSecrets, projectSessionSecretHandles } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import {
-  loadProjectForUser,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp } from './app';
 import { isSystemProjectSecretName, loadSecretViewsForUser } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
-import {
-  SecretWriteResultSchema,
-  type SecretDeliverySync,
-  boundaryConflictBody,
-  boundaryDestinationConflict,
-  connectorSecretBindings,
-  summarizeDeliverySync,
-} from '../../services/secrets/secret-writes';
+import { readJsonObject } from '../lib/http-body';
+import { type SecretDeliverySync, boundaryConflictBody, boundaryDestinationConflict, connectorSecretBindings, summarizeDeliverySync } from '../../services/secrets/secret-writes';
+import { SecretWriteResultSchema } from './secret-write-result';
 export function registerSecretDeliveryRoutes(): void {
   projectsApp.openapi(
     createRoute({
@@ -270,7 +261,7 @@ export function registerSecretDeliveryRoutes(): void {
             projectId,
             actorUserId: loaded.userId,
             actorType,
-            source: inferAuditSource(c, actorType),
+            source: inferAuditSource(c.get('authType'), actorType),
             action: 'secret.strategy.changed',
             resourceType: 'project_secret',
             resourceId: existing.secretId,

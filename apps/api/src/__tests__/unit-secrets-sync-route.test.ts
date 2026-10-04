@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { PROJECT_ACTIONS } from '../services/iam/actions';
-import * as realAccess from '../services/projects/lib/access';
 
 // POST /v1/projects/:projectId/secrets/sync — who syncs what.
 //
@@ -27,8 +26,9 @@ mock.module('../http/middleware/auth', () => ({
 }));
 
 const capabilities: string[] = [];
-mock.module('../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, name: 'demo' },
     userId: USER_ID,
