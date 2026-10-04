@@ -1,17 +1,15 @@
 {
-  "source_hash": "4c5319cf325a54ce2778545e2d661f53795d3cf47e0ea1895eb3796af4ba23f9",
+  "source_hash": "dc524f070b99662efd55950eddee32537f4aa228dd6368e6f44703a0425a4007",
   "diff_files": [
     "apps/web/src/app/(auth)/auth/callback/bounce-attribution.test.ts",
     "apps/web/src/app/(auth)/auth/callback/callback-redirects.test.ts",
+    "apps/web/src/app/(auth)/auth/callback/pkce-resume-redirect.test.ts",
     "apps/web/src/app/(auth)/auth/callback/route.ts",
     "apps/web/src/app/(auth)/auth/callback/signup-destination.test.ts",
     "apps/web/src/app/(system)/api/maintenance/bypass/route.test.ts",
     "apps/web/src/app/(system)/api/maintenance/bypass/route.ts",
     "apps/web/src/app/(system)/api/maintenance/route.test.ts",
     "apps/web/src/app/(system)/api/maintenance/route.ts",
-    "apps/web/src/app/(system)/api/og/template/og-cards.test.tsx",
-    "apps/web/src/app/(system)/api/og/template/og-cards.tsx",
-    "apps/web/src/app/(system)/api/og/template/route.tsx",
     "apps/web/src/app/[locale]/(app)/invites/[inviteId]/page.tsx",
     "apps/web/src/app/[locale]/(app)/projects/[id]/layout.tsx",
     "apps/web/src/app/[locale]/(app)/projects/[id]/page.tsx",
@@ -47,6 +45,7 @@
     "apps/web/src/components/root-head.tsx",
     "apps/web/src/features/auth/auth-popup-shell.test.tsx",
     "apps/web/src/features/auth/auth-popup-shell.tsx",
+    "apps/web/src/features/auth/use-pkce-resume.ts",
     "apps/web/src/features/session/composer/held-first-prompt.ts",
     "apps/web/src/features/session/first-prompt-inbox.test.ts",
     "apps/web/src/features/session/session-body.test.tsx",
@@ -69,6 +68,7 @@
     "apps/web/src/lib/public-env-server.ts",
     "apps/web/src/lib/query-cache-config.test.ts",
     "apps/web/src/lib/query-client-defaults.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/lib/seo/public-content.ts",
     "apps/web/src/lib/supabase/env.test.ts",
     "apps/web/src/lib/supabase/env.ts",
@@ -84,13 +84,13 @@
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json"
   ],
-  "diff_hash": "ebe8aae60e057694fdb667419f80ca700096b697bf11a6daf09767e80e2a4a75",
-  "head": "d936f32b196193d842342606a92817a91447423f",
+  "diff_hash": "6f76c272ee9c3bdcc3fc9f7baca30b52b62c287ef23fbdafee8eb25ce21fe43d",
+  "head": "b7acb05d63bf8b4a0495725ce1e44d8dd1ffd216",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:07:26.866Z"
+  "at": "2026-10-04T18:04:38.557Z"
 }
