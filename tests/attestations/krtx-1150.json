@@ -1,0 +1,19 @@
+{
+  "source_hash": "e55661a1b091b621f50a852c7948ed95c859a57bf0a986e960e4858831a37814",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/migrations/20261004001214513_user_roles_rls_initplan.sql",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
+    "packages/db/scripts/user-roles-rls-initplan.integration.test.ts"
+  ],
+  "diff_hash": "cbb85bc35e1e940df213c9ff61dd733dedd16bc8e4677f8cf988bf400d702334",
+  "head": "aeac64aaeb1ec2bee8afecec75f96ce7c7d943b4",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T01:54:49.024Z"
+}
