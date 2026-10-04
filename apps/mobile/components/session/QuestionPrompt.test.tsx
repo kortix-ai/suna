@@ -179,7 +179,7 @@ for (const action of ['reply', 'reject']) {
       void renderer.root.findAll((node) => String(node.type) === 'Button')[0].props.onPress();
     });
     expect(callback).toHaveBeenCalledTimes(2);
-    await act(async () => renderer.update(null));
+    await act(async () => renderer.unmount());
     expect(renderer.toJSON()).toBeNull();
   });
 }
