@@ -1,0 +1,27 @@
+{
+  "source_hash": "7391a5e73f253d3074c75717a97b579b83caeb5dccffeef498cf86f70a9eca6c",
+  "diff_files": [
+    "apps/api/src/__tests__/billing/mocks.ts",
+    "apps/api/src/__tests__/e2e-billing-routes.test.ts",
+    "apps/api/src/billing/routes/account-deletion.ts",
+    "apps/api/src/billing/services/account-deletion.test.ts",
+    "apps/api/src/billing/services/account-deletion.ts",
+    "apps/web/src/components/account/delete-account-dialogs.tsx",
+    "apps/web/src/features/accounts/hub/account-hub-content.tsx",
+    "apps/web/src/features/workspace/settings/tabs/profile-tab.tsx",
+    "apps/web/src/hooks/account/use-account-deletion.test.ts",
+    "apps/web/src/hooks/account/use-account-deletion.ts",
+    "packages/sdk/src/core/rest/projects-client/account-lifecycle.test.ts",
+    "packages/sdk/src/core/rest/projects-client/account-lifecycle.ts",
+    "scripts/dev-local.sh"
+  ],
+  "diff_hash": "210f8f017dfd7c88009385c61fa825bbd8373e8374f918817b3a7745e9c3adc3",
+  "head": "e6b6f5f162cf20e5118a82905122f97c3b1c0de9",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:00:55.919Z"
+}
