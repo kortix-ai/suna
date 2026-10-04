@@ -1,16 +1,16 @@
 {
-  "source_hash": "6a2f6ddea935ef7933b12f1a7655e6703e721622ba8cde48ef1f36bbe42ab415",
+  "source_hash": "f2331692e34f6bda3fd11c3db8418f9b4dbaba8f336da025cd675f9572ebf6bc",
   "diff_files": [
-    "packages/db/migrations/20261004001500000_resources_rls_auth_initplan.sql",
+    "packages/db/migrations/20261004035000000_resources_rls_auth_initplan.sql",
     "packages/db/scripts/resources-rls-auth-initplan.integration.test.ts"
   ],
-  "diff_hash": "0e5bd579d493f22f43bc036188fbf593f75ff51a217c3883c783924248671674",
-  "head": "4e79749e487b466fa6e82e1eb4ce7604ea58483c",
+  "diff_hash": "db0719b3e93a3d907169c584a353a6f6a0b9280ba2623b8711ac10f4833ab7e3",
+  "head": "42da0750b5633e699cb539e02cffbad667957afd",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T02:12:41.915Z"
+  "at": "2026-10-04T05:41:12.718Z"
 }
