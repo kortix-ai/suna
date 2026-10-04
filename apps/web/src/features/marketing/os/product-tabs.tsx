@@ -4,7 +4,7 @@ import Link from '@/components/site-link';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useState } from 'react';
-import { productTabs } from './content';
+import { useOsContent } from './use-os-content';
 import { CardArrow, Heading, Section } from './primitives';
 
 /**
@@ -13,6 +13,7 @@ import { CardArrow, Heading, Section } from './primitives';
  * dark pane in both themes and the screen never reads as a bright panel.
  */
 export function ProductTabs() {
+  const { productTabs } = useOsContent();
   const [active, setActive] = useState<string>(productTabs.tabs[0].id);
   const tab = productTabs.tabs.find((t) => t.id === active) ?? productTabs.tabs[0];
 
@@ -47,7 +48,7 @@ export function ProductTabs() {
             <p className="text-muted-foreground text-base leading-relaxed text-pretty">{tab.body}</p>
           </div>
           <Link href={tab.href} className="group text-foreground flex w-fit items-center gap-2 text-sm">
-            <span className="underline underline-offset-4">Learn more</span>
+            <span className="underline underline-offset-4">{productTabs.learnMore.label}</span>
             <CardArrow className="size-4" />
           </Link>
         </div>

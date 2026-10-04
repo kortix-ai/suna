@@ -1,8 +1,8 @@
 'use client';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
-import { closing, osHero } from '@/features/marketing/os/content';
+import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
+import { useOsContent } from '@/features/marketing/os/use-os-content';
 import { DemoPill, PillLink } from '@/features/marketing/os/primitives';
 import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -118,13 +118,13 @@ const Footer = () => {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const footerSections = localizeUiCatalog(FOOTER_SECTIONS, tI18nComplete, FOOTER_TRANSLATION_KEYS);
   const currentYear = new Date().getFullYear();
+  const { closing, osHero } = useOsContent();
 
   return (
     <section className="dark bg-background text-foreground relative overflow-hidden">
       {/* The close every marketing page ends on, on the Beams art. */}
       <div className="relative overflow-hidden">
-        <BeamsShader />
-        <div className="from-background via-background/30 to-background absolute inset-0 bg-linear-to-b" aria-hidden />
+        <BeamsBackdrop fade="band" />
         <div className="relative mx-auto flex max-w-7xl flex-col items-center gap-8 px-6 py-30 text-center md:py-40">
           <h2 className="text-foreground max-w-3xl text-3xl font-normal tracking-tight text-balance sm:text-5xl">
             {closing.title}

@@ -65,4 +65,6 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'textad70f35eaccc',
   'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.':
     'text66b6392a2418',
+  "The AI Operating System": 'text72e9cb3a34a8',
+  "One open-source operating system for your agents, people and tools: agents, skills, memory, connectors and computers in one git repo you own.": 'textcfc0925e41a1',
 };

@@ -2,15 +2,16 @@
 
 import Link from '@/components/site-link';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
+import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { EnterpriseRows } from './closing-sections';
-import { aiOsAdvantages, aiOsHero, aiOsLayers, aiOsProducts } from './content';
+import { useOsContent } from './use-os-content';
 import { Lattice } from './os-layer';
 import { CardArrow, DemoPill, Heading, PillLink, Section } from './primitives';
 
 function Hero() {
+  const { aiOsHero } = useOsContent();
   return (
     <section data-kx-dark-hero="" className="dark bg-background text-foreground relative flex min-h-svh items-center justify-center overflow-hidden px-6 pt-32 pb-20">
       <Lattice />
@@ -36,6 +37,7 @@ function Hero() {
 
 /** The stack as a diagram: pick a layer on the right, read it on the left. */
 function Layers() {
+  const { aiOsLayers } = useOsContent();
   const [active, setActive] = useState<string>(aiOsLayers.layers[0].id);
   const layer = aiOsLayers.layers.find((l) => l.id === active) ?? aiOsLayers.layers[0];
 
@@ -44,13 +46,12 @@ function Layers() {
       <div className="space-y-8">
         <Heading>{aiOsLayers.title}</Heading>
         <div key={layer.id} className="max-w-md space-y-3 motion-safe:animate-[kx-fade_300ms_ease-out_both]">
-          <h3 className="text-foreground text-2xl font-normal tracking-tight">{layer.name}</h3>
+          <h3 className="text-foreground text-2xl font-normal tracking-tight">{layer.title}</h3>
           <p className="text-muted-foreground text-base leading-relaxed text-pretty">{layer.body}</p>
         </div>
       </div>
       <div className="dark bg-background border-border relative overflow-hidden rounded-xl border p-6 sm:p-10">
-        <BeamsShader />
-        <div className="bg-background/60 absolute inset-0" aria-hidden />
+        <BeamsBackdrop fade="hero" />
         <div role="tablist" aria-orientation="vertical" className="relative flex flex-col gap-2">
           {aiOsLayers.layers.map((l) => (
             <button
@@ -67,7 +68,7 @@ function Layers() {
                   : 'bg-background/50 text-foreground hover:bg-background/80',
               )}
             >
-              {l.name}
+              {l.title}
             </button>
           ))}
         </div>
@@ -77,6 +78,7 @@ function Layers() {
 }
 
 function Products() {
+  const { aiOsProducts } = useOsContent();
   return (
     <Section>
       <Heading className="max-w-2xl">{aiOsProducts.title}</Heading>
@@ -88,10 +90,10 @@ function Products() {
             className="group dark bg-background text-foreground border-border relative flex aspect-[3/4] flex-col justify-between overflow-hidden rounded-xl border p-8"
           >
             {card.image === 'beams' ? (
-              <BeamsShader />
+              <BeamsBackdrop fade="card" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={card.image} alt="" aria-hidden className="absolute inset-0 size-full object-cover object-left-top opacity-70" />
+              <img src={card.image} alt="" aria-hidden className="absolute inset-0 size-full object-cover object-left-top opacity-40" />
             )}
             <span className="relative flex items-center justify-between">
               <span className="flex items-center gap-2 text-xl">
@@ -100,8 +102,7 @@ function Products() {
               </span>
               <CardArrow />
             </span>
-            <span className="from-background absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t to-transparent" aria-hidden />
-            <span className="text-foreground/80 relative max-w-56 text-base text-pretty">{card.body}</span>
+            <span className="text-foreground relative max-w-56 text-base text-pretty">{card.body}</span>
           </Link>
         ))}
       </div>
@@ -110,6 +111,7 @@ function Products() {
 }
 
 function Advantages() {
+  const { aiOsAdvantages } = useOsContent();
   return (
     <Section>
       <div className="max-w-3xl space-y-4">

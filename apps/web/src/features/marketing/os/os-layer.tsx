@@ -1,10 +1,10 @@
 'use client';
 
 import Link from '@/components/site-link';
-import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
+import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
-import { osLayer } from './content';
+import { useOsContent } from './use-os-content';
 import { CardArrow, PillLink } from './primitives';
 
 const COLS = 24;
@@ -25,6 +25,7 @@ const ACCENT = new Set([5, 31, 58, 77, 102, 121, 146, 170, 199, 216, 238, 257]);
  * pane in both themes (`graphic-elements.md`).
  */
 export function Lattice() {
+  const { osLayer } = useOsContent();
   return (
     <div aria-hidden className="absolute inset-0">
       <div
@@ -48,7 +49,7 @@ export function Lattice() {
         return (
           <span
             key={tag}
-            className="border-border bg-background/80 text-foreground absolute flex -translate-y-1/2 items-center gap-2 rounded-sm border px-2 py-1 font-mono text-xs motion-safe:animate-[kx-fade_600ms_ease-out_both]"
+            className="border-border bg-background/80 text-foreground absolute hidden -translate-y-1/2 sm:flex items-center gap-2 rounded-sm border px-2 py-1 font-mono text-xs motion-safe:animate-[kx-fade_600ms_ease-out_both]"
             style={{
               left: `${(col / COLS) * 100}%`,
               top: `${((row + 0.5) / ROWS) * 100}%`,
@@ -65,6 +66,7 @@ export function Lattice() {
 }
 
 export function OsLayer() {
+  const { osLayer } = useOsContent();
   return (
     <section className="dark bg-background text-foreground">
       <div className="relative flex min-h-[44rem] items-center justify-center overflow-hidden px-6 py-30">
@@ -89,19 +91,18 @@ export function OsLayer() {
             className="group border-border relative flex min-h-[32rem] flex-col justify-end overflow-hidden rounded-xl border"
           >
             {card.art === 'beams' ? (
-              <BeamsShader />
+              <BeamsBackdrop fade="card" />
             ) : (
               // A still of the Neuro wallpaper (dark), not the live shader: the
               // shader follows the page theme, and this pane is dark in both.
               // eslint-disable-next-line @next/next/no-img-element
               <img src="/media/os/neuro-dark.webp" alt="" aria-hidden className="absolute inset-0 size-full object-cover" />
             )}
-            <div className="from-background absolute inset-0 bg-linear-to-t via-background/60 to-transparent" aria-hidden />
             <div className="relative flex items-end justify-between gap-6 p-8">
               <div className="max-w-sm space-y-3">
                 <h3 className="text-foreground text-3xl font-normal tracking-tight text-balance">{card.title}</h3>
                 <p className="text-muted-foreground text-base text-pretty">{card.body}</p>
-                <span className="text-foreground inline-block pt-2 text-sm underline underline-offset-4">{card.cta}</span>
+                <span className="text-foreground inline-block pt-2 text-sm underline underline-offset-4">{card.cta.label}</span>
               </div>
               <CardArrow className="text-foreground" />
             </div>

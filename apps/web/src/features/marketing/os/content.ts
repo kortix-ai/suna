@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { OS_TRANSLATION_KEYS } from '@/i18n/os-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * Copy for the AI OS marketing system: the home page and `/ai-os`.
  *
@@ -11,7 +15,7 @@
 
 export const announcement = {
   label: 'The leading open-source alternative to Claude Cowork and ChatGPT Work',
-  cta: 'Read the launch',
+  cta: { label: 'Read the launch' },
   href: '/launch',
 } as const;
 
@@ -32,8 +36,10 @@ export const workCarousel = {
   title: 'Real work, finished. Not a chat window.',
 } as const;
 
-export const statement =
-  'Kortix brings your agents, your people and every tool into one repo you own, and puts each agent to work on its own cloud computer.';
+export const statement = {
+  title:
+    'Kortix brings your agents, your people and every tool into one repo you own, and puts each agent to work on its own cloud computer.',
+} as const;
 
 /** The layer's parts, in the order the lattice types them. Each is a product
  *  noun from the glossary. */
@@ -46,14 +52,14 @@ export const osLayer = {
     {
       title: 'A cloud computer for every session.',
       body: 'One isolated sandbox per session. Each session has its own isolated machine and branch.',
-      cta: 'See the computer',
+      cta: { label: 'See the computer' },
       href: '/agent-computer',
       art: 'beams',
     },
     {
       title: 'Your company, as code you own.',
       body: 'Agents, skills, memory and connectors are files in one git repo. Versioned, reviewable, portable.',
-      cta: 'Explore company as code',
+      cta: { label: 'Explore company as code' },
       href: '/company-as-code',
       art: 'neuro',
     },
@@ -63,6 +69,7 @@ export const osLayer = {
 /** Real screenshots from `public/media/film` (synthetic Northwind data). */
 export const productTabs = {
   title: 'Everything a company runs on, in one place.',
+  learnMore: { label: 'Learn more' },
   tabs: [
     {
       id: 'agents',
@@ -175,37 +182,37 @@ export const aiOsLayers = {
   layers: [
     {
       id: 'governance',
-      name: 'Permissions and change requests',
+      title: 'Permissions and change requests',
       body: 'Per-resource permissions for people and agents. Session work reaches main through a change request. Merge is default-deny for agents.',
     },
     {
       id: 'channels',
-      name: 'Channels and triggers',
+      title: 'Channels and triggers',
       body: 'Slack and Microsoft Teams are live. Triggers run on a cron schedule or a signed webhook. Work runs on demand, human-assisted or automated.',
     },
     {
       id: 'agents',
-      name: 'Agents and skills',
+      title: 'Agents and skills',
       body: 'An agent is a markdown file plus its block in kortix.yaml. A skill is the markdown that encodes how your company does one job.',
     },
     {
       id: 'memory',
-      name: 'Memory',
+      title: 'Memory',
       body: 'Memory is markdown files next to your code, cloned into every session, readable by a person and editable by an agent.',
     },
     {
       id: 'connectors',
-      name: 'Connectors and secrets',
+      title: 'Connectors and secrets',
       body: '3,000+ apps in a click. Connector credentials never enter the machine. Secrets are encrypted at rest with a key per project.',
     },
     {
       id: 'models',
-      name: 'Models',
+      title: 'Models',
       body: 'Any model provider with your own keys. Or the ChatGPT plan you already pay for.',
     },
     {
       id: 'computers',
-      name: 'Computers',
+      title: 'Computers',
       body: 'One isolated sandbox per session. Each session has its own isolated machine and branch.',
     },
   ],
@@ -234,3 +241,29 @@ export const aiOsAdvantages = {
     { title: 'Open and yours', body: 'Open source. Read it, fork it, audit it. Self-host is free.' },
   ],
 } as const;
+
+/** Every block above, localized through the `hardcodedUi.i18nComplete` catalog. */
+export function getLocalizedOsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    {
+      announcement,
+      osHero,
+      logoWall,
+      workCarousel,
+      statement,
+      osLayer,
+      productTabs,
+      developers,
+      enterpriseRows,
+      plans,
+      team,
+      closing,
+      aiOsHero,
+      aiOsLayers,
+      aiOsProducts,
+      aiOsAdvantages,
+    },
+    tI18nComplete,
+    OS_TRANSLATION_KEYS,
+  );
+}

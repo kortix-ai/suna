@@ -1,10 +1,10 @@
 'use client';
 
 import Link from '@/components/site-link';
-import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
+import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
 import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
 import { ArrowRightIcon } from '@phosphor-icons/react';
-import { announcement, osHero } from './content';
+import { useOsContent } from './use-os-content';
 import { DemoPill, PillLink } from './primitives';
 
 /**
@@ -14,13 +14,13 @@ import { DemoPill, PillLink } from './primitives';
  * past the art is the artifact the reader can open.
  */
 export function OsHero() {
+  const { osHero } = useOsContent();
   return (
     <>
       <section id="hero" data-kx-dark-hero="" className="dark relative flex min-h-svh flex-col overflow-hidden bg-background">
         <div className="kx-hero-veil absolute inset-0" aria-hidden>
-          <BeamsShader />
-          {/* Floor scrim: the copy sits on a calm band, never on a beam. */}
-          <div className="from-background/90 absolute inset-x-0 bottom-0 h-2/3 bg-linear-to-t to-transparent" />
+          {/* The floor fade: the copy sits on a calm band, never on a beam. */}
+          <BeamsBackdrop fade="floor" />
         </div>
 
         <div className="relative z-10 mx-auto mt-auto flex w-full max-w-7xl flex-col gap-10 px-6 pt-40 pb-16 lg:flex-row lg:items-end lg:justify-between lg:pb-20">
@@ -28,7 +28,7 @@ export function OsHero() {
             {osHero.title}
           </h1>
           <div className="flex max-w-md flex-col gap-6 lg:pb-2">
-            <p className="kx-hero-text text-foreground/80 text-lg leading-relaxed text-pretty [--kx-enter:120ms]">
+            <p className="kx-hero-text text-muted-foreground text-lg leading-relaxed text-pretty [--kx-enter:120ms]">
               {osHero.sub}
             </p>
             <div className="kx-hero-text flex flex-wrap gap-3 [--kx-enter:200ms]">
@@ -48,6 +48,7 @@ export function OsHero() {
 
 /** One line above the navbar, like a release note pinned to the door. */
 export function Announcement() {
+  const { announcement } = useOsContent();
   return (
     <Link
       href={announcement.href}
@@ -55,7 +56,7 @@ export function Announcement() {
     >
       <span className="truncate">{announcement.label}</span>
       <span className="text-foreground hidden items-center gap-1 sm:flex">
-        {announcement.cta}
+        {announcement.cta.label}
         <ArrowRightIcon className="size-3.5" />
       </span>
     </Link>

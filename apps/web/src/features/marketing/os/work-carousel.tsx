@@ -4,8 +4,11 @@ import Link from '@/components/site-link';
 import { KIND_LABEL, RoleArtifactBody } from '@/features/marketing/solutions/role-hero-visual';
 import { ROLES } from '@/features/marketing/solutions/registry';
 import { ArrowLeftIcon, ArrowRightIcon } from '@phosphor-icons/react';
+import { ROLES_TRANSLATION_KEYS } from '@/i18n/roles-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { useRef } from 'react';
-import { workCarousel } from './content';
+import { useOsContent } from './use-os-content';
 import { CardArrow, Heading } from './primitives';
 
 /**
@@ -13,7 +16,14 @@ import { CardArrow, Heading } from './primitives';
  * own hero line on top and its own sample artifact underneath, cropped, because
  * the artifact is an excerpt. No customer, no metric.
  */
+/** The track bleeds to the viewport edge while its first card lines up with
+ *  the max-w-7xl measure: half the leftover width plus px-6, both tokens. */
+const TRACK_GUTTER = 'xl:px-[calc((100vw-var(--container-7xl))/2+var(--spacing)*6)]'; // audit:allow full-bleed scroller aligned to the section measure
+
 export function WorkCarousel() {
+  const { workCarousel } = useOsContent();
+  // The same localization the role pages use, so a card matches its page.
+  const roles = localizeUiCatalog(ROLES, useTranslations('hardcodedUi.i18nComplete'), ROLES_TRANSLATION_KEYS);
   const track = useRef<HTMLUListElement>(null);
   const scroll = (dir: 1 | -1) =>
     track.current?.scrollBy({ left: dir * track.current.clientWidth * 0.8, behavior: 'smooth' });
@@ -39,9 +49,9 @@ export function WorkCarousel() {
 
       <ul
         ref={track}
-        className="mt-12 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-6 pb-4 [scrollbar-width:none] xl:px-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))]"
+        className={`mt-12 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-6 pb-4 [scrollbar-width:none] ${TRACK_GUTTER}`}
       >
-        {ROLES.map((role) => (
+        {roles.map((role) => (
           <li key={role.slug} className="shrink-0 snap-start">
             <Link
               href={`/solutions/${role.slug}`}
@@ -59,7 +69,7 @@ export function WorkCarousel() {
               <div className="border-border bg-background mx-6 mt-auto flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0">
                 <div className="border-border flex items-center justify-between gap-3 border-b px-4 py-2">
                   <span className="text-muted-foreground truncate font-mono text-xs">{role.output.artifact.file}</span>
-                  <span className="text-muted-foreground/70 font-mono text-xs uppercase">
+                  <span className="text-muted-foreground font-mono text-xs uppercase">
                     {KIND_LABEL[role.output.artifact.kind]}
                   </span>
                 </div>

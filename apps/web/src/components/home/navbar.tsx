@@ -265,7 +265,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     <>
       <header
         className={cn(
-          'relative inset-x-0 top-0 z-50 flex w-full flex-col items-center border-b transition-colors duration-normal ease-out motion-reduce:transition-none',
+          'text-foreground relative inset-x-0 top-0 z-50 flex w-full flex-col items-center border-b transition-colors duration-normal ease-out motion-reduce:transition-none',
           // Over the home hero the bar is part of the dark art pane: no fill,
           // no rule, dark tokens. Past the fold it becomes the solid bar.
           overHero ? 'dark border-transparent bg-transparent' : 'border-border-default bg-background',

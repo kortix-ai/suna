@@ -9,7 +9,7 @@ import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
 import { useReducedMotion } from 'motion/react';
 import { type ComponentType, useEffect, useState } from 'react';
-import { logoWall } from './content';
+import { useOsContent } from './use-os-content';
 import { Section } from './primitives';
 
 /**
@@ -53,6 +53,7 @@ function Mark({ logo }: { logo: Logo }) {
 }
 
 export function LogoWall() {
+  const { logoWall } = useOsContent();
   const reduceMotion = useReducedMotion();
   // `shown[i]` is the pool index in cell i. A tick moves one cell to the next
   // pool logo that no cell shows, so the wall never repeats a mark.
@@ -88,7 +89,7 @@ export function LogoWall() {
             <li
               key={i}
               className={cn(
-                'bg-muted/40 text-foreground/70 flex h-20 items-center justify-center rounded-md',
+                'bg-muted/40 text-muted-foreground flex h-20 items-center justify-center rounded-md',
                 i >= 12 && 'max-sm:hidden',
               )}
             >

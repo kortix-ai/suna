@@ -1,13 +1,14 @@
 'use client';
 
 import Link from '@/components/site-link';
-import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
+import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { developers, enterpriseRows, plans, team } from './content';
+import { useOsContent } from './use-os-content';
 import { CardArrow, Heading, PillLink, Section } from './primitives';
 
 /** Developers: the two commands, and where to read more. */
 export function Developers() {
+  const { developers } = useOsContent();
   return (
     <Section className="grid gap-12 lg:grid-cols-2 lg:items-center">
       <div className="space-y-6">
@@ -30,6 +31,7 @@ export function Developers() {
 
 /** "Built for the enterprise": a title, then one row per guarantee. */
 export function EnterpriseRows() {
+  const { enterpriseRows } = useOsContent();
   return (
     <Section>
       <div className="max-w-3xl space-y-4">
@@ -55,6 +57,7 @@ export function EnterpriseRows() {
 
 /** Product-led: the three plans, read from the one pricing source. */
 export function Plans() {
+  const { plans } = useOsContent();
   return (
     <Section>
       <div className="flex flex-wrap items-end justify-between gap-6">
@@ -72,7 +75,7 @@ export function Plans() {
               {plan.unit ? <span className="text-muted-foreground ml-2 text-base">{plan.unit}</span> : null}
             </span>
             <p className="text-muted-foreground text-base text-pretty">{plan.note}</p>
-            <ul className="text-foreground/80 mt-auto space-y-2 text-sm">
+            <ul className="text-foreground mt-auto space-y-2 text-sm">
               {plan.features.slice(0, 3).map((f) => (
                 <li key={f}>{f}</li>
               ))}
@@ -86,10 +89,10 @@ export function Plans() {
 
 /** The team. The footer carries the close. */
 export function Team() {
+  const { team } = useOsContent();
   return (
     <section className="dark bg-background text-foreground relative overflow-hidden">
-      <BeamsShader />
-      <div className="from-background absolute inset-0 bg-linear-to-b via-background/40 to-background" aria-hidden />
+      <BeamsBackdrop fade="band" />
       <div className="relative mx-auto w-full max-w-7xl px-6 py-24 md:py-30">
         <div className="grid gap-6 lg:grid-cols-2 lg:items-end">
           <Heading>{team.title}</Heading>

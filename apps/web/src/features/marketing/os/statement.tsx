@@ -2,7 +2,7 @@
 
 import { type MotionValue, m, useReducedMotion, useScroll, useTransform } from 'motion/react';
 import { useRef } from 'react';
-import { statement } from './content';
+import { useOsContent } from './use-os-content';
 
 /**
  * A chapter break: one sentence, pinned, that reads itself in as the page
@@ -10,15 +10,16 @@ import { statement } from './content';
  * motion gets the sentence at full strength and no pin.
  */
 export function Statement() {
+  const { statement } = useOsContent();
   const reduceMotion = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start 70%', 'end end'] });
-  const words = statement.split(' ');
+  const words = statement.title.split(' ');
 
   if (reduceMotion) {
     return (
       <section className="mx-auto max-w-5xl px-6 py-24 text-center md:py-30">
-        <p className="text-foreground text-3xl font-normal tracking-tight text-balance sm:text-5xl">{statement}</p>
+        <p className="text-foreground text-3xl font-normal tracking-tight text-balance sm:text-5xl">{statement.title}</p>
       </section>
     );
   }
