@@ -1,21 +1,21 @@
 {
-  "source_hash": "fe66fb5fa8d737264748458229fef9253160c97e1d942b8df75da486747a68d2",
+  "source_hash": "d9062bb3027e4c1fb8a841ef82ae6779a5c7b9a020ddf126fe60b1d9decfedc5",
   "diff_files": [
     "apps/web/src/features/workspace/new/new-workspace-form.test.ts",
     "apps/web/src/features/workspace/new/new-workspace-page.test.ts",
     "apps/web/src/features/workspace/new/new-workspace-page.tsx",
     "apps/web/src/features/workspace/new/workspace-name.test.ts",
     "apps/web/src/features/workspace/new/workspace-name.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts"
+    "apps/web/src/lib/menu-registry.flags.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "da990d2d9053473ee1a879fe67e6e2524822bd2a1d37ea63964e46802ecb103b",
-  "head": "6427b5a9909c3f08d3ebc0a869dbbde2fa1a8733",
+  "diff_hash": "c22a5467daf170a66633912d3d4c8c89108f586f23028eee71d15ccc3652a73c",
+  "head": "734bcb4c3ad48c036e003f4227851e5141ef1dff",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:54:57.877Z"
+  "at": "2026-10-04T00:48:59.343Z"
 }
