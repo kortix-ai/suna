@@ -1494,19 +1494,13 @@ async function resolveSecretReader(
 }
 
 /**
- * Admin list — sharing + credential mode + whether a credential is set.
- *
- * `actingUserId` answers it for THIS caller: a connector with no project-wide
- * shared credential but a credentialed account owned by the caller is
- * connected for them (connection-access.ts — reachability is per-row, not
- * per-connector). Omitted only by callers with no human principal (there is
- * nobody whose own account could make the difference); the project-wide
- * checks below still apply either way.
- */
-/**
- * The built-in computer connector (the one `ensureProjectComputer` picks) is
- * always shown. Any other computer connector (a legacy per-machine profile)
- * that holds no machine is hidden: it has nothing to manage.
+ * A computer connector with no machine — no `connector_connections` row bound
+ * to a tunnel — has nothing to manage and no call it could answer, so it is
+ * not a connected connector and stays out of the admin list (KRTX-1492: a
+ * fresh project's Connected tab listed the machineless built-in `computer`
+ * connector as connected while its own dialog said "No account yet"). The
+ * catalogue's native Computers card carries the Connect CTA instead, and the
+ * row reappears the moment a machine is paired.
  */
 async function hideMachinelessComputers<
   T extends { connectorId: string; providerType: string; slug: string; createdAt: Date },
@@ -1515,9 +1509,6 @@ async function hideMachinelessComputers<
 ): Promise<T[]> {
   const computers = rows.filter((row) => row.providerType === 'computer');
   if (computers.length === 0) return rows;
-  const builtIn =
-    computers.find((row) => row.slug === COMPUTER_SLUG) ??
-    [...computers].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0]!;
   const computerIds = computers.map((row) => row.connectorId);
   const withMachine = new Set(
     (
@@ -1533,10 +1524,20 @@ async function hideMachinelessComputers<
     ).map((row) => row.connectorId),
   );
   return rows.filter(
-    (row) => row.providerType !== 'computer' || row === builtIn || withMachine.has(row.connectorId),
+    (row) => row.providerType !== 'computer' || withMachine.has(row.connectorId),
   );
 }
 
+/**
+ * Admin list — sharing + credential mode + whether a credential is set.
+ *
+ * `actingUserId` answers it for THIS caller: a connector with no project-wide
+ * shared credential but a credentialed account owned by the caller is
+ * connected for them (connection-access.ts — reachability is per-row, not
+ * per-connector). Omitted only by callers with no human principal (there is
+ * nobody whose own account could make the difference); the project-wide
+ * checks below still apply either way.
+ */
 async function listConnectors(
   projectId: string,
   actingUserId?: string | null,
