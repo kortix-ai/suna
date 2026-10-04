@@ -1,0 +1,16 @@
+{
+  "source_hash": "9622df9ab87e7fce9d005808a7c9b7d3e841ee486e65e1dde02e4c62b2ee8bd6",
+  "diff_files": [
+    "packages/db/migrations/20261004061020065_referrals_single_select_policy.sql",
+    "packages/db/scripts/referrals-single-select-policy.integration.test.ts"
+  ],
+  "diff_hash": "14d1ab56c1374e2c2e095fc2ea39dcd29d21712f3f68c4b8108669de8f893ae8",
+  "head": "b8f259fe510f13a404d71d6cdd55d59e9ae3e10a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:08:18.234Z"
+}
