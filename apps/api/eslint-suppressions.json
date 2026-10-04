@@ -1492,7 +1492,7 @@
   },
   "src/projects/lib/sandbox-session-push.ts": {
     "no-console": {
-      "count": 4
+      "count": 2
     }
   },
   "src/projects/lib/session-control-reconciler.ts": {
@@ -1571,11 +1571,6 @@
   "src/projects/lib/trigger-connector-sweep.ts": {
     "no-console": {
       "count": 3
-    }
-  },
-  "src/projects/lib/trigger-fire.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/projects/lib/trigger-manifest.ts": {
