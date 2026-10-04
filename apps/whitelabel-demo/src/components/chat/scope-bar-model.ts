@@ -12,14 +12,8 @@
  * bind.
  */
 
-import {
-  type ConnectorBindingNotice,
-  connectorBindingNotice,
-} from '@/lib/connector-binding';
-import {
-  collidingIdentifiers,
-  normalizeSecretKey,
-} from '@/lib/secret-collisions';
+import { type ConnectorBindingNotice, connectorBindingNotice } from '@/lib/connector-binding';
+import { collidingIdentifiers, normalizeSecretKey } from '@/lib/secret-collisions';
 import { selectAllowlistableSecrets } from '@/lib/secret-scope';
 import { type ScopeRowKey, isFixedAtStart, scopeBadge } from '@/lib/session-scope';
 import type {
@@ -119,14 +113,14 @@ export function scopeBarSecrets(input: {
   // allowlist against those alone, so listing a channel-install row as
   // "excluded" would invent a decision nobody could have made.
   const rows: ScopeBarSecretRow[] = selectAllowlistableSecrets(input.secrets).map((secret) => ({
-      identifier: secret.identifier,
-      name: secret.name,
-      membership: narrowed
-        ? allowed.has(secret.identifier)
-          ? 'allowed'
-          : 'excluded'
-        : 'agent_grant',
-    }));
+    identifier: secret.identifier,
+    name: secret.name,
+    membership: narrowed
+      ? allowed.has(secret.identifier)
+        ? 'allowed'
+        : 'excluded'
+      : 'agent_grant',
+  }));
 
   // Allowlistable rows only. Keying this on EVERY row made an allowlisted-but-
   // unallowlistable identifier count as "known", so it disappeared from the
@@ -136,9 +130,7 @@ export function scopeBarSecrets(input: {
   const known = new Set(
     selectAllowlistableSecrets(input.secrets).map((secret) => secret.identifier),
   );
-  const missing = (allowlist ?? []).filter(
-    (identifier) => !known.has(identifier),
-  );
+  const missing = (allowlist ?? []).filter((identifier) => !known.has(identifier));
 
   if (!narrowed) {
     return {
@@ -218,9 +210,7 @@ export function scopeDraftIssues(
       });
       continue;
     }
-    const conflicts = collidingIdentifiers(items, identifier).filter((other) =>
-      drafted.has(other),
-    );
+    const conflicts = collidingIdentifiers(items, identifier).filter((other) => drafted.has(other));
     if (conflicts.length > 0) {
       issues.push({
         identifier,
@@ -246,16 +236,13 @@ export function classifyTypedIdentifier(
 ): TypedIdentifier {
   const identifier = text.trim();
   if (identifier.length === 0) return { kind: 'empty' };
-  if (input.draft.includes(identifier))
-    return { kind: 'already_listed', identifier };
+  if (input.draft.includes(identifier)) return { kind: 'already_listed', identifier };
   // Same filter as scopeDraftIssues: "exists" here must mean "can be allowed",
   // otherwise the field tells the user an identifier is fine and create 404s.
   const exists = selectAllowlistableSecrets(input.secrets).some(
     (secret) => secret.identifier === identifier,
   );
-  return exists
-    ? { kind: 'existing', identifier }
-    : { kind: 'unknown', identifier };
+  return exists ? { kind: 'existing', identifier } : { kind: 'unknown', identifier };
 }
 
 // ── Connections ─────────────────────────────────────────────────────────────
@@ -292,15 +279,11 @@ export function scopeBarConnectors(input: {
 }): ScopeBarConnectors {
   const choices = input.choices ?? [];
   const aliases = [
-    ...new Set([
-      ...choices.map((choice) => choice.alias),
-      ...Object.keys(input.boundConnections),
-    ]),
+    ...new Set([...choices.map((choice) => choice.alias), ...Object.keys(input.boundConnections)]),
   ].sort((a, b) => a.localeCompare(b));
 
   const rows: ScopeBarConnector[] = aliases.map((alias) => {
-    const choice =
-      choices.find((candidate) => candidate.alias === alias) ?? null;
+    const choice = choices.find((candidate) => candidate.alias === alias) ?? null;
     const connectionId = input.boundConnections[alias] ?? null;
     const connection = choice?.connections.find(
       (candidate) => candidate.connectionId === connectionId,
@@ -315,20 +298,12 @@ export function scopeBarConnectors(input: {
       // A synthesized row (bound, but no longer in the choices) has no reason,
       // and `connectorBindingNotice` would fall through to "private only" —
       // naming a cause nobody established.
-      notice:
-        choice && choice.unavailable !== null
-          ? connectorBindingNotice(choice)
-          : null,
+      notice: choice && choice.unavailable !== null ? connectorBindingNotice(choice) : null,
     };
   });
 
   const bound = rows.filter((row) => row.bound !== null).length;
-  const summary =
-    rows.length === 0
-      ? 'None'
-      : bound === 0
-        ? 'Project defaults'
-        : `${bound} bound`;
+  const summary = rows.length === 0 ? 'None' : bound === 0 ? 'Project defaults' : `${bound} bound`;
   return { rows, summary };
 }
 

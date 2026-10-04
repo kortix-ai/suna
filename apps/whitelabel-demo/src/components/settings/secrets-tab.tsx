@@ -42,9 +42,9 @@ import { toast } from 'sonner';
 import { GitCredentialCard } from './secrets/git-credential-card';
 import { SecretUpsertForm } from './secrets/secret-upsert-form';
 import {
+  ALLOWLIST_IS_CREATE_ONLY,
   Notice,
   ROTATION_REACHES_RUNNING_SESSIONS_LATE,
-  ALLOWLIST_IS_CREATE_ONLY,
 } from './secrets/shared';
 
 export function SecretsTab({ projectId }: { projectId: string }) {

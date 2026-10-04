@@ -192,12 +192,7 @@ export function TriggerRow({
         >
           <Play className="size-4" />
         </Button>
-        <EditTriggerDialog
-          projectId={projectId}
-          slug={slug}
-          trigger={trigger}
-          onSaved={refresh}
-        />
+        <EditTriggerDialog projectId={projectId} slug={slug} trigger={trigger} onSaved={refresh} />
         <Button
           variant="ghost"
           size="icon"

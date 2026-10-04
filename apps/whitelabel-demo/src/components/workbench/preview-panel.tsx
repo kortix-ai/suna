@@ -12,7 +12,6 @@ import Loading from '@/components/ui/loading';
  */
 
 import { useWrapperMode } from '@/app/providers';
-import { SessionSharing, PublicSharesList } from '@/components/workbench/session-sharing';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,18 +25,13 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PublicSharesList, SessionSharing } from '@/components/workbench/session-sharing';
 import { getApiKey, kortix } from '@/lib/kortix';
-import { authHeaders, getSessionToken } from '@/lib/session';
 import { qk } from '@/lib/query-keys';
+import { authHeaders, getSessionToken } from '@/lib/session';
 import type { SessionPreviewCandidate } from '@kortix/sdk';
-import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query';
-import {
-  ExternalLink,
-  Globe,
-  Link2,
-  MonitorPlay,
-  RefreshCw,
-} from 'lucide-react';
+import { type UseQueryResult, useMutation, useQuery } from '@tanstack/react-query';
+import { ExternalLink, Globe, Link2, MonitorPlay, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -338,8 +332,8 @@ function PreviewSurface({
           <Globe className="size-8 text-muted-foreground/50" />
           <p className="text-sm font-medium text-foreground">No preview yet</p>
           <p className="max-w-xs text-xs text-muted-foreground">
-            The agent hasn't exposed a port. Once it starts a dev server the preview will
-            appear here automatically.
+            The agent hasn't exposed a port. Once it starts a dev server the preview will appear
+            here automatically.
           </p>
         </div>
       )}

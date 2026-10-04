@@ -8,24 +8,23 @@
 
 import { ConnectorBindingFields } from '@/components/connector-bindings';
 
-import { CallSnippet } from '@/components/dev/call-snippet';
-import { AlertTriangle } from 'lucide-react';
-import { Plug } from 'lucide-react';
 import {
+  ApplyDraft,
   ScopeChip,
   ScopeEditor,
-  ApplyDraft,
   StartWithScope,
 } from '@/components/chat/scope-bar/chip';
-import { hasScopeDraft, scopeControl, type ScopeBarConnectors } from '../scope-bar-model';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import type { ConnectorBindingChoice } from '@/server/bindable-connections';
+import { AlertTriangle } from 'lucide-react';
+import { Plug } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { type ScopeBarConnectors, hasScopeDraft, scopeControl } from '../scope-bar-model';
 
 /** The rows this session is bound to, with each unavailable alias's reason. */
 function ConnectionRows({ connections }: { connections: ScopeBarConnectors }) {
   return (
     <div className="mt-3 space-y-2">
-
       {connections.rows.length === 0 && (
         <p className="text-xs text-muted-foreground">
           This project has no connectors connected yet.
@@ -34,12 +33,8 @@ function ConnectionRows({ connections }: { connections: ScopeBarConnectors }) {
       {connections.rows.map((row) => (
         <div key={row.alias} className="space-y-0.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate font-mono text-xs text-muted-foreground">
-              {row.alias}
-            </span>
-            <span className="truncate text-xs">
-              {row.bound ?? 'Project default'}
-            </span>
+            <span className="truncate font-mono text-xs text-muted-foreground">{row.alias}</span>
+            <span className="truncate text-xs">{row.bound ?? 'Project default'}</span>
           </div>
           {/* The remedy is always a teammate. A wrapper acts under one
               credential for many end-users, so it has no upstream identity
@@ -80,7 +75,10 @@ export function ConnectionsScopeChip({
   draft: Record<string, string> | undefined;
   nextBindings: Record<string, string>;
   setDraftBindings: (bindings: Record<string, string> | undefined) => void;
-  applyScope: { isPending: boolean; mutate: (patch: { bindings?: Record<string, string> }) => void };
+  applyScope: {
+    isPending: boolean;
+    mutate: (patch: { bindings?: Record<string, string> }) => void;
+  };
   startAction: ReactNode;
 }) {
   return (

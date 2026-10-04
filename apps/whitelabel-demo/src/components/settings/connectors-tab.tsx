@@ -58,7 +58,6 @@ const CONNECTOR_PROVIDERS: ConnectorProvider[] = [
   'computer',
 ];
 
-
 function AddConnectorForm({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const refresh = () => qc.invalidateQueries({ queryKey: qk.connectors(projectId) });

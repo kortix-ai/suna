@@ -33,8 +33,7 @@ export function serverErrorBody(err: unknown): ServerErrorBody | null {
   const code = candidate?.code ?? e.code;
   // ApiError.message is always coerced to a string and holds the server's
   // `error`/`detail` text, so it is a usable fallback when the body is absent.
-  const error =
-    candidate?.error ?? (typeof e.message === 'string' ? e.message : undefined);
+  const error = candidate?.error ?? (typeof e.message === 'string' ? e.message : undefined);
 
   if (code === undefined && error === undefined && !candidate) return null;
   return { code, error, connector: candidate?.connector, raw: candidate };

@@ -1,13 +1,10 @@
-import type { SessionCostSummary } from '@kortix/sdk';
-import { createScopedKortix } from '@kortix/sdk/server';
+import type { SessionCostProject, SessionCostsResponse } from '@/app/session-costs/contract';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { upstreamBase } from '@/server/upstream-path';
 import { isValidProjectId, listOwnedProjects } from '@/server/users';
-import type {
-  SessionCostsResponse,
-  SessionCostProject,
-} from '@/app/session-costs/contract';
+import type { SessionCostSummary } from '@kortix/sdk';
+import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -49,19 +46,14 @@ async function listProjectSessionCosts(
 export async function GET(req: NextRequest) {
   const apiKey = process.env.KORTIX_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { error: 'Wrapper mode is not enabled on this server.' },
-      { status: 500 },
-    );
+    return Response.json({ error: 'Wrapper mode is not enabled on this server.' }, { status: 500 });
   }
 
   const session = getRequestSession(req);
-  if (!session)
-    return Response.json({ error: 'Not authenticated' }, { status: 401 });
+  if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 });
 
   const limited = consumeRateLimit(session.userId);
-  if (!limited.ok)
-    return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
+  if (!limited.ok) return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
 
   const markup = markupMultiplier();
   const projectIds = listOwnedProjects(session.userId).filter(isValidProjectId);

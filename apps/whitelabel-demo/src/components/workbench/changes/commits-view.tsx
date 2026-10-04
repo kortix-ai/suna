@@ -236,9 +236,7 @@ function CommitList({
             <Skeleton className="h-12 w-full" />
           </>
         ) : items.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-            No commits yet.
-          </div>
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground">No commits yet.</div>
         ) : (
           items.map((c) => (
             <Button

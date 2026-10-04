@@ -42,7 +42,7 @@ export type TokenKind =
   | 'method'
   | 'path';
 
-export interface Token {
+interface Token {
   text: string;
   kind: TokenKind;
 }
@@ -135,7 +135,9 @@ function isDigit(char: string): boolean {
 }
 
 function isIdentifierStart(char: string): boolean {
-  return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_' || char === '$';
+  return (
+    (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_' || char === '$'
+  );
 }
 
 function isIdentifierPart(char: string): boolean {

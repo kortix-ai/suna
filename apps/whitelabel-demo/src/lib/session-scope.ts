@@ -1,9 +1,9 @@
-import { MID_SESSION_CAPABILITIES, type MidSessionCapability } from './mid-session-change';
 import type {
   SessionConnectorBindings,
   SessionScope,
   SessionScopeInput as SessionScopeReplacement,
 } from '@kortix/sdk';
+import { MID_SESSION_CAPABILITIES, type MidSessionCapability } from './mid-session-change';
 
 /**
  * What THIS session is actually scoped to, and what can still move.
@@ -50,10 +50,7 @@ export function readScopeBindingIds(
   bindings: SessionConnectorBindings | null | undefined,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(bindings ?? {}).map(([alias, binding]) => [
-      alias,
-      binding.connection_id,
-    ]),
+    Object.entries(bindings ?? {}).map(([alias, binding]) => [alias, binding.connection_id]),
   );
 }
 
@@ -64,9 +61,7 @@ export function buildCompleteSessionScopeReplacement(
     bindings?: Record<string, string>;
   },
 ): SessionScopeReplacement {
-  const secrets = Object.hasOwn(changes, 'secrets')
-    ? changes.secrets
-    : current.secrets_allowlist;
+  const secrets = Object.hasOwn(changes, 'secrets') ? changes.secrets : current.secrets_allowlist;
   const bindings = Object.hasOwn(changes, 'bindings')
     ? (changes.bindings ?? {})
     : readScopeBindingIds(current.connector_bindings);
@@ -111,9 +106,7 @@ export function scopeBadge(key: keyof typeof MID_SESSION_CAPABILITIES): string {
   return CAPABILITY_BADGE[MID_SESSION_CAPABILITIES[key]];
 }
 
-export function sessionScopeRows(
-  input: SessionScopeRowsInput,
-): SessionScopeRow[] {
+export function sessionScopeRows(input: SessionScopeRowsInput): SessionScopeRow[] {
   const agent = input.agentName ?? null;
   const agentLabel = agent ?? 'The project default agent';
   const bound = Object.entries(input.boundConnections);
@@ -168,9 +161,7 @@ export function sessionScopeRows(
 
 /** The scope rows the mid-session capability map says are frozen. Keeps the
  *  badges from drifting away from the contract they describe. */
-export function isFixedAtStart(
-  key: keyof typeof MID_SESSION_CAPABILITIES,
-): boolean {
+export function isFixedAtStart(key: keyof typeof MID_SESSION_CAPABILITIES): boolean {
   // Derived from the capability table, with no hardcoded exception. `connections`
   // used to be forced true here even though the table had no entry for it — so
   // the badge and the behaviour could disagree, and did the moment the /scope

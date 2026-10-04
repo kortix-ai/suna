@@ -9,31 +9,31 @@
 
 import { CallSnippet } from '@/components/dev/call-snippet';
 
+import {
+  ApplyDraft,
+  ScopeChip,
+  ScopeEditor,
+  StartWithScope,
+} from '@/components/chat/scope-bar/chip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  ScopeChip,
-  ScopeEditor,
-  ApplyDraft,
-  StartWithScope,
-} from '@/components/chat/scope-bar/chip';
+import type { ProjectSecret, SessionScope } from '@kortix/sdk';
 import { Lock } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
   MISSING_SECRET_NOTE,
   NEW_IDENTIFIER_HINT,
   SECRET_MEMBERSHIP_LABEL,
-  classifyTypedIdentifier,
-  hasScopeDraft,
-  scopeControl,
   type ScopeBarSecrets,
   type ScopeDraftIssue,
   type TypedIdentifier,
+  classifyTypedIdentifier,
+  hasScopeDraft,
+  scopeControl,
 } from '../scope-bar-model';
-import type { ProjectSecret, SessionScope } from '@kortix/sdk';
 
 interface SecretsChipProps {
   projectId: string;
@@ -122,8 +122,7 @@ function SecretsChipRows({
           would be a claim about secret access that nothing established. */}
       {secretsError && (
         <p className="text-xs text-muted-foreground">
-          This project's secrets could not be read just now, so only
-          the allowlist itself is shown:{' '}
+          This project's secrets could not be read just now, so only the allowlist itself is shown:{' '}
           {live.narrowed
             ? authoritativeScope.secrets_allowlist?.join(', ') || 'nothing'
             : 'it was never narrowed'}
@@ -136,28 +135,17 @@ function SecretsChipRows({
         </p>
       )}
       {live.rows.map((row) => (
-        <div
-          key={row.identifier}
-          className="flex items-start justify-between gap-2"
-        >
+        <div key={row.identifier} className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate font-mono text-xs">
-              {row.identifier}
-            </div>
+            <div className="truncate font-mono text-xs">{row.identifier}</div>
             {/* The KEY is shown next to every identifier, always: the
                 allowlist addresses the identifier, the sandbox sees the
                 KEY, and they are routinely different names. */}
-            <div className="truncate font-mono text-[11px] text-muted-foreground">
-              {row.name}
-            </div>
+            <div className="truncate font-mono text-[11px] text-muted-foreground">{row.name}</div>
           </div>
           <Badge
             variant={row.membership === 'allowed' ? 'outline' : 'ghost'}
-            className={
-              row.membership === 'excluded'
-                ? 'text-muted-foreground'
-                : undefined
-            }
+            className={row.membership === 'excluded' ? 'text-muted-foreground' : undefined}
           >
             {SECRET_MEMBERSHIP_LABEL[row.membership]}
           </Badge>
@@ -208,9 +196,7 @@ function SecretsChipEditor({
   const toggleSecret = (identifier: string, on: boolean) => {
     const base = nextSecrets ?? [];
     setDraftSecrets(
-      on
-        ? [...new Set([...base, identifier])]
-        : base.filter((id) => id !== identifier),
+      on ? [...new Set([...base, identifier])] : base.filter((id) => id !== identifier),
     );
   };
   const typedState = classifyTypedIdentifier(typed, { secrets: items, draft: nextSecrets ?? [] });
@@ -234,23 +220,16 @@ function SecretsChipEditor({
           <Switch
             id="scope-bar-narrow"
             checked={nextSecrets !== null}
-            onCheckedChange={(on) =>
-              setDraftSecrets(on ? (nextSecrets ?? []) : null)
-            }
+            onCheckedChange={(on) => setDraftSecrets(on ? (nextSecrets ?? []) : null)}
           />
         </div>
         {nextSecrets === null ? (
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Off, this session gets its agent's full secret grant — no
-            narrowing at all.
+            Off, this session gets its agent's full secret grant — no narrowing at all.
           </p>
         ) : (
           <>
-            <SecretSwitchRows
-              live={live}
-              nextSecrets={nextSecrets}
-              toggleSecret={toggleSecret}
-            />
+            <SecretSwitchRows live={live} nextSecrets={nextSecrets} toggleSecret={toggleSecret} />
             <AddIdentifierField
               typed={typed}
               setTyped={setTyped}
@@ -321,19 +300,14 @@ function SecretSwitchRows({
   return (
     <div className="space-y-2">
       {live.rows.map((row) => (
-        <div
-          key={row.identifier}
-          className="flex items-center justify-between gap-3"
-        >
+        <div key={row.identifier} className="flex items-center justify-between gap-3">
           <Label
             htmlFor={`scope-bar-secret-${row.identifier}`}
             className="min-w-0 font-mono text-xs font-normal"
           >
             <span className="truncate">{row.identifier}</span>
             {row.name !== row.identifier && (
-              <span className="truncate text-muted-foreground">
-                → {row.name}
-              </span>
+              <span className="truncate text-muted-foreground">→ {row.name}</span>
             )}
           </Label>
           <Switch
@@ -346,13 +320,8 @@ function SecretSwitchRows({
       {nextSecrets
         .filter((id) => !live.rows.some((row) => row.identifier === id))
         .map((id) => (
-          <div
-            key={id}
-            className="flex items-center justify-between gap-3"
-          >
-            <span className="min-w-0 truncate font-mono text-xs">
-              {id}
-            </span>
+          <div key={id} className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate font-mono text-xs">{id}</span>
             <Button
               variant="ghost"
               size="sm"
@@ -383,10 +352,7 @@ function AddIdentifierField({
 }) {
   return (
     <div className="space-y-1.5 border-t border-border pt-2">
-      <Label
-        htmlFor="scope-bar-new-identifier"
-        className="text-xs font-normal"
-      >
+      <Label htmlFor="scope-bar-new-identifier" className="text-xs font-normal">
         Allow another identifier
       </Label>
       <div className="flex items-center gap-1.5">
@@ -401,15 +367,9 @@ function AddIdentifierField({
           size="sm"
           variant="secondary"
           className="h-8"
-          disabled={
-            typedState.kind === 'empty' ||
-            typedState.kind === 'already_listed'
-          }
+          disabled={typedState.kind === 'empty' || typedState.kind === 'already_listed'}
           onClick={() => {
-            if (
-              typedState.kind === 'empty' ||
-              typedState.kind === 'already_listed'
-            ) {
+            if (typedState.kind === 'empty' || typedState.kind === 'already_listed') {
               return;
             }
             onAdd(typedState.identifier);
@@ -419,16 +379,12 @@ function AddIdentifierField({
         </Button>
       </div>
       {typedState.kind === 'already_listed' && (
-        <p className="text-[11px] text-muted-foreground">
-          Already on the list.
-        </p>
+        <p className="text-[11px] text-muted-foreground">Already on the list.</p>
       )}
       {/* Said where they type it, not after the create fails: this app can
           list a project's secrets but cannot mint one, and an allowlist naming
           an identifier that does not exist is refused at start. */}
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        {NEW_IDENTIFIER_HINT}
-      </p>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">{NEW_IDENTIFIER_HINT}</p>
     </div>
   );
 }

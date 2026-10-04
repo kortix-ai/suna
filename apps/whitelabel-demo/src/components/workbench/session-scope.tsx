@@ -11,9 +11,9 @@
  * why THIS session cannot move rather than restating the rule in the abstract.
  */
 
-import { CallSnippet } from '@/components/dev/call-snippet';
-import { useConnectorBindingChoices } from '@/components/connector-bindings';
 import { scopeBarConnectors } from '@/components/chat/scope-bar-model';
+import { useConnectorBindingChoices } from '@/components/connector-bindings';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ModelSwitcher } from '@/components/workbench/model-switcher';
@@ -21,10 +21,10 @@ import type { CallSnippetId } from '@/lib/call-snippets';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import {
+  type ScopeRowKey,
   readScopeBindingIds,
   sessionScopeIsReadable,
   sessionScopeRows,
-  type ScopeRowKey,
 } from '@/lib/session-scope';
 import { useQuery } from '@tanstack/react-query';
 import { Lock, Plug, RefreshCw, Repeat } from 'lucide-react';
@@ -76,13 +76,9 @@ function ScopeRowCard({
           </div>
         )}
         {row.value !== null && (
-          <div className="mt-0.5 break-words font-mono text-xs">
-            {row.value}
-          </div>
+          <div className="mt-0.5 break-words font-mono text-xs">{row.value}</div>
         )}
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {row.detail}
-        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{row.detail}</p>
         {ROW_CALL[row.key] && (
           <div className="-ml-2 mt-1">
             <CallSnippet
@@ -106,19 +102,15 @@ function ScopeRescopeNote({
 }) {
   return (
     <>
-  <div className="rounded-md border border-dashed border-border px-3 py-2.5">
-    <p className="text-xs leading-relaxed text-muted-foreground">
-      The secret allowlist and connections above come from the
-      session scope endpoint. Saving a change sends one complete
-      replacement.
-    </p>
-    <div className="-ml-2 mt-1">
-      <CallSnippet
-        id="session.rescope"
-        context={{ projectId, sessionId }}
-      />
-    </div>
-  </div>
+      <div className="rounded-md border border-dashed border-border px-3 py-2.5">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          The secret allowlist and connections above come from the session scope endpoint. Saving a
+          change sends one complete replacement.
+        </p>
+        <div className="-ml-2 mt-1">
+          <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
+        </div>
+      </div>
     </>
   );
 }
@@ -132,8 +124,7 @@ export function SessionScope({
 }) {
   const session = useQuery({
     queryKey: qk.session(projectId, sessionId),
-    queryFn: () =>
-      kortix.session(projectId, sessionId).get({ showErrors: false }),
+    queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const scope = useQuery({
@@ -167,8 +158,7 @@ export function SessionScope({
   if (!sessionScopeIsReadable(session.data) || !scope.data) {
     return (
       <p className="rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
-        This session&apos;s scope could not be read just now. Reopen the session
-        to try again.
+        This session&apos;s scope could not be read just now. Reopen the session to try again.
       </p>
     );
   }
@@ -184,9 +174,7 @@ export function SessionScope({
     agentName: session.data.agent_name,
     secretsAllowlist: scope.data.secrets_allowlist,
     boundConnections: Object.fromEntries(
-      connectionRows.flatMap((row) =>
-        row.bound ? [[row.alias, row.bound]] : [],
-      ),
+      connectionRows.flatMap((row) => (row.bound ? [[row.alias, row.bound]] : [])),
     ),
   });
 

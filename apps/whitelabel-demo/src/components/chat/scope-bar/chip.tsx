@@ -10,11 +10,7 @@ import Loading from '@/components/ui/loading';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Popover,
   PopoverContent,
@@ -24,7 +20,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { ChevronDown, Plus } from 'lucide-react';
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { START_NEW_SESSION_ACTION } from '../scope-bar-model';
 
 /** One compact chip. Opens a popover; the chip itself never mutates anything. */
@@ -71,9 +67,7 @@ export function ScopeChip({
               {badge}
             </Badge>
           </div>
-          <PopoverDescription className="text-xs leading-relaxed">
-            {note}
-          </PopoverDescription>
+          <PopoverDescription className="text-xs leading-relaxed">{note}</PopoverDescription>
         </PopoverHeader>
         {children}
       </PopoverContent>
@@ -103,9 +97,7 @@ export function ScopeEditor({
           <ChevronDown className="size-3.5" />
         </Button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 space-y-2.5">
-        {children}
-      </CollapsibleContent>
+      <CollapsibleContent className="mt-2 space-y-2.5">{children}</CollapsibleContent>
     </Collapsible>
   );
 }
@@ -131,12 +123,7 @@ export function ApplyDraft({
   if (!show) return null;
   return (
     <div className="mt-2 space-y-1.5 border-t border-border pt-2">
-      <Button
-        size="sm"
-        className="w-full"
-        disabled={pending || disabled}
-        onClick={onApply}
-      >
+      <Button size="sm" className="w-full" disabled={pending || disabled} onClick={onApply}>
         {pending ? 'Applying…' : 'Apply to this session'}
       </Button>
       <p className="text-[11px] leading-relaxed text-muted-foreground">{caveat}</p>
@@ -171,11 +158,7 @@ export function StartWithScope({
         disabled={pending || issues.length > 0}
         onClick={onStart}
       >
-        {pending ? (
-          <Loading className="size-3.5" />
-        ) : (
-          <Plus className="size-3.5" />
-        )}
+        {pending ? <Loading className="size-3.5" /> : <Plus className="size-3.5" />}
         {START_NEW_SESSION_ACTION}
       </Button>
     </div>

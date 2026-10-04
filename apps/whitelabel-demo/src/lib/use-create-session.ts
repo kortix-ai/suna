@@ -15,10 +15,7 @@
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { sessionCreateFailure } from '@/lib/session-create-failure';
-import {
-  buildSessionCreateInput,
-  type SessionOverrides,
-} from '@/lib/session-overrides';
+import { type SessionOverrides, buildSessionCreateInput } from '@/lib/session-overrides';
 import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -51,9 +48,7 @@ export function useCreateSession<TVars>(
       const { overrides, name, sandboxSlug } = options.input(vars);
       await kortix
         .project(projectId)
-        .sessions.create(
-          buildSessionCreateInput(overrides, { sessionId, name, sandboxSlug }),
-        );
+        .sessions.create(buildSessionCreateInput(overrides, { sessionId, name, sandboxSlug }));
       return sessionId;
     },
     onSuccess: (sessionId, vars) => {

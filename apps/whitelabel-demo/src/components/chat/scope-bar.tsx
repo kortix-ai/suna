@@ -17,25 +17,25 @@
  * `connections-scope-chip.tsx`, the shared primitives in `chip.tsx`.
  */
 
-import { Cpu, Bot } from 'lucide-react';
+import { Bot, Cpu } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { useConnectorBindingChoices } from '@/components/connector-bindings';
 import { ScopeChip, StartWithScope } from '@/components/chat/scope-bar/chip';
 import { ConnectionsScopeChip } from '@/components/chat/scope-bar/connections-scope-chip';
 import { SecretsScopeChip } from '@/components/chat/scope-bar/secrets-scope-chip';
+import { useConnectorBindingChoices } from '@/components/connector-bindings';
 import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { useSessionModel } from '@/lib/session-model';
-import { useCreateSession } from '@/lib/use-create-session';
 import {
   buildCompleteSessionScopeReplacement,
   readScopeBindingIds,
   sessionScopeIsReadable,
 } from '@/lib/session-scope';
+import { useCreateSession } from '@/lib/use-create-session';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   scopeBarConnectors,
@@ -56,8 +56,7 @@ export function ScopeBar({
 
   const session = useQuery({
     queryKey: qk.session(projectId, sessionId),
-    queryFn: () =>
-      kortix.session(projectId, sessionId).get({ showErrors: false }),
+    queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const secrets = useQuery({
@@ -89,9 +88,7 @@ export function ScopeBar({
     secrets: items,
     allowlist: authoritativeScope?.secrets_allowlist,
   });
-  const liveBindings = readScopeBindingIds(
-    authoritativeScope?.connector_bindings,
-  );
+  const liveBindings = readScopeBindingIds(authoritativeScope?.connector_bindings);
   const connections = scopeBarConnectors({
     choices: connectors.data?.connectors,
     boundConnections: liveBindings,
@@ -100,17 +97,11 @@ export function ScopeBar({
   // `undefined` = untouched, so the draft simply IS this session's scope until
   // someone changes something. Deriving it instead of copying it in an effect
   // keeps it correct while the session query is still resolving.
-  const [draftSecrets, setDraftSecrets] = useState<string[] | null | undefined>(
-    undefined,
-  );
-  const [draftBindings, setDraftBindings] = useState<
-    Record<string, string> | undefined
-  >(undefined);
+  const [draftSecrets, setDraftSecrets] = useState<string[] | null | undefined>(undefined);
+  const [draftBindings, setDraftBindings] = useState<Record<string, string> | undefined>(undefined);
 
   const nextSecrets =
-    draftSecrets === undefined
-      ? (authoritativeScope?.secrets_allowlist ?? null)
-      : draftSecrets;
+    draftSecrets === undefined ? (authoritativeScope?.secrets_allowlist ?? null) : draftSecrets;
   const nextBindings = draftBindings ?? liveBindings;
   const issues = scopeDraftIssues(nextSecrets ?? [], items);
 
@@ -142,9 +133,7 @@ export function ScopeBar({
       }
       return kortix
         .session(projectId, sessionId)
-        .rescope(
-          buildCompleteSessionScopeReplacement(authoritativeScope, patch),
-        );
+        .rescope(buildCompleteSessionScopeReplacement(authoritativeScope, patch));
     },
     onSuccess: (body) => {
       // Report what actually happened, not a flat "saved". A dropped secret stops
@@ -159,9 +148,7 @@ export function ScopeBar({
           duration: 8000,
         });
       } else {
-        toast.success(
-          body.detail ?? 'Scope updated — applies from the next prompt.',
-        );
+        toast.success(body.detail ?? 'Scope updated — applies from the next prompt.');
       }
       qc.setQueryData(qk.sessionScope(projectId, sessionId), body);
       setDraftSecrets(undefined);
@@ -173,12 +160,7 @@ export function ScopeBar({
   // Every chip is a claim about what this session may reach, and a half-loaded
   // one reads as a narrower session than it is ("None" before the list arrives).
   // Hold the whole bar rather than animating through a wrong answer.
-  if (
-    session.isLoading ||
-    scope.isLoading ||
-    secrets.isLoading ||
-    connectors.isLoading
-  ) {
+  if (session.isLoading || scope.isLoading || secrets.isLoading || connectors.isLoading) {
     return <div className="mt-2 h-6" aria-hidden />;
   }
   if (!data || !authoritativeScope) {
@@ -202,6 +184,15 @@ export function ScopeBar({
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <ScopeChip
+        icon={<Bot className="size-3" />}
+        label="Agent"
+        value={data.agent_name ?? 'Project default'}
+        title="Agent"
+        badge={scopeControl('agent').badge}
+        note={scopeControl('agent').note}
+      />
+
       <SecretsScopeChip
         projectId={projectId}
         sessionId={sessionId}

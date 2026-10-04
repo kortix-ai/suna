@@ -17,8 +17,6 @@ import Loading from '@/components/ui/loading';
  * live under `files/`.
  */
 
-import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
-import { FileViewer } from '@/components/workbench/files/file-viewer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -27,6 +25,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FileViewer } from '@/components/workbench/files/file-viewer';
+import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
 import { kortix } from '@/lib/kortix';
 import { fmtDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -106,9 +106,15 @@ export function FilesPanel({ projectId }: { projectId: string }) {
       <div className="flex min-h-0 flex-1">
         {/* Left — search + list */}
         <FileListPane
-          projectId={projectId} query={query} onQueryChange={setQuery}
-          searching={searching} rows={rows} rowsLoading={rowsLoading}
-          rowsReady={rowsReady} selected={selected} onSelect={setSelected}
+          projectId={projectId}
+          query={query}
+          onQueryChange={setQuery}
+          searching={searching}
+          rows={rows}
+          rowsLoading={rowsLoading}
+          rowsReady={rowsReady}
+          selected={selected}
+          onSelect={setSelected}
         />
 
         {/* Right — content viewer */}
@@ -172,9 +178,7 @@ function FileListPane({
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-0.5 px-2 pb-2">
           {rowsLoading &&
-            Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-7 w-full" />
-            ))}
+            Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}
 
           {rowsReady && rows.length === 0 && (
             <div className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -218,10 +222,7 @@ function FileRows({
         return (
           <div
             key={`${path}-${i}`}
-            className={cn(
-              'group flex items-center gap-1 rounded-md',
-              active && 'bg-accent',
-            )}
+            className={cn('group flex items-center gap-1 rounded-md', active && 'bg-accent')}
           >
             <Button
               type="button"

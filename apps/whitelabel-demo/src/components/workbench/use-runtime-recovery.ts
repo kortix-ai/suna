@@ -14,8 +14,8 @@ import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 
 export function useRuntimeRecovery(session: UseSessionResult) {
   const qc = useQueryClient();

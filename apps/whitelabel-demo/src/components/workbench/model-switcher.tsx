@@ -10,8 +10,8 @@ import {
 import { classifyModelChange } from '@/lib/mid-session-change';
 import { qk } from '@/lib/query-keys';
 import { authHeaders } from '@/lib/session';
-import { sessionModelKey, useSessionModel } from '@/lib/session-model';
 import { getSessionToken } from '@/lib/session';
+import { sessionModelKey, useSessionModel } from '@/lib/session-model';
 import { useProjectModels } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Cpu } from 'lucide-react';

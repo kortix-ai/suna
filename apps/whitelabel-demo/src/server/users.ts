@@ -8,8 +8,8 @@
  * `json-store.ts`; this module is only the ownership logic.
  */
 
-import { WRAPPER_DATA_DIR, readJsonStore, writeJsonStore } from './json-store';
 import path from 'node:path';
+import { WRAPPER_DATA_DIR, readJsonStore, writeJsonStore } from './json-store';
 
 type UsersData = Record<string, string[]>;
 
@@ -27,8 +27,7 @@ function writeData(data: UsersData): void {
 // actually minted) and on READ (ids from this file end up inside upstream
 // request URLs — see /api/session-costs — so a hand-edited or corrupted store must
 // never be able to steer a request anywhere unexpected).
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A Kortix id is a UUID; project AND session ids are validated with this before either is interpolated into an upstream URL. */
 export function isValidProjectId(id: string): boolean {

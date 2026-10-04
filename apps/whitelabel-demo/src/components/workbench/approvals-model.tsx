@@ -69,9 +69,7 @@ function isPending(action: AuditAction): boolean {
   return action.status === 'pending_approval' && !action.resolved_at && !action.resolved_by;
 }
 
-export function sessionApprovalsView(
-  audit: SessionAudit | null | undefined,
-): SessionApprovalsView {
+export function sessionApprovalsView(audit: SessionAudit | null | undefined): SessionApprovalsView {
   const actions = audit?.actions ?? [];
   return {
     pending: actions.filter(isPending).map((a) => ({
@@ -95,11 +93,7 @@ export function sessionApprovalsView(
   };
 }
 
-type ApprovalFailureKind =
-  | 'requires_human'
-  | 'already_resolved'
-  | 'not_permitted'
-  | 'unknown';
+type ApprovalFailureKind = 'requires_human' | 'already_resolved' | 'not_permitted' | 'unknown';
 
 export interface ApprovalFailure {
   kind: ApprovalFailureKind;

@@ -313,26 +313,26 @@ function OpenCrRefs({
 }) {
   return (
     <>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
-              <Input
-                value={headRef}
-                onChange={(e) => setHeadRef(e.target.value)}
-                placeholder="head branch"
-                className="font-mono text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
-              <Input
-                value={baseRef}
-                onChange={(e) => setBaseRef(e.target.value)}
-                placeholder="default branch"
-                className="font-mono text-xs"
-              />
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
+          <Input
+            value={headRef}
+            onChange={(e) => setHeadRef(e.target.value)}
+            placeholder="head branch"
+            className="font-mono text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
+          <Input
+            value={baseRef}
+            onChange={(e) => setBaseRef(e.target.value)}
+            placeholder="default branch"
+            className="font-mono text-xs"
+          />
+        </div>
+      </div>
     </>
   );
 }

@@ -10,7 +10,6 @@ import {
 } from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -18,10 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { NO_OVERRIDES } from '@/lib/session-overrides';
 import { useCreateSession } from '@/lib/use-create-session';
-import { type SandboxTemplate } from '@kortix/sdk';
+import type { SandboxTemplate } from '@kortix/sdk';
 import {
   type ModelKey,
   useProjectConfig,
@@ -131,9 +131,7 @@ function ProjectHome() {
           <div className="mx-auto mb-4 grid size-11 place-items-center rounded-2xl bg-brand/10">
             <Sparkles className="size-5 text-brand" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            What would you like to build?
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight">What would you like to build?</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pick your template, agent, and model, then describe the task.
           </p>
@@ -201,11 +199,7 @@ function ProjectHome() {
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? (
-                <Loading className="size-4" />
-              ) : (
-                <ArrowUp className="size-4" />
-              )}
+              {launching ? <Loading className="size-4" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
         </div>

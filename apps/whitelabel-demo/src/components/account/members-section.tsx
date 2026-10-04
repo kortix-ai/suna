@@ -26,8 +26,8 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
-import { ApiError, type AccountMember } from '@kortix/sdk';
 import { relativeTime } from '@/lib/utils';
+import { type AccountMember, ApiError } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, UserMinus } from 'lucide-react';
 import { useState } from 'react';
@@ -90,8 +90,7 @@ function MemberRow({
           <DropdownMenuRadioGroup
             value={memberRole}
             onValueChange={(v) => {
-              if (userId && v !== memberRole)
-                onChangeRole({ userId, role: v as Role });
+              if (userId && v !== memberRole) onChangeRole({ userId, role: v as Role });
             }}
           >
             {ROLES.map((r) => (
@@ -101,10 +100,7 @@ function MemberRow({
             ))}
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => userId && onRemove(userId)}
-          >
+          <DropdownMenuItem variant="destructive" onClick={() => userId && onRemove(userId)}>
             <UserMinus className="size-4" /> Remove from account
           </DropdownMenuItem>
         </DropdownMenuContent>

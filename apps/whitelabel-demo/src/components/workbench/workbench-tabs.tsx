@@ -7,19 +7,19 @@ import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
-import { ScopeBar } from '@/components/chat/scope-bar';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
+import { ScopeBar } from '@/components/chat/scope-bar';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
-import { SessionScope } from '@/components/workbench/session-scope';
-import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
 import { PreviewPanel } from '@/components/workbench/preview-panel';
+import { SessionScope } from '@/components/workbench/session-scope';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
+import { sendFailureTitle } from '@/lib/send-failure';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
@@ -205,12 +205,7 @@ function MessageList({ session: c }: { session: UseSessionResult }) {
           <PermissionPrompt key={p.id} request={p} onAnswer={c.answerPermission} />
         ))}
         {c.questions.map((q) => (
-          <QuestionPrompt
-            key={q.id}
-            request={q}
-            onAnswer={c.answerQuestion}
-            onCancel={c.cancel}
-          />
+          <QuestionPrompt key={q.id} request={q} onAnswer={c.answerQuestion} onCancel={c.cancel} />
         ))}
 
         {c.isBusy && !c.hasPending && (

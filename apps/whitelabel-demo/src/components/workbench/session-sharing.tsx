@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { resolvePublicShareUrl } from '@kortix/sdk';
 import type { SessionPreviewCandidate, SessionPublicShare } from '@kortix/sdk';
@@ -35,7 +36,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { kortix } from '@/lib/kortix';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -98,12 +98,7 @@ function CreateShareDialog({
   return (
     <Dialog open={createOpen} onOpenChange={setCreateOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="ml-auto h-8 gap-1.5"
-          disabled={!selected}
-        >
+        <Button variant="secondary" size="sm" className="ml-auto h-8 gap-1.5" disabled={!selected}>
           <Plus className="size-3.5" />
           Create public share
         </Button>
@@ -195,11 +190,7 @@ function CreateShareForm({
           onClick={() => createMut.mutate()}
           disabled={createMut.isPending || !selected}
         >
-          {createMut.isPending ? (
-            <Loading className="size-3.5" />
-          ) : (
-            <Share2 className="size-3.5" />
-          )}
+          {createMut.isPending ? <Loading className="size-3.5" /> : <Share2 className="size-3.5" />}
           Create link
         </Button>
       </DialogFooter>
@@ -256,11 +247,7 @@ export function SessionSharing({
       </Select>
       {setSharingMut.isPending && <Loading className="size-3.5 text-muted-foreground" />}
 
-      <CreateShareDialog
-        projectId={projectId}
-        sessionId={sessionId}
-        selected={selected}
-      />
+      <CreateShareDialog projectId={projectId} sessionId={sessionId} selected={selected} />
     </div>
   );
 }
@@ -278,9 +265,7 @@ function ShareRow({
   revokeMut: { isPending: boolean; mutate: (shareId: string) => void };
 }) {
   return (
-    <li
-      className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-2.5 py-2"
-    >
+    <li className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-2.5 py-2">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-xs font-medium text-foreground">
@@ -296,9 +281,7 @@ function ShareRow({
             </Badge>
           )}
         </div>
-        <p className="truncate font-mono text-[0.7rem] text-muted-foreground">
-          {url || '—'}
-        </p>
+        <p className="truncate font-mono text-[0.7rem] text-muted-foreground">{url || '—'}</p>
       </div>
       <Button
         variant="ghost"

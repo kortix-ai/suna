@@ -22,9 +22,9 @@ import {
 import type { ProjectSecret } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
-import { Dispatch, SetStateAction, useState } from 'react';
+import { type Dispatch, type SetStateAction, useState } from 'react';
 import { toast } from 'sonner';
-import { Notice, ROTATION_REACHES_RUNNING_SESSIONS_LATE, ALLOWLIST_IS_CREATE_ONLY } from './shared';
+import { ALLOWLIST_IS_CREATE_ONLY, Notice, ROTATION_REACHES_RUNNING_SESSIONS_LATE } from './shared';
 
 export function SecretUpsertForm({
   projectId,

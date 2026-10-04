@@ -21,10 +21,7 @@ export function PermissionPrompt({
   onAnswer,
 }: {
   request: PermissionRequest;
-  onAnswer: (
-    requestId: string,
-    decision: 'once' | 'always' | 'reject',
-  ) => Promise<void>;
+  onAnswer: (requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>;
 }) {
   const [sending, setSending] = useState(false);
   const label = String(request.permission ?? 'this action').replace(/[._-]/g, ' ');
