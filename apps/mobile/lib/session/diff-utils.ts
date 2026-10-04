@@ -14,7 +14,7 @@ export type DiffLine = { type: 'unchanged' | 'added' | 'removed'; text: string }
 export const MAX_LCS_CELLS = 250_000;
 
 function splitLines(text: string): string[] {
-  return text.replace(/\\n/g, '\n').split('\n');
+  return text.split('\n');
 }
 
 /**

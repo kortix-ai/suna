@@ -75,7 +75,7 @@ const MANIFEST_ACTION_ALIASES = DEPRECATED_KORTIX_PERMISSION_ALIASES;
  */
 export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant | null {
   if (!grant || grant.permissions === 'all') return grant;
-  const canonical = grant.permissions.map((a) => MANIFEST_ACTION_ALIASES[a] ?? a);
+  const canonical = grant.permissions.flatMap((a) => MANIFEST_ACTION_ALIASES[a] ?? [a]);
   return { ...grant, permissions: [...new Set(canonical)] };
 }
 
