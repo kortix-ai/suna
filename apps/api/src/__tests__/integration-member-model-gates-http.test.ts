@@ -234,7 +234,7 @@ describe('project member — model selection', () => {
     });
     expect(res.status).toBe(403);
     const text = JSON.stringify(await res.json().catch(() => ({})));
-    expect(text).toContain('project.customize.write');
+    expect(text).toContain('project.model.write');
   });
 
   test('a manager is not refused project-level model configuration', async () => {
