@@ -1,5 +1,5 @@
 {
-  "source_hash": "eb6440351ae8e05ac5f6f09a53e3dc53a39e7aaac351f215d4e1f5afaec62edb",
+  "source_hash": "87b5934fcba188d160ea5e78f210ce8b3bc4eb25df572fa140e7b1c7fd4f4ea9",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-04T032812Z-bound-the-git-backed-project-config-load-under-the-request-d.md",
@@ -7,12 +7,12 @@
     "apps/api/src/projects/git/config.ts"
   ],
   "diff_hash": "2ac93fa9225d848be4d74c165bc73f2238b10514c01f50779db71a0471eac4ea",
-  "head": "1a7fe853caf95fe2a23c7eed5feb586bdf9c4b0b",
-  "passed": false,
+  "head": "f8813e40c0da6343ae610bc854a15e5950e7495e",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T03:53:03.404Z"
+  "at": "2026-10-04T05:35:45.941Z"
 }
