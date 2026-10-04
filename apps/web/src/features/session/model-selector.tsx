@@ -87,7 +87,7 @@ type ModelRef = { providerID: string; modelID: string };
 /**
  * The one default this picker sets: the ACCOUNT default model, from the star on
  * a row. It is the default for every member of the account, so it needs
- * `project.customize.write` and the star is hidden without it.
+ * `project.model.write` and the star is hidden without it.
  *
  * The other two scopes are gone from here, not lost — each already had a
  * better home, on the screen that owns the thing being defaulted:
@@ -443,14 +443,14 @@ export function ModelSelector({
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
   const [chatGptOpen, setChatGptOpen] = useState(false);
-  // Every write this picker offers is `project.customize.write` on the API: the
+  // Every write this picker offers is `project.model.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
   // got a "You don't have permission" toast for each. Hidden on a RECEIVED
   // denial only, from the shared project-page probe batch.
   const caps = useProjectPageCans(projectId ?? undefined);
   const canManageModels =
-    !projectId || caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE]?.allowed !== false;
+    !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed !== false;
   const rowDefaultControls = canManageModels ? defaultControls : undefined;
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');

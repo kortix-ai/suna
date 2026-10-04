@@ -1,5 +1,5 @@
 {
-  "id": "acd9176e-c650-4552-9b14-65e2e949dd32",
+  "id": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "prevId": "fa283177-4bf6-4777-aa5c-a4c6a91339a5",
   "version": "7",
   "dialect": "postgresql",
@@ -19103,18 +19103,24 @@
           "method": "btree",
           "with": {}
         },
-        "idx_session_sandboxes_provider_removal_pending": {
-          "name": "idx_session_sandboxes_provider_removal_pending",
+        "idx_session_sandboxes_parked_verified": {
+          "name": "idx_session_sandboxes_parked_verified",
           "columns": [
             {
-              "expression": "(\"metadata\" ->> 'providerRemovalRetryAfterAt') asc nulls first",
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'parkedVerifiedAt') ASC NULLS FIRST",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
-          "where": "\"kortix\".\"session_sandboxes\".\"status\" = 'archived' and \"kortix\".\"session_sandboxes\".\"external_id\" is not null and \"kortix\".\"session_sandboxes\".\"metadata\" ? 'providerRemovalPendingAt'",
+          "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -26,7 +26,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { accountTokens, projectSessions, readStoredAgentGrant } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { loadTokenBinding, type Actor } from '../../iam/actor';
-import { agentPrincipalModeFor, isGovernedAgentGrant, loadAgentPrincipalFlag } from '../../iam/agent-principal';
+import { agentPrincipalModeFor, isGovernedAgentGrant } from '../../iam/agent-principal';
 import { db } from '../../shared/db';
 import type { ConnectionAgentPrincipalReach } from './connection-access';
 import type { Context } from 'hono';
@@ -104,13 +104,6 @@ export async function resolveSessionPersonalOwner(input: {
 }): Promise<string | null> {
   const legacy = input.strict ? null : input.legacyUserId;
   if (!input.sessionId) return legacy;
-  let flag = false;
-  try {
-    flag = input.strict || (await loadAgentPrincipalFlag(input.projectId));
-  } catch {
-    return legacy;
-  }
-  if (!flag) return legacy;
   try {
     // Both reads take the session id alone: they go out together.
     const [[session], [token]] = await Promise.all([

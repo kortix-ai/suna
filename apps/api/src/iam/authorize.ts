@@ -205,7 +205,7 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // never be able to lock an account out permanently.
   if (rec.isSuperAdmin) return allow('super_admin');
 
-  // 5a. AGENT PRINCIPAL (project flag `agent_principal`, governed grant). The
+  // 5a. AGENT PRINCIPAL (every governed grant). The
   // session IS the agent: grant ∩ ceiling − HUMAN_ONLY. The launcher's role and
   // super-admin bit never reach this point — the principal is the agent's
   // service account (actingPrincipal), so step 5 above cannot fire for it.
@@ -286,9 +286,9 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
     if (!usable) return deny('resource_scope_insufficient');
   }
 
-  // 10. role ∩ agent grant. Enforced HERE, centrally, so a new route cannot
-  // forget it — the 23 per-route `assertAgentScope` calls are the duplicate.
-  // No-op for non-agent tokens (null grant) and for `permissions: all`.
+  // 10. role ∩ agent grant, for a token that carries a grant but did not take
+  // step 5a (a session token with no service account). Kept as the backstop so
+  // a grant is never ignored; a no-op for a null grant and for `all`.
   if (tokenId && !AGENT_GRANT_EXEMPT_ACTIONS.has(action)) {
     if (!agentMayPerform(binding?.agentGrant ?? null, action)) {
       return deny('agent_scope_insufficient');
@@ -305,7 +305,7 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
  * of the session's own project (or `projectId`).
  *
  * Returns false for any actor that is NOT an agent session under the
- * agent-principal model (flag off, ungoverned grant, human, PAT): those callers
+ * agent-principal model (ungoverned grant, human, PAT): those callers
  * keep their existing decision path. Check `isAgentPrincipalActor(actor)`
  * (iam/actor.ts) first to choose the path.
  */
