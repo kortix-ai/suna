@@ -27,7 +27,12 @@ function psqlAllowError(sql: string): { ok: boolean; stderr: string } {
 }
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+  // which initdb's temporary socket-only server satisfies while nothing serves
+  // TCP yet — the published port's proxy then accepts and closes the suite's
+  // first `psql` (`server closed the connection unexpectedly`). See
+  // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
 }
 
 function fundedAccount(balance: string): string {

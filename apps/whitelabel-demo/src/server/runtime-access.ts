@@ -7,8 +7,8 @@
  * check. Unknown runtime ids fail closed.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { WRAPPER_DATA_DIR, readJsonStore, writeJsonStore } from './json-store';
 import { isValidProjectId } from './users';
 
 interface RuntimeEntry {
@@ -18,24 +18,16 @@ interface RuntimeEntry {
 
 type RuntimeData = Record<string, RuntimeEntry>;
 
-const DATA_DIR = process.env.LUMEN_DATA_DIR || path.join(process.cwd(), '.lumen-data');
-const DATA_FILE = path.join(DATA_DIR, 'runtime-access.json');
+const DATA_FILE = path.join(WRAPPER_DATA_DIR, 'runtime-access.json');
 const MAX_RUNTIME_ENTRIES = 10_000;
 const RUNTIME_ID_RE = /^[A-Za-z0-9._:-]{1,256}$/;
 
 function readData(): RuntimeData {
-  try {
-    if (!existsSync(DATA_FILE)) return {};
-    const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8'));
-    return parsed && typeof parsed === 'object' ? (parsed as RuntimeData) : {};
-  } catch {
-    return {};
-  }
+  return readJsonStore<RuntimeData>(DATA_FILE, {});
 }
 
 function writeData(data: RuntimeData): void {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+  writeJsonStore(WRAPPER_DATA_DIR, DATA_FILE, data);
 }
 
 function isValidRuntimeId(runtimeId: string): boolean {

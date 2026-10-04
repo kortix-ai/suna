@@ -13,23 +13,22 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import type { QuestionRequest } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import { MessageCircleQuestion, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-
-type AnyQuestion = Record<string, any>;
 
 export function QuestionPrompt({
   request,
   onAnswer,
   onCancel,
 }: {
-  request: Record<string, any>;
+  request: QuestionRequest;
   onAnswer: (requestId: string, answers: string[][]) => Promise<void>;
   onCancel: () => void;
 }) {
-  const questions: AnyQuestion[] = request.questions ?? [];
+  const questions = request.questions;
   const [selected, setSelected] = useState<string[][]>(() => questions.map(() => []));
   const [custom, setCustom] = useState<string[]>(() => questions.map(() => ''));
   const [sending, setSending] = useState(false);
@@ -89,11 +88,11 @@ export function QuestionPrompt({
 
       <div className="space-y-4 p-3">
         {questions.map((q, qi) => {
-          const options: AnyQuestion[] = q.options ?? [];
+          const options = q.options;
           const multiple = !!q.multiple;
           return (
             <div key={qi} className="space-y-2">
-              <p className="text-sm text-foreground">{q.question ?? q.header}</p>
+              <p className="text-sm text-foreground">{q.question}</p>
               <div className="space-y-1.5">
                 {options.map((opt, oi) => {
                   const picked = selected[qi].includes(opt.label);

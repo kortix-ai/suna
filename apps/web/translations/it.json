@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Scegli le chiavi condivise che questa sessione può usare.",
     "sessionKeyPool": "Pool di chiavi della sessione",
     "sharedSessionKeys": "Questa sessione è condivisa con il progetto, quindi qui funzionano solo le chiavi condivise con tutto il progetto. Le chiavi assegnate a te funzionano nelle tue sessioni private.",
+    "promptedSessionKeys": "Un altro membro ha scritto in questa sessione, quindi non agisce più per il suo proprietario. Qui funzionano solo le chiavi condivise con tutto il progetto.",
+    "noPersonSessionKeys": "Questa sessione non agisce per nessuna persona: è iniziata prima delle chiavi personali o senza supervisione. Qui funzionano solo le chiavi condivise con tutto il progetto. Avvia una nuova sessione per usare le tue chiavi.",
     "projectDefaultShort": "Impostazione predefinita del progetto",
     "rateLimitDescription": "Il gateway alterna le chiavi selezionate quando un fornitore segnala un limite di richieste.",
     "enableGateway": "Abilita il gateway LLM nelle impostazioni del progetto per usare i pool di chiavi.",
@@ -577,7 +579,7 @@
       "keepMyAccount": "Mantieni il mio account",
       "deleteDialogTitle": "Eliminare il tuo account?",
       "immediateWarning": "Questo elimina immediatamente il tuo account. Non esiste un periodo di grazia e non c'è modo di annullarlo.",
-      "gracePeriodWarning": "È prevista l'eliminazione del tuo account dopo un periodo di grazia di 30 giorni, durante il quale puoi annullare.",
+      "gracePeriodWarning": "L'eliminazione del tuo account verrà programmata dopo un periodo di grazia di 30 giorni, durante il quale puoi annullare.",
       "whenDeleted": "Quando il tuo account viene eliminato:",
       "agentsDeleted": "Ogni agente di tua proprietà viene eliminato",
       "threadsDeleted": "Ogni sessione e ogni messaggio vengono eliminati",
@@ -638,7 +640,13 @@
       "verified": "Verificato",
       "unverified": "Non verificato",
       "signedOutOtherDevices": "Disconnesso dagli altri tuoi dispositivi",
-      "signOutOtherDevicesFailed": "Impossibile disconnettersi da altri dispositivi"
+      "signOutOtherDevicesFailed": "Impossibile disconnettersi da altri dispositivi",
+      "currentDevice": "Questo browser",
+      "deviceSignedInAt": "Connesso il {date}",
+      "deviceActive": "Attivo",
+      "noDevices": "Nessun dispositivo connesso",
+      "noDevicesDescription": "Non hai una sessione attiva su nessun dispositivo in questo momento.",
+      "devicesLoadFailed": "Impossibile caricare i tuoi dispositivi connessi"
     },
     "appearance": {
       "theme": "Tema",
@@ -1108,7 +1116,7 @@
       "noMatches": "Nessun risultato per {query}.",
       "emptyTitle": "Nessuna funzionalità sperimentale",
       "emptyDescription": "Questa installazione non espone funzionalità attivabili per progetto.",
-      "permission": "Per modificare una funzionalità serve l’autorizzazione a modificare la personalizzazione del progetto.",
+      "permission": "Ti serve il permesso per le impostazioni del progetto per modificare un feature flag.",
       "updateFailed": "Impossibile aggiornare {key}",
       "flags": {
         "marketplace": {
@@ -1972,7 +1980,11 @@
       "topupWalletHint": "Ricarica il saldo per mantenere attivi gli agenti.",
       "addCredits": "Aggiungi crediti",
       "billingPortal": "Portale di fatturazione",
-      "portalDescription": "Gestisci abbonamento, metodi di pagamento e fatture."
+      "portalDescription": "Gestisci abbonamento, metodi di pagamento e fatture.",
+      "cancelSubscription": "Annulla abbonamento",
+      "cancelSubscriptionDescription": "Il tuo piano resta attivo fino alla fine del periodo di fatturazione corrente, poi termina. Puoi riattivarlo fino ad allora.",
+      "reactivateSubscription": "Riattiva abbonamento",
+      "commitmentCancelHint": "Il tuo impegno dura fino al {date}. Potrai annullare dopo."
     },
     "topup": {
       "minimum": "La ricarica minima è {amount}.",
@@ -9605,7 +9617,7 @@
       "text062b7c4143e2": "Il proprio branch, creato per sessione",
       "text062bccfdad1c": "Nessun sandbox corrisponde a questa ricerca",
       "text062dddbbb151": "Una frontiera senza ecosistema non è stabile",
-      "text06346e4d9c35": "Per modificare un flag di funzionalità è necessaria l'autorizzazione di personalizzazione-scrittura del progetto.",
+      "text6d484ed8c1a0": "Ti serve il permesso per le impostazioni del progetto per modificare un feature flag.",
       "text06475633ed3e": "Ultima attività",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Cambia cosa può fare {value0} {value1} in {value2}.",
@@ -19191,8 +19203,11 @@
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
       "text39207bf34111": "Competenze correlate",
       "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
+      "text0e5f7f6732e0": "Biforca conversazione",
+      "text32ad3abe4479": "Impossibile biforcare la conversazione",
       "text85b7a59cdbd5": "Agente della piattaforma",
-      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."
+      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui.",
+      "text6c4af31cd4ab": "Disconnesso su questo dispositivo, ma il server non ha potuto confermare la disconnessione."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
