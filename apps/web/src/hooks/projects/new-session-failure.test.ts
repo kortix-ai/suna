@@ -29,8 +29,10 @@ describe('resolveCreateFailure', () => {
     expect(resolveCreateFailure('no_account')).toBe('upgrade');
   });
 
-  test('the concurrent-session cap stays silent (global 429 handler owns it)', () => {
-    expect(resolveCreateFailure('concurrent_session_limit')).toBe('silent');
+  test('an SDK error is toasted once, by the global error sink, never again here', () => {
+    expect(resolveCreateFailure('project_session_limit', true)).toBe('silent');
+    expect(resolveCreateFailure(undefined, true)).toBe('silent'); // dropped connection
+    expect(resolveCreateFailure(undefined, false)).toBe('toast'); // non-SDK failure
   });
 
   test('request deadlines stay silent because the server can complete after the client stops waiting', () => {

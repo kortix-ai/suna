@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayUseEnv, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { agentMayUseEnv, getAgentGrant, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   SecretConsumerSchema,
@@ -321,13 +321,13 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
-  const resolved = resolveSecretWriteInput(body, isProjectSessionPrincipal(c));
+  const resolved = resolveSecretWriteInput(body, isBorrowedSessionPrincipal(c));
   if (!resolved.ok) return c.json(resolved.body, resolved.status);
   const { name, identifier, value, explicitStrategy, explicitConsumer, explicitPolicy, explicitHandlePrefix } =
     resolved.input;
   const sharedWith = parseSecretSharedWith(body.shared_with);
   if (!sharedWith.ok) return c.json({ error: sharedWith.error }, 400);
-  if (sharedWith.value && isProjectSessionPrincipal(c)) {
+  if (sharedWith.value && isBorrowedSessionPrincipal(c)) {
     return c.json(
       { error: 'An agent cannot change who can use a secret. A person changes it in Customize → Secrets.' },
       403,
@@ -601,7 +601,7 @@ projectsApp.openapi(
     // POST guards: an agent session cannot touch the delivery control, only a
     // plain runtime secret. Otherwise an agent could delete a tightly-scoped
     // egress row and re-create it (defeated separately by the POST guard).
-    if (isProjectSessionPrincipal(c) && existing.strategy && existing.strategy !== 'runtime') {
+    if (isBorrowedSessionPrincipal(c) && existing.strategy && existing.strategy !== 'runtime') {
       return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
     }
     const connectors = await connectorSecretBindings(projectId, identifier);

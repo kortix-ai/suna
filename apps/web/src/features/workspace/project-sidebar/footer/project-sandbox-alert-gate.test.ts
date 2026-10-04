@@ -5,10 +5,10 @@
  * A plain project MEMBER needs the TEXT — "new sessions can't start until this
  * image builds" is the only explanation for why the composer is refusing them.
  * They cannot use any of the CONTROLS: "Details" routes into Customize →
- * Settings → Sandbox (`project.customize.read`) and "Retry build" / "Fix with
- * agent" rebuild the project's image (`project.write`). Neither leaf is in the
- * member floor role since #6522, so every one of those buttons was a
- * "forbidden" toast waiting to be clicked.
+ * Settings (`project.settings.write`) and "Retry build" / "Fix with agent"
+ * rebuild the project's image (`project.sandbox.write`, what the rebuild routes
+ * assert). Neither leaf is in the member floor role, so every one of those
+ * buttons would be a "forbidden" toast waiting to be clicked.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -20,18 +20,18 @@ const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g,
 describe('sandbox alert — controls are IAM-gated, the message is not', () => {
   test('reads both leaves from the shared project-page batch', () => {
     expect(code).toContain('useProjectPageCans(projectId)');
-    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]');
-    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_WRITE]');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]');
   });
 
   // "Details" is a Customize destination, not a modal — each control is a
   // `<Link>` to `projectSettingsSectionHref(projectId, 'sandbox')`.
-  test('Details gates on customize.read, the recovery actions on project.write', () => {
+  test('Details gates on settings.write, the recovery actions on sandbox.write', () => {
     expect(code).toContain(
-      'const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;',
+      'const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed !== false;',
     );
     expect(code).toContain(
-      'const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;',
+      'const canRecover = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]?.allowed !== false;',
     );
     // The one "Details" sits behind the details gate. It is a prefetching
     // anchor, not a button handler: this alert only shows when the project is

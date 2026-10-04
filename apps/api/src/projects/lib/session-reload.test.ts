@@ -110,20 +110,30 @@ describe('the reload never hard-resets the session branch', () => {
     expect(refreshBody()).not.toContain('resolveCommitSha');
   });
 
-  test('both entry points drop the mirror TTL before reading it', () => {
+  test('both entry points read a fresh mirror before comparing', () => {
     // The mirror caches for 60s. "I merged, now reload" happens inside that
-    // window essentially every time, so without this the reload compiles the
-    // pre-merge manifest and `--status` cheerfully agrees you are up to date.
+    // window essentially every time, so without fresh state the reload compiles
+    // the pre-merge manifest and `--status` cheerfully agrees you are up to date.
     // `\n}\n` — a closing brace alone on a line. Splitting on `\n}` alone stops
     // at the end of the destructured input TYPE (`\n}): Promise<…>`), which cuts
     // the body off entirely and makes this pass for the wrong reason.
     const bodyOf = (name: string) =>
       SOURCE.split(`export async function ${name}(`)[1]?.split('\n}\n')[0];
-    for (const name of ['reloadSessionConfig', 'latestAgentConfigEtag']) {
-      const body = bodyOf(name);
-      expect(body).toBeTruthy();
-      expect(body).toContain('invalidateProjectMirror(input.projectId)');
-    }
+    // The reload invalidates the stamp: its caller is a write-shaped action and
+    // every read after it must fetch.
+    const reload = bodyOf('reloadSessionConfig');
+    expect(reload).toBeTruthy();
+    expect(reload).toContain('invalidateProjectMirror(input.projectId)');
+    // The etag read proves its ref against the remote instead (a `git ls-remote`
+    // per poll, a fetch only when the branch moved) and bounds the wait: the
+    // stamp drop made every later unforced read of the same request pay its own
+    // fetch, and the unbounded wait outran the 25s request deadline on a slow
+    // mirror (KRTX-818).
+    const etag = bodyOf('latestAgentConfigEtag');
+    expect(etag).toBeTruthy();
+    expect(etag).not.toContain('invalidateProjectMirror(input.projectId)');
+    expect(etag).toContain('forceRefresh: true');
+    expect(etag).toContain('withTimeout(');
   });
 
   test('the commit is read from repo.after, the field the daemon actually sends', () => {
