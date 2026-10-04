@@ -138,7 +138,6 @@ afterAll(() => {
 
 describe('forwardToSandbox — turn-start pre-flight runs concurrently (R2)', () => {
   test('config-converge, model-catalog-converge and ingress overlap, not queue', async () => {
-    const startedAt = performance.now();
     const res = await forwardToSandbox(
       'sb-1',
       8000,
@@ -150,14 +149,17 @@ describe('forwardToSandbox — turn-start pre-flight runs concurrently (R2)', ()
       PROMPT_BODY,
       'http://app.local',
     );
-    const elapsedMs = performance.now() - startedAt;
     expect(res.status).toBe(200);
 
     // Sequential (today's shape) would read as three complete start/end pairs
     // back to back: config-converge:start, config-converge:end,
     // model-catalog-converge:start, model-catalog-converge:end, ingress:start,
     // ingress:end — costing ~3×GATE_DELAY_MS. Concurrent means every gate's
-    // OWN start precedes every OTHER gate's end.
+    // OWN start precedes every OTHER gate's end, which only an overlapping
+    // schedule can produce; a sequential one queues each start behind the
+    // previous end and fails these pairs. Event order, not wall clock: a
+    // wall-clock bound re-flaked under load on a busy runner (86 ms vs the 80
+    // ms bound) while the overlap held.
     const startIdx = (label: string) => gateLog.indexOf(`${label}:start`);
     const endIdx = (label: string) => gateLog.indexOf(`${label}:end`);
     for (const label of ['config-converge', 'model-catalog-converge', 'ingress']) {
@@ -166,10 +168,5 @@ describe('forwardToSandbox — turn-start pre-flight runs concurrently (R2)', ()
     expect(startIdx('model-catalog-converge')).toBeLessThan(endIdx('config-converge'));
     expect(startIdx('ingress')).toBeLessThan(endIdx('config-converge'));
     expect(startIdx('ingress')).toBeLessThan(endIdx('model-catalog-converge'));
-
-    // Three 40ms holds run concurrently in ~40ms, not ~120ms. Generous bound
-    // (2x one delay) to stay non-flaky under CI scheduling jitter while still
-    // failing hard against a fully sequential implementation (~120ms+).
-    expect(elapsedMs).toBeLessThan(GATE_DELAY_MS * 2);
   });
 });

@@ -196,7 +196,13 @@ export function selectSessionRowsForViewer(input: {
       ) {
         return false;
       }
-      return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
+      // A stopped session lists whatever its runtime row says: a terminal turn
+      // error parks the session (`parkTurnError`) while its box is still up,
+      // and a session stopped before its first box was created has no runtime
+      // row at all. Hiding either made the session vanish from this list and
+      // the sidebar while `sessions info` and the manager inventory returned
+      // it (KRTX-1452); clients read `runtime_status` from the payload.
+      return true;
     }),
   };
 }

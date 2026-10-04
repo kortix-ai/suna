@@ -177,19 +177,19 @@ describe('ExperimentalTabView', () => {
     ).toContain('Default on');
   });
 
-  test('the customize-write notice renders only when the probe has resolved to a denial', () => {
+  test('the settings-permission notice renders only when the probe has resolved to a denial', () => {
     // Ported from `main`'s `feature-flags-view.tsx`. While the IAM probe is in
     // flight the switches are already disabled (fail-closed) but the reason is
     // unknown, so the line must stay off rather than assert a denial.
     const denied = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature]} canManage={false} showPermissionNotice />,
     );
-    expect(denied).toContain('customize-write permission');
+    expect(denied).toContain('settings permission');
 
     const probing = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature]} canManage={false} />,
     );
-    expect(probing).not.toContain('customize-write permission');
+    expect(probing).not.toContain('settings permission');
   });
 
   test('does not render General-tab markers — the sandbox-provider pin and Delete workspace live there instead', () => {
