@@ -27,7 +27,7 @@ import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   type ConnectorSpec,
   extractConnectors,

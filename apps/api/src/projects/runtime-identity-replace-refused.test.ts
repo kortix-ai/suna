@@ -40,7 +40,7 @@ function describeSql(expression: unknown): string {
     .join(' ');
 }
 
-mock.module('../config', () => mockConfigModule());
+mock.module('../lib/config', () => mockConfigModule());
 
 const updater = () => ({
   set: () => ({

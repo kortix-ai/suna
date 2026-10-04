@@ -13,7 +13,7 @@ let release!: () => void;
 let dispatchDone = false;
 const dispatched: string[] = [];
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: { MICROSOFT_APP_ID: 'app-1', MICROSOFT_APP_PASSWORD: 'secret' },
 }));

@@ -70,7 +70,7 @@
  *    secrets.ts:173,226`).
  *  - AUDIT. Recording is NEVER gated — every tier's actions are always captured.
  *    Only READ, EXPORT and STREAM are entitlement-gated (`auditAccess` in
- *    `apps/api/src/types.ts:129-135`). That distinction is the honest answer and
+ *    `apps/api/src/types/app-env.ts:129-135`). That distinction is the honest answer and
  *    must survive editing.
  *  - ISOLATION. "Its own isolated machine" only. NEVER a blanket "microVM" —
  *    true for the Platinum provider (Cloud Hypervisor) and not for the default.

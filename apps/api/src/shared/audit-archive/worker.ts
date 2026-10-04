@@ -2,7 +2,7 @@
 // the bucket is configured, and the bucket has Object Lock. Recursive setTimeout keeps ticks serial
 // per process; every step of a pass is idempotent, so a leader change mid-pass is safe.
 import { createDb } from '@kortix/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { ObjectLockMode } from '../../object-store/s3';
 import { db as mainDb } from '../db';
 import { runWorkerTick } from '../audit-scope';

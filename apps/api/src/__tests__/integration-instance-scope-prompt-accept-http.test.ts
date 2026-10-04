@@ -24,7 +24,7 @@ import {
   sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';

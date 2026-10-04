@@ -39,7 +39,7 @@ let forwardedCalls: string[] = [];
 let failedCalls: Array<{ commandId: string; message: string }> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: cfg,
   SANDBOX_VERSION: 'test',
 }));

@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { rewriteStorageOrigin } from './storage-url';
 
 let client: SupabaseClient | null = null;

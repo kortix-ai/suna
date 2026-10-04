@@ -1,4 +1,4 @@
-import { config, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../lib/config';
 import { escapeHtml } from '../shared/html';
 
 // The `frame-ancestors` directive for App responses. It decides which origins

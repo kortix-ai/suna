@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { generateSlackManifest, resolveBaseUrl } from '../slack-manifest';
 import { loadSlackSigningSecretForProject } from '../install-store';
 import { slackOauthMode } from '../slack-oauth-mode';

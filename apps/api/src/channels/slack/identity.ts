@@ -1,5 +1,5 @@
 import { accountRoleMap, isAccountManagerRole } from '../../iam/read-models';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { loadSlackTokenForProject } from '../install-store';

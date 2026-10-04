@@ -94,7 +94,7 @@ const RED_PNG =
 
 // The first GLM upstream: OpenCode Zen when its key is set (OPENCODE_ZEN_MANAGED_MODELS), else OpenRouter.
 async function glmFirstUpstream(): Promise<string> {
-  const { config } = await import('../../config');
+  const { config } = await import('../../lib/config');
   return config.OPENCODE_ZEN_API_KEY && config.OPENCODE_ZEN_MANAGED_MODELS.includes('glm-5.3-flash') ? 'opencode' : 'openrouter';
 }
 
@@ -122,7 +122,7 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter + OpenCo
         ]
       : 'Reply with the single word: red';
     test(`${model.id}: configured upstream serves the turn; the client sees only Kortix`, async () => {
-      const { config } = await import('../../config');
+      const { config } = await import('../../lib/config');
       const morphSelected = config.MORPH_MANAGED_MODELS.includes(model.id) && !!config.MORPH_API_KEY;
       const zenSelected = config.OPENCODE_ZEN_MANAGED_MODELS.includes(model.id) && !!config.OPENCODE_ZEN_API_KEY;
       const { gateway, recorded } = await managedGateway();
@@ -145,7 +145,7 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter + OpenCo
   }
 
   test('a selected model fails over from rejected Morph credentials to OpenRouter', async () => {
-    const { config } = await import('../../config');
+    const { config } = await import('../../lib/config');
     if (!config.MORPH_MANAGED_MODELS.includes('deepseek-v4.1-flash') || !config.MORPH_API_KEY) return;
     const { gateway, recorded } = await managedGateway((candidates) =>
       candidates.map((candidate) => candidate.provider === 'morph'
@@ -197,7 +197,7 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter + OpenCo
   for (const busyProvider of ['opencode', 'openrouter']) {
     for (const stream of [false, true]) {
       test(`glm-5.3-flash: a ${busyProvider} 429 fails over to the other upstream (stream=${stream})`, async () => {
-        const { config } = await import('../../config');
+        const { config } = await import('../../lib/config');
         if (!config.OPENCODE_ZEN_API_KEY) return;
         const busy = Bun.serve({ port: 0, fetch: () => Response.json({ error: { code: 429, message: 'Rate limit exceeded.' } },
           { status: 429, headers: { 'retry-after': '5' } }) });

@@ -6,7 +6,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { markComputeSessionAlive, reopenComputeForSandbox } from '../../billing/services/compute-metering';
-import { type SandboxProviderName, config } from '../../config';
+import { type SandboxProviderName, config } from '../../lib/config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { isProviderNotFound } from '../../platform/providers/status';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';

@@ -21,7 +21,7 @@ import {
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import {
   InvalidUsageQueryError,
   type UsageQueryParams,

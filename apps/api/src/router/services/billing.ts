@@ -1,11 +1,11 @@
 import { debitAndCheckAutoTopup } from '../../billing/services/wallet-debits';
-import { config, getToolCost } from '../../config';
+import { config, getToolCost } from '../../lib/config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
 
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError } from '../../billing/errors';
 import { wallet, type LedgerDebitType } from '../../billing/wallet';
-import type { BillingCheckResult, BillingDeductResult } from '../../types';
+import type { BillingCheckResult, BillingDeductResult } from '../types';
 
 /** Check if account has sufficient credits. */
 export async function checkCredits(

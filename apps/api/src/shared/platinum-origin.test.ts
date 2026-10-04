@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 let mockPlatinumApiUrl = 'https://api.platinum.dev';
 
 // The getter sits on the field: platinum.ts binds `config` once at import.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     PLATINUM_API_KEY: 'pt_test_key',
     get PLATINUM_API_URL() {

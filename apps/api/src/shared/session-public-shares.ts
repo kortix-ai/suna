@@ -7,7 +7,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { db } from './db';
 import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';

@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { PROJECT_SNAPSHOT_FORMAT } from './project-snapshot-store';
 
 const SHA = 'a'.repeat(40);

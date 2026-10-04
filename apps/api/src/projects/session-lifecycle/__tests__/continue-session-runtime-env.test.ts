@@ -10,7 +10,7 @@ const PROJECT_ID = 'proj-1';
 const EXTERNAL_ID = 'sandbox-1';
 const events: string[] = [];
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
 }));

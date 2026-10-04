@@ -21,7 +21,7 @@ import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   buildDefaultSandboxTemplate,
   DEFAULT_SANDBOX_SLUG,

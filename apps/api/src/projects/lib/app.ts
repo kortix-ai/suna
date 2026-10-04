@@ -1,5 +1,5 @@
 import { makeOpenApiApp } from '../../openapi';
-import { type AppEnv } from '../../types';
+import { type AppEnv } from '../../types/app-env';
 import {
   OkResponseSchema as ContractOkResponseSchema,
   ProjectSchema as ContractProjectSchema,

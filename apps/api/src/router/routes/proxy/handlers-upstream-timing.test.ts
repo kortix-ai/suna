@@ -29,7 +29,7 @@ const slowUpstream = async (): Promise<Response> => {
 
 const reserveDelays: number[] = [];
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: {
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     OPENROUTER_API_URL: 'https://openrouter.example',

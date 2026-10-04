@@ -208,7 +208,7 @@ const reaperConfigModule = mockConfigModule({
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
 });
 const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
-mock.module('../config', () => reaperConfigModule);
+mock.module('../lib/config', () => reaperConfigModule);
 
 mock.module('../shared/db', () => ({
   db: {

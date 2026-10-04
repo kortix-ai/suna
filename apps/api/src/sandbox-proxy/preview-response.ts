@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { KORTIX_SERVICE_CALL_HEADER } from '../shared/kortix-user-context';
 import { previewCorsHeaders } from './preview-hosts';
 import { PREVIEW_STATE_HEADER, type PreviewState, previewStatePage } from './preview-state-page';

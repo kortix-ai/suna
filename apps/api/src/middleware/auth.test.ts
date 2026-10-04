@@ -526,7 +526,7 @@ describe('typed 401 for a credential the API can never take back', () => {
 });
 
 describe('unknown-token attempt budget (pre-authentication, per client IP)', () => {
-  const { config } = require('../config') as { config: Record<string, unknown> };
+  const { config } = require('../lib/config') as { config: Record<string, unknown> };
   const { resetTokenAttemptBudget } = require('./token-attempt-budget') as {
     resetTokenAttemptBudget: () => void;
   };

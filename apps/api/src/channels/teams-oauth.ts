@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import {

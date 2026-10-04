@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { GrantInput } from '../wallet';
 
 // Production price catalog: the legacy tier prices below only exist there.
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: new Proxy({} as Record<PropertyKey, unknown>, {
     get: (_target, key) => (key === 'INTERNAL_KORTIX_ENV' ? 'prod' : undefined),
   }),

@@ -9,7 +9,7 @@ const SERVICE_URL = 'https://smba.trafficmanager.net/emea/tenant-1/';
 let storedServiceUrl: string | null = SERVICE_URL;
 let byoCreds: { appId: string; appPassword: string } | null = null;
 
-mock.module('../config', () => ({ config: { MICROSOFT_APP_ID: 'managed-app' } }));
+mock.module('../lib/config', () => ({ config: { MICROSOFT_APP_ID: 'managed-app' } }));
 mock.module('../channels/install-store', () => ({
   loadTeamsServiceUrlForProject: async () => storedServiceUrl,
   loadTeamsBotCredentials: async () => byoCreds,

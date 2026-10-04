@@ -63,7 +63,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { readSessionAuditActions } from '../lib/session-audit-read';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';

@@ -18,7 +18,7 @@ import {
   saveAgentMailInstall,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';

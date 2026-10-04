@@ -2,7 +2,7 @@ import { accountMembers, accountMemberships, accounts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { db } from '../../shared/db';

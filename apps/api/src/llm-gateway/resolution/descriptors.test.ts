@@ -8,7 +8,7 @@ const config: Record<string, unknown> = {
   OPENROUTER_API_KEY: 'openrouter-test-key',
   OPENROUTER_API_URL: 'https://openrouter.ai/api/v1',
 };
-mock.module('../../config', () => ({ config }));
+mock.module('../../lib/config', () => ({ config }));
 // Spread the real module — see the note in resolve-candidates.test.ts. Listing
 // three exports by hand silently removed every other one from the registry.
 mock.module('../../billing/services/tiers', () => ({
@@ -18,7 +18,7 @@ mock.module('../../billing/services/tiers', () => ({
   tierHasEntitlement: () => false,
 }));
 
-// Stand in for the live models.dev pricing cache (router/config/model-pricing)
+// Stand in for the live models.dev pricing cache (llm-gateway/models/model-pricing)
 // with a tiny fixed catalog keyed by BASE (unprefixed) Bedrock model ids —
 // mirrors what models.dev actually publishes for Bedrock: it has never heard
 // of a cross-region inference-profile id like `us.anthropic.claude-...`.
@@ -40,7 +40,7 @@ const CATALOG: Record<string, { inputPer1M: number; outputPer1M: number; cacheRe
 const getModelPricing = mock(
   (providerId: string, modelId: string) => CATALOG[`${providerId}/${modelId}`] ?? null,
 );
-mock.module('../../router/config/model-pricing', () => ({ getModelPricing }));
+mock.module('../models/model-pricing', () => ({ getModelPricing }));
 
 const {
   bedrockByokBaseUrl,

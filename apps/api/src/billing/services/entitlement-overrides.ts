@@ -14,7 +14,7 @@
  *   { "sso": { "value": true, "expires_at": "2026-09-01T00:00:00.000Z" } }
  *
  * PURE. Parsing only — no I/O, no clock of its own (`nowMs` is a parameter),
- * no imports that reach `../../config`. The resolver
+ * no imports that reach `../../lib/config`. The resolver
  * (`resolve-billing.ts`) applies these; the admin route writes them through
  * `applyAdminOverride`.
  *

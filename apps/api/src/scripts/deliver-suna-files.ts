@@ -6,7 +6,7 @@
  *   bun run src/scripts/deliver-suna-files.ts --account-id <uuid> --file <path> [--days 7]
  */
 import { readFileSync, statSync } from 'node:fs';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 import { ensureBackupBucket } from '../projects/legacy-migration-storage';
 

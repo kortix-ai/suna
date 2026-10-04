@@ -21,7 +21,7 @@ import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroups, accountMembers, connectors } from '@kortix/db';
 import { and, eq, inArray, or } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';

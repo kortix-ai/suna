@@ -23,7 +23,7 @@ let executeResults: unknown[] = [];
 
 
 
-mock.module('../config', () => mockConfigModule());
+mock.module('../lib/config', () => mockConfigModule());
 // `adoptRuntimeSandboxTurn` mints the adopted turn's token with `randomUUID`;
 // pin it so the adoption snapshot is deterministic across runs.
 const realCrypto = await import('node:crypto');

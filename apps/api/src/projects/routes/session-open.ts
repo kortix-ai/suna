@@ -7,7 +7,7 @@ import type { SessionStartResult } from '@kortix/api-contract';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
-import { type SandboxProviderName } from '../../config';
+import { type SandboxProviderName } from '../../lib/config';
 import { db } from '../../shared/db';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../session-lifecycle/start-envelope';

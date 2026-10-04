@@ -1795,7 +1795,7 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
 });
 
 test('claims only the owning instance before changing queue availability', async () => {
-  const { config } = await import('../config');
+  const { config } = await import('../lib/config');
   const original = config.KORTIX_INSTANCE_ID;
   try {
     config.KORTIX_INSTANCE_ID = 'queue-owner-test';

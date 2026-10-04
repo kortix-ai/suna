@@ -14,7 +14,7 @@
 // The chain exists because a single vendor is a single point of failure: the
 // 2026-08-05 Mailtrap suspension took invites down. Any failure falls through
 // to the next configured provider.
-import { config } from '../../config';
+import { config } from '../config';
 import { formatEmailAddress, parseEmailAddress } from './address';
 import { parseEmailTargets, type EmailTarget } from '@kortix/shared/email-url';
 import { sendViaMailpit, sendViaMailtrap, sendViaResend } from './providers/http';

@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // channel or group chat showed everyone a card that sent the person to a
 // private chat.
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     MICROSOFT_APP_PASSWORD: 'teams-secret',
     API_KEY_SECRET: 'unit-test-api-key-secret',

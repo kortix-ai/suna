@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 // (measured 2026-09-29), and Teams drew a broken image beside every
 // Kortix-hosted project. The repository page decides: 200 public, 404 not.
 
-mock.module('../config', () => ({ config: { MANAGED_GIT_GITHUB_OWNER: 'managed-kortix' } }));
+mock.module('../lib/config', () => ({ config: { MANAGED_GIT_GITHUB_OWNER: 'managed-kortix' } }));
 const { isKortixHostedRepo, repoDisplayLabel, repoPreviewImages, resetRepoPreviewCache } = await import('../channels/repo-preview');
 
 const PUBLIC = 'https://github.com/octocat/Hello-World';

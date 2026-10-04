@@ -14,7 +14,7 @@ const testConfig: Record<string, unknown> = {
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt',
   FRONTEND_URL: 'https://app.example',
 };
-mock.module('../config', () => ({ config: testConfig }));
+mock.module('../lib/config', () => ({ config: testConfig }));
 const claims = new Set<string>();
 mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
   const rendered = new PgDialect().sqlToQuery(query);

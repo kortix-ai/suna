@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 const BOT_FRAMEWORK_ISSUERS = [
   'https://api.botframework.com',

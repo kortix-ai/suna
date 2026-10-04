@@ -43,7 +43,7 @@ import {
   inboundMessageKey,
 } from './dedup';
 import { escapeMrkdwn, mentionsUser, sessionWebUrl, stripMentions } from './util';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type {
   EventClass,
   ProjectResolution,

@@ -7,7 +7,7 @@ import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { mapGatewayLogToGeneration } from './generation-mapper';
 
 const generationApp = makeOpenApiApp<AppEnv>();

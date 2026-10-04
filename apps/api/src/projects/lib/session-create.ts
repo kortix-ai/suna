@@ -7,7 +7,7 @@ import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { type SandboxProviderName, config } from '../../config';
+import { type SandboxProviderName, config } from '../../lib/config';
 
 
 import { agentMayUseConnector, agentMayUseEnv } from '../../iam/agent-scope';

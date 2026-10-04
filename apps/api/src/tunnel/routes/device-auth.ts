@@ -26,8 +26,8 @@ import {
   randomAlphanumeric,
 } from '../../shared/crypto';
 import { tunnelRateLimiter } from '../core/rate-limiter';
-import { config } from '../../config';
-import type { AppEnv } from '../../types';
+import { config } from '../../lib/config';
+import type { AppEnv } from '../../types/app-env';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelReadContext, requireUserCredential } from './auth';
 import { isValidCapability } from '../core/scope-validator';

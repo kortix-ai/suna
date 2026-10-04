@@ -14,7 +14,7 @@ import {
 import { authorizeSecretRelay } from '../../secrets/relay-authorize';
 import { recordAuditEvent } from '../../shared/audit';
 import { intersectSecretGrants } from '../secrets';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { loadProjectForUser } from '../lib/access';
 import {
   requestEgressIp,

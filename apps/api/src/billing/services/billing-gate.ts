@@ -1,5 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import {
   type BillingSnapshot,

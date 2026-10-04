@@ -21,7 +21,7 @@ const cfg: {
   KORTIX_SANDBOX_AUTOSTOP_MINUTES?: number;
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES?: number;
 } = {};
-mock.module('../../config', () => ({ config: cfg, SANDBOX_VERSION: 'test-version' }));
+mock.module('../../lib/config', () => ({ config: cfg, SANDBOX_VERSION: 'test-version' }));
 mock.module('../../shared/db', () => ({ db: {} }));
 
 const { providerAutoStopBackstopMinutes } = await import('./index');

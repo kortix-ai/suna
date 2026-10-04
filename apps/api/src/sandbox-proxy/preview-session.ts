@@ -31,7 +31,7 @@
  * rejected on another even if a browser were to send it there.
  */
 import { createHmac, timingSafeEqual } from 'crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export const PREVIEW_COOKIE = '__kortix_preview';
 export const PREVIEW_COOKIE_PARTITIONED = '__kortix_preview_chips';

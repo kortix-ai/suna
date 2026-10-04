@@ -25,7 +25,7 @@ let billingInternalEnabled = true;
 let debitCalls: Array<{ accountId: string; amount: number }> = [];
 let deductShouldFail = false;
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     get KORTIX_BILLING_INTERNAL_ENABLED() {
       return billingInternalEnabled;

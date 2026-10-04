@@ -34,7 +34,7 @@ import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSna
 import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
 import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
-import { config, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;

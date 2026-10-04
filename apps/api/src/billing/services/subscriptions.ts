@@ -6,7 +6,7 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { getCustomerByAccountId, getCustomerByStripeId, upsertCustomer, deleteCustomerByStripeId } from '../repositories/customers';
-import { BillingError, SubscriptionError } from '../../errors';
+import { BillingError, SubscriptionError } from '../errors';
 import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, resolveTierForPrice, isPerSeatAccount, MAX_SEATS_PER_ACCOUNT } from './tiers';
 import { countActiveMembers } from './seat-management';
 import { wallet } from '../wallet';

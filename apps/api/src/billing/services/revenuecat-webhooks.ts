@@ -1,5 +1,5 @@
 import { isWebhookEventProcessed, recordWebhookEvent } from './webhook-concurrency';
-import { WebhookError } from '../../errors';
+import { WebhookError } from '../errors';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyStripeSync } from './account-write-owner';
 import { mapRevenueCatProductToTier, getRevenueCatPeriodType, isRevenueCatAnonymous, getMonthlyCredits, getTier } from './tiers';

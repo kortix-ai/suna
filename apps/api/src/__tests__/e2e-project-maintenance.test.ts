@@ -10,7 +10,7 @@ let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [
 let providerStopError: Error | null = null;
 let auditInserts: Array<Record<string, unknown>> = [];
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
   SANDBOX_VERSION: 'test',
   KORTIX_MARKUP: 1,

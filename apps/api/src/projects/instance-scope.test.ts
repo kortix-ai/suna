@@ -12,7 +12,7 @@
 // strict NO-OP when `KORTIX_INSTANCE_ID` is unset (production: one URL), and it
 // must treat rows that predate the stamp as everyone's (legacy rows).
 import { afterEach, describe, expect, test } from 'bun:test';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { sandboxBelongsToThisInstance } from './instance-scope';
 
 const ORIGINAL = (config as { KORTIX_INSTANCE_ID?: string }).KORTIX_INSTANCE_ID;

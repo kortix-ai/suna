@@ -29,7 +29,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   type ProviderName,
   type SandboxWorkloadType,

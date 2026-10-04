@@ -146,7 +146,7 @@ mock.module('../channels/repo-preview', () => ({
 let recentSessions: unknown[] | null = [];
 mock.module('../channels/core/sessions', () => ({ listVisibleChatSessions: async () => recentSessions }));
 
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { handleSlashCommand } = await import('../channels/slack/commands');
 
 const ctx = { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' };

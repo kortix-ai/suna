@@ -7,7 +7,7 @@
 
 import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';
 import {
@@ -19,7 +19,7 @@ import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
 import { wallet } from '../wallet';
 import { isPaidTier } from './tiers';
-import { BillingError } from '../../errors';
+import { BillingError } from '../errors';
 import {
   AUTO_TOPUP_DEFAULT_AMOUNT,
   AUTO_TOPUP_DEFAULT_THRESHOLD,

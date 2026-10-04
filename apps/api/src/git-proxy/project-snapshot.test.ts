@@ -5,7 +5,7 @@
  * `__tests__/integration-project-snapshot.test.ts` against real MinIO + Postgres.
  */
 import { describe, expect, test } from 'bun:test';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   PROJECT_SNAPSHOT_MAX_ATTEMPTS,
   normalizeSnapshotRef,

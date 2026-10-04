@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';

@@ -21,7 +21,7 @@ mock.module('../services/auto-topup', () => ({
 }));
 
 const { wallet } = await import('./index');
-const { InsufficientCreditsError } = await import('../../errors');
+const { InsufficientCreditsError } = await import('../errors');
 
 /** A Drizzle failure: the pg detail hangs off `cause`, not `message`. */
 function queryError(cause: Record<string, unknown>) {

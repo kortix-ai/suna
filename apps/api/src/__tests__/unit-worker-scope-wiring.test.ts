@@ -65,7 +65,7 @@ const NOT_WORKERS: Record<string, string> = {
   'projects/session-lifecycle/command-lease.ts':
     'renews the lock of one claimed command while its drain lane or inline create runs',
   'projects/session-lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
-  'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
+  'llm-gateway/models/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
   'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',

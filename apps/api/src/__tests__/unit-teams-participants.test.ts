@@ -47,7 +47,7 @@ mock.module('../shared/db', () => ({
     },
   },
 }));
-mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
+mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['req-1', 'marko@example.com']]) }));
 // Where each card went: to one person (targeted), or to the whole conversation.
 const deliveries: Array<{ to: 'targeted' | 'public'; recipient?: string }> = [];

@@ -1,5 +1,5 @@
 import { createHmac, scrypt } from 'node:crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 /**
  * Lookup hashes for a PRESENTED Kortix token, computed off the event loop and

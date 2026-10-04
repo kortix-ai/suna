@@ -19,7 +19,7 @@
  * never sees a manifest whose archive is still uploading.
  */
 import type { S3Client } from '@aws-sdk/client-s3';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { ObjectStore, type ObjectBody, type PutOutcome, resolvePresignTarget } from '../object-store/s3';
 
 export { resolvePresignTarget };

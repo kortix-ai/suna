@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getModel, requireModelPricing, resolveOpenRouterId } from './models';
+import { getModel, requireModelPricing, resolveOpenRouterId } from './model-registry';
 
 describe('billable model resolution', () => {
   test('returns null for a provider/model pair without an exact price', () => {

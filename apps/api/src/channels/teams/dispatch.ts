@@ -1,7 +1,7 @@
 import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { listTenantProjects, resolveConversationProjectDetailed } from './binding';

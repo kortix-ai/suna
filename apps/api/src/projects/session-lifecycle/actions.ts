@@ -1,6 +1,6 @@
 import { sessionAttachmentStore } from '../lib/session-attachments';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../../config';
+import { config, type SandboxProviderName } from '../../lib/config';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';

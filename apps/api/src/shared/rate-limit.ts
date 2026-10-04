@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { requestClientIp, requestClientKey } from './client-ip';
 import { shareIdFromPublicRef } from './public-share-ref';
 import { recordAuditEvent } from './audit';

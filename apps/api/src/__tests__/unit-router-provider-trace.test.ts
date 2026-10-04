@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { runWithContext } from '../lib/request-context';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   KORTIX_MARKUP: 1.2,
   config: {
     TAVILY_API_KEY: 'tvly-test',

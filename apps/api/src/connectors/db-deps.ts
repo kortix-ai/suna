@@ -38,7 +38,7 @@ import {
   loadTeamsTenantForProject,
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';

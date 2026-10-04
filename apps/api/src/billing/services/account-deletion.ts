@@ -38,7 +38,7 @@ import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
-import { BillingError } from '../../errors';
+import { BillingError } from '../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';

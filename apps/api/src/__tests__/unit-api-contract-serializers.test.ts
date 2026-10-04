@@ -7,7 +7,7 @@ import {
   SessionStartResultSchema,
 } from '@kortix/api-contract';
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
 import { serializeSandboxRow } from '../projects/routes/shared';
 

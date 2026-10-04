@@ -714,14 +714,6 @@
       "count": 2
     }
   },
-  "src/config.ts": {
-    "kortix-api/layers": {
-      "count": 2
-    },
-    "no-console": {
-      "count": 23
-    }
-  },
   "src/connectors/call.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -943,6 +935,14 @@
       "count": 2
     }
   },
+  "src/lib/config.ts": {
+    "kortix-api/layers": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 23
+    }
+  },
   "src/lib/demo-request-email.ts": {
     "kortix-api/layers": {
       "count": 1
@@ -1026,6 +1026,14 @@
   "src/llm-gateway/internal-routes.ts": {
     "no-restricted-properties": {
       "count": 1
+    }
+  },
+  "src/llm-gateway/models/model-pricing.ts": {
+    "kortix-api/replica-local": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 5
     }
   },
   "src/llm-gateway/models/runtime-catalog.ts": {
@@ -2516,14 +2524,6 @@
       "count": 1
     }
   },
-  "src/router/config/model-pricing.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 5
-    }
-  },
   "src/router/routes/generation.ts": {
     "no-restricted-imports": {
       "count": 2
@@ -3131,11 +3131,6 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/types.ts": {
-    "kortix-api/layers": {
       "count": 1
     }
   }

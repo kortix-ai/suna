@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
-mock.module('../config', () => mockConfigModule());
+mock.module('../lib/config', () => mockConfigModule());
 
 const {
   NON_TURN_DEADLINE_CAP_MS,

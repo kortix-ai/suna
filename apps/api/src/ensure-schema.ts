@@ -10,7 +10,7 @@
 
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { config } from './config';
+import { config } from './lib/config';
 import { SCHEMA_CHECK_POOL_MAX } from './shared/database-capacity';
 
 export async function ensureSchema(): Promise<void> {

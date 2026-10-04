@@ -7,7 +7,7 @@
 import type { SessionStartResult } from '@kortix/api-contract';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { type SandboxProviderName, config } from '../../config';
+import { type SandboxProviderName, config } from '../../lib/config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { db } from '../../shared/db';

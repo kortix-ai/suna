@@ -67,7 +67,7 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 

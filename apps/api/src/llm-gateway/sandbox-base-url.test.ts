@@ -8,7 +8,7 @@ delete process.env.LLM_GATEWAY_BASE_URL;
 delete process.env.LLM_GATEWAY_PROXY_PORT;
 delete process.env.LLM_GATEWAY_PROXY_TARGET;
 
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { resolveLlmGatewayBaseUrl } = await import('./sandbox-base-url');
 
 describe('resolveLlmGatewayBaseUrl', () => {

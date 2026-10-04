@@ -281,7 +281,7 @@ describe('channelTurnModel', () => {
   });
 });
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { LLM_GATEWAY_VISION_MODEL: 'gpt-5.6-luna' },
 }));
 

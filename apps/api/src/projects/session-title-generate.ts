@@ -1,7 +1,7 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { logger as appLogger } from '../lib/logger';
 import {
   INTERNAL_SESSION_TITLE_KEY_NAME,

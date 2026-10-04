@@ -31,7 +31,7 @@ mock.module('../shared/db', () => ({
     select: () => chain([]),
   },
 }));
-mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
+mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
 mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 const cards: string[] = [];
 mock.module('../channels/teams-api', () => ({

@@ -33,7 +33,7 @@ let updateThrows: string | null = null;
 /** When set, every `db.update(...).where(...)` resolves to no rows — the CAS matched nothing. */
 let updateMatchesNothing = false;
 
-mock.module('../../config', () => mockConfigModule());
+mock.module('../../lib/config', () => mockConfigModule());
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({

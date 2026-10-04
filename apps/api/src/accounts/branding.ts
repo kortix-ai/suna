@@ -27,7 +27,7 @@ import { accountHasEntitlement } from '../billing/services/entitlements';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { auth, errors, json } from '../openapi';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { db } from '../shared/db';
 import { rewriteStorageOrigin } from '../shared/storage-url';
 import { getSupabase } from '../shared/supabase';

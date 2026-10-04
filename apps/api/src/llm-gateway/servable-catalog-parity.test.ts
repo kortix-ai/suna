@@ -234,7 +234,7 @@ const accountResource = {
 
 mock.module('../secrets/account-resource', () => accountResource);
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { LLM_GATEWAY_ENABLED: true, KORTIX_MANAGED_PROVIDER_ENABLED: false },
 }));
 

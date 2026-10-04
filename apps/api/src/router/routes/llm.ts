@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
-import type { AppContext } from '../../types';
+import type { AppContext } from '../types';
 import {
   proxyToOpenRouter,
   extractUsage,
@@ -18,7 +18,7 @@ import {
   reserveEstimatedLlmCredits,
   settleLlmReservation,
 } from '../services/llm-reservation';
-import { KORTIX_MARKUP } from '../../config';
+import { KORTIX_MARKUP } from '../../lib/config';
 
 const llm = makeOpenApiApp<{ Variables: AppContext }>();
 

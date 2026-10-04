@@ -3,7 +3,7 @@ import { chatInstalls, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { publishHomeView } from '../slack-api';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { escapeMrkdwn, formatRelativeTime } from './util';
 import { isKortixHostedRepo, repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { HomeProjectRow, HomeRecentRow } from './types';

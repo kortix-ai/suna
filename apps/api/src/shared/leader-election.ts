@@ -24,7 +24,7 @@
 
 import os from 'node:os';
 import postgres from 'postgres';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { logger } from '../lib/logger';
 import { LEADER_ELECTION_POOL_MAX } from './database-capacity';
 

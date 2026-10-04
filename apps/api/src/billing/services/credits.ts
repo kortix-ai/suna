@@ -2,7 +2,7 @@ import type { getCreditAccount } from '../repositories/credit-accounts';
 import { TOKEN_PRICE_MULTIPLIER } from './tiers';
 import { getManagedModel } from '@kortix/llm-catalog';
 import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
-import { requireModelPricing } from '../../router/config/models';
+import { requireModelPricing } from '../../llm-gateway/models/model-registry';
 
 // Credit movements live in billing/wallet. This module derives the bucket
 // summary from a credit row and prices tokens. Whether an account may run is

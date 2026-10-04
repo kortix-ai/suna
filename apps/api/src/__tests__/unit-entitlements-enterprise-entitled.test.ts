@@ -26,7 +26,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // flip it without re-mocking the module. Everything else entitlements.ts might
 // read from config stays absent; it only ever touches this one field.
 let enterpriseLicenseAvailable = false;
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     get ENTERPRISE_LICENSE_AVAILABLE() {
       return enterpriseLicenseAvailable;

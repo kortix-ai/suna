@@ -22,7 +22,7 @@ mock.module('../../billing/services/entitlements', () => ({
 }));
 
 const config: Record<string, unknown> = {};
-mock.module('../../config', () => ({ config }));
+mock.module('../../lib/config', () => ({ config }));
 
 // `resolvedSecret` is the legacy single-value behavior every non-Bedrock test
 // below still relies on (one BYOK provider = one envVar). Bedrock resolves

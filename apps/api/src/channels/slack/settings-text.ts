@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { type ChatUser, chatUser } from '../core/identity';
 import type { SettingsChannel, SettingsRefusal } from '../core/settings';
 

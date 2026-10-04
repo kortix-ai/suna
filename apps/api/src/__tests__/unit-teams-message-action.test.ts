@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 // "Open in Kortix" on a message's ⋯ menu: Slack's message shortcut. It answers
 // which session a conversation (or a channel thread) belongs to, with a link.
 
-mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app.example.test' } }));
+mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app.example.test' } }));
 
 const CHANNEL = '19:c@thread.tacv2';
 const sessions: Record<string, { sessionId: string; projectId: string }> = {

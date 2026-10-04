@@ -16,7 +16,7 @@
  * boots meta sandboxes from. That is the first test below.
  */
 import { describe, expect, test } from 'bun:test';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { metaSnapshotName, reapSupersededMetaSnapshots } from './builder';
 
 /**

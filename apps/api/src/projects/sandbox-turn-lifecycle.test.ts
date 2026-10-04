@@ -13,7 +13,7 @@ let executeErrorByIndex: Record<number, Error> = {};
 
 
 
-mock.module('../config', () => mockConfigModule());
+mock.module('../lib/config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
   withDbTransaction: async (action: () => Promise<unknown>) => action(),
   db: {

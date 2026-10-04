@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OPENCODE_VERSION } from '@kortix/shared';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { PI_WORKER_ENTRYPOINT, piWorkerImageFingerprint } from './build-context';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { recentlyBuiltStrict } from './builder-log';

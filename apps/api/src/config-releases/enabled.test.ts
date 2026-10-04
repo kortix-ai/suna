@@ -3,7 +3,7 @@
  * flag is available on every deployment.
  */
 import { describe, expect, test } from 'bun:test';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { buildFeatureFlagCatalog, featureFlagDef } from '../feature-flags/registry';
 import { projectSnapshotStorageConfigured } from '../git-proxy/project-snapshot-store';
 import { CONFIG_RELEASES_FLAG, configReleasesEnabled } from './enabled';

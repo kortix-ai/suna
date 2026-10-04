@@ -22,7 +22,7 @@ import { describe, expect, mock, test } from 'bun:test';
 const FREE_REQS_PER_MIN = 7;
 const PAID_REQS_PER_MIN = 100;
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     INTERNAL_KORTIX_ENV: 'dev',
     KORTIX_BILLING_INTERNAL_ENABLED: true,

@@ -12,7 +12,7 @@ import { mockConfigModule } from './reaping/test-support/mock-config';
 // wide fan of DB/provider modules. `shouldForceResetStaleLock` is a pure
 // function with none of that runtime surface, so everything below is purely
 // to let the module load in isolation.
-mock.module('../config', () => mockConfigModule());
+mock.module('../lib/config', () => mockConfigModule());
 
 // How many sweeps are in flight at once. A tracked sweep holds its slot for one
 // timer turn, so sweeps that start together are counted together.

@@ -44,7 +44,7 @@ mock.module('../shared/db', () => ({
 }));
 
 let requireIdentity = true;
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: {
     FRONTEND_URL: 'https://dev.kortix.com',

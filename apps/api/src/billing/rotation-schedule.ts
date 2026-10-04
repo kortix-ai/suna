@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { runWorkerTick } from '../shared/audit-scope';
 import { logger } from '../lib/logger';
 

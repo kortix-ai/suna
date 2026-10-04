@@ -7,7 +7,7 @@ process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.FRONTEND_URL = 'https://app.example.com';
 
-const { config } = await import('../../config');
+const { config } = await import('../../lib/config');
 const { e2bDomain } = await import('./e2b-domain');
 
 const original = config.E2B_DOMAIN;

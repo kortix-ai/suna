@@ -1,5 +1,5 @@
 import type { ManagedModel } from '@kortix/llm-catalog';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { managedTransportAvailable } from '../resolution/descriptors';
 import {
   RUNTIME_MANAGED_MODELS,

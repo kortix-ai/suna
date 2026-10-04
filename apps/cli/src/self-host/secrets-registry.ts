@@ -114,7 +114,7 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
   // Agent sandbox — three interchangeable providers (SandboxProviderName in
-  // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
+  // apps/api/src/lib/config.ts). `init`/`configure` ask which ONE this instance
   // runs on (default daytona) and only collect that provider's key(s); the
   // actual required-secret gate is the composite sandboxProviderConfigured()
   // check in commands/self-host.ts (whichever provider ALLOWED_SANDBOX_

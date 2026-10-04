@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
 import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
-import { config } from "../../config";
+import { config } from "../../lib/config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { actorOf } from '../../iam/actor';

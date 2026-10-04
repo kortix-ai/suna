@@ -19,7 +19,7 @@
  * implementation, parameterized by header set and secret.
  */
 import { createHmac, timingSafeEqual } from 'crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export interface EdgeHeaderNames {
   host: string;

@@ -9,7 +9,7 @@
 import { beforeAll, expect, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { verifyParkedRuntimes } from '../projects/reaping/parked-runtime-verification';
 import { db } from '../shared/db';
 import { seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';

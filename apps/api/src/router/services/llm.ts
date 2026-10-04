@@ -1,4 +1,4 @@
-import { config, KORTIX_MARKUP } from '../../config';
+import { config, KORTIX_MARKUP } from '../../lib/config';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import {
   getModel,
@@ -6,7 +6,7 @@ import {
   requireModelPricing,
   resolveOpenRouterId,
   type ModelConfig,
-} from '../config/models';
+} from '../../llm-gateway/models/model-registry';
 import type { ActorContext } from '../../shared/actor-context';
 import {
   refundLlmReservation,
@@ -313,4 +313,4 @@ export async function settleStreamUsage(options: {
 }
 
 // Re-export model functions used by router handlers.
-export { getModel, getAllModels } from '../config/models';
+export { getModel, getAllModels } from '../../llm-gateway/models/model-registry';

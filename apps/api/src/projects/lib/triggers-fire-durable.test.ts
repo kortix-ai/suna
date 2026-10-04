@@ -7,7 +7,7 @@
 // continue_session command (drained with retry/backoff, dead-lettered loudly),
 // while a dead/failed session still falls through to the fresh-create path.
 //
-// Mocks `../session-lifecycle`, `../../shared/db`, and `../../config` via
+// Mocks `../session-lifecycle`, `../../shared/db`, and `../../lib/config` via
 // `mock.module` — process-global in bun:test, so run this file in its own
 // `bun test <file>` invocation (as CI does), same caveat as
 // ../sandbox-reaper.test.ts.
@@ -19,7 +19,7 @@ let enqueueCalls: Array<Record<string, unknown>> = [];
 let drainCalls: Array<Record<string, unknown>> = [];
 let createCalls: Array<Record<string, unknown>> = [];
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {},
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['daytona'],

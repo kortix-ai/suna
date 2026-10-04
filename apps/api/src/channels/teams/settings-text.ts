@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { SettingsChannel, SettingsRefusal, changeChannelAgent } from '../core/settings';
 import { teamsChannelCtx } from './binding';
 import type { TeamsActivity } from './types';

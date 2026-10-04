@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 
 let auditRows: Array<Record<string, unknown>> = [];
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     KORTIX_CHECK_EMAIL_REQS_PER_MIN: 1,
     KORTIX_INVITE_ACCEPT_REQS_PER_MIN: 1,

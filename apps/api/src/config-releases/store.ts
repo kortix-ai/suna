@@ -21,7 +21,7 @@
  *     tree ID), so even a lost race writes identical bytes.
  */
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { ObjectStore, type PutOutcome } from '../object-store/s3';
 import { isUuid } from '../shared/validate';
 

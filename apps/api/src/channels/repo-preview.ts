@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { repoLabel, repoOgImage } from './slack/util';
 
 // Repo previews on Slack and Teams cards: GitHub's social-preview image of the

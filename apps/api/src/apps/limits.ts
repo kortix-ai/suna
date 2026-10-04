@@ -22,7 +22,7 @@
  */
 import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { assertAppBudgetAvailable } from './budget';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import { getTier } from '../billing/services/tiers';

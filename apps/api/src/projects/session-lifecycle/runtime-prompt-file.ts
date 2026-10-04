@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 
 import type { RuntimePromptFileWriteInput } from './prompt-attachment-materializer';

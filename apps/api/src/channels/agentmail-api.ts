@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export interface AgentMailInbox {
   inbox_id: string;

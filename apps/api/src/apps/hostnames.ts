@@ -20,7 +20,7 @@
  * The environment prefix and the immutable route key are unchanged: routing has
  * never been derived from the mutable slug.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 
 /** Hostname shape for an App on a real domain. Kept in one regexp. */
 const APP_LABEL = /^(dev|staging|prod|preview)-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-([a-f0-9]{16})$/;

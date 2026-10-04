@@ -5,7 +5,7 @@ const updates: Array<{ values: any }> = [];
 const observations = new Map<string, string>();
 const provider = 'daytona';
 
-mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { ALLOWED_SANDBOX_PROVIDERS: [provider] } }));
+mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { ALLOWED_SANDBOX_PROVIDERS: [provider] } }));
 
 mock.module('../shared/db', () => ({
   db: {

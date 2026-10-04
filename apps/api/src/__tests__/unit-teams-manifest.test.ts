@@ -78,7 +78,7 @@ describe('buildTeamsManifest', () => {
   });
 });
 
-mock.module('../config', () => ({ config: { MICROSOFT_APP_ID: 'app-123', MICROSOFT_APP_PASSWORD: 'secret' } }));
+mock.module('../lib/config', () => ({ config: { MICROSOFT_APP_ID: 'app-123', MICROSOFT_APP_PASSWORD: 'secret' } }));
 const { teamsMode } = await import('../channels/teams-mode');
 
 describe('teamsMode', () => {

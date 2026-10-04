@@ -1,5 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
-import { config, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
 import {
   effectiveAppMachine,

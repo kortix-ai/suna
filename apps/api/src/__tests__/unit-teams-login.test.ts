@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     MICROSOFT_APP_PASSWORD: 'teams-secret',
     API_KEY_SECRET: 'unit-test-api-key-secret',

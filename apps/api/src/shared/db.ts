@@ -1,5 +1,5 @@
 import { createDb, type Database } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { contextualDatabase } from './db-context';
 import { beginStage } from '../lib/server-timing';
 

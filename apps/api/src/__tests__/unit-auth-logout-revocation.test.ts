@@ -2,7 +2,7 @@ import { expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import type { AuthVariables } from '../types';
+import type { AuthVariables } from '../types/app-env';
 
 const USER = '00000000-0000-4000-8000-00000000a001';
 const SECRET = 'synthetic-logout-secret-0123456789';

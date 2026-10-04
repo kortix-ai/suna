@@ -10,7 +10,7 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 const CTX = { platform: 'teams', teamId: 'tenant-1', channelId: 'a:synthetic-chat' };
 const testConfig = { TEAMS_REQUIRE_USER_IDENTITY: true };
-mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: testConfig }));
+mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: testConfig }));
 
 let gate: Record<string, unknown> | null = null;
 mock.module('../channels/slack/model-gate', () => ({ channelModelContext: async () => gate }));

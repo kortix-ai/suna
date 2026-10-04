@@ -7,7 +7,7 @@ import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub'
 
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'false';
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   // Keep the managed catalog enabled because this file exercises the real model
   // picker. scripts/test.env sets it, but this config mock replaces that module.
   config: {

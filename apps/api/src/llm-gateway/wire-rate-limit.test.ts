@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { Hono } from 'hono';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     LLM_GATEWAY_ENABLED: true,
     LLM_GATEWAY_PROXY_TARGET: 'http://gateway.test',

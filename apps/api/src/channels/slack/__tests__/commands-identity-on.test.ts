@@ -5,7 +5,7 @@ import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub'
 // `/login` / `/logout` subcommands and help rows become live.
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'true';
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: true,

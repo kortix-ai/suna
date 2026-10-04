@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     MICROSOFT_APP_ID: 'app-id',
     MICROSOFT_APP_PASSWORD: 'app-secret',

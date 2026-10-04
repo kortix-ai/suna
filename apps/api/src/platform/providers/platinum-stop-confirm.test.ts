@@ -7,7 +7,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 // turn-stream/audit/events with that now-dead token. `stop()` must now poll
 // until Platinum confirms the VM is actually off, and throw (never silently
 // return) when it never gets there within the bound.
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     PLATINUM_API_KEY: 'pt_test',
     PLATINUM_API_URL: 'https://platinum.example.test',

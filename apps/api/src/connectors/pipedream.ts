@@ -10,7 +10,7 @@
  * goes through the Connect `actions/run` API.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { upsertCredential, upsertConnectionCredential } from './credentials';
 import type { ExecResult } from './call';
 import { isCatalogApp } from './pipedream-catalog';

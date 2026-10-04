@@ -10,7 +10,7 @@ let billingEnabled = true;
 // The other config exports must be listed explicitly: a partial namespace makes
 // ESM named-export resolution fail for any sibling test file that imports them
 // in the same run.
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   SANDBOX_VERSION: '0.0.0-test',
   KNOWN_PROVIDERS: [],
   KORTIX_MARKUP: 1,

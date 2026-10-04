@@ -23,7 +23,7 @@ const confirmed = Boolean(
 );
 const withDb = confirmed ? describe : describe.skip;
 
-// Metering is a managed-deployment feature. `apps/api/src/config` validates the
+// Metering is a managed-deployment feature. `apps/api/src/lib/config` validates the
 // environment at import time, so billing, and the keys a managed deployment must
 // hold, are set before the first API import. No value is reachable.
 Object.assign(process.env, {

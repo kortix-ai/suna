@@ -12,7 +12,7 @@
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { supabaseAuth } from '../middleware/auth';
 import { requestClientIp } from '../shared/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
@@ -1543,7 +1543,7 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'weights'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const { config } = await import('../config');
+    const { config } = await import('../lib/config');
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
     const { eq } = await import('drizzle-orm');
@@ -1567,7 +1567,7 @@ adminApp.openapi(
     const src = (
       typeof body.weights === 'object' && body.weights !== null ? body.weights : body
     ) as Record<string, unknown>;
-    const { config } = await import('../config');
+    const { config } = await import('../lib/config');
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
       const w = Number(src[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
@@ -1662,7 +1662,7 @@ adminApp.openapi(
     const sessionId = c.req.param('sessionId');
     const body = await readJsonObject(c);
     const target = String(body.targetProvider || '');
-    const { config } = await import('../config');
+    const { config } = await import('../lib/config');
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
     const { db } = await import('../shared/db');
     const { sessionSandboxes, projectSessions, projects } = await import('@kortix/db');

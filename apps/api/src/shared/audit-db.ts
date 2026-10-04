@@ -1,5 +1,5 @@
 import type { Database } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity';
 import { db } from './db';
 import { errorSqlstate, isAuditContentionError } from './error-cause';

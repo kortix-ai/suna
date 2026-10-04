@@ -1,5 +1,5 @@
 // The audit archive's object store (bucket from AUDIT_ARCHIVE_*). Shared by the archive job and the export.
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { ObjectStore } from '../../object-store/s3';
 
 const store = new ObjectStore(() => ({

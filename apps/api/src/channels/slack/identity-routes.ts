@@ -14,7 +14,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { inArray } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
 import {

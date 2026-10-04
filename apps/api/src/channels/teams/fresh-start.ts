@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { chatEventDedup, chatThreadParticipants, chatThreads, projectSessions } from '@kortix/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { chatUser, resolveProjectChatActor } from '../core/identity';

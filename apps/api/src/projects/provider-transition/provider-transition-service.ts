@@ -13,7 +13,7 @@ import {
   resolveCommitSha,
 } from '../../snapshots/builder';
 import { resolveTemplateBySlug, computeTemplateIdentity } from '../../snapshots/templates';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { GitBackedProject } from '../git/types';
 import {
   driveProviderTransition,

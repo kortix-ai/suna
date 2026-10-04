@@ -142,7 +142,7 @@ function updateResult(rows: unknown[]) {
   return p;
 }
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: testConfig,
 }));
 

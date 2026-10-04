@@ -29,7 +29,7 @@ import {
   type SecretRelayMeta,
 } from '@kortix/api-contract/secret-relay';
 import { Hono } from 'hono';
-import { config } from '../config';
+import { config } from '../lib/config';
 import * as realAccess from '../projects/lib/access';
 import * as realProjectSecrets from '../projects/secrets';
 import { mintHandle } from '../secrets/strategy';

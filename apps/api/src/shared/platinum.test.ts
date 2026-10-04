@@ -15,7 +15,7 @@ let mockPlatinumApiUrl = '';
 // Real config.ts validates the actual dotenvx-encrypted process.env and
 // exits on a bare `bun test` run (see sandbox-reaper.test.ts for the same
 // pattern) — platinum.ts only reads these two fields, so mock just those.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   get config() {
     return { PLATINUM_API_KEY: mockPlatinumApiKey, PLATINUM_API_URL: mockPlatinumApiUrl };
   },

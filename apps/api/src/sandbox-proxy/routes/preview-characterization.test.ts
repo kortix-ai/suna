@@ -57,7 +57,7 @@ const counts = {
   resumeStopped: 0,
 };
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: { FRONTEND_URL: 'http://localhost:3000' },
 }));
 mock.module('../../lib/request-context', () => ({

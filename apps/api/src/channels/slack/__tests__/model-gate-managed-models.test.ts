@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  */
 
 let billingEnabled = true;
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: new Proxy(
     {},
     {

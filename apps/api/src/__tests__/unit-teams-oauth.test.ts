@@ -27,7 +27,7 @@ const catalogIds: string[] = [];
 const appVersions: string[] = [];
 let publishImpl: () => Promise<Record<string, unknown>> = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: {
     MICROSOFT_APP_ID: '62b4470a-e8e6-4e13-a73f-363de2209dfc',
@@ -285,7 +285,7 @@ describe('Teams one-click install completion', () => {
  */
 describe('Teams install state key', () => {
   test('a state MACed with an empty key is refused while MICROSOFT_APP_PASSWORD is empty, and nothing is saved', async () => {
-    const { config } = (await import('../config')) as { config: Record<string, unknown> };
+    const { config } = (await import('../lib/config')) as { config: Record<string, unknown> };
     const original = config.MICROSOFT_APP_PASSWORD;
     config.MICROSOFT_APP_PASSWORD = '';
     try {

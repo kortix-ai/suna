@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { assertSafePresignedUploadUrl, parseUploadHostAllowlist, sanitizeUrlForLog } from './upload-url-guard';
 
 const UPLOAD_ATTEMPTS = 3;

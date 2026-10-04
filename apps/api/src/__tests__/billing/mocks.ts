@@ -65,7 +65,7 @@ export function registerGlobalMocks() {
     getStripe: () => mockRegistry.stripeClient ?? createMockStripeClient(),
   }));
 
-  mock.module('../../config', () => ({
+  mock.module('../../lib/config', () => ({
     config: {
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
       KORTIX_BILLING_INTERNAL_ENABLED: true,

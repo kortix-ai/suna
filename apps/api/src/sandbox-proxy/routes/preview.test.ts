@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { getRequestContext, runWithContext } from '../../lib/request-context';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../proxy-hop';
 import {

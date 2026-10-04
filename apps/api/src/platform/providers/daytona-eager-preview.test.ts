@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test';
 mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     DAYTONA_API_KEY: 'test-key',
     DAYTONA_SERVER_URL: '',

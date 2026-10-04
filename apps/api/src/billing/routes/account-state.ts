@@ -1,8 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } from '../services/account-state';
 import { hasDatabase } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { authorize } from '../../iam/authorize';
 import { actorOf } from '../../iam/actor';

@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { accountRoleMap, isAccountManagerRole } from '../../iam/read-models';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';

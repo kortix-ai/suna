@@ -2,7 +2,7 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { escapeMrkdwn, formatRelativeTime, sessionWebUrl } from './util';
 import { SLACK_PREVIEW_WAIT_MS, repoPreviewImages } from '../repo-preview';
 import { currentChannelSelection } from './selection';

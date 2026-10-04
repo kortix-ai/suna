@@ -120,7 +120,7 @@ let scheduledRequests: Array<{ id: string; accountId: string; userId: string }> 
 let completedRequests: string[] = [];
 let deletedUsers: string[] = [];
 let deleteUserError: Error | null = null;
-const { config } = await import('../../config');
+const { config } = await import('../../lib/config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
 const liveness = await import('../../shared/jwt-liveness');
 mock.module('../../shared/supabase', () => ({

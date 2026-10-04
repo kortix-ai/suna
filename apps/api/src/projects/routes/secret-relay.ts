@@ -40,7 +40,7 @@ import {
   RELAY_VERSION,
   RELAY_VERSION_HEADER,
 } from '@kortix/api-contract/secret-relay';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors } from '../../openapi';
 import { requestEgressIp, verifySandboxEgressIp } from '../../platform/services/sandbox-egress-pin';

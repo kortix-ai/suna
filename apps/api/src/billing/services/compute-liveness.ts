@@ -53,7 +53,7 @@
  * around the clock. A signal the box authors may never extend its own bill.
  */
 
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 /**
  * Hard floor on the billing grace, and its value in every environment that has

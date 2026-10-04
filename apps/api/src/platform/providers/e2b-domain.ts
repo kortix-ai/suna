@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 /**
  * The one E2B cluster this deployment talks to.

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // Run this file in its own `bun test <file>` invocation (as CI does) so this
 // mock never leaks into a sibling file that needs the real config — see the
 // same pattern in projects/sandbox-reaper.test.ts.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     DAYTONA_API_KEY: 'test-key',
     DAYTONA_SERVER_URL: 'https://daytona.test/api',

@@ -132,7 +132,7 @@ let postDelayMs = 0;
 const simulatedInFlightCommands = new Set<string>();
 
 let pauseAfterPosts: number | null = null;
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
 }));

@@ -100,7 +100,7 @@ const ORIGINAL_FETCH = globalThis.fetch;
 };
 
 const { propagateProjectSecretsToActiveSandboxes } = await import('./sandbox-env-sync');
-const { config } = await import('../../config');
+const { config } = await import('../../lib/config');
 const ORIGINAL_INSTANCE = (config as { KORTIX_INSTANCE_ID?: string }).KORTIX_INSTANCE_ID;
 const setInstance = (value: string | undefined) => {
   (config as { KORTIX_INSTANCE_ID?: string }).KORTIX_INSTANCE_ID = value;

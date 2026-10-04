@@ -7,7 +7,7 @@ const cfg: {
   KORTIX_SANDBOX_AUTOSTOP_MINUTES?: number;
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES?: number;
 } = { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 };
-mock.module('../../config', () => ({ config: cfg }));
+mock.module('../../lib/config', () => ({ config: cfg }));
 
 const {
   billableWindowEnd,

@@ -10,7 +10,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 process.env.KORTIX_URL = 'https://api.example.com';
 process.env.FRONTEND_URL = 'https://app.example.com';
 
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { makeOpenApiApp } = await import('../openapi');
 const { mountLlmGateway } = await import('./wire');
 

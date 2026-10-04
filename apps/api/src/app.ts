@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { config } from './config';
+import { config } from './lib/config';
 import { auth, errors, json } from './openapi';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { getPlatformRole } from './shared/platform-roles';

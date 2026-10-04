@@ -10,7 +10,7 @@ import * as realPreviewOwnership from '../shared/preview-ownership';
 
 let mockPayload: { userId: string; sandboxId: string } | null = null;
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {},
   SANDBOX_VERSION: 'test-version',
 }));

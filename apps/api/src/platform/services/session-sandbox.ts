@@ -55,7 +55,7 @@ import {
   type EnsureSandboxImageResult,
   type SandboxImageSpec,
 } from '../../snapshots/builder';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';

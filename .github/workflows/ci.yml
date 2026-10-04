@@ -102,7 +102,7 @@ jobs:
               - 'apps/api/Dockerfile'
               - 'apps/kortix-app-runtime/**'
               - 'apps/api/src/snapshots/builder.ts'
-              - 'apps/api/src/config.ts'
+              - 'apps/api/src/lib/config.ts'
               - 'packages/db/**'
               - 'apps/cli/src/commands/self-host.ts'
               - 'apps/cli/src/self-host/**'

@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { latestPendingTeamsAuthMessageId } from './auth-resume';
 import { buildConnectAccountCard, buildConnectPrivatelyCard, buildConnectSentPrivatelyCard } from './cards';
 import { openDirectConversation, sendCard, sendTargetedCard, updateCard } from '../teams-api';

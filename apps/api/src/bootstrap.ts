@@ -3,7 +3,7 @@ import { captureException, flushSentry } from './lib/sentry';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from './platform/services/pi-worker-pool';
-import { stopModelPricing } from './router/config/model-pricing';
+import { stopModelPricing } from './llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
 import { runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';

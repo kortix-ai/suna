@@ -23,7 +23,7 @@
 
 import { isNotNull } from 'drizzle-orm';
 import { appRuntimes, projectMonitorBoxes, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { REAP_CONCURRENCY } from '../reaper-constants';

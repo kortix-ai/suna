@@ -9,7 +9,7 @@
 // a hung upstream call within the configured bound instead of hanging.
 import { beforeEach, expect, mock, test } from 'bun:test';
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     DAYTONA_API_KEY: 'test-key',
     DAYTONA_SERVER_URL: '',

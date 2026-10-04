@@ -13,7 +13,7 @@ let billingCalls = 0;
 // Everything except the billing gate is mocked to a "happy path" stub so the
 // only thing under test is the catch block's error-code selection.
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: new Proxy(
     {},
     {

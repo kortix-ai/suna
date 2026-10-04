@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
-import { config } from './config';
+import { config } from './lib/config';
 import { logger as appLogger } from './lib/logger';
 import { decInFlight, incInFlight, recordHttpRequest } from './lib/metrics';
 import { emitOtelSpan } from './lib/otel';

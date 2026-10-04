@@ -115,7 +115,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
 
 14. **Prompt-cache WRITE tokens priced at a real premium** —
     `usage/{extract,pricing}.ts`, `transports/anthropic/response.ts`,
-    `router/config/model-pricing.ts`, `resolution/descriptors.ts`
+    `models/model-pricing.ts`, `resolution/descriptors.ts`
     Anthropic's `cache_creation_input_tokens` were folded into the plain input
     bucket and billed at the base rate. Now surfaced separately end to end and
     priced at Anthropic's published cache-write multiplier (1.25x base input

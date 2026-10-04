@@ -1,6 +1,6 @@
 import { MANAGED_MODELS as BUNDLED_MANAGED_MODELS, type ManagedModel } from '@kortix/llm-catalog';
 import { z } from 'zod';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 const managedModelSchema = z.object({
   id: z.string().min(1),

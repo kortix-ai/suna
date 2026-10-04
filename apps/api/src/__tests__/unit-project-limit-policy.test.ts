@@ -14,7 +14,7 @@ let currentTier: string | null = 'free';
 
 // A Proxy config so any unrelated key read elsewhere is a harmless `undefined`;
 // only KORTIX_BILLING_INTERNAL_ENABLED matters to the policy.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: new Proxy(
     {},
     {

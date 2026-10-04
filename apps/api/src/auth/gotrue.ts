@@ -8,7 +8,7 @@
  * routes pass GoTrue's status and `{error, error_description}` through
  * unchanged, so a wrong password is a 400 from Supabase, not a 500 from us.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export type GoTrueFetch = (input: string, init: RequestInit) => Promise<Response>;
 

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,

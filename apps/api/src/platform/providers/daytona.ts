@@ -8,7 +8,7 @@
 import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { isProviderNotFound } from './status';
 import { SandboxState } from '@daytonaio/sdk';
-import { SANDBOX_VERSION, config } from '../../config';
+import { SANDBOX_VERSION, config } from '../../lib/config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
 import {
   archiveDaytonaSandboxById,

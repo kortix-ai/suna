@@ -2,7 +2,7 @@
 
 import { rm } from 'node:fs/promises';
 import { Template, waitForProcess } from 'e2b';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { e2bDomain } from '../../platform/providers/e2b-domain';
 import {
   DEFAULT_CPU,

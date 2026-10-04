@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accessRequests } from '@kortix/db';
 import { sql } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';

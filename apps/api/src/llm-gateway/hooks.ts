@@ -10,7 +10,7 @@ import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/ser
 import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { wallet } from '../billing/wallet';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { logger } from '../lib/logger';
 import { emitOtelSpan, isOtelTraceExporterConfigured } from '../lib/otel';
 import {

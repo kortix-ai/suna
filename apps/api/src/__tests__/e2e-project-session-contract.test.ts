@@ -39,7 +39,7 @@ process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
 
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 
 let branchCreateCalls = 0;
 // Committed manifest text served by the git mock; null = a blank project.

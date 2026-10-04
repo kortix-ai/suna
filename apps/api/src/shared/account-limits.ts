@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
 import { activeTrialSeatLimit } from '../billing/services/resolve-billing';

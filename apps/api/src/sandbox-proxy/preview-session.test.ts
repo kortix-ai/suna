@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-secret-value-32-chars-long!!' } }));
+mock.module('../lib/config', () => ({ config: { API_KEY_SECRET: 'test-secret-value-32-chars-long!!' } }));
 
 const {
   appCookieHeader,

@@ -11,7 +11,7 @@ import { tunnelConnections } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import postgres from 'postgres';
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { hashSecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
 import { API_INSTANCE_ID } from '../shared/instance';

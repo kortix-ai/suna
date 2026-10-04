@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { metricsEnabled, renderMetrics, setEventLoopLagSeconds } from '../lib/metrics';
 import { json, mountOpenApiDocs } from '../openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';

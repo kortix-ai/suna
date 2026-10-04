@@ -22,7 +22,7 @@
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNotNull, lte, sql } from 'drizzle-orm';
 
-import { type SandboxProviderName, config } from '../../config';
+import { type SandboxProviderName, config } from '../../lib/config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { finalizeRecoveredRuntimeIfRunning, preserveEstablishedRuntime } from '../runtime-identity';

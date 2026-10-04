@@ -5,7 +5,7 @@ let signupsOpen = true;
 let allowlisted = new Set<string>();
 let ssoProvidersByDomain = new Map<string, { enforceSso: boolean; domainVerifiedAt: Date | null }>();
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     DATABASE_URL: 'postgresql://mocked',
     KORTIX_CHECK_EMAIL_REQS_PER_MIN: 1000,

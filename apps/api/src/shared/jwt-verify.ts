@@ -15,7 +15,7 @@
  * fall back to the network call so nothing breaks during cold starts.
  */
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { confirmJwtLive } from './jwt-liveness';
 export { isInconclusiveVerifyFailure } from './jwt-verify-outcome';
 

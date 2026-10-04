@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
 import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../lib/config';
 import { db } from '../shared/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAppComputeAllowed } from './limits';

@@ -20,13 +20,13 @@ import { sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { db } from '../shared/db';
 import { makeOpenApiApp, json, errors } from '../openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../shared/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { requestClientIp, requestClientKey } from '../shared/client-ip';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 

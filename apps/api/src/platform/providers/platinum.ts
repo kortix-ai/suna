@@ -55,7 +55,7 @@
 import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
-import { SANDBOX_VERSION, config } from '../../config';
+import { SANDBOX_VERSION, config } from '../../lib/config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';

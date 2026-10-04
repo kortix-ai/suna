@@ -30,7 +30,7 @@
 import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, eq, inArray, isNotNull, ne, notExists, or, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
 import { getProvider, type SandboxProvider } from '../platform/providers';
 import { db } from '../shared/db';

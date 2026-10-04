@@ -28,7 +28,7 @@
  * `SESSION_OWNED_BY_OTHER_INSTANCE`) and the warm lookup
  * (`findWarmProjectSession`) never offers a foreign session.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export const SANDBOX_INSTANCE_METADATA_KEY = 'instanceId';
 

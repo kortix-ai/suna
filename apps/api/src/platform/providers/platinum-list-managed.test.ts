@@ -18,7 +18,7 @@ const platinumConfig: Record<string, unknown> = {
   INTERNAL_KORTIX_ENV: 'dev',
   PLATINUM_TEMPLATE: 'kortix-computer',
 };
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: platinumConfig,
   SANDBOX_VERSION: 'test-version',
 }));

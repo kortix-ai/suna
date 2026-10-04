@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
-mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
+mock.module('../lib/config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
 const { clampTtlMinutes, mintSetupLink, resolveSetupLink } = await import('./token');
 

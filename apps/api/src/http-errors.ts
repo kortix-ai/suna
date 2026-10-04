@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { BillingError } from './errors';
+import { BillingError } from './billing/errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
 import { isRequestDeadlineHTTPException } from './middleware/request-deadline';

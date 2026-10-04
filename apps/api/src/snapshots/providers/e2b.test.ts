@@ -36,7 +36,7 @@ mock.module('e2b', () => ({
   Template: FakeTemplate,
   waitForProcess: (processName: string) => `wait-for-process:${processName}`,
 }));
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     E2B_API_KEY: 'e2b-test-key',
     E2B_DOMAIN: 'e2b.sampleco.kortix.com',

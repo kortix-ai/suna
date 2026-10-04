@@ -6,7 +6,7 @@ import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { llmPriceMarkup } from '../../billing/services/tiers';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';

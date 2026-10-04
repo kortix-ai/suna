@@ -6,7 +6,7 @@ import {
   projectRoleGrants,
 } from '../../iam/read-models';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { lookupEmailsByUserIds } from './access';
 

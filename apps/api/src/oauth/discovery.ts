@@ -7,7 +7,7 @@
  * (`KORTIX_URL`), never the incoming request — a value a third party compares
  * against must come from configuration (learnings 2026-08-19).
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 import { OAUTH_SCOPE_KORTIX, OAUTH_SCOPES } from './access-token';
 
 export function oauthIssuer(fallbackOrigin?: string): string {

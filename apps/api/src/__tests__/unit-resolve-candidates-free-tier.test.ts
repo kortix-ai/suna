@@ -18,7 +18,7 @@ let accountTierCalls = 0;
 // resolveCandidates' OWN inline gate.
 let managedProviderEnabled = true;
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   KORTIX_MARKUP: 1.2,
   PLATFORM_FEE_MARKUP: 0.1,

@@ -10,7 +10,7 @@ import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { isUuid } from '../../shared/validate';

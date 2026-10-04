@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { ProviderName, SandboxProvider } from './contract';
 import { DaytonaProvider } from './daytona';
 import { E2BProvider } from './e2b';

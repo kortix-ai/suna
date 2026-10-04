@@ -1,6 +1,6 @@
 import { HTTPException } from 'hono/http-exception';
 import { wallet } from '../../../billing/wallet';
-import { config, getToolCost } from '../../../config';
+import { config, getToolCost } from '../../../lib/config';
 import { getTraceHeaders } from '../../../lib/request-context';
 import { validateAccountToken } from '../../../repositories/account-tokens';
 import { validateSecretKey } from '../../../repositories/api-keys';

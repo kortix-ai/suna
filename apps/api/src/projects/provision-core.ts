@@ -39,7 +39,7 @@ import {
 } from './seed-files';
 import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import { projects } from '@kortix/db';

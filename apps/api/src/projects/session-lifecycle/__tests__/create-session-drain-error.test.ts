@@ -34,7 +34,7 @@ let claimed: SessionLifecycleCommandRow[] = [];
 let failedCalls: Array<{ commandId: string; message: string; retryable: boolean; attempts: number }> = [];
 let succeededCalls: string[] = [];
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: cfg,
   SANDBOX_VERSION: 'test',
 }));

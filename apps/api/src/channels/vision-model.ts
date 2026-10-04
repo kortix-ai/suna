@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';

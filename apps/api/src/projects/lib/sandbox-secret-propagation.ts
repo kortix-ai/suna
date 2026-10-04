@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { ProviderName } from '../../platform/providers';
 import { createCoalescedRunner } from './env-sync-coalescer';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';

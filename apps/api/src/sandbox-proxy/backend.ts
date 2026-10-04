@@ -22,7 +22,7 @@
 
 import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { timeUpstream } from '../middleware/upstream-timing';
 import {
   getProvider,

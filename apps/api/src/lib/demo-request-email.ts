@@ -5,7 +5,7 @@
 // the send is skipped gracefully so lead capture never fails on account of
 // email.
 import { emailDomain, isWorkEmail } from '../accounts/personal-email';
-import { config } from '../config';
+import { config } from './config';
 import { escapeHtml } from '../shared/html';
 import { EMAIL_COLORS } from './email/brand-tokens.generated';
 import { BRAND_FOOTER, renderEmail } from './email/template';

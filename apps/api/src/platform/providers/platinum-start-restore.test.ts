@@ -15,7 +15,7 @@ import {
   isAmbiguousRuntimeStartError,
 } from '../../projects/session-lifecycle/runtime-wake-fence';
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     PLATINUM_API_KEY: 'pt_test',
     PLATINUM_API_URL: 'https://platinum.example.test',

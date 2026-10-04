@@ -4,7 +4,7 @@
 // register the customer's IdP, and hand back the provider UUID the rest of the
 // SSO config keys off.
 
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 export interface SamlMetadataInput {
   /** Raw IdP federation metadata XML (Entra: "App Federation Metadata XML"). */

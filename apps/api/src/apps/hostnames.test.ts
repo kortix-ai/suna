@@ -6,7 +6,7 @@ process.env.FRONTEND_URL = 'https://app.example.com';
 delete process.env.KORTIX_APPS_BASE_DOMAIN;
 delete process.env.KORTIX_APPS_LOCAL;
 
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { appPublicUrl, appsBaseDomain, resolveAppHost } = await import('./hostnames');
 
 const ROW = { slug: 'store', routeKey: 'aaaaaaaaaaaaaaaa' };

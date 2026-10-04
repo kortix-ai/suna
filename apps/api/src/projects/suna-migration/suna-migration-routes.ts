@@ -14,7 +14,7 @@ import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { json, errors, auth, ErrorSchema } from '../../openapi';
 import { startSunaMigration, latestSunaMigration, PHASE_ORDER } from './suna-migration-runner';
 import { sunaAccountMigrations, type Database } from '@kortix/db';

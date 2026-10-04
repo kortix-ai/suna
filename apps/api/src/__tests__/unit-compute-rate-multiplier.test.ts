@@ -14,7 +14,7 @@ const RATE = { cpuPerCoreSecond: 0.0000168, memoryPerGbSecond: 0.0000054, diskPe
 // `mock.module` replaces the module WHOLESALE, so every export the import
 // graph below reaches for has to be present — config.ts boots env validation at
 // module scope, which a unit test must not do.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['daytona', 'platinum', 'e2b'] as const,
   KORTIX_MARKUP: 1.2,

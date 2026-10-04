@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   planSignupContact,
   syncSignupContactToMailtrap,

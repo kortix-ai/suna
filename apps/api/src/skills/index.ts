@@ -33,7 +33,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { getManagedSkill, getManagedSkillFile, listManagedSkills } from './catalog';
 
 export const skillsApp = makeOpenApiApp<AppEnv>();

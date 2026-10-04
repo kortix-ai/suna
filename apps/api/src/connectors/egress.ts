@@ -20,7 +20,7 @@
  * connector is created or synced, so a misconfigured endpoint fails with a
  * clear message at configuration time instead of at the first call.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 import { isPrivateIp, safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { isIP } from 'node:net';
 import type { FetchImpl } from './call';

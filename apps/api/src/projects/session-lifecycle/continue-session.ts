@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   bindSessionTurnIdentity,
   channelPrompterForOnBehalfOf,

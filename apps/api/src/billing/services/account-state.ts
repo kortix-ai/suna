@@ -1,10 +1,10 @@
 import { sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { and, eq, inArray } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
+import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { resolveAccountBilling } from './billing-cache';

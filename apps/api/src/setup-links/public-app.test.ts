@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 
-mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
+mock.module('../lib/config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
 const realSecrets = await import('../projects/secrets');
 const writes: Array<Record<string, unknown>> = [];

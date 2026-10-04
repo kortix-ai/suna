@@ -25,7 +25,7 @@ async function trackedDelay<T>(value: T, ms = 15): Promise<T> {
   return value;
 }
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     ENTERPRISE_LICENSE_AVAILABLE: false,
     KORTIX_BILLING_INTERNAL_ENABLED: true,

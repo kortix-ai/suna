@@ -1,8 +1,8 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import { VERIFIED_US_MANAGED_ENDPOINTS } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
-import { config } from '../../config';
-import { getModelPricing } from '../../router/config/model-pricing';
+import { config } from '../../lib/config';
+import { getModelPricing } from '../models/model-pricing';
 import {
   CHATGPT_CODEX_BASE_URL,
   CODEX_USER_AGENT,

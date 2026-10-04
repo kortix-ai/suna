@@ -20,7 +20,7 @@ import { db } from '../shared/db';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync } from '../shared/token-hash';
 import { supabaseAuth } from '../middleware/auth';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   oauthClients,
   oauthAuthorizationCodes,

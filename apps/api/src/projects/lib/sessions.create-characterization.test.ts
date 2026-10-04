@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 // Run alone: Bun module mocks are process-global.
 let billing: Record<string, unknown> = { ok: true };

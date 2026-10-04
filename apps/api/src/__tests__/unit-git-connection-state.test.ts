@@ -83,7 +83,7 @@ describe('project git connection state', () => {
 
 describe('a GitHub App with no OAuth client', () => {
   test('boot warns instead of staying silent', async () => {
-    const config = await Bun.file(new URL('../config.ts', import.meta.url)).text();
+    const config = await Bun.file(new URL('../lib/config.ts', import.meta.url)).text();
     // The gap that hid this for months: these two are read straight from
     // process.env, so they never appeared in the startup report and every
     // environment ran without them unnoticed.

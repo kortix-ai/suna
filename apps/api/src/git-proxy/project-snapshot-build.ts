@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as tar from 'tar';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { validateSha } from '../projects/git-ref';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';

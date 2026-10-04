@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { isPlainObject } from '../../shared/json';
 
 export type TriggerSchedulerTimer = ReturnType<typeof setInterval>;

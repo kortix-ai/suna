@@ -30,7 +30,7 @@
  */
 
 import postgres from 'postgres';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { PG_BROADCAST_POOL_MAX } from './database-capacity';
 import { isUuid } from './validate';
 import type { DesiredInvalidationTransport } from '../projects/lib/turn-start-convergence';

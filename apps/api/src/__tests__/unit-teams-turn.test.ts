@@ -32,7 +32,7 @@ mock.module('../channels/teams-api', () => ({
   cardActivity: (c: unknown) => ({ type: 'message', attachments: [{ contentType: 'x', content: c }] }),
 }));
 
-mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app', MICROSOFT_APP_ID: 'x' } }));
+mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app', MICROSOFT_APP_ID: 'x' } }));
 mock.module('../channels/slack/util', () => ({ sessionWebUrl: () => 'https://app/session' }));
 let knownServiceUrl: string | null = 'https://smba/';
 mock.module('../channels/install-store', () => ({

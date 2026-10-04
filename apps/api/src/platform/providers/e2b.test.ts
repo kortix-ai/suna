@@ -152,7 +152,7 @@ mock.module('../service-key', () => ({
   serviceKeyForExternalId: async () => 'service-key-test',
 }));
 
-const { config } = await import('../../config');
+const { config } = await import('../../lib/config');
 const { E2BProvider, E2B_INGRESS_HANDLE_TTL_MS, E2B_RUNNING_STATUS_CACHE_TTL_MS } =
   await import('./e2b');
 const { getProvider } = await import('./index');

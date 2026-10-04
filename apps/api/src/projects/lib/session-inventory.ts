@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   isProjectSessionVisibleTo,
   type SecretGrant,

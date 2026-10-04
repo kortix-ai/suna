@@ -15,7 +15,7 @@ let existingIntents: Array<Record<string, unknown>> = [];
 let listIntentsFails = false;
 const intentUpdates: Array<{ id: string; params: Record<string, unknown> }> = [];
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: new Proxy(
     {},
     {

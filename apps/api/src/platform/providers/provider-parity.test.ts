@@ -28,7 +28,7 @@ process.env.KORTIX_URL = 'https://api.example.com';
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.FRONTEND_URL = 'https://app.example.com';
 
-const { KNOWN_PROVIDERS, config } = await import('../../config');
+const { KNOWN_PROVIDERS, config } = await import('../../lib/config');
 const { getProvider } = await import('./index');
 const { getProviderComputeRateCard } = await import('./compute-rates');
 const { effectiveAppMachine } = await import('./index');

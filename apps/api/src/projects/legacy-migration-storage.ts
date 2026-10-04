@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { getSupabase } from '../shared/supabase';
 
 const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;

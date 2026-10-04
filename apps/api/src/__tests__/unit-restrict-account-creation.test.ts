@@ -11,7 +11,7 @@
  *
  * Exercises the REAL config module (env var set before any app module is
  * imported) so the test also proves the schema/config wiring in
- * apps/api/src/config.ts, not just the route's own `if` check.
+ * apps/api/src/lib/config.ts, not just the route's own `if` check.
  */
 import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
@@ -101,7 +101,7 @@ describe('account-creation restriction (KORTIX_RESTRICT_ACCOUNT_CREATION=true)',
   });
 
   test('config.KORTIX_RESTRICT_ACCOUNT_CREATION reflects the env var', async () => {
-    const { config } = await import('../config');
+    const { config } = await import('../lib/config');
     expect(config.KORTIX_RESTRICT_ACCOUNT_CREATION).toBe(true);
   });
 

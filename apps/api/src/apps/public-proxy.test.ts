@@ -20,7 +20,7 @@ const {
   verifyAppEdgeRequest,
 } = await import('./public-proxy');
 const { createAppAccessToken } = await import('./access');
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 
 describe('Apps public edge', () => {
   test('recognises a dead E2B runtime, which is a 502 and not a throw', () => {

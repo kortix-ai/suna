@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 const ENVELOPE_VERSION = 'v1';
 const GCM_AUTH_TAG_LENGTH = 16;

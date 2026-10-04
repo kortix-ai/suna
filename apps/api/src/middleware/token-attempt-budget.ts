@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { requestClientKey } from '../shared/client-ip';
 import { isTokenHashCached, isTokenValidated } from '../shared/token-hash';
 

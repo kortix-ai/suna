@@ -6,7 +6,7 @@ const configState: Record<string, unknown> = {
   PORT: 8008,
   KORTIX_PREVIEW_BASE_DOMAIN: undefined,
 };
-mock.module('../config', () => ({ config: configState }));
+mock.module('../lib/config', () => ({ config: configState }));
 
 const {
   previewBaseDomain,

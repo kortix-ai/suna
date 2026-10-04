@@ -34,7 +34,7 @@ const ACTIVE_RECORD = {
 let envSyncCalls: Array<{ sessionId: string; requestedAgent: string | null }> = [];
 let remintCalls: Array<{ sessionAgent: string; requestedAgent: string | null }> = [];
 
-mock.module('../../config', () => ({ config: {} }));
+mock.module('../../lib/config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),

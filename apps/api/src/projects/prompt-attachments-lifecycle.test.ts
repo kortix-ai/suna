@@ -16,7 +16,7 @@ const configModule = mockConfigModule({
   PROMPT_ATTACHMENT_CHUNK_BYTES: 65536,
 });
 const config = configModule.config as Record<string, unknown>;
-mock.module('../config', () => configModule);
+mock.module('../lib/config', () => configModule);
 
 type Op = 'select' | 'insert' | 'update' | 'delete' | 'execute';
 const events: string[] = [];

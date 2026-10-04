@@ -5,7 +5,7 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 // access. Teams now does the same in each admin's 1:1 chat with the bot, on top
 // of the notice every manager gets in Kortix.
 
-mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app.example.test' } }));
+mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app.example.test' } }));
 
 const managerNotices: unknown[] = [];
 mock.module('../projects/lib/access-requests', () => ({

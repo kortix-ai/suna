@@ -15,7 +15,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accountSessionActivity } from '@kortix/db';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { auditLogout } from '../shared/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from './gotrue';

@@ -1,7 +1,7 @@
 import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, eq, isNull, lt, lte, or } from 'drizzle-orm';
 import { pauseComputeSession } from '../billing/services/compute-metering';
-import { type SandboxProviderName } from '../config';
+import { type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { runWorkerTick } from '../shared/audit-scope';

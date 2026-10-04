@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { makeOpenApiApp, json } from '../../openapi';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 /**
  * Sandbox version and changelog endpoints.

@@ -1,5 +1,5 @@
-import { config } from '../../config';
-import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
+import { config } from '../../lib/config';
+import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../types';
 // Config-free tier facts live in their own module so genuinely pure consumers
 // (billing-state.ts) can import them without booting env validation. Re-exported
 // here so every existing `from './tiers'` import keeps working — one definition.

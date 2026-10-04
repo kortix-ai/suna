@@ -37,7 +37,7 @@ Use these words. Do not invent others.
 | Permissions | Per-resource permissions for people and agents. Roles, groups, and an audit trail. | `apps/web/content/docs/accounts.mdx` | 2026-10-01 |
 | SSO | SAML 2.0 single sign-on and SCIM 2.0. | `security-page/content.ts` gate item 7; `accounts.mdx:92` | 2026-10-01 |
 | Approval gates | Approval gates you set. Off until you set them. | `apps/web/content/docs/project/manifest.mdx:123` (`policy.default_mode` defaults to `allow_all`) | 2026-10-01 |
-| Audit | Every action is recorded. Reading, exporting and streaming the audit log depend on the plan. | `faq/content.ts` gate (`auditAccess`, `apps/api/src/types.ts:129-135`) | gate cited 2026-07-31 |
+| Audit | Every action is recorded. Reading, exporting and streaming the audit log depend on the plan. | `faq/content.ts` gate (`auditAccess`, `apps/api/src/types/app-env.ts:129-135`) | gate cited 2026-07-31 |
 | Secrets, encrypted | Secrets are encrypted at rest with a key per project. | `security-page/content.ts` specs row | gate cited 2026-07-31 |
 | Models | Any model provider with your own keys. Or the ChatGPT plan you already pay for. Or sign in with your OpenCode Console account for OpenCode Zen and Go. | `apps/web/content/docs/project/models.mdx:43,57-71`; `apps/api/src/llm-gateway/credentials/opencode-console.ts:1-19` | 2026-10-01 |
 | Channels | Slack and Microsoft Teams are live. Email is experimental, per project. | section 5, item 2 | 2026-10-01 |
@@ -71,7 +71,7 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 ### Isolation and network
 
-**Rule.** Do not write blanket "microVM isolation". Write "its own isolated machine", and name the provider when the boundary matters. — *Why:* Platinum is a Cloud Hypervisor microVM. The default provider, Daytona (`ALLOWED_SANDBOX_PROVIDERS` defaults to `daytona`, `apps/api/src/config.ts:695`), is not. The always-on monitor box is a persistent microVM (`apps/web/content/docs/connect/triggers.mdx:104`). — *Where:* marketing | deck | sales | docs. — *When silent:* "sandbox" or "cloud computer".
+**Rule.** Do not write blanket "microVM isolation". Write "its own isolated machine", and name the provider when the boundary matters. — *Why:* Platinum is a Cloud Hypervisor microVM. The default provider, Daytona (`ALLOWED_SANDBOX_PROVIDERS` defaults to `daytona`, `apps/api/src/lib/config.ts:695`), is not. The always-on monitor box is a persistent microVM (`apps/web/content/docs/connect/triggers.mdx:104`). — *Where:* marketing | deck | sales | docs. — *When silent:* "sandbox" or "cloud computer".
 
 **Rule.** Do not write "container" in external copy. — *Why:* The sanctioned nouns are "cloud computer" and "sandbox". "Container" reads as shared-kernel and invites the isolation question. — *Where:* marketing | deck | store listing. — *When silent:* "sandbox".
 

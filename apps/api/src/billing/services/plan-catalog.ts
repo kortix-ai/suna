@@ -3,7 +3,7 @@
  * way the product talks about it (family, status, billing shape, price, grant,
  * entitlements, limits) rather than the way `TierConfig` happens to store it.
  *
- * PURE. Like `tier-facts.ts`, this module must never import `../../config` (or
+ * PURE. Like `tier-facts.ts`, this module must never import `../../lib/config` (or
  * anything that reaches it — `tiers.ts` builds per-environment Stripe price
  * catalogs at module scope, so importing ANY symbol from it boots env
  * validation). Everything here is static data plus total functions over it.

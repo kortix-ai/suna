@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export const BOT_CONNECTOR_SCOPE = 'https://api.botframework.com/.default';
 export const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';

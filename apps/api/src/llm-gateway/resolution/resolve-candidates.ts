@@ -13,7 +13,7 @@ import {
 } from '@kortix/llm-gateway';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../../billing/services/entitlements';
 import { isPaidTier } from '../../billing/services/tiers';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   getProjectSecretValueForConsumer,
   resolveProjectSecretsForConsumer,

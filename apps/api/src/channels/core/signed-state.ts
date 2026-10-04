@@ -1,5 +1,5 @@
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 /**
  * Short-lived signed tokens that carry chat-channel state through a browser:

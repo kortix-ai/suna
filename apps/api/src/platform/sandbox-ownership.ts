@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { platformSettings, type Database } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { currentInstanceId } from '../projects/instance-scope';
 
 const OWNER_KEY = 'sandbox_owner_id';

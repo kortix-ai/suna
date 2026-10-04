@@ -25,7 +25,7 @@ let transitions: string[] = [];
 let identityEvents: string[] = [];
 let bindFails = false;
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: { KORTIX_URL: 'https://kortix.test' },
   SANDBOX_VERSION: 'test',
 }));

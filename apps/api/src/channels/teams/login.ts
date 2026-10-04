@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { signChannelState, verifyChannelState } from '../core/signed-state';
 
 const LOGIN_TTL_MS = 10 * 60 * 1000;

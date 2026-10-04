@@ -20,7 +20,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PI_SUPPLIED_PACKAGES } from '@kortix/shared';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { PREBUILT_FORMAT } from './prebuild';
 import {
   headObject,

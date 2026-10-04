@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { countProvisioningProjectSessions } from '../lib/sessions';
 
 export function triggerBackpressureLimit() {

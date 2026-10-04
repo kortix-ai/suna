@@ -9,11 +9,11 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { spawnSync } from 'child_process';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { getProvider } from '../platform/providers';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';

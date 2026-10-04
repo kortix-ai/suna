@@ -31,7 +31,7 @@ import {
   type SecretEgressPolicy,
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { decryptProjectSecret, intersectSecretGrants } from '../projects/secrets';
 import { ACTIVE_SESSION_STATUSES } from '../projects/lib/session-status';
 import { db } from '../shared/db';

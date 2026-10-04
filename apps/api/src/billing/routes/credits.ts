@@ -1,13 +1,13 @@
 import { debitAndCheckAutoTopup } from '../services/wallet-debits';
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { calculateTokenCost } from '../services/credits';
 import { wallet } from '../wallet';
 import { getVisibleTiers } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
-import type { TokenUsageRequest } from '../../types';
+import type { TokenUsageRequest } from '../types';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();

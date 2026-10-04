@@ -15,7 +15,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { SUPABASE_URL: 'http://supabase.internal:8000', SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt', FRONTEND_URL: 'https://app.example' },
 }));
 mock.module('../shared/auth-audit', () => ({

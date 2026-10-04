@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 
 /**
  * The Kortix FRONTEND base URL (no trailing slash) a sandbox is given as

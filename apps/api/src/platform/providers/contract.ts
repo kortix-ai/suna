@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 export type ProviderName = 'daytona' | 'platinum' | 'e2b';
 

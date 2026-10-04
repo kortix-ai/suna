@@ -1,7 +1,7 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
 import { capabilityForMethod, TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { fingerprintTunnelCredentialHash } from '../../shared/crypto';

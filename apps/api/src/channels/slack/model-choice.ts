@@ -10,7 +10,7 @@
  * use, so they rotate. A Slack thread is one session: a channel's choice
  * starts every NEW thread, and a thread keeps the model it started with.
  */
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';

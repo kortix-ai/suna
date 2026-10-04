@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { accountGroups, accountMembers, appAccessGrants, apps, type AgentGrant } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorForToken, actorForUser } from '../iam/actor';
 import { agentMayOpenApp } from '../iam/agent-scope';

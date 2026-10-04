@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { slackFollowUpHeader, slackPlainText } from '@kortix/shared';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { filterAccessibleObjects } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import {

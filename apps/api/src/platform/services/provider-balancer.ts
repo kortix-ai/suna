@@ -1,4 +1,4 @@
-import { config, type SandboxProviderName } from '../../config';
+import { config, type SandboxProviderName } from '../../lib/config';
 
 // Weighted load-balancing of NEW sandboxes across ALLOWED_SANDBOX_PROVIDERS.
 // Weights live in kortix.platform_settings under 'provider_distribution' as

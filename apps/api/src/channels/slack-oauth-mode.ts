@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export interface SlackOauthMode {
   available: boolean;

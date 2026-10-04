@@ -28,7 +28,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { SANDBOX_VERSION } from '../config';
+import { SANDBOX_VERSION } from '../lib/config';
 import type { SandboxSpec } from './dockerfile-layer';
 
 export interface SnapshotHashInputs {

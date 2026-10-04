@@ -20,7 +20,7 @@
  * Git path has the same semantics), submodule contents (`.gitmodules` only,
  * like a clone without `--recurse-submodules`).
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 import { validateRef } from '../projects/git-ref';
 import { PROJECT_SNAPSHOT_FORMAT, type ProjectSnapshotRepository } from './project-snapshot-store';
 

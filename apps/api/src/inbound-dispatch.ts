@@ -1,4 +1,4 @@
-import { config } from './config';
+import { config } from './lib/config';
 import { getRequestUrl } from './lib/request-url';
 import { runInboundAudit } from './shared/audit-edge';
 import { annotateAuditEvent, setInboundAuditEntrypoint } from './shared/audit-scope';

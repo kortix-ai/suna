@@ -14,7 +14,7 @@ import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();

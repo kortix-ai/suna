@@ -7,7 +7,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import {
   _resetExternalCache,
   assertAllowedSourceAddress,

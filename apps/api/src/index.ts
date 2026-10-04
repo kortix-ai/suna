@@ -4,11 +4,11 @@ import './environment-secret';
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
 
-import { config } from './config';
+import { config } from './lib/config';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { runInboundAudit } from './shared/audit-edge';
 import { describeEmailChain } from './lib/email/transport';
-import { initModelPricing } from './router/config/model-pricing';
+import { initModelPricing } from './llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
 import { primeDaytonaTransientClassifier } from './shared/daytona-transient';

@@ -25,8 +25,8 @@ import { randomBytes } from 'node:crypto';
 import { bodyLimit } from 'hono/body-limit';
 import { eq, and, isNotNull, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '@kortix/db';
-import { config } from '../config';
-import type { AppEnv } from '../types';
+import { config } from '../lib/config';
+import type { AppEnv } from '../types/app-env';
 import { makeOpenApiApp } from '../openapi';
 import {
   createConnectionsRouter,

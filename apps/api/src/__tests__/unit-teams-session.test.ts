@@ -81,7 +81,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const testConfig = { TEAMS_REQUIRE_USER_IDENTITY: true, FRONTEND_URL: 'https://dev.kortix.com' };
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: testConfig,
 }));

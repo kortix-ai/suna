@@ -4,7 +4,7 @@ import { describe, expect, mock, test } from 'bun:test';
 // real PROD Stripe price, and every no-price state must be an explicit,
 // reviewed enumeration — not a silent getVisibleTiers() filter. tiers.ts boots
 // env validation, so pin the config to prod for the price-table switch.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { INTERNAL_KORTIX_ENV: 'prod', KORTIX_LLM_MARKUP: undefined },
 }));
 

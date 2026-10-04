@@ -1,8 +1,8 @@
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
-import { config } from '../../config';
-import { WebhookError } from '../../errors';
+import { config } from '../../lib/config';
+import { WebhookError } from '../errors';
 import { applyStripeSync } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';

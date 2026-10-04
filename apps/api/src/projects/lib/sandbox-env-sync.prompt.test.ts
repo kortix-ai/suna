@@ -13,7 +13,7 @@
 // re-pushed, and resolving the binding set stays FAIL-CLOSED — it re-reads the
 // agent's grant, and a grant we cannot prove must refuse the turn.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';

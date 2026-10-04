@@ -9,7 +9,7 @@
 // Slack commands use, so the two surfaces can never disagree about how a binding
 // is stored or resolved.
 import { createRoute, z } from "@hono/zod-openapi";
-import { config } from "../../config";
+import { config } from "../../lib/config";
 import { accountMayUseManagedModels } from "../../billing/services/entitlements";
 import {
   type ChannelBindingRow,

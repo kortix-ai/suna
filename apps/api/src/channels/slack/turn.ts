@@ -4,7 +4,7 @@ import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { sessionWebUrl } from './util';
 import { markdownToMrkdwn, mrkdwnToRichTextElements, slackMentionsAsText, unlabelledMentionIds } from './mrkdwn';
 import { slackUserNames } from './labels';

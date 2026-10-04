@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MORPH_MANAGED_MODELS_DEFAULT, parseMorphManagedModels } from '../config';
+import { MORPH_MANAGED_MODELS_DEFAULT, parseMorphManagedModels } from '../lib/config';
 
 /**
  * Morph direct is off by default (2026-09-27). Its deepseek-v4.1-flash endpoint

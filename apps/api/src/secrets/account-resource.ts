@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { db } from '../shared/db';
 
 const envelopeVersion = 'v1';

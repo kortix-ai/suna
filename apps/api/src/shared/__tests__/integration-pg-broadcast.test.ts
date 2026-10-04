@@ -13,7 +13,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import postgres from 'postgres';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   BASE_MOVE_CHANNEL,
   configBaseMoveTransport,

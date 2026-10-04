@@ -6,7 +6,7 @@ import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
 import { requestClientIp } from '../../shared/client-ip';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
-import type { TierEntitlements } from '../../types';
+import type { TierEntitlements } from '../../billing/types';
 
 /** Human label per entitlement, for the 402 message shown to admins. */
 const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {

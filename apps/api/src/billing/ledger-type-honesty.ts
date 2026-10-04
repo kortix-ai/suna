@@ -22,7 +22,7 @@
 // write (grant, reset, forfeit) takes its `type` from the caller and carries no
 // caller metadata, so it cannot contradict itself.
 
-import { BillingError } from '../errors';
+import { BillingError } from './errors';
 
 /**
  * Granular kinds that are legitimately carried on a row typed 'usage'.

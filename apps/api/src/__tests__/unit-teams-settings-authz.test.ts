@@ -12,7 +12,7 @@ const OTHER = 'proj-2';
 const TENANT = 'tenant-1';
 const CONVO = '19:abc@thread.tacv2';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: { FRONTEND_URL: 'https://dev.kortix.com', TEAMS_REQUIRE_USER_IDENTITY: true },
 }));

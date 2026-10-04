@@ -1,5 +1,5 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { createLlmGatewayRateLimitMiddleware } from '../shared/rate-limit';
 import { createInternalGatewayRoutes } from './internal-routes';

@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';

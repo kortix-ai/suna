@@ -36,7 +36,7 @@ import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from 
 import { db } from '../../shared/db';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 
 const STUCK_SESSION_BATCH = 200;

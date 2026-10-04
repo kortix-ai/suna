@@ -11,7 +11,7 @@ process.env.KORTIX_URL ??= 'https://api.example.com';
 process.env.DATABASE_URL ??= 'postgres://x';
 
 test('ALLOWED_SANDBOX_PROVIDERS=platinum makes Platinum the active provider', async () => {
-  const { config } = await import('../../config');
+  const { config } = await import('../../lib/config');
   const m = await import('./index');
   expect(config.isPlatinumEnabled()).toBe(true);
   expect(config.getDefaultProvider()).toBe('platinum');

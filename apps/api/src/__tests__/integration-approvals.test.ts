@@ -26,7 +26,7 @@ import { deleteFromView, insertIntoView } from './helpers/compat-views';
 /** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
 const setDemoEnterprise = (accountId: string, enabled: boolean) =>
   applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
-import { config } from '../config';
+import { config } from '../lib/config';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';

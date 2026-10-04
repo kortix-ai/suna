@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 const SESSION_ID = 'sess-fail-open-1';
 const OC_SESSION_ID = 'oc-fail-open-1';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
 }));

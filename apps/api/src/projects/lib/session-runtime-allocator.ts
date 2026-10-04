@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import type { SandboxProviderName } from '../../config';
+import type { SandboxProviderName } from '../../lib/config';
 import { logger } from '../../lib/logger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';

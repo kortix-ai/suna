@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 /**
  * The caller's address, for rate limiting and for the address recorded in

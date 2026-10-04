@@ -23,7 +23,7 @@
  *   (Daytona preview token, held server-side only).
  */
 import { randomUUID } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { ensurePiWorkerImage } from '../../snapshots/builder';
 import { getDaytona } from '../../shared/daytona';

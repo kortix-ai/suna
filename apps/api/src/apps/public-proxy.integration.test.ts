@@ -10,7 +10,7 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import type { AppHostingProvider, AppMachineSpec, AppdStatus } from './hosting';
 import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';

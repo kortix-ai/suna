@@ -5,7 +5,7 @@ import { afterAll, describe, expect, mock, test } from 'bun:test';
 // under it. A row now shows a preview only when it loads, and a hosted repo
 // by what it is.
 
-mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app.example.test', MANAGED_GIT_GITHUB_OWNER: 'managed-kortix' } }));
+mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app.example.test', MANAGED_GIT_GITHUB_OWNER: 'managed-kortix' } }));
 const calls: string[][] = [];
 const realRepoPreview = await import('../channels/repo-preview');
 mock.module('../channels/repo-preview', () => ({

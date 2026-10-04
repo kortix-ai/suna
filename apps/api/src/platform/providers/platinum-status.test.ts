@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {
     PLATINUM_API_KEY: 'pt_test',
     PLATINUM_API_URL: 'https://platinum.example.test',

@@ -34,7 +34,7 @@ function render(query: unknown): string {
  *  the EXPRESSION SHAPE without depending on how drizzle spaced the chunks. */
 const squish = (sql: string) => sql.replace(/\s+/g, ' ');
 
-mock.module('../config', () => mockConfigModule());
+mock.module('../lib/config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
   db: {
     execute: async (query: unknown) => {

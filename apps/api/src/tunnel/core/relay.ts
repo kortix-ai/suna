@@ -1,5 +1,5 @@
 import { TunnelRelay } from 'agent-tunnel';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 export const tunnelRelay = new TunnelRelay({
   rpcTimeoutMs: config.TUNNEL_RPC_TIMEOUT_MS,

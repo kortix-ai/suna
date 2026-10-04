@@ -91,7 +91,7 @@ mock.module('../middleware/auth', () => ({
     await next();
   },
 }));
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { FRONTEND_URL: 'https://app.example', KORTIX_URL: 'https://api.example', API_KEY_SECRET: process.env.API_KEY_SECRET },
 }));
 // Spread the real module: a wholesale stub drops every export another importer

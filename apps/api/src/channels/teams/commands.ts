@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { formatRelativeTime, sessionWebUrl } from '../slack/util';
 import { repoPreviewImages } from '../repo-preview';
 import { PREVIEW_WAIT_MS, projectRows } from './project-rows';

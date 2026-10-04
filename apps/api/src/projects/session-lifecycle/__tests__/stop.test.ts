@@ -30,7 +30,7 @@ let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Resp
   new Response(JSON.stringify({ ok: true }), { status: 200 });
 const originalFetch = globalThis.fetch;
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: { ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'platinum'] },
 }));
 

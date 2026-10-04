@@ -40,7 +40,7 @@
  * CLIENT (packages/sdk/src/core/session/url.ts) when it sees a localhost API,
  * and only matched here.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 
 /** `{env}-p{port}-{label}` on a real domain; `p{port}-{label}` on localhost. */
 const DEPLOYED_LABEL = /^(dev|staging|prod|preview)-p(\d{1,5})-([a-z0-9-]+)$/;

@@ -1,10 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { getTunnelServiceStatus } from '../tunnel';
 import { isOtelTraceExporterConfigured } from '../lib/otel';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';

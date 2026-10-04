@@ -7,7 +7,7 @@ import {
   createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
 } from './rate-limit';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 describe('TokenBucketRateLimiter bounded buckets', () => {
   test('a flood of unique keys never grows the internal Map without bound', () => {

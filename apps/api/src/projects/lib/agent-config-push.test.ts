@@ -8,7 +8,7 @@
 // session merged past days ago kept running the agents it booted with, with no
 // documented way to reconcile the two short of starting a new session.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import * as realCompile from './compile-agent-config';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';

@@ -195,7 +195,7 @@ export const credentials = {
    VALID_RESOURCE_TYPES list in iam/app.ts. Preset roles are role-presets.ts.
    Service accounts are iam/service-accounts.ts — "non-human IAM principals",
    evaluated purely against their own policies with no minter inheritance.
-   The entitlement split is TierEntitlements in apps/api/src/types.ts. */
+   The entitlement split is TierEntitlements in apps/api/src/types/app-env.ts. */
 export const identity = {
   eyebrow: 'Identity & permissions',
   title: 'An agent is a principal, not a loophole.',
@@ -342,7 +342,7 @@ export const landing = {
 } as const;
 
 /* ── 6 · audit ─────────────────────────────────────────────────────────────
-   Grounded in TierEntitlements.auditAccess in apps/api/src/types.ts, which is
+   Grounded in TierEntitlements.auditAccess in apps/api/src/types/app-env.ts, which is
    explicit that RECORDING is never gated and only read/export/streaming is.
    Stated narrowly on purpose: this is the claim a reviewer will test first. */
 export const audit = {

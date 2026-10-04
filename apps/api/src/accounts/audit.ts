@@ -42,7 +42,7 @@ import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { readExportPage } from '../shared/audit-archive/export-page';
 import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/helpers';
 import { readJsonObject } from '../shared/http-body';

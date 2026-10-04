@@ -209,7 +209,7 @@ export function withDatabase(url: string, database: string): string {
 /**
  * The environment one suite process receives. Every DB suite reads
  * `TEST_DATABASE_URL`; `DATABASE_URL` is the same database because
- * `apps/api/src/config` reads it at import time. Both connect as `postgres`,
+ * `apps/api/src/lib/config` reads it at import time. Both connect as `postgres`,
  * the role the API uses in every deployment, which is NOT a superuser on
  * Supabase.
  *

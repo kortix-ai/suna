@@ -1,5 +1,5 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
-import { config, type SandboxProviderName } from '../../config';
+import { config, type SandboxProviderName } from '../../lib/config';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';

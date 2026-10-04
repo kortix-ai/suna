@@ -104,7 +104,7 @@ export function bindPreviewResource(sandboxId: string, port: number | null): voi
   bindAuditPrincipal({
     lateAttribution: async () => {
       // Imported here, not at module load: preview-origin's suite replaces
-      // `../config` wholesale, and this module pulls the database client in.
+      // `../lib/config` wholesale, and this module pulls the database client in.
       const { resolveSandboxOwner } = await import('../shared/preview-ownership');
       const owner = await resolveSandboxOwner(sandboxId);
       return owner ? { accountId: owner.accountId, projectId: owner.projectId } : null;

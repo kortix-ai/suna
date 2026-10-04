@@ -37,7 +37,7 @@ mock.module('../middleware/require-admin', () => ({
   },
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { KORTIX_BILLING_INTERNAL_ENABLED: false, INTERNAL_KORTIX_ENV: 'dev' },
 }));
 

@@ -8,7 +8,7 @@ let stoppedOptions: Array<Record<string, unknown> | undefined> = [];
 let removedCalls: string[] = [];
 let dedupSeen: Set<string> = new Set();
 
-mock.module('../../config', () => ({ config: cfg }));
+mock.module('../../lib/config', () => ({ config: cfg }));
 mock.module('../../billing/services/webhook-concurrency', () => ({
   recordWebhookEvent: async (id: string) => {
     if (dedupSeen.has(id)) return false;

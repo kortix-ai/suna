@@ -11,7 +11,7 @@ import {
 } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
-import { config, SANDBOX_VERSION, type SandboxProviderName } from '../config';
+import { config, SANDBOX_VERSION, type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { runWorkerTick } from '../shared/audit-scope';

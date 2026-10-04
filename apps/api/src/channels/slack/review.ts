@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { postBlocks, postMessage } from '../slack-api';
 import { type ReviewCardItem, buildReviewCardBlocks } from './review-cards';
 import { deleteTurn, finalizeTurn, loadTurn } from './turn';

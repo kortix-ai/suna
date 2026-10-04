@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 /**
  * dev/preview QA exemption from the internal credit gate — the same policy

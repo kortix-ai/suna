@@ -24,7 +24,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   },
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { ENTERPRISE_LICENSE_AVAILABLE: false },
 }));
 

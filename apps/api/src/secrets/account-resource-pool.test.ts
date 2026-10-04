@@ -5,7 +5,7 @@ mock.module('../shared/db', () => ({ db: {
   update,
   select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ secretIds: [], nextIndex: 7 }] }) }) }),
 } }));
-mock.module('../config', () => ({ config: {} }));
+mock.module('../lib/config', () => ({ config: {} }));
 const { resolveSessionProviderSecrets } = await import('./account-resource');
 
 test('passive model validation reads a configured pool without advancing its starting key', async () => {

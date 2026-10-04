@@ -26,7 +26,7 @@ import {
 } from '../projects';
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
 import type { ProjectRow } from '../projects/lib/serializers';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { deriveRequestContext } from '../iam/cache';
 import {
   MAX_COMMAND_SECTION_BYTES,
@@ -83,7 +83,7 @@ import {
   COMPILED_RUNTIME_FORMAT,
 } from './compiled-runtime';
 import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   buildProjectSnapshotDescriptor,
   queueProjectSnapshotForRef,

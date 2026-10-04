@@ -16,7 +16,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import {

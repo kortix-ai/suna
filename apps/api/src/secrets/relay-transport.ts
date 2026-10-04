@@ -45,7 +45,7 @@
 import type { IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { Readable } from 'node:stream';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   createPinnedRequestOptions,
   resolvePinnedAddress,

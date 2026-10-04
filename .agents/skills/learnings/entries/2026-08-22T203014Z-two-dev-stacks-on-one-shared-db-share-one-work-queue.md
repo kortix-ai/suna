@@ -35,7 +35,7 @@ default failure mode of a shared DB, not a one-off.
    warns at start when another stack is live on the same database, names it,
    and states the remedy.
 2. **Instance scoping is the product fix.** `KORTIX_INSTANCE_ID`
-   (`apps/api/src/config.ts`, optional, unset in every deployed env) is set by
+   (`apps/api/src/lib/config.ts`, optional, unset in every deployed env) is set by
    the launchers only: `scripts/dev-local.sh` exports `primary`,
    `scripts/worktree/lib/launch-env.ts` exports the worktree name.
    `provisionSessionSandbox` stamps `session_sandboxes.metadata.instanceId`;

@@ -3,7 +3,7 @@
  * LLM provider hit" (KORTIX_LLM_BASE_URL). Takes the ORIGIN a sandbox should
  * use to reach kortix-api and applies the proxy-mode suffix rule.
  *
- * Deliberately a tiny, dependency-free module (only `../config`) rather than
+ * Deliberately a tiny, dependency-free module (only `../lib/config`) rather than
  * living inline in session-sandbox.ts or sandbox-env-sync.ts: BOTH of those
  * need it —
  *   - session-sandbox.ts computes it once at sandbox boot (KORTIX_LLM_BASE_URL
@@ -12,7 +12,7 @@
  *     mode toggle (the hot env-push path posts it to the running daemon).
  * One implementation keeps boot and hot environment pushes synchronized.
  */
-import { config } from '../config';
+import { config } from '../lib/config';
 
 export function resolveLlmGatewayBaseUrl(origin: string): string {
   if (config.LLM_GATEWAY_BASE_URL) return config.LLM_GATEWAY_BASE_URL;

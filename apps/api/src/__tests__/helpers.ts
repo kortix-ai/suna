@@ -8,8 +8,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError } from '../errors';
-import type { AuthVariables } from '../types';
+import { BillingError } from '../billing/errors';
+import type { AuthVariables } from '../types/app-env';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

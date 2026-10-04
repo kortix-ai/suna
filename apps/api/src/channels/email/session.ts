@@ -5,7 +5,7 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   ensureEmailSessionBinding,
   loadEmailInstallConnectionId,

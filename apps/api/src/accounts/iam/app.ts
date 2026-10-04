@@ -8,7 +8,7 @@
 
 import { z } from '@hono/zod-openapi';
 import { makeOpenApiApp } from '../../openapi';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import type { ResourceType } from '../../iam';
 
 export const iamRouter = makeOpenApiApp<AppEnv>();

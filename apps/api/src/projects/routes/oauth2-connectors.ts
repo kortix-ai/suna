@@ -14,7 +14,7 @@ import {
 } from '@kortix/api-contract';
 import { connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { ensureDefaultConnection } from '../../connectors/credentials';
 import { nativeOAuth2CallbackUrl } from '../../connectors/oauth2-callback-url';
 import {

@@ -12,7 +12,7 @@
  * for the agent-facing flow.
  */
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { createRoute, z } from '@hono/zod-openapi';
 import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { connectLinkEligibility } from '../../connectors/db-deps';

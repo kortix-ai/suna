@@ -1,6 +1,6 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';

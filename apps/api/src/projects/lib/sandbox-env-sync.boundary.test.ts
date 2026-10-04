@@ -16,7 +16,7 @@
 // fan-out is the caller that does NOT fail soft — a refusal reaches its report
 // verbatim, which is the only place the decision is observable as a message.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';

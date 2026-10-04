@@ -7,7 +7,7 @@ import {
   accounts,
   projects,
 } from '@kortix/db';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';

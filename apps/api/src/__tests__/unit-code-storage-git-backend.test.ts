@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
 import { jwtVerify, importSPKI } from 'jose';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   codeStorageBackend,
   codeStorageGitAuthHeader,

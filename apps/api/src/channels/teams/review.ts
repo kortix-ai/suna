@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { sendCard, sendText } from '../teams-api';
 import { buildReviewCard } from './cards';
 import { conversationRefForSession, finalizeTurn, loadTurn, markTurnReplied } from './turn';

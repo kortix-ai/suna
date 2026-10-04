@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { config } from '../lib/config';
 import { loadTeamsBotCredentials, loadTeamsServiceUrlForProject } from './install-store';
 import { botConnectorToken } from './teams-auth';
 import { assertValidTeamsServiceUrl } from './teams-service-url';

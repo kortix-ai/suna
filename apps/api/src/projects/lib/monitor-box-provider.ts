@@ -4,7 +4,7 @@
  * answer without the reconciler importing the provisioner's heavy subtree.
  */
 
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { ProviderName } from '../../platform/providers';
 
 /**

@@ -12,7 +12,7 @@ import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-r
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { logger } from '../../lib/logger';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { writeRuntimePromptFile } from './runtime-prompt-file';

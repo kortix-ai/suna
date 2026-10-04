@@ -1,5 +1,5 @@
 import type { ModelRouteInput, ModelRoutePlan, AuthedPrincipal } from '@kortix/llm-gateway';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { catalogModelForWireModel, gatewayModelCatalog } from '../models/catalog-models';
 import { platformDefaultModelId } from '../models/served-managed-models';
 import { createGatewayRouteResolver } from './resolve-route';

@@ -199,7 +199,7 @@ mock.module('../channels/slack/agent-picker', () => ({
 }));
 
 const { spawnAgentTurn } = await import('../channels/slack/dispatch');
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
 const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
 

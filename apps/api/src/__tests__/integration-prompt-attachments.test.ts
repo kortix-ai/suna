@@ -8,7 +8,7 @@ import {
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import {
   beginPromptAttachment,
   bindPromptAttachments,

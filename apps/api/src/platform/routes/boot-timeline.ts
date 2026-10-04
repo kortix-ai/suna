@@ -25,7 +25,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { pinSandboxEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
 import { db } from '../../shared/db';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { recordBootTimeline } from '../services/boot-timeline-store';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 

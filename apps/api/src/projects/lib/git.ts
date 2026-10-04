@@ -1,5 +1,5 @@
 import { auth } from '../../openapi';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';

@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
-import { WebSearchRequestSchema } from '../../types';
-import type { WebSearchResponse, AppContext } from '../../types';
+import { WebSearchRequestSchema } from '../types';
+import type { WebSearchResponse, AppContext } from '../types';
 import { webSearchTavily } from '../services/tavily';
 import { checkCredits, deductToolCredits } from '../services/billing';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';

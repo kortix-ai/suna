@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { FEATURE_FLAG_KEYS } from '@kortix/api-contract';
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { FEATURE_DISABLED_CODE, featureDisabledBody } from '../feature-flags/gate';
 import {
   REGISTERED_FEATURE_FLAGS,

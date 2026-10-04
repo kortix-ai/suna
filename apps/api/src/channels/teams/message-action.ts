@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { sessionWebUrl } from '../slack/util';
 import { conversationSession } from './binding';
 import { buildOpenSessionCard } from './cards';

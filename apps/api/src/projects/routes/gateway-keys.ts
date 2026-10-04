@@ -9,7 +9,7 @@ import {
   revokeGatewayKey,
 } from '../../llm-gateway/gateway-keys';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 
 projectsApp.openapi(
   createRoute({

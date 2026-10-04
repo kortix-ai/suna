@@ -15,7 +15,7 @@
 // only the first send after a cold start pays the TLS handshake.
 import { createRoute, z } from '@hono/zod-openapi';
 
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { sendEmail } from '../../lib/email/transport';
 import {
   readStandardWebhookHeaders,

@@ -33,7 +33,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { getSupabase } from './supabase';
 
 export interface LiveUser {

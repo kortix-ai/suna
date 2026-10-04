@@ -15,7 +15,7 @@ import * as realProviders from '../platform/providers';
 import * as realKortixUserContext from '../shared/kortix-user-context';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 
-mock.module('../config', () => ({ config: {} }));
+mock.module('../lib/config', () => ({ config: {} }));
 mock.module('../shared/db', () => ({ db: {} }));
 mock.module('../shared/preview-ownership', () => ({
   ...realPreviewOwnership,

@@ -23,7 +23,7 @@
 import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A

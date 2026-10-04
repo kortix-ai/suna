@@ -1,8 +1,8 @@
 import { HTTPException } from 'hono/http-exception';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
 import { timeUpstream } from '../../../middleware/upstream-timing';
-import { config, KORTIX_MARKUP } from '../../../config';
-import { requireModelPricing } from '../../config/models';
+import { config, KORTIX_MARKUP } from '../../../lib/config';
+import { requireModelPricing } from '../../../llm-gateway/models/model-registry';
 import {
   calculateCost,
   extractUsage,

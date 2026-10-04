@@ -2,7 +2,7 @@ import type { TriggerList } from '@kortix/api-contract';
 import { projectTriggerRuntime } from '@kortix/db';
 import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';

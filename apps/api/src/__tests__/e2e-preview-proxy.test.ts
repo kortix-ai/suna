@@ -359,7 +359,7 @@ mock.module('../platform/providers', () => ({
   },
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
     isDaytonaEnabled: () => true,

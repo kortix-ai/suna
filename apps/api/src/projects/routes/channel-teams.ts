@@ -14,7 +14,7 @@ import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/cor
 import { completeTeamsOauthInstall, teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import { deleteTeamsMessage, editTeamsMessage, listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';

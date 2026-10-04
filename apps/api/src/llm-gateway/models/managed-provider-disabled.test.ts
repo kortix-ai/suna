@@ -16,7 +16,7 @@ let morphKeyReads = 0;
 let bedrockKeyReads = 0;
 let openrouterKeyReads = 0;
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: new Proxy(
     {},

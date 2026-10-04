@@ -1,7 +1,7 @@
 /**
  * The config-free half of the tier vocabulary.
  *
- * `tiers.ts` reaches for `../../config` at module scope (Stripe price catalogs
+ * `tiers.ts` reaches for `../../lib/config` at module scope (Stripe price catalogs
  * are per-environment), which means importing ANY symbol from it boots env
  * validation. These few facts are pure data/predicates with no environment
  * dependency, so they live here and `tiers.ts` re-exports them — one definition,

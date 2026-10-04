@@ -16,7 +16,7 @@ const configuredModels = [
   },
 ];
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: new Proxy(
     {},

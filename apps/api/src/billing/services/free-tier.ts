@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { getCreditAccount, upsertCreditAccount } from '../repositories/credit-accounts';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { wallet } from '../wallet';

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual, randomInt, scryptSync } from 'crypto';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 

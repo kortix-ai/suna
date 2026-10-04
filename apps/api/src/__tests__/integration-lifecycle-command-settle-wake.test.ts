@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { cancelForwardedPrompt } from '../projects/session-lifecycle/cancel-forwarded';
 import { db } from '../shared/db';
 import {

@@ -1,5 +1,5 @@
 import { Daytona } from '@daytonaio/sdk';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { configuredTimeoutMs } from './with-timeout';
 
 let daytonaClient: Daytona | null = null;

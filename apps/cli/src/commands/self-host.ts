@@ -2415,7 +2415,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     TUNNEL_SIGNING_SECRET: token(32),
     // Sandboxes run on a real provider, just like Kortix Cloud — Daytona,
     // E2B, or Kortix's own Platinum (SandboxProviderName in
-    // apps/api/src/config.ts); `kortix self-host configure` asks which one
+    // apps/api/src/lib/config.ts); `kortix self-host configure` asks which one
     // and collects only that provider's key(s).
     DAYTONA_API_KEY: '',
     E2B_API_KEY: '',

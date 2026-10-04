@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { makeOpenApiApp, json } from '../openapi';
 import { versionRouter } from './routes/version';
 import { githubAppSetupRouter } from './routes/github-app';

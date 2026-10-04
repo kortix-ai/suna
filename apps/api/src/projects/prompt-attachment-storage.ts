@@ -4,7 +4,7 @@ import { promptAttachments, promptAttachmentReferences } from '@kortix/db';
 import { eq, notExists } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 const BUCKET = 'staged-files';
 export const STORAGE_TIMEOUT_MS = 20_000;

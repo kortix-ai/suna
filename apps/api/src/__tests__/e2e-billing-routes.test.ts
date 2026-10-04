@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError, InsufficientCreditsError } from '../errors';
+import { BillingError, InsufficientCreditsError } from '../billing/errors';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -176,7 +176,7 @@ mock.module('../shared/stripe', () => ({
   }),
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     STRIPE_WEBHOOK_SECRET: 'whsec_test',
     INTERNAL_KORTIX_ENV: 'staging',

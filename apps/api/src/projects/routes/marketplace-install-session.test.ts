@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 
 // Keep the catalog hermetic — the in-repo Kortix source needs no network.
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';

@@ -5,7 +5,7 @@
 // throws and never runs on the relay's response path.
 import { projectSessions, sessionPresenceLeases } from '@kortix/db';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
 import { db } from '../shared/db';
 import { pushDeviceTokenStore, type PushDeviceTokenRow, type PushDeviceTokenStore } from './device-tokens';

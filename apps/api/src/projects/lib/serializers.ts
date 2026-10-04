@@ -18,7 +18,7 @@ import {
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { sessionInitiatorLabel } from './session-initiator';
-import { type SandboxProviderName, config } from '../../config';
+import { type SandboxProviderName, config } from '../../lib/config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { requestClientIp } from '../../shared/client-ip';

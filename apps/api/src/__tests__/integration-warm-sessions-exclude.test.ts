@@ -20,7 +20,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { accounts, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { findWarmProjectSession, warmSessionPlacement } from '../projects/routes/warm-sessions';
 import { db } from '../shared/db';
 import { WARM_SESSION_LOCATION_KEY } from '../projects/lib/warm-sessions';

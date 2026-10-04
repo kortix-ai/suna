@@ -13,7 +13,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError } from '../errors';
+import { BillingError } from '../billing/errors';
 import { runWithContext } from '../lib/request-context';
 
 // ─── Mock tracking ───────────────────────────────────────────────────────────

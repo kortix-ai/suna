@@ -25,7 +25,7 @@ import {
 import { requestClientKey } from '../../shared/client-ip';
 import { isUuid } from '../../shared/validate';
 import { tunnelRateLimiter } from '../core/rate-limiter';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';

@@ -2,7 +2,7 @@
 // device token here, with per-device notification preferences.
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context, MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { supabaseAuth } from '../middleware/auth';
 import { pushDeviceTokenStore, type PushDeviceTokenStore } from './device-tokens';

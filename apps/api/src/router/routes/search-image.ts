@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
-import { ImageSearchRequestSchema } from '../../types';
-import type { ImageSearchResponse, AppContext } from '../../types';
+import { ImageSearchRequestSchema } from '../types';
+import type { ImageSearchResponse, AppContext } from '../types';
 import { imageSearchSerper } from '../services/serper';
 import { checkCredits, deductToolCredits } from '../services/billing';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';

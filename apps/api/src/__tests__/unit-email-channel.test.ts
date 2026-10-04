@@ -10,7 +10,7 @@ import {
 } from '../channels/agentmail-api';
 import type { AgentMailMessageReceivedEvent } from '../channels/email/types';
 import { verifyAgentMailSignature } from '../channels/email/verify';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 let dbResults: unknown[][] = [];
 

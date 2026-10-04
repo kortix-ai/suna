@@ -41,7 +41,7 @@ let turnAbandonError: Error | null = null;
 
 let upstreamPort = 3000;
 
-mock.module('../../config', () => ({
+mock.module('../../lib/config', () => ({
   config: {},
 }));
 // Importing the real lifecycle export surface must not initialize the actual

@@ -95,7 +95,7 @@ mock.module('./templates', () => ({
   resolveTemplateForBuildSlug: async () => HEALTHY_TEMPLATE,
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: {
     isProviderEnabled: () => true,
     sandboxProvider: 'daytona',

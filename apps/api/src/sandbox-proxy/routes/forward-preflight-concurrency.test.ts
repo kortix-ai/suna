@@ -42,7 +42,7 @@ function hold(label: string, ms: number): Promise<void> {
   });
 }
 
-mock.module('../../config', () => ({ config: {} }));
+mock.module('../../lib/config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),

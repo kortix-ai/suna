@@ -1,6 +1,6 @@
 import { type GitBackedProject } from '../projects/git';
 import { getSandboxProvider } from './providers';
-import { config, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../lib/config';
 import { computeTemplateIdentity, listTemplatesForProject, resolveTemplateForBuildSlug, refreshTemplateState, type ResolvedTemplate } from './templates';
 import { enabledTemplateBuildProviders, observeTemplateProviderCoverage, resolveRoutedTemplateState, type SandboxTemplateProvider, type SandboxTemplateProviderCoverage } from './provider-coverage';
 import { ensureSandboxImage, type SnapshotBuildSource } from './builder';

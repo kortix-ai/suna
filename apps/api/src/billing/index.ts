@@ -1,11 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { runWorkerTick } from '../shared/audit-scope';
 import { supabaseAuth } from '../middleware/auth';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 
 import { accountDeletionRouter } from './routes/account-deletion';
 import { accountStateRouter } from './routes/account-state';

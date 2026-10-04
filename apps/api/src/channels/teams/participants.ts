@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { chatThreadParticipants, chatThreads, projectSessionGrants, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { sessionWebUrl } from '../slack/util';
 import { conversationMemberId } from '../teams-api';

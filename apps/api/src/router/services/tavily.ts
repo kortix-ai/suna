@@ -1,5 +1,5 @@
-import { config } from '../../config';
-import type { WebSearchResult } from '../../types';
+import { config } from '../../lib/config';
+import type { WebSearchResult } from '../types';
 import { getTraceHeaders } from '../../lib/request-context';
 
 interface TavilyResponse {

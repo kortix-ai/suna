@@ -16,7 +16,7 @@ import { connectionRowIsReachable } from '../projects/lib/connection-access';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { connectionIsEffectiveProjectDefault, upsertConnectionCredential } from './credentials';
 import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
 import {

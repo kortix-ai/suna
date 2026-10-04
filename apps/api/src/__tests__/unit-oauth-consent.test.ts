@@ -69,7 +69,7 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { FRONTEND_URL: 'https://app.example', KORTIX_URL: 'https://api.example', API_KEY_SECRET: 'test-secret' },
 }));
 

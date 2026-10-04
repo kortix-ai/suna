@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { createDb, platformSettings, sessionEnvironments, sessionSandboxes, type Database } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { sandboxDatabaseOwner, sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 import { PlatinumProvider } from '../platform/providers/platinum';
 import { reapOrphanProviderBoxes } from '../projects/reaping/orphan-boxes';

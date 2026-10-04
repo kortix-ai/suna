@@ -18,7 +18,7 @@
  * workflow step never blocks the roll on this exit code (continue-on-error);
  * a failure only means the next deploy behaves as it did before this gate.
  */
-import { config } from '../src/config';
+import { config } from '../src/lib/config';
 import { platinumUsRegion } from '../src/shared/platinum-region';
 import { buildPlatformDefaultImageForRelease } from '../src/snapshots/builder';
 import { preparePlatinumTemplateRegion } from '../src/snapshots/providers/platinum-templates';

@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import type { AuthVariables } from '../types';
+import type { AuthVariables } from '../types/app-env';
 
 /**
  * Local HS256 verification + the GoTrue liveness cache (2026-09-23).
@@ -108,7 +108,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
   });
 
   test('with cache disabled a token revoked by another replica is refused on its next verification', async () => {
-    const { config } = await import('../config');
+    const { config } = await import('../lib/config');
     const previous = config.SUPABASE_JWT_LIVENESS_TTL_MS;
     config.SUPABASE_JWT_LIVENESS_TTL_MS = 0;
     let live = true;
@@ -126,7 +126,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
 
   test('the authenticated identity route refuses the same bearer after upstream logout', async () => {
     const { supabaseAuth } = await import('../middleware/auth');
-    const { config } = await import('../config');
+    const { config } = await import('../lib/config');
     const previous = config.SUPABASE_JWT_LIVENESS_TTL_MS;
     config.SUPABASE_JWT_LIVENESS_TTL_MS = 0;
     let live = true;

@@ -1,5 +1,5 @@
 import type { AgentGrant } from '@kortix/db';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { validateAccountToken, validateAccountTokenById } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isAccountToken, isServiceAccountToken } from '../shared/crypto';

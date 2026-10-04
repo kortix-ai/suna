@@ -37,7 +37,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: {
     SLACK_SIGNING_SECRET: 'state-secret',
@@ -112,7 +112,7 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-const { config } = (await import('../config')) as { config: Record<string, unknown> };
+const { config } = (await import('../lib/config')) as { config: Record<string, unknown> };
 const oauth = (await import('../channels/slack-oauth')) as any;
 const { slackOauthApp, buildSlackInstallUrl } = oauth;
 
@@ -269,7 +269,7 @@ describe('Slack OAuth installer identity', () => {
  */
 describe('Slack install completion checks the state before the server setup', () => {
   test('without Slack OAuth configured, a malformed state is 400 and a foreign one 403; a valid one is 503', async () => {
-    const { config } = (await import('../config')) as { config: Record<string, unknown> };
+    const { config } = (await import('../lib/config')) as { config: Record<string, unknown> };
     const state = stateFromInstallUrl();
     const original = config.SLACK_CLIENT_ID;
     config.SLACK_CLIENT_ID = '';

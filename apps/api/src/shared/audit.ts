@@ -9,7 +9,7 @@ import {
 import type { Context, Next } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import { getRequestContext, runWithContext } from '../lib/request-context';
-import type { AppEnv } from '../types';
+import type { AppEnv } from '../types/app-env';
 import { credentialFromContext } from './audit-credential';
 import { type AuditRow, getAuditQueue } from './audit-queue';
 import { AnonymousAuditBudget, type AnonymousAuditSummary } from './audit-anonymous-budget';

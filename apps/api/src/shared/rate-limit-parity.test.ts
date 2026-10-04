@@ -8,7 +8,7 @@ mock.module('./audit', () => ({
   },
 }));
 const rate = await import('./rate-limit');
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { RATE_LIMIT_EXCEEDED_ACTION } = await import('./rate-limit-audit');
 const shareId = '11111111-1111-4111-8111-111111111111';
 const cases = [

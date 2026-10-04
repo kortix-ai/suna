@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { signChannelState, verifyChannelState } from './signed-state';
 
 describe('channel signed state', () => {

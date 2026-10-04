@@ -75,7 +75,7 @@ const { accounts, accountMembers, accountTokens, projects, projectSessions, sess
   await import('@kortix/db');
 const { eq } = await import('drizzle-orm');
 const { Hono } = await import('hono');
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { db } = await import('../shared/db');
 const { runWithContext } = await import('../lib/request-context');
 const { createAccountToken } = await import('../repositories/account-tokens');

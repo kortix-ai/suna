@@ -15,7 +15,7 @@ const confirmed = Boolean(
 );
 const withDb = confirmed ? describe : describe.skip;
 
-// `apps/api/src/config` validates the environment at import time, so billing,
+// `apps/api/src/lib/config` validates the environment at import time, so billing,
 // and the keys a managed deployment must hold, are set before the first API
 // import. No value is reachable.
 Object.assign(process.env, {

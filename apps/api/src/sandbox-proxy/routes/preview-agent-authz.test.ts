@@ -35,7 +35,7 @@ let remintCalls: Array<{ requestedAgent: string | null }> = [];
 const undeclaredAgents = new Set<string>();
 let envSyncCalls: Array<{ requestedAgent: string | null | undefined }> = [];
 
-mock.module('../../config', () => ({ config: {} }));
+mock.module('../../lib/config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),

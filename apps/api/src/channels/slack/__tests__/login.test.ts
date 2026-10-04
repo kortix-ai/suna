@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { signLoginState, verifyLoginState, buildSlackLoginUrl } from '../login';
-import { config } from '../../../config';
+import { config } from '../../../lib/config';
 
 describe('slack login-state token', () => {
   test('round-trips team + slack user', () => {

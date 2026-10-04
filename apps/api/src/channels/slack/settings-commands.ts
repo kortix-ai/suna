@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';

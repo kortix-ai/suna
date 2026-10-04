@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { SKILLS_DIR, piConfigDirCandidates } from '@kortix/manifest-schema';
 import { execFileAsync, refreshMirror, runGitCapture, spawn } from '../projects/git/mirror';
 import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';

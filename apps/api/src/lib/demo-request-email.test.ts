@@ -8,7 +8,7 @@ const mockConfig = {
   DEMO_LEAD_FROM_EMAIL: 'hi@kortix-test.ai',
 };
 
-mock.module('../config', () => ({ config: mockConfig }));
+mock.module('./config', () => ({ config: mockConfig }));
 
 const { sendDemoRequestNotification } = await import('./demo-request-email');
 

@@ -25,7 +25,7 @@ import {
   type TunnelCapability,
 } from 'agent-tunnel';
 import { eq } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { db } from '../../shared/db';
 import { buildRequestSummary, finishAuditLog, startAuditLog } from './audit-logger';
 import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';

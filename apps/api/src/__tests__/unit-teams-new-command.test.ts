@@ -8,7 +8,7 @@ const PROJECT = '00000000-0000-4000-8000-000000000001';
 const TENANT = 'tenant-1';
 const CONVO = 'a:synthetic-chat';
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: { FRONTEND_URL: 'https://dev.kortix.com', TEAMS_REQUIRE_USER_IDENTITY: true },
 }));

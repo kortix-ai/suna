@@ -1,4 +1,4 @@
-import type { SandboxProviderName } from '../config';
+import type { SandboxProviderName } from '../lib/config';
 import type { ProviderState, SandboxProviderAdapter } from './providers';
 
 export const SANDBOX_TEMPLATE_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;

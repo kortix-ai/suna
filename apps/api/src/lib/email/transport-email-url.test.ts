@@ -22,7 +22,7 @@ const mockConfig = {
   SMTP_PASS: '',
 };
 
-mock.module('../../config', () => ({ config: mockConfig }));
+mock.module('../config', () => ({ config: mockConfig }));
 
 const { configuredEmailProviders, emailSender, isEmailConfigured, sendEmail } =
   await import('./transport');

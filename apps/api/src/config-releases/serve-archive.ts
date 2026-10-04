@@ -20,7 +20,7 @@
  * S3 protocol, MinIO) without this module knowing which.
  */
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { runGitCapture } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import { rewriteStorageOrigin } from '../shared/storage-url';

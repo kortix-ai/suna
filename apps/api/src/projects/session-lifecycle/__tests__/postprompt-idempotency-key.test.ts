@@ -35,7 +35,7 @@ let capturedIdempotencyKeys: Array<string | null> = [];
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
 let failedCalls: Array<{ commandId: string; message: string }> = [];
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
 }));

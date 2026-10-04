@@ -5,7 +5,7 @@ import {
   projectSessions,
 } from '@kortix/db';
 import { db } from '../../shared/db';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { loadSlackTokenForProject } from '../install-store';
 import { postEphemeral } from '../slack-api';
 import { escapeMrkdwn, sessionWebUrl } from './util';

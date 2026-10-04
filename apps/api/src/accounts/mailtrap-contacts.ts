@@ -13,7 +13,7 @@
 // Fire-and-forget from bootstrapPersonalAccount: a failed sync must never
 // affect signup, so failures are logged and dropped after a few retries.
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { classifyEmailKind } from './personal-email';
 
 const MAX_ATTEMPTS = 3;

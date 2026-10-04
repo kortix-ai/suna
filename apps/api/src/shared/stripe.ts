@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { config } from '../config';
+import { config } from '../lib/config';
 
 let client: Stripe | null = null;
 

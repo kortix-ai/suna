@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { ProjectRow } from './cards';
 

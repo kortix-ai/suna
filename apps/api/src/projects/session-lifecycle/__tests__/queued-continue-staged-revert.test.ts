@@ -47,7 +47,7 @@ let endpointResult: { url: string; headers: Record<string, string> } | null = {
 let sessionInfoBody: unknown = null;
 let sessionInfoStatus = 200;
 
-mock.module('../../../config', () => ({
+mock.module('../../../lib/config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
 }));

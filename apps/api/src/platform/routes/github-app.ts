@@ -28,7 +28,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { supabaseAuth } from '../../middleware/auth';
 import { requireAdmin } from '../../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
@@ -48,7 +48,7 @@ import {
   type GitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
 } from '../../projects/github';
-import type { AppEnv } from '../../types';
+import type { AppEnv } from '../../types/app-env';
 import {
   clearAppIdentity,
   refreshAppIdentity,

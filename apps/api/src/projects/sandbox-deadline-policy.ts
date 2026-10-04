@@ -13,7 +13,7 @@
  * EXTEND it, and only up to a bounded ceiling.
  */
 
-import { config } from '../config';
+import { config } from '../lib/config';
 import { SESSION_DATA_PORTS } from '../sandbox-proxy/session-data-ports';
 import { isOpencodePort } from '../shared/opencode-ports';
 import { positiveEnvInt } from './reaper-constants';

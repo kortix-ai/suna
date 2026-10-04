@@ -8,7 +8,7 @@ const configState: Record<string, unknown> = {
   API_KEY_SECRET: 'test-secret-value-32-chars-long!!',
   KORTIX_PREVIEW_BASE_DOMAIN: undefined,
 };
-mock.module('../config', () => ({ config: configState }));
+mock.module('../lib/config', () => ({ config: configState }));
 
 let labelLookups: string[] = [];
 let principalCalls: Array<string | null | undefined> = [];

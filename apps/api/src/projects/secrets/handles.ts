@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { projectSessionSecretHandles, projectSessions } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type { SecretEgressPolicy } from '../../secrets/strategy';
 import { mintHandle, newLookupId } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';

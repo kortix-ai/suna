@@ -16,8 +16,8 @@
 // false) — fail-closed, so an unprovisioned account can never reach an
 // enterprise surface.
 
-import { config } from '../../config';
-import type { TierEntitlements } from '../../types';
+import { config } from '../../lib/config';
+import type { TierEntitlements } from '../types';
 import type { getCreditAccount } from '../repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from './billing-cache';
 import { resolvePlanRecord } from './plan-catalog';

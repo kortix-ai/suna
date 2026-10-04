@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import * as relayContract from '@kortix/api-contract/secret-relay';
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import {
   type PresentedHandleRefusal,
   classifyPresentedHandles,

@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { drainSessionLifecycleQueue } from './drain';
 
 const state = globalThis as typeof globalThis & {

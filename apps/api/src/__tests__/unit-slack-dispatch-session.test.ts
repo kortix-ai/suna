@@ -201,7 +201,7 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 const { spawnAgentTurn, dispatchSlackEvent } = await import('../channels/slack/dispatch');
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 const { inboundMessageKey } = await import('../channels/slack/dedup');
 const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
 const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;

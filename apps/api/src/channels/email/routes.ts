@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { json, errors } from '../../openapi';
 import { loadAgentMailWebhookSecretForInbox } from '../install-store';
 import { emailWebhookApp } from './app';

@@ -1,11 +1,11 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from 'zod';
-import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
+import { SLACK_BOT_SCOPES } from '../channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
   parseFallbackPolicies,
-} from './llm-gateway/routing/policy-config';
+} from '../llm-gateway/routing/policy-config';
 
 hydrateEnvironmentSecret();
 
@@ -1446,7 +1446,7 @@ export const config = {
         const { appendFileSync, readFileSync } = require('fs');
         const { resolve } = require('path');
         const candidates = [
-          resolve(__dirname, '../../.env'), // from src/config.ts -> ../../.env
+          resolve(__dirname, '../../.env'), // from src/lib/config.ts -> ../../.env
           resolve(process.cwd(), '.env'), // cwd/.env
         ];
         for (const envPath of candidates) {

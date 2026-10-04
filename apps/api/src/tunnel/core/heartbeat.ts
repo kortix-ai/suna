@@ -1,5 +1,5 @@
 import { HeartbeatManager } from 'agent-tunnel';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { tunnelRelay } from './relay';
 
 export const heartbeatManager = new HeartbeatManager(tunnelRelay, {

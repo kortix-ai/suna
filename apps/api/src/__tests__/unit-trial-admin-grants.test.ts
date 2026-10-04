@@ -27,7 +27,7 @@ mock.module('../shared/account-limits', () => ({
 mock.module('../shared/db', () => ({ db: {} }));
 // tiers.ts (grantForSeats lives there) imports the validated env config; stub
 // the two fields it can touch so the test runs without a booted environment.
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: { INTERNAL_KORTIX_ENV: 'dev', KORTIX_LLM_MARKUP: undefined },
 }));
 

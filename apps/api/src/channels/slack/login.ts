@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import { signChannelState, verifyChannelState } from '../core/signed-state';
 
 // Short-lived, integrity-protected token that round-trips a Slack user's

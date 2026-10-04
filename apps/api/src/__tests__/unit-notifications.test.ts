@@ -7,7 +7,7 @@ const mockConfig = {
   MAILTRAP_FROM_NAME: 'Kortix Test',
 };
 
-mock.module('../config', () => ({
+mock.module('../lib/config', () => ({
   config: mockConfig,
 }));
 

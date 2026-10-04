@@ -47,7 +47,7 @@
  * the real paths are under `/api/repos`, not `/repositories`.
  */
 import { type KeyObject, createPrivateKey, createSign } from 'node:crypto';
-import { config } from '../../config';
+import { config } from '../../lib/config';
 import type {
   GitConnectionRef,
   GitHostBackend,

@@ -26,7 +26,7 @@ import { authenticatePreviewPrincipalDetailed, extractPreviewToken } from './pre
 import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { forwardToSandbox } from './routes/preview';
 import { resolveExternalIdFromHostLabel } from './backend';
-import { config } from '../config';
+import { config } from '../lib/config';
 import { PREVIEW_STATE_HEADER, previewStatePage, type PreviewState } from './preview-state-page';
 import {
   isAllowedPreviewOrigin,

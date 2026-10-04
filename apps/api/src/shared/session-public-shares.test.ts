@@ -11,7 +11,7 @@ const {
   shareIdFromPublicRef,
   shareUnlocksTranscript,
 } = await import('./session-public-shares');
-const { config } = await import('../config');
+const { config } = await import('../lib/config');
 
 const CTX = {
   sessionId: '22222222-2222-4222-8222-222222222222',
