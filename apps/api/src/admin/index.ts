@@ -17,7 +17,6 @@ import { supabaseAuth } from '../middleware/auth';
 import { requestClientIp } from '../shared/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
-import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
 import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
 import { readJsonObject } from '../shared/http-body';
@@ -223,11 +222,6 @@ adminApp.openapi(
             // Read by resolveBillingFromRow's per-seat self-heal (a live seat
             // subscription outranks a stale non-paid `tier`). Not rendered.
             stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-            // Read by resolveBillingFromRow's session-limit override. Not rendered
-            // either, but the resolver takes ONE row and answers the WHOLE billing
-            // question from it — handing it a partial row silently mis-answers the
-            // parts this projection does not happen to render today.
-            maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
             billingModel: creditAccounts.billingModel,
             seatCount: creditAccounts.seatCount,
             trialStatus: creditAccounts.trialStatus,
@@ -239,9 +233,9 @@ adminApp.openapi(
             managedModelsOverride: creditAccounts.managedModelsOverride,
             demoEnterprise: creditAccounts.demoEnterprise,
             enterpriseEntitled: creditAccounts.enterpriseEntitled,
-            // Same reason as maxConcurrentSessions above: the resolver reads the
-            // JSONB overrides FIRST, so a projection without them reports the
-            // legacy columns' answer for an account whose real answer expired.
+            // The resolver takes ONE row and reads the JSONB overrides FIRST,
+            // so a projection without them reports the legacy columns' answer
+            // for an account whose real answer expired.
             entitlementOverrides: creditAccounts.entitlementOverrides,
             ownerEmail,
             memberCount,
@@ -1087,88 +1081,6 @@ adminApp.openapi(
   },
 );
 
-// ── Set account concurrent-session override ─────────────────────────────────
-// `null` restores the tier-derived limit. Operators use this route for account
-// policy changes and for bounded end-to-end limit verification.
-adminApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/session-limit',
-    tags: ['admin'],
-    summary: "Set an account's concurrent-session override",
-    ...auth,
-    request: {
-      params: z.object({ id: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              max_concurrent_sessions: z.number().int().min(1).max(MAX_ACCOUNT_SESSION_LIMIT).nullable(),
-            }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(
-        z.object({
-          ok: z.boolean(),
-          previous: z.number().int().nullable(),
-          current: z.number().int().nullable(),
-        }),
-        'Updated concurrent-session override',
-      ),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const actorUserId = (c.get('userId') as string | undefined) ?? null;
-    const body = c.req.valid('json') as { max_concurrent_sessions: number | null };
-    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
-    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
-    const { clearAccountLimitCache } = await import('../shared/account-limits');
-    const { recordAuditEvent } = await import('../shared/audit');
-
-    const result = await setAccountSessionLimit(
-      {
-        accountId,
-        actorUserId,
-        maxConcurrentSessions: body.max_concurrent_sessions,
-        ip: requestClientIp(c),
-        userAgent: c.req.header('user-agent') || null,
-      },
-      {
-        getCurrent: async () => (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
-        persist: async (id, value) => {
-          await applyAdminOverride(
-            id,
-            { maxConcurrentSessions: value },
-            { userId: actorUserId, action: 'admin.account.session_limit.set' },
-          );
-        },
-        clearCache: clearAccountLimitCache,
-        recordAudit: recordAuditEvent,
-      },
-    );
-
-    return c.json({ ok: true, ...result });
-  } catch (e: any) {
-    return c.json({ error: adminErrorMessage(e) }, 500);
-  }
-  },
-);
-
-// ── Grant / replace an account trial ─────────────────────────────────────────
-// An admin-issued trial makes the account BEHAVE as `tier_key` (entitlements,
-// project/session limits, managed-models gate) until `duration_days` elapse —
-// without touching `credit_accounts.tier`, which belongs to the Stripe webhook.
-// Re-granting overwrites the window (extend/adjust = re-grant). `credit_grant`
-// (USD credits) funds sandbox compute: even a BYOK trial needs wallet balance
-// to run sessions.
 adminApp.openapi(
   createRoute({
     method: 'post',

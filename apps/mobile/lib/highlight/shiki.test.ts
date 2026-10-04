@@ -135,6 +135,20 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
     ini: { light: [2], dark: [2] },
   };
 
+  /**
+   * Lines where the wasm reference's own verdict is not portable: excluded
+   * from the comparison, with no direction asserted — unlike
+   * KNOWN_ENGINE_DIFFERENCES, whose entries are asserted to still differ.
+   *
+   * php light line 0 (`<?php`): the wasm Oniguruma paints `php` base fg in
+   * one environment (a factory sandbox, node and bun alike) and keyword red
+   * in another (CI's packages lane at the same lockfile; #8963 measured the
+   * same on removal). The ES2018 engine paints it red everywhere.
+   */
+  const UNSTABLE_WASM_LINES: Record<string, { light: number[]; dark: number[] }> = {
+    php: { light: [0], dark: [] },
+  };
+
   for (const lang of HIGHLIGHT_LANGS) {
     test(`${lang}: compiles, colours, and matches Oniguruma in both themes`, async () => {
       const sample = HIGHLIGHT_SAMPLES[lang];
@@ -143,6 +157,12 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
       // crossed that limit and failed the parity check below.
+      highlightToTokens(sample, lang, 'light');
+      // A slow box's FIRST tokenization can still cross that limit
+      // (`tokenizeTimeLimit = 500`, @shikijs/primitive) and cache the fallback
+      // scopes. Clear and re-run once: the grammar is warm now, so the cache
+      // holds the tokens the parity check below asserts.
+      __testing.tokenCache.clear();
       highlightToTokens(sample, lang, 'light');
 
       for (const scheme of ['light', 'dark'] as const) {
@@ -165,7 +185,8 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
         const theirs = paint(reference);
         const differing = KNOWN_ENGINE_DIFFERENCES[lang]?.[scheme] ?? [];
         for (const line of differing) expect(ours[line]).not.toEqual(theirs[line]);
-        const keep = (_: string, i: number) => !differing.includes(i);
+        const unstable = UNSTABLE_WASM_LINES[lang]?.[scheme] ?? [];
+        const keep = (_: string, i: number) => !differing.includes(i) && !unstable.includes(i);
         expect(ours.filter(keep)).toEqual(theirs.filter(keep));
       }
     });

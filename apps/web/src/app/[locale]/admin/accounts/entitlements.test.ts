@@ -140,8 +140,7 @@ describe('admin accounts — Overrides card', () => {
     for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'branding', 'managedModels']) {
       expect(rows).toContain(`key: '${key}'`);
     }
-    // The two numeric overrides are laid out by hand — an input, not a Select.
-    expect(pageSource).toContain("raw('text016e549e6831')");
+    // The numeric override is laid out by hand — an input, not a Select.
     expect(pageSource).toContain("raw('texta6b6d1454df0')");
   });
 
