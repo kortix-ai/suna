@@ -3,6 +3,7 @@
  * endpoint, and the per-session reconstruction timeline.
  */
 
+import { RuntimeAuditBatchSchema } from '@kortix/api-contract/runtime-relay';
 import { auditCredentialNames } from '../../shared/audit-credential-names';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -303,7 +304,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // Documents the batch; `parseOpenCodeAuditBatch` owns validation and
+      // names the failing event index in its 400.
+      body: { content: { 'application/json': { schema: RuntimeAuditBatchSchema.or(AnyObject) } } },
     },
     responses: {
       200: json(AnyObject, 'Batch ingestion result'),

@@ -8,6 +8,7 @@
 // a real href for whatever page that is.
 import { describe, expect, test } from 'bun:test';
 
+import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
   NAV_GROUPS,
@@ -48,6 +49,17 @@ describe('the catalog', () => {
     for (const [section, meta] of Object.entries(PANE_META)) {
       expect(meta.title).toBe(sectionLabel(section as (typeof VALID_TABS)[number]));
     }
+  });
+
+  test('the audit pane carries a page heading like the other tabs', () => {
+    // The audit tab renders the upsell card or the log and no heading of its
+    // own, so the pane header is the page heading (the acct-account-hub-tabs
+    // journey found the audit pane with no h1 in the DOM).
+    expect(PANE_META.audit?.title).toBe(sectionLabel('audit'));
+    // Both display strings resolve to catalog keys, so every locale renders
+    // them translated instead of the English fallback.
+    expect(ACCOUNT_HUB_TRANSLATION_KEYS[PANE_META.audit?.title ?? '']).toBeDefined();
+    expect(ACCOUNT_HUB_TRANSLATION_KEYS[PANE_META.audit?.description ?? '']).toBeDefined();
   });
 
   test('the ledger is the only full-width pane', () => {

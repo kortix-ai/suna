@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { within } from '@kortix/shared/tool-output/testing';
+
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -274,14 +276,15 @@ test('retains only valid private attachment references beside sandbox paths', ()
   expect(parseFileReferences(tag('https://other.test/private')).files[0]).not.toHaveProperty('attachment');
 });
 
-test('a pathological message cannot freeze the tab that renders it', () => {
-  // Every viewer parses every user message. The regex this used took ~10 s on
-  // this text — quadratic in it — so in a shared session one member's message
-  // froze the tab of every member who opened it.
-  const evil = `${'<file\t'.repeat(40_000)}<file${'\t'.repeat(200_000)}`;
-  const started = performance.now();
-  const parsed = parseFileReferences(evil);
-  expect(performance.now() - started).toBeLessThan(100);
+// Every viewer parses every user message. The regex this used took ~10 s on
+// this text — quadratic in it — so in a shared session one member's message
+// froze the tab of every member who opened it. within() judges CPU (the same
+// guard packages/shared uses), so a loaded lane cannot fail it on wall time.
+within('a pathological message cannot freeze the tab that renders it', () =>
+  parseFileReferences(`${'<file\t'.repeat(40_000)}<file${'\t'.repeat(200_000)}`));
+
+test('a pathological message parses to no file references', () => {
+  const parsed = parseFileReferences(`${'<file\t'.repeat(40_000)}<file${'\t'.repeat(200_000)}`);
   expect(parsed.files).toEqual([]);
 });
 
@@ -471,13 +474,8 @@ describe('each parser returns exactly what its regex returned', () => {
 
 describe('no message can freeze the tab that parses it', () => {
   // Measured on the regexes with Bun: each took ~1 s or more on these inputs,
-  // and each doubling of the text quadrupled the time.
-  const within = (label: string, run: () => unknown) =>
-    test(label, () => {
-      const started = performance.now();
-      run();
-      expect(performance.now() - started).toBeLessThan(100);
-    });
+  // and each doubling of the text quadrupled the time. within() judges CPU
+  // (the shared guard), so a loaded lane cannot fail them on wall time.
 
   within('16k <project_ref openers that never close', () => parseProjectReferences('<project_ref x>'.repeat(16_000)));
   within('20k <file_ref openers that never close', () => parseFileMentionReferences('<file_ref x>'.repeat(20_000)));

@@ -20,4 +20,5 @@ export * from './ssh';
 export * from './updates';
 export * from './instance-admin';
 export * from './host-boundary';
+export * from './connector-setup';
 export * from './github-app';

@@ -131,6 +131,22 @@ export async function GET(request: NextRequest) {
       if (error) {
         console.error('Error exchanging code for session:', error);
 
+        // The PKCE verifier lives in a browser cookie that must survive the
+        // mailbox detour and a redirect chain before this handler runs. When it
+        // does not, auth-js throws pkce_code_verifier_not_found BEFORE any
+        // request leaves the server: the code is untouched and still fresh.
+        // Hand it back to the browser that started the flow — it re-seeds the
+        // verifier it snapshotted at send time and re-enters THIS handler,
+        // which then runs the normal exchange and the normal success path
+        // (return-URL demotion, terms stamp, billing-aware landing). Every
+        // other exchange failure keeps today's behavior below.
+        if (error.code === 'pkce_code_verifier_not_found') {
+          const resumeUrl = new URL(`${baseUrl}/auth`);
+          resumeUrl.searchParams.set('pkce_code', code);
+          if (next) resumeUrl.searchParams.set('returnUrl', next);
+          return NextResponse.redirect(resumeUrl);
+        }
+
         // Check if the error is due to expired/invalid link
         const isExpired =
           error.message?.toLowerCase().includes('expired') ||

@@ -106,8 +106,7 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // One user of the treatment left in this file: `Try again`. `Back to
     // projects` moved into the shared `AccountTopBar` with the rest of the top
     // row and carries the same treatment there; Log out moved into that bar's
-    // account menu. The onboarding escape link lives in `workspace-handoff.tsx`
-    // (asserted in `workspace-handoff.test.tsx`).
+    // account menu.
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
     expect(treatmentMatches).toHaveLength(1);
     const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');

@@ -10,6 +10,7 @@
  * Pure. No database, no auth: the caller owns both.
  */
 
+import type { SessionPrompt } from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
@@ -104,7 +105,7 @@ function promptAttachments(payload: Record<string, unknown>): Array<{
   return attachments;
 }
 
-export function serializePrompt(row: PromptRow) {
+export function serializePrompt(row: PromptRow): SessionPrompt {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);

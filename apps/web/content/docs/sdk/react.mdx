@@ -112,6 +112,20 @@ need a running session. Each mirrors a method on the
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
 | `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |
 
+## Connector setup links
+
+An agent can mint a 1-click connect link (`/connect/<token>`). The flow's data
+and runtime policy live in the SDK; a host renders its own dialog over them and
+injects its adapters.
+
+| Export | Role |
+|---|---|
+| `useConnectorSetup(token, options)` | The whole flow: load what the link names, `POST /start`, open the provider's hosted page through the injected `openPopup`, poll `POST /finalize` on the 3 s / 5 s / 5-minute schedule, and report `phase` (`loading`, `ready`, `starting`, `opened`, `connected`, `error`), the app info, the error, and who the account was authorized as. `options` carries the host's `backendUrl`, `storage` adapter and `openPopup`; `onOpened` fires after each popup opening. |
+| `useConnectorLinkInfo(token, options)` | One shared, storage-backed cache per link token, so every card and the modal share one GET of the rate-limited public route and paint the app's logo on the first frame. The same `backendUrl`/`storage` options. |
+| `createConnectorLinkInfoCache(fetchInfo, { storage })` | The cache factory itself (framework-free, storage injected) for a host that wants its own instance. |
+| `resolveConnectorStart({ start, finalize })` | The `/start` outcome rule: hosted url → popup, already connected → finalize once, otherwise the error message. |
+| `nextConnectorPollDelay(attempt, elapsedMs)` | The bounded poll schedule (3 s first, 5 s after, stops at 5 minutes). |
+
 ## Start the open read early
 
 `prefetchSessionOpen(queryClient, projectId, sessionId)` starts the session-open
