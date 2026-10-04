@@ -1,20 +1,20 @@
 {
-  "source_hash": "d8df6e3caa521ddb0bf27abaa5f092fa641cb67231f829c1699bc2cfbae99c37",
+  "source_hash": "88dbf29a4dce0ffde78dca7c1a47ef8f953ebc83315328c8f83385e2479693cf",
   "diff_files": [
     "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/drizzle/meta/20261003182953_snapshot.json",
+    "packages/db/drizzle/meta/20261004033003_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261004003900000_gateway_logs_session_rollup_index.concurrent.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-session-rollup-index.test.ts"
   ],
-  "diff_hash": "758c1536dd7a1f48a8a73df12cebb7f19b3408eb99866238d75bacd8514087df",
-  "head": "8cff315bf7ea6088f129b6e40945547e5381290c",
+  "diff_hash": "f144e3ade7f30396131efbedde8202c2bb3406303d70de0a908ea817635e977f",
+  "head": "b218867b8fe8b52999fbfb7dec9ef5278a88c557",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
+    "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T03:23:11.391Z"
+  "at": "2026-10-04T03:41:01.316Z"
 }
