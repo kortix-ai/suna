@@ -10,47 +10,49 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 
 | Layer | Line | Use for |
 | --- | --- | --- |
-| Category | AI Management System | What Kortix is. The default noun everywhere. |
-| Tagline | The open-source AI Management System | Page titles, hero, README, CLI banner, GitHub About, auth screen. The default lead. |
+| Category | AI Operating System (short form: AI OS) | What Kortix is. The default noun everywhere. |
+| Tagline | The open-source AI Operating System | Page titles, hero, README, CLI banner, GitHub About, auth screen. The default lead. |
 | Comparative | The leading open-source alternative to Claude Cowork and ChatGPT Work | Search, social, launch, GitHub. Anchors against the known category. |
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
 
-**Rule.** Use "AI Management System" as the category and "The open-source AI Management System" as the tagline. — *Why:* D1 (2026-10-01). README, CLI banner, home H1 and the launch film (#8023, 2026-09-29) already use it. The phrase names the job, so a cold reader needs no explanation. — *Where:* app | marketing | mobile | deck | email | CLI. — *When silent:* use the tagline in titles and the category noun in sentences.
+**Rule.** Use "AI Operating System" as the category and "The open-source AI Operating System" as the tagline. — *Why:* D10 (2026-10-04, founder). An operating system is the layer everything else runs on: agents, skills, memory, connectors, computers, channels and triggers. The phrase names that layer, and it scales from one person to a company. — *Where:* app | marketing | mobile | deck | email | CLI | GitHub. — *When silent:* use the tagline in titles and the category noun in sentences.
 
-**Rule.** Use "command center" only as a descriptor inside a sentence. Never use it as the category, the page title, the meta line, or the tagline. — *Why:* D1. The live site still ships "AI command center" as the title, meta description, manifest name, Slack app, auth tagline and the starter `kortix-system` skill. It competes with the category line. The manifesto uses it as a descriptor ("call it a command center"), and that use stays. — *Where:* marketing | app | email | CLI. — *When silent:* write "AI Management System". If the sentence still needs a descriptor, write "a place to run it from".
+**Rule.** Write "AI OS" only as the short form of "AI Operating System". Spell the full name first on a page, then "AI OS" may follow. A label, a nav item, a chip or a headline with no room may use "AI OS" alone. — *Why:* D10. One concept, two lengths, no third. — *Where:* every surface. — *When silent:* the full name. Never write "AIOS", "Ai OS", "AI-OS" or "the OS" alone.
 
-**Rule.** Do not write these retired lines: "Autonomous Company Operating System", "open AGI platform", "self-driving companies", "AI Worker", "Super AI Worker", "AI command center" (as category), "genius colleague". — *Why:* D1. Each one either claims a category Kortix does not hold, implies autonomy that a change request gate contradicts, or is legacy Suna copy. — *Where:* every surface, including store listings, permission prompts, email footers and blog posts. — *When silent:* find the closest line in the table above. If none fits, flag it and ask. Do not invent a new category line.
+**Rule.** Use "command center" only as a descriptor inside a sentence. Never use it as the category, the page title, the meta line, or the tagline. — *Why:* D1, D10. The live site once shipped "AI command center" as the title, meta description, manifest name, Slack app, auth tagline and the starter `kortix-system` skill. It competes with the category line. The manifesto uses it as a descriptor ("call it an AI Operating System"), and that use stays. — *Where:* marketing | app | email | CLI. — *When silent:* write "AI Operating System". If the sentence still needs a descriptor, write "a place to run it from".
 
-**Rule.** Keep "AI Management System" capitalized as a proper category name. Keep "open-source" hyphenated before a noun and "open source" two words as a noun. — *Why:* One spelling per term. The README and hero use this form. — *Where:* every surface. — *When silent:* "the open-source AI Management System" (adjective); "Kortix is open source" (noun).
+**Rule.** Do not write these retired lines: "Autonomous Company Operating System", "open AGI platform", "self-driving companies", "AI Worker", "Super AI Worker", "AI command center" (as category), "genius colleague". — *Why:* D1, D10. "Autonomous Company Operating System" stays retired: the word "Autonomous" claims autonomy that a change request gate contradicts. "Operating System" itself is the category now. Each other line either claims a category Kortix does not hold, implies autonomy that a change request gate contradicts, or is legacy Suna copy. — *Where:* every surface, including store listings, permission prompts, email footers and blog posts. — *When silent:* find the closest line in the table above. If none fits, flag it and ask. Do not invent a new category line.
+
+**Rule.** Keep "AI Operating System" capitalized as a proper category name. Keep "open-source" hyphenated before a noun and "open source" two words as a noun. — *Why:* One spelling per term. The README and hero use this form. — *Where:* every surface. — *When silent:* "the open-source AI Operating System" (adjective); "Kortix is open source" (noun).
 
 **Rule.** Do not name a license in public copy. Write "open source" and stop. — *Why:* The license is a legal detail that changes the claim. Public copy states the fact a reader can verify: they can read, fork and audit the code. — *Where:* marketing | deck | social | email | docs | store listing. — *When silent:* "open source", "code you can read, fork, and audit", "self-host for free". Never add a license badge.
 
 ### What-is, in one sentence
 
-Kortix is the open-source AI Management System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
+Kortix is the open-source AI Operating System: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
 
 ### The three lengths
 
-**Rule.** Pick one of three approved lengths. Do not write a fourth. — *Why:* The lengths keep meta text, README and press consistent. The Short line is exactly 129 characters (counted 2026-10-01). — *Where:* marketing | docs | store listing | CLI package descriptions. — *When silent:* choose by the character limit of the field.
+**Rule.** Pick one of three approved lengths. Do not write a fourth. — *Why:* The lengths keep meta text, README and press consistent. The Short line is exactly 128 characters (counted 2026-10-04). — *Where:* marketing | docs | store listing | CLI package descriptions. — *When silent:* choose by the character limit of the field.
 
-- **Short (129 characters, GitHub About, meta description, manifest description, package descriptions):** Open-source AI Management System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.
-- **Standard (about 30 words, README subtitle, landing subhead, store subtitle):** Kortix is an open-source AI Management System — your agents, skills, company memory, and connectors in one git repo you own. Any model, your keys, self-hosted or managed cloud.
-- **Long (about 70 words, press, docs, about, store description lead):** Agents that deliver finished work are now a product category. Every version of it runs inside a model lab, on that lab's model, with your company's brain on their side of the wall. Kortix is the one you own: an open-source AI Management System where your agents, skills, memory, and connectors live in one git repo, and the agents work on real cloud computers, landing work through a change request a human approves.
+- **Short (128 characters, GitHub About, meta description, manifest description, package descriptions):** Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.
+- **Standard (about 30 words, README subtitle, landing subhead, store subtitle):** Kortix is an open-source AI Operating System — your agents, skills, company memory, and connectors in one git repo you own. Any model, your keys, self-hosted or managed cloud.
+- **Long (about 70 words, press, docs, about, store description lead):** Agents that deliver finished work are now a product category. Every version of it runs inside a model lab, on that lab's model, with your company's brain on their side of the wall. Kortix is the one you own: an open-source AI Operating System where your agents, skills, memory, and connectors live in one git repo, and the agents work on real cloud computers, landing work through a change request a human approves.
 
 ### Which line goes on which surface
 
 | Surface | Line | Note |
 | --- | --- | --- |
-| Page `<title>` and `og:title` (home) | Tagline: "Kortix – The open-source AI Management System" | Brand name once. |
+| Page `<title>` and `og:title` (home) | Tagline: "Kortix – The open-source AI Operating System" | Brand name once. |
 | Page `<title>` (subpage) | "Pricing" (the template adds "| Kortix") | Do not repeat "Kortix" in the page's own title. Today titles read "Kortix pricing \| Kortix". |
-| Meta description (home, manifest, Slack app short text) | Short | 129 characters. |
+| Meta description (home, manifest, Slack app short text) | Short | 128 characters. |
 | Meta description (subpage) | One sentence: the mechanism or the offer. 155 characters or fewer. | Not "Current plans and included features." |
 | PWA manifest `name` | "Kortix" | `description` = Short. |
 | README, GitHub About | Tagline (README) and Short (About) | Already correct. |
 | CLI banner and `--help` | Tagline | Already correct. |
 | Auth screen subtitle | Tagline | Not "Your AI Command Center". |
-| Transactional email footer | "Kortix — The open-source AI Management System" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
+| Transactional email footer | "Kortix — The open-source AI Operating System" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
 | Slack and Teams app description | Standard, then one sentence on the channel | "Start a session from any Slack thread." |
 | Package descriptions (root, CLI, SDK) | Short (root, CLI); "the Kortix API" (SDK) | Not "agent platform". |
 | App Store and Play Store listing | Standard, the message house pillars, the three work modes | Commit the store text to the repo (open issue). |

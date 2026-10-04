@@ -704,7 +704,7 @@ flow(
 );
 
 // PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
-// project visible (404) → project.customize.write (403) → project LLM gateway
+// project visible (404) → project.model.write (403) → project LLM gateway
 // enabled (404 llm_gateway_disabled). Same caller + same project state → same
 // status on both verbs. Every denial fires before model servability is
 // checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
@@ -746,11 +746,11 @@ flow(
         r.status(200);
       }
     });
-    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is off', async () => {
+    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is off', async () => {
       (await put(user, gatewayOff.id)).status(403);
       (await del(user, gatewayOff.id)).status(403);
     });
-    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is on', async () => {
+    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is on', async () => {
       (await put(user, gatewayOn.id)).status(403);
       (await del(user, gatewayOn.id)).status(403);
     });

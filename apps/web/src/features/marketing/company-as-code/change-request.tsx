@@ -1,5 +1,5 @@
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { getLocalizedCompanyAsCodeContent } from './content';
 
@@ -28,7 +28,7 @@ export function ChangeRequest(): ReactNode {
   const { cr } = getLocalizedCompanyAsCodeContent(tI18nComplete).change;
 
   return (
-    <div className="border-border bg-card overflow-hidden rounded-sm border">
+    <div className="border-border bg-card overflow-hidden rounded-xl border">
       {/* who opened it, and against what */}
       <div className="border-border flex flex-col gap-4 border-b p-5 sm:p-7">
         <div className="flex flex-wrap items-center gap-3">

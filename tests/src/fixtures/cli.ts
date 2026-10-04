@@ -232,9 +232,13 @@ export class CliSandbox {
       // Make the CLI deterministic + non-interactive-friendly.
       KORTIX_CONFIG_FILE: this.configFile,
       KORTIX_DEFAULT_API_BASE: targetApiBase(),
-      // The invoking session's agent-env file (/dev/shm/kortix/agent-env.sh)
-      // must not hand this subprocess a live credential: the hermetic config
-      // file above is the only token source here.
+      // CI-shape rule (same reason `tests/bin/package-quality.ts` sets it): a
+      // Kortix sandbox session can carry a live /dev/shm/kortix/agent-env.sh
+      // written by the stack under test. Without this flag the CLI reads that
+      // file through `sandboxEnvValue()` and every hermetic sandbox here
+      // silently targets the host's identity instead of `targetApiBase()`.
+      // On a laptop or a GitHub runner the file does not exist, so this
+      // changes nothing.
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       // A stable git identity so `create`/`ship` commits don't fail on a
       // machine without a configured user.

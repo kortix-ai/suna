@@ -56,6 +56,7 @@ pnpm test -- --db-only [path-filter ...] # PostgreSQL-backed suites only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/4 # One browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
+pnpm test -- --agentic-only tests/example.e2e.ts # Opt-in browser-agent pilot
 pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
@@ -63,6 +64,10 @@ pnpm test -- --target-full     # Every deployed staging flow and browser journey
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
+
+The [e2e evaluation and runbook](references/e2e-evaluation.md) defines the opt-in
+browser-agent pilot. Keep it outside the default/full/release gates until its
+reliability and false-pass criteria are measured. Preserve all existing lanes.
 
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.

@@ -1,0 +1,16 @@
+{
+  "source_hash": "ee06d0c19ea2bd310ad90510be4cd03ec4765d3651be41283e6e6f2c5024e6df",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-forwarded-strand-reconcile.test.ts",
+    "apps/api/src/projects/session-lifecycle/forwarded-strand-reconcile.ts"
+  ],
+  "diff_hash": "90287a076641daaa1197df631d9843c81a968a5521d21934dcf1ece6521f0b78",
+  "head": "4f6119a6ce42acd7f5d36c96c3aecf05b9b3a8a5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:08:02.808Z"
+}
