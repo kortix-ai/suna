@@ -12,7 +12,7 @@ import { CardArrow, DemoPill, Heading, PillLink, Section } from './primitives';
 
 function Hero() {
   return (
-    <section className="dark bg-background text-foreground relative flex min-h-svh items-center justify-center overflow-hidden px-6 pt-32 pb-20">
+    <section data-kx-dark-hero="" className="dark bg-background text-foreground relative flex min-h-svh items-center justify-center overflow-hidden px-6 pt-32 pb-20">
       <Lattice />
       <div className="relative z-10 flex max-w-3xl flex-col items-center gap-6 text-center">
         <span className="kx-hero-text flex items-center gap-2 text-lg">

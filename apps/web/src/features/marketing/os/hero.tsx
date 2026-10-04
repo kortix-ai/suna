@@ -16,7 +16,7 @@ import { DemoPill, PillLink } from './primitives';
 export function OsHero() {
   return (
     <>
-      <section id="hero" className="dark relative flex min-h-svh flex-col overflow-hidden bg-background">
+      <section id="hero" data-kx-dark-hero="" className="dark relative flex min-h-svh flex-col overflow-hidden bg-background">
         <div className="kx-hero-veil absolute inset-0" aria-hidden>
           <BeamsShader />
           {/* Floor scrim: the copy sits on a calm band, never on a beam. */}

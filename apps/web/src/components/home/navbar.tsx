@@ -59,8 +59,6 @@ const SCROLL_THRESHOLD_UP = 20;
 
 const CTA_LINK = '/auth';
 
-/** Pages whose hero is a dark art pane under the bar. */
-const DARK_HERO_PATHS = new Set(['/', '/ai-os']);
 
 /**
  * Scroll compaction — height only.
@@ -220,8 +218,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     };
   }, [isDrawerOpen]);
 
+  // A page whose fold is a dark art pane marks it `data-kx-dark-hero`; the bar
+  // then sits on the pane, transparent, until the reader scrolls.
+  const [hasDarkHero, setHasDarkHero] = useState(false);
+  useEffect(() => {
+    setHasDarkHero(document.querySelector('[data-kx-dark-hero]') !== null);
+  }, [pathname]);
+
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
-  const overHero = DARK_HERO_PATHS.has(pathname) && !hasScrolled && !isDrawerOpen;
+  const overHero = hasDarkHero && !hasScrolled && !isDrawerOpen;
 
   // Anchor links scroll in place on the home page; everything else navigates.
   // Either way the sheet closes.
