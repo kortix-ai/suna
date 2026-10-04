@@ -1,6 +1,6 @@
 'use client';
 
-import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus } from '../core/runtime/runtime-types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';

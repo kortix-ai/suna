@@ -43,7 +43,7 @@ import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
@@ -238,12 +238,6 @@ export interface ShowContentProps {
    * way the user sees one header with the actions on its right.
    */
   toolbarActions?: React.ReactNode;
-  /**
-   * Show the file name in the viewer's header row. Off when the card header
-   * already names the item (the inline carousel's tabs): a row carrying only a
-   * repeated name is dead height, and with no actions it is not drawn at all.
-   */
-  showFileLabel?: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -262,7 +256,6 @@ export function ShowContentRenderer({
   fill = false,
   onStatusChange,
   toolbarActions,
-  showFileLabel = true,
 }: ShowContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const arCSS = showAspectRatioToCSS(aspectRatio);
@@ -314,7 +307,6 @@ export function ShowContentRenderer({
   }, [path, isLocalPath]);
 
   const fileName = useMemo(() => path.split('/').pop() || '', [path]);
-  const frameLabel = showFileLabel ? fileName : undefined;
 
   /**
    * ── One header, never two ──────────────────────────────────────────────
@@ -338,14 +330,14 @@ export function ShowContentRenderer({
     fill ? (
       node
     ) : (
-      <ViewerFrame label={frameLabel} actions={toolbarActions}>
+      <ViewerFrame actions={toolbarActions}>
         {node}
       </ViewerFrame>
     );
 
   /** For renderers that never draw a header themselves. */
   const alwaysFramed = (node: React.ReactNode) => (
-    <ViewerFrame label={frameLabel} actions={toolbarActions}>
+    <ViewerFrame actions={toolbarActions}>
       {node}
     </ViewerFrame>
   );
@@ -1224,7 +1216,6 @@ export function ShowCarousel({
             attachment={currentItem.attachment}
             LocalhostPreview={LocalhostPreview}
             toolbarActions={toolbarActions}
-            showFileLabel={!hideNav}
             fill={fill}
           />
         )}

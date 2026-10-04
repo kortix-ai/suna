@@ -1,4 +1,4 @@
-import type { KortixEvent, KortixEventBus } from '../../kortix-event-bus'
+import type { KortixEvent, KortixEventBus } from '@/services/event-bus/kortix-event-bus'
 
 /** Frames whose payload names a session, and where. */
 function sessionOf(payload: unknown): string | undefined {
@@ -19,6 +19,6 @@ function sessionOf(payload: unknown): string | undefined {
   }
 
 export const OPENCODE_EVENT_RECOVERY = [
-  "GET /kortix/opencode/state",
-  "GET /kortix/opencode/messages/:sessionId?limit=20",
+  "GET /kortix/runtime/state",
+  "GET /kortix/runtime/messages/:sessionId?limit=20",
 ] as const

@@ -1,14 +1,14 @@
 import { createHmac } from 'node:crypto'
 
-import type { Config } from '../../config'
-import type { OpenCodeConfig } from '../../harness/open-code/config'
-import type { ProjectEnvStore } from '../../project-env'
-import type { OpenCodeBootState } from '../../harness/open-code/boot-state'
-import { requireOpenCodeConfig } from '../../harness/open-code/config'
-import type { Opencode } from '../../harness/open-code/lifecycle'
-import { composeOpenCodeHarnessService } from '../../harness/open-code/service'
-import { buildDaemonApp } from '../../proxy'
-import type { PtyRegistry } from '../../routes/pty'
+import type { Config } from '@/lib/config/config'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
+import type { OpenCodeBootState } from '@/harness/open-code/boot-state'
+import { requireOpenCodeConfig } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
+import { buildDaemonApp } from '@/app/server'
+import type { PtyRegistry } from '@/routes/kortix/pty'
 
 /** The production daemon app over the production service composition; only
  *  the native OpenCode lifecycle is substituted. */
@@ -45,7 +45,7 @@ export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCode
     opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
-    projectTarget: '/workspace',
+    projectTarget: `/tmp/kortix-test-workspace-${process.pid}`,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
@@ -94,4 +94,22 @@ export function signTestUserContext(
   const payloadB64 = base64url(Buffer.from(JSON.stringify(body), 'utf8'))
   const sig = base64url(createHmac('sha256', secret).update(payloadB64).digest())
   return `${payloadB64}.${sig}`
+}
+
+/**
+ * Two distinct free ports for the OpenCode primary/standby pair. Both stay
+ * bound until both are chosen: two sequential port-0 binds returned the same
+ * port 10 times in 50,000 on Linux, and a pair with one port makes every
+ * verified reload refuse as "port pair is desynced". They are reserved on
+ * 127.0.0.1, where the child binds: on macOS a wildcard port-0 bind can return
+ * a port another process holds on 127.0.0.1 (267 in 20,000 with 300 such
+ * listeners), and the child then exits with EADDRINUSE.
+ */
+export function reserveOpenCodePortPair(): [primary: number, standby: number] {
+  const servers = [0, 1].map(() =>
+    Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('reserved') }),
+  )
+  const [primary, standby] = servers.map((server) => server.port as number)
+  for (const server of servers) server.stop(true)
+  return [primary!, standby!]
 }

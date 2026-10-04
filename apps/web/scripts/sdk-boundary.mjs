@@ -35,6 +35,7 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
   '@kortix/sdk/react',
   '@kortix/sdk/server',
+  '@kortix/sdk/workspace-search',
   '@kortix/sdk/internal/idb-sync-cache',
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
@@ -104,7 +105,6 @@ const FORBIDDEN_RUNTIME_PATHS = [
 ];
 
 const FORBIDDEN_KORTIX_NETWORK_PATHS = [
-  /\/tunnel\/permission-requests\/stream/,
   /\/p\/public-share\//,
   /\/admin\/stress-test\/run/,
   /\/setup-links\//,
@@ -114,6 +114,39 @@ const FORBIDDEN_KORTIX_NETWORK_PATHS = [
   /\/system\/(?:maintenance|demo-request)/,
   /\/user-roles/,
 ];
+
+const RUNTIME_NOT_READY_PHRASE = /opencode not ready/i;
+const RUNTIME_QUERY_KEY_ROOT = 'opencode';
+
+const QUERY_CACHE_METHODS = new Set([
+  'cancelQueries',
+  'ensureQueryData',
+  'fetchQuery',
+  'getQueryData',
+  'getQueryState',
+  'invalidateQueries',
+  'prefetchQuery',
+  'refetchQueries',
+  'removeQueries',
+  'resetQueries',
+  'setQueryData',
+]);
+
+/**
+ * An array literal used as a React Query key: the value of a `queryKey`
+ * property, or the first argument of a query-cache method. A plain list that
+ * starts with the word (provider ids, a demo table) is not a key.
+ */
+function isQueryKey(array) {
+  const parent = array.parent;
+  if (ts.isPropertyAssignment(parent)) return parent.name.getText() === 'queryKey';
+  return (
+    ts.isCallExpression(parent) &&
+    parent.arguments[0] === array &&
+    ts.isPropertyAccessExpression(parent.expression) &&
+    QUERY_CACHE_METHODS.has(parent.expression.name.text)
+  );
+}
 
 function productionSourceFiles(root) {
   const files = [];
@@ -244,6 +277,41 @@ export function scanSdkBoundary(sourceRoot) {
             source: templateText,
           });
         }
+      }
+      // F2: the daemon's not-ready answer differs per harness and the SDK
+      // classifies every spelling (`isRuntimeNotReadyResponse`,
+      // `isRuntimeStartingError`, `RUNTIME_NOT_READY_MARKERS`). A phrase
+      // spelled here covers one harness and drifts.
+      const literalText = ts.isTemplateExpression(node)
+        ? networkTargetText(node)
+        : ts.isStringLiteral(node) ||
+            ts.isNoSubstitutionTemplateLiteral(node) ||
+            ts.isRegularExpressionLiteral(node)
+          ? node.text
+          : '';
+      if (RUNTIME_NOT_READY_PHRASE.test(literalText)) {
+        violations.push({
+          file,
+          line: lineOf(sourceFile, node),
+          kind: 'runtime-not-ready-string',
+          source: literalText,
+        });
+      }
+      // F2: runtime cache keys are the SDK's (`runtimeKeys`,
+      // `resetRuntimeQueries`); their root segment is not a host contract.
+      if (
+        ts.isArrayLiteralExpression(node) &&
+        node.elements[0] &&
+        ts.isStringLiteral(node.elements[0]) &&
+        node.elements[0].text === RUNTIME_QUERY_KEY_ROOT &&
+        isQueryKey(node)
+      ) {
+        violations.push({
+          file,
+          line: lineOf(sourceFile, node),
+          kind: 'runtime-query-key',
+          source: RUNTIME_QUERY_KEY_ROOT,
+        });
       }
       if (
         ts.isCallExpression(node) &&

@@ -4,9 +4,13 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 // The internal routes the standalone gateway pod calls, through the real Hono
 // app and the real model catalog. Mocked: resolveCandidates, the servable
 // project catalog (it reads the database), and the hooks' persistence.
+const loggerWarn = mock(() => {});
+// Swapped per-test so a test can hold the trace write open and prove the route
+// does not wait for it.
+const persistGatewayTraceMock = mock<(trace: unknown) => Promise<void>>(async () => {});
 mock.module('../lib/logger', () => ({
   logger: {
-    warn: mock(() => {}),
+    warn: loggerWarn,
     info: mock(() => {}),
     error: mock(() => {}),
     debug: mock(() => {}),
@@ -27,7 +31,7 @@ mock.module('./hooks', () => ({
   ...actualHooks,
   authenticatePrincipal: async () => null,
   authorizeRequest: async () => ({ ok: true }),
-  persistGatewayTrace: async () => {},
+  persistGatewayTrace: persistGatewayTraceMock,
   recordGatewayUsage: async (event: unknown) => {
     usageEvents.push(event);
   },
@@ -62,6 +66,24 @@ const resolveCandidatesMock = mock<
 >();
 mock.module('./resolution/resolve-candidates', () => ({
   resolveCandidates: resolveCandidatesMock,
+}));
+
+const refreshCalls: unknown[] = [];
+let refreshResult: { access: string; accountId?: string } | null = null;
+const actualCodex = await import('./credentials/codex');
+mock.module('./credentials/codex', () => ({
+  ...actualCodex,
+  refreshRefusedCodexAccountLogin: async (input: unknown) => {
+    refreshCalls.push(input);
+    return refreshResult;
+  },
+}));
+
+let opencodeResult: { access: string } | null = null;
+const actualOpencode = await import('./credentials/opencode-console');
+mock.module('./credentials/opencode-console', () => ({
+  ...actualOpencode,
+  refreshRefusedOpencodeLogin: async () => opencodeResult,
 }));
 
 const { createInternalGatewayRoutes } = await import('./internal-routes');
@@ -220,6 +242,54 @@ describe('POST /models managedOnly', () => {
   });
 });
 
+describe('POST /trace — best-effort persistence never blocks the response', () => {
+  // Prod, 2026-09-28: the handler awaited the gateway_request_logs write on the
+  // isolated audit pool. Under the per-session sequence-lock convoy that write
+  // waited tens of seconds for one of the pool's 2 backends, so this route's
+  // p95 tracked the pool's queue depth (44 s at the peak). The gateway already
+  // posts the trace fire-and-forget, so the route must answer at once.
+  test('answers 200 while the audit-pool write is still pending', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    persistGatewayTraceMock.mockImplementationOnce(async () => {
+      await held;
+    });
+
+    const res = await Promise.race([
+      app().request('/trace', authedRequest({ trace: { requestId: 'req_held' } })),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 1_000)),
+    ]);
+    release();
+
+    expect(res).not.toBe('timeout');
+    expect((res as Response).status).toBe(200);
+    expect(await (res as Response).json()).toEqual({ ok: true });
+  });
+
+  test('a failed background write is logged and still answers 200', async () => {
+    loggerWarn.mockClear();
+    persistGatewayTraceMock.mockImplementationOnce(async () => {
+      throw new Error('55P03 canceling statement due to lock timeout');
+    });
+
+    const res = await app().request('/trace', authedRequest({ trace: { requestId: 'req_fail' } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    // Let the detached rejection handler run before asserting on it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loggerWarn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a trace without a request id is still refused', async () => {
+    const res = await app().request('/trace', authedRequest({ trace: { accountId: 'a1' } }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false });
+  });
+});
+
 describe('POST /usage', () => {
   // The request id is the settlement's idempotency key: without it a retried
   // settlement would bill twice.
@@ -238,5 +308,59 @@ describe('POST /usage', () => {
     );
     expect(settled.status).toBe(200);
     expect(usageEvents).toHaveLength(1);
+  });
+});
+
+describe('POST /refresh-credential', () => {
+  const ACCOUNT = '22222222-2222-4222-8222-222222222222';
+  const PROJECT = '11111111-1111-4111-8111-111111111111';
+  const USER = '33333333-3333-4333-8333-333333333333';
+  const SECRET = '44444444-4444-4444-8444-444444444444';
+  const body = {
+    principal: { accountId: ACCOUNT, projectId: PROJECT, userId: USER, sessionId: 'session-1' },
+    secretId: SECRET,
+    failedKeySha256: 'a'.repeat(64),
+  };
+  const post = (payload: unknown, authorization = `Bearer ${TOKEN}`) =>
+    app().request('http://test/refresh-credential', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization },
+      body: JSON.stringify(payload),
+    });
+
+  test('returns only the new token and its ChatGPT headers', async () => {
+    refreshCalls.length = 0;
+    refreshResult = { access: 'fresh-access', accountId: 'chatgpt-acct' };
+    const res = await post(body);
+    expect(res.status).toBe(200);
+    const { descriptor } = (await res.json()) as { descriptor: Record<string, unknown> };
+    expect(Object.keys(descriptor).sort()).toEqual(['apiKey', 'headers']);
+    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct' } });
+    expect(refreshCalls).toEqual([{
+      projectId: PROJECT, accountId: ACCOUNT, userId: USER, sessionId: 'session-1', secretId: SECRET, failedKeySha256: 'a'.repeat(64),
+    }]);
+  });
+
+  test('an OpenCode Console login returns only its new token', async () => {
+    refreshCalls.length = 0;
+    opencodeResult = { access: 'fresh-console-token' };
+    const res = await post(body);
+    opencodeResult = null;
+    expect(await res.json()).toEqual({ descriptor: { apiKey: 'fresh-console-token' } });
+    expect(refreshCalls).toEqual([]);
+  });
+
+  test('a login that cannot be refreshed answers null', async () => {
+    refreshResult = null;
+    const res = await post(body);
+    expect(await res.json()).toEqual({ descriptor: null });
+  });
+
+  test('refuses a malformed request and a caller without the internal token', async () => {
+    refreshCalls.length = 0;
+    expect((await post({ ...body, failedKeySha256: 'not-a-digest' })).status).toBe(400);
+    expect((await post({ ...body, principal: { accountId: ACCOUNT, userId: USER } })).status).toBe(400);
+    expect((await post(body, 'Bearer wrong')).status).toBe(401);
+    expect(refreshCalls).toEqual([]);
   });
 });

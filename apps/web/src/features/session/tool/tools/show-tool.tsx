@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
   isShowContentUnavailable,
   isShowPayloadEmpty,
@@ -31,12 +31,12 @@ import {
   ShowContentRenderer,
   showDomain,
   ShowFileActions,
+  ShowFileHoverCard,
   showFileTypeIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useTranslations } from '@/i18n/use-translations';
-import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
@@ -334,16 +334,19 @@ export function ShowTool({ part, sessionId }: ToolProps) {
             label={title}
           />
         ) : (
-          <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
-            {(running && !type && !items) || currentItem?.status === 'pending' ? (
-              <Loading className="text-muted-foreground size-4 shrink-0" />
-            ) : (
-              showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl)
-            )}
-            <span className="min-w-0 truncate" title={displayTitle}>
-              {displayTitle}
-            </span>
-          </div>
+          <ShowFileHoverCard path={activePath}>
+            <div className="text-foreground flex min-w-0 cursor-pointer items-center gap-2 px-1 text-xs [&>svg]:size-4">
+              {(running && !type && !items) || currentItem?.status === 'pending' ? (
+                <Loading className="text-muted-foreground size-4 shrink-0" />
+              ) : (
+                showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl)
+              )}
+              {/* No native `title` on a file: the hover card already names it. */}
+              <span className="min-w-0 truncate" title={activePath ? undefined : displayTitle}>
+                {displayTitle}
+              </span>
+            </div>
+          </ShowFileHoverCard>
         )}
         {inlineToolbar ? (
           <div className="flex shrink-0 items-center gap-1">{inlineToolbar}</div>
@@ -353,5 +356,6 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     </div>
   );
 }
+
 ToolRegistry.register('show', ShowTool);
 ToolRegistry.register('show-user', ShowTool);

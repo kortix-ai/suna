@@ -96,6 +96,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { SettingsTabHeader } from '../settings-tab-header';
+import { ConnectedApps } from './connected-apps';
 
 /** Sentinel Select value for "not scoped to one project". */
 const WHOLE_WORKSPACE = '__workspace__';
@@ -371,6 +372,8 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
             ),
         })}
       </p>
+
+      <ConnectedApps relativeTime={(iso) => localizedRelativeTime(iso, locale, renderedAt)} />
 
       {accountId ? (
         <CreateApiKeyDialog

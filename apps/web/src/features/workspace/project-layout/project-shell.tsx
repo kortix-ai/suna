@@ -20,6 +20,7 @@ import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sid
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
+import { SessionRouteCache } from '@/features/workspace/project-layout/session-route-cache';
 import {
   isAccountGraduatedSection,
   legacySectionRedirect,
@@ -256,7 +257,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             <CommandPalette />
           </Suspense>
 
-          <ProjectSheelLayout>{children}</ProjectSheelLayout>
+          <ProjectSheelLayout><SessionRouteCache>{children}</SessionRouteCache></ProjectSheelLayout>
         </div>
 
         <SettingsPanel projectId={projectId} />
@@ -266,6 +267,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </Suspense>
 
         <ProjectOnboardingWizard projectId={projectId} />
+
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>

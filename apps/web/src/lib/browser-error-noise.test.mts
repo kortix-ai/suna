@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
+  isAnonymousAuthRefreshRace,
   isAndroidWebViewNativeBridgePostMessageNoise,
+  isAutoplayNotAllowedRejectionNoise,
   isCanvasImageDataOOMNoise,
   isCaptchaInterceptorNoise,
   isClientRequestTimeoutMessage,
@@ -45,6 +47,7 @@ import {
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
+  isServerSuspenseBailoutNoise,
   isSignalTimeoutNoise,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -5132,7 +5135,7 @@ test('does NOT suppress a near-worded message that is not a document-state looku
 // loop after its document-state-map race (see the document-state matcher
 // above), tripping React's 50-nested-update guard (#185) WITHOUT an
 // `onTileRendering` frame. All three patterns are from the SAME Safari 26.5
-// session (`be897489-…`), same release, same `0foj1ouh5ijrj.js` chunk, same
+// session, same release, same `0foj1ouh5ijrj.js` chunk, same
 // 2026-08-05 ~04:30–05:28 UTC window, 1 occurrence each, UNCAUGHT
 // (`handled:false`). The existing `isEmbedPdfTilingReactUpdateDepthNoise`
 // matcher anchors on the `onTileRendering` frame and does NOT catch these —
@@ -6509,6 +6512,102 @@ test('does NOT treat an unrelated message from the same in-document source as st
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow, BARE `app:///` root
+// (Better Stack patterns
+// 3442ad7cdbfb5687bec652fb1ee20d0ea2e382f104b1b96fb995be5048057e54 and its
+// sibling b86f8fb06181ea3ca7626e3f22f312258899aa056173de4733b5911ce6da181a,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 0 identified users, `auto.browser.global_handlers.
+// onerror`, iOS. The same `Ok`/`Qk` mutual recursion at one document line as
+// the sibling above, but on the open-web marketing (`/`) and auth (`/auth`)
+// pages EVERY frame's filename is the BARE app origin `app:///` — the route
+// path is absent, not `app:///<route>`. The in-page inline-script anchor
+// accepts the bare origin and the page-path anchor treats it as this page's
+// source.
+// ---------------------------------------------------------------------------
+
+const IOS_WEBVIEW_BARE_SOURCE = 'app:///';
+const IOS_WEBVIEW_BARE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_BARE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_BARE_SOURCE, lineno: 226, colno: 408, in_app: true },
+];
+
+test('classifies the bare app:/// root in-document stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with bare app:/// frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the bare app:/// root stack overflow via the Sentry beforeSend gate on / and /auth', () => {
+  for (const url of ['https://kortix.com/', 'https://kortix.com/auth']) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url },
+        exception: {
+          values: [
+            {
+              value: 'RangeError: Maximum call stack size exceeded.',
+              mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+              stacktrace: { frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected the bare app:/// stack overflow on ${url} to be noise`,
+    );
+  }
+});
+
+test('suppresses the bare app:/// root stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_BARE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a bare app:/// stack overflow that also carries a bundle or first-party frame', () => {
+  for (const frame of [
+    { function: 'e', filename: 'app:///_next/static/chunks/main-abc123.js', lineno: 1, colno: 2 },
+    {
+      function: 'deepRecurse',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+      lineno: 3,
+      colno: 4,
+    },
+  ]) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames: [...IOS_WEBVIEW_BARE_OVERFLOW_FRAMES, frame],
+      }),
+      false,
+      `expected real recursion with ${frame.filename} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT treat an unrelated message on the bare app:/// root as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
@@ -7175,7 +7274,7 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
 // `IntersectionObserver` threshold callback) calls `const { tile } =
 // queue.pop()` on an `undefined` pop result, and V8 throws
 // `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` Two
-// patterns, SAME root cause, SAME user/session (`7254bee8-…`/`bd1306e9-…`), 1
+// patterns, SAME root cause, SAME user and session, 1
 // occurrence each, 0 identified users, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route
 // `/projects/:id/sessions/:sessionId`, Chrome 150 on Windows 10. Pattern
@@ -11984,7 +12083,255 @@ test('suppresses a 404-boundary React #419 through the Sentry beforeSend hint', 
     }),
     true,
   );
-  // Same event without the hint (the digest is not in the serialised event) must
-  // keep reporting so a real server-render failure is never hidden.
-  assert.equal(shouldIgnoreSentryNoiseEvent(event), false);
+  // Same event without the hint (the digest is not in the serialised event) is
+  // the digest-less abort class: a superseded client navigation left the server
+  // Suspense boundary a permanent fallback with no `data-dgst`, React threw #419
+  // and switched the boundary to client rendering. That is the
+  // `server-suspense-bailout` noise class (23 occurrences / 0 identified users
+  // in prod), so it is dropped. See `isServerSuspenseBailoutNoise`.
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), true);
+});
+
+// The digest-less React #419 class: the recoverable "the server could not
+// finish this Suspense boundary" report React raises for an abandoned
+// RSC-streamed boundary (a superseded client navigation / cut stream), which
+// Next.js does not skip because its `data-dgst` is absent. Sibling of the
+// React #412 RSC-stream-close class in `isConnectionClosedNoise`.
+const REACT_419_PROD_FRAMES = [
+  { filename: 'app:///_next/static/immutable/chunks/1lk6qtp5slimq.js', function: '?' },
+];
+
+test('classifies a digest-less React #419 from a minified React chunk as noise', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({ message: REACT_419_MESSAGE, frames: REACT_419_PROD_FRAMES }),
+    true,
+  );
+});
+
+test('classifies a frameless digest-less React #419 as noise', () => {
+  assert.equal(isServerSuspenseBailoutNoise({ message: REACT_419_MESSAGE }), true);
+});
+
+test('keeps reporting a React #419 whose stack resolves to first-party source', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: REACT_419_MESSAGE,
+      frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    }),
+    false,
+  );
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: REACT_419_MESSAGE,
+      filename: 'apps/web/src/features/session/session-chat.tsx',
+    }),
+    false,
+  );
+});
+
+test('does NOT claim a React #419 with a 404/redirect or a real error digest', () => {
+  for (const digest of [
+    'NEXT_HTTP_ERROR_FALLBACK;404',
+    'NEXT_REDIRECT;replace;/projects;307;',
+    'deadbeef01',
+    'BAILOUT_TO_CLIENT_SIDE_RENDERING',
+    'NEXT_PRERENDER_INTERRUPTED',
+  ]) {
+    assert.equal(
+      isServerSuspenseBailoutNoise({
+        message: REACT_419_MESSAGE,
+        digest,
+        frames: REACT_419_PROD_FRAMES,
+      }),
+      false,
+      `expected digest ${digest} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT claim a non-#419 React error', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: 'Minified React error #418; visit https://react.dev/errors/418',
+      frames: REACT_419_PROD_FRAMES,
+    }),
+    false,
+  );
+});
+
+test('suppresses the digest-less React #419 at both gates', () => {
+  const event = {
+    exception: {
+      values: [
+        {
+          value: REACT_419_MESSAGE,
+          mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+          stacktrace: { frames: REACT_419_PROD_FRAMES },
+        },
+      ],
+    },
+    request: { url: 'https://kortix.com/dashboard' },
+  };
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), true);
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: REACT_419_MESSAGE }), true);
+  // A first-party-resolved stack keeps the same event reporting.
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent({
+      exception: {
+        values: [
+          {
+            value: REACT_419_MESSAGE,
+            stacktrace: { frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx' }] },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('anonymous Supabase refresh race is noise only on the landing page', () => {
+  const input = {
+    message: 'Auth session missing!',
+    requestUrl: 'https://kortix.com/',
+    mechanism: 'auto.browser.global_handlers.onunhandledrejection',
+    frames: [{ filename: 'app:///_next/static/immutable/chunks/22knfs0jv6sj3.js', function: 'async sc.refreshSession' }],
+  };
+  assert.equal(isAnonymousAuthRefreshRace(input), true);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, requestUrl: 'https://kortix.com/projects' }), false);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, frames: [{ filename: 'apps/web/src/auth.ts', function: 'refreshSession' }] }), false);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, message: 'Invalid refresh token' }), false);
+  assert.equal(shouldIgnoreSentryBrowserNoise({
+    request: { url: input.requestUrl },
+    exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
+  }), true);
+});
+
+// ---------------------------------------------------------------------------
+// `NotAllowedError: The play method is not allowed by the user agent or the
+// platform in the current context, possibly because the user denied
+// permission.` — the HTML-spec message the `HTMLMediaElement.play()` promise
+// rejects with when the browser's autoplay policy denies playback. Better
+// Stack pattern `3fcd960e…` (Kortix Frontend prod, application_id 2346967):
+// `NotAllowedError`, 1 occurrence, 0 identified users, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT global unhandledrejection, never reached a React error boundary),
+// release `84a0bc48…`, first=last 2026-10-03 03:55:02Z, Firefox 157 on
+// macOS 10.15, request URL `https://kortix.com/` (the marketing/landing
+// page). NO stacktrace, NO `call_site_file`/`call_site_function`, NO
+// `call_stack_hash` — Firefox rejects the play promise without a stack, so
+// the call site is unattributable. Breadcrumbs: only the landing page boot
+// (`[runtime-env]` console log, navigation to `/`, the i18n bundle fetch) —
+// no first-party media action within ~0.4 s of load, and no first-party
+// `.play()` call exists on that route. Same frameless-rejection family as
+// `isNonErrorUndefinedRejectionNoise` (pattern `5cfc90e5…`) and
+// `isOperationErrorPopErrorScopeNoise` (pattern `5e1aca20…`).
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (the HTML spec's
+// canonical play() NotAllowedError message).
+const PLAY_NOT_ALLOWED = 'The play method is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.';
+
+test('suppresses the frameless play() NotAllowedError rejection via the beforeSend gate', () => {
+  // Exact shape of the production event: type `NotAllowedError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection), NO stacktrace at all, request URL
+  // `https://kortix.com/` (the marketing/landing page).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: PLAY_NOT_ALLOWED,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the frameless play() NotAllowedError noise class (matcher level)', () => {
+  assert.equal(
+    isAutoplayNotAllowedRejectionNoise({ message: PLAY_NOT_ALLOWED, frames: [] }),
+    true,
+  );
+  // No stacktrace key at all (Sentry omits it when there is nothing to
+  // serialize) — the production shape again.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: PLAY_NOT_ALLOWED }] },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress the play() NotAllowedError rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code left a play promise
+  // unhandled → actionable; the negative guard must preserve it so the call
+  // site can be found + given its `.catch`.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/file-renderers/video-renderer.tsx', function: 'togglePlay' }],
+    [{ filename: 'app:///_next/static/chunks/main.js', function: 'f' }, { filename: 'app:///apps/web/src/lib/sounds.ts', function: 'playSound' }],
+  ]) {
+    assert.equal(
+      isAutoplayNotAllowedRejectionNoise({ message: PLAY_NOT_ALLOWED, frames }),
+      false,
+      `expected first-party play() NotAllowedError rejection from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: PLAY_NOT_ALLOWED, stacktrace: { frames } }] },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party play() NotAllowedError rejection from ${JSON.stringify(frames)}`,
+    );
+  }
+});
+
+test('does NOT suppress the play() NotAllowedError rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real stack we can trace. Keep reporting;
+  // only the frameless capture (the production noise pattern) is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/player.js', function: 'autoplay' }],
+  ]) {
+    assert.equal(
+      isAutoplayNotAllowedRejectionNoise({ message: PLAY_NOT_ALLOWED, frames }),
+      false,
+      `expected attributable play() NotAllowedError rejection from ${JSON.stringify(frames)} to keep reporting`,
+    );
+  }
+});
+
+test('the play() NotAllowedError matcher anchors on the exact spec message', () => {
+  // A bare `NotAllowedError` type or a different message (a permission
+  // denial of another API) must not match — only the play() denial string.
+  for (const message of [
+    'NotAllowedError',
+    'The operation was aborted',
+    'play() failed because the user didn\'t interact with the document first.',
+    `${PLAY_NOT_ALLOWED} (extra)`,
+  ]) {
+    assert.equal(
+      isAutoplayNotAllowedRejectionNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" not to match the play() NotAllowedError noise class`,
+    );
+  }
+});
+
+test('the runtime gate does not drop the play() NotAllowedError rejection (sentry-only rule)', () => {
+  // The runtime evidence carries no frames, so the rule cannot apply its
+  // negative guards there; the frame-aware beforeSend hook is the safe gate.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: { message: PLAY_NOT_ALLOWED, name: 'NotAllowedError' } }),
+    false,
+  );
 });

@@ -70,11 +70,6 @@ export class ResourceStack {
         }
         await r.meta.dispose();
         break;
-      case "tunnelPermission":
-        await this.admin.del("/v1/tunnel/permissions/:tunnelId/:permissionId", {
-          params: { tunnelId: r.meta?.tunnelId, permissionId: r.id },
-        });
-        break;
       case "tunnelConnection":
         await this.admin.del("/v1/tunnel/connections/:tunnelId", {
           params: { tunnelId: r.id },

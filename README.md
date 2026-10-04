@@ -1,10 +1,13 @@
 <div align="center">
 
-<img src="apps/web/public/kortix-symbol.svg" alt="Kortix" width="80" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20White.svg">
+  <img src="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20Black.svg" alt="Kortix" width="80" />
+</picture>
 
 # Kortix
 
-**The open-source AI Management System**
+**The open-source AI Operating System**
 
 **The leading open-source alternative to Claude Cowork and ChatGPT Work.**
 
@@ -17,7 +20,7 @@
 
 <br />
 
-<img src="apps/web/public/media/showcase/kortix-showcase.gif" alt="Ask a project for real work, connect 3,000+ apps, manage agents, skills and schedules, then watch an agent research on a cloud computer and return a finished pitch deck" width="900" />
+<img src="apps/web/public/media/showcase/kortix-showcase.gif" alt="Configure your agents and exactly what they can reach — connectors, Kortix permissions, tool rules, secrets and groups — approve the calls an agent makes, and audit every action it takes" width="900" />
 
 </div>
 
@@ -27,7 +30,7 @@ Agents that deliver finished work — reports, decks, code, replies, deployed ch
 product category. Every version of it runs inside a model lab, on that lab's model, with your
 company's brain on their side of the wall.
 
-**Kortix is the one you own.** It's an open-source **AI Management System**: your agents, the
+**Kortix is the one you own.** It's an open-source **AI Operating System**: your agents, the
 skills they share, your company memory, and every connector live in one git repo — versioned,
 diffable, and shared by the whole company. The agents work on real **cloud computers** — an
 isolated sandbox per session, on its own branch — and land what they produce through a **change
@@ -127,7 +130,7 @@ end).
 - **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
 - **Real work, not chat.** Agents run on real cloud computers and return finished deliverables — and take real actions in your tools.
 - **Everything is code.** Versioned, reviewable, portable, governable — never a black box.
-- **Bring your own models.** Any provider, your own keys — or the ChatGPT, Claude, or Cursor subscription you already pay for.
+- **Bring your own models.** Any provider, your own keys — or the ChatGPT subscription you already pay for.
 
 ---
 

@@ -1,9 +1,9 @@
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import {
   saveTeamsInstall,
+  setTeamsAppVersion,
   setTeamsCatalogAppId,
   setTeamsOrgInstalled,
   setTeamsPublishState,
@@ -11,6 +11,7 @@ import {
 import { publishTeamsAppToCatalog } from './teams/catalog';
 import { signChannelState, verifyChannelState } from './core/signed-state';
 import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './core/install-completion';
+import { logger } from '../lib/logger';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -35,7 +36,6 @@ export type TeamsInstallRedirectStatus =
   | 'failed'
   | 'publishing'
   | 'declined'
-  | 'disabled'
   | 'unconfigured';
 
 /**
@@ -48,9 +48,14 @@ async function runCatalogPublish(input: {
   baseUrl: string;
   appId: string;
   tenantId: string;
-}): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'disabled' | 'unconfigured'>> {
+}): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'unconfigured'>> {
   const { projectId } = input;
-  await setTeamsPublishState(projectId, 'publishing').catch(() => {});
+  // The install row is the only record of the publish: a write lost here
+  // leaves the status at 'publishing' or the catalog id unset, and nothing
+  // repairs it but another install. Never swallow it silently.
+  const storeFailed = (step: string) => (err: unknown) =>
+    logger.error('[teams-oauth] install state write failed', { step, projectId, error: err instanceof Error ? err.message : String(err) });
+  await setTeamsPublishState(projectId, 'publishing').catch(storeFailed('setTeamsPublishState'));
   let published: Awaited<ReturnType<typeof publishTeamsAppToCatalog>>;
   try {
     published = await publishTeamsAppToCatalog({
@@ -66,16 +71,17 @@ async function runCatalogPublish(input: {
   let status: 'connected' | 'review' | 'failed';
   if (published.published) {
     status = 'connected';
-    await setTeamsOrgInstalled(projectId, true).catch(() => {});
-    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
-    await setTeamsPublishState(projectId, 'published').catch(() => {});
+    await setTeamsOrgInstalled(projectId, true).catch(storeFailed('setTeamsOrgInstalled'));
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(storeFailed('setTeamsCatalogAppId'));
+    if (published.version) await setTeamsAppVersion(projectId, published.version).catch(storeFailed('setTeamsAppVersion'));
+    await setTeamsPublishState(projectId, 'published').catch(storeFailed('setTeamsPublishState'));
   } else if (published.pendingReview) {
     status = 'review';
-    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
-    await setTeamsPublishState(projectId, 'review').catch(() => {});
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(storeFailed('setTeamsCatalogAppId'));
+    await setTeamsPublishState(projectId, 'review').catch(storeFailed('setTeamsPublishState'));
   } else {
     status = 'failed';
-    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(() => {});
+    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(storeFailed('setTeamsPublishState'));
   }
 
   console.info('[teams-oauth] install complete', {
@@ -83,6 +89,7 @@ async function runCatalogPublish(input: {
     tenantId: input.tenantId,
     status,
     teamsAppId: published.teamsAppId ?? null,
+    appVersion: published.version ?? null,
     error: published.error ?? null,
   });
   return status;
@@ -181,10 +188,9 @@ export function teamsOrgConsentUrl(input: {
   /** The Kortix user starting the install; only they can complete it. */
   userId: string;
   baseUrl: string;
-  enabled: boolean;
 }): string | null {
   const appId = config.MICROSOFT_APP_ID;
-  if (!appId || !input.enabled) return null;
+  if (!appId) return null;
   const url = new URL(`${AUTHORITY}/authorize`);
   url.searchParams.set('client_id', appId);
   url.searchParams.set('response_type', 'code');
@@ -211,12 +217,6 @@ teamsOauthApp.get('/callback', async (c: any) => {
   const state = verifyState(rawState);
   if (!state) return c.redirect(`${frontendBase()}/?teams_error=expired`, 302);
   const dest = (status: TeamsInstallRedirectStatus) => channelsUrl(state.projectId, status);
-
-  // The flag is per project, so it can only be read once the signed state
-  // tells us which project this consent belongs to.
-  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) {
-    return c.redirect(dest('disabled'), 302);
-  }
 
   if (c.req.query('error')) {
     console.warn('[teams-oauth] authorize error', {
@@ -250,7 +250,6 @@ export async function completeTeamsOauthInstall(input: {
     redirectUrl: channelsUrl(state.projectId, status),
   });
 
-  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) return done('disabled');
   const appId = config.MICROSOFT_APP_ID;
   if (!appId) return done('unconfigured');
 

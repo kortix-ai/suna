@@ -1,5 +1,5 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
-import type { PromptOverridesWire, PromptPartWire } from './store';
+import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
 import type { SessionStartResult } from '../routes/shared';
 
@@ -15,6 +15,7 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
+  | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
@@ -75,7 +76,6 @@ export interface CreateSessionCommand {
   mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
-  enforceAccountCap?: boolean;
   request?: RequestAuditContext;
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
@@ -99,7 +99,6 @@ export interface QueuedCreateSessionPayload {
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;
-  enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Origin-derivation signals captured at ENQUEUE time. Without them a queued
   // backend create would replay as origin 'user'. Absent on rows queued before
@@ -140,8 +139,14 @@ export interface ContinueSessionCommand {
   wireMessageId?: string;
   /** Stable lifecycle row identity used only for deterministic workspace paths. */
   materializationKey?: string;
+  /** Persist the message without starting an agent loop (OpenCode `noReply`). */
+  noReply?: boolean;
   /** Skip legacy first-message repair only for the pending-first row itself. */
   isPendingFirstPrompt?: boolean;
+  /** `userId` is the person who sent this prompt: the session token acts as
+   *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
+   *  route for a non-agent caller; absent keeps the token's identity. */
+  bindTurnIdentity?: boolean;
 }
 
 /** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
@@ -161,7 +166,7 @@ export interface StartSessionCommand {
       sandboxProvider: string;
       baseRef: string | null;
       agentName: string | null;
-      opencodeSessionId: string | null;
+      runtimeSessionId: string | null;
       accountId: string;
       metadata?: Record<string, unknown> | null;
     };
@@ -243,5 +248,4 @@ export interface SessionLifecycleResult {
   retryable?: boolean;
   reason?: string;
   error?: SessionCreateError | { status: number; body: Record<string, unknown> };
-  headers?: Record<string, string>;
 }

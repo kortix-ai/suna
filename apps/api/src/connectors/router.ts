@@ -32,7 +32,7 @@ import {
   principalMayUseConnector,
 } from './principal-access';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
-import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { auth, errors, json, makeOpenApiApp, lenientBody } from '../openapi';
 import { INVALID_SOURCE_ADDRESS_CODE } from '../marketplace/catalog';
 import { UnsafeEgressError } from '../shared/ssrf-guard';
 import {
@@ -134,7 +134,7 @@ const CallResponseSchema = z
     reason: z.any().optional(),
     // Which connection ran the call, so the transcript can always answer
     // "whose account sent that". Absent when the connector resolved no
-    // connection (public/no-auth connector, or a Computers tunnel profile).
+    // connection (a public/no-auth connector).
     account: z
       .object({
         connection_id: z.string(),
@@ -200,11 +200,11 @@ export interface ConnectorPrincipal {
   requestedConnectorAccount?: string | null;
   /**
    * Present when the caller is an agent session under the agent-principal
-   * model (flag `agent_principal` ON, governed grant). Personal resources
+   * model (a governed grant). Personal resources
    * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
-  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
+  agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
 }
 
 interface CatalogAction {
@@ -452,7 +452,6 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
-    tunnelIds?: string[];
     auth: {
       type:
         | 'none'
@@ -505,7 +504,7 @@ export interface ConnectorRouterDeps {
     slug: string;
     userId: string;
     sessionId: string | null;
-    agentPrincipal?: { onBehalfOfUserId: string | null } | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
   }): Promise<
     Array<{
       connection_id: string;
@@ -836,6 +835,21 @@ const CatalogQuerySchema = z.object({
   include_schemas: z.enum(['true', 'false']).optional(),
 });
 
+const COMPUTER_REFUSALS = ['computer_access_pending', 'computer_access_denied', 'computer_access_off', 'computer_capability_not_approved'];
+const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
+
+/**
+ * HTTP status for a gateway `error`. Computer states the owner controls are
+ * expected outcomes, not server faults: a 5xx invites a retry, and each retry
+ * re-prompts the owner. 500, not 502, for the rest (Cloudflare eats 502 bodies).
+ */
+export function connectorErrorHttpStatus(reason: string): 403 | 409 | 500 {
+  const kind = reason.split(':', 1)[0];
+  if (COMPUTER_REFUSALS.includes(kind)) return 403;
+  if (COMPUTER_STATES.includes(kind)) return 409;
+  return 500;
+}
+
 function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
   return CONNECTOR_DENIAL_REASONS.has(reason);
 }
@@ -941,6 +955,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       actionPath,
       args,
       approvalExecutionId,
+      approvalContext: typeof body?.approval_context === 'string' ? body.approval_context : null,
     });
     switch (result.status) {
       case 'ok':
@@ -1008,15 +1023,19 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 requestedAccount,
                 availableAccounts,
               })
-            : { ok: false, status: 'denied', reason: result.reason },
+            : {
+                ok: false,
+                status: 'denied',
+                reason: result.reason,
+                ...(result.message ? { message: result.message } : {}),
+              },
           result.reason === 'connector_not_found' || result.reason === 'action_not_found'
             ? 404
             : 403,
         );
       }
       default:
-        // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
-        return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
+        return c.json({ ok: false, status: 'error', reason: result.reason }, connectorErrorHttpStatus(result.reason));
     }
   };
 
@@ -1333,6 +1352,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 /** Which account to run as — a connection label or id. Omit for
                  *  the default. See GET .../connectors/{slug}/accounts. */
                 account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -1408,6 +1431,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 /** Which account to run as — a connection label or id. Omit for
                  *  the default. See GET .../connectors/{slug}/accounts. */
                 account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -1578,10 +1605,26 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/projects/{projectId}/connectors',
       tags: ['connector'],
       summary: 'Create or update a connector in kortix.yaml',
+      description:
+        'Add or update a connector. It is committed to kortix.yaml. Fields depend on provider.',
       ...auth,
       request: {
         params: ProjectParam,
-        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            slug: z.string().openapi({ description: 'Connector slug (its name in kortix.yaml).' }),
+            provider: z.enum(['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps.' }),
+            name: z.string().optional().openapi({ description: 'Display name.' }),
+            app: z.string().optional().openapi({ description: 'Composio app slug, e.g. gmail (composio providers).' }),
+            url: z.string().optional().openapi({ description: 'MCP server URL (provider mcp).' }),
+            transport: z.enum(['http', 'sse']).optional().openapi({ description: 'MCP transport (provider mcp).' }),
+            endpoint: z.string().optional().openapi({ description: 'GraphQL endpoint (provider graphql).' }),
+            baseUrl: z.string().optional().openapi({ description: 'Base URL (provider http or openapi).' }),
+            spec: z.string().optional().openapi({ description: 'OpenAPI or Postman spec URL.' }),
+            authorization_strategy: z.string().optional().openapi({ description: 'Who owns connections: project or user.' }),
+            auth: z.record(z.string(), z.any()).optional().openapi({ description: 'Auth scheme: { type: none|bearer|basic|custom|api_key|..., in, name, prefix }. Discovered when omitted.' }),
+            headers: z.record(z.string(), z.any()).optional().openapi({ description: 'Static request headers (plaintext, committed to kortix.yaml).' }),
+            create_only: z.boolean().optional().openapi({ description: 'Refuse to update an existing slug.' }),
+          }) } } },
       },
       responses: {
         200: json(CrudOkSchema, 'Created/updated'),
@@ -2280,7 +2323,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'Start an easy-connect authorization',
       ...auth,
-      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: OpaqueSchema } } } },
+      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: lenientBody({
+          owner: z.enum(['me', 'project']).optional().openapi({ description: 'Whose account is connected: me or project.' }),
+          success_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after success.' }),
+          error_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after failure.' }),
+        }) } } } },
       responses: {
         200: json(OpaqueSchema, 'Connect token / overlay info'),
         ...errors(403, 404, 501),

@@ -142,6 +142,63 @@ test("the server's newer copy reconciles into the local one and is kept for the 
   expect(kept.messages).toHaveLength(3);
 });
 
+/** Mount with a host-supplied `mirror` that the test can change between renders. */
+async function mountWithHostCopy(sessionId: string) {
+  touched.push(sessionId);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  let mirror: SessionTranscriptSyncEnvelope | null = null;
+  let value!: ReturnType<typeof useSessionSync>;
+  function Probe() {
+    value = useSessionSync(sessionId, { ...offline, mirror });
+    return null;
+  }
+  await act(async () => {
+    root = create(React.createElement(Probe));
+  });
+  return {
+    value: () => value,
+    answer: async (envelope: SessionTranscriptSyncEnvelope) => {
+      mirror = envelope;
+      await act(async () => {
+        root?.update(React.createElement(Probe));
+      });
+      await settle();
+    },
+  };
+}
+
+test("the host's saved copy reconciles into the local one when it arrives after the first paint", async () => {
+  // `useSession` reads saved history itself and hands the answer in as
+  // `mirror`: null while that read is in flight, then the envelope. A hard
+  // reload painted the device's older copy first and then kept it on screen
+  // until the computer woke, although the newer copy had arrived.
+  const store = await seeded('ses_host_copy', 2);
+  heldFetch();
+  const hook = await mountWithHostCopy('ses_host_copy');
+  expect(hook.value().messages).toHaveLength(2);
+
+  await hook.answer(envelope('ses_host_copy', 3, '2026-09-26T00:00:00Z'));
+
+  expect(hook.value().messages).toHaveLength(3);
+  const kept = store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope;
+  expect(kept.messages).toHaveLength(3);
+});
+
+test("the host's saved copy never replaces a runtime read", async () => {
+  await seeded('ses_host_after_runtime', 2);
+  heldFetch();
+  const hook = await mountWithHostCopy('ses_host_after_runtime');
+  const live = envelope('ses_host_after_runtime', 4).messages;
+  await act(async () => {
+    useSyncStore.getState().hydrate('ses_host_after_runtime', live as never);
+  });
+  expect(hook.value().messages).toHaveLength(4);
+
+  await hook.answer(envelope('ses_host_after_runtime', 3, '2026-09-26T00:00:00Z'));
+
+  expect(hook.value().messages).toHaveLength(4);
+});
+
 test('a local copy captured from another root is refused', async () => {
   await seeded('ses_old_root', 2);
   heldFetch();
@@ -244,4 +301,40 @@ test('when a turn ends, the kept copy is re-read from the server', async () => {
   } finally {
     globalThis.setTimeout = realSetTimeout;
   }
+});
+
+test("a sub-agent reads its own saved window by `child`, and never touches the parent's kept copy", async () => {
+  // A sub-agent is its own OpenCode session inside the parent's Kortix
+  // session: same scope, different transcript. Read as the root, it would get
+  // the parent's window; kept like the root, it would overwrite the parent's
+  // copy on this device.
+  const store = await seeded('ses_parent_root', 2);
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json({ ...envelope('ses_subagent_one', 3), next_cursor: 'msg_ses_subagent_one_1' });
+  }) as unknown as typeof fetch;
+
+  const hook = await mount('ses_subagent_one', { ...offline, savedChild: true });
+  await settle();
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain('child=ses_subagent_one');
+  expect(hook.value().messages.map((row) => row.info.sessionID)).toEqual([
+    'ses_subagent_one',
+    'ses_subagent_one',
+    'ses_subagent_one',
+  ]);
+  const kept = store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope;
+  expect(kept.opencode_session_id).toBe('ses_parent_root');
+  expect(kept.messages).toHaveLength(2);
+
+  // Older windows come from the same sub-agent.
+  expect(hook.value().hasOlder).toBe(true);
+  await act(async () => {
+    await hook.value().loadOlder();
+  });
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toContain('child=ses_subagent_one');
+  expect(requests[1]).toContain('before=msg_ses_subagent_one_1');
 });

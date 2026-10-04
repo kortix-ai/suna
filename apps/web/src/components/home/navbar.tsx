@@ -39,7 +39,6 @@ import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
   DiscordLogoIcon,
-  DownloadSimpleIcon as Download,
   GithubLogoIcon,
   StackIcon as Layers,
   LinkedinLogoIcon,
@@ -52,11 +51,14 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
+import { Announcement } from '@/features/marketing/os/hero';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
 
 const CTA_LINK = '/auth';
+
 
 /**
  * Scroll compaction — height only.
@@ -216,7 +218,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     };
   }, [isDrawerOpen]);
 
+  // A page whose fold is a dark art pane marks it `data-kx-dark-hero`; the bar
+  // then sits on the pane, transparent, until the reader scrolls.
+  const [hasDarkHero, setHasDarkHero] = useState(false);
+  useEffect(() => {
+    setHasDarkHero(document.querySelector('[data-kx-dark-hero]') !== null);
+  }, [pathname]);
+
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
+  const overHero = hasDarkHero && !hasScrolled && !isDrawerOpen;
 
   // Anchor links scroll in place on the home page; everything else navigates.
   // Either way the sheet closes.
@@ -255,16 +265,14 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     <>
       <header
         className={cn(
-          'border-border-default bg-background fixed relative inset-x-0 top-0 z-50 flex h-16 w-full flex-col items-center justify-between border-b transition-all duration-300 ease-out motion-reduce:transition-none',
+          'text-foreground relative inset-x-0 top-0 z-50 flex w-full flex-col items-center border-b transition-colors duration-normal ease-out motion-reduce:transition-none',
+          // Over the home hero the bar is part of the dark art pane: no fill,
+          // no rule, dark tokens. Past the fold it becomes the solid bar.
+          overHero ? 'dark border-transparent bg-transparent' : 'border-border-default bg-background',
         )}
       >
-        <div
-          className={cn(
-            CONTENT_MEASURE,
-            'relative flex h-full w-full items-center justify-between',
-            'transition-[height] duration-300 ease-out motion-reduce:transition-none',
-          )}
-        >
+        {overHero && pathname === '/' && <Announcement />}
+        <div className={cn(CONTENT_MEASURE, 'relative flex h-16 w-full items-center justify-between')}>
           <div className="flex flex-1 items-center gap-8">
             <ContextMenu>
               <ContextMenuTrigger asChild className="group/kortix-logo">
@@ -412,17 +420,22 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             )}
 
             {user ? (
-              <Button size="sm" asChild>
+              <Button size="sm" asChild className="rounded-full px-4">
                 <Link href={projectsHref} prefetch>
                   {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 </Link>
               </Button>
             ) : (
-              <Button size="sm" asChild>
-                <Link href={CTA_LINK} onClick={trackCtaSignup}>
-                  {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
-                </Link>
-              </Button>
+              <>
+                <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground hidden sm:flex">
+                  <Link href={CTA_LINK}>{tHardcodedUi.raw('componentsHomeNavbar.logIn')}</Link>
+                </Button>
+                <Button size="sm" asChild className="rounded-full px-4">
+                  <Link href={CTA_LINK} onClick={trackCtaSignup}>
+                    {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
+                  </Link>
+                </Button>
+              </>
             )}
 
             <Button

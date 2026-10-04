@@ -1,4 +1,5 @@
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
+import { STATUS_TEXT } from '@/components/ui/status';
 import type { Part, ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
@@ -91,6 +92,19 @@ describe('ActivityFileChipStep', () => {
     expect(markup).toContain('Read 3 files');
     expect(chipCount(markup)).toBe(0);
     expect(markup).not.toContain('package.json');
+  });
+
+  test('file trigger skeleton', () => {
+    const markup = render(three, { open: false });
+    const row = markup.match(/<div[^>]*class="[^"]*cursor-pointer[^"]*"[^>]*>[\s\S]*?<\/div>/)?.[0];
+    expect(
+      row?.replace(
+        /<svg[^>]*>[\s\S]*?<\/svg>/g,
+        (svg) => `<svg class="${svg.match(/class="([^"]+)"/)?.[1]}"/>`,
+      ),
+    ).toBe(
+      '<div data-status="done" class="select-none text-foreground/80 hover:text-foreground flex w-full cursor-pointer items-center gap-3 text-left text-sm leading-[1.5] transition-colors" role="button" aria-expanded="false" tabindex="0"><svg class="text-muted-foreground size-4 flex-none"/><span class="min-w-0 truncate font-medium">Read 3 files</span><svg class="text-muted-foreground/40 size-3.5 flex-none transition-transform group-data-[state=open]/step:rotate-90"/></div>',
+    );
   });
 
   test('a bare row keeps the indent that gives the chain rail its lane', () => {
@@ -230,7 +244,7 @@ describe('ActivityFileChipStep', () => {
     );
     expect(markup).toContain('data-status="error"');
     expect(markup).toContain('aria-label="This step failed"');
-    expect(markup).toContain('text-destructive');
+    expect(markup).toContain(STATUS_TEXT.destructive);
   });
 
   test('a call that RETURNED its error is a failure too, not a chip', () => {

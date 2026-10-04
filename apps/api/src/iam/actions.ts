@@ -94,6 +94,7 @@ export const PROJECT_ACTIONS = {
 
   PROJECT_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
   PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
+  PROJECT_USAGE_READ: 'project.usage.read',
   PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
   PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
 
@@ -113,8 +114,14 @@ export const PROJECT_ACTIONS = {
   PROJECT_COMMAND_WRITE: 'project.command.write',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
-  PROJECT_CUSTOMIZE_READ: 'project.customize.read',
-  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
+  // Project settings: name, description, icon, sandbox provider, feature
+  // flags, the connected repository.
+  PROJECT_SETTINGS_WRITE: 'project.settings.write',
+  // The project's sandbox environment: templates and snapshot rebuilds.
+  PROJECT_SANDBOX_WRITE: 'project.sandbox.write',
+  // Which models the project may use, its defaults, and gateway routing.
+  PROJECT_MODEL_READ: 'project.model.read',
+  PROJECT_MODEL_WRITE: 'project.model.write',
   PROJECT_GITOPS_READ: 'project.gitops.read',
   PROJECT_GITOPS_PUSH: 'project.gitops.push',
   PROJECT_GITOPS_MERGE: 'project.gitops.merge',

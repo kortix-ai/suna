@@ -31,7 +31,7 @@ across runs.
 
 ```sh
 # Read the durable ledger first — which pages were refreshed, when, and why.
-cat .kortix/memory/content-refresh-log.md 2>/dev/null || echo "(no ledger yet)"
+cat memory/content-refresh-log.md 2>/dev/null || echo "(no ledger yet)"
 
 # Check any open refresh PR from a prior run.
 gh pr list --repo {{target_repo}} --state open \
@@ -137,13 +137,13 @@ agent — a human reviews and decides what ships."
 
 ## Step 8 — Update the ledger
 
-Append a dated entry to `.kortix/memory/content-refresh-log.md` (see
+Append a dated entry to `memory/content-refresh-log.md` (see
 `<ledger-format>`).
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/content-refresh-log.md`. Every run appends a dated
+Lives at `memory/content-refresh-log.md`. Every run appends a dated
 entry with: run timestamp, branch, PR link (or "not opened — nothing stale
 enough"), a **Refreshed pages** table (page path / decay signal / what
 changed), the **full candidate list** considered that week with their decay

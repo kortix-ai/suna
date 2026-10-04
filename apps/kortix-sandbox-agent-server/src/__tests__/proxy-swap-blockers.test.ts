@@ -11,33 +11,32 @@
  * config convergence is in flight". What THAT test cannot see is whether
  * `startProxy` is the thing that wires it in for a real daemon boot. This
  * file drives `startProxy` itself with a fake `HarnessService` (the same
- * technique `harness-boundary.test.ts` uses to prove host code depends only
- * on the contract) and reads the decision back through the real,
+ * technique `harness-boundary.test.ts` uses to prove host controllers depend
+ * only on the contract) and reads the decision back through the real,
  * module-level `requestAgentSwapIfIdle` — so it is a behavior assertion, not
  * a source-text one.
  *
  * `harness.control.convergenceInFlight` — not a direct import of
- * `harness/open-code/config-release` — is deliberate: `proxy.ts` is host
- * production code, and importing a concrete adapter from there is exactly
- * what `harness-boundary.test.ts`'s "only the resolver can import a concrete
- * adapter" tripwire forbids.
+ * `harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * is host production code, and importing a concrete adapter from there is
+ * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
+ * an adapter") forbids.
  */
 import { afterEach, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { HarnessService } from '../harness/harness'
-import type { HarnessQueryService } from '../harness/queries'
-import { requireOpenCodeConfig } from '../harness/open-code/config'
-import { startProxy } from '../proxy'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { HarnessService } from '@/harness/harness'
+import type { HarnessQueryService } from '@/harness/contract/queries'
+import { startProxy } from '@/app/server'
 import {
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
   type AgentSwapDecision,
-} from '../runtime-assets'
-import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '../routes/pty'
+} from '@/services/runtime-assets/runtime-assets'
+import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '@/routes/kortix/pty'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -78,12 +77,7 @@ const unexpected = (): never => { throw new Error('unused operation must not run
 /** The minimal `HarnessService` `startProxy` needs, with a controllable convergence flag. */
 function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
   const queries: HarnessQueryService = {
-    readState: unexpected, readMessages: unexpected, readVcsDiff: unexpected,
-    readCurrentProject: unexpected, readConfiguration: unexpected,
-    readSession: unexpected, readTodo: unexpected, pinnedSessionId: unexpected,
-    replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected,
-    stopSession: unexpected, revertSession: unexpected, unrevertSession: unexpected,
-    observeTurn: unexpected,
+    readState: unexpected, readMessages: unexpected,
     events: { epoch: 'test', headSeq: 0, firstSeq: 0, subscribe: unexpected },
     attachments: { read: unexpected },
   }
@@ -103,11 +97,12 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
         armAbortAfterTool: unexpected, disarmAbortAfterTool: unexpected,
       }),
     },
-    diagnostics: { health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
+    diagnostics: { capabilities: [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
     queries: { bind: () => queries },
+    turns: { prompt: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
     background: { start: () => ({ stop: () => {} }) as unknown as ReturnType<HarnessService['background']['start']> },
     assets: {
-      componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
+      harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
       reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
     },
   }

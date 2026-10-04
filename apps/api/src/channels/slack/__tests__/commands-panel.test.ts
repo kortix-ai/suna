@@ -138,9 +138,9 @@ describe('/kortix models → real served catalog', () => {
 });
 
 describe('/kortix model <id> → servability gate (never store a 404)', () => {
-  test('servable id is stored as the opencode ref', async () => {
+  test('servable id is stored as the wire id', async () => {
     const resp = await handleSlashCommand('model', 'glm-5.3-flash', ctx);
-    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'kortix/glm-5.3-flash');
+    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'glm-5.3-flash');
     expect(resp.text).toContain('set to');
   });
 

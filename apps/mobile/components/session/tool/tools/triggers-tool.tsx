@@ -5,7 +5,7 @@
  * The trigger (title, subtitle, icon, args) comes from the call's `action`
  * (`triggersRow`). The `p-2` body lists parsed trigger lines (source icon,
  * name, schedule / webhook path in mono, status badge), else the raw output
- * (first 3000 characters), else a loading shimmer. A created trigger's prompt
+ * (first 3000 characters), else a loading shimmer while the call is live ("No output" once it is not). A created trigger's prompt
  * folds under a `border-border/30` rule.
  */
 
@@ -36,7 +36,15 @@ import {
   type TriggerIconKey,
 } from '@/lib/session/tools/projects-triggers';
 import { webSpace } from '@/lib/session/user-message';
-import { BasicTool, isErrorOutput, partInput, partOutput, ToolOutputFallback } from '../shared/infrastructure';
+import {
+  BasicTool,
+  isErrorOutput,
+  partInput,
+  partOutput,
+  ToolEmptyState,
+  ToolOutputFallback,
+  useToolLive,
+} from '../shared/infrastructure';
 import { FoldedSection, OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
@@ -86,6 +94,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const isError = useMemo(() => isErrorOutput(output), [output]);
   const outputPreview = useMemo(() => output.slice(0, 3000), [output]);
   const prompt = triggerPromptPreview(action, input);
+  const live = useToolLive();
 
   return (
     <BasicTool
@@ -143,10 +152,13 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
           </View>
         ) : output ? (
           <OutputBlock text={outputPreview} />
-        ) : (
+        ) : live ? (
           <View style={{ padding: webSpace(3) }}>
             <TextShimmer style={TURN_TYPE.sm}>{triggerLoadingMessage(action)}</TextShimmer>
           </View>
+        ) : (
+          // Not in flight (settled, or its turn ended): nothing more will arrive.
+          <ToolEmptyState message="No output" />
         )}
 
         {/* The answer to "create a trigger" is the trigger; the prompt it runs with folds. */}
@@ -162,36 +174,11 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
   );
 }
 ToolRegistry.register('triggers', TriggersTool);
-ToolRegistry.register('oc-triggers', TriggersTool);
-ToolRegistry.register('trigger_create', TriggersTool);
 ToolRegistry.register('trigger-create', TriggersTool);
-ToolRegistry.register('oc-trigger_create', TriggersTool);
-ToolRegistry.register('oc-trigger-create', TriggersTool);
-ToolRegistry.register('trigger_list', TriggersTool);
 ToolRegistry.register('trigger-list', TriggersTool);
-ToolRegistry.register('oc-trigger_list', TriggersTool);
-ToolRegistry.register('oc-trigger-list', TriggersTool);
-ToolRegistry.register('trigger_get', TriggersTool);
 ToolRegistry.register('trigger-get', TriggersTool);
-ToolRegistry.register('oc-trigger_get', TriggersTool);
-ToolRegistry.register('oc-trigger-get', TriggersTool);
-ToolRegistry.register('trigger_delete', TriggersTool);
 ToolRegistry.register('trigger-delete', TriggersTool);
-ToolRegistry.register('oc-trigger_delete', TriggersTool);
-ToolRegistry.register('oc-trigger-delete', TriggersTool);
-ToolRegistry.register('trigger_update', TriggersTool);
 ToolRegistry.register('trigger-update', TriggersTool);
-ToolRegistry.register('oc-trigger_update', TriggersTool);
-ToolRegistry.register('oc-trigger-update', TriggersTool);
-ToolRegistry.register('trigger_test', TriggersTool);
 ToolRegistry.register('trigger-test', TriggersTool);
-ToolRegistry.register('oc-trigger_test', TriggersTool);
-ToolRegistry.register('oc-trigger-test', TriggersTool);
-ToolRegistry.register('trigger_pause', TriggersTool);
 ToolRegistry.register('trigger-pause', TriggersTool);
-ToolRegistry.register('oc-trigger_pause', TriggersTool);
-ToolRegistry.register('oc-trigger-pause', TriggersTool);
-ToolRegistry.register('trigger_resume', TriggersTool);
 ToolRegistry.register('trigger-resume', TriggersTool);
-ToolRegistry.register('oc-trigger_resume', TriggersTool);
-ToolRegistry.register('oc-trigger-resume', TriggersTool);

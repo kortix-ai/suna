@@ -26,7 +26,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 
 import { networkInterfaces } from 'node:os'
 
-import { createWebProxyRouter } from '../routes/web-proxy'
+import { createWebProxyRouter } from '@/routes/proxy/web-proxy'
 
 /** This machine's own non-loopback IPv4 addresses — the same ones a sandbox's
  *  daemon is reachable on besides 127.0.0.1. */
@@ -212,8 +212,10 @@ describe('/web-proxy stays off the box control plane', () => {
   test("browsing the agent's own dev server still works", async () => {
     // The whole point of this proxy. Blocking all of loopback would have been a
     // cheaper fix and would have broken the internal browser.
+    // Loopback by address: `localhost` does not resolve on a platform sandbox,
+    // and the proxy would answer 502 before the guard is exercised at all.
     const res = await guarded().request(
-      `/web-proxy/http/localhost:${upstreamPort}/index.html`,
+      `/web-proxy/http/127.0.0.1:${upstreamPort}/index.html`,
       { method: 'GET' },
     )
     expect(res.status).toBe(200)
@@ -221,12 +223,15 @@ describe('/web-proxy stays off the box control plane', () => {
 
   test('an external host on a blocked port number is unaffected', async () => {
     // The guard keys on loopback + port, not the port alone — example.com:8000
-    // is somebody else's server, not our control plane.
+    // is somebody else's server, not our control plane. The DNS resolution of
+    // example.invalid runs under this test's own 15 s budget: bun's 5 s
+    // default tripped when the attested packages lane ran this suite beside
+    // every other workspace.
     const res = await guarded().request('/web-proxy/https/example.invalid:8000/', {
       method: 'GET',
     })
     expect(res.status).not.toBe(403)
-  })
+  }, 15_000)
 })
 
 /**
@@ -240,12 +245,14 @@ describe('/web-proxy stays off the box control plane', () => {
 describe('a vetted destination is the one we connect to', () => {
   test('the upstream sees the original Host header', async () => {
     // Virtual hosting on the agent's own dev server depends on it.
+    // Loopback by address (see the dev-server row above); the pinned behavior
+    // is that the host the caller named reaches the upstream as the Host.
     received = null
     const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
-    const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {
+    const res = await open.request(`/web-proxy/http/127.0.0.1:${upstreamPort}/x`, {
       method: 'GET',
     })
     expect(res.status).toBe(200)
-    expect(lastHeaders()?.get('host')).toBe(`localhost:${upstreamPort}`)
+    expect(lastHeaders()?.get('host')).toBe(`127.0.0.1:${upstreamPort}`)
   })
 })

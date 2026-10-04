@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { createSandboxTemplate, updateSandboxTemplate, type SandboxTemplate } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -153,12 +153,12 @@ export function SandboxTemplateForm({
         disk_gb: parsePosInt(diskGb),
       }),
     onSuccess: () => {
-      toast.success(t('toasts.created'));
+      successToast(t('toasts.created'));
       queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
       queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || t('toasts.createFailed')),
+    onError: (err: Error) => errorToast(err.message || t('toasts.createFailed')),
   });
 
   const editMut = useMutation({
@@ -173,12 +173,12 @@ export function SandboxTemplateForm({
         disk_gb: parsePosInt(diskGb) ?? null,
       }),
     onSuccess: () => {
-      toast.success(t('toasts.updated'));
+      successToast(t('toasts.updated'));
       queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
       queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || t('toasts.updateFailed')),
+    onError: (err: Error) => errorToast(err.message || t('toasts.updateFailed')),
   });
 
   const submitting = createMut.isPending || editMut.isPending;
@@ -275,7 +275,7 @@ export function SandboxTemplateForm({
                   <Label htmlFor="tpl-df">{t('dockerfilePath')}</Label>
                   <Input
                     id="tpl-df"
-                    placeholder={tI18nComplete.raw('textf9edcea2223e')}
+                    placeholder={tI18nComplete.raw('text1bc7a47dada1')}
                     value={dockerfilePath}
                     onChange={(e) => setDockerfilePath(e.target.value)}
                   />

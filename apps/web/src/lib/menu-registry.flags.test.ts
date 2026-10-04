@@ -1,5 +1,4 @@
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { visibleCapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
@@ -37,17 +36,20 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('Review Center is reachable with no flag and removed features stay absent', () => {
-    // Review is a capability tab since 2026-09-02 and graduated out of the flag
-    // system, so neither the tab nor its palette row declares a flag. Voice and
+    // Review graduated out of the flag system on 2026-09-02. Since 2026-10-02
+    // (#8761) it is its own project page, `/projects/<id>/review`, reached from
+    // a permanent sidebar row and this palette row, so it is no longer a
+    // Customize capability tab. Neither entry point declares a flag. Voice and
     // Marketplace have no flag any more: both were removed from the product.
-    const keys = visibleCapabilityTabs({}).map((tab) => tab.key);
-    expect(keys).toContain('review');
+    const keys = CAPABILITY_TABS.map((tab) => tab.key);
+    expect(keys).not.toContain('review');
     expect(keys).not.toContain('voice');
     expect(keys).not.toContain('marketplace');
 
     const reviewRow = menuRegistry.find((item) => item.id === 'proj-review-inbox');
     expect(reviewRow).toBeDefined();
     expect(reviewRow?.requiresFlag).toBeUndefined();
+    expect(reviewRow?.href).toBe('/projects/{projectId}/review');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.

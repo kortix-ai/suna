@@ -6,8 +6,8 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { logger } from '../logger'
-import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '../harness/open-code/resource-diagnostics'
+import { logger } from '@/lib/log/logger'
+import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '@/harness/open-code/resource-diagnostics'
 import {
   type MemoryConsumer,
   type ResourceSnapshot,
@@ -21,7 +21,7 @@ import {
   readResourceSnapshot,
   readTopMemoryProcesses,
   startResourceMonitor,
-} from '../resources'
+} from '@/services/resources/resources'
 
 const MEMINFO = `MemTotal:        3985760 kB
 MemFree:          123456 kB
@@ -203,11 +203,13 @@ describe('readResourceSnapshot', () => {
         await mkdir(join(root, String(pid)))
         await writeFile(join(root, String(pid), 'status'), `Name:\t${name}\nVmRSS:\t${rss} kB\n`)
       }
-      expect(await readTopMemoryProcesses(root)).toEqual([
+      expect(await readTopMemoryProcesses(root, ['opencode'])).toEqual([
         { pid: 101, name: 'bun', rssMb: 2000 },
         { pid: 102, name: 'other', rssMb: 1000 },
         { pid: 103, name: 'opencode', rssMb: 500 },
       ])
+      // A harness binary is named only when the harness declares it.
+      expect((await readTopMemoryProcesses(root)).map((p) => p.name)).toEqual(['bun', 'other', 'other'])
     } finally {
       await rm(root, { recursive: true, force: true })
     }

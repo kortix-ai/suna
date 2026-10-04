@@ -1,3 +1,4 @@
+import { numberValue, isoValue } from './cost-values';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
@@ -42,17 +43,6 @@ interface ComputeProjectAggregateRow {
   computeCost: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
-}
-
-function numberValue(value: number | string | null | undefined): number {
-  const result = Number(value ?? 0);
-  return Number.isFinite(result) ? result : 0;
-}
-
-function isoValue(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function laterIso(left: string | null, right: string | null): string | null {
@@ -153,6 +143,7 @@ export function sortProjectRows(rows: ProjectCostRow[], sort: CostSort): Project
 // session_id is the primary key — a PK join, not a scan.
 export async function listCostByProject(input: {
   accountId: string;
+  projectId?: string;
   window: CostWindow;
   sort: CostSort;
   limit: number;
@@ -174,6 +165,7 @@ export async function listCostByProject(input: {
       .where(
         and(
           eq(gatewayRequestLogs.accountId, accountId),
+          input.projectId ? eq(gatewayRequestLogs.projectId, input.projectId) : undefined,
           // createdAt is a Date-mode timestamp, so the bounds are Date objects.
           gte(gatewayRequestLogs.createdAt, window.from),
           lt(gatewayRequestLogs.createdAt, window.to),
@@ -193,6 +185,7 @@ export async function listCostByProject(input: {
       .where(
         and(
           eq(sandboxComputeSessions.accountId, accountId),
+          input.projectId ? eq(projectSessions.projectId, input.projectId) : undefined,
           // startedAt is declared mode:'string', so the bounds are ISO strings.
           // Never last_billed_at — its only index is partial (WHERE state =
           // 'active'), built for the biller, not for windowed reporting.
@@ -204,7 +197,10 @@ export async function listCostByProject(input: {
     db
       .select({ projectId: projects.projectId, name: projects.name })
       .from(projects)
-      .where(eq(projects.accountId, accountId)),
+      .where(and(
+        eq(projects.accountId, accountId),
+        input.projectId ? eq(projects.projectId, input.projectId) : undefined,
+      )),
   ]);
 
   const projectNames = new Map(projectRows.map((row) => [row.projectId, row.name]));

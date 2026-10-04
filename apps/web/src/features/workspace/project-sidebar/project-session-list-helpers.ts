@@ -1,5 +1,5 @@
 import { stripChatMentionMarkup } from '@/components/projects/session-label';
-import type { ChangeRequest, ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
+import { type ChangeRequest, type ProjectSession, type ProjectSessionStatus } from '@kortix/sdk';
 
 /**
  * Pure helpers extracted from `project-session-list.tsx` so every decision the
@@ -147,12 +147,12 @@ function promptActivityMs(session: ProjectSession): number | null {
   return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);
 }
 
-/** Newest conversation update in OpenCode's scoped session snapshot, or null
+/** Newest conversation update in the runtime's scoped session snapshot, or null
  *  when the session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
+  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+    const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
@@ -166,7 +166,7 @@ function conversationActivityMs(session: ProjectSession): number | null {
  * runs, and the conversation snapshot keeps advancing while the agent replies.
  *
  *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *   2. `runtime_sessions[].updated_at` — the runtime's conversation snapshot.
  *      Real activity, but a LAGGING cache: it is written only by a deferred,
  *      best-effort sandbox read (`opencode-session-snapshot.ts`), so a session
  *      whose sandbox was unreachable at that moment has no snapshot at all.
@@ -344,44 +344,28 @@ export function resolveSessionListViewState(params: {
   isError: boolean;
   totalCount: number;
   visibleCount: number;
+  /** The server already applied a filter (labels): zero rows is "no matches". */
+  serverFiltered?: boolean;
 }): SessionListViewState {
   if (!params.hasData) return params.isError ? 'error' : 'loading';
-  if (params.totalCount === 0) return 'empty';
+  if (params.totalCount === 0) return params.serverFiltered ? 'no-matches' : 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';
 }
 
-/** A coordinator (or standalone) session plus the sessions it spawned. */
-export interface SessionGroup {
-  session: ProjectSession;
-  children: ProjectSession[];
-}
+export type StarterSection = 'shared' | 'automated';
 
 /**
- * Fold a flat, already-sorted session list into coordinator groups: a session
- * spawned by another session in the list (metadata.spawned_by_session) nests
- * under it — the sidebar renders the coordinator as a folder and its children
- * as files. A child whose coordinator is absent (deleted, other project, or a
- * stale stamp) stays top-level rather than disappearing.
+ * Which sidebar section a session's RUN lives in, from its `initiator`: another
+ * member's run is Shared, an automated run (trigger, channel, API, platform) is
+ * Automated, and the viewer's own run (or an unclassified row) is neither.
  */
-export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
-  const present = new Set(sessions.map((s) => s.session_id));
-  const parentOf = (session: ProjectSession): string | null => {
-    const meta = (session.metadata ?? {}) as Record<string, unknown>;
-    const parent = typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
-    return parent && present.has(parent) && parent !== session.session_id ? parent : null;
-  };
-  const groups = new Map<string, SessionGroup>();
-  const order: SessionGroup[] = [];
-  for (const session of sessions) {
-    if (parentOf(session)) continue;
-    const group = { session, children: [] as ProjectSession[] };
-    groups.set(session.session_id, group);
-    order.push(group);
-  }
-  for (const session of sessions) {
-    const parent = parentOf(session);
-    if (parent) groups.get(parent)?.children.push(session);
-  }
-  return order;
+export function starterSectionOf(
+  session: Pick<ProjectSession, 'initiator' | 'is_owner'>,
+  viewerId: string | null,
+): StarterSection | null {
+  const initiator = session.initiator;
+  if (!initiator) return session.is_owner === false ? 'shared' : null;
+  if (initiator.type !== 'member') return 'automated';
+  return initiator.id && viewerId && initiator.id !== viewerId ? 'shared' : null;
 }

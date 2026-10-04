@@ -1,5 +1,4 @@
 import { config } from '../config';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 
 export const BOT_CONNECTOR_SCOPE = 'https://api.botframework.com/.default';
 export const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
@@ -12,16 +11,6 @@ interface CachedToken {
 }
 
 const tokenCache = new Map<string, CachedToken>();
-
-/**
- * Is the Teams channel offered for THIS project? One gate, one source: the
- * per-project `teams` feature flag. There is no operator env var — a
- * project turns Teams on in Settings → Feature flags, exactly like
- * `agentmail_email` and `voice`.
- */
-export function teamsChannelEnabled(metadata: unknown): boolean {
-  return resolveFeatureFlag(metadata, 'teams');
-}
 
 export function teamsConfigured(): boolean {
   return Boolean(config.MICROSOFT_APP_ID && config.MICROSOFT_APP_PASSWORD);
@@ -161,13 +150,19 @@ export async function prewarmTeamsBotToken(): Promise<boolean> {
 /** Keep the bot-connector token warm for the life of the process. */
 export const TEAMS_TOKEN_REFRESH_MS = 50 * 60 * 1000;
 
-export function startTeamsBotTokenRefresh(): ReturnType<typeof setInterval> | null {
-  if (!teamsConfigured()) return null;
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startTeamsBotTokenRefresh(): void {
+  if (refreshTimer || !teamsConfigured()) return;
   void prewarmTeamsBotToken();
-  const timer = setInterval(() => {
+  refreshTimer = setInterval(() => {
     tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
     void prewarmTeamsBotToken();
   }, TEAMS_TOKEN_REFRESH_MS);
-  timer.unref();
-  return timer;
+  refreshTimer.unref();
+}
+
+export function stopTeamsBotTokenRefresh(): void {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = null;
 }

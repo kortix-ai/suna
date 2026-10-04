@@ -100,10 +100,10 @@ export interface ProjectRouteValue {
   /**
    * Put the project in the connecting state for a session. The view route
    * shows it. Stable. A covering route opens a session through
-   * useCoveringRoute, not through this directly. `focusOpenCodeId` (a
+   * useCoveringRoute, not through this directly. `focusRuntimeId` (a
    * sub-session row): the thread opens on that sub-session, not the root.
    */
-  openProjectSession: (session: ProjectSession, focusOpenCodeId?: string) => void;
+  openProjectSession: (session: ProjectSession, focusRuntimeId?: string) => void;
   /** Open the project drawer. Stable. Every project page's hamburger calls it. */
   openDrawer: () => void;
   /** The project drawer is open: a hamburger shows its X. */
@@ -231,7 +231,7 @@ export function ProjectViewRoute() {
  * A covering route must not reset the store on `beforeRemove`: replace removes
  * it after step 1.
  */
-export function useCoveringRoute(): (session: ProjectSession, focusOpenCodeId?: string) => void {
+export function useCoveringRoute(): (session: ProjectSession, focusRuntimeId?: string) => void {
   const { openProjectSession, isHome } = useProjectRoute();
   const navigation = useNavigation<ProjectStackNavigation>();
   const isFocused = useIsFocused();
@@ -250,9 +250,9 @@ export function useCoveringRoute(): (session: ProjectSession, focusOpenCodeId?: 
   }, [isHome, isFocused, replaceWithView]);
 
   return React.useCallback(
-    (session: ProjectSession, focusOpenCodeId?: string) => {
+    (session: ProjectSession, focusRuntimeId?: string) => {
       if (leavingRef.current) return;
-      openProjectSession(session, focusOpenCodeId);
+      openProjectSession(session, focusRuntimeId);
       replaceWithView();
     },
     [openProjectSession, replaceWithView]

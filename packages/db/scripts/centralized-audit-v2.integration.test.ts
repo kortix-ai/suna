@@ -69,7 +69,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
     await client.end();
   });
 
-  test('allocates one ordered hash chain under concurrent session writers', async () => {
+  test('concurrent same-session writers insert without a sequence allocator or hash chain', async () => {
     const writers = await Promise.all(
       ['one', 'two', 'three'].map(async () => {
         const writer = new pg.Client({ connectionString: databaseUrl });
@@ -81,15 +81,18 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       await Promise.all(
         ['one', 'two', 'three'].map((id, index) =>
           writers[index]!.query(
-            // The third row carries on_behalf_of_user_id, so the chain below
-            // proves the digest covers it when set and omits it when NULL.
             `INSERT INTO kortix.audit_events
              (account_id, project_id, session_id, action, resource_type,
               source_ledger, source_record_id, phase, authoritative_source,
-              on_behalf_of_user_id)
+              on_behalf_of_user_id, credential_kind, credential_id)
            VALUES ($1, $2, $3, 'test.sequence', 'project_session',
-                   'audit_v2_test', $4, 'completed', 'system', $5::uuid)`,
-            [ACCOUNT, PROJECT, SESSION, id, index === 2 ? 'a7300000-0000-4000-a000-0000000000b1' : null],
+                   'audit_v2_test', $4, 'completed', 'system', $5::uuid, $6, $7)`,
+            [
+              ACCOUNT, PROJECT, SESSION, id,
+              index === 2 ? 'a7300000-0000-4000-a000-0000000000b1' : null,
+              index === 1 ? 'personal_access_token' : null,
+              index === 1 ? 'token-id-1' : null,
+            ],
           ),
         ),
       );
@@ -97,34 +100,37 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       await Promise.all(writers.map((writer) => writer.end()));
     }
     const result = await client!.query<{
-      session_sequence: string;
+      source_record_id: string;
+      source: string;
+      authoritative_source: string;
+      session_sequence: string | null;
       integrity_previous_hash: string | null;
-      integrity_hash: string;
-      recomputed_hash: string;
+      integrity_hash: string | null;
     }>(
-      `SELECT session_sequence, integrity_previous_hash, integrity_hash,
-              -- The digest rule: the row minus integrity_hash, and minus
-              -- on_behalf_of_user_id when it is NULL (migration
-              -- 20260922144740453_audit_events_on_behalf_of).
-              encode(extensions.digest(
-                convert_to((
-                  to_jsonb(a) - 'integrity_hash'
-                    - (CASE WHEN a.on_behalf_of_user_id IS NULL THEN 'on_behalf_of_user_id' ELSE '' END)
-                )::text, 'UTF8'), 'sha256'
-              ), 'hex') AS recomputed_hash
-       FROM kortix.audit_events
-       AS a
-       WHERE source_ledger = 'audit_v2_test'
-       ORDER BY session_sequence`,
+      `SELECT source_record_id, source, authoritative_source, session_sequence,
+              integrity_previous_hash, integrity_hash
+         FROM kortix.audit_events
+        WHERE source_ledger = 'audit_v2_test'
+        ORDER BY source_record_id`,
     );
-    const sequences = result.rows.map((row) => Number(row.session_sequence));
-    expect(sequences).toHaveLength(3);
-    expect(sequences[1]).toBe(sequences[0]! + 1);
-    expect(sequences[2]).toBe(sequences[1]! + 1);
-    expect(result.rows.every((row) => row.integrity_hash.length === 64)).toBe(true);
-    expect(result.rows.every((row) => row.integrity_hash === row.recomputed_hash)).toBe(true);
-    expect(result.rows[1]!.integrity_previous_hash).toBe(result.rows[0]!.integrity_hash);
-    expect(result.rows[2]!.integrity_previous_hash).toBe(result.rows[1]!.integrity_hash);
+    // The row still gets its source columns from the BEFORE INSERT trigger ...
+    expect(result.rows.map((row) => [row.source_record_id, row.source, row.authoritative_source])).toEqual([
+      ['one', 'system', 'system'],
+      ['three', 'system', 'system'],
+      ['two', 'system', 'system'],
+    ].sort());
+    // ... and nothing else: no per-session sequence, no hash chain (removed from
+    // ingestion in favour of S3 Object Lock on the archive). Old rows keep theirs.
+    expect(result.rows.every((row) => row.session_sequence === null)).toBe(true);
+    expect(result.rows.every((row) => row.integrity_hash === null)).toBe(true);
+    expect(result.rows.every((row) => row.integrity_previous_hash === null)).toBe(true);
+  });
+
+  test('the prepare trigger takes no advisory lock and never touches audit_session_sequences', async () => {
+    const { rows } = await client!.query<{ def: string }>(
+      `SELECT pg_get_functiondef('kortix.audit_prepare_event'::regproc) AS def`,
+    );
+    expect(rows[0]!.def).not.toMatch(/advisory|audit_session_sequences|digest|session_sequence/i);
   });
 
   test('rejects updates and deletes from the canonical ledger', async () => {
@@ -137,50 +143,58 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
     ).rejects.toMatchObject({ code: 'P0001' });
   });
 
-  test('duplicate source replay does not advance or detach the session hash chain', async () => {
-    const first = await client!.query<{
-      session_sequence: string;
-      integrity_hash: string;
-    }>(
-      `INSERT INTO kortix.audit_events
-         (account_id, project_id, session_id, action, resource_type,
-          source_ledger, source_record_id, phase, authoritative_source)
-       VALUES ($1, $2, $3, 'test.replay', 'project_session',
-               'audit_v2_replay', 'same', 'completed', 'system')
-       RETURNING session_sequence, integrity_hash`,
-      [ACCOUNT, PROJECT, SESSION],
-    );
-    const duplicate = await client!.query(
-      `INSERT INTO kortix.audit_events
-         (account_id, project_id, session_id, action, resource_type,
-          source_ledger, source_record_id, phase, authoritative_source)
-       VALUES ($1, $2, $3, 'test.replay', 'project_session',
-               'audit_v2_replay', 'same', 'completed', 'system')
-       ON CONFLICT DO NOTHING
-       RETURNING event_id`,
-      [ACCOUNT, PROJECT, SESSION],
-    );
-    const next = await client!.query<{
-      session_sequence: string;
-      integrity_previous_hash: string;
-    }>(
-      `INSERT INTO kortix.audit_events
-         (account_id, project_id, session_id, action, resource_type,
-          source_ledger, source_record_id, phase, authoritative_source)
-       VALUES ($1, $2, $3, 'test.replay.next', 'project_session',
-               'audit_v2_replay', 'next', 'completed', 'system')
-       RETURNING session_sequence, integrity_previous_hash`,
-      [ACCOUNT, PROJECT, SESSION],
-    );
+  test('a duplicate source replay inserts nothing; the unique index is the only dedupe check', async () => {
+    // The dedupe key includes occurred_at (partitioned table). A replay carries the instant of the
+    // original, as the relay and the source triggers do, so the test fixes it.
+    const occurredAt = new Date(Date.now() - 60_000).toISOString();
+    const insertOne = (client: pg.Client | pg.PoolClient, suffix: string) =>
+      client.query<{ event_id: string }>(
+        `INSERT INTO kortix.audit_events
+           (account_id, project_id, session_id, action, resource_type,
+            source_ledger, source_record_id, phase, authoritative_source, occurred_at)
+         VALUES ($1, $2, $3, 'test.replay', 'project_session',
+                 'audit_v2_replay', $4, 'completed', 'system', $5)
+         ON CONFLICT DO NOTHING
+         RETURNING event_id`,
+        [ACCOUNT, PROJECT, SESSION, suffix, occurredAt],
+      );
+    const first = await insertOne(client!, 'same');
+    const duplicate = await insertOne(client!, 'same');
+    expect(first.rows).toHaveLength(1);
     expect(duplicate.rows).toHaveLength(0);
-    expect(Number(next.rows[0]!.session_sequence)).toBe(
-      Number(first.rows[0]!.session_sequence) + 1,
+
+    // Without ON CONFLICT the same replay is a unique violation: the index, not a
+    // trigger, enforces idempotency.
+    await expect(
+      client!.query(
+        `INSERT INTO kortix.audit_events
+           (account_id, session_id, action, resource_type, source_ledger, source_record_id,
+            phase, authoritative_source, occurred_at)
+         VALUES ($1, $2, 'test.replay', 'project_session', 'audit_v2_replay', 'same',
+                 'completed', 'system', $3)`,
+        [ACCOUNT, SESSION, occurredAt],
+      ),
+    ).rejects.toMatchObject({ code: '23505' });
+
+    // Eight connections replay the same new source record at once: exactly one
+    // row lands, nobody errors, nobody waits on an advisory lock.
+    const writers = await Promise.all(
+      Array.from({ length: 8 }, async () => {
+        const writer = new pg.Client({ connectionString: databaseUrl });
+        await writer.connect();
+        return writer;
+      }),
     );
-    expect(next.rows[0]!.integrity_previous_hash).toBe(first.rows[0]!.integrity_hash);
+    try {
+      const results = await Promise.all(writers.map((writer) => insertOne(writer, 'race')));
+      expect(results.reduce((total, result) => total + result.rows.length, 0)).toBe(1);
+    } finally {
+      await Promise.all(writers.map((writer) => writer.end()));
+    }
   });
 
   test('keeps repeated phases when the durable source revision changes', async () => {
-    const inserted = await client!.query<{ source_revision: string; session_sequence: string }>(
+    const inserted = await client!.query<{ source_revision: string }>(
       `INSERT INTO kortix.audit_events
          (account_id, project_id, session_id, action, resource_type,
           source_ledger, source_record_id, phase, source_revision, authoritative_source)
@@ -189,13 +203,10 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
           'running', 'running:1', 'system'),
          ($1, $2, $3, 'test.retry', 'project_session', 'audit_v2_revision', 'same',
           'running', 'running:2', 'system')
-       RETURNING source_revision, session_sequence`,
+       RETURNING source_revision`,
       [ACCOUNT, PROJECT, SESSION],
     );
     expect(inserted.rows.map((row) => row.source_revision)).toEqual(['running:1', 'running:2']);
-    expect(Number(inserted.rows[1]!.session_sequence)).toBe(
-      Number(inserted.rows[0]!.session_sequence) + 1,
-    );
   });
 
   test('projects connector and lifecycle state in the source transaction', async () => {
@@ -291,7 +302,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       `SELECT phase, outcome, source_revision, input_summary, output_summary
          FROM kortix.audit_events
         WHERE source_ledger = 'tunnel_audit_logs' AND source_record_id = $1
-        ORDER BY session_sequence`,
+        ORDER BY occurred_at, event_id`,
       [logId],
     );
     expect(events.rows.map((event) => [event.phase, event.outcome])).toEqual([
@@ -353,7 +364,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
               delegation_depth
          FROM kortix.audit_events
         WHERE source_ledger = 'project_sessions' AND source_record_id = $1
-        ORDER BY session_sequence`,
+        ORDER BY occurred_at, event_id`,
       [sessionId],
     );
     expect(result.rows.map((row) => [row.action, row.phase])).toEqual([
@@ -427,21 +438,14 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
   });
 
   /**
-   * The SampleCo audit convoy (2026-08-26).
-   *
-   * `audit_prepare_event` allocates the per-session sequence and hash-chain
-   * head out of `kortix.audit_session_sequences`, and PostgreSQL holds that row
-   * lock until the inserting transaction COMMITs. Serializing one session is
-   * the append-only chain's price. Serializing DIFFERENT sessions is not, and
-   * a blocked writer must not burn a whole statement_timeout finding out.
-   *
-   * Live evidence this pins: POST .../audit/events returned 500 [57014] 445
-   * times in 3 hours, each at ~10s, with `insert into "kortix"."audit_events"`
-   * blocking other `insert into "kortix"."audit_events"` in chained pids.
+   * The SampleCo audit convoy (2026-08-26) and the 2026-10 ingest 503s came from a
+   * row lock on `kortix.audit_session_sequences` that PostgreSQL held until COMMIT.
+   * The BEFORE INSERT trigger no longer takes any per-session lock: two writers
+   * of ONE session never wait for each other, whatever one of them has not
+   * committed.
    */
-  describe('per-session sequence lock scope', () => {
+  describe('no per-session lock', () => {
     const HOLD_SESSION = 'a7300000-0000-4000-a000-0000000000c1';
-    const OTHER_SESSION = 'a7300000-0000-4000-a000-0000000000c2';
 
     async function connect(): Promise<pg.Client> {
       const c = new pg.Client({ connectionString: databaseUrl });
@@ -449,57 +453,44 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       return c;
     }
 
-    function insert(c: pg.Client, sessionId: string, recordId: string) {
+    function insert(c: pg.Client, recordId: string) {
       return c.query(
         `INSERT INTO kortix.audit_events
            (account_id, project_id, session_id, action, resource_type,
             source_ledger, source_record_id, phase, authoritative_source)
          VALUES ($1, $2, $3, 'test.lock-scope', 'project_session',
                  'audit_v2_lock_scope', $4, 'completed', 'system')`,
-        [ACCOUNT, PROJECT, sessionId, recordId],
+        [ACCOUNT, PROJECT, HOLD_SESSION, recordId],
       );
     }
 
     afterAll(async () => {
       if (!client) return;
       await client.query(`SET kortix.audit_maintenance = 'on'`);
-      await client.query(`DELETE FROM kortix.audit_events WHERE session_id = ANY($1::text[])`, [
-        [HOLD_SESSION, OTHER_SESSION],
-      ]);
-      await client.query(
-        `DELETE FROM kortix.audit_session_sequences WHERE session_id = ANY($1::text[])`,
-        [[HOLD_SESSION, OTHER_SESSION]],
-      );
+      await client.query(`DELETE FROM kortix.audit_events WHERE session_id = $1`, [HOLD_SESSION]);
       await client.query(`SET kortix.audit_maintenance = 'off'`);
     });
 
-    test('an uncommitted writer blocks only its own session, and lock_timeout bounds the wait', async () => {
+    test('an uncommitted writer holds no lock another writer of the same session can wait on', async () => {
       const holder = await connect();
       const waiter = await connect();
       try {
         await holder.query('BEGIN');
-        await insert(holder, HOLD_SESSION, 'holder');
+        await insert(holder, 'holder');
+        const { rows: held } = await client!.query<{ locktype: string; relation: string | null }>(
+          `SELECT l.locktype, l.relation::regclass::text AS relation
+             FROM pg_locks l
+            WHERE l.pid = $1 AND l.locktype = 'advisory'
+               OR (l.pid = $1 AND l.relation = 'kortix.audit_session_sequences'::regclass)`,
+          [(await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid],
+        );
+        expect(held).toEqual([]);
 
-        // A different session takes a different row lock: no wait at all. This
-        // is why the API's flush must never put two sessions in one statement.
-        await waiter.query(`SET lock_timeout = '2500ms'`);
-        const otherStartedAt = Date.now();
-        await insert(waiter, OTHER_SESSION, 'other');
-        expect(Date.now() - otherStartedAt).toBeLessThan(2_000);
-
-        // The SAME session waits, and fails with 55P03 (lock_not_available) at
-        // the lock budget instead of riding the 10s statement_timeout to 57014.
-        const blockedStartedAt = Date.now();
-        let code: string | null = null;
-        try {
-          await insert(waiter, HOLD_SESSION, 'blocked');
-        } catch (error) {
-          code = (error as { code?: string }).code ?? null;
-        }
-        const blockedMs = Date.now() - blockedStartedAt;
-        expect(code).toBe('55P03');
-        expect(blockedMs).toBeGreaterThanOrEqual(2_000);
-        expect(blockedMs).toBeLessThan(9_000);
+        // Same session, different source record: no wait, even under a tight lock_timeout.
+        await waiter.query(`SET lock_timeout = '250ms'`);
+        const startedAt = Date.now();
+        await insert(waiter, 'waiter');
+        expect(Date.now() - startedAt).toBeLessThan(250);
       } finally {
         await holder.query('ROLLBACK').catch(() => {});
         await holder.end();

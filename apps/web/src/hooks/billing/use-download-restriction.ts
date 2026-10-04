@@ -16,13 +16,7 @@ interface UseDownloadRestrictionOptions {
 interface UseDownloadRestrictionReturn {
   /** Whether the user is on a free tier and downloads should be restricted */
   isRestricted: boolean;
-  /** Wrapper function that checks restriction before executing callback */
-  withRestrictionCheck: <T extends (...args: any[]) => any>(
-    callback: T,
-  ) => (...args: Parameters<T>) => ReturnType<T> | void;
   /** Manually show upgrade prompt (toast + modal) */
-  showUpgradePrompt: () => void;
-  /** Alias for showUpgradePrompt for backward compatibility */
   openUpgradeModal: () => void;
 }
 
@@ -32,19 +26,14 @@ interface UseDownloadRestrictionReturn {
  *
  * Usage:
  * ```tsx
- * const { isRestricted, withRestrictionCheck, showUpgradePrompt } = useDownloadRestriction({
+ * const { isRestricted, openUpgradeModal } = useDownloadRestriction({
  *   featureName: 'presentations'
  * });
  *
- * // Wrap your download handler
- * const handleDownload = withRestrictionCheck(() => {
- *   // actual download logic
- * });
- *
- * // Or check manually
+ * // Check manually
  * const handleDownload = () => {
  *   if (isRestricted) {
- *     showUpgradePrompt();
+ *     openUpgradeModal();
  *     return;
  *   }
  *   // actual download logic
@@ -87,27 +76,8 @@ export function useDownloadRestriction(
     });
   }, [openUpgradeDialog, options?.featureName, tI18nComplete]);
 
-  const withRestrictionCheck = useCallback(
-    <T extends (...args: any[]) => any>(callback: T) => {
-      return (...args: Parameters<T>): ReturnType<T> | void => {
-        if (isRestricted) {
-          showUpgradePrompt();
-          return;
-        }
-        return callback(...args);
-      };
-    },
-    [isRestricted, showUpgradePrompt],
-  );
-
   return {
     isRestricted: isRestricted ?? false,
-    withRestrictionCheck,
-    showUpgradePrompt,
-    // Keep openUpgradeModal as alias for backward compatibility
     openUpgradeModal: showUpgradePrompt,
   };
 }
-
-// Re-export with old name for backward compatibility
-export { useDownloadRestriction as useDownloadRestrictionHook };

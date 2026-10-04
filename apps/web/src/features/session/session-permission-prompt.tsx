@@ -3,34 +3,37 @@
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * Inline "agent needs your permission" prompt, pinned above the composer — the
- * opencode tool-permission twin of `SessionApprovalPrompt` (connector
- * approvals). Answering resumes the agent's already-blocked turn in place
- * (opencode holds the tool call open until `/permission/{id}/reply`), so no
- * follow-up "continue" message is ever needed.
+ * runtime tool-permission twin of `SessionApprovalPrompt` (connector
+ * approvals). Answering resumes the agent's already-blocked turn in place (the
+ * runtime holds the tool call open until `/permission/{id}/reply`), so no
+ * follow-up "continue" message is ever needed. A request names a capability
+ * (`bash`, `edit`, …), not a harness's tool.
  *
  * Three decision scopes, visually separated by how long they last:
- *  - per request: Deny / Allow once / Allow for session (opencode's native
- *    `always` reply — this action pattern, rest of this session)
+ *  - per request: Deny / Allow once / Allow for session (the `always` reply —
+ *    this capability or pattern, rest of this session)
  *  - per session: "Allow everything" writes a blanket allow ruleset onto the
- *    opencode session (survives tab close) + auto-approves anything already
+ *    runtime session (survives tab close) + auto-approves anything already
  *    pending; a client-side auto-approver backstops any ask that still arrives.
- *  - persistent (footer, gated on `project.customize.write`): writes the
- *    project's opencode permission config — future sessions stop asking.
+ *  - persistent (footer, gated on `project.agent.write` and an editable v2
+ *    agent): writes `allow` into the session agent's permission rules (its
+ *    `.md`, through the agent-config route) — sessions started after the
+ *    commit stop asking; this one allows the capability for the rest of its run.
  */
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
+import type { PermissionConfig, PermissionRule } from '@kortix/sdk';
 import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
-  useRuntimeConfig,
   useRuntimePendingStore,
-  useUpdateRuntimeConfig,
 } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
@@ -40,13 +43,30 @@ import {
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+/**
+ * An agent's permission rules with `type` allowed: a bare action becomes the
+ * `*` fallback of the object form, and `*` ("always allow everything") also
+ * flattens every existing rule, so no leftover `ask`/`deny` outranks it.
+ */
+export function permissionRulesAllowing(
+  current: PermissionConfig | undefined,
+  type: string,
+): Record<string, PermissionRule> {
+  const base: Record<string, PermissionRule> =
+    typeof current === 'string' ? { '*': current } : current ? { ...current } : {};
+  if (type !== '*') return { ...base, [type]: 'allow' };
+  return Object.fromEntries([...Object.keys(base), '*'].map((key) => [key, 'allow']));
+}
+
 /** Full-text review is only worth an extra click for a detail that won't fit
  * on one line — short commands stay flat, no chevron. */
 const EXPANDABLE_DETAIL_LENGTH = 64;
 
 interface SessionPermissionPromptProps {
-  /** The OPENCODE session id (what `PermissionRequest.sessionID` carries). */
+  /** The runtime session id (what `PermissionRequest.sessionID` carries). */
   sessionId: string;
+  /** The agent the session runs: "Allow in config" writes its rules. Absent, the footer hides. */
+  agentName?: string;
   permissions: PermissionRequest[];
   /** Must reject on failure so busy states reset and the card stays actionable. */
   onReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
@@ -117,6 +137,7 @@ function PendingLabel({ pending, children }: { pending: boolean; children: React
 
 export function SessionPermissionPrompt({
   sessionId,
+  agentName,
   permissions,
   onReply,
 }: SessionPermissionPromptProps) {
@@ -125,13 +146,14 @@ export function SessionPermissionPrompt({
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const params = useParams<{ id?: string; sessionId?: string }>();
   const projectId = params?.sessionId ? params.id : undefined;
-  const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE];
+  const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_AGENT_WRITE];
 
   const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
   const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
 
-  const { data: config } = useRuntimeConfig();
-  const updateConfig = useUpdateRuntimeConfig();
+  const { data: agentConfig } = useAgentConfig(canWriteConfig.allowed ? projectId : undefined, agentName);
+  const updateAgentConfig = useUpdateAgentConfig(projectId ?? '', agentName ?? '');
+  const agentBlock = agentConfig?.editable ? agentConfig.block : null;
 
   // Which button is loading: `${requestId}:once|always|reject`, 'session-all',
   // or `config:${type}` / 'config:*'.
@@ -192,31 +214,24 @@ export function SessionPermissionPrompt({
     }
   }, [sessionId, setAutoApproveAll]);
 
-  /** Persist an allow into the project's opencode permission config (the same
-   * surface Settings → Permissions edits), then release the pending asks it
-   * covers. `type === '*'` = always allow everything. */
+  /** Persist an allow into the session agent's permission rules (the agent
+   * editor's surface), then release the pending asks it covers with `always`:
+   * the running session keeps the config it started with. `type === '*'` =
+   * always allow everything. */
   const allowInConfig = useCallback(
     async (type: string) => {
+      if (!agentBlock) return;
       setBusy(`config:${type}`);
       try {
-        const current = config?.permission as string | Record<string, unknown> | undefined;
-        // Preserve the existing shape: a global string mode becomes the `*`
-        // fallback of the object form.
-        const base: Record<string, unknown> =
-          typeof current === 'string'
-            ? { '*': current }
-            : current && typeof current === 'object'
-              ? { ...current }
-              : {};
-        const next =
-          type === '*'
-            ? // "Always allow everything": flatten every existing override too,
-              // so no leftover per-tool `ask`/`deny` outranks the wildcard.
-              Object.fromEntries([...Object.keys(base), '*'].map((k) => [k, 'allow']))
-            : { ...base, [type]: 'allow' };
-        await updateConfig.mutateAsync({ permission: next } as never);
+        const { opencode: _legacyBehavior, ...block } = agentBlock;
+        const behavior = block.behavior ?? {};
+        const next = permissionRulesAllowing(behavior.permission, type);
+        await updateAgentConfig.mutateAsync({
+          ...block,
+          behavior: { ...behavior, permission: next },
+        });
         const covered = permissions.filter((p) => type === '*' || p.permission === type);
-        await Promise.all(covered.map((p) => onReply(p.id, 'once')));
+        await Promise.all(covered.map((p) => onReply(p.id, 'always')));
         successToast(
           type === '*'
             ? tI18nComplete.raw('texte5776302ca62')
@@ -228,7 +243,7 @@ export function SessionPermissionPrompt({
         setBusy(null);
       }
     },
-    [config?.permission, updateConfig, permissions, tI18nComplete, onReply],
+    [agentBlock, updateAgentConfig, permissions, tI18nComplete, onReply],
   );
 
   // Client-side backstop for "allow everything this session": auto-approve any
@@ -246,9 +261,13 @@ export function SessionPermissionPrompt({
     }
   }, [autoApprove, permissions, onReply]);
 
+  // A manifest `skills:` grant outranks the `skill` rule, so writing one would change nothing.
   const uniqueTypes = useMemo(
-    () => [...new Set(permissions.map((p) => p.permission))],
-    [permissions],
+    () =>
+      [...new Set(permissions.map((p) => p.permission))].filter(
+        (type) => !(type === 'skill' && agentBlock?.skills !== undefined),
+      ),
+    [permissions, agentBlock],
   );
 
   if (autoApprove) {
@@ -376,7 +395,7 @@ export function SessionPermissionPrompt({
           </PendingLabel>
         </Button>
       </div>
-      {canWriteConfig.allowed ? (
+      {canWriteConfig.allowed && agentBlock ? (
         // Deliberately set apart from the one-off buttons above: these WRITE the
         // project's permission config — every future session stops asking.
         <div className="bg-muted/40 border-border flex flex-wrap items-center gap-2 border-t px-3 py-2">

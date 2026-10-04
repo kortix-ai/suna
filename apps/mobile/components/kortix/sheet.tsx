@@ -1,7 +1,8 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Keyboard, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
+  ANIMATION_STATUS,
   BottomSheetModal,
   BottomSheetView,
   BottomSheetBackdrop,
@@ -9,7 +10,8 @@ import {
   useBottomSheetInternal,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { State as GestureState } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { getSheetBg } from '@/lib/theme-colors';
@@ -24,6 +26,7 @@ import { cn } from '@/lib/utils/utils';
 import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
 import { sheetScrimColor } from '@/lib/ui/sheet-scrim';
 import { SurfaceContext } from '@/components/kortix/surface-context';
+import { PinnedBarShiftContext } from '@/components/kortix/pinned-bar';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -237,7 +240,21 @@ export const KortixBottomSheetModal = React.forwardRef<
   // expands any sheet. Keyed by value: most call sites pass an inline array.
   const key = detentsKey(snapPoints);
   const detents = React.useMemo(() => withFullDetent(snapPoints), [key]);
-  React.useImperativeHandle(ref, () => innerRef.current as BottomSheetModal, []);
+  // Opening a sheet closes the keyboard. A sheet is a new context: a keyboard
+  // left up from the screen behind covers the sheet's lower half, and its field
+  // keeps the focus. Set HERE so no call site has to remember it. A sheet's own
+  // auto-focused field mounts after this and raises the keyboard again.
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      ...(innerRef.current as BottomSheetModal),
+      present: (...args: Parameters<BottomSheetModal['present']>) => {
+        Keyboard.dismiss();
+        innerRef.current?.present(...args);
+      },
+    }),
+    []
+  );
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const background = getSheetBg(isDark);
@@ -301,8 +318,8 @@ export const KortixBottomSheetModal = React.forwardRef<
 KortixBottomSheetModal.displayName = 'KortixBottomSheetModal';
 
 /**
- * SheetFill — a box exactly as tall as the sheet's visible content area
- * (container − sheet position − handle), tracking drags on the UI thread.
+ * SheetFill — a box as tall as the sheet's visible content area
+ * (container − sheet position − handle) whenever the sheet is at rest.
  *
  * gorhom sizes its content box to the sheet's HIGHEST detent
  * (`animatedSheetHeight = containerHeight − highestDetentPosition`), and every
@@ -316,16 +333,114 @@ KortixBottomSheetModal.displayName = 'KortixBottomSheetModal';
  * content-sized sheet has no height of its own to fill. Never give it
  * `flex: 1`: React Native's `flex: 1` sets `flexBasis: 0`, which discards the
  * height (measured: 787pt again).
+ *
+ * A height change re-lays out the whole body, lists included. So while the
+ * sheet moves, the body keeps one height (`sheetFillHeight`) and a `PinnedBar`
+ * inside follows the visible edge by a transform (`PinnedBarShiftContext`).
  */
 export function SheetFill({ children, style }: { children: React.ReactNode; style?: Omit<ViewStyle, 'flex' | 'height'> }) {
-  const { animatedLayoutState, animatedPosition } = useBottomSheetInternal();
+  const {
+    animatedLayoutState,
+    animatedPosition,
+    animatedAnimationState,
+    animatedContentGestureState,
+    animatedHandleGestureState,
+  } = useBottomSheetInternal();
+  // The last laid-out height: the memory `sheetFillHeight` keeps across frames.
+  const laidOut = useSharedValue<number | null>(null);
+  // Derived values, not a reaction: `useDerivedValue` registers its mapper
+  // with the value as an output, so Reanimated runs it before every mapper
+  // that reads it (`mappers.ts` `updateMappersOrder`). The height, the shift
+  // and both styles then update in the same frame, whatever order React
+  // registered them in. A reaction has no outputs: a child `PinnedBar`'s style
+  // registered first would read the new shift one frame late.
+  const height = useDerivedValue(() => {
+    const dragging =
+      isGestureLive(animatedContentGestureState.get()) || isGestureLive(animatedHandleGestureState.get());
+    const next = sheetFillHeight(
+      animatedLayoutState.get(),
+      animatedPosition.get(),
+      animatedAnimationState.get(),
+      dragging,
+      laidOut.get()
+    );
+    if (next !== laidOut.get()) laidOut.set(next);
+    return next;
+  }, [animatedLayoutState, animatedPosition, animatedAnimationState, animatedContentGestureState, animatedHandleGestureState, laidOut]);
+  const shift = useDerivedValue(
+    () => sheetFillShift(animatedLayoutState.get(), animatedPosition.get(), height.get()),
+    [animatedLayoutState, animatedPosition, height]
+  );
   const fill = useAnimatedStyle(() => {
-    const { containerHeight, handleHeight } = animatedLayoutState.get();
-    if (containerHeight <= 0) return {};
-    const height = containerHeight - animatedPosition.get() - Math.max(0, handleHeight);
-    return { height: Math.max(0, height) };
-  }, [animatedLayoutState, animatedPosition]);
-  return <Animated.View style={[style, fill]}>{children}</Animated.View>;
+    const h = height.get();
+    return h === null ? {} : { height: h };
+  }, [height]);
+  return (
+    <Animated.View style={[style, fill]}>
+      <PinnedBarShiftContext.Provider value={shift}>{children}</PinnedBarShiftContext.Provider>
+    </Animated.View>
+  );
+}
+
+// Plain numbers: a worklet captures them by value.
+const ANIMATION_RUNNING = ANIMATION_STATUS.RUNNING;
+const GESTURE_BEGAN = GestureState.BEGAN;
+const GESTURE_ACTIVE = GestureState.ACTIVE;
+
+function isGestureLive(state: number): boolean {
+  'worklet';
+  return state === GESTURE_BEGAN || state === GESTURE_ACTIVE;
+}
+
+/** The sheet below the handle, in points. */
+function visibleFill(layout: { containerHeight: number; handleHeight: number }, position: number): number {
+  'worklet';
+  return Math.max(0, layout.containerHeight - position - Math.max(0, layout.handleHeight));
+}
+
+/**
+ * `SheetFill`'s laid-out height for one frame. `null` until the container is
+ * measured.
+ * - At rest (no animation, no drag): `visible`. This is the one layout a move
+ *   down costs.
+ * - An animation lays out once at `max(visible, its target)` when that is
+ *   taller than `previous` (the open, a snap up, the keyboard lift), and keeps
+ *   `previous` otherwise (the close, a snap down, the keyboard drop).
+ * - A drag keeps `previous` going down, and grows with the drag past it going
+ *   up, so no empty band shows between the content's end and the bar.
+ */
+export function sheetFillHeight(
+  layout: { containerHeight: number; handleHeight: number },
+  position: number,
+  animation: { status: number; nextPosition?: number },
+  dragging: boolean,
+  previous: number | null
+): number | null {
+  'worklet';
+  if (layout.containerHeight <= 0) return null;
+  const visible = visibleFill(layout, position);
+  const running = animation.status === ANIMATION_RUNNING;
+  if (!running && !dragging) return visible;
+  let wanted = visible;
+  if (running && animation.nextPosition !== undefined) {
+    wanted = Math.max(visible, visibleFill(layout, animation.nextPosition));
+  }
+  return previous === null || wanted > previous ? wanted : previous;
+}
+
+/**
+ * How far a `PinnedBar` moves to sit on the visible edge: `visible − height`,
+ * 0 or less (`sheetFillHeight` never returns less than `visible`). The bar's
+ * bottom is then at `height + shift === visible`, where it was before.
+ */
+export function sheetFillShift(
+  layout: { containerHeight: number; handleHeight: number },
+  position: number,
+  height: number | null
+): number {
+  'worklet';
+  if (height === null || layout.containerHeight <= 0) return 0;
+  return visibleFill(layout, position) - height;
 }
 
 /** Copies `text`; the glyph is a check for 1.5 s after. For `titleTrailing`. */
@@ -356,6 +471,9 @@ export interface SheetRef {
   open: () => void;
   close: () => void;
 }
+
+export { useCloseThen } from './use-close-then';
+
 interface SheetProps {
   snapPoints?: (string | number)[];
   /** Present at full screen height (100%) with a safe-area top inset. */

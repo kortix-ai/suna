@@ -4,7 +4,8 @@ import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
-import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { mintInstallationTokenHealing } from './installation-healing';
+import { getBackend, managedGithubInstallId, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import {
   decryptProjectSecret,
@@ -15,13 +16,8 @@ import { recordAuditEvent } from '../../shared/audit';
 import { bindAuditPrincipal } from '../../shared/audit-scope';
 import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
-import { and, asc, countDistinct, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
+import { and, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { ttlMemo } from '../../shared/ttl-memo';
-import {
-  isImpersonatingAccount,
-  isImpersonationBlockedAccount,
-} from '../../shared/impersonation';
 // Imported from the leaf modules, not the `../../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
@@ -31,8 +27,6 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/actor';
-import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { accountRoleFor } from '../../iam/read-models';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
 import type { GitPrincipal } from '../../git-proxy/ref-policy';
@@ -41,52 +35,18 @@ import {
 } from './session-workspace-access';
 import { repositoryGeneration } from './repository-generation';
 
-// Memoized briefly (positive hits only): this runs on every project-scoped
-// request. Each DB statement is a fast same-region roundtrip (~3ms measured,
-// not the cross-region cost this comment used to claim), but the same
-// lookup repeats across a burst of parallel requests, so caching still cuts
-// redundant query volume. A revoked membership lingers for at most one TTL
-// window; a fresh grant is visible immediately because null results are
-// never cached.
-const loadAccountMembership = ttlMemo({
-  ttlMs: 15_000,
-  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
-  loader: async (userId: string, accountId: string) => {
-    // Membership IS the account-scope assignment (spec §1). The
-    // `account_members.account_role` column this used to read is no longer
-    // written by every path — an assignment made through `assignRole()` leaves
-    // it stale on purpose — so reading it here would hand a project request a
-    // role the engine disagrees with.
-    const accountRole = await accountRoleFor(accountId, userId);
-    return accountRole ? { accountId, accountRole } : null;
-  },
-  shouldCache: (membership) => membership !== null,
-});
-// Key is `${userId}|${accountId}` → bust per principal on account-member changes.
-registerPrincipalScopedMemo(loadAccountMembership);
-
-export async function getAccountMembership(userId: string, accountId: string) {
-  // Act-as: a platform admin holding a live grant on this account resolves as
-  // its owner. Checked BEFORE the memo, never inside it — `loadAccountMembership`
-  // is keyed `${userId}|${accountId}` and shared across requests, so caching an
-  // impersonation-derived membership would hand the operator owner rights on
-  // their own later, non-impersonated requests for the whole TTL window.
-  if (isImpersonatingAccount(userId, accountId)) {
-    return { accountId, accountRole: 'owner' as const };
-  }
-  // …and CONFINES: while a grant is live, the operator's own memberships are
-  // out of reach. Otherwise "open the app" lands on their last project (a
-  // cookie), which is theirs, under a banner naming the customer.
-  if (isImpersonationBlockedAccount(userId, accountId)) return null;
-  return loadAccountMembership(userId, accountId);
-}
-
-
 /**
- * Every account connection, oldest first. The order is explicit because
+ * Every account connection, NEWEST first. The order is explicit because
  * callers that pass no installation id take the FIRST row, and an unordered
  * select returns whatever the heap hands back — so the same request could
  * resolve to a different connection between two calls.
+ *
+ * Newest, not oldest: a reconnect mints a new installation id for the same
+ * owner, and the retired one answers 404 on `/access_tokens`. Oldest-first made
+ * that dead row the default on `/new`, which is how a user who had just
+ * reconnected was told to reconnect. `upsertAccountGitHubInstallation` now
+ * keeps one row per owner, so this ordering is the second line of defence, not
+ * the only one.
  */
 export function accountGitHubInstallationsQuery(accountId: string) {
   return db
@@ -94,8 +54,8 @@ export function accountGitHubInstallationsQuery(accountId: string) {
     .from(accountGithubInstallations)
     .where(eq(accountGithubInstallations.accountId, accountId))
     .orderBy(
-      asc(accountGithubInstallations.createdAt),
-      asc(accountGithubInstallations.installationId),
+      desc(accountGithubInstallations.createdAt),
+      desc(accountGithubInstallations.installationId),
     );
 }
 
@@ -155,7 +115,7 @@ export class GitHubInstallationAmbiguousError extends Error {
 
 /**
  * One account connection. With an explicit id it is exact. Without one it
- * returns the OLDEST connection — deterministic, and only correct for a
+ * returns the NEWEST connection — deterministic, and only correct for a
  * caller that genuinely has no id to pass. Anything a user drives should pass
  * the id and let `requireAccountGitHubInstallation` refuse an ambiguity.
  */
@@ -289,6 +249,32 @@ async function resolveImportedDefaultBranch(
 }
 
 
+/** Remove one connection row. Only ever called for an installation GitHub
+ *  itself reported gone (404 on `/access_tokens`). */
+export async function dropAccountGitHubInstallation(accountId: string, installationId: string) {
+  await db
+    .delete(accountGithubInstallations)
+    .where(
+      and(
+        eq(accountGithubInstallations.accountId, accountId),
+        eq(accountGithubInstallations.installationId, installationId),
+      ),
+    );
+}
+
+/** The real mint + deletes behind `mintInstallationTokenHealing`. */
+function installationHealingDeps(accountId: string) {
+  return {
+    accountId,
+    mint: (installationId: string) => createInstallationToken(installationId),
+    dropInstallation: dropAccountGitHubInstallation,
+    siblings: async (account: string, ownerLogin: string) => {
+      const rows = await listAccountGitHubInstallations(account);
+      return rows.filter((row) => row.ownerLogin === ownerLogin);
+    },
+  };
+}
+
 export async function resolveGitHubRepoAuth(accountId: string, installationId?: string | null): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation';
@@ -296,17 +282,22 @@ export async function resolveGitHubRepoAuth(accountId: string, installationId?: 
 }> {
   const installation = await requireAccountGitHubInstallation(accountId, installationId);
   if (installation) {
-    const token = await createInstallationToken(installation.installationId);
+    // A retired installation id answers 404 here. `mintInstallationTokenHealing`
+    // deletes that row and continues with another connection for the same
+    // owner, so a reconnect heals itself instead of telling the user to
+    // reconnect again.
+    const minted = await mintInstallationTokenHealing(installation, installationHealingDeps(accountId));
+    const resolved = minted.installation;
     return {
       auth: {
-        token: token.token,
+        token: minted.token,
         source: 'app_installation',
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType,
-        installationId: installation.installationId,
+        owner: resolved.ownerLogin,
+        ownerType: resolved.ownerType,
+        installationId: resolved.installationId,
       },
       authSource: 'app_installation',
-      installation,
+      installation: resolved,
     };
   }
   if (installationId) {
@@ -505,6 +496,31 @@ export function emptyGitRemote(): ProjectGitRemote {
 }
 
 
+/**
+ * `managed` means the repository lives in the Kortix managed-git backend. A row
+ * that says so while it points at ANOTHER installation under ANOTHER owner is a
+ * repository in the account's own GitHub: `POST /projects/create-repo` wrote
+ * `managed: true` for those until 2026-09-28. Read as managed, the managed-org
+ * PAT authenticated them, GitHub answered `Repository not found`, and the first
+ * session failed with `503 git_mirror_unavailable`.
+ *
+ * Both signals are required, so a managed repo survives a backend switch: a
+ * PAT-backend repo has no installation id, and an App-backend repo keeps the
+ * managed owner after the backend moves to a PAT.
+ */
+function livesInManagedBackend(
+  stored: boolean,
+  provider: string,
+  installationId: string | null,
+  repoOwner: string | null,
+): boolean {
+  if (!stored || provider !== 'github' || !installationId) return stored;
+  const owner = managedGithubOwner();
+  if (!owner || !repoOwner) return stored;
+  if (installationId === managedGithubInstallId()) return true;
+  return owner.toLowerCase() === repoOwner.toLowerCase();
+}
+
 export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnectionRow | null): ProjectGitRemote {
   if (connection) {
     return {
@@ -517,7 +533,12 @@ export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGit
       repoName: connection.repoName,
       externalRepoId: connection.externalRepoId,
       upstreamUrl: connection.upstreamUrl ?? null,
-      managed: connection.managed ?? false,
+      managed: livesInManagedBackend(
+        connection.managed ?? false,
+        connection.provider,
+        connection.installationId,
+        connection.repoOwner,
+      ),
     };
   }
 
@@ -525,17 +546,25 @@ export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGit
   const git = meta.git;
   if (git && typeof git === 'object') {
     const method = String(git.auth?.method ?? 'none');
+    const provider = String(git.provider ?? 'generic');
+    const installationId = git.auth?.installation_id ?? git.installation_id ?? null;
+    const repoOwner = git.owner ?? null;
     return {
-      provider: String(git.provider ?? 'generic'),
+      provider,
       authMethod: method,
       repoId: git.repo_id ?? null,
       ref: git.auth?.ref ?? null,
-      installationId: git.auth?.installation_id ?? git.installation_id ?? null,
-      repoOwner: git.owner ?? null,
+      installationId,
+      repoOwner,
       repoName: git.name ?? null,
       externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
       upstreamUrl: typeof git.upstream_url === 'string' ? git.upstream_url : null,
-      managed: git.managed === true || method === 'managed',
+      managed: livesInManagedBackend(
+        git.managed === true || method === 'managed',
+        provider,
+        installationId == null ? null : String(installationId),
+        repoOwner,
+      ),
     };
   }
   if (meta.github) {
@@ -775,6 +804,9 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     accountId: project.accountId,
     name: PROJECT_GIT_AUTH_SECRET_NAME,
     consumer: 'git_proxy',
+    // An optional legacy fallback checked on every git request: its absence is
+    // the normal case, not an access attempt, so it writes no missing row.
+    probe: true,
   });
   if (legacyToken) {
     return {

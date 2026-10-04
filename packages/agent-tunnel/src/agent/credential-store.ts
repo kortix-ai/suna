@@ -1,8 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
+import { agentTunnelHome } from './service-paths';
 
-export const CONFIG_DIR = join(homedir(), '.agent-tunnel');
+export const CONFIG_DIR = agentTunnelHome();
 export const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 /** Fields that identify a pairing. Everything else in the file is user settings. */

@@ -6,14 +6,35 @@
  * `{ reachable, downSince, connection }`: `connection` is the SDK's vocabulary
  * (`connectionFromHealth`), so the pill says "Waking computer" for a parked or
  * booting computer and "Can't reach computer" only when a dial failed.
+ *
+ * Each probe is one sample, folded through the SDK's `settleSessionConnection`:
+ * good news lands at once, bad news must persist `CONNECTION_FAULT_GRACE_MS`.
+ * Drawing every sample made the pill flap Connecting → Can't reach → gone on a
+ * computer that never went away (KRTX-606). An open event stream is the
+ * runtime answering, so it reads live whatever a probe concluded.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { connectionFromHealth, getSessionHealth, type SessionConnection } from '@kortix/sdk';
+import {
+  connectionFromHealth,
+  getSessionHealth,
+  INITIAL_SETTLED_CONNECTION,
+  settleSessionConnection,
+  type SessionConnection,
+  type SettledConnection,
+} from '@kortix/sdk';
+import { useStreamHealthStore } from '@/lib/session/live-updates';
+import { recordRuntimeCapabilities } from '@/lib/session/runtime-capabilities';
 
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;
+/** A box mid-turn answers slowly. 3s timed out on loaded boxes and read as a fault. */
+const PROBE_TIMEOUT_MS = 10_000;
+
+function streamIsOpen(): boolean {
+  return useStreamHealthStore.getState().health.phase === 'connected';
+}
 
 /**
  * One probe of the session's computer, read in the SDK's connection vocabulary
@@ -25,9 +46,11 @@ const INITIAL_GRACE_MS = 3_000;
  */
 async function probeSandboxConnection(sandboxUrl: string): Promise<SessionConnection> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
+  const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
     const result = await getSessionHealth(sandboxUrl.replace(/\/$/, ''), { signal: controller.signal });
+    // What the runtime serves rides on the same answer: no second poller (E1).
+    recordRuntimeCapabilities(sandboxUrl, result.health?.capabilities);
     return connectionFromHealth(result);
   } catch {
     return 'unreachable';
@@ -55,7 +78,8 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
     connection: 'unknown',
   });
   const mountedRef = useRef(true);
-  const downSinceRef = useRef<number | null>(null);
+  const settledRef = useRef<SettledConnection>(INITIAL_SETTLED_CONNECTION);
+  const streamOpen = useStreamHealthStore((s) => s.health.phase === 'connected');
 
   useEffect(() => {
     mountedRef.current = true;
@@ -69,20 +93,22 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
 
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
+    // A different computer: what we knew about the last one says nothing.
+    settledRef.current = INITIAL_SETTLED_CONNECTION;
 
-    const probe = async () => {
-      const connection = await probeSandboxConnection(sandboxUrl);
-      const isReachable = connection === 'live' || connection === 'unknown';
+    const apply = (observed: SessionConnection) => {
       if (cancelled || !mountedRef.current) return;
+      settledRef.current = settleSessionConnection(settledRef.current, observed, Date.now());
+      const connection = settledRef.current.connection;
+      const isReachable = connection === 'live' || connection === 'unknown';
       setState((prev) => {
         let downSince = prev.downSince;
         if (isReachable) {
           downSince = null;
         } else if (!downSince) {
           // Transitioned from reachable → unreachable
-          downSince = Date.now();
+          downSince = settledRef.current.faultSinceMs ?? Date.now();
         }
-        downSinceRef.current = downSince;
         // Keep the same object when nothing changed so consumers skip the
         // re-render on every 10 s probe.
         if (
@@ -95,6 +121,11 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
         }
         return { checked: true, reachable: isReachable, downSince, connection };
       });
+    };
+
+    const probe = async () => {
+      const observed = await probeSandboxConnection(sandboxUrl);
+      apply(streamIsOpen() ? 'live' : observed);
     };
 
     // Give the app a grace period after mount before the first probe so we
@@ -115,6 +146,18 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
       sub.remove();
     };
   }, [sandboxUrl]);
+
+  // The stream opening is the runtime answering: clear the pill now, not on
+  // the next 10s probe.
+  useEffect(() => {
+    if (!streamOpen || !sandboxUrl) return;
+    settledRef.current = settleSessionConnection(settledRef.current, 'live', Date.now());
+    setState((prev) =>
+      prev.reachable && prev.connection === 'live' && prev.downSince === null
+        ? prev
+        : { checked: true, reachable: true, downSince: null, connection: 'live' },
+    );
+  }, [streamOpen, sandboxUrl]);
 
   return state;
 }

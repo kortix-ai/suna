@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 710 route actions and 64 other events.
+This page lists 722 route actions and 64 other events.
 
 ## `account.`
 
@@ -51,7 +51,6 @@ This page lists 710 route actions and 64 other events.
 | `admin.account.member_role.set` | Changed account member role | `POST /v1/admin/api/accounts/:id/members/:userId/role` |
 | `admin.account.overrides.set` | Set account entitlement overrides | `PUT /v1/admin/api/accounts/:id/overrides` |
 | `admin.account.project.list` | Listed account projects as admin | `GET /v1/admin/api/accounts/:id/projects` |
-| `admin.account.session_limit.set` | Updated account session limit | `POST /v1/admin/api/accounts/:id/session-limit` |
 | `admin.account.sso_domain.set` | Set account SSO domain verification | `PUT /v1/admin/api/accounts/:id/sso-domain-verification` |
 | `admin.account.subscription.read` | Viewed account Stripe subscription | `GET /v1/admin/api/accounts/:id/subscription` |
 | `admin.account.tier.set` | Updated account tier | `POST /v1/admin/api/accounts/:id/tier` |
@@ -93,6 +92,7 @@ This page lists 710 route actions and 64 other events.
 | `app.create` | Created Kortix App | `POST /v1/projects/:projectId/apps` |
 | `app.delete` | Deleted Kortix App | `DELETE /v1/projects/:projectId/apps/:appId` |
 | `app.deployment.create` | Deployed Kortix App | `POST /v1/projects/:projectId/apps/:appId/deployments` |
+| `app.deployment.delete` | Deleted Kortix App deployment | `DELETE /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
 | `app.deployment.list` | Listed Kortix App deployments | `GET /v1/projects/:projectId/apps/:appId/deployments` |
 | `app.deployment.log.list` | Viewed Kortix App deployment logs | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs` |
 | `app.deployment.read` | Viewed Kortix App deployment | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
@@ -124,6 +124,7 @@ This page lists 710 route actions and 64 other events.
 | Action | Title | Route |
 | --- | --- | --- |
 | `auth.access_request.create` | Requested early access | `POST /v1/access/request-access` |
+| `auth.client_config.read` | Read the sign-in configuration | `GET /v1/auth/client-config` |
 | `auth.email.check` | Checked sign-in email | `POST /v1/access/check-email` |
 | `auth.identity.read` | Viewed own identity | `GET /v1/accounts/me` |
 | `auth.logout` | Signed out | `POST /v1/auth/logout` (also `POST /v1/auth/sign-out`) |
@@ -235,6 +236,8 @@ This page lists 710 route actions and 64 other events.
 | `channel.teams.installation.read` | Viewed Microsoft Teams installation | `GET /v1/projects/:projectId/channels/teams/installation` |
 | `channel.teams.login_link.read` | Opened Teams login link | `GET /v1/channels/teams/identity/login/:token` |
 | `channel.teams.manifest.read` | Viewed Microsoft Teams app manifest | `GET /v1/projects/:projectId/channels/teams/manifest` |
+| `channel.teams.message.delete` | Deleted Microsoft Teams message | `POST /v1/projects/:projectId/channels/teams/message/delete` |
+| `channel.teams.message.edit` | Edited Microsoft Teams message | `POST /v1/projects/:projectId/channels/teams/message/edit` |
 | `channel.teams.message.send` | Sent Microsoft Teams message | `POST /v1/projects/:projectId/channels/teams/message` |
 | `channel.teams.mode.read` | Viewed Microsoft Teams setup options | `GET /v1/projects/:projectId/channels/teams/mode` |
 | `channel.teams.oauth.complete` | Completed Microsoft Teams install | `POST /v1/projects/:projectId/channels/teams/oauth/complete` |
@@ -252,6 +255,7 @@ This page lists 710 route actions and 64 other events.
 | `connector.auth.preview` | Previewed connector authentication | `POST /v1/connectors/projects/:projectId/connectors/auth-discovery` |
 | `connector.authorization_strategy.update` | Updated connector authorization strategy | `PUT /v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy` |
 | `connector.catalog.list` | Viewed connector catalog | `GET /v1/connectors/catalog` (also `GET /v1/connectors/connectors`, `GET /v1/connectors/projects/:projectId/catalog`) |
+| `connector.computer_account.create` | Added computer to project | `POST /v1/projects/:projectId/computers` |
 | `connector.config.read` | Viewed connector configuration | `GET /v1/connectors/projects/:projectId/connectors/:slug/config` |
 | `connector.connect_request.list` | Viewed pending connector authorizations | `GET /v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests` |
 | `connector.connection.activate` | Activated connector account | `PUT /v1/projects/:projectId/connections/:connectionId/activate` |
@@ -271,7 +275,7 @@ This page lists 710 route actions and 64 other events.
 | `connector.connection.oauth.resource.discover` | Discovered MCP authorization server | `POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource` |
 | `connector.connection.oauth.status.read` | Viewed connector OAuth status | `GET /v1/projects/:projectId/connections/:connectionId/oauth2/status` |
 | `connector.connection.personal.create` | Created personal connector account | `POST /v1/projects/:projectId/connections/me` |
-| `connector.connection.rename` | Renamed connector account | `PUT /v1/projects/:projectId/connections/:connectionId/label` |
+| `connector.connection.rename` | Renamed connector account | `PUT /v1/projects/:projectId/connections/:connectionId/label` (also `PATCH /v1/projects/:projectId/connections/:connectionId`) |
 | `connector.connection.revoke` | Revoked connector account | `PUT /v1/projects/:projectId/connections/:connectionId/revoke` |
 | `connector.connection.roster.list` | Listed all connector accounts | `GET /v1/projects/:projectId/connections/all` |
 | `connector.connection.share` | Shared a private connector account | `POST /v1/projects/:projectId/connections/:connectionId/share` |
@@ -351,6 +355,7 @@ This page lists 710 route actions and 64 other events.
 | `gateway.generation.read` | Viewed LLM generation details | `GET /v1/generation` |
 | `gateway.internal.billing.check` | Checked LLM billing eligibility | `POST /internal/gateway/billing` |
 | `gateway.internal.budget.check` | Checked LLM gateway budget | `POST /internal/gateway/budget-check` |
+| `gateway.internal.login.refresh` | Refreshed a refused ChatGPT login | `POST /internal/gateway/refresh-credential` |
 | `gateway.internal.model.list` | Resolved LLM gateway model catalog | `POST /internal/gateway/models` |
 | `gateway.internal.pool_key.cool_down` | Cooled down pooled provider key | `POST /internal/gateway/pool-rate-limit` |
 | `gateway.internal.request.authorize` | Authorized LLM gateway request | `POST /internal/gateway/authorize` |
@@ -400,6 +405,7 @@ This page lists 710 route actions and 64 other events.
 | `git.github.installation.list` | Listed GitHub installations | `GET /v1/projects/github/installations` (also `GET /v1/projects/github/installation`) |
 | `git.github.repository.branch.list` | Listed GitHub repository branches | `GET /v1/projects/github/repository-branches` |
 | `git.github.repository.list` | Listed GitHub repositories | `GET /v1/projects/github/repositories` |
+| `git.github.user_token.store` | Authorized GitHub as a user | `POST /v1/projects/github/user-token` |
 | `git.managed_status.read` | Viewed managed Git status | `GET /v1/projects/managed-git/status` |
 | `git.project_snapshot.download` | Requested project snapshot download | `GET /v1/git/:project/project-snapshot` |
 | `git.push` | Pushed to Git repository | `POST /v1/git/:project/git-receive-pack` |
@@ -520,8 +526,9 @@ This page lists 710 route actions and 64 other events.
 
 | Action | Title | Route |
 | --- | --- | --- |
-| `mcp.request` | Called the MCP server | `POST /v1/projects/:projectId/mcp` (also `DELETE /v1/projects/:projectId/mcp`, `GET /v1/projects/:projectId/mcp`) |
-| `mcp.resource_metadata.read` | Read MCP server metadata | `GET /.well-known/oauth-protected-resource/v1/projects/:projectId/mcp` |
+| `mcp.request` | Called the MCP server | `POST /v1/mcp` (also `DELETE /v1/mcp`, `GET /v1/mcp`) |
+| `mcp.resource_metadata.read` | Read MCP resource metadata | `GET /.well-known/oauth-protected-resource` |
+| `mcp.server_metadata.read` | Read MCP server metadata | `GET /.well-known/oauth-protected-resource/v1/mcp` |
 
 ## `member.`
 
@@ -562,6 +569,9 @@ This page lists 710 route actions and 64 other events.
 | `oauth.client.register` | Registered an OAuth client | `POST /v1/oauth/register` |
 | `oauth.consent.answer` | Submitted OAuth consent | `POST /v1/oauth/authorize/consent` |
 | `oauth.consent_request.read` | Viewed OAuth consent request | `GET /v1/oauth/authorize/consent/:requestId` |
+| `oauth.grant.list` | Listed connected apps | `GET /v1/oauth/grants` |
+| `oauth.grant.revoke` | Revoked a connected app | `DELETE /v1/oauth/grants/:clientId` |
+| `oauth.openid_configuration.read` | Read OpenID configuration | `GET /.well-known/openid-configuration` |
 | `oauth.server_metadata.read` | Read OAuth server metadata | `GET /.well-known/oauth-authorization-server` (also `GET /v1/oauth/.well-known/oauth-authorization-server`) |
 | `oauth.token.create` | Issued an OAuth token | `POST /v1/oauth/token` |
 | `oauth.token.revoke` | Revoked an OAuth token | `POST /v1/oauth/revoke` |
@@ -594,6 +604,7 @@ This page lists 710 route actions and 64 other events.
 | `project.access_request.create` | Requested project access | `POST /v1/projects/:projectId/access-requests` |
 | `project.access_request.list` | Listed project access requests | `GET /v1/projects/:projectId/access-requests` |
 | `project.access_request.reject` | Rejected project access request | `POST /v1/projects/:projectId/access-requests/:requestId/reject` |
+| `project.agent_identity.list` | Listed project agent identities | `GET /v1/projects/:projectId/agent-identities` |
 | `project.cli_token.create` | Created project CLI token | `POST /v1/projects/:projectId/cli-token` |
 | `project.cli_token.list` | Listed project CLI tokens | `GET /v1/projects/:projectId/cli-token` |
 | `project.cli_token.revoke` | Revoked project CLI token | `DELETE /v1/projects/:projectId/cli-token/:tokenId` |
@@ -620,6 +631,7 @@ This page lists 710 route actions and 64 other events.
 | `project.onboarding.update` | Updated project onboarding | `PATCH /v1/projects/:projectId/onboarding` |
 | `project.provision` | Provisioned project | `POST /v1/projects/provision` (also `POST /v1/projects/provision-stream`) |
 | `project.read` | Viewed project | `GET /v1/projects/:projectId` |
+| `project.reminder.list` | Listed project reminders | `GET /v1/projects/:projectId/reminders` |
 | `project.repository.create` | Created project with new GitHub repository | `POST /v1/projects/create-repo` |
 | `project.repository.link` | Linked repository as project | `POST /v1/projects/link-repository` |
 | `project.resource_grant.create` | Granted resource access | `POST /v1/projects/:projectId/resource-grants` |
@@ -773,10 +785,14 @@ This page lists 710 route actions and 64 other events.
 | `session.event.stream` | Streamed session events | `GET /v1/projects/:projectId/sessions/:sessionId/events` |
 | `session.git.push` | Committed and pushed session changes | `POST /v1/projects/:projectId/sessions/:sessionId/commit-push` |
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |
+| `session.message_authors.read` | Viewed session message authors | `GET /v1/projects/:projectId/sessions/:sessionId/message-authors` |
 | `session.model.update` | Changed session model | `PUT /v1/projects/:projectId/sessions/:sessionId/model` |
+| `session.participants.list` | Viewed session participants | `GET /v1/projects/:projectId/sessions/:sessionId/participants` |
 | `session.permission.notify` | Relayed session permission request | `POST /v1/projects/:projectId/turn-permission` |
+| `session.presence.update` | Updated session presence | `PUT /v1/projects/:projectId/sessions/:sessionId/presence` |
 | `session.preview.list` | Listed session preview candidates | `GET /v1/projects/:projectId/sessions/:sessionId/previews` |
 | `session.prompt.delete` | Removed a queued session prompt | `DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId` |
+| `session.prompt.edit` | Edited a queued session prompt | `PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId` |
 | `session.prompt.hold.set` | Set session prompt queue hold | `POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold` |
 | `session.prompt.list` | Viewed queued session prompts | `GET /v1/projects/:projectId/sessions/:sessionId/prompts` |
 | `session.prompt.retry` | Retried a queued session prompt | `POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry` |
@@ -797,6 +813,10 @@ This page lists 710 route actions and 64 other events.
 | `session.question.create` | Submitted session question | `POST /v1/projects/:projectId/turn-question` |
 | `session.question.read` | Viewed open session question | `GET /v1/projects/:projectId/sessions/:sessionId/question` |
 | `session.read` | Viewed session | `GET /v1/projects/:projectId/sessions/:sessionId` |
+| `session.reminder.create` | Created session reminder | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.delete` | Deleted session reminder | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
+| `session.reminder.list` | Listed session reminders | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.update` | Turned session reminder on or off | `PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.restart` | Restarted session | `POST /v1/projects/:projectId/sessions/:sessionId/restart` |
 | `session.scope.read` | Viewed session scope | `GET /v1/projects/:projectId/sessions/:sessionId/scope` |
 | `session.scope.update` | Updated session scope | `PUT /v1/projects/:projectId/sessions/:sessionId/scope` |
@@ -874,11 +894,10 @@ This page lists 710 route actions and 64 other events.
 | Action | Title | Route |
 | --- | --- | --- |
 | `tunnel.agent.connect` | Connected computer tunnel agent | before the API router |
-| `tunnel.audit_log.list` | Viewed computer tunnel audit log | `GET /v1/tunnel/audit/:tunnelId` |
-| `tunnel.connection.create` | Registered computer tunnel | `POST /v1/tunnel/connections` |
 | `tunnel.connection.delete` | Deleted computer tunnel | `DELETE /v1/tunnel/connections/:tunnelId` |
 | `tunnel.connection.list` | Listed computer tunnels | `GET /v1/tunnel/connections` |
 | `tunnel.connection.read` | Viewed computer tunnel | `GET /v1/tunnel/connections/:tunnelId` |
+| `tunnel.connection.self_delete` | Computer unpaired itself | `DELETE /v1/tunnel/self` |
 | `tunnel.connection.token.rotate` | Rotated computer tunnel setup token | `POST /v1/tunnel/connections/:tunnelId/rotate-token` |
 | `tunnel.connection.update` | Updated computer tunnel | `PATCH /v1/tunnel/connections/:tunnelId` |
 | `tunnel.device_auth.approve` | Approved computer tunnel device authorization | `POST /v1/tunnel/device-auth/:code/approve` |
@@ -886,13 +905,6 @@ This page lists 710 route actions and 64 other events.
 | `tunnel.device_auth.create` | Requested computer tunnel device authorization | `POST /v1/tunnel/device-auth` |
 | `tunnel.device_auth.deny` | Denied computer tunnel device authorization | `POST /v1/tunnel/device-auth/:code/deny` |
 | `tunnel.device_auth.read` | Viewed computer tunnel device authorization | `GET /v1/tunnel/device-auth/:code/info` |
-| `tunnel.event.stream` | Streamed computer tunnel events | `GET /v1/tunnel/permission-requests/stream` |
-| `tunnel.permission.grant` | Granted computer tunnel permission | `POST /v1/tunnel/permissions/:tunnelId` |
-| `tunnel.permission.list` | Listed computer tunnel permissions | `GET /v1/tunnel/permissions/:tunnelId` |
-| `tunnel.permission.revoke` | Revoked computer tunnel permission | `DELETE /v1/tunnel/permissions/:tunnelId/:permissionId` |
-| `tunnel.permission_request.approve` | Approved computer tunnel permission request | `POST /v1/tunnel/permission-requests/:requestId/approve` |
-| `tunnel.permission_request.deny` | Denied computer tunnel permission request | `POST /v1/tunnel/permission-requests/:requestId/deny` |
-| `tunnel.permission_request.list` | Listed computer tunnel permission requests | `GET /v1/tunnel/permission-requests` |
 | `tunnel.rpc.send` | Sent operation to computer tunnel | `POST /v1/tunnel/rpc/:tunnelId` |
 
 ## `usage.`

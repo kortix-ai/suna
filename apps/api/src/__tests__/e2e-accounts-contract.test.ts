@@ -254,8 +254,14 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
 }
 
 // The read models project from THIS suite's member rows — see mockIamReadModels.
+// `roleReads` counts the projections: on `GET /v1/accounts` the only caller is
+// `accountRolesForUser`, so it is the number of role reads that request made.
+let roleReads = 0;
 mockIamReadModels({
-  members: () => memberRows.map((m) => ({ userId: m.userId, accountId: m.accountId, accountRole: m.accountRole })),
+  members: () => {
+    roleReads += 1;
+    return memberRows.map((m) => ({ userId: m.userId, accountId: m.accountId, accountRole: m.accountRole }));
+  },
 });
 
 // The ROLE half of membership is `assignRole` now, not a column on the row this
@@ -359,7 +365,6 @@ mock.module('../accounts/email', () => ({
 mock.module('../shared/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
-  consumeProjectSessionCreateBudget: () => ({ allowed: true, limit: 100, remaining: 99, resetMs: 1000 }),
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -735,6 +740,87 @@ describe('accounts API contract', () => {
     expect(inviteRows).toHaveLength(0);
   });
 
+  test('preserves invite create/list/resend and member role ordering with denied writes', async () => {
+    const app = createApp();
+    const inviteUrl = `http://localhost:3000/invites/${INVITE_ID}`;
+    const post = (path: string, body: object) => app.request(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const created = await post(`/v1/accounts/${ACCOUNT_ID}/members`, {
+      email: ' Pending@Example.Test ', role: 'admin',
+    });
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      status: 'pending', invite_id: INVITE_ID, email: 'pending@example.test',
+      account_role: 'admin', invite_url: inviteUrl,
+      email_sent: false, email_skip_reason: 'email_not_configured',
+    });
+    expect(sentInvites).toEqual([expect.objectContaining({
+      email: 'pending@example.test', accountName: 'Team Account',
+      inviterEmail: 'owner@example.test', inviteId: INVITE_ID, role: 'admin',
+    })]);
+
+    const listed = await app.request(`/v1/accounts/${ACCOUNT_ID}/invites`);
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual([expect.objectContaining({
+      invite_id: INVITE_ID, email: 'pending@example.test', initial_role: 'admin',
+      invited_by: OWNER_ID, invite_url: inviteUrl,
+    })]);
+
+    inviteRows[0]!.expiresAt = pastDate;
+    const resent = await app.request(`/v1/accounts/${ACCOUNT_ID}/invites/${INVITE_ID}/resend`, { method: 'POST' });
+    expect(resent.status).toBe(200);
+    expect(await resent.json()).toMatchObject({
+      ok: true, invite_url: inviteUrl, email_sent: false, email_skip_reason: 'email_not_configured',
+    });
+    expect(inviteRows[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(sentInvites).toHaveLength(2);
+
+    memberRows.push({ userId: MEMBER_ID, accountId: ACCOUNT_ID, accountRole: 'member', joinedAt: baseDate });
+    const rolePath = `/v1/accounts/${ACCOUNT_ID}/members/${MEMBER_ID}`;
+    const promoted = await app.request(rolePath, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'admin' }),
+    });
+    expect(promoted.status).toBe(200);
+    expect(await promoted.json()).toEqual({ user_id: MEMBER_ID, account_role: 'admin' });
+    expect(membership(MEMBER_ID, ACCOUNT_ID)?.accountRole).toBe('admin');
+
+    currentUserId = MEMBER_ID;
+    currentUserEmail = 'member@example.test';
+    const adminList = await app.request(`/v1/accounts/${ACCOUNT_ID}/invites`);
+    expect(adminList.status).toBe(200);
+    expect(await adminList.json()).toHaveLength(1);
+    const demoted = await app.request(rolePath, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'member' }),
+    });
+    expect(demoted.status).toBe(200);
+    expect(await demoted.json()).toEqual({ user_id: MEMBER_ID, account_role: 'member' });
+
+    const hidden = await app.request(`/v1/accounts/${ACCOUNT_ID}/invites`);
+    expect(hidden.status).toBe(200);
+    expect(await hidden.json()).toEqual([]);
+    const deniedCreate = await post(`/v1/accounts/${ACCOUNT_ID}/members`, { email: 'other@example.test' });
+    expect(deniedCreate.status).toBe(403);
+    const deniedResend = await app.request(`/v1/accounts/${ACCOUNT_ID}/invites/${INVITE_ID}/resend`, { method: 'POST' });
+    expect(deniedResend.status).toBe(403);
+    const deniedRole = await app.request(rolePath, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'admin' }),
+    });
+    expect(deniedRole.status).toBe(403);
+    expect(membership(MEMBER_ID, ACCOUNT_ID)?.accountRole).toBe('member');
+    expect(inviteRows).toHaveLength(1);
+    expect(sentInvites).toHaveLength(2);
+
+    currentUserId = OUTSIDER_ID;
+    currentUserEmail = 'outsider@example.test';
+    const outsiderList = await app.request(`/v1/accounts/${ACCOUNT_ID}/invites`);
+    expect(outsiderList.status).toBe(403);
+    expect(await outsiderList.json()).toEqual({ error: 'Forbidden' });
+  });
+
   test('enforces member removal, demotion, and leave invariants', async () => {
     const app = createApp();
     const removeLastOwner = await app.request(`/v1/accounts/${ACCOUNT_ID}/members/${OWNER_ID}`, { method: 'DELETE' });
@@ -991,6 +1077,16 @@ describe('accounts API contract', () => {
     expect(accountRows).toHaveLength(accountCountBefore);
     expect(memberRows.filter((m) => m.userId === OWNER_ID)).toHaveLength(2);
     expect(accountRows.some((a) => a.accountId === OWNER_ID)).toBe(false);
+  });
+
+  // The pre-claim read only decides the bootstrap, so it reads no roles. The
+  // list used to read memberships AND roles twice on every call.
+  test('GET /v1/accounts reads the caller roles once per call', async () => {
+    roleReads = 0;
+    const res = await createApp().request('/v1/accounts');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveLength(2);
+    expect(roleReads).toBe(1);
   });
 
   // GET /v1/accounts/me (tokens.ts) had the identical claim-before-check

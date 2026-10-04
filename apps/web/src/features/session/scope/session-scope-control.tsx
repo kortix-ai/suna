@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwise } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -12,6 +13,8 @@ export interface SessionScopeEditorProps {
   draft: SessionScopeDraft;
   catalog: SessionScopeSelectionCatalog;
   disabled?: boolean;
+  /** The catalog has not answered yet; nothing is known to be unavailable. */
+  loading?: boolean;
   onChange: (draft: SessionScopeDraft) => void;
 }
 
@@ -118,9 +121,18 @@ export function SessionSecretsEditor({
   draft,
   catalog,
   disabled = false,
+  loading = false,
   onChange,
 }: SessionScopeEditorProps) {
   const t = useTranslations('sessionScope');
+  if (loading) {
+    return (
+      <div role="status" className="text-muted-foreground flex min-h-10 items-center gap-2 text-xs">
+        <Loading variant="spokes" className="size-3.5 shrink-0" />
+        {t('secrets.loading')}
+      </div>
+    );
+  }
   if (catalog.secrets.status === 'unavailable') {
     return (
       <InfoBanner tone="neutral" title={t('secrets.unavailableTitle')}>

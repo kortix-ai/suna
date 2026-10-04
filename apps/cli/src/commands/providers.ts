@@ -1,5 +1,3 @@
-import { createInterface } from 'node:readline';
-
 import { CATALOG, isProviderAuthSatisfied, primaryAuthEnvVars } from '@kortix/llm-catalog';
 import { formatRelative } from '@kortix/shared';
 
@@ -14,13 +12,14 @@ import { openInBrowser } from '../browser.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
-  missing,
 } from '../command-helpers.ts';
+import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
@@ -28,8 +27,8 @@ const HELP = help`Usage: kortix providers <subcommand> [options]
 Configure LLM providers for the linked Kortix project. Two paths:
 
   • OAuth (zero config) — uses the upstream provider's device-code flow
-    (ChatGPT Pro/Plus, GitHub Copilot). Tokens land encrypted on the
-    project, get refreshed on each sandbox boot.
+    (ChatGPT Pro/Plus, an OpenCode Console account for OpenCode Zen or Go).
+    Tokens land encrypted on the project; Kortix refreshes them.
 
   • API key — stored as an encrypted project secret. Injected into
     sessions at boot, picked up by opencode's provider lookup.
@@ -39,7 +38,9 @@ Subcommands:
                                     API-key secrets that map to known
                                     providers).
   login <provider>                  Run the OAuth device-code flow.
-                                    Providers: openai, github-copilot.
+                                    Providers: openai, opencode (Zen),
+                                    opencode-go. Zen and Go each need
+                                    their own login.
   set <provider> [<key>]            Save an API key as a project secret.
                                     Provider → env-var mapping below.
                                     With no <key>, reads from stdin.
@@ -56,6 +57,8 @@ Known API-key providers (provider → project secret(s)):
   xai             → XAI_API_KEY
   deepseek        → DEEPSEEK_API_KEY
   mistral         → MISTRAL_API_KEY
+  opencode        → OPENCODE_API_KEY (OpenCode Zen)
+  opencode-go     → OPENCODE_GO_API_KEY (OpenCode Go)
   bedrock         → AWS_BEARER_TOKEN_BEDROCK + AWS_REGION (--region)
 
 Global options:
@@ -68,7 +71,7 @@ Global options:
 
 const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 
-Start the OAuth device-code flow for openai or github-copilot.
+Start the OAuth device-code flow for openai, opencode, or opencode-go.
 
 Options:
   --enterprise <url>  GitHub Enterprise URL for github-copilot.
@@ -97,6 +100,8 @@ export const PROVIDER_CATALOG_ID: Record<string, string> = {
   xai: 'xai',
   deepseek: 'deepseek',
   mistral: 'mistral',
+  opencode: 'opencode',
+  'opencode-go': 'opencode-go',
   bedrock: 'amazon-bedrock',
 };
 
@@ -118,7 +123,7 @@ export function isProviderConnected(envVars: string[], secretNames: Set<string>)
 }
 
 // Providers that support the OAuth device-code flow.
-const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot']);
+const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot', 'opencode', 'opencode-go']);
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -213,8 +218,10 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   const keyRows: Array<{ provider: string; env: string }> = [];
+  // An OpenCode login is stored as the provider's key secret; list it once, as OAuth.
+  const oauthIds = new Set(oauthList.items.map((c) => c.provider_id));
   for (const [provider, envVars] of Object.entries(PROVIDER_ENV_VARS)) {
-    if (isProviderConnected(envVars, setSecretNames)) {
+    if (!oauthIds.has(provider) && isProviderConnected(envVars, setSecretNames)) {
       keyRows.push({ provider, env: envVars.join(' + ') });
     }
   }
@@ -235,7 +242,8 @@ async function providersLogin(
   enterpriseUrl: string | undefined,
   opts: CtxOpts,
 ): Promise<number> {
-  if (!provider) return fail('Pass a provider: kortix providers login <openai|github-copilot>');
+  if (!provider)
+    return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
   if (!OAUTH_PROVIDERS.has(provider)) {
     process.stderr.write(
       `${status.err(`OAuth not supported for "${provider}".`)}\n` +
@@ -288,7 +296,7 @@ async function providersLogin(
       const exp = resp.credential.expires_in_ms;
       if (exp !== null) {
         process.stdout.write(
-          `  ${C.dim}Token refresh in ${formatDuration(exp)} (handled by Kortix on next sandbox boot).${C.reset}\n\n`,
+          `  ${C.dim}Token expires in ${formatDuration(exp)}; Kortix refreshes it before then.${C.reset}\n\n`,
         );
       } else {
         process.stdout.write('\n');
@@ -451,41 +459,4 @@ function formatDuration(ms: number): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-
-/** Read a plain (non-secret) value with normal echoed input — e.g. a region,
- *  which isn't sensitive and is easier to verify visibly. */
-async function readVisible(label: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-/** Read a secret with input echo suppressed when possible. Falls back to
- *  normal readline (echoed) if stdin is not a TTY. */
-async function readSecret(label: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const wasMuted = rl as unknown as { _writeToOutput?: unknown };
-  if (process.stdin.isTTY) {
-    // Mute echo by replacing the readline output writer.
-    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-      if (s.includes(label)) process.stdout.write(s);
-      else process.stdout.write('');
-    };
-  }
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      // Restore writer so subsequent stdout works normally.
-      if (wasMuted) {
-        (rl as unknown as { _writeToOutput?: unknown })._writeToOutput = wasMuted;
-      }
-      rl.close();
-      process.stdout.write('\n');
-      resolve(answer);
-    });
-  });
 }

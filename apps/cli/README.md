@@ -7,8 +7,8 @@ kortix init my-project
 ```
 
 Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
-project floor at the repo root (`kortix.yaml`, `README.md`,
-`.kortix/opencode/`, `.kortix/memory/MEMORY.md`), stages every file, and
+project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
+`skills/`, `memory/MEMORY.md`, `harnesses/opencode/`), stages every file, and
 makes an initial commit.
 
 ## Usage
@@ -29,6 +29,18 @@ Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
 
+## Use Kortix from an MCP client
+
+Claude, ChatGPT, Cursor, VS Code and Codex reach the same projects and sessions
+as this CLI through one hosted MCP server. Nothing to install:
+
+```sh
+claude mcp add --transport http kortix https://api.kortix.com/v1/mcp
+```
+
+Setup for each client, sign-in and revocation (`kortix tokens apps ls|rm`):
+<https://kortix.com/docs/connect/mcp>.
+
 ## What gets written
 
 ```
@@ -36,22 +48,34 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← v2 OpenCode manifest
-└── .kortix/
-    ├── memory/MEMORY.md               ← project-wide memory for agents
-    └── opencode/                      ← OpenCode native config dir
-        ├── opencode.jsonc             ← runtime config (providers, plugins, MCP servers, …)
-        ├── agents/{kortix,harness-reflector}.md
-        └── skills/kortix-cli/SKILL.md (+ the artifact skill floor)
+├── kortix.yaml                        ← v2 manifest; `agents.<name>.file` names each agent's .md
+├── agents/{kortix,harness-reflector,session-reviewer}.md
+├── skills/kortix-cli/SKILL.md         ← (+ the artifact skill floor), every harness loads them
+├── memory/MEMORY.md                   ← project-wide memory for agents
+└── harnesses/opencode/                ← files only OpenCode reads (`opencode.config_dir`)
+    ├── opencode.jsonc                 ← runtime config (providers, plugins, MCP servers, …)
+    ├── plugins/
+    └── tools/
 ```
 
-The local coding tools you wire up (`--primary`/`--agents`, default Codex)
-receive native discovery links to the canonical `.kortix/opencode` source.
-OpenCode uses `.opencode`. Claude Code uses `.claude/skills`,
-`.claude/agents`, and `.claude/commands`. Codex uses `.agents`. Pi uses
-`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+Projects created before 2026-09 keep agents and skills under
+`.kortix/opencode/` and memory under `.kortix/memory/`. Every command reads
+both layouts.
 
-The public starter uses `kortix_version: 2`. Cloud sessions run OpenCode REST.
+A pi session reads `agents/`, `skills/` and `memory/` too. Its own files go in
+`harnesses/pi/` (`pi.config_dir`): `settings.json`, `extensions/`, `prompts/`,
+`skills/`. The starter does not create that directory.
+
+The local coding tools you wire up (`--primary`/`--agents`, default Codex)
+receive native discovery links to the canonical sources: `skills/`,
+`agents/`, and `harnesses/opencode/`. OpenCode uses `.opencode`. Claude Code
+uses `.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
+`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+
+The public starter uses `kortix_version: 2`. A cloud session runs one of two
+harnesses: OpenCode (the default) or pi (`runtime: pi` in `kortix.yaml`, or the
+`pi_harness` project flag; pi needs the LLM gateway). The CLI talks to the same
+Kortix routes on both.
 
 Create a project with:
 
@@ -59,7 +83,7 @@ Create a project with:
 kortix init my-project --yes --no-git
 ```
 
-Agents can retrieve the deployed platform manual from OpenCode:
+Agents can retrieve the deployed platform manual from inside a session, on either harness:
 
 ```sh
 kortix system-skills

@@ -175,6 +175,7 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] 
       'project.gateway.keys.manage',
     ],
   },
+  { group: 'Usage', actions: ['project.usage.read'] },
   {
     group: 'Configuration',
     actions: [
@@ -186,8 +187,10 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] 
       'project.command.write',
       'project.file.read',
       'project.file.write',
-      'project.customize.read',
-      'project.customize.write',
+      'project.settings.write',
+      'project.sandbox.write',
+      'project.model.read',
+      'project.model.write',
     ],
   },
   // `project.cr.open` / `project.cr.merge` are deliberately NOT offered here.

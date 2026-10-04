@@ -1,3 +1,4 @@
+import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -129,11 +130,10 @@ describe('ToolPartRenderer forwards the open props to every branch', () => {
  * prompt, an ask — puts its own question on screen. Drop it and the prompt is
  * behind a shut row the reader has no reason to click, so the run just stalls.
  * Nine body-bearing renderers were dropping it when this half of the rule went
- * in: `context-info`, `dcp-compress`, `dcp-distill`, `dcp-prune`,
- * `project-create`, `project-select`, `session-message`, `session-stats`,
- * `task-list`. Two of those (`session-message`, `task-list`) hardcode
- * `defaultOpen={false}` — which is exactly the shape where the latch is the
- * only way the row ever opens by itself.
+ * in, among them `project-create`, `project-select`, `session-message`,
+ * `session-stats`, `task-list`. Two of those (`session-message`, `task-list`)
+ * hardcode `defaultOpen={false}` — which is exactly the shape where the latch
+ * is the only way the row ever opens by itself.
  */
 describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => {
   const toolDir = join(__dirname, 'tools');
@@ -195,5 +195,31 @@ describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => 
 
   test('no body-bearing call site drops forceOpen', () => {
     expect(gapsFor('forceOpen')).toEqual([]);
+  });
+});
+
+describe('a command saved before tool calls were kept 1:1', () => {
+  // The old mirror kept a call's status, title, time and metadata, and lost
+  // its input and output. OpenCode titles a command with the command and keeps
+  // its output in `metadata.output`, so the API serves the row with both
+  // restored (`restoreStrippedToolParts`). This is that served shape.
+  test('draws its command and its output through the bash renderer', () => {
+    const served = {
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call-restored',
+      state: {
+        status: 'completed',
+        title: 'ls -la dist',
+        time: { start: 1, end: 2 },
+        metadata: { output: 'bundle.min.js', exit: 0, truncated: false },
+        input: { command: 'ls -la dist' },
+        output: 'bundle.min.js',
+      },
+    } as unknown as ToolPart;
+    const html = renderPanel(served, { defaultOpen: true });
+    expect(html).toContain('-la');
+    expect(html).toContain('dist');
+    expect(html).toContain('bundle.min.js');
   });
 });

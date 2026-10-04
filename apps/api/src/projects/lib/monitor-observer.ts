@@ -24,7 +24,8 @@ import {
   renderMonitorLifecyclePrompt,
 } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
-import { fireGitTrigger, triggersPausedForProject } from './triggers';
+import { fireGitTrigger } from './trigger-fire';
+import { triggersPausedForProject } from './trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
  *  execution queue's ceiling so both queues fail the same way. */

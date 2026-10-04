@@ -4,41 +4,41 @@ name: Tests
 # runners. Each lane is the unchanged root command `pnpm test -- <args>`.
 #
 # It runs when ANY of these holds:
-#   1. a push to `main`                    — post-merge trunk signal
-#   2. a `workflow_dispatch`               — manual
-#   3. a pull request into `staging`       — the release candidate, always
-#   4. a pull request carrying `test` or `preview`
+#   1. a daily `schedule` on `main`        — safety-net trunk signal
+#   2. a pull request into `staging`       — the release candidate
+#   3. someone adds the `test` label       — one explicit run on that PR
+#   4. a `workflow_dispatch`               — manual
 #
-# A plain pull request into `main` does not run it. The old per-pull-request
-# gate cost ~11 min median and 68 min worst case, and it gated nothing: neither
-# `main` nor `staging` has a required status check, so a red suite never
-# blocked a merge. `main` is the dev trunk.
+# Nothing else runs it. A pull request into `main` runs no lane unless a person
+# adds `test`; that runs the suite ONCE, at the head SHA of that moment. A later
+# push does not re-run it: re-add the label. The developer's box is the
+# pre-merge gate (`pnpm test`). No run blocks a merge into `main`.
 #
-# `trunk-report` comments on the offending commit when a push to `main` is red.
+# A push to `main` does NOT run it (since 2026-10-03: Actions minutes). The
+# per-merge gate is the local attestation plus the pre-push hook. The schedule
+# only catches drift the attestation missed.
+#
+# `trunk-report` comments on the HEAD commit when a scheduled run is red.
 # A superseded (cancelled) run reports nothing. A green run runs no extra job.
-# Any label change on a labelled pull request restarts its in-flight suite:
-# `types` cannot filter by label name.
 
 on:
   pull_request:
     branches: [main, staging]
-    # `labeled` / `unlabeled` make the opt-in work: adding `test` to an open
-    # pull request re-triggers this workflow with no push.
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
-  push:
-    # No `paths-ignore`: the suite parses markdown (`tests/spec/end-to-end.md`
-    # feeds route coverage), so a docs-only push can break it.
-    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
+  schedule:
+    # Off the top of the hour: GitHub drops congested top-of-hour crons.
+    - cron: '41 5 * * *' # 05:41 UTC daily, runs on main HEAD
   workflow_dispatch:
 
 # A pull request cancels its superseded run: only its newest commit matters.
-# A push to `main` QUEUES instead. Merges land faster than the ~9 min suite, so
-# cancelling left busy afternoons with no trunk result at all (2026-09-26: 7 of
-# the last 8 push runs cancelled). Queued, the running commit finishes and the
-# newest waiting commit runs next, so every burst ends with a verdict.
+# A scheduled or manual run on `main` QUEUES instead, so it always ends with a
+# verdict.
+#
+# A labelled run has its own group: a later push (whose lanes skip) must not
+# cancel the run a person asked for. Only re-adding the label supersedes it.
 concurrency:
-  group: tests-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -46,13 +46,12 @@ permissions:
 jobs:
   lane:
     name: ${{ matrix.lane }} lane
-    # `contains(<array>, 'test')` compares whole elements, so a label named
-    # `no-tests-needed` or `latest` can never match `test`.
+    # A release pull request runs on every update except a label change. Into
+    # `main`, only the act of adding `test` runs it.
     if: >-
       github.event_name != 'pull_request'
-      || github.base_ref == 'staging'
-      || contains(github.event.pull_request.labels.*.name, 'test')
-      || contains(github.event.pull_request.labels.*.name, 'preview')
+      || (github.base_ref == 'staging' && github.event.action != 'labeled')
+      || (github.event.action == 'labeled' && github.event.label.name == 'test')
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
     # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
@@ -112,13 +111,14 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Restore Chromium
-        if: matrix.mode == 'browser'
+        # The core and packages lanes also run apps/web's layout test that launches Chromium.
+        if: matrix.mode == 'browser' || matrix.mode == 'packages' || matrix.mode == 'core'
         uses: actions/cache@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
-        if: matrix.mode == 'browser'
+        if: matrix.mode == 'browser' || matrix.mode == 'packages' || matrix.mode == 'core'
         run: pnpm --dir tests exec playwright install --with-deps chromium
       - name: Free the local Supabase ports
         # Blacksmith runners are reused, and a job that ended without stopping
@@ -236,9 +236,9 @@ jobs:
     needs: lane
     # A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
     # so `failure()` would miss it. `cancelled()` is true only when the whole
-    # run is cancelled: a manual cancel, or a pending push run that a newer
-    # push replaced before it started.
-    if: github.event_name == 'push' && !cancelled() && needs.lane.result != 'success'
+    # run is cancelled: a manual cancel, or a queued run that a newer
+    # one replaced before it started.
+    if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     permissions:
@@ -259,6 +259,17 @@ jobs:
           failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
             --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name] | join(", ")' || true)"
 
+          # Merges land faster than the suite and queued runs supersede each
+          # other, so the red commit is often not the culprit. Name every
+          # commit since the last green scheduled run: those are the suspects.
+          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=main&event=schedule&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty' || true)"
+          suspects=""
+          if [ -n "$green" ]; then
+            suspects="$(gh api "repos/$REPO/compare/${green}...${SHA}" \
+              --jq '.commits[] | "- `\(.sha[0:10])` \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' || true)"
+          fi
+
           {
             echo "## \`main\` @ \`${SHA:0:8}\`: failure"
             echo
@@ -278,7 +289,16 @@ jobs:
             echo
             echo "Run: $RUN_URL"
             echo
-            echo "This is the post-merge trunk suite (\`tests.yml\`). It did not"
+            if [ -n "$suspects" ]; then
+              echo "Commits since the last green run (\`${green:0:10}\`), newest last:"
+              echo
+              echo "$suspects"
+              echo
+            fi
+            echo "The author whose commit broke it fixes forward. If \`main\` is still"
+            echo "red 1 hour after this comment, anyone may revert the culprit PR."
+            echo
+            echo "This is the scheduled trunk suite (\`tests.yml\`). It did not"
             echo "block the merge — \`main\` is the dev trunk. Reproduce locally with"
             echo "\`pnpm test -- --full\`, or one lane at a time:"
             echo

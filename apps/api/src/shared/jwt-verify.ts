@@ -8,6 +8,9 @@
  * any transient blip to 127.0.0.1:54321 → intermittent 401 on valid tokens.
  * Local verification is also ~10x faster.
  *
+ * Liveness: signature checks cannot see revocation, so both algorithms confirm
+ * the session with GoTrue through `jwt-liveness.ts` (cached per TTL).
+ *
  * Fallback: if JWKS fetch fails (Supabase not up yet) or key is unknown, we
  * fall back to the network call so nothing breaks during cold starts.
  */
@@ -38,6 +41,11 @@ interface JwksResponse {
 const keyCache = new Map<string, CryptoKey>();
 let jwksFetchedAt = 0;
 const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour
+// `kid` is unauthenticated input: one refetch per minute at most, or every
+// forged kid costs a JWKS request. A token signed by a key rotated in inside
+// that minute falls back to the network check (`no-key-for-kid` is inconclusive).
+const UNKNOWN_KID_REFETCH_MS = 60 * 1000;
+let unknownKidRefetchAt = 0;
 
 async function loadJwks(): Promise<void> {
   const supabaseUrl = config.SUPABASE_URL;
@@ -187,8 +195,9 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
   let key: CryptoKey | undefined;
   if (header.kid) {
     key = keyCache.get(header.kid);
-    if (!key) {
+    if (!key && Date.now() - unknownKidRefetchAt >= UNKNOWN_KID_REFETCH_MS) {
       // Unknown kid — JWKS may have rotated, try refreshing once
+      unknownKidRefetchAt = Date.now();
       await loadJwks();
       key = keyCache.get(header.kid);
     }
@@ -237,10 +246,30 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
     return { ok: false, reason: 'no-sub' };
   }
 
+  // Signature and expiry say nothing about revocation. Ask GoTrue (through the
+  // short-TTL cache) whether the session behind this token is still live, as
+  // the HS256 path does: logout, a ban or a deleted user must end an ES256
+  // token at once, not at `exp`.
+  return confirmLive(token, payload, payload.email || (payload.user_metadata?.email as string) || '');
+}
+
+/**
+ * Final step shared by the symmetric and asymmetric paths. A GoTrue failure is
+ * INCONCLUSIVE (`liveness-unavailable`): the caller then asks GoTrue itself and
+ * fails closed. Only GoTrue's own verdict (`session-not-live`) is definitive.
+ */
+async function confirmLive(token: string, payload: JwtPayload, fallbackEmail: string): Promise<VerifyResult | VerifyFailure> {
+  let live: Awaited<ReturnType<typeof confirmJwtLive>>;
+  try {
+    live = await confirmJwtLive(token, payload.exp);
+  } catch {
+    return { ok: false, reason: 'liveness-unavailable' };
+  }
+  if (!live || live.id !== payload.sub) return { ok: false, reason: 'session-not-live' };
   return {
     ok: true,
-    userId: payload.sub,
-    email: payload.email || payload.user_metadata?.email as string || '',
+    userId: payload.sub as string,
+    email: payload.email || live.email || fallbackEmail,
     payload,
   };
 }
@@ -316,20 +345,7 @@ async function verifyHs256(token: string): Promise<VerifyResult | VerifyFailure>
   if (payload.exp && Date.now() / 1000 > payload.exp) return { ok: false, reason: 'expired' };
   if (!payload.sub) return { ok: false, reason: 'no-sub' };
 
-  let live: Awaited<ReturnType<typeof confirmJwtLive>>;
-  try {
-    live = await confirmJwtLive(token, payload.exp);
-  } catch {
-    return { ok: false, reason: 'liveness-unavailable' };
-  }
-  if (!live || live.id !== payload.sub) return { ok: false, reason: 'session-not-live' };
-
-  return {
-    ok: true,
-    userId: payload.sub,
-    email: payload.email || live.email || (payload.user_metadata?.email as string) || '',
-    payload,
-  };
+  return confirmLive(token, payload, (payload.user_metadata?.email as string) || '');
 }
 
 // ── Eager JWKS load on import ─────────────────────────────────────────────────

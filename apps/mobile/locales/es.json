@@ -1182,5 +1182,11 @@
     "includes": "Incluye",
     "askOwner": "Pide un puesto a un propietario de la cuenta",
     "notNow": "Ahora no"
+  },
+  "sessions": {
+    "showMoreSubsessions_one": "Mostrar {{count}} más",
+    "showMoreSubsessions_other": "Mostrar {{count}} más",
+    "showMoreSubsessionsLabel_one": "Mostrar {{count}} subsesión más de {{title}}",
+    "showMoreSubsessionsLabel_other": "Mostrar {{count}} subsesiones más de {{title}}"
   }
 }

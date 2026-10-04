@@ -96,8 +96,6 @@ export async function getSubscriptionInfo(accountId: string) {
       seatCount: creditAccounts.seatCount,
       seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
-      // Operator-set per-account concurrent-session override (NULL = use tier).
-      maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
       // The JSONB override map. Selected because callers feed this row
       // straight to `resolveBillingFromRow` (account-state.ts:96); omitting it
       // would make an override silently vanish on that path while applying

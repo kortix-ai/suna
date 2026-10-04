@@ -58,7 +58,7 @@ describe('managed catalog', () => {
       };
       expect(route).toMatchObject({ allow_fallbacks: true, zdr: true, data_collection: 'deny' });
       expect(route.only.length, model.id).toBeGreaterThanOrEqual(1);
-      for (const tag of route.only) expect(VERIFIED_US_MANAGED_ENDPOINTS, `${model.id} ${tag}`).toContain(tag);
+      for (const tag of route.only) expect(VERIFIED_US_MANAGED_ENDPOINTS as readonly string[], `${model.id} ${tag}`).toContain(tag);
       expect(route.only, model.id).not.toContain('morph');
       expect(new Set(route.only).size, model.id).toBe(route.only.length);
       expect(route.max_price.prompt).toBeGreaterThanOrEqual(model.pricing!.inputPerMillion);
@@ -112,6 +112,44 @@ describe('managed catalog', () => {
     }
     expect(getManagedModel('deepseek-v4.1-flash')?.name).toBe('DeepSeek V4.1 Flash');
   });
+});
+
+// Prod 2026-09-30: a long GLM session hit `context_length_exceeded` on every
+// turn. `limit.context` equalled the endpoint window, so OpenCode's compaction
+// point was the rejection point and the step that crossed it was refused.
+//
+// The smallest window each route that serves the model accepted, probed on
+// 2026-09-30 with synthetic prompts at the edge (README, "Context windows").
+// A new managed model needs a measured entry before it ships.
+const MEASURED_CONTEXT_WINDOW: Record<string, number> = {
+  // Zen, prompt only. OpenRouter Decart and CoreWeave: prompt + max_tokens <= 1,048,576.
+  'glm-5.3-flash': 1_048_573,
+  // Morph and OpenRouter CoreWeave: prompt + max_tokens <= 1,048,576.
+  'deepseek-v4.1-flash': 1_048_576,
+  // OpenRouter Fireworks, prompt only. Morph answered 429 to every probe.
+  'kimi-k3': 1_048_575,
+};
+
+// OpenCode 1.18.23 (session/overflow.ts) compacts after a step that used
+// `limit.context - maxTokens` tokens, and sends `max_tokens = maxTokens`
+// (capped at OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = 65,536 in the sandbox). A route
+// that checks prompt + max_tokens rejects any prompt above `window - maxTokens`.
+// The difference is what one more step may add: a new message plus tool results
+// (OpenCode truncates each tool result at 50 KB, about 12,000 tokens).
+const MIN_STEP_HEADROOM = 32_768;
+
+describe('managed context windows', () => {
+  test.each(MANAGED_MODELS.map((model) => [model.id, model] as const))(
+    '%s compacts before a serving route rejects the next request',
+    (id, model) => {
+      const window = MEASURED_CONTEXT_WINDOW[id];
+      expect(window, `probe every route of ${id} and record its window`).toBeGreaterThan(0);
+      const maxTokens = Math.min(model.limit.output, 65_536);
+      const compactsAt = model.limit.context - maxTokens;
+      const largestAcceptedPrompt = window! - maxTokens;
+      expect(largestAcceptedPrompt - compactsAt).toBeGreaterThanOrEqual(MIN_STEP_HEADROOM);
+    },
+  );
 });
 
 // Product rule: Kortix-managed models are open-weight models only. OpenAI and

@@ -20,17 +20,17 @@
  * the right one: "why would someone convert a docx to markdown with this
  * powerful tool?" A prompt has to name a REASON, not a capability.
  *
- * Worse, that rule excluded the things that make this an AI Management System
+ * Worse, that rule excluded the things that make this an AI Operating System
  * rather than a chat box. The most valuable prompts here operate on Kortix's
  * OWN primitives — they are the first group below, and they are first on
  * purpose:
  *
- *   - **agents** live in `.kortix/opencode/agents/<name>.md` with a governance
- *     entry in `kortix.yaml`;
- *   - **skills** live in `.kortix/opencode/skills/` and are served live by
+ *   - **agents** live in `agents/<name>.md` with a governance entry in
+ *     `kortix.yaml`;
+ *   - **skills** live in `skills/` and are served live by
  *     `kortix skills get`;
  *   - **triggers** are cron and signed-webhook entries in `kortix.yaml`;
- *   - **memory** is `.kortix/memory/`;
+ *   - **memory** is `memory/`;
  *   - work lands through a **change request**, never a direct merge.
  *
  * None of that is aspirational. The shipped `base` template already carries a
@@ -52,10 +52,6 @@
  *
  * Labels are verb-first and sentence case, capped at 32 characters so the row
  * never truncates — `starter-prompts.test.ts` enforces both the cap and rule 2.
- *
- * Worth knowing: the onboarding wizard does NOT read this list. It carries its
- * own `STARTER_PROMPTS` in `components/projects/onboarding/onboarding-profile.ts`,
- * keyed by use case. Same name, different module, no relationship.
  */
 
 import {
@@ -103,6 +99,7 @@ import {
   GraduationCapIcon,
   HandshakeIcon,
   HighlighterIcon,
+  type Icon,
   IdentificationCardIcon,
   KanbanIcon,
   LifebuoyIcon,
@@ -146,7 +143,6 @@ import {
   WalletIcon,
   WarningIcon,
   WrenchIcon,
-  type Icon,
 } from '@phosphor-icons/react';
 
 export interface StarterPrompt {
@@ -191,9 +187,9 @@ const GUESS =
  * being the right tool.
  *
  * Everything here operates on a Kortix primitive that exists in the shipped
- * `base` template: agents in `.kortix/opencode/agents/`, skills in
- * `.kortix/opencode/skills/`, cron and webhook triggers in `kortix.yaml`,
- * memory in `.kortix/memory/`, and work landing through `kortix cr`.
+ * `base` template: agents in `agents/`, skills in `skills/`, cron and webhook
+ * triggers in `kortix.yaml`, memory in `memory/`, and work landing through
+ * `kortix cr`.
  */
 export const WORKFORCE_STARTER_PROMPTS: StarterPrompt[] = [
   // ── Build the workforce ───────────────────────────────────────────────
@@ -205,7 +201,7 @@ export const WORKFORCE_STARTER_PROMPTS: StarterPrompt[] = [
     icon: RobotIcon,
     label: 'Create an agent',
     prompt:
-      'Create a specialist agent for a job my company does often. Write its prompt into `.kortix/opencode/agents/`, give it only the grants it actually needs in `kortix.yaml`, and open a change request so I can read it before it goes live. Pick the job that would save me the most time and tell me why you picked it.',
+      'Create a specialist agent for a job my company does often. Write its prompt into `agents/`, give it only the grants it actually needs in `kortix.yaml`, and open a change request so I can read it before it goes live. Pick the job that would save me the most time and tell me why you picked it.',
   },
   {
     id: 'agent-team',
@@ -219,7 +215,7 @@ export const WORKFORCE_STARTER_PROMPTS: StarterPrompt[] = [
     icon: SparkleIcon,
     label: 'Write a skill',
     prompt:
-      'Turn something my company does the same way every time into a skill under `.kortix/opencode/skills/`, so every future session already knows how. Pick the highest-value one, write it properly with the steps and the gotchas, and open a change request.',
+      'Turn something my company does the same way every time into a skill under `skills/`, so every future session already knows how. Pick the highest-value one, write it properly with the steps and the gotchas, and open a change request.',
   },
   {
     id: 'skill-from-runbook',
@@ -636,7 +632,7 @@ export const GENERAL_STARTER_PROMPTS: StarterPrompt[] = [
 
   // ── Research on the live web ─────────────────────────────────────────
   // The `agent-browser` skill plus the `web_search` / `scrape_webpage` tools in
-  // `.kortix/opencode/tools/`.
+  // `harnesses/opencode/tools/`.
   {
     id: 'competitor-teardown',
     icon: MagnifyingGlassIcon,
@@ -888,7 +884,7 @@ export const GENERAL_STARTER_PROMPTS: StarterPrompt[] = [
   },
   // ── Engineering, on the repo this session cloned ─────────────────────
   // The biggest gap in the first pass, and the least defensible one:
-  // developers are Kortix's primary audience (comms skill, §9) and the sandbox
+  // developers are Kortix's primary audience (kortix-brand `positioning.md`, section 5) and the sandbox
   // is a real Linux machine with the repo already checked out. Every row here
   // is work the agent does in `/workspace`, landing through a change request.
   {

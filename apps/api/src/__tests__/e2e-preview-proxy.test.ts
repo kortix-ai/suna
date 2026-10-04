@@ -204,6 +204,15 @@ mock.module('../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 
+// The turn-identity bind is one conditional UPDATE through `db.execute`, which
+// this file's `db` stub does not build. Its SQL is pinned by
+// integration-session-turn-identity.test.ts; here it only has to succeed.
+const realOnBehalfOf = await import('../projects/lib/on-behalf-of');
+mock.module('../projects/lib/on-behalf-of', () => ({
+  ...realOnBehalfOf,
+  bindSessionTurnIdentity: async () => true,
+}));
+
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
 // `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
@@ -736,14 +745,14 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
 
   // Both sides of one contract in two packages: the daemon's health payload
   // must publish the field the lookup reads.
-  test('the daemon health payload publishes opencode_port', async () => {
+  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
     const health = await Bun.file(
       new URL(
         '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
         import.meta.url,
       ).pathname,
     ).text();
-    expect(health).toContain('opencode_port:');
+    expect(health).toContain('port: opencode.getActivePort()');
   });
 });
 
@@ -921,6 +930,8 @@ describe('Preview proxy: forwarding', () => {
       },
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
+      runtimeEnv: {},
       opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
@@ -996,15 +1007,11 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // In-session agent switching is allowed, unconditionally — there is no flag
-  // and no refusal. A concrete agent is forwarded untouched whatever the
-  // session booted with; only the literal 'default' sentinel is stripped. A new
-  // session is stored with the sentinel, and the client echoes back the
-  // concrete name it resolved "the default" to (the reported "agent switch
-  // requires a new session" false positive).
+  // A concrete agent is forwarded when it matches the session's agent, when the
+  // session runs the legacy default sentinel, or — since KRTX-1290 — when the
+  // switch to it is authorized (the IAM gate above is held open here).
   test.each([
     ['the agent the session runs', 'reviewer', 'reviewer'],
-    ['a different concrete agent', 'reviewer', 'researcher'],
     ['a concrete agent in a default session', 'default', 'kortix'],
   ])('prompt_async naming %s is forwarded untouched', async (_label, sessionAgent, requested) => {
     mockDbSandbox = { ...mockDbSandbox, agentName: sessionAgent };
@@ -1026,6 +1033,30 @@ describe('Preview proxy: forwarding', () => {
     ]);
     expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
       agent: requested,
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+  });
+
+  test('forwards an authorized switch to a different concrete agent (KRTX-1290)', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+    expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
+      agent: 'researcher',
       parts: [{ type: 'text', text: 'hi' }],
     });
   });
@@ -1101,7 +1132,10 @@ describe('Preview proxy: forwarding', () => {
       {
         status: 0,
         body: '',
-        error: new Error('Unable to connect. Is the computer able to access the url?'),
+        // Bun's real shape for a refused connection: a TypeError with a code.
+        error: Object.assign(new TypeError('Unable to connect. Is the computer able to access the url?'), {
+          code: 'ConnectionRefused',
+        }),
       },
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
       { status: 204, body: '' },
@@ -1791,29 +1825,28 @@ describe('Preview proxy: SSE stall bypass', () => {
   });
 });
 
-// The daemon's /kortix/opencode/* namespace negotiates compression with the
-// client. `fetch` hands back DECODED bytes while keeping the upstream
-// `content-encoding` and compressed `content-length`; forwarding those with a
-// decoded body is a response no client can read.
+// The daemon's /kortix/runtime/* namespace negotiates compression with the
+// client. The proxy fetches upstream with `decompress: false`, so it holds the
+// raw compressed bytes: the daemon's `content-encoding` and `content-length`
+// must reach the client with them, or no client can read the body.
 describe('Preview proxy: upstream encoding on the daemon namespace', () => {
-  test('the client negotiation reaches the daemon, and the decoded body is relabelled', async () => {
+  test('the client negotiation reaches the daemon, and its encoded answer passes through labelled', async () => {
     mockFetchResponses = [
       {
         status: 200,
-        body: '{"state":"ok"}',
+        body: 'gzip-bytes!!',
         headers: { 'content-encoding': 'gzip', 'content-length': '12' },
       },
     ];
     const res = await createProxyTestApp().request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/opencode/state`,
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/runtime/messages/ses_root`,
       { headers: { Authorization: 'Bearer test', 'Accept-Encoding': 'gzip' } },
     );
 
     expect(mockFetchCalls[0]?.headers['accept-encoding']).toBe('gzip');
-    expect(res.headers.get('content-encoding')).toBeNull();
-    expect(res.headers.get('content-length')).toBeNull();
-    expect(res.headers.get('x-kortix-upstream-encoding')).toBe('gzip');
-    expect(res.headers.get('access-control-expose-headers')).toContain('x-kortix-upstream-encoding');
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    expect(res.headers.get('content-length')).toBe('12');
+    expect(res.headers.get('x-kortix-upstream-encoding')).toBeNull();
   });
 });
 

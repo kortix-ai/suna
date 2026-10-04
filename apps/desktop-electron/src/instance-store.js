@@ -42,6 +42,23 @@ function createInstanceStore({ dir, envUrl, defaultUrl }) {
   }
 
   /**
+   * What launch and Go ▸ Home load. Every preset and the build default name
+   * `/projects`, the list; the site root is where the web app sends a
+   * signed-in browser into the project it had open last. Any other saved path
+   * is the user's choice and stays.
+   */
+  function homeUrl() {
+    let url;
+    try {
+      url = new URL(appUrl());
+    } catch {
+      return appUrl(); // the load fails and did-fail-load offers the chooser
+    }
+    if (url.pathname === '/projects' || url.pathname === '/projects/') url.pathname = '/';
+    return url.toString();
+  }
+
+  /**
    * Mark a profile that no earlier launch used, so the chooser asks. Call
    * before anything writes into `dir`: Electron's single-instance lock writes
    * SingletonLock, and Chromium fills the profile on ready.
@@ -93,7 +110,7 @@ function createInstanceStore({ dir, envUrl, defaultUrl }) {
     }
   }
 
-  return { override, baseUrl, appUrl, markIfNewProfile, needsSetup, save };
+  return { override, baseUrl, appUrl, homeUrl, markIfNewProfile, needsSetup, save };
 }
 
 module.exports = { createInstanceStore, OVERRIDE_FILE, SETUP_PENDING_FILE };

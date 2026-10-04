@@ -4,7 +4,7 @@ A company is going to be a git repository.
 
 Not as a metaphor. Literally — something you can clone. Inside it: the company's agents, the skills it has built up, the way it actually does its work, every fact it has ever learned, and the definition of the machines all of that runs on. Versioned. Diffable. Owned outright. Running on its own around the clock, opening pull requests against itself, getting better at being your company while everyone's asleep.
 
-That's half the bet. The other half is that an AI-native company needs a single place to be run from. Call it the WordPress of AGI, call it a command center — one core platform where all the context lives, where the agents live, the skills, the triggers, the connectors, the memory, the whole continuous build-out of the company, in one spot, so a person can actually operate the thing instead of duct-taping forty tools together and praying.
+That's half the bet. The other half is that an AI-native company needs a single place to be run from. Call it the WordPress of AGI, call it an AI Operating System — one core platform where all the context lives, where the agents live, the skills, the triggers, the connectors, the memory, the whole continuous build-out of the company, in one spot, so a person can actually operate the thing instead of duct-taping forty tools together and praying.
 
 OpenAI, Anthropic, and a pile of others are going to build a version of this. Of course they are. The difference is what you get and what you keep. Here you run the best models, whichever ones those are this month, not whatever one vendor happens to sell. It's open. You can run it on your own infrastructure. You own all the data, you own the configuration, you own the stack down to the metal if you want it. Everyone else is building a place to rent your company back to you. We're building the one you own.
 
@@ -80,7 +80,7 @@ The thing runs without you. The main branch is always up. Triggers go off in the
 
 It's built to survive a security review, not slip past one. MicroVM isolation. Egress and credentials controlled at the network. A real account/user/group model where every agent, skill, file, secret, trigger, channel, and connector answers to who is allowed to touch it. Hard gates that make an agent stop and wait for a person before it does something that matters.
 
-And it's yours all the way down. Any model. Your own keys, or the ChatGPT, Claude, or Cursor subscription you already pay for. Our cloud, your servers, or fully on-prem. Everything is files, ready to walk out the door the day you want them to. The labs are paid to lock you in. We only make money if you'd stay anyway.
+And it's yours all the way down. Any model. Your own keys, or the ChatGPT subscription you already pay for. Our cloud, your servers, or fully on-prem. Everything is files, ready to walk out the door the day you want them to. The labs are paid to lock you in. We only make money if you'd stay anyway.
 
 ---
 

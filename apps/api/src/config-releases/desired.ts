@@ -45,6 +45,16 @@ export interface DesiredReleaseInput {
   /** Record the assignment. Only the daemon's own request records it. */
   recordAssignment?: boolean;
   /**
+   * Default true: drop the mirror's TTL so the base tip is fetched before it
+   * is resolved. Set false only from a caller that has JUST refreshed this
+   * project's mirror within the same request (`GET /config` compiles the
+   * latest etag first — its own invalidate already fetched the tip, and a
+   * second invalidation made every one of those reads pay a second sequential
+   * `git fetch`). The next request on that route invalidates again, so a push
+   * that landed after this one's fetch is caught one read later.
+   */
+  refreshProjectMirror?: boolean;
+  /**
    * May the session's OWNER run `agent`? Asked only when the manifest dropped
    * the session's agent and a declared default exists to move it to. Omitted ⇒
    * the answer is no, so a caller that cannot ask never widens anything.
@@ -72,6 +82,8 @@ export interface DesiredReleaseDeps {
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
+  /** Drop the mirror's freshness stamp. Injectable so tests count the call. */
+  invalidate: (projectId: string) => void;
 }
 
 const defaultDeps: DesiredReleaseDeps = {
@@ -79,6 +91,7 @@ const defaultDeps: DesiredReleaseDeps = {
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
   loadRoster: loadAgentRosterAtCommit,
+  invalidate: invalidateProjectMirror,
 };
 
 /**
@@ -100,8 +113,11 @@ export async function resolveDesiredRelease(
   input: DesiredReleaseInput,
   deps: DesiredReleaseDeps = defaultDeps,
 ): Promise<DesiredRelease> {
-  // A push the warm mirror has not fetched must not be missed.
-  invalidateProjectMirror(input.project.projectId);
+  // A push the warm mirror has not fetched must not be missed — unless the
+  // caller refreshed the mirror itself moments ago (`refreshProjectMirror`).
+  if (input.refreshProjectMirror !== false) {
+    deps.invalidate(input.project.projectId);
+  }
   let baseSha: string;
   try {
     baseSha = await deps.resolveBase(input.project, input.baseRef);

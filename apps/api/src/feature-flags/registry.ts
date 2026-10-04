@@ -68,6 +68,7 @@
  * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
+import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
@@ -115,24 +116,10 @@ export interface FeatureFlagDef {
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: paired machines are selectable accounts inside a
- * regular `computer` connector profile. A profile can contain one or more
- * machines and uses the normal connector grant, policy, call, and audit paths.
- * Pairing does not auto-create project access. This flag gates the dedicated
- * fleet surface (Customize → Computers, device auth, and tunnel permissions).
- * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration.
+ * Computers need no flag: a paired machine is an account on the project's
+ * `computer` connector. The platform-wide `TUNNEL_ENABLED` env is the only gate.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
-  {
-    key: 'session_transcript_history',
-    name: 'Session Transcript History',
-    description: 'Save chat history after each turn and show it from the database while the session computer starts.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-  },
   {
     key: 'marketplace',
     name: 'Marketplace',
@@ -145,29 +132,13 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'agent_tunnel',
-    name: 'Agent Computer Tunnel',
-    description:
-      'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
-    stability: 'experimental',
-    // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
-    // Explicit opt-in: off by default even where the service is available.
-    platformDefault: () => false,
-    enforcement: 'ui-only',
-    enforcementNote:
-      'Tunnel state is account-scoped (device auth, machines) and the computer ' +
-      'connector deliberately materializes independent of this flag — see the ' +
-      'registry header. The platform-wide TUNNEL_ENABLED env is the hard gate.',
-  },
-  {
     key: 'connectors_api_discover',
     name: 'Connectors API Discover',
     description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
-    stability: 'experimental',
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
+    stability: 'beta',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    // Direct discovery is an explicit opt-in, not the reliable managed default.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -179,23 +150,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
-    key: 'teams',
-    name: 'Microsoft Teams',
-    description:
-      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
-    stability: 'experimental',
-    // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
-    // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
-    // offered — `teamsMode().available` reports that separately, and a project
-    // can always bring its own bot app. Gating availability on the credentials
-    // would hide the bring-your-own flow on exactly the deployments that need
-    // it (self-host).
-    available: () => true,
-    // Explicit opt-in: a project turns Teams on in Settings.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -263,10 +217,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
+    enforcement: 'routes',
+  },
+  {
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, and it uses one of your concurrent-session slots until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
     // The surface is small and server-owned, but the cost tradeoff is real and
     // the presence model is new. `beta` says "we intend this on for everyone,
     // and we expect to tune the grant".
@@ -331,7 +298,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
@@ -344,11 +311,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'config_releases',
     name: 'Config Releases',
     description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
     stability: 'experimental',
-    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
-    // Settings row disappears and the surface is dark for every project.
-    available: () => config.CONFIG_RELEASES_ENABLED,
+    available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
     // "its off for now, as its untested"). The behaviour it gates is the
     // intended one; the default is a rollout decision, not a design opinion.
@@ -368,48 +333,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'row is written.',
   },
   {
-    key: 'agent_principal',
-    name: 'Agents as Principals',
+    key: 'us_region',
+    name: 'US Region',
     description:
-      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
+      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. The first session after a new sandbox image may wait while the image is copied to the region.",
     stability: 'experimental',
-    available: () => true,
-    // Default ON. An agent's authority is a property of the AGENT, not of
-    // whoever pressed start: the launcher-∩-grant model gave the same agent
-    // different power per person, let an owner-launched agent ignore its own
-    // grant entirely (super-admin short-circuit), and ran every unattended
-    // trigger as the account owner. Switching a project OFF restores that old
-    // model as an escape hatch for one release; the switch is then deleted.
-    platformDefault: () => true,
-    // Not listed in Settings → Feature flags. An agent acting as itself is how
-    // Kortix works, not a choice we offer, so presenting a switch would invite
-    // a project to turn the governance model off. Support can still put ONE
-    // project back with `PATCH /projects/:id/features {agent_principal:false}`
-    // while it migrates. Delete the flag — and this line — in the release after
-    // the one that shipped the default (spec §5).
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read by the authorization engine for every agent-session credential ' +
-      '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
-      'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
-      'the change-request merge governance guard.',
-  },
-  {
-    key: 'mcp',
-    name: 'MCP server',
-    description:
-      'Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls the Kortix API with your permissions. Settings shows the URL under Connect MCP in the workspace menu.',
-    stability: 'experimental',
-    available: () => true,
-    // OFF until the hosted MCP is proven with real clients (Marko, 2026-09-28:
-    // "the entire thing should be a feature flag because this ain't ready yet").
+    // Two operator gates: Platinum must be the configured provider, and the
+    // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
+    // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
+    available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
     platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'POST /projects/:id/mcp answers 403 `feature_disabled` when off (mcp/index.ts). ' +
-      'The OAuth client registration and discovery documents are user-scoped and stay ' +
-      'reachable; a token they produce opens no MCP endpoint on a project with the flag off.',
+    // Read at provisioning (platform/services/session-sandbox.ts
+    // resolveSessionSandboxRegion) and sent as `region` on the Platinum
+    // create. Off ⇒ no region is sent and Platinum places in its home region.
+    enforcement: 'behavioral',
   },
   {
     key: 'drives',

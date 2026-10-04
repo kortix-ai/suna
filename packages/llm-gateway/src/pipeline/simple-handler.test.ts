@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
+import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { rawProviderError } from './dispatch';
 import { handleChatCompletions } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
@@ -72,8 +74,11 @@ describe('simple gateway pipeline', () => {
         hooks: {
           ...hooks([], []),
           resolveUpstream: async () => [
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'first', apiKey: 'first' },
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'second', apiKey: 'second' },
+            // Loopback by address: `upstream.url` reports `localhost`, which does
+            // not resolve on a platform sandbox — the pool would answer 502
+            // (connection refused) instead of exercising the 429 failover.
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'first', apiKey: 'first' },
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'second', apiKey: 'second' },
           ],
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },
@@ -413,6 +418,36 @@ describe('simple gateway pipeline', () => {
     expect(traces[0]).toMatchObject({ attempts: 1, candidatesTried: ['amazon-bedrock'] });
   });
 
+  test('a provider 4xx labelled server_error reaches the client without the label OpenCode retries on', async () => {
+    // OpenCode retries any body matching /server_error|internal error|.../,
+    // whatever the status: this permanent 400 was replayed 5 times (dev 2026-09-29).
+    const upstreamBody = JSON.stringify({
+      error: { type: 'server_error', message: 'Upstream request failed: This Go model requires Global regions.' },
+    });
+    for (const stream of [false, true]) {
+      const response = await handleChatCompletions(
+        {
+          hooks: { ...hooks([], []), resolveUpstream: async () => [primary] },
+          logger: { info() {}, warn() {}, error() {} },
+          fetchImpl: async () => new Response(upstreamBody, { status: 400, headers: { 'content-type': 'application/json' } }),
+        },
+        { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream, messages: [{ role: 'user', content: 'hi' }] }) },
+      );
+      const text = await response.text();
+      expect(response.status).toBe(400);
+      expect(text).not.toMatch(/server[_ -]?error/i);
+      expect(JSON.parse(text)).toEqual({
+        error: { message: 'Upstream request failed: This Go model requires Global regions.', type: 'invalid_request_error' },
+      });
+    }
+    const raw = rawProviderError(new UpstreamHttpError(400, upstreamBody));
+    expect(await raw.text()).not.toMatch(/server[_ -]?error/i);
+    const overflow = rawProviderError(new UpstreamHttpError(400, '{"error":{"message":"prompt is too long"}}'));
+    expect((await overflow.json()).error.code).toBe('context_length_exceeded');
+    const unavailable = rawProviderError(new UpstreamHttpError(503, upstreamBody));
+    expect(await unavailable.text()).toBe(upstreamBody);
+  });
+
   test('settles one successful response exactly once', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -439,10 +474,12 @@ describe('simple gateway pipeline', () => {
     expect(traces).toHaveLength(1);
   });
 
+  // An error frame before any output served nothing: the client gets the
+  // provider's status as an HTTP error, which OpenCode can retry or compact on.
   test.each([
     ['a timeout', '"upstream_timeout"', 502],
     ['a numeric rate limit', '429', 429],
-  ])('records an in-band streaming provider error (%s) as a failed gateway request', async (_name, code, status) => {
+  ])('answers an in-band streaming provider error (%s) before output as an HTTP error', async (_name, code, status) => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
     const response = await handleChatCompletions(
@@ -464,11 +501,11 @@ describe('simple gateway pipeline', () => {
       },
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(status);
     expect(await response.text()).toContain('provider failed');
     expect(usage).toHaveLength(0);
     expect(traces).toHaveLength(1);
-    expect(traces[0]).toMatchObject({ status, ok: false, errorMessage: 'provider failed' });
+    expect(traces[0]).toMatchObject({ status, ok: false });
   });
 
   test('a stream the client stops before the usage frame still settles an estimate', async () => {
@@ -521,14 +558,18 @@ describe('simple gateway pipeline', () => {
   test('a stream stopped during prefill, before any output, settles the prompt', async () => {
     const usage: UsageEvent[] = [];
     const client = new AbortController();
-    const response = await handleChatCompletions(
+    let fetched!: () => void;
+    const upstreamAnswered = new Promise<void>((resolve) => { fetched = resolve; });
+    const pending = handleChatCompletions(
       {
         hooks: hooks(usage, []),
         logger: { info() {}, warn() {}, error() {} },
-        fetchImpl: async () =>
-          new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
+        fetchImpl: async () => {
+          fetched();
+          return new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
             headers: { 'content-type': 'text/event-stream' },
-          }),
+          });
+        },
       },
       {
         authorization: 'Bearer token',
@@ -540,7 +581,10 @@ describe('simple gateway pipeline', () => {
         }),
       },
     );
+    // The provider answered headers and is silent in prefill; the client stops.
+    await upstreamAnswered;
     client.abort();
+    const response = await pending;
     await response.body!.cancel();
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
@@ -924,6 +968,18 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     return { response, text, usage, traces };
   }
 
+  async function runManaged(
+    respond: (url: string) => Response,
+    requestBody: Record<string, unknown>,
+  ) {
+    const calls: string[] = [];
+    const result = await run((url) => {
+      calls.push(url);
+      return respond(url);
+    }, requestBody);
+    return { ...result, calls };
+  }
+
   test('an upstream 429 reaches the client as a Kortix 429 without upstream identity', async () => {
     const { response, text, traces } = await run(() =>
       new Response(coreweave429, { status: 429, headers: { 'retry-after': '7', 'content-type': 'application/json' } }));
@@ -946,6 +1002,8 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
 
   test.each([
     [400, '{"error":{"message":"This endpoint\'s maximum context length is 131072 tokens (Wafer)"}}', 400, 'context_length_exceeded'],
+    // CoreWeave through OpenRouter, probed 2026-09-30: no word "context".
+    [400, '{"error":{"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"message\\":\\"This model configuration accepts at most 1048576 combined input and output tokens. However, your request has 1036630 input tokens and asks for 16384 output tokens (1053014 tokens total).\\"}","provider_name":"CoreWeave"}}}', 400, 'context_length_exceeded'],
     [400, '{"error":{"message":"vendor/model does not support image input on Morph"}}', 400, 'unsupported_input'],
     [400, '{"error":{"message":"Invalid schema for function noop"}}', 400, 'invalid_tool_definition'],
     [422, '{"error":{"message":"bad"}}', 400, 'invalid_request'],
@@ -956,6 +1014,33 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     const { response, text } = await run(() => new Response(body, { status }));
     expect(response.status).toBe(clientStatus);
     expect(JSON.parse(text).code).toBe(code);
+    expect(text).not.toMatch(LEAK);
+  });
+
+  // Prod 2026-09-30: a long GLM session reached OpenRouter's Decart endpoint,
+  // which answered 200 and then an in-band 400. OpenCode read that frame as an
+  // UnknownError, so it never compacted and every later turn failed the same
+  // way. Morph rejects the same request with a bare "Invalid request".
+  test('a context overflow reported in-band before output reaches the client as HTTP 400 context_length_exceeded', async () => {
+    const overflow =
+      'data: {"id":"gen-1","model":"vendor/model","provider":"Decart","choices":[],"error":{"code":400,' +
+      '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
+    const { response, text, calls } = await runManaged(
+      (url) =>
+        url.startsWith('https://morph.example')
+          ? new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', { status: 400 })
+          : new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
+              status: 200, headers: { 'content-type': 'text/event-stream' },
+            }),
+      { model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] },
+    );
+    expect(calls).toEqual(['https://morph.example/v1/chat/completions', 'https://openrouter.example/v1/chat/completions']);
+    expect(response.status).toBe(400);
+    expect(response.headers.get('content-type')).toBe('application/json');
+    const body = JSON.parse(text);
+    // OpenCode's parseAPICallError reads `error.code` to raise ContextOverflowError.
+    expect(body.error.code).toBe('context_length_exceeded');
+    expect(body.message).toBe('This request is longer than the primary-model context window.');
     expect(text).not.toMatch(LEAK);
   });
 
@@ -1059,8 +1144,10 @@ describe('model fallback chains (route.fallbackModels)', () => {
   async function run(options: {
     fallbackOn?: 'transient' | 'any-error';
     fallbackModels?: string[];
+    policyId?: string;
     respond: (url: string) => Response | Promise<Response>;
     resolve?: (model: string) => UpstreamDescriptor[] | Promise<UpstreamDescriptor[]>;
+    billing?: GatewayHooks['assertBillingActive'];
     requestBody?: Record<string, unknown>;
   }) {
     const usage: UsageEvent[] = [];
@@ -1071,7 +1158,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
       hooks: {
         ...hooks(usage, traces),
         resolveRoute: async () => ({
-          policyId: 'project:default',
+          policyId: options.policyId ?? 'project:default',
           primaryModel: 'primary-model',
           fallbackModels: options.fallbackModels ?? ['fallback-model'],
           fallbackOn: options.fallbackOn ?? 'transient',
@@ -1085,6 +1172,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
           if (options.resolve) return options.resolve(model);
           return model === 'primary-model' ? [primaryUpstream] : [fallbackUpstream];
         },
+        ...(options.billing ? { assertBillingActive: options.billing } : {}),
       },
       logger: { info() {}, warn() {}, error() {} },
       fetchImpl: async (url, init) => {
@@ -1121,6 +1209,210 @@ describe('model fallback chains (route.fallbackModels)', () => {
     });
     expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.routeModel, f.status])).toEqual([
       ['primary-upstream', 'primary-model', 503],
+    ]);
+  });
+
+  // Incident 2026-09-28: a routed model the provider would not serve (404 —
+  // OpenAI's "the model does not exist or you do not have access to it") left
+  // the request with the "model isn't available" error. A 404 is the provider's
+  // own "not available" class, so the chain the project configured on Retry on:
+  // transient must run.
+  test('a model the provider will not serve (404) reaches a transient chain', async () => {
+    const { response, resolved, traces } = await run({
+      respond: (url) => (isPrimary(url)
+        ? new Response(
+            JSON.stringify({ error: { message: 'The model does not exist or you do not have access to it.' } }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          )
+        : ok('from fallback')),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('from fallback');
+    expect(resolved).toEqual(['primary-model', 'fallback-model']);
+    expect(traces.at(-1)?.attemptFailures).toEqual([
+      expect.objectContaining({ routeModel: 'primary-model', status: 404 }),
+    ]);
+  });
+
+  // Incident 2026-09-28: codex/gpt-6-sol on a ChatGPT plan hit its usage
+  // limit (429); the project's own chain of Kortix models never ran.
+  test.each([
+    ['a chain the project set in Routing', 'project:exact:primary-model', 200],
+    ['the platform route', 'platform-default', 429],
+  ])('a ChatGPT-plan primary that fails reaches Kortix models only through %s', async (_name, policyId, expected) => {
+    const planUpstream: UpstreamDescriptor = { ...primaryUpstream, provider: 'openai-codex', billingMode: 'none', markup: 0 };
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response } = await run({
+      policyId,
+      fallbackOn: 'any-error',
+      resolve: (model) => (model === 'primary-model' ? [planUpstream] : [managedUpstream]),
+      respond: (url) => (isPrimary(url)
+        ? new Response(JSON.stringify({ error: { type: 'usage_limit_reached', message: 'The usage limit has been reached' } }), { status: 429 })
+        : ok('from kortix')),
+    });
+    expect(response.status).toBe(expected);
+  });
+
+  // #7979 let a project's chain move a failed ChatGPT request to a Kortix
+  // model, but the wallet gate had run for the ChatGPT model alone, which bills
+  // nothing: a drained wallet still got Kortix answers.
+  test('a Kortix-billed fallback after a ChatGPT failure passes the wallet gate first', async () => {
+    const planUpstream: UpstreamDescriptor = { ...primaryUpstream, provider: 'openai-codex', billingMode: 'none', markup: 0 };
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const limited = () => new Response(JSON.stringify({ error: { type: 'usage_limit_reached' } }), { status: 429 });
+    const chain = {
+      policyId: 'project:exact:primary-model',
+      fallbackOn: 'any-error' as const,
+      resolve: (model: string) => (model === 'primary-model' ? [planUpstream] : [managedUpstream]),
+    };
+
+    const gated: string[] = [];
+    const paid = await run({
+      ...chain,
+      respond: (url) => (isPrimary(url) ? limited() : ok('from kortix')),
+      billing: async (accountId) => { gated.push(accountId); return { holdUsd: 0.5 }; },
+    });
+    expect(paid.response.status).toBe(200);
+    expect(gated).toEqual(['account']);
+    expect(paid.usage).toEqual([expect.objectContaining({ billingMode: 'credits', billingHoldUsd: 0.5 })]);
+
+    const drained = await run({
+      ...chain,
+      respond: (url) => (isPrimary(url) ? limited() : ok('from kortix')),
+      billing: async () => { throw Object.assign(new Error('Insufficient credits'), { reason: 'insufficient_credits' }); },
+    });
+    expect(drained.response.status).toBe(429);
+    expect(drained.calls.map((call) => new URL(call.url).host)).toEqual(['primary.example']);
+    expect(drained.usage).toEqual([]);
+
+    // A hold taken for a fallback that then fails is returned in full.
+    const failed = await run({
+      ...chain,
+      respond: (url) => (isPrimary(url) ? limited() : new Response('down', { status: 503 })),
+      billing: async () => ({ holdUsd: 0.5 }),
+    });
+    expect(failed.response.status).toBe(503);
+    expect(failed.usage).toEqual([expect.objectContaining({ finalCost: 0, billingHoldUsd: 0.5 })]);
+  });
+
+  // With every ChatGPT account paused after a 429, or needing reconnection, the
+  // request failed at resolution, before the project's chain could run.
+  const unavailable = (code: 'provider_pool_rate_limited' | 'provider_reauth_required' | 'provider_not_connected') => () => {
+    throw new GatewayResolutionError(code, `ChatGPT is unavailable: ${code}`, 'Reconnect the account or wait.',
+      code === 'provider_pool_rate_limited' ? 42 : undefined);
+  };
+  test.each([
+    ['paused, retry on service errors', 'provider_pool_rate_limited', 'transient', 200],
+    ['paused, retry on any error', 'provider_pool_rate_limited', 'any-error', 200],
+    ['needing reconnection, retry on any error', 'provider_reauth_required', 'any-error', 200],
+    ['needing reconnection, retry on service errors', 'provider_reauth_required', 'transient', 400],
+    ['not connected, retry on any error', 'provider_not_connected', 'any-error', 400],
+  ] as const)('a ChatGPT model with every account %s', async (_name, code, fallbackOn, expected) => {
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response, calls, traces } = await run({
+      policyId: 'project:exact:primary-model',
+      fallbackOn,
+      resolve: (model) => (model === 'primary-model' ? unavailable(code)() : [managedUpstream]),
+      respond: () => ok('from kortix'),
+    });
+    expect(response.status).toBe(expected);
+    if (expected !== 200) {
+      expect(calls).toEqual([]);
+      expect(await response.json()).toMatchObject({ error: { code } });
+      return;
+    }
+    expect(await response.text()).toContain('from kortix');
+    expect(traces.at(-1)).toMatchObject({
+      ok: true,
+      attempts: 1,
+      resolvedModel: 'fallback-model',
+      candidatesTried: [`primary-model:${code}`, 'fallback-upstream:fallback-model'],
+    });
+    expect(traces.at(-1)?.attemptFailures).toEqual([expect.objectContaining({
+      attempt: 1,
+      stage: 'resolve',
+      routeModel: 'primary-model',
+      code,
+      status: code === 'provider_pool_rate_limited' ? 429 : 401,
+    })]);
+  });
+
+  // A routed model that cannot be resolved at all is the same "the provider
+  // will not serve this model" class as an upstream 404. The project's own
+  // chain is configured for exactly this, so it runs.
+  const unroutable = (code: 'model_not_found' | 'model_retired' | 'model_disabled_on_deployment') => () => {
+    throw new GatewayResolutionError(code, `The model is unavailable: ${code}`, 'Choose another model.');
+  };
+  test.each(['model_not_found', 'model_retired', 'model_disabled_on_deployment'] as const)(
+    'a project chain takes over an unroutable primary (%s)',
+    async (code) => {
+      const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+      const { response, traces } = await run({
+        policyId: 'project:exact:primary-model',
+        fallbackOn: 'transient',
+        resolve: (model) => (model === 'primary-model' ? unroutable(code)() : [managedUpstream]),
+        respond: () => ok('from fallback'),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('from fallback');
+      expect(traces.at(-1)?.attemptFailures).toEqual([
+        expect.objectContaining({ stage: 'resolve', routeModel: 'primary-model', code, status: 404 }),
+      ]);
+    },
+  );
+
+  test('an unroutable primary on the platform route keeps its own error', async () => {
+    const { response, calls } = await run({
+      policyId: 'platform-default',
+      fallbackOn: 'transient',
+      resolve: (model) => (model === 'primary-model' ? unroutable('model_not_found')() : [fallbackUpstream]),
+      respond: () => ok('from fallback'),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'model_not_found' } });
+    expect(calls).toEqual([]);
+  });
+
+  test('a paused ChatGPT model on the platform route returns its own error', async () => {
+    const { response, calls } = await run({
+      policyId: 'platform-default',
+      fallbackOn: 'any-error',
+      resolve: (model) => (model === 'primary-model' ? unavailable('provider_pool_rate_limited')() : [fallbackUpstream]),
+      respond: () => ok('from kortix'),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('42');
+    expect(calls).toEqual([]);
+  });
+
+  test('a paused ChatGPT model is not moved to a Kortix model the account cannot pay for', async () => {
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response, calls, usage } = await run({
+      policyId: 'project:default',
+      resolve: (model) => (model === 'primary-model' ? unavailable('provider_pool_rate_limited')() : [managedUpstream]),
+      respond: () => ok('from kortix'),
+      billing: async () => { throw Object.assign(new Error('Insufficient credits'), { reason: 'insufficient_credits' }); },
+    });
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: { code: 'provider_pool_rate_limited' } });
+    expect(calls).toEqual([]);
+    expect(usage).toEqual([]);
+  });
+
+  test('a rescued chain keeps numbering its failures when it moves again', async () => {
+    const { response, traces } = await run({
+      fallbackModels: ['fallback-model', 'second-fallback'],
+      resolve: (model) => {
+        if (model === 'primary-model') return unavailable('provider_pool_rate_limited')();
+        return [{ ...fallbackUpstream, provider: model === 'fallback-model' ? 'fallback-upstream' : 'second-upstream',
+          baseUrl: `https://${model}.example/v1` }];
+      },
+      respond: (url) => (new URL(url).host === 'fallback-model.example' ? new Response('down', { status: 503 }) : ok('second')),
+    });
+    expect(response.status).toBe(200);
+    expect(traces.at(-1)?.attemptFailures?.map((f) => [f.attempt, f.stage, f.routeModel])).toEqual([
+      [1, 'resolve', 'primary-model'],
+      [2, 'dispatch', 'fallback-model'],
     ]);
   });
 

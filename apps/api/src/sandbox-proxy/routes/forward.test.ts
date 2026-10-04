@@ -81,14 +81,14 @@ mock.module('../../projects/opencode-session-snapshot', () => ({
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
-let begunTurns: Array<{ opencodeSessionId: string; messageId: string | null }> = [];
+let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (
     _target: unknown,
-    turn: { opencodeSessionId: string; messageId: string | null },
+    turn: { runtimeSessionId: string; messageId: string | null },
   ) => {
-    begunTurns.push({ opencodeSessionId: turn.opencodeSessionId, messageId: turn.messageId });
+    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId });
     return 'granted';
   },
   acceptSandboxTurn: async () => true,
@@ -363,7 +363,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(wireIdTime(delivered.messageID)! > tip.time).toBe(true);
     expect(delivered.parts).toEqual([{ type: 'text', text: 'stop looping' }]);
     // The turn ledger was begun under the EFFECTIVE id, not the stale one.
-    expect(begunTurns).toEqual([{ opencodeSessionId: 'ses_child', messageId: delivered.messageID }]);
+    expect(begunTurns).toEqual([{ runtimeSessionId: 'ses_child', messageId: delivered.messageID }]);
     // And the sender can correlate.
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
     expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Kortix-Effective-Message-Id');
@@ -381,6 +381,16 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(fetchLog[1].body).toBe(JSON.stringify(body));
     expect(begunTurns[0]?.messageId).toBe(client.id);
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(client.id);
+  });
+
+  test('a noReply prompt is forwarded with its flag and never begins a turn', async () => {
+    const client = mintWireMessageId({ nowMs: NOW });
+    installFetch([]);
+    const body = { messageID: client.id, noReply: true, parts: [{ type: 'text', text: 'held' }] };
+    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf(body), 'http://app.local');
+    expect(res.status).toBe(200);
+    expect(begunTurns).toEqual([]);
+    expect(fetchLog[fetchLog.length - 1].body).toContain('"noReply":true');
   });
 
   test('a body with NO client id pays for no read at all — OpenCode mints', async () => {
@@ -478,5 +488,28 @@ describe('forwardToSandbox — POST /file/import', () => {
     expect(res.status).toBe(200);
     expect(timerDelays).toContain(PROXY_ATTEMPT_TIMEOUT_MS);
     expect(timerDelays).not.toContain(PROXY_IMPORT_ATTEMPT_TIMEOUT_MS);
+  });
+});
+
+// `/kortix/env-rpc` answers only when its operation finishes, and its `exec` is
+// not idempotent: a replay runs the shell command a second time.
+describe('forwardToSandbox — POST /kortix/env-rpc', () => {
+  test('on the daemon port: one attempt past the 15 s cap, a 502 is not replayed', async () => {
+    queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
+    recordTimerDelays();
+    const res = await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/kortix/env-rpc',
+      '',
+      new Headers({ 'content-type': 'application/json' }),
+      new TextEncoder().encode('{"op":"exec","args":{"command":"true"}}').buffer,
+      'http://app.local',
+    );
+    expect(fetchCalls).toBe(1);
+    expect(res.status).toBe(502);
+    expect(Math.max(...timerDelays)).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
   });
 });

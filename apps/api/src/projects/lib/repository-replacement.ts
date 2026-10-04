@@ -1,10 +1,16 @@
 import { changeRequests, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
+import * as iamAuthorize from '../../iam/authorize';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGitHubRepoUrl, verifyGitHubInstallationAdmin, type GitHubRepo } from '../github';
 import { invalidateProjectMirror } from '../git';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
+import {
+  buildProjectGitConnectionValues,
+  buildProjectGitMetadata,
+  type ProjectGitWriteAuth,
+} from './project-git-write';
 import { resolveGitHubImportWithPat } from './git';
 
 export class RepositoryChangedError extends Error {}
@@ -88,8 +94,10 @@ export async function persistProjectRepositoryReplacement(input: {
   defaultBranch: string;
   copySharedSecrets?: SharedSecretCopy;
 }) {
-  const owner = input.repo.full_name.split('/')[0]!;
   const now = new Date();
+  const auth: ProjectGitWriteAuth = input.installationId
+    ? { kind: 'github_app', installationId: input.installationId, projectGrant: true }
+    : { kind: 'project_credential' };
   const result = await db.transaction(async (tx) => {
     const [oldProject] = await tx.select().from(projects)
       .where(eq(projects.projectId, input.projectId)).for('update');
@@ -138,9 +146,15 @@ export async function persistProjectRepositoryReplacement(input: {
         isNull(projectSecrets.ownerUserId),
       ));
       if (existing.length) throw new RepositorySecretCopyError(`Target already has ${existing[0]!.identifier}`);
+      // A value narrowed to an audience stays in its project: a copy would be
+      // open to everyone in the target (secret-audience.ts).
+      const narrowed = await iamAuthorize.loadObjectGrants(sourceProjectId, 'secret');
       for (const identifier of unique) {
         const row = sourceByIdentifier.get(identifier);
         if (!row || !row.active) throw new RepositorySecretCopyError(`Source has no active shared ${identifier}`);
+        if (narrowed.has(row.secretId)) {
+          throw new RepositorySecretCopyError(`${identifier} is shared with specific people and cannot be copied`);
+        }
         if (row.scope !== 'runtime' || row.strategy !== 'runtime' || identifier.toUpperCase().startsWith('KORTIX_') || identifier.toUpperCase() === 'CODEX_AUTH_JSON') {
           throw new RepositorySecretCopyError(`${identifier} cannot be copied with a repository replacement`);
         }
@@ -175,20 +189,12 @@ export async function persistProjectRepositoryReplacement(input: {
       credentialId = credential.credentialId;
     }
 
-    const connectionValues = {
-      provider: 'github', repoUrl: input.repo.clone_url,
-      upstreamUrl: input.repo.clone_url, managed: false,
-      repoOwner: owner, repoName: input.repo.name,
-      externalRepoId: String(input.repo.id), defaultBranch: input.defaultBranch,
-      authMethod: input.installationId ? 'github_app' : 'project_credential', installationId: input.installationId ?? null,
-      credentialRef: credentialId, permissions: {},
-      visibility: input.repo.private ? 'private' : 'public',
-      webhookId: null, status: 'connected', lastValidatedAt: now,
-      lastErrorCode: null, lastErrorMessage: null,
-      metadata: { full_name: input.repo.full_name, html_url: input.repo.html_url, ssh_url: input.repo.ssh_url,
-        ...(input.installationId ? { project_grant: true } : {}) },
-      updatedAt: now,
-    };
+    const connectionValues = buildProjectGitConnectionValues(input.repo, auth, {
+      defaultBranch: input.defaultBranch,
+      credentialRef: credentialId,
+      now,
+      upstreamUrl: input.repo.clone_url,
+    });
     const [connection] = await tx.insert(projectGitConnections).values({
       accountId: input.accountId, projectId: input.projectId, ...connectionValues,
     }).onConflictDoUpdate({
@@ -200,7 +206,9 @@ export async function persistProjectRepositoryReplacement(input: {
     const existingMetadata = oldProject.metadata && typeof oldProject.metadata === 'object'
       ? oldProject.metadata as Record<string, unknown> : {};
     const metadata = {
-      ...existingMetadata,
+      ...buildProjectGitMetadata(input.repo, auth, existingMetadata, {
+        defaultBranch: input.defaultBranch,
+      }),
       // What this generation still decides, and all it decides: the git-proxy
       // authorization memo and the upstream memo are keyed by it, so a
       // replacement busts both instead of serving the old upstream for another
@@ -212,19 +220,6 @@ export async function persistProjectRepositoryReplacement(input: {
       // left is physical — that clone and the new origin hold unrelated
       // histories, so Git itself refuses a push without a rebase.
       repository_generation: randomUUID(),
-      git: {
-        url: input.repo.clone_url, default_branch: input.defaultBranch,
-        provider: 'github', owner, name: input.repo.name,
-        external_repo_id: String(input.repo.id), managed: false,
-        auth: input.installationId
-          ? { method: 'github_app', installation_id: input.installationId, project_grant: true }
-          : { method: 'project_credential' },
-      },
-      github: {
-        repo_id: String(input.repo.id), full_name: input.repo.full_name,
-        html_url: input.repo.html_url, private: input.repo.private,
-        auth_source: input.installationId ? 'app_installation' : 'pat',
-      },
     };
     const [project] = await tx.update(projects).set({
       repoUrl: input.repo.clone_url,

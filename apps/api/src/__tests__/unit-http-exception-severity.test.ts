@@ -10,16 +10,16 @@ import { describe, expect, test } from 'bun:test';
  * without `project.session.start`. Real faults were the minority of the error
  * log, which is how a real fault gets missed.
  *
- * Reading the source rather than driving the server: the branch sits inside a
- * Hono `onError` on a module whose import boots the whole API. What has to hold
- * is a rule about severity, and the rule is visible in the source.
+ * Reading the source rather than driving the server: the branch is a typed
+ * handler installed through Hono's `onError` (http-errors.ts, KRTX-347 split).
+ * What has to hold is a rule about severity, and the rule is visible in the source.
  */
-const SOURCE = await Bun.file(new URL('../index.ts', import.meta.url)).text();
+const SOURCE = await Bun.file(new URL('../http-errors.ts', import.meta.url)).text();
 
 function httpExceptionBranch(): string {
-  const start = SOURCE.indexOf('if (err instanceof HTTPException) {');
+  const start = SOURCE.indexOf('function handleHttpException(');
   expect(start).toBeGreaterThan(-1);
-  return SOURCE.slice(start, start + 2600);
+  return SOURCE.slice(start, start + 3800);
 }
 
 describe('HTTPException log severity follows the status class', () => {

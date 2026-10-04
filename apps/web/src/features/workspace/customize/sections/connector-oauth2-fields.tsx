@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
+import { OAuth2ScopeFields } from './connector-oauth2-scope-fields';
 import type { OAuth2CredentialForm } from './connector-oauth2';
 
 export function OAuth2CredentialFields({
@@ -126,37 +127,12 @@ export function OAuth2CredentialFields({
           />
         </Field>
       )}
-      <Field className="sm:col-span-2">
-        <FieldLabel htmlFor={id('scopes')}>{tI18nComplete.raw('text0d5644ff52ce')}</FieldLabel>
-        <Input
-          id={id('scopes')}
-          value={value.scopes}
-          onChange={(event) => set('scopes', event.target.value)}
-          placeholder={tI18nComplete.raw('textd39d2a43676f')}
-          variant="popover"
-        />
-        <FieldDescription>{tI18nComplete.raw('textda4365b5d2bf')}</FieldDescription>
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={id('resource')}>{tI18nComplete.raw('texteb7a842ff958')}</FieldLabel>
-        <Input
-          id={id('resource')}
-          value={value.resource}
-          onChange={(event) => set('resource', event.target.value)}
-          placeholder={tI18nComplete.raw('text59be71333c96')}
-          variant="popover"
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={id('audience')}>{tI18nComplete.raw('text545c02357695')}</FieldLabel>
-        <Input
-          id={id('audience')}
-          value={value.audience}
-          onChange={(event) => set('audience', event.target.value)}
-          placeholder={tI18nComplete.raw('text59be71333c96')}
-          variant="popover"
-        />
-      </Field>
+      <OAuth2ScopeFields
+        value={value}
+        onChange={set}
+        idPrefix={idPrefix}
+        scopePlaceholder={tI18nComplete.raw('textd39d2a43676f')}
+      />
     </FieldGroup>
   );
 }

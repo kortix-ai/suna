@@ -1,5 +1,6 @@
 /** Session runtime: start (the unified open), restart, stop, and the current turn. */
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -19,8 +20,9 @@ import {
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
+import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { isWarmProjectSession } from '../lib/warm-sessions';
-import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
+import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
@@ -35,7 +37,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/start',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/start',
+    summary: 'Start a session sandbox and its runtime',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -74,6 +76,11 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    // Account-scoped keys have no member identity to sign for the daemon.
+    // Reject before provisioning rather than returning a misleading ready/start response.
+    if (c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'user') {
+      return c.json({ error: 'A user or service-account credential is required to start a session' }, 403);
+    }
     const projectMetadata = loaded.row.metadata as Record<string, unknown>;
     const sessionMetadata = visible.row.metadata as Record<string, unknown>;
     const repositoryMode = c.req.query('repository_mode');
@@ -93,6 +100,26 @@ projectsApp.openapi(
     // this row, not a spend, so it lands even if the billing gate rejects the
     // resume that follows.
     if (isWarmProjectSession(visible.row.metadata)) {
+      // A held browser entry can predate the project's region preference.
+      // Wait for actual placement while creation is pending; never adopt an
+      // EU or unknown active box as US, and never move an existing box.
+      const placement = await warmSessionPlacement(sessionId, projectMetadata);
+      if (placement === 'pending') {
+        return c.json({
+          stage: 'provisioning' as const,
+          agent_name: visible.row.agentName ?? 'default',
+          sandbox: null,
+          opencode_session_id: null,
+          retriable: true,
+          runtime_transport: 'rest' as const,
+        }, 200);
+      }
+      if (placement === 'mismatch') {
+        return c.json({
+          error: 'The warm session does not match the project compute region',
+          code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+        }, 409);
+      }
       await dropWarmSessionMarkerOnAdopt(sessionId);
       stl.mark('warm-adopted');
     }
@@ -122,7 +149,7 @@ projectsApp.openapi(
     // server holds the request until readiness flips (or a bounded deadline),
     // killing the ~800ms client poll-tick latency. Clamped; omitted = one-shot.
     const waitMsRaw = Number(c.req.query('wait_ms'));
-    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
+    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, START_AWAIT_MAX_MS) : 0;
     const result = await startSession({
       source: 'ui',
       loaded,
@@ -134,16 +161,14 @@ projectsApp.openapi(
     stl.mark(`open-session:${result.start.stage}`);
     // THE RUNTIME IS UP — mirror what is already in it, once.
     //
-    // Capture otherwise runs only at turn end, so enabling
-    // `session_transcript_history` did nothing for a project's EXISTING
-    // sessions: each one stayed blank on open until somebody sent it another
-    // message. Opening the session is exactly when the user waits and the
-    // feature is supposed to pay off, so that is where the backfill belongs.
+    // Capture otherwise runs only at turn end, so a session nobody prompted
+    // since saved history shipped stayed blank on open until somebody sent it
+    // another message. Opening the session is exactly when the user waits and
+    // the feature is supposed to pay off, so that is where the backfill belongs.
     //
     // Fire-and-forget and self-limiting: at most one attempt per session per
-    // process, skipped entirely when the flag is off or the mirror already
-    // proves it holds the session's first message. It cannot fail or delay
-    // this response.
+    // process, skipped entirely when the mirror already proves it holds the
+    // session's first message. It cannot fail or delay this response.
     if (result.start.stage === 'ready') void backfillSessionTranscriptMirrorOnWake(sessionId);
     stl.log({
       waitMs,
@@ -171,7 +196,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/restart',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/restart',
+    summary: 'Restart a session sandbox',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -184,10 +209,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     // Per-agent gate: restart re-provisions compute. A scoped agent token must
     // hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -225,7 +249,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/stop',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/stop',
+    summary: 'Stop a session (interrupt the running turn)',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -238,10 +262,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     // Per-agent gate: same capability as start/restart — stopping is part of
     // the agent's session-lifecycle surface.
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -281,6 +304,8 @@ const SessionTurnSchema = z.object({
   turn_token: z.string(),
   state: z.enum(['delivering', 'active']),
   message_id: z.string().nullable(),
+  runtime_session_id: z.string().nullable(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   started_at: z.string().nullable(),
   accepted_at: z.string().nullable(),
@@ -343,7 +368,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/turn',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/turn',
+    summary: 'Get the current turn state of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),

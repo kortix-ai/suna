@@ -185,6 +185,9 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // needs. Live invocation (`/call`) stays open too: it acts now, inside the
   // audited hour, and creates nothing durable.
   { re: /^\/v1\/projects\/[^/]+\/connections(\/|$)/ },
+  // A paired computer added to a project is a computer ACCOUNT: the same
+  // durable access to a real machine as a connection.
+  { re: /^\/v1\/projects\/[^/]+\/computers(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/connectors\/[^/]+\/oauth2\/connection(\/|$)/ },
   { re: /^\/v1\/connectors\/projects\/[^/]+\/connectors(\/|$)/ },
   { re: /^\/v1\/connectors\/projects\/[^/]+\/policies(\/|$)/ },

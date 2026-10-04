@@ -93,6 +93,8 @@ interface ChannelActionDef {
   /** JSON-schema properties using Slack's NATIVE param names (passed through verbatim). */
   properties: Record<string, Record<string, unknown> & { type: string; description: string }>;
   required: string[];
+  /** Curated defaults the provider does not apply itself; the caller's args always win. */
+  defaults?: Record<string, unknown>;
 }
 
 const EMAIL_ATTACHMENT_SCHEMA = {
@@ -226,6 +228,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
       limit: { type: 'number', description: 'Max messages to return (default 20).' },
     },
     required: ['channel'],
+    defaults: { limit: 20 },
   },
   {
     path: 'get_thread',
@@ -238,7 +241,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     properties: {
       channel: { type: 'string', description: 'Channel ID the thread is in.' },
       ts: { type: 'string', description: 'Timestamp (ts) of the thread root message.' },
-      limit: { type: 'number', description: 'Max replies to return (default 20).' },
+      limit: { type: 'number', description: 'Max replies to return (default: Slack\'s).' },
     },
     required: ['channel', 'ts'],
   },
@@ -262,6 +265,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
       },
     },
     required: [],
+    defaults: { types: 'public_channel,private_channel', exclude_archived: true },
   },
   {
     path: 'channel_info',
@@ -295,7 +299,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     description: 'List workspace members. Optional `limit`.',
     risk: 'read',
     properties: {
-      limit: { type: 'number', description: 'Max users to return (default 100).' },
+      limit: { type: 'number', description: 'Max users to return (default: Slack\'s).' },
     },
     required: [],
   },
@@ -634,6 +638,20 @@ const TEAMS_ACTIONS: ChannelActionDef[] = [
 ];
 
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
+/**
+ * Merge a Slack action's curated defaults under the caller's args. Read live at
+ * call time, so it covers connectors materialized before a default existed.
+ */
+export function withChannelDefaults(
+  platform: string,
+  actionPath: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  if (platform !== 'slack') return args;
+  const defaults = SLACK_ACTIONS.find((a) => a.path === actionPath)?.defaults;
+  return defaults ? { ...defaults, ...args } : args;
+}
+
 export function channelCatalog(platform: string): NormalizedAction[] {
   switch (platform) {
     case 'slack':

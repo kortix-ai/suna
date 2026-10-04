@@ -25,6 +25,13 @@ If the work continues, extends, fixes, or cleans up something already in flight,
 it belongs in that worktree, on that branch. Join it. Spinning a second worktree
 for the same objective is the mistake this rule exists to prevent.
 
+**Never switch a worktree you did not create to another branch.** Another
+session may be working in it. The pre-commit hook refuses a commit whose branch
+is neither the worktree's own (`.kortix-worktree.json`) nor `<branch>/…`
+(`scripts/check-worktree-branch.sh`; deliberate override:
+`KORTIX_WORKTREE_ANY_BRANCH=1`). A throwaway probe branch gets a private
+`git worktree add <scratchpad>/<name>` instead.
+
 **Create a new worktree only when the work is genuinely a new thing.** Use
 shared-DB mode for ordinary UI/API work; opt into `--db` when database isolation
 is materially required.

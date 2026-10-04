@@ -31,6 +31,7 @@ import { accountPanelUrl, hubTarget } from '@/stores/account-panel-store';
 import {
   capabilityTabHref,
   channelsHref,
+  reviewHref,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 
 export type SettingsTab =
@@ -175,11 +176,10 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   agent: (p) => capabilityTabHref(p, 'agent'),
   agents: (p) => capabilityTabHref(p, 'agent'),
   connectors: (p) => capabilityTabHref(p, 'connectors'),
-  // Computers graduated out of settings on `main` (#6313): device pairing and
-  // per-capability grants are a connector now (`ComputerTunnelManager` in
-  // `capabilities/connectors/`), so a bookmarked `/customize/computers` or
-  // `/settings/computers` lands on the Connectors page instead of a tab that
-  // no longer exists.
+  // Computers graduated out of settings on `main` (#6313): a paired computer
+  // is an account of the project's `computer` connector now, so a bookmarked
+  // `/customize/computers` or `/settings/computers` lands on the Connectors
+  // page instead of a tab that no longer exists.
   computers: (p) => capabilityTabHref(p, 'connectors'),
   skills: (p) => capabilityTabHref(p, 'skills'),
   // Schedules and Webhooks graduated out of the overlay, merged into one
@@ -214,7 +214,7 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   upgrades: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
   // `upgrade`, singular, is the old Customize id for the Upgrades pane.
   upgrade: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
-  review: (p) => capabilityTabHref(p, 'review'),
+  review: reviewHref,
   // Secrets, Channels, and Models graduated a SECOND time — off the Settings
   // sub-nav entirely and onto their own top-level Customize tab. `models` and
   // every `llm-*` sub-section (the old Models pane's own sub-tabs) all land
@@ -403,7 +403,7 @@ export function legacySectionRedirect(
     // project-specific destination, so this stays a narrow special case rather
     // than a second parameter every entry pays for.
     return accountPanelUrl(
-      `/projects/${projectId}`,
+      projectId ? `/projects/${projectId}` : '/projects',
       hubTarget(accountId, {
         tab: ACCOUNT_GRADUATED[rawSection],
         project: rawSection === 'members' ? projectId : undefined,

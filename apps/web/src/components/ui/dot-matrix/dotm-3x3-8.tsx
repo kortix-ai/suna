@@ -2,14 +2,13 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import {
   createDotm3x3Component,
   rowWave3NormFromRow,
   wave3PathOpacityFromNorm,
 } from '@/lib/dotmatrix-core';
 
-export type Dotm3x3_8Props = DotMatrixCommonProps;
 
 const animationResolver: DotAnimationResolver = ({ isActive, row, reducedMotion, phase }) => {
   if (!isActive) {

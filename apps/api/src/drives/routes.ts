@@ -11,7 +11,7 @@ import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { loadProjectForUser } from '../projects/lib/access';
-import { getAccountMembership } from '../projects/lib/git';
+import { getAccountMembership } from '../projects/lib/user-identity';
 import { db } from '../shared/db';
 import { resolveScopedAccountId } from '../shared/resolve-account';
 import { isUuid } from '../shared/validate';

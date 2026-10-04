@@ -373,6 +373,66 @@ ensure_deps() {
   fi
 }
 
+# One session cookie for the route warmup, minted through the local Supabase
+# admin API: first user's email → magic-link hashed token → verify → the
+# compact base64url session blob the sb-kortix-auth-token cookie carries.
+# Every step is optional: an unset SUPABASE_SERVICE_ROLE_KEY or any failure
+# returns empty and warm_frontend_routes warms unauthed instead.
+mint_warm_cookie() {
+  [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]] || return 0
+  local email
+  email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
+  [[ -n "$email" ]] || return 0
+  local ht
+  ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$email\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
+  [[ -n "$ht" ]] || return 0
+  curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" \
+    -H "apikey: ${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}" \
+    -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$ht\"}" 2>/dev/null \
+    | python3 -c '
+import json, base64, sys
+d = json.load(sys.stdin)
+if "access_token" in d:
+    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
+         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
+    print("base64-" + base64.urlsafe_b64encode(json.dumps(s, separators=(",", ":")).encode()).decode().rstrip("="))
+' 2>/dev/null || true
+}
+
+# Warm the heavy frontend routes in the background of `pnpm dev` so the FIRST
+# human navigation doesn't pay Turbopack's on-demand compile (measured:
+# /projects/[id] 16.1s, /projects/[id]/sessions/[sessionId] 5.2s — which read
+# as "creating a session takes 6+ seconds" when it was the ROUTE compiling,
+# not the sandbox). An UNAUTHED hit compiles the bundle but redirects before
+# the page's module graph ever evaluates — the first real (authed) navigation
+# then paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
+# #2 0.28s) — so mint a real session and warm WITH it, falling back to
+# compile-only warming when no cookie can be minted. The header is a scalar
+# expanded with ${var:+…}, not an array: an empty array under set -u is fatal
+# on macOS bash 3.2 (the same class kill_dev_ports guards below), and it once
+# killed this warmup silently.
+warm_frontend_routes() {
+  local base="http://localhost:${WEB_PORT:-3000}"
+  until curl -sf -o /dev/null -m 2 "$base" 2>/dev/null; do sleep 2; done
+
+  local cookie="$(mint_warm_cookie)"
+  local auth_header=""
+  [[ -n "$cookie" ]] && auth_header="Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$cookie"
+  for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
+    curl -s -o /dev/null -m 120 ${auth_header:+-H "$auth_header"} "$base$p" || true
+  done
+  if [[ -n "$cookie" ]]; then
+    echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
+  else
+    echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
+  fi
+}
+
 kill_dev_ports() {
   local ports=()
   local port
@@ -769,57 +829,9 @@ else
   FRONTEND_PID=$!
 
   # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
-  # Turbopack's on-demand compile (measured: /projects/[id] 16.1s,
-  # /projects/[id]/sessions/[sessionId] 5.2s — which read as "creating a
-  # session takes 6+ seconds" when it was the ROUTE compiling, not the
-  # sandbox). Unauthenticated requests still compile the route bundle before
-  # the auth redirect, so dummy ids are fine.
-  (
-    until curl -sf -o /dev/null -m 2 "http://localhost:${WEB_PORT:-3000}" 2>/dev/null; do sleep 2; done
-    # An UNAUTHED hit compiles the bundle but redirects before the page's
-    # module graph ever evaluates — the first real (authed) navigation then
-    # paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
-    # #2 0.28s). Mint a real session via the local supabase admin API and
-    # warm WITH it; falls back to unauthed compile-only warming.
-    WARM_COOKIE=""
-    if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-      _email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
-        -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-        | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
-      if [[ -n "$_email" ]]; then
-        _ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
-          -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-          -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$_email\"}" \
-          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
-        if [[ -n "$_ht" ]]; then
-          _anon="${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}"
-          curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" -H "apikey: $_anon" \
-            -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$_ht\"}" > /tmp/kortix-warm-session.json 2>/dev/null || true
-          WARM_COOKIE="$(python3 - <<'PYC' 2>/dev/null || true
-import json, base64
-d = json.load(open('/tmp/kortix-warm-session.json'))
-if 'access_token' in d:
-    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
-         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
-    raw = json.dumps(s, separators=(',', ':'))
-    print('base64-' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('='))
-PYC
-)"
-          rm -f /tmp/kortix-warm-session.json
-        fi
-      fi
-    fi
-    _hdr=()
-    [[ -n "$WARM_COOKIE" ]] && _hdr=(-H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE")
-    for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
-      curl -s -o /dev/null -m 120 "${_hdr[@]}" "http://localhost:${WEB_PORT:-3000}$p" || true
-    done
-    if [[ -n "$WARM_COOKIE" ]]; then
-      echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
-    else
-      echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
-    fi
-  ) &
+  # Turbopack's on-demand compile. Unauthenticated requests still compile the
+  # route bundle before the auth redirect, so dummy ids are fine.
+  warm_frontend_routes &
 
   start_tunnel_watchdog
 

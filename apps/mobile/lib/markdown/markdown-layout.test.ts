@@ -92,9 +92,9 @@ describe('orderedListGutter', () => {
 
 describe('inline code chip', () => {
   test("matches web's INLINE_CODE class", () => {
-    // rounded-[5px] border px-1.5 text-[0.8rem] tracking-tight
+    // rounded-[5px] px-1.5 text-[0.8rem] tracking-tight; the border is half of web's 1px.
     expect(RADIUS.inlineCode).toBe(5);
-    expect(INLINE_CODE.borderWidth).toBe(1);
+    expect(INLINE_CODE.borderWidth).toBe(0.5);
     expect(INLINE_CODE.paddingX).toBe(web(1.5));
     expect(INLINE_CODE.fontSize).toBe(12.8);
     expect(INLINE_CODE.letterSpacing).toBe(-0.32);
@@ -113,7 +113,7 @@ describe('inline code chip', () => {
     const textBaseline = (INLINE_CODE.lineHeight - content) / 2 + descent;
     expect(INLINE_CODE.textBaselineFromBottom).toBeCloseTo(textBaseline, 5);
     expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(textBaseline + INLINE_CODE.paddingY + INLINE_CODE.borderWidth, 5);
-    expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(4.56, 2);
+    expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(4.06, 2);
   });
 
   test('the widest piece fits a table cell and a nested list on a 320pt phone', () => {
@@ -128,16 +128,16 @@ describe('inline code chip', () => {
 describe('inlineCodeAnchor', () => {
   const body = { fontSize: TYPE.body.fontSize, lineHeight: TYPE.body.lineHeight };
   const table = { fontSize: TYPE.sm.fontSize, lineHeight: TYPE.sm.lineHeight };
-  // Chip text baseline above the chip's bottom edge: 2.56 + 1 + 1.
+  // Chip text baseline above the chip's bottom edge: 2.56 + 1 + 0.5.
   const hang = INLINE_CODE.chipBaselineFromBottom;
 
   test('the inline view is the whole chip, so nothing hangs outside it to be clipped', () => {
     // A view that holds only the part above the text baseline let Android clip
-    // the bottom 5.07px: Jay saw about 70% of the chip (13.93 / 19).
+    // the bottom 5.07px: Jay saw about 70% of the chip (13.93 / 19, with the 1px border of the time).
     expect(inlineCodeAnchor('android', body).height).toBeCloseTo(INLINE_CODE.height, 5);
-    expect(inlineCodeAnchor('android', body).height).toBeCloseTo(19, 5);
-    expect(inlineCodeAnchor('ios', body).height).toBeCloseTo(19, 5);
-    // Border and padding stay 4px; the text line scales with the system text size.
+    expect(inlineCodeAnchor('android', body).height).toBeCloseTo(18, 5);
+    expect(inlineCodeAnchor('ios', body).height).toBeCloseTo(18, 5);
+    // Border and padding stay 3px; the text line scales with the system text size.
     expect(inlineCodeAnchor('android', body, 1.5).height).toBeCloseTo(
       1.5 * INLINE_CODE.lineHeight + 2 * INLINE_CODE.paddingY + 2 * INLINE_CODE.borderWidth,
       5,
@@ -155,11 +155,69 @@ describe('inlineCodeAnchor', () => {
 
   test('iOS puts the view bottom on the line bottom minus a Helvetica 12 descender', () => {
     // Roobert: unitsPerEm 1000, hhea ascent 1018, descent 246. Helvetica 12 descender 2.76.
-    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 4.56 = 0.495
+    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 4.06 = -0.005
     expect(inlineCodeAnchor('ios', body).translateY).toBeCloseTo(-4.064 + hang, 2);
-    // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 4.56 = 2.723
+    // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 4.06 = 2.223
     expect(inlineCodeAnchor('ios', table).translateY).toBeCloseTo(-1.836 + hang, 2);
     // No line height: TextKit adds no half-leading.
     expect(inlineCodeAnchor('ios', { fontSize: 15 }).translateY).toBeCloseTo(-(3.69 - 2.76) + hang, 2);
+  });
+});
+
+describe('classifyBlock reads only the first and last lines', () => {
+  // The implementation before the line scan: split every line, drop blank ones.
+  const HEADING = /^ {0,3}(#{1,6})(?:[ \t]|$)/;
+  const FENCE_LINE = /^ {0,3}(?:`{3,}|~{3,})/;
+  const LIST_ITEM = /^ {0,3}(?:[*+-]|\d{1,9}[.)])(?:[ \t]|$)/;
+  const BLOCKQUOTE = /^ {0,3}>/;
+  const TABLE_ROW = /^ {0,3}\|/;
+  const RULE = /^ {0,3}(?:-{3,}|\*{3,}|_{3,})[ \t]*$/;
+  const INDENTED = /^(?: {4}|\t)/;
+  const MATH_LINE = /^ {0,3}\${2,}[^$]*$/;
+  function kindOfLine(line: string): string {
+    const heading = HEADING.exec(line);
+    if (heading) return `heading${heading[1].length}`;
+    if (FENCE_LINE.test(line) || INDENTED.test(line)) return 'code';
+    if (MATH_LINE.test(line)) return 'math';
+    if (RULE.test(line)) return 'hr';
+    if (LIST_ITEM.test(line)) return 'list';
+    if (BLOCKQUOTE.test(line)) return 'blockquote';
+    if (TABLE_ROW.test(line)) return 'table';
+    return 'paragraph';
+  }
+  function splitClassify(block: string) {
+    const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
+    if (lines.length === 0) return { first: 'paragraph', last: 'paragraph' };
+    const first = kindOfLine(lines[0]);
+    if (lines.length === 1) return { first, last: first };
+    const lastLine = lines[lines.length - 1];
+    let last = kindOfLine(lastLine);
+    if (last === 'code' && !FENCE_LINE.test(lastLine) && (first === 'list' || first === 'blockquote')) last = first;
+    if (last === 'paragraph' && (first === 'list' || first === 'blockquote' || first === 'code' || first === 'math')) {
+      last = first;
+    }
+    return { first, last };
+  }
+
+  test('gives the split result for random blocks', () => {
+    const pieces = [
+      'text', '# h', '###### h6', '- item', '1. one', '> q', '| a |', '---', '***', '```', '~~~', '    code', '\tcode',
+      '$$', '$$ x', ' ', '\t', '\n', '\r\n', '\r', '\n\n', '\r\r\n', '  ', 'x\r', '---\r',
+    ];
+    let seed = 4242;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let i = 0; i < 20_000; i += 1) {
+      let block = '';
+      const count = 1 + random(8);
+      for (let j = 0; j < count; j += 1) block += pieces[random(pieces.length)];
+      const expected = splitClassify(block);
+      const actual = classifyBlock(block);
+      if (actual.first !== expected.first || actual.last !== expected.last) {
+        throw new Error(`classifyBlock(${JSON.stringify(block)}) = ${JSON.stringify(actual)}, split gives ${JSON.stringify(expected)}`);
+      }
+    }
   });
 });

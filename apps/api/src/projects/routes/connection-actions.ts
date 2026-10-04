@@ -4,7 +4,7 @@ import {
   RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections } from '@kortix/db';
+import { connectorConnections, tunnelConnections } from '@kortix/db';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   connectionIsEffectiveProjectDefault,
@@ -12,14 +12,10 @@ import {
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
-import { connectedAsOf, validateConnectionLabel } from '../../connectors/connection-identity';
+import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
-import {
-  finalizePipedreamConnectionAuthorization,
-  pipedreamConfigured,
-  pipedreamConnectUrl,
-} from '../../connectors/pipedream';
+import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -29,7 +25,12 @@ import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
 import { actorOf } from '../../iam/actor';
+import { requireUserCredential } from '../../tunnel/routes/auth';
 import { assignRole } from '../../iam/assignments';
+import {
+  startComposioConnect, finalizeComposioConnect,
+  startPipedreamConnect, finalizePipedreamConnect,
+} from '../lib/connection-hosted-connect';
 
 const ShareConnectionInput = z
   .object({
@@ -90,6 +91,32 @@ projectsApp.openapi(
     }
     if (connection.ownerType !== 'member' || connection.ownerId !== loaded.userId) {
       return c.json({ error: 'Not found' }, 404);
+    }
+    // A computer account follows its owner into every project, including
+    // projects of other workspaces. Only its owner, as a human, shares it, and
+    // only where the machine may go: its owner's personal workspace machine
+    // goes anywhere they manage, a team machine stays in its team.
+    if (connection.providerType === 'computer') {
+      requireUserCredential(c);
+      const [machine] = await db
+        .select({ accountId: tunnelConnections.accountId, ownerUserId: tunnelConnections.ownerUserId })
+        .from(connectorConnections)
+        .innerJoin(tunnelConnections, eq(tunnelConnections.tunnelId, connectorConnections.tunnelId))
+        .where(eq(connectorConnections.connectionId, connectionId))
+        .limit(1);
+      if (
+        !machine ||
+        machine.ownerUserId !== loaded.userId ||
+        (machine.accountId !== loaded.userId && machine.accountId !== loaded.row.accountId)
+      ) {
+        return c.json(
+          {
+            error: 'This computer belongs to another account. Pair it again from this project.',
+            code: 'COMPUTER_ACCOUNT_MISMATCH',
+          },
+          409,
+        );
+      }
     }
     if (!mutable.mayManageSystemConnections) {
       return c.json(
@@ -159,75 +186,82 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/connections/{connectionId}/label',
-    tags: ['connectors'],
-    summary: 'Rename connection',
-    description:
-      'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
-    },
-    responses: {
-      200: json(ConnectionViewSchema, 'Renamed connection'),
-      ...errors(400, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const connectionId = c.req.param('connectionId');
-    const body = await readJsonObject(c);
-    const validated = validateConnectionLabel(body.label);
-    if (!validated.ok) return c.json({ error: validated.error }, 400);
-    const mutable = await loadMutableConnection(c, projectId, connectionId);
-    if (!mutable) return c.json({ error: 'Not found' }, 404);
-    const { connection } = mutable;
-    const label = validated.label;
-    if (label === connection.label) {
-      return c.json(serializeConnection(connection), 200);
-    }
-    // `--account <label>` matches case-insensitively, so two accounts of one
-    // owner that differ only by case could not be told apart. The unique
-    // index is case-sensitive, so this check is the one that refuses them.
-    const [clash] = await db
-      .select({ connectionId: connectorConnections.connectionId })
-      .from(connectorConnections)
-      .where(
-        and(
-          eq(connectorConnections.connectorId, connection.connectorId),
-          eq(connectorConnections.ownerType, connection.ownerType),
-          connection.ownerId === null
-            ? isNull(connectorConnections.ownerId)
-            : eq(connectorConnections.ownerId, connection.ownerId),
-          ne(connectorConnections.connectionId, connectionId),
-          sql`lower(btrim(${connectorConnections.label})) = ${label.toLowerCase()}`,
-        ),
-      )
-      .limit(1);
-    if (clash) {
+async function renameConnectionHandler(c: any) {
+  const projectId = c.req.param('projectId');
+  const connectionId = c.req.param('connectionId');
+  const body = await readJsonObject(c);
+  const validated = validateConnectionLabel(body.label);
+  if (!validated.ok) return c.json({ error: validated.error }, 400);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
+  if (!mutable) return c.json({ error: 'Not found' }, 404);
+  const { connection } = mutable;
+  const label = validated.label;
+  if (label === connection.label) {
+    return c.json(serializeConnection(connection), 200);
+  }
+  // `--account <label>` matches case-insensitively, so two accounts of one
+  // owner that differ only by case could not be told apart. The unique
+  // index is case-sensitive, so this check is the one that refuses them.
+  const [clash] = await db
+    .select({ connectionId: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(
+      and(
+        eq(connectorConnections.connectorId, connection.connectorId),
+        eq(connectorConnections.ownerType, connection.ownerType),
+        connection.ownerId === null
+          ? isNull(connectorConnections.ownerId)
+          : eq(connectorConnections.ownerId, connection.ownerId),
+        ne(connectorConnections.connectionId, connectionId),
+        sql`lower(btrim(${connectorConnections.label})) = ${label.toLowerCase()}`,
+      ),
+    )
+    .limit(1);
+  if (clash) {
+    return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+  }
+  try {
+    // `updatedAt` stays as it is on purpose. Composio finalize picks the
+    // most recently updated row of an owner as the one a connect just
+    // started, so bumping it here could redirect an in-flight authorization.
+    await db
+      .update(connectorConnections)
+      .set({ label })
+      .where(eq(connectorConnections.connectionId, connectionId));
+  } catch (error) {
+    if (isUniqueViolation(error)) {
       return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
     }
-    try {
-      // `updatedAt` stays as it is on purpose. Composio finalize picks the
-      // most recently updated row of an owner as the one a connect just
-      // started, so bumping it here could redirect an in-flight authorization.
-      await db
-        .update(connectorConnections)
-        .set({ label })
-        .where(eq(connectorConnections.connectionId, connectionId));
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
-      }
-      throw error;
-    }
-    return c.json(serializeConnection({ ...connection, label }), 200);
-  },
-);
+    throw error;
+  }
+  return c.json(serializeConnection({ ...connection, label }), 200);
+}
+
+for (const [method, path] of [
+  ['put', '/{projectId}/connections/{connectionId}/label'],
+  ['patch', '/{projectId}/connections/{connectionId}'],
+] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method,
+      path,
+      tags: ['connectors'],
+      summary: 'Rename connection',
+      description:
+        'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
+      },
+      responses: {
+        200: json(ConnectionViewSchema, 'Renamed connection'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    renameConnectionHandler,
+  );
+}
 
 for (const operation of ['credential', 'revoke', 'activate', 'default'] as const) {
   projectsApp.openapi(
@@ -441,119 +475,10 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       }
       if (connection.providerType === 'composio') {
         if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
-        const {
-          composioConnectUrl,
-          finalizeComposioConnection,
-          composioUserId,
-          probeComposioIdentity,
-        } = await import('../../connectors/composio');
-        const { relabelToIdentity, resolveConnectedAs } = await import(
-          '../../connectors/connection-identity'
-        );
-        const { composioConnectionMetadata } = await import('../../connectors/db-deps');
-        const stableUserId = composioUserId(connectionId);
-        const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
         if (operation === 'connect') {
-          const body = await readJsonObject(c);
-          const redirects =
-            body.success_redirect_uri || body.error_redirect_uri
-              ? {
-                  success:
-                    typeof body.success_redirect_uri === 'string'
-                      ? body.success_redirect_uri
-                      : undefined,
-                  error:
-                    typeof body.error_redirect_uri === 'string'
-                      ? body.error_redirect_uri
-                      : undefined,
-                }
-              : undefined;
-          const result = await composioConnectUrl({
-            projectId,
-            slug: connection.connectorAlias,
-            app,
-            connectionId,
-            stableUserId,
-            redirects,
-          });
-          await db
-            .update(connectorConnections)
-            .set({
-              status: 'active',
-              metadata: composioConnectionMetadata({
-                toolkit: app,
-                stableUserId,
-                sessionId: result.sessionId,
-                authRequestId: result.authRequestId,
-                connectedAccountId: result.connectedAccountId,
-                isNoAuth: result.isNoAuth,
-                previous: metadata,
-                connectedAs:
-                  result.connectedAccountId &&
-                  result.connectedAccountId === metadata.connected_account_id
-                    ? connectedAsOf(metadata)
-                    : null,
-              }),
-              updatedAt: sql`now()`,
-            })
-            .where(eq(connectorConnections.connectionId, connectionId));
-          return c.json({
-            app,
-            connectUrl: result.connectUrl,
-            connected: result.connected,
-            isNoAuth: result.isNoAuth,
-          });
+          return c.json(await startComposioConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
         }
-        const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
-        if (!sessionId) return c.json({ connected: false });
-        const result = await finalizeComposioConnection({
-          projectId,
-          slug: connection.connectorAlias,
-          app,
-          connectionId,
-          stableUserId,
-          sessionId,
-          ...(typeof metadata.auth_request_id === 'string'
-            ? { authRequestId: metadata.auth_request_id }
-            : {}),
-        });
-        const connectedAs = result.connected
-          ? await resolveConnectedAs({
-              previous: metadata,
-              connectedAccountId: result.connectedAccountId,
-              isNoAuth: result.isNoAuth,
-              probe: () =>
-                probeComposioIdentity({
-                  app,
-                  sessionId: result.sessionId,
-                  connectedAccountId: result.connectedAccountId!,
-                }),
-            })
-          : null;
-        await db
-          .update(connectorConnections)
-          .set({
-            status: 'active',
-            metadata: composioConnectionMetadata({
-              toolkit: app,
-              stableUserId,
-              sessionId: result.sessionId,
-              authRequestId: result.authRequestId,
-              connectedAccountId: result.connectedAccountId,
-              isNoAuth: result.isNoAuth,
-              previous: metadata,
-              connectedAs,
-            }),
-            updatedAt: sql`now()`,
-          })
-          .where(eq(connectorConnections.connectionId, connectionId));
-        const label = connectedAs ? await relabelToIdentity({ connectionId, identity: connectedAs }) : null;
-        return c.json({
-          connected: result.connected,
-          accountId: result.connectedAccountId,
-          connected_as: connectedAs,
-          ...(label ? { label } : {}),
-        });
+        return c.json(await finalizeComposioConnect(projectId, connectionId, connection, app));
       }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
@@ -562,41 +487,9 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
-        const body = await readJsonObject(c);
-        const redirects =
-          body.success_redirect_uri || body.error_redirect_uri
-            ? {
-                success:
-                  typeof body.success_redirect_uri === 'string'
-                    ? body.success_redirect_uri
-                    : undefined,
-                error:
-                  typeof body.error_redirect_uri === 'string' ? body.error_redirect_uri : undefined,
-              }
-            : undefined;
-        const result = await pipedreamConnectUrl(
-          projectId,
-          connection.connectorAlias,
-          app,
-          connectionId,
-          redirects,
-        );
-        return c.json({
-          token: result.token,
-          app,
-          connectUrl: result.connectUrl,
-          expiresAt: result.expiresAt,
-        });
+        return c.json(await startPipedreamConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
       }
-      const result = await finalizePipedreamConnectionAuthorization({
-        projectId,
-        slug: connection.connectorAlias,
-        app,
-        connectorId: connection.connectorId,
-        connectionId,
-        createdBy: loaded.userId,
-      });
-      return c.json(result);
+      return c.json(await finalizePipedreamConnect(projectId, connectionId, connection, app, loaded.userId));
     },
   );
 }

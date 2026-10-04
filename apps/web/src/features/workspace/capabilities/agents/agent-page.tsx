@@ -100,7 +100,7 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords } from '@kortix/shared';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   BookOpenTextIcon,
   CaretRightIcon,
@@ -188,6 +188,9 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
   });
   const config = detailQuery.data?.config ?? null;
   const agent = toArray(config?.agents).find((a) => a.name === agentName) ?? null;
+  // Meta (and any platform-owned agent) is injected by the API, not declared in
+  // kortix.yaml. Its configuration is fixed: never editable, no agent-config read.
+  const isPlatform = agent?.platform === true;
 
   // All reads start on the first render, in parallel. The agent-config read
   // used to wait for detail to list the agent, and the editor's option reads
@@ -203,7 +206,7 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
     ].map((query) => ({ ...query, enabled: canWrite })),
   });
 
-  if (detailQuery.isLoading || (agent && configQuery.isLoading)) {
+  if (detailQuery.isLoading || (agent && !isPlatform && configQuery.isLoading)) {
     return <AgentPageSkeleton />;
   }
 
@@ -243,8 +246,8 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
     );
   }
 
-  const editable = canWrite && configQuery.data?.editable === true;
-  const isV1 = configQuery.data !== undefined && configQuery.data.editable !== true;
+  const editable = !isPlatform && canWrite && configQuery.data?.editable === true;
+  const isV1 = !isPlatform && configQuery.data !== undefined && configQuery.data.editable !== true;
 
   return editable ? (
     <EditableAgentPage
@@ -260,6 +263,7 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
       config={config}
       canWrite={canWrite}
       showUpgradeHint={isV1}
+      isPlatform={isPlatform}
     />
   );
 }
@@ -347,7 +351,7 @@ function AgentPageFrame({
               className="min-w-0 flex-1 py-2"
             >
               <Tabs value={section} className="w-fit">
-                <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
+                <TabsList orientation="horizontal" className="w-fit">
                   {items.map((item) => trigger(item, true))}
                 </TabsList>
               </Tabs>
@@ -466,7 +470,7 @@ function AgentActions({
   const startSession = useNewProjectSession(projectId);
   const configure = useConfigureThread(projectId);
   const [confirmEditSource, setConfirmEditSource] = useState(false);
-  const isDefault = config.open_code_default_agent === agent.name;
+  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
   const mode = agent.mode?.toLowerCase();
   const startBlocked =
     agent.enabled === false
@@ -572,7 +576,7 @@ function AgentChips({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode = agent.mode?.toLowerCase();
-  const isDefault = config.open_code_default_agent === agent.name;
+  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
   return (
     <span className="flex items-center gap-1.5">
       {mode && mode !== 'primary' ? (
@@ -633,7 +637,7 @@ function AgentHeader({
           </Link>
           <CaretRightIcon aria-hidden className="text-muted-foreground/50 size-3.5 shrink-0" />
           <h1 className="text-foreground truncate text-sm font-semibold">
-            {capitalizeWords(agent.name)}
+            {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
           </h1>
           <AgentChips agent={agent} config={config} size="xs" />
         </nav>
@@ -670,6 +674,10 @@ const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
   'actions',
   'model',
 ];
+/** A platform agent (Meta) shows one page: its identity and the platform notice.
+ *  Its people, triggers, model and permissions are platform-managed, not project
+ *  settings to inspect here. */
+const PLATFORM_SECTIONS: readonly AgentConfigSectionKey[] = ['overview'];
 
 function EditableAgentPage({
   projectId,
@@ -748,7 +756,7 @@ function EditableAgentPage({
             <AgentTriggersSection
               projectId={projectId}
               agentName={agent.name}
-              defaultAgent={config.open_code_default_agent}
+              defaultAgent={config.default_agent ?? config.open_code_default_agent}
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
@@ -1046,12 +1054,14 @@ function ReadOnlyAgentPage({
   config,
   canWrite,
   showUpgradeHint,
+  isPlatform,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   canWrite: boolean;
   showUpgradeHint: boolean;
+  isPlatform: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // The real repo path, with any manifest anchor stripped. Agents declared in
@@ -1062,12 +1072,17 @@ function ReadOnlyAgentPage({
     queryKey: ['entity-file-content', projectId, sourcePath],
     queryFn: () => readProjectFile(projectId, sourcePath),
     staleTime: 30_000,
+    // Meta's "source" is /workspace/AGENTS.md, not a repo file — reading it 404s.
+    enabled: !isPlatform,
   });
   const pathname = usePathname();
   const drivesEnabled = useFeatureFlag(projectId, 'drives').enabled;
   const readOnlySections = useMemo(
-    () => READ_ONLY_SECTIONS.filter((key) => drivesEnabled || key !== 'drive'),
-    [drivesEnabled],
+    () =>
+      isPlatform
+        ? PLATFORM_SECTIONS
+        : READ_ONLY_SECTIONS.filter((key) => drivesEnabled || key !== 'drive'),
+    [drivesEnabled, isPlatform],
   );
   const section = useAgentSection(readOnlySections);
 
@@ -1130,7 +1145,12 @@ function ReadOnlyAgentPage({
   return (
     <AgentPageFrame
       header={
-        <AgentHeader projectId={projectId} agent={agent} config={config} canWrite={canWrite}>
+        <AgentHeader
+          projectId={projectId}
+          agent={agent}
+          config={config}
+          canWrite={canWrite && !isPlatform}
+        >
           {agent.description ? (
             <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
               {agent.description}
@@ -1144,14 +1164,18 @@ function ReadOnlyAgentPage({
       pane={
         <EditorSectionStyleProvider value="panel">
           <div className="space-y-4">
-            {showUpgradeHint ? (
+            {isPlatform ? (
+              <InfoBanner tone="info" title={tI18nComplete.raw('text85b7a59cdbd5')}>
+                {tI18nComplete.raw('textd9c0c74b514b')}
+              </InfoBanner>
+            ) : showUpgradeHint ? (
               <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
                 {tI18nComplete.raw('textf74efe18842d')}{' '}
                 <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>{' '}
                 {tI18nComplete.raw('text479d92cbfaa1')}
               </InfoBanner>
             ) : null}
-            {section === 'overview' ? (
+            {isPlatform ? null : section === 'overview' ? (
               <>
                 {source}
                 <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
@@ -1162,7 +1186,7 @@ function ReadOnlyAgentPage({
               <AgentTriggersSection
                 projectId={projectId}
                 agentName={agent.name}
-                defaultAgent={config.open_code_default_agent}
+                defaultAgent={config.default_agent ?? config.open_code_default_agent}
               />
             ) : section === 'drive' ? (
               <AgentDriveSection projectId={projectId} agentName={agent.name} />

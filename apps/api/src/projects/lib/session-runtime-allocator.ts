@@ -8,11 +8,11 @@ import { provisionSessionSandbox } from '../../platform/services/session-sandbox
 import { db } from '../../shared/db';
 import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
-import type { PreparedInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { transitionSession } from '../session-lifecycle/status-transitions';
+import type { PreparedInitialSandboxTurn } from '../session-turn-ledger';
 import type { ProjectRow } from './serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
-import { transitionSession } from '../session-lifecycle/status-transitions';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -59,7 +59,9 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       return envVars;
     });
 
-    const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
+    // Not awaited here: provisioning reads it only when it builds the provider
+    // input, so the env build overlaps the image check and the token mint.
+    const extraEnvVars = envPromise.then((env) => mergeSessionSandboxEnv(env, input.extraEnvVars));
 
     await provisionSessionSandbox({
       sandboxId: input.sessionId,

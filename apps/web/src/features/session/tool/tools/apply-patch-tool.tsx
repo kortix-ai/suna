@@ -233,5 +233,4 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     </BasicTool>
   );
 }
-ToolRegistry.register('apply_patch', ApplyPatchTool);
 ToolRegistry.register('apply-patch', ApplyPatchTool);

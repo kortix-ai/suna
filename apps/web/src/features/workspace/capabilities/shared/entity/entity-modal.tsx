@@ -17,7 +17,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { FileTree } from '@/components/ui/file-tree';
+import { FileTree, FileTreeNav } from '@/components/ui/file-tree';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -82,10 +82,10 @@ const WRITE_ACTION: Record<EntityKind, string> = {
 /**
  * Whether listing the entity's directory lists THAT ENTITY's files.
  *
- * A skill owns its directory — `.kortix/opencode/skills/<name>/SKILL.md` plus
+ * A skill owns its directory — `skills/<name>/SKILL.md` plus
  * its own scripts and templates — so the listing is exactly its file tree.
  * An agent is a single file in a SHARED directory
- * (`.kortix/opencode/agents/<name>.md`), so the same listing returns every
+ * (`agents/<name>.md`), so the same listing returns every
  * other agent in the project. Rendering that as "this agent's files" would let
  * a click swap the source pane to a different agent while the modal title,
  * the badges, and the configuration aside all still describe the first one.
@@ -324,28 +324,12 @@ function EntityModalBody({
         className="overscroll-contain"
       >
         <FileTree title={tI18nComplete.raw('textabc7e9892806')}>
-          {nodes.length > 0 ? (
-            <nav aria-label={`${entity.name} files`} className="space-y-0.5">
-              {nodes.map((node) => (
-                <button
-                  key={node.path}
-                  type="button"
-                  onClick={() => setSelectedPath(node.path)}
-                  aria-current={node.path === selectedPath}
-                  style={{ paddingLeft: 8 + node.depth * 12 }}
-                  className={cn(
-                    'block w-full truncate rounded-md py-1.5 pr-2 text-left text-xs transition-colors',
-                    'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
-                    node.path === selectedPath
-                      ? 'bg-primary/[0.06] text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {node.name}
-                </button>
-              ))}
-            </nav>
-          ) : null}
+          <FileTreeNav
+            nodes={nodes}
+            selectedPath={selectedPath}
+            onSelect={setSelectedPath}
+            label={`${entity.name} files`}
+          />
         </FileTree>
 
         {filesQuery.isError ? (

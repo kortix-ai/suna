@@ -1,8 +1,9 @@
 import type { ChildProcess } from 'node:child_process';
 import { describe, expect, test } from 'bun:test';
 
-import type { RunningOpenCodeProxy } from '../api/sdk.ts';
+import type { RunningSandboxPortProxy } from '../api/sdk.ts';
 import {
+  ATTACH_UNSUPPORTED,
   AttachOpenCodeError,
   type AttachOpenCodeDeps,
   type AttachResolveRequest,
@@ -22,9 +23,8 @@ function runtimeFor(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
     session,
     auth,
     handle: {} as SessionRuntime['handle'],
-    runtime: {} as SessionRuntime['runtime'],
     runtimeUrl: 'https://runtime.example.test/p/ext/8000',
-    opencodeSessionId: OPENCODE_SESSION_ID,
+    runtimeSessionId: OPENCODE_SESSION_ID,
     ...overrides,
   };
 }
@@ -43,6 +43,7 @@ interface Harness {
 function harness(
   overrides: {
     resolveRuntime?: AttachOpenCodeDeps['resolveRuntime'];
+    probeCapabilities?: AttachOpenCodeDeps['probeCapabilities'];
     ensureBin?: AttachOpenCodeDeps['ensureBin'];
     startProxy?: AttachOpenCodeDeps['startProxy'];
     spawnAttach?: AttachOpenCodeDeps['spawnAttach'];
@@ -62,6 +63,7 @@ function harness(
         resolveRequests.push(request);
         return runtimeFor();
       }),
+    probeCapabilities: overrides.probeCapabilities ?? (async () => undefined),
     probeRuntimeVersion: async () => '1.18.23',
     ensureBin:
       overrides.ensureBin ??
@@ -74,7 +76,7 @@ function harness(
       (() => {
         const record = { url: 'http://127.0.0.1:41234', closed: false };
         proxies.push(record);
-        const proxy: RunningOpenCodeProxy = {
+        const proxy: RunningSandboxPortProxy = {
           url: record.url,
           close: () => {
             record.closed = true;
@@ -157,14 +159,14 @@ describe('attachOpenCodeSession', () => {
     expect(stages).toEqual(['resolving', 'downloading-binary', 'proxy-ready', 'attached']);
     expect(result).toEqual({
       exitCode: 7,
-      opencodeSessionId: OPENCODE_SESSION_ID,
+      runtimeSessionId: OPENCODE_SESSION_ID,
       proxyUrl: 'http://127.0.0.1:41234',
     });
     expect(attachedDetail).toBe(
       'Connecting to Fix the thing (OpenCode ses_opencode, local http://127.0.0.1:41234)',
     );
     expect(attachedContext).toMatchObject({
-      opencodeSessionId: OPENCODE_SESSION_ID,
+      runtimeSessionId: OPENCODE_SESSION_ID,
       proxyUrl: 'http://127.0.0.1:41234',
     });
     expect(h.spawned).toEqual([
@@ -383,9 +385,37 @@ describe('attachOpenCodeSession', () => {
     expect(seen).toEqual([child]);
   });
 
+  test('a runtime without session.attach is refused before the binary or proxy is touched', async () => {
+    const h = harness({ probeCapabilities: async () => ['file.import', 'session.subagents'] });
+    const err = (await attachOpenCodeSession({
+      auth,
+      projectId: 'proj',
+      sessionId: 'sess',
+      deps: h.deps,
+    }).catch((e) => e)) as AttachOpenCodeError;
+    expect(err).toBeInstanceOf(AttachOpenCodeError);
+    expect(err.stage).toBe('resolving');
+    expect(err.message).toBe(ATTACH_UNSUPPORTED);
+    expect(h.binRequests).toEqual([]);
+    expect(h.proxies).toEqual([]);
+    expect(h.spawned).toEqual([]);
+  });
+
+  test('a runtime that lists session.attach attaches', async () => {
+    const h = harness({ probeCapabilities: async () => ['session.subagents', 'session.attach'] });
+    const result = await attachOpenCodeSession({
+      auth,
+      projectId: 'proj',
+      sessionId: 'sess',
+      deps: h.deps,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(h.spawned).toHaveLength(1);
+  });
+
   test('a session with no OpenCode id is refused before the binary is touched', async () => {
     const h = harness({
-      resolveRuntime: async () => runtimeFor({ opencodeSessionId: '' }),
+      resolveRuntime: async () => runtimeFor({ runtimeSessionId: '' }),
     });
     const err = (await attachOpenCodeSession({
       auth,

@@ -18,7 +18,6 @@ import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CodeIcon as Code,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   ArrowsOutSimpleIcon as Maximize2,
@@ -38,6 +37,8 @@ import { createPortal } from 'react-dom';
 import { FileContentRenderer } from './file-content-renderer';
 import { FileSourceProvider, type FileRefreshResult, type FileSource } from './file-source';
 import { getLanguageFromExt } from './preview-policy';
+import { SaveAsPdfButton } from './save-as-pdf-button';
+import { Download } from '@/features/icon/icons/download';
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [
@@ -149,6 +150,10 @@ export function FilePreviewModal({
   const [markdownPreview, setMarkdownPreview] = useState(true);
   // Markdown and Mermaid files both open rendered, with a Source toggle.
   const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
+  // Markdown alone also exports to PDF. Only its text is read here — the query
+  // `FileContentRenderer` already runs for the same path, so no second fetch.
+  const exportsPdf = getLanguageFromExt(fileName) === 'markdown';
+  const { data: pdfSource } = source.useFileContent(exportsPdf ? selectedFilePath : null);
   const shareInput = useMemo(() => {
     if (!selectedFilePath || !shareContext) return null;
     return {
@@ -391,6 +396,14 @@ export function FilePreviewModal({
             <History className="h-4 w-4" />
           </Button>
         </Hint>
+        {exportsPdf && (
+          <SaveAsPdfButton
+            fileName={fileName}
+            content={pdfSource?.type === 'text' ? pdfSource.content : undefined}
+            className="text-muted-foreground hover:text-foreground h-8 w-8"
+            iconClassName="h-4 w-4"
+          />
+        )}
         <Button
           variant="outline"
           size="sm"

@@ -6,15 +6,11 @@
  * type, `#id`, the first line of its content, confidence) and folds its body
  * (markdown content + file chips) behind it. The request (source, query) is a
  * folded "Request" section.
- *
- * `LtmSearchExpandedContent` is the previous mobile body, still imported by
- * `tool-part-renderer.tsx`'s legacy path; it goes when that path is removed.
  */
 
 import { useContext, useMemo } from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import type { ToolPart } from '@/lib/opencode/types';
 import { MagnifyingGlassIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { isToolStreaming } from '@/lib/session/tools/projects-connectors';
@@ -141,27 +137,6 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
     </BasicTool>
   );
 }
-ToolRegistry.register('ltm_search', MemorySearchTool);
 ToolRegistry.register('ltm-search', MemorySearchTool);
-ToolRegistry.register('mem_search', MemorySearchTool);
 ToolRegistry.register('mem-search', MemorySearchTool);
-ToolRegistry.register('memory_search', MemorySearchTool);
 ToolRegistry.register('memory-search', MemorySearchTool);
-ToolRegistry.register('oc-mem_search', MemorySearchTool);
-ToolRegistry.register('oc-mem-search', MemorySearchTool);
-
-// ─── Legacy body (tool-part-renderer.tsx generic path) ───────────────────────
-
-/** @deprecated Previous mobile body; `MemorySearchTool` replaces it. Raw output only. */
-export function LtmSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const output =
-    tool.state.status === 'completed' && 'output' in tool.state && tool.state.output ? tool.state.output.trim() : '';
-  if (!output) return null;
-  return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 10, maxHeight: 250 }}>
-      <MonoBlock isDark={isDark} maxLines={30}>
-        {output.slice(0, 3000)}
-      </MonoBlock>
-    </View>
-  );
-}

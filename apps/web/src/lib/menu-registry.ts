@@ -25,6 +25,7 @@ import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
+import type { RuntimeCapability } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
@@ -42,6 +43,7 @@ import {
   FlaskIcon as Flask,
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
+  HardDriveIcon as HardDrive,
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
   KeyIcon as KeyRound,
@@ -224,6 +226,9 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
+  /** If set, the item is only shown when the session's runtime serves this
+   *  feature (`runtimeSupports`; a pi session has no compact). */
+  requiresRuntime?: RuntimeCapability;
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
@@ -285,6 +290,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'compactSession',
     requiresSession: true,
+    requiresRuntime: 'session.compact',
   },
   {
     id: 'view-changes',
@@ -671,6 +677,18 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
   {
+    id: 'proj-drives',
+    label: 'Drives',
+    icon: HardDrive,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Which company drives this project's agents may use (Kortix Drive).
+    href: '/projects/{projectId}/customize/drives',
+    requiresProject: true,
+    requiresFlag: 'drives',
+  },
+  {
     id: 'proj-triggers',
     label: 'Triggers',
     icon: AlarmClock,
@@ -779,8 +797,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own capability tab since 2026-09-02, beside Agents and Triggers.
-    href: '/projects/{projectId}/customize/review',
+    // Its own project page since 2026-10-02, outside Customize.
+    href: '/projects/{projectId}/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },

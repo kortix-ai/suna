@@ -1,9 +1,9 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, test } from 'bun:test'
-import { createAbortRouter } from '../routes/abort'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import type { Config } from '../config'
-import type { HarnessAbortAfterToolInput, HarnessControlOperations } from '../harness/control'
+import { createAbortRouter } from '@/routes/kortix/abort'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import type { Config } from '@/lib/config/config'
+import type { HarnessAbortAfterToolInput, HarnessControlOperations } from '@/harness/contract/control'
 
 const secret = 'local-test-secret'
 const body = Buffer.from(JSON.stringify({
@@ -26,7 +26,7 @@ describe('abort after tool', () => {
     }
     const router = createAbortRouter({ sandboxToken: secret } as Config, control)
     const payload = {
-      prompt_id: 'prompt-1', opencode_session_id: 'ses_root', turn_message_id: 'msg_running',
+      prompt_id: 'prompt-1', runtime_session_id: 'ses_root', turn_message_id: 'msg_running',
     }
     const unauthorized = await router.request('/after-tool', {
       method: 'POST', body: JSON.stringify(payload),
@@ -41,8 +41,18 @@ describe('abort after tool', () => {
     })
     expect(accepted.status).toBe(202)
     expect(armed).toEqual([{
-      promptId: 'prompt-1', opencodeSessionId: 'ses_root', messageId: 'msg_running',
+      promptId: 'prompt-1', runtimeSessionId: 'ses_root', messageId: 'msg_running',
     }])
+
+    // An API built before W3 names the root `opencode_session_id`.
+    const legacy = await router.request('/after-tool', {
+      method: 'POST',
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt_id: 'prompt-2', opencode_session_id: 'ses_root', turn_message_id: 'msg_running' }),
+    })
+    expect(legacy.status).toBe(202)
+    expect(armed[1]).toEqual({ promptId: 'prompt-2', runtimeSessionId: 'ses_root', messageId: 'msg_running' })
+    armed.length = 1
 
     const removed = await router.request('/after-tool', {
       method: 'DELETE',

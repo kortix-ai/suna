@@ -40,6 +40,7 @@
  * and in the audit ledger, never silent. The script restores the legacy
  * entrypoint and relaunches the old chain if the new daemon does not answer.
  */
+import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
@@ -111,7 +112,7 @@ export const LEGACY_OPENCODE_HOME = 'auto';
  * stopped looking.
  *
  * THE GROUND TRUTH, per the daemon's own contract
- * (`apps/kortix-sandbox-agent-server/src/runtime-assets.ts`,
+ * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts`,
  * `RuntimeConvergenceReport.running`): `build` and `components` describe a
  * PASS — an attempt — not what is running now; a daemon restart reports
  * `build: null` until its first pass completes, and `build` is written even
@@ -188,6 +189,38 @@ function shaField(running: Record<string, unknown>, key: string): string | null 
 }
 
 /**
+ * How long after boot a digest mismatch in `runtime.running` is not, by itself,
+ * evidence that the box runs stale bytes.
+ *
+ * Until a daemon's first convergence pass writes the state file, `running` is
+ * the record the IMAGE BUILD baked (`bakeRuntimeAssetsState` deliberately omits
+ * `build`, so `running.build` is null), and the in-process pass has not run
+ * either (`runtime.build` is null). The Platinum agent-swap fast path replaces
+ * the agent binary after that bake and keeps the predecessor's record, and its
+ * CLI is the predecessor's until the boot pass replaces it in place. Measured
+ * on Dev 2026-10-02 (both regions, template kortix-default-6bacca9b52cc): the
+ * record said agent efd19aa3… / cli 9ba28976… while the box ran agent
+ * d2019d30… — exactly the manifest's — and the boot pass finished ~20 s after
+ * start. Session open read the record, called the box stale, and relaunched a
+ * correct daemon: +17 s on every session from a swapped template.
+ *
+ * Bounded so a daemon whose first pass never completes cannot hide a genuinely
+ * stale agent forever: past the grace, the record counts as evidence again.
+ */
+export const FIRST_CONVERGENCE_GRACE_S = 300;
+
+function awaitingFirstConvergence(
+  health: Record<string, unknown>,
+  runtime: Record<string, unknown>,
+  running: Record<string, unknown>,
+): boolean {
+  if (runtime.build !== null && runtime.build !== undefined) return false;
+  if (running.build !== null && running.build !== undefined) return false;
+  const uptime = typeof health.uptime_s === 'number' ? health.uptime_s : null;
+  return uptime !== null && uptime >= 0 && uptime < FIRST_CONVERGENCE_GRACE_S;
+}
+
+/**
  * A daemon that answers /kortix/health without a `runtime` block was built
  * before convergence existed. Health is unauthenticated and always 200 on a
  * daemon, so a null body means the box could not be reached, not "old".
@@ -208,7 +241,7 @@ export function classifyDaemonHealth(
     return { klass: 'unreachable', ...empty };
   }
   const h = body as Record<string, unknown>;
-  const opencode = typeof h.opencode === 'string' ? h.opencode : null;
+  const opencode = healthRuntimeState(h);
   if (h.daemon !== 'ok') {
     return { klass: 'not-ok', ...empty, opencode };
   }
@@ -259,15 +292,30 @@ export function classifyDaemonHealth(
       if (have !== wanted) mismatches.push(key);
     });
     if (mismatches.length > 0) {
-      staleReasons.push('running_assets_stale');
-      detail.push(`runtime.running does not match the manifest: ${mismatches.join(', ')}`);
+      if (awaitingFirstConvergence(h, r, running)) {
+        // Not evidence yet — see FIRST_CONVERGENCE_GRACE_S. The daemon's own
+        // boot pass re-hashes these files and converges the CLI and skills in
+        // place; if the agent really is behind, that pass stages it and the next
+        // read reports `agentSwapPending`, which still repairs.
+        detail.push(
+          `runtime.running differs from the manifest (${mismatches.join(', ')}) but is still the image bake record; awaiting the first convergence pass`,
+        );
+      } else {
+        staleReasons.push('running_assets_stale');
+        detail.push(`runtime.running does not match the manifest: ${mismatches.join(', ')}`);
+      }
     }
   }
 
   const capabilities = Array.isArray(h.capabilities)
     ? h.capabilities.filter((c): c is string => typeof c === 'string')
     : [];
-  const missingCapabilities = REQUIRED_RUNTIME_CAPABILITIES.filter((cap) => !capabilities.includes(cap));
+  // pi daemons advertise `config.release.v1` since pi applies config releases
+  // (harness/pi/config-release.ts). It is still not REQUIRED of a pi box: one
+  // that runs an older daemon gets it through its runtime-assets update, and
+  // requiring it relaunched every idle pi box on session open (W0).
+  const required = healthHarnessId(h) === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
+  const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {
     staleReasons.push('missing_capability');
     detail.push(`missing required capabilit${missingCapabilities.length === 1 ? 'y' : 'ies'}: ${missingCapabilities.join(', ')}`);
@@ -301,6 +349,9 @@ export function classifyDaemonHealth(
 
 /** Gap between the two health reads that must BOTH be silent before a relaunch. */
 export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+/** The daemon as the box itself sees it — no provider ingress in the path. */
+const LOOPBACK_HEALTH_URL = 'http://127.0.0.1:8000/kortix/health';
+const LOOPBACK_PROBE_TIMEOUT_MS = 15_000;
 
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
@@ -319,6 +370,39 @@ export function relaunchStrategyFor(provider: ProviderName | string): RelaunchSt
     default:
       return null;
   }
+}
+
+/** Metadata stamp: when a session open asked for a dead-daemon relaunch. */
+export const DEAD_DAEMON_REPAIR_REQUESTED_KEY = 'deadDaemonRepairRequestedAt';
+/** One open-time relaunch: download + relaunch + the script's own health wait, then the open parks. */
+export const DEAD_DAEMON_REPAIR_BUDGET_MS = 4 * 60_000;
+
+export type DeadDaemonOpenAction = 'request' | 'wait' | 'park';
+
+/**
+ * A provider-running box whose daemon stayed unreachable past the open budget.
+ * Where the provider's init never relaunches the runtime (Platinum), parking it
+ * only freezes the corpse: every later open resumes the same snapshot with
+ * nothing on :8000, forever (prod 2026-09-28: 18 h, every `/start` parked it
+ * again). So ask for the relaunch once per unreachable spell, and park only
+ * after it had its chance. Daytona/E2B rerun the entrypoint on their next
+ * start, so parking IS their repair.
+ */
+export function decideDeadDaemonOnOpen(input: {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  unreachableSinceMs: number | null;
+  nowMs: number;
+}): DeadDaemonOpenAction {
+  if (relaunchStrategyFor(input.provider) !== 'pt-app') return 'park';
+  const requestedMs = Date.parse(String(input.metadata?.[DEAD_DAEMON_REPAIR_REQUESTED_KEY] ?? ''));
+  if (!Number.isFinite(requestedMs)) return 'request';
+  if (input.unreachableSinceMs !== null && requestedMs < input.unreachableSinceMs) return 'request';
+  const record = readRecord(input.metadata);
+  if (record?.state === 'failed' && Date.parse(record.finishedAt ?? record.lastAttemptAt) >= requestedMs) {
+    return 'park';
+  }
+  return input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS ? 'wait' : 'park';
 }
 
 export interface RenderScriptOptions {
@@ -707,6 +791,20 @@ export async function bootstrapLegacyRuntime(
     await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
     const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
+      }
       deadDaemonOnRunningBox = true;
       deps.log('daemon gone on a running box; relaunching the runtime chain', {
         sandboxId: input.sandboxId,
@@ -936,6 +1034,14 @@ export async function bootstrapLegacyRuntime(
       `script failed at ${report.stage}`,
     );
   }
+  if (report.stage === 'deferred_busy') {
+    // A turn started between the idle gate above and the relaunch. Nothing
+    // ran, so this was not an attempt: put the prior record back and the next
+    // idle pass retries with no cooldown and no budget spent.
+    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
+    deps.log('legacy runtime bootstrap deferred: a turn started during the repair', { sandboxId: input.sandboxId });
+    return { outcome: 'skipped-busy', detail: 'a turn started during the repair; relaunch deferred', classification };
+  }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {
     return finish('staged', { to }, 'staged', 'staged; converges at the provider\'s next start');
@@ -1007,7 +1113,16 @@ export async function bootstrapLegacyRuntime(
     'failed',
     {
       to,
-      error: `relaunched but not converged within budget (last: ${last?.klass ?? 'unreachable'}/${last?.opencode ?? '-'})`,
+      // Name EVERY condition the acceptance gate above tests, not two of them.
+      // The old message printed `klass/opencode` only, so a box that timed out
+      // on `runtimeBuild === null` reported `last: current/ok` — a reading that
+      // says "converged" next to the word "not converged" and sent the next
+      // reader looking in the wrong place (a dev session, 2026-09-28).
+      error: `relaunched but not converged within budget (last: klass=${
+        last?.klass ?? 'unreachable'
+      } opencode=${last?.opencode ?? '-'} opencodeComponent=${
+        last?.opencodeComponent ?? '-'
+      } runtimeBuild=${last?.runtimeBuild == null ? 'null' : 'present'})`,
     },
     'failed',
     'converge timeout',

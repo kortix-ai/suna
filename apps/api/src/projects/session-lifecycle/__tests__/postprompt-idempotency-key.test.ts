@@ -46,6 +46,9 @@ mock.module('../../../shared/db', () => ({
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
+          // continuationOverrides (queued-continue-delivery.ts) reads the newest
+          // turn that named a model; none here, so the prompt goes out as sent.
+          orderBy: () => ({ limit: async () => [] }),
           limit: async () => {
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
@@ -173,6 +176,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+  invalidateSandbox: () => {},
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},

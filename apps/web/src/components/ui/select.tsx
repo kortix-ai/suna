@@ -9,7 +9,16 @@ import {
 } from '@phosphor-icons/react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import * as React from 'react';
-import { MENU_LABEL, MENU_PANEL_STATIC, MENU_SEPARATOR, menuRow, type MenuRowSize } from './menu-recipe';
+import {
+  MENU_INDICATOR,
+  MENU_INDICATOR_ICON,
+  MENU_INSET_END,
+  MENU_LABEL,
+  MENU_PANEL_STATIC,
+  MENU_SEPARATOR,
+  menuRow,
+  type MenuRowSize,
+} from './menu-recipe';
 import {
   TRIGGER_CARET_CLASS,
   TRIGGER_ICON_SIZE,
@@ -70,7 +79,10 @@ const SelectScrollUpButton = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.ScrollUpButton
     ref={ref}
-    className={cn('flex cursor-default items-center justify-center py-1', className)}
+    className={cn(
+      'flex cursor-default items-center justify-center py-1', // cursor-default: hover-scroll area, not a control.
+      className,
+    )}
     {...props}
   >
     <ChevronUp className="size-4" />
@@ -84,7 +96,10 @@ const SelectScrollDownButton = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.ScrollDownButton
     ref={ref}
-    className={cn('flex cursor-default items-center justify-center py-1', className)}
+    className={cn(
+      'flex cursor-default items-center justify-center py-1', // cursor-default: hover-scroll area, not a control.
+      className,
+    )}
     {...props}
   >
     <ChevronDown className="size-4" />
@@ -115,7 +130,6 @@ const SelectContent = React.forwardRef<
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
           className={cn(
-            // 'p-1',
             position === 'popper' &&
               'h-(--radix-select-trigger-height) w-full min-w-[calc(var(--radix-select-trigger-width)-8px)]',
           )}
@@ -143,42 +157,41 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
-    /**
-     * `md` (`px-3 py-2`) is the select's default rather than the dropdown's
-     * `sm`: an option is a form target the pointer travels to, not an action in
-     * a menu the pointer is already inside. Same scale, one step apart.
-     */
+    /** Row height step — see `MENU_ROW_SIZE` in `./menu-recipe`. */
     size?: MenuRowSize;
     /** Renders below children in the dropdown only — not in the trigger. */
     description?: React.ReactNode;
   }
-  // The removed `variant="secondary"` had no call sites in the app. It carried
-  // its own radius (`rounded-[0.4rem]`), its own padding and `transition-all
-  // duration-500`, so any row that ever used it would have broken the column.
 >(({ className, children, size = 'sm', description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
+    // `MENU_INSET_END` reserves the trailing slot on every row, checked or
+    // not, so a long label truncates before the check instead of running
+    // under it, and the check column is the same x on every row.
     className={cn(
       menuRow(size, 'default'),
-      description &&
-        'items-start [&>[data-slot=select-item-indicator]]:top-2 [&>[data-slot=select-item-indicator]]:translate-y-0',
+      MENU_INSET_END,
+      description && 'items-start',
       className,
     )}
     {...props}
   >
     <span
       data-slot="select-item-indicator"
-      className="absolute right-3 flex h-3.5 w-3.5 items-center justify-center"
+      // Absolute inside a flex row: its static position follows the row's
+      // `items-*`, so it centres on a one-line row. On a described row it tops
+      // out, and `mt-0.5` centres the ~15px slot on the 20px first line.
+      className={cn(MENU_INDICATOR, 'absolute right-2', description && 'mt-0.5')}
     >
       <SelectPrimitive.ItemIndicator>
-        <Check className="size-4 shrink-0" />
+        <Check className={MENU_INDICATOR_ICON} />
       </SelectPrimitive.ItemIndicator>
     </span>
 
     {description ? (
       <div className="flex min-w-0 flex-col gap-0.5">
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        <span className="text-muted-foreground max-w-[260px] text-[11px] leading-snug whitespace-normal">
+        <span className="text-muted-foreground max-w-64 text-xs whitespace-normal">
           {description}
         </span>
       </div>

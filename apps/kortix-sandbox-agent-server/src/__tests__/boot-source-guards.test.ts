@@ -1,12 +1,14 @@
 /**
- * Ordering contracts inside `harness/open-code/boot.ts` (and the one boot path it
- * hands the clone to, `boot-config-path.ts`) that no behavioral test reaches yet.
+ * Ordering contracts inside `harness/open-code/boot.ts`, `initial-session.ts`
+ * (where KRTX-930 moved the initial session out of boot.ts), and the one boot
+ * path boot hands the clone to, `boot-config-path.ts`, that no behavioral test
+ * reaches yet.
  *
- * `startSessionRuntime` and `maybeCreateInitialOpencodeSession` are private and
- * run only inside a full boot. Until a boot keeper drives them over a fake
- * OpenCode and a fake API, these source guards are the cheapest independent
- * proof of each ordering below; every one of them names the incident it
- * prevents. They are the ONLY source-text assertions allowed on boot.ts.
+ * `startSessionRuntime` and `maybeCreateInitialOpencodeSession` run only inside
+ * a full boot. Until a boot keeper drives them over a fake OpenCode and a fake
+ * API, these source guards are the cheapest independent proof of each ordering
+ * below; every one of them names the incident it prevents. They are the ONLY
+ * source-text assertions allowed on these files.
  *
  * Rules for this file:
  * - Read sources through `stripComments()` first. A guard that
@@ -58,13 +60,16 @@ const BOOT = stripComments(readFileSync(join(import.meta.dir, '..', 'harness', '
 const BOOT_PATH = stripComments(
   readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8'),
 )
+const INITIAL_SESSION = stripComments(
+  readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'initial-session.ts'), 'utf8'),
+)
 
-/** The text of one top-level function, from its declaration to the next one. */
-function fn(signature: string): string {
-  const start = BOOT.indexOf(signature)
+/** The text of one top-level function in `src`, from its declaration to the next one. */
+function fn(signature: string, src = BOOT): string {
+  const start = src.indexOf(signature)
   expect(start).toBeGreaterThan(-1)
-  const next = BOOT.slice(start + signature.length).search(/\n(export )?(async )?function |\nexport \{/)
-  return next < 0 ? BOOT.slice(start) : BOOT.slice(start, start + signature.length + next)
+  const next = src.slice(start + signature.length).search(/\n(export )?(async )?function |\nexport \{/)
+  return next < 0 ? src.slice(start) : src.slice(start, start + signature.length + next)
 }
 
 /** Every index of `needle` must be > -1 and strictly increasing. */
@@ -128,7 +133,7 @@ describe('startSessionRuntime', () => {
 })
 
 describe('maybeCreateInitialOpencodeSession', () => {
-  const initial = fn('async function maybeCreateInitialOpencodeSession(')
+  const initial = fn('export async function maybeCreateInitialOpencodeSession(', INITIAL_SESSION)
 
   test('resolves the live URL after the listening gate, before the root lookup', () => {
     // A verified reload during the wait moves the port; a URL read before the

@@ -9,7 +9,6 @@ interface SessionCreatedAuditInput {
   inSession?: boolean | null;
   origin: string;
   invocationSource?: string | null;
-  clientReportedSource?: string | null;
   callerSessionId?: string | null;
   agentName: string;
   visibility: string;
@@ -45,7 +44,6 @@ function authoritativeSource(input: SessionCreatedAuditInput, actor: AuditActorT
 export interface SessionCreatedAuditAttribution {
   actorType: AuditActorType;
   authoritativeSource: string;
-  clientReportedSource: string | null;
   initiatorActorType: 'agent' | null;
   initiatorActorId: string | null;
   delegationDepth: number;
@@ -58,7 +56,6 @@ export function sessionCreatedAuditAttribution(
   return {
     actorType: actor,
     authoritativeSource: authoritativeSource(input, actor),
-    clientReportedSource: input.clientReportedSource ?? null,
     initiatorActorType: input.callerSessionId ? 'agent' : null,
     initiatorActorId: input.callerSessionId ?? null,
     delegationDepth: input.callerSessionId ? 1 : 0,
@@ -74,7 +71,6 @@ export function sessionCreatedAuditEvent(input: SessionCreatedAuditInput): Audit
     actorUserId: input.actorUserId,
     actorType: attribution.actorType,
     authoritativeSource: attribution.authoritativeSource,
-    clientReportedSource: attribution.clientReportedSource,
     initiatorActorType: attribution.initiatorActorType,
     initiatorActorId: attribution.initiatorActorId,
     delegationDepth: attribution.delegationDepth,

@@ -193,7 +193,7 @@ test('command payload and reference commit together; retries do not add referenc
   expect(second.row.commandId).toBe(first.row.commandId);
   expect(second.deduped).toBe(true);
   expect(first.row.payload.parts).toEqual([
-    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'text/plain' },
+    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'application/octet-stream' },
   ]);
   const refs = await db
     .select()
@@ -254,6 +254,33 @@ test('command payload and reference commit together; retries do not add referenc
       partIndex: 0,
     }),
   ).rejects.toThrow('unavailable');
+});
+
+test('an attachment retry with the same key but another project rejects without binding a reference', async () => {
+  const id = await ready();
+  const clientMessageId = crypto.randomUUID();
+  const first = await enqueue(id, clientMessageId);
+  const referencesBefore = await db.select().from(promptAttachmentReferences)
+    .where(eq(promptAttachmentReferences.attachmentId, id));
+  expect(referencesBefore).toHaveLength(1);
+
+  await expect(enqueueContinueSessionCommand({
+    source: 'ui',
+    ...scope,
+    actorUserId: scope.userId,
+    projectId: crypto.randomUUID(),
+    sessionId,
+    text: 'proof',
+    clientMessageId,
+    idempotencyKey: `prompt:${sessionId}:${clientMessageId}`,
+    parts: [{ type: 'file', attachment_id: id, filename: 'spoof.txt' }],
+  })).rejects.toThrow('Prompt idempotency conflict');
+
+  const [persisted] = await db.select().from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.commandId, first.row.commandId));
+  expect(persisted.sessionId).toBe(sessionId);
+  expect(await db.select().from(promptAttachmentReferences)
+    .where(eq(promptAttachmentReferences.attachmentId, id))).toHaveLength(1);
 });
 
 // Guard ORDER, not just the two guards. A wrong part index is a permanent
@@ -339,7 +366,8 @@ test('runtime descriptor requires the live sandbox and exact running command par
     attachment_id: id,
     part_index: 0,
     filename: 'proof.txt',
-    mime: 'text/plain',
+    // KRTX-778: a declared type outside the model-native allowlist is stored as binary.
+    mime: 'application/octet-stream',
     size_bytes: 3,
     target_path: `/workspace/uploads/.kortix-inbox/${command.row.commandId}/0-proof.txt`,
   });
@@ -481,7 +509,7 @@ test('removing an expired queued command gives Undo a fresh owner-scoped attachm
   await cleanupExpiredPromptAttachments();
   const restored = await enqueue(id);
   expect(restored.row.payload.parts).toEqual([
-    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'text/plain' },
+    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'application/octet-stream' },
   ]);
 });
 

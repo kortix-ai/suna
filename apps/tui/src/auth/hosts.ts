@@ -27,8 +27,8 @@ import {
   listHosts,
   loadConfig,
   secureRemoteBase,
-} from '@kortix/cli/src/api/config.ts';
-import { sdkBackendUrl } from '@kortix/cli/src/api/sdk.ts';
+} from '@kortix/shared/host-config';
+import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export interface ResolvedHost {
   /** Config key (`cloud`, `local-dev`, …), or `env` for the env override. */

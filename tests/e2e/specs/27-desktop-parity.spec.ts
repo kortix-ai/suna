@@ -726,6 +726,20 @@ for (const runtime of runtimes) {
               enabled: true,
               accelerator: "CommandOrControl+W",
             });
+          // KRTX-48: a production build (the shipped channel) shows one
+          // "Change Kortix Instance…" entry and hides the developer presets.
+          const frontendMenu = await desktopApp.evaluate(({ Menu }) => {
+            const menu = Menu.getApplicationMenu();
+            return {
+              changeLabel:
+                menu?.getMenuItemById("kx-change-instance")?.label ?? null,
+              hasDevPresets: Boolean(menu?.getMenuItemById("kx-frontend-url")),
+            };
+          });
+          expect(frontendMenu).toEqual({
+            changeLabel: "Change Kortix Instance…",
+            hasDevPresets: false,
+          });
           await clickNativeMenu("kx-app-settings");
           await expect(page.getByRole("dialog")).toBeVisible();
           await page
@@ -1075,12 +1089,6 @@ for (const runtime of runtimes) {
           await expect(input).toBeEmpty();
           expect([200, 202]).toContain((await sent.response())?.status());
         };
-        const send = async (text: string, key: string, placement: string, fill = true) => {
-          const request = promptRequest();
-          if (fill) await input.fill(text);
-          await input.press(key);
-          await verifySend(request, text, placement);
-        };
         const transcriptText = "Enter pending placement";
         const composerText = "Command pending placement";
         const pending = page
@@ -1135,7 +1143,10 @@ for (const runtime of runtimes) {
         await expect.poll(() => postOrder).toEqual(["transcript", "composer"]);
         await page.unroute(promptsUrl);
         await expect(pending).toHaveAttribute("data-queue-tone", "pending");
-        await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
+        // KRTX-494: a prompt waiting in the inbox says "Queued" inline on the
+        // message. The retired Quick Queue / Waiting chrome stays gone.
+        await expect(pending.locator("[data-queued-status]")).toHaveText("Queued");
+        await expect(pending).not.toContainText(/Quick Queue|Waiting/);
         await expectThinkingMatchesStop(page);
         if (!isDeployedTarget()) {
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);
@@ -1172,7 +1183,31 @@ for (const runtime of runtimes) {
         }
         await expect(input).toContainText("console.log(value)");
         const editedText = `${composerText}\n${codeLines.join("\n")}`;
-        await send(editedText, "Control+Enter", "composer", false);
+        // Editing a queued prompt saves it in place (#8753): the row keeps its
+        // place in the queue and any Stop hold, so submit PATCHes that row and
+        // never re-POSTs it. A re-POST would run at once on an idle session.
+        const reposts: string[] = [];
+        const countRepost = (request: import("@playwright/test").Request) => {
+          if (
+            request.method() === "POST" &&
+            new URL(request.url()).pathname.endsWith(`/sessions/${sessionId}/prompts`)
+          ) reposts.push(request.url());
+        };
+        page.on("request", countRepost);
+        const saveRequest = page.waitForRequest(
+          (request) =>
+            request.method() === "PATCH" &&
+            new URL(request.url()).pathname.includes(`/sessions/${sessionId}/prompts/`),
+        );
+        await input.press("Control+Enter");
+        const saved = await saveRequest;
+        expect(saved.postDataJSON()).toEqual({ text: editedText });
+        expect((await saved.response())?.status()).toBe(200);
+        await expect(input).toBeEmpty();
+        await expect(row).toBeVisible();
+        await expect(row).toContainText("console.log(value)");
+        page.off("request", countRepost);
+        expect(reposts).toEqual([]);
         const persisted = await api<{
           prompts: Array<{ placement: string; full_text: string }>;
         }>(
@@ -1679,7 +1714,7 @@ for (const runtime of runtimes) {
         await dismissOnboarding(page);
 
         // The reported soft lock: the switcher opens /new, and /new has no
-        // navigation of its own — only an account picker and Log out.
+        // navigation of its own — only an account menu.
         await page
           .getByRole("button", { name: "Switch project", exact: true })
           .click();
@@ -1708,15 +1743,16 @@ for (const runtime of runtimes) {
           backBox.y + backBox.height,
           "Back must sit inside the title-bar band",
         ).toBeLessThanOrEqual(43);
-        // The page's own top row (account picker, Log out) drops below the band.
-        const logOut = page.getByRole("button", {
-          name: "Log out",
+        // The page's own top row drops below the band. Log out lives in the
+        // account menu (AccountTopBar, #8286); its trigger is the row's control.
+        const accountMenu = page.getByRole("button", {
+          name: `Logged in as ${email}`,
           exact: true,
         });
-        await expect(logOut).toBeVisible();
+        await expect(accountMenu).toBeVisible();
         expect(
-          (await logOut.boundingBox())!.y,
-          "Log out must sit below the title-bar band",
+          (await accountMenu.boundingBox())!.y,
+          "the account menu must sit below the title-bar band",
         ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
 
         // `/new` has no titlebar owner, so the root strip is its only drag
@@ -2256,7 +2292,7 @@ nativeBrowserTest?.(
       await expect.poll(currentZoom).toBe(0.94);
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
 
-      for (const route of ["apps", "files"] as const) {
+      for (const route of ["apps", "files", "reminders"] as const) {
         await main.goto(`${baseURL}/projects/${project.id}/${route}`);
         const row = main
           .locator(".kx-titlebar-row[data-sidebar-collapsed='true']")

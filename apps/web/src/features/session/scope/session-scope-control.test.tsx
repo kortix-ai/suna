@@ -62,6 +62,7 @@ const messages = {
       unavailableDescription: 'The current secret selection stays unchanged.',
       useProjectDefault: 'Use the project default',
       empty: 'No secrets are available for this agent.',
+      loading: 'Loading secrets…',
     },
   },
 };
@@ -90,6 +91,22 @@ function renderSecrets(draft: SessionScopeDraft, scopeCatalog = catalog) {
 // stays below — `connector_bindings` is still a real, programmatic-API concept
 // (Kortix as a Backend).
 describe('session scope editors', () => {
+  test('a secrets catalog still loading says so, never "unavailable"', () => {
+    const unavailable: SessionScopeSelectionCatalog = {
+      secrets: { status: 'unavailable' },
+      connector_connections: { status: 'unavailable' },
+    };
+    const html = renderToStaticMarkup(
+      withTranslations(
+        <SessionSecretsEditor draft={{}} catalog={unavailable} loading onChange={() => {}} />,
+      ),
+    );
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain('Loading secrets…');
+    expect(html).not.toContain('Secret access is unavailable');
+  });
+
   test('an inherited secrets axis keeps the project default checked', () => {
     // `null` is the INHERITED state, so the box that says "use the project
     // default" is the one that is on. Unchecking a secret is what converts the

@@ -12,6 +12,23 @@ You declare most connectors in `kortix.yaml`, or in a file it lists under [`impo
 channel and computer connectors when you connect a chat platform or a
 machine.
 
+## Browse and add a connector
+
+Open **Connectors** to browse the managed catalog. Its default list contains
+managed-provider toolkits connectable with provider-managed authentication or an
+enabled custom authentication configuration. It does not require an existing
+connection in your project. A toolkit that needs an unverified custom OAuth
+configuration stays hidden until that configuration can be verified.
+
+For direct sources, enable **Connectors API Discover** in the project's feature
+flags, then select **API / MCP** on the same page. Enabling the flag does not
+replace the managed default. The direct catalog groups published OpenAPI, MCP,
+GraphQL, Postman, and other API surfaces. Select a card, choose a published
+surface, and complete its connection form. Documentation-only surfaces open the
+provider's documentation; they are not presented as a ready-to-connect template.
+Use **Add → Manual** for a raw API or a schema that the catalog does not contain.
+Direct discovery also works without a configured managed provider.
+
 ## Connectors, connections, and accounts
 
 A connector is the agent-facing reach package: a declared capability (which
@@ -52,8 +69,8 @@ Select **Add account**, name the account, and choose **Who can use it**:
 
 - **Only you** — a private account. Any member can add one.
 - **Everyone in the project** — a shared account.
-- **Specific people or groups** — a shared account, narrowed to the people and
-  groups you pick.
+- **Specific people or groups** — a shared account, narrowed to the people,
+  groups, and agents you pick.
 
 The two shared choices need `project.connector.connections.manage`. For
 **Specific people or groups**, Kortix writes the grants before you authorize
@@ -76,6 +93,8 @@ dialog used for agents. It lists who can use the account now, and you add:
 - **Everyone in the project** — the default.
 - **Groups** — every member of each group.
 - **People** — one member each. Pick only yourself to keep the account to you.
+- **Agents** — every session of that agent, triggers and shared sessions
+  included. Anyone who can run the agent can use the account through it.
 
 Nothing changes until you select **Save**. Removing the last group or person
 makes the account usable by everyone again; the dialog states the result before
@@ -84,9 +103,12 @@ you save.
 A narrowed account follows the private-account rules, with its audience in
 place of the owner:
 
-- Only a person in the audience can use it, and only in a private session.
-- A service account (an agent or a trigger acting unattended) never uses it.
-- A session that binds it cannot be shared.
+- A person in the audience can use it, and only in a private session.
+- An agent in the audience can use it in every one of its sessions.
+- Any other agent, and a trigger of any other agent, never uses it.
+- A session that binds it cannot be shared, unless the account is shared with
+  that session's own agent.
+- Only a person changes who can use an account. An agent session gets `403`.
 
 A person outside the audience does not see the account. A person who manages
 the project's connections still sees it, marked **Not shared with you**, so
@@ -220,7 +242,7 @@ A connector uses one provider type:
 - **openapi**, **postman**, **graphql**, **http** — direct API connectors
 - **mcp** — a remote MCP server over HTTP or SSE
 - **channel** — a chat platform connection
-- **computer** — one permissioned connector profile for one connected machine
+- **computer** — each member's connected machine is one account
 
 See [Slack and channels](/docs/connect/slack) and
 [Computers](/docs/connect/computers) for the managed provider flows.
@@ -280,7 +302,28 @@ not grant authority. The page requires a signed-in Kortix account. Kortix then
 verifies that the account can access and approve actions in the project.
 
 The approval page shows the redacted parameters that the connector will receive.
-Approve or deny the call once. Kortix sends the decision back into the session
+A caller can add `approval_context` (CLI: `--reason`) to describe the effect.
+Use it when the parameters are only references: `gmail.send_draft` takes a
+draft id, so the agent states the recipient, subject, and body. The page shows
+this text as the agent's description, not verified. The parameters remain the
+evidence. Kortix never sends `approval_context` to the provider.
+
+Approve or deny the call once. Add an optional message to the decision. The
+message goes back to the agent with the decision, so a deny can say what to do
+instead.
+
+Every pending call also appears in **Review → Needs you** for the project. Open
+**Review** from the sidebar; its count shows how many items wait for you. A
+call opens in the same approval view as its approval link, so you see the
+connector, the parameters, and the agent's description before you decide.
+
+When the call comes from a Slack or Teams session, Kortix posts an approval
+card in that thread. The card shows the agent's description, the parameters,
+and **Approve** / **Deny**. In Slack, **Reply…** opens a box for a message to
+the agent; in Teams, the card has the message box inline. Only a project
+manager or the person who started the session can decide. A decision made
+anywhere (the thread, Kortix, or the approval page) replaces the card's
+buttons with the outcome, and the agent continues in the same thread. Kortix sends the decision back into the session
 through a durable callback. An approval applies only to the exact request
 digest. A changed recipient, subject, body, channel, URL, or other parameter
 requires a new decision.

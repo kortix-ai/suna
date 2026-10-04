@@ -9,10 +9,6 @@ import { useTranslations } from '@/i18n/use-translations';
  * Actions mutate parent state optimistically via the passed handlers.
  */
 
-import {
-  type ApprovalDecisionValue,
-  ApprovalRequest,
-} from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
@@ -35,15 +31,13 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 import { ChangeFiles } from './change-files';
-import { connectorCallId, formatItemAgeLong } from './review-actions';
+import { formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
-  RISK_META,
   STATUS_META,
   VERIFICATION_BADGE,
   reviewKindLabel,
-  reviewRiskLabel,
   reviewStatusLabel,
 } from './review-meta';
 import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } from './types';
@@ -53,8 +47,7 @@ export interface ReviewActions {
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
-  /** Live-data mode. The shared Connector parameter review submits its exact
-   *  decision through `resolve()`. */
+  /** Live-data mode: verdicts go to the server through `resolve()`. */
   connected?: boolean;
   /** The review item id currently mid-mutation, if any — drives the
    *  per-item `Loading` state on Approve/Deny while connected. */
@@ -202,6 +195,8 @@ function ChangeBody({
 }
 
 // ── approval ──────────────────────────────────────────────────────────────
+// Connector calls never reach this page: the inbox opens them in
+// `ApprovalDecisionModal`. What is left here is the native multi-action approval.
 function ApprovalActionRow({
   action,
   connected,
@@ -241,9 +236,6 @@ function ApprovalActionRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-foreground text-sm font-medium">{action.title}</span>
-            <Badge variant={RISK_META[action.risk].badge} size="sm">
-              {reviewRiskLabel(action.risk, tI18nComplete)}
-            </Badge>
           </div>
           <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
             {action.consequence}
@@ -320,52 +312,13 @@ function ApprovalBody({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const list = item.detail.actions ?? [];
-  const adaptedExecutionId = connectorCallId(item.id);
-  const adaptedAction = adaptedExecutionId ? list[0] : null;
-  if (actions.connected && adaptedAction) {
-    const busyDecision: ApprovalDecisionValue | null =
-      actions.pendingId === item.id ? (actions.pendingDecision ?? null) : null;
-    return (
-      <ApprovalRequest
-        request={{
-          action: adaptedAction.actionPath ?? adaptedAction.title,
-          risk: adaptedAction.connectorRisk ?? adaptedAction.risk,
-          projectName: item.project,
-          requestedAt: item.createdAt,
-          argsPreview: adaptedAction.rawArgsPreview ?? null,
-          reviewComplete: adaptedAction.reviewComplete === true,
-          previewAuthorized: adaptedAction.previewAuthorized !== false,
-          pending: item.status === 'needs_you',
-          resolution:
-            item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,
-          status:
-            item.status === 'approved'
-              ? 'ok'
-              : item.status === 'rejected'
-                ? 'denied'
-                : 'pending_approval',
-        }}
-        onDecision={(decision) =>
-          actions.resolve(
-            item.id,
-            decision === 'approve' ? 'approved' : 'rejected',
-            decision === 'approve' ? tI18nComplete.raw('text24234d557d8d') : 'Denied',
-          )
-        }
-        busyDecision={busyDecision}
-      />
-    );
-  }
   const openSession =
     actions.openSession && item.sessionId
       ? () => actions.openSession?.(item.sessionId as string)
       : undefined;
-  // Adapted Connector approvals return through ApprovalRequest above. This
-  // native/prototype branch keeps its existing whole-item decision behavior.
   return (
     <>
-      {/* Native multi-action approvals resolve as one item. Adapted Connector
-          approvals cannot reach this branch. */}
+      {/* Native multi-action approvals resolve as one item. */}
       {(() => {
         const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;
         const busy = actions.connected && actions.pendingId === item.id;
@@ -659,7 +612,7 @@ function ActionBar({
       </span>
     );
   }
-  // Decisions and approvals decide inside their body.
+  // Decisions and native approvals decide inside their body.
   if (item.kind === 'decision' || item.kind === 'approval') return null;
 
   // change · output · batch
@@ -797,6 +750,15 @@ export function ReviewDetail({
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="text-muted-foreground hover:text-foreground -ml-2.5"
+            >
+              <ArrowLeft className="size-3.5 shrink-0" />
+              {tI18nComplete.raw('text76900f1bfd16')}
+            </Button>
             <Badge variant={statusBadge} size="sm">
               {statusLabel}
             </Badge>
@@ -805,11 +767,6 @@ export function ReviewDetail({
                 {reviewKindLabel(item.kind, tI18nComplete)}
               </Badge>
             )}
-            {item.risk === 'medium' || item.risk === 'high' ? (
-              <Badge variant={RISK_META[item.risk].badge} size="sm">
-                {reviewRiskLabel(item.risk, tI18nComplete)}
-              </Badge>
-            ) : null}
           </div>
           <div className="mt-10 space-y-2">
             <p className="text-muted-foreground text-xs">
@@ -826,7 +783,7 @@ export function ReviewDetail({
             <span>{formatItemAgeLong(item.createdAt)}</span>
           </div>
         </div>
-        <div className="shrink-0 sm:pt-1">
+        <div className="shrink-0">
           <ActionBar
             item={item}
             actions={actions}
@@ -840,7 +797,7 @@ export function ReviewDetail({
       </header>
 
       <div className="mt-8 space-y-8">
-        {composing && secondaryLabel && (
+        {composing && secondaryLabel && item.kind !== 'approval' && (
           <FeedbackComposer
             onCancel={() => setComposing(false)}
             onSend={(text) => {

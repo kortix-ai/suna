@@ -13,7 +13,7 @@ import type {
 import { getClient } from '../core/runtime/client';
 import {
   deriveSubdomainOpts,
-  getActiveOpenCodeUrl,
+  getActiveRuntimeUrl,
 } from '../browser/stores/server-store';
 import type { SubdomainUrlOptions } from '../core/session/url';
 import {
@@ -22,7 +22,7 @@ import {
   hasPreviewTarget,
 } from '../core/session/url';
 import { useCurrentRuntime } from './use-current-runtime';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
+import { runtimeKeys, useRuntimeReady } from './use-opencode-sessions/keys';
 
 interface RuntimeResult<T> {
   data?: T;
@@ -52,12 +52,14 @@ export function readRuntimeTextFile(path: string): Promise<string | FileContent>
   return getClient().file.read({ path }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function getRuntimeProviderAuthMethods(): Promise<
   Record<string, ProviderAuthMethod[]>
 > {
   return getClient().provider.auth().then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function authorizeRuntimeProvider(
   providerID: string,
   method: number,
@@ -65,6 +67,7 @@ export function authorizeRuntimeProvider(
   return getClient().provider.oauth.authorize({ providerID, method }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function completeRuntimeProviderOAuth(
   providerID: string,
   method?: number,
@@ -77,6 +80,7 @@ export function completeRuntimeProviderOAuth(
   }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function setRuntimeProviderApiKey(
   providerID: string,
   key: string,
@@ -87,14 +91,17 @@ export function setRuntimeProviderApiKey(
   }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function getRuntimeConfig(): Promise<Config> {
   return getClient().global.config.get().then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function updateRuntimeConfig(config: Config): Promise<Config> {
   return getClient().global.config.update({ config } as never).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export async function refreshRuntimeConfiguration(): Promise<void> {
   unwrapRuntimeResult(await getClient().global.dispose());
 }
@@ -110,7 +117,7 @@ export function logRuntimeEvent(input: {
 
 /** Opaque identity for caches that must reset when the active runtime changes. */
 export function getRuntimeCacheKey(): string {
-  return getActiveOpenCodeUrl();
+  return getActiveRuntimeUrl();
 }
 
 export interface ActiveSandboxProxyContext {
@@ -126,7 +133,7 @@ export interface ActiveSandboxProxyContext {
 export function createActiveSandboxProxyContext(): ActiveSandboxProxyContext {
   const subdomainOpts = deriveSubdomainOpts();
   return {
-    serverUrl: getActiveOpenCodeUrl(),
+    serverUrl: getActiveRuntimeUrl(),
     subdomainOpts,
     isReady: hasPreviewTarget(subdomainOpts),
   };
@@ -162,9 +169,9 @@ export function getActiveStaticFileHealthUrl(): string {
 }
 
 export function useRuntimeProjectInfo(options?: { enabled?: boolean }) {
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   return useQuery<RuntimeProjectInfo>({
-    queryKey: opencodeKeys.currentProject(),
+    queryKey: runtimeKeys.currentProject(),
     queryFn: getRuntimeProjectInfo,
     enabled: runtimeReady && options?.enabled !== false,
     staleTime: Infinity,

@@ -67,5 +67,4 @@ export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </>
   );
 }
-ToolRegistry.register('agent_message', AgentMessageTool);
 ToolRegistry.register('agent-message', AgentMessageTool);

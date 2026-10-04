@@ -1,20 +1,20 @@
 import { requireOpenCodeConfig, type OpenCodeConfig } from './config'
-import { ConvergeBusyError, configReleaseReport, convergeConfigRelease } from './config-release'
+import { ConvergeBusyError } from '@/services/config-release/release'
+import { configReleaseReport, convergeConfigRelease } from './config-release'
 import {
+  applyCatalogIfIdle,
   cachedManagedModels,
   configuredKortixProviderModelIds,
   missingManagedModelIds,
   settleManagedModelsPrefetch,
   startManagedModelsPrefetch,
-  writeManagedOverlayCatalogFile,
   type Opencode,
 } from './lifecycle'
 import { opencodeTurnInFlight } from './opencode-turn-state'
-import { OPENCODE_HOME } from './paths'
-import { logger } from '../../logger'
-import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import { configureRuntimeTruth, startRuntimeTruthTicker, type RuntimeTruthDeps } from '../../runtime-truth'
-import type { Config as HostConfig } from '../../config'
+import { logger } from '@/lib/log/logger'
+import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
+import { configureRuntimeTruth, startRuntimeTruthTicker, type RuntimeTruthDeps } from '@/services/runtime-assets/runtime-truth'
+import type { Config as HostConfig } from '@/lib/config/config'
 
 /**
  * Wires `runtime-truth.ts` (host, harness-neutral) to THIS harness's concrete
@@ -23,7 +23,7 @@ import type { Config as HostConfig } from '../../config'
  * This file is the one place OpenCode-specific state (config releases, the
  * managed-model catalog) crosses into the host's convergence tick. It exists
  * so `runtime-truth.ts` itself never imports `harness/open-code/*`
- * (harness-boundary.test.ts forbids that from host production code) — the
+ * (the boundary lint, eslint.config.mjs, forbids that from a service) — the
  * ALLOWED direction is an adapter importing host code, which is what this
  * file, and its one caller (`boot.ts`'s `runtimeReadyTail`), do.
  *
@@ -85,17 +85,10 @@ async function reconcileCatalog(cfg: HostConfig, opencode: Opencode): Promise<vo
   if (missing.length === 0) return
   const openCodeCfg = resolveOpenCodeConfig(cfg)
   if (!openCodeCfg) return
-  const turnInFlight = await opencodeTurnInFlight(opencode.getInternalUrl(), openCodeCfg.workspace)
-  if (turnInFlight !== false) return // Never restart under a live or unreadable turn; the next tick tries again.
   try {
-    const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
-      targetCatalogFile: `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
-      managed: live,
-    })
-    if (written) process.env.KORTIX_LLM_CATALOG_FILE = written
-    await opencode.restart()
-    logger.info('[runtime-truth] catalog tick restarted opencode with newly-available managed models', { missing })
+    // Declined under a live or unreadable turn; the next tick tries again.
+    const result = await applyCatalogIfIdle(opencode, openCodeCfg, { live, missing })
+    logger.info('[runtime-truth] catalog tick', result)
   } catch (err) {
     logger.warn('[runtime-truth] catalog tick failed', { err: String(err) })
   }

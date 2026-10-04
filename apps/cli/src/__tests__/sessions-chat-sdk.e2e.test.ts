@@ -33,6 +33,10 @@ let promptBody: Record<string, unknown> | null = null;
 let runtimeAuthorization: string | null = null;
 let runtimePromptPosts = 0;
 let createBody: Record<string, unknown> | null = null;
+/** The runtime's transcript: a reply appears once a prompt reaches the inbox. */
+let transcript: unknown[] = [];
+/** When true, the assistant reply stops with a structured runtime error. */
+let replyError = false;
 
 function sessionRow() {
   return {
@@ -56,13 +60,27 @@ function sessionRow() {
   };
 }
 
-function assistantReply() {
+function userMessage(id: string, text: string) {
   return {
     info: {
-      id: 'msg_assistant',
+      id,
+      role: 'user',
+      sessionID: OPENCODE_SESSION_ID,
+      agent: 'default',
+      model: { providerID: 'test-provider', modelID: 'test-model' },
+      time: { created: 1 },
+    },
+    parts: [{ id: `${id}-p0`, sessionID: OPENCODE_SESSION_ID, messageID: id, type: 'text', text }],
+  };
+}
+
+function assistantReply(parentID = 'msg_user') {
+  return {
+    info: {
+      id: `${parentID}-reply`,
       role: 'assistant',
       sessionID: OPENCODE_SESSION_ID,
-      parentID: 'msg_user',
+      parentID,
       agent: 'default',
       mode: 'build',
       modelID: 'test-model',
@@ -77,12 +95,16 @@ function assistantReply() {
       },
       time: { created: 2, completed: 3 },
       finish: 'stop',
+      // OpenCode's error envelope: the message lives under `data.message`.
+      ...(replyError
+        ? { error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } } }
+        : {}),
     },
     parts: [
       {
         id: 'part_assistant',
         sessionID: OPENCODE_SESSION_ID,
-        messageID: 'msg_assistant',
+        messageID: `${parentID}-reply`,
         type: 'text',
         text: 'OpenCode REST reply',
       },
@@ -103,6 +125,8 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     runtimeAuthorization = null;
     runtimePromptPosts = 0;
     createBody = null;
+    transcript = [];
+    replyError = false;
 
     server = Bun.serve({
       port: 0,
@@ -132,19 +156,34 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
         }
         if (
           request.method === 'POST' &&
-          url.pathname === `/v1/p/${EXTERNAL_ID}/8000/session/${OPENCODE_SESSION_ID}/message`
+          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/prompts`
         ) {
+          // The inbox holds the prompt; the runtime answers it.
           runtimePromptPosts += 1;
-          runtimeAuthorization = request.headers.get('authorization');
           promptBody = (await request.json()) as Record<string, unknown>;
-          return Response.json(assistantReply());
+          const id = String(promptBody.message_id);
+          const text = (promptBody.parts as Array<{ text: string }>)[0]!.text;
+          transcript.push(userMessage(id, text), assistantReply(id));
+          return Response.json({ prompt_id: 'prompt_1', state: 'pending', message_id: id, deduped: false });
         }
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/p/${EXTERNAL_ID}/8000/session/${OPENCODE_SESSION_ID}/message`
+          url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/runtime/messages/${OPENCODE_SESSION_ID}`
         ) {
           runtimeAuthorization = request.headers.get('authorization');
-          return Response.json([assistantReply()]);
+          // `chat --new` reads the reply to its initial prompt, which session
+          // creation queued.
+          const messages = transcript.length ? transcript : [userMessage('msg_user', 'one initial prompt'), assistantReply()];
+          return Response.json({ messages, has_more: false });
+        }
+        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/session/status`) {
+          return Response.json({});
+        }
+        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/permission`) {
+          return Response.json([]);
+        }
+        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/question`) {
+          return Response.json([]);
         }
         return Response.json(
           { error: `unexpected ${request.method} ${url.pathname}` },
@@ -194,7 +233,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  test('sends and reads chat through the SDK-resolved OpenCode REST URL', async () => {
+  test('sends through the prompt inbox and reads the reply from the session runtime', async () => {
     const chatCode = await runSessions([
       'chat',
       SESSION_ID,
@@ -208,8 +247,9 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     expect(chatCode).toBe(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
     expect(promptBody).toMatchObject({
-      agent: 'default',
       parts: [{ type: 'text', text: 'hello from the CLI' }],
+      overrides: { agent: 'default' },
+      remint_on_delivery: true,
     });
     expect(JSON.parse(stdout).text).toBe('OpenCode REST reply');
 
@@ -227,6 +267,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     expect(logCode).toBe(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
     expect(JSON.parse(stdout)).toEqual([
+      expect.objectContaining({ role: 'user', text: 'hello from the CLI' }),
       expect.objectContaining({ role: 'assistant', text: 'OpenCode REST reply' }),
     ]);
 
@@ -245,8 +286,39 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
 
     expect(code).toBe(0);
     expect(createBody).toMatchObject({ initial_prompt: 'one initial prompt', agent_name: 'default' });
+    // `--new` sends its prompt as the session's initial prompt, not a second one.
     expect(runtimePromptPosts).toBe(1);
     expect(JSON.parse(stdout).text).toBe('OpenCode REST reply');
     expect(stderr).toBe('');
+
+    // A turn that stops with a structured runtime error surfaces its name and
+    // message in chat and log output, and keeps the raw envelope in --json.
+    replyError = true;
+    stdout = '';
+    const failedCode = await runSessions([
+      'chat',
+      SESSION_ID,
+      '--project',
+      PROJECT_ID,
+      '--prompt',
+      'synthetic failure',
+    ]);
+    expect(failedCode).toBe(1);
+    expect(stdout).toContain('error: APIError: Synthetic model requires a paid plan.');
+    expect(stdout).not.toContain('error: unknown');
+
+    stdout = '';
+    expect(
+      await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--limit', '5']),
+    ).toBe(0);
+    expect(stdout).toContain('error: APIError: Synthetic model requires a paid plan.');
+
+    stdout = '';
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json'])).toBe(0);
+    const logged = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
+    expect(logged.at(-1)).toMatchObject({
+      role: 'assistant',
+      error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } },
+    });
   });
 });

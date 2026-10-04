@@ -59,39 +59,6 @@ export function Eyebrow({
 }
 
 /**
- * Hairlines for a grid that reflows 1 → 2 → 4 columns. Written per index because
- * the divider a cell needs changes with the breakpoint: cell 3 starts a new row
- * at `sm` (top rule) and a new column at `lg` (left rule). Same table as
- * `/channels`, so the pages share one rhythm.
- */
-export const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
-
-/** The four mono facts under a hero. */
-export function SpecGrid({
-  specs,
-}: {
-  specs: readonly { readonly k: string; readonly v: string }[];
-}): ReactNode {
-  return (
-    <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-      {specs.map((spec, i) => (
-        <div key={spec.k} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
-          <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-            {spec.k}
-          </dt>
-          <dd className="text-foreground mt-2.5 text-sm leading-snug">{spec.v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/**
  * A bordered definition list — mono key on the left, prose on the right. Used
  * for "where it reaches" and "what lands, and what does not" on every role page.
  */
@@ -103,7 +70,7 @@ export function DefinitionRows({
   keyClassName?: string;
 }): ReactNode {
   return (
-    <dl className="border-border bg-card overflow-hidden rounded-sm border">
+    <dl className="border-border bg-card overflow-hidden rounded-xl border">
       {rows.map((row, i) => (
         <div
           key={row.k}

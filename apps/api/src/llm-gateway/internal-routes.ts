@@ -21,6 +21,9 @@ import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { coolDownAccountSecret } from '../secrets/account-resource';
+import { refreshRefusedCodexAccountLogin } from './credentials/codex';
+import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
+import { codexDescriptor } from './resolution/descriptors';
 import { resolveGatewayRoute } from './routing';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
@@ -107,6 +110,36 @@ export function createInternalGatewayRoutes() {
     return c.json({ ok: true });
   });
 
+  // The provider refused a ChatGPT or OpenCode login (401): a fresh token to retry with,
+  // or null. Only the token and its headers change; the gateway keeps the rest
+  // of the descriptor it holds.
+  app.post('/refresh-credential', async (c) => {
+    const parsed = z.object({
+      principal: z.object({
+        accountId: z.string().uuid(), projectId: z.string().uuid(), userId: z.string().uuid(),
+        sessionId: z.string().nullish(),
+      }),
+      secretId: z.string().uuid(),
+      failedKeySha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid credential refresh' }, 400);
+    const { principal, secretId, failedKeySha256 } = parsed.data;
+    // An OpenCode Console login keeps its descriptor's base URL; only the token
+    // and the workspace header change.
+    const opencode = await refreshRefusedOpencodeLogin({
+      projectId: principal.projectId, accountId: principal.accountId, userId: principal.userId,
+      sessionId: principal.sessionId ?? null, secretId, failedKeySha256,
+    });
+    if (opencode) return c.json({ descriptor: { apiKey: opencode.access } });
+    const credential = await refreshRefusedCodexAccountLogin({
+      projectId: principal.projectId, accountId: principal.accountId, userId: principal.userId,
+      sessionId: principal.sessionId ?? null, secretId, failedKeySha256,
+    });
+    if (!credential) return c.json({ descriptor: null });
+    const { apiKey, headers } = codexDescriptor(credential, '');
+    return c.json({ descriptor: { apiKey, headers } });
+  });
+
   app.post('/resolve-route', async (c) => {
     const { principal, input } = await c.req.json();
     const route = await resolveGatewayRoute(principal as AuthedPrincipal, input as ModelRouteInput);
@@ -182,16 +215,16 @@ export function createInternalGatewayRoutes() {
   app.post('/trace', async (c) => {
     const { trace } = await c.req.json();
     if (!trace || typeof trace.requestId !== 'string') return c.json({ ok: false }, 400);
-    // Trace persistence is best-effort observability — never 500 the gateway's
-    // fire-and-forget trace post if the write fails.
-    try {
-      await persistGatewayTrace(trace as GatewayTrace);
-    } catch (err) {
+    // Best-effort telemetry the gateway already posts fire-and-forget. Never
+    // await it: this write fans out an audit_events row on the 2-backend audit
+    // pool, and under the per-session sequence-lock convoy it waits tens of
+    // seconds for a backend, which became this route's p95 (prod 2026-09-28).
+    // A failed write is logged, never surfaced.
+    void persistGatewayTrace(trace as GatewayTrace).catch((err) => {
       logger.warn(`[gateway] persistGatewayTrace failed for ${trace.requestId}`, {
         error: err instanceof Error ? err.message : String(err),
       });
-      return c.json({ ok: false }, 200);
-    }
+    });
     return c.json({ ok: true });
   });
 

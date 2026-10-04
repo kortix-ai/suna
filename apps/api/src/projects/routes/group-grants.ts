@@ -18,13 +18,13 @@ import {
   isAccountManagerRole,
 } from '../../iam/read-models';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
-import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
+import { GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { requireEntitlement } from '../../accounts/iam/helpers';
@@ -41,7 +41,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/group-grants',
     tags: ['access'],
-    summary: 'GET /:projectId/group-grants',
+    summary: 'List group access grants of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -160,11 +160,15 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/group-grants',
     tags: ['access'],
-    summary: 'POST /:projectId/group-grants',
+    summary: 'Grant a group access to a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            group_id: z.string().openapi({ description: 'Group id.' }),
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
+          }) } } },
       },
     responses: {
         201: json(GroupGrantSchema, 'The created group grant'),
@@ -238,11 +242,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/group-grants/{groupId}',
     tags: ['access'],
-    summary: 'PATCH /:projectId/group-grants/:groupId',
+    summary: 'Change a group\'s role on a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), groupId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -347,7 +354,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/group-grants/{groupId}',
     tags: ['access'],
-    summary: 'DELETE /:projectId/group-grants/:groupId',
+    summary: 'Remove a group\'s access to a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), groupId: z.string() }),

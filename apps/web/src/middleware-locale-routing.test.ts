@@ -21,7 +21,7 @@ const GERMAN_SESSION = `base64-${Buffer.from(
 
 describe('locale rewrite onto app/[locale]', () => {
   test('unprefixed public pages render in English', async () => {
-    for (const path of ['/pricing', '/blog/some-post', '/legal', '/auth', '/game-of-life']) {
+    for (const path of ['/pricing', '/legal', '/auth', '/game-of-life']) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBe(`${ORIGIN}/en${path}`);
       expect(response.headers.get('x-middleware-request-x-next-intl-locale')).toBe('en');
@@ -73,9 +73,39 @@ describe('locale rewrite onto app/[locale]', () => {
       '/download/macos',
       '/auth/callback',
       '/scim/v2/Users',
+      '/blog',
+      '/blog/some-post',
     ]) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    }
+  });
+});
+
+// A chat sign-in link is `/slack/login/<payload>.<signature>` or
+// `/teams/login/…` (apps/api/src/channels/core/signed-state.ts). A dot marks a
+// file, so from #7566 (2026-09-24, every page moved under app/[locale]) until
+// 2026-10-01 these links skipped the locale rewrite and answered 404, on every
+// environment.
+describe('chat sign-in links carry a dotted token', () => {
+  // The shape is what matters: `<payload>.<signature>`. A realistic
+  // base64url token here trips gitleaks' generic-api-key rule.
+  const DOTTED = 'payload.signature';
+
+  test('an anonymous visitor is sent to sign in, then back to the link', async () => {
+    for (const path of [`/teams/login/${DOTTED}`, `/slack/login/${DOTTED}`]) {
+      const response = await middleware(request(path));
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/auth?redirect=${encodeURIComponent(path)}`);
+    }
+  });
+
+  test('is a page with or without a locale prefix; dotted files stay files', () => {
+    for (const path of [`/teams/login/${DOTTED}`, `/slack/login/${DOTTED}`, `/de/teams/login/${DOTTED}`]) {
+      expect(isNonPagePath(path)).toBe(false);
+    }
+    for (const path of ['/robots.txt', '/llms.txt', '/teams/login.txt', '/teams/login/a/b.c', '/.well-known/security.txt']) {
+      expect(isNonPagePath(path)).toBe(true);
     }
   });
 });

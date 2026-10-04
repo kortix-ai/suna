@@ -1,9 +1,9 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
+import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
-import { inboxPrecedesRow } from './inbox-order';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
 /**
@@ -14,6 +14,14 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * over AND every older prompt has left the delivery path. The first Quick
  * Queue prompt may end that turn after its current tool call finishes. Queue
  * List prompts wait for natural turn completion.
+ *
+ * ONE EXCEPTION (KRTX-683): prompts released from a Stop hold. The release
+ * stamps them with one `releasedBatchId`, and they share ONE answer. They are
+ * still admitted one at a time, in order, as separate user messages, but every
+ * row with a later row of its batch pending (`hasLaterReleasedSibling`) goes
+ * out `noReply` — OpenCode persists it and starts no loop, and the row closes
+ * `delivered` with `no_reply: true` — and the batch's last row starts the one
+ * turn that answers them all.
  *
  * The turn half is not belt-and-braces on the order half — it is the whole
  * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
@@ -128,10 +136,7 @@ export interface InboxAdmissionDeps {
   readSandbox: (
     sessionId: string,
   ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
-  hasOlderPendingPrompt: (
-    sessionId: string,
-    row: SessionLifecycleCommandRow,
-  ) => Promise<boolean>;
+  hasOlderPendingPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
@@ -227,7 +232,8 @@ export async function admitInboxPrompt(
   if (sessionHoldsTurnAuthority(sandbox)) {
     // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
     // of every Queue List row (`inbox-order.ts`), so its head arms the
-    // interrupt even while older Queue List entries wait.
+    // interrupt even while older Queue List entries wait. A released Stop
+    // batch row sorts in the Queue List lane whatever its placement.
     const isHead = !(await inFlightRead) && !(await olderRead);
     if (deps.reconcileTurn && isHead) {
       await deps.reconcileTurn(row.sessionId);
@@ -241,7 +247,7 @@ export async function admitInboxPrompt(
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
         active?.state === 'active' &&
         active.messageId
-          ? { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId }
+          ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
       return {
         admit: false,
@@ -272,4 +278,42 @@ export async function admitInboxPrompt(
   }
 
   return { admit: true };
+}
+
+/**
+ * Is a LATER prompt of this row's released Stop batch still waiting to go out?
+ * Then this row goes out `noReply` (KRTX-683): OpenCode persists it as its own
+ * user message and starts no turn, and the batch's last prompt starts the one
+ * turn that answers them all.
+ *
+ * Read from the database at delivery time, never from what one drain happened
+ * to claim. Concurrent drains (the targeted wake, the 1 s tick, another API
+ * instance) can split one batch across lanes, and a lane that saw no later row
+ * sent its head as a turn of its own — a second answer for one release. A later
+ * row counts while `queued` or `running` (claimed by another drain, not yet
+ * sent); a HELD row does not, since a new Stop took it out of the line.
+ *
+ * The decision and the POST are not atomic: a row deleted, or held by a new
+ * Stop, during a cold-box wait leaves the earlier noReply rows unanswered until
+ * the next send.
+ */
+export async function hasLaterReleasedSibling(row: SessionLifecycleCommandRow): Promise<boolean> {
+  const batchId = (row.payload as { releasedBatchId?: unknown } | null)?.releasedBatchId;
+  if (!row.sessionId || typeof batchId !== 'string' || batchId.length === 0) return false;
+  const [later] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, row.sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        sql`${sessionLifecycleCommands.payload}->>'releasedBatchId' = ${batchId}`,
+        inboxFollowsRow(row),
+        ne(sessionLifecycleCommands.commandId, row.commandId),
+      ),
+    )
+    .limit(1);
+  return !!later;
 }

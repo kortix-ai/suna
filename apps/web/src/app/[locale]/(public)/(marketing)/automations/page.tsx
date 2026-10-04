@@ -1,13 +1,13 @@
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAutomationsContent } from '@/features/marketing/automations/content';
 import { AutomationsHeroVisual } from '@/features/marketing/automations/hero-visual';
 import { ScheduleTable } from '@/features/marketing/automations/schedule-table';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
 import { getTranslations } from '@/i18n/get-translations';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
 /**
@@ -23,19 +23,11 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
-
 /**
  * `/automations` — the page for work that starts with nobody in the room.
  *
  * Copy lives in `features/marketing/automations/content.ts` and is governed by
- * the `comms` skill. The accuracy gate that bites hardest here: there are two
+ * the `kortix-brand` skill. The accuracy gate that bites hardest here: there are two
  * trigger types and four session modes, and a trigger has no "deliver the
  * result somewhere" field. See the header of `content.ts`.
  */
@@ -53,7 +45,11 @@ export default async function AutomationsPage(): Promise<ReactNode> {
         ctaPrimaryHref={hero.ctaPrimaryHref}
         ctaSecondary={hero.ctaSecondary}
         ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<AutomationsHeroVisual />}
+        visual={
+          <div className="dark bg-background text-foreground border-border w-full rounded-xl border p-6 sm:p-10">
+            <AutomationsHeroVisual />
+          </div>
+        }
       />
 
       {/* ── 1 · cron or webhook, and nothing else ───────────────────────── */}
@@ -65,7 +61,7 @@ export default async function AutomationsPage(): Promise<ReactNode> {
             {types.cards.map((card) => (
               <div
                 key={card.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <span className="border-border text-muted-foreground w-fit rounded-sm border px-2 py-1 font-mono text-[10px] tracking-widest uppercase">
                   {card.kind}
@@ -155,7 +151,7 @@ export default async function AutomationsPage(): Promise<ReactNode> {
         <SectionHeader eyebrow={webhook.eyebrow} title={webhook.title} description={webhook.sub} />
 
         <Reveal delay={0.06}>
-          <div className="border-border bg-card mt-10 rounded-sm border">
+          <div className="border-border bg-card mt-10 rounded-xl border">
             <div className="border-border border-b px-6 py-5 sm:px-8">
               <p className="text-foreground overflow-x-auto font-mono text-[12.5px] whitespace-pre">
                 {webhook.endpoint}
@@ -203,7 +199,7 @@ export default async function AutomationsPage(): Promise<ReactNode> {
         <SectionHeader eyebrow={session.eyebrow} title={session.title} description={session.sub} />
 
         <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
+          <ol className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
             {session.steps.map((step, i) => (
               <li
                 key={step.mode}
@@ -235,7 +231,7 @@ export default async function AutomationsPage(): Promise<ReactNode> {
         <SectionHeader eyebrow={review.eyebrow} title={review.title} description={review.sub} />
 
         <Reveal delay={0.06}>
-          <dl className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
+          <dl className="border-border bg-card mt-10 overflow-hidden rounded-xl border">
             {review.rows.map((row, i) => (
               <div
                 key={row.id}

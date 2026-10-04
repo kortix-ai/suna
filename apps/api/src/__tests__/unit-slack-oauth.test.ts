@@ -64,8 +64,12 @@ mock.module('../channels/install-store', () => ({
 mock.module('../channels/core/identity', () =>
   chatIdentityStub({
     lookupChatIdentity: async () => identityRow,
+    // The real write refuses in SQL to replace a live link to someone else
+    // (integration-chat-identity.test.ts); this stub answers the same way.
     linkChatIdentity: async (user: { workspaceId: string; platformUserId: string }, userId: string) => {
+      if (identityRow && identityRow.userId !== userId) return { ok: false, reason: 'linked_to_other' };
       linkCalls.push({ teamId: user.workspaceId, slackUserId: user.platformUserId, userId });
+      return { ok: true };
     },
   }),
 );

@@ -5,6 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import {
   getGitHubAppInstallation,
+  resolveGitHubUserLogin,
   githubVerificationStatus,
   listLinkableGitHubAppInstallations,
   type GitHubAppInstallation,
@@ -13,8 +14,9 @@ import {
 } from '../github';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { resolveProjectAccount } from '../lib/access';
+import { deleteGitHubUserTokens, saveGitHubUserToken } from '../lib/github-user-token';
 import { AnyObject, projectsApp } from '../lib/app';
 import {
   consumeGitHubInstallationState,
@@ -34,18 +36,10 @@ import { readJsonObject } from '../../shared/http-body';
 // Account-scoped GitHub App install state. The client only receives metadata;
 // installation tokens are minted server-side at repo creation time.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'GET /github/installation',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  async (c: any) => {
+// Both GET routes share this handler: the account's install state and the
+// Vercel-style connections surface serialize the same account-scoped rows
+// under the same authorization.
+const getAccountInstallationsHandler = async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -59,7 +53,20 @@ projectsApp.openapi(
   // used to appear here as a synthetic installation, which made an
   // instance-global credential look like this account's own connection.
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
+};
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'Get the GitHub App installation of the account',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  getAccountInstallationsHandler,
 );
 
 // GET /v1/projects/github/installations?account_id=...
@@ -71,30 +78,31 @@ projectsApp.openapi(
     method: 'get',
     path: '/github/installations',
     tags: ['github'],
-    summary: 'GET /github/installations',
+    summary: 'List GitHub App installations',
     ...auth,
     responses: {
         200: json(z.any(), 'OK'),
     },
   }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
-
-  const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
-  const installUrl = canManageGit
-    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-    : null;
-  // Account connections only. "Kortix managed" is the INSTANCE backend and
-  // has its own namespace (GET /v1/projects/git/backend[/repositories]); it
-  // used to appear here as a synthetic installation, which made an
-  // instance-global credential look like this account's own connection.
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
+  getAccountInstallationsHandler,
 );
 
-async function upsertAccountGitHubInstallation(
+/**
+ * One row per `(account_id, owner_login)`.
+ *
+ * Reconnecting the App mints a NEW installation id for the same owner, and the
+ * retired id answers 404 on `/access_tokens` forever after. Conflicting on
+ * `(account_id, installation_id)` alone left both rows in place, both labelled
+ * `github.com/<owner>`, and a create could pick the dead one — which is how a
+ * user who had just reconnected was told to reconnect (prod, 2026-09-25).
+ *
+ * The delete and the insert share one transaction: a reader never sees an
+ * account with zero connections to an owner it is connected to.
+ *
+ * Exported for `__tests__/integration-github-installation-dedupe.test.ts`,
+ * which drives it against the real table.
+ */
+export async function upsertAccountGitHubInstallation(
   accountId: string,
   installationId: string,
   installation: GitHubAppInstallation,
@@ -107,23 +115,21 @@ async function upsertAccountGitHubInstallation(
   const ownerType =
     normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization';
   const now = new Date();
-  const [row] = await db
-    .insert(accountGithubInstallations)
-    .values({
-      accountId,
-      installationId,
-      ownerLogin,
-      ownerType,
-      repositorySelection: installation.repository_selection ?? null,
-      permissions: installation.permissions ?? {},
-      metadata: {
-        html_url: installation.html_url ?? null,
-      },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
-      set: {
+  const row = await db.transaction(async (tx) => {
+    await tx
+      .delete(accountGithubInstallations)
+      .where(
+        and(
+          eq(accountGithubInstallations.accountId, accountId),
+          eq(accountGithubInstallations.ownerLogin, ownerLogin),
+          ne(accountGithubInstallations.installationId, installationId),
+        ),
+      );
+    const [inserted] = await tx
+      .insert(accountGithubInstallations)
+      .values({
+        accountId,
+        installationId,
         ownerLogin,
         ownerType,
         repositorySelection: installation.repository_selection ?? null,
@@ -132,9 +138,23 @@ async function upsertAccountGitHubInstallation(
           html_url: installation.html_url ?? null,
         },
         updatedAt: now,
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
+        set: {
+          ownerLogin,
+          ownerType,
+          repositorySelection: installation.repository_selection ?? null,
+          permissions: installation.permissions ?? {},
+          metadata: {
+            html_url: installation.html_url ?? null,
+          },
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return inserted;
+  });
 
   if (!row) throw new Error('Failed to save the GitHub installation');
   return row;
@@ -151,7 +171,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installations/linkable',
     tags: ['github'],
-    summary: 'POST /github/installations/linkable',
+    summary: 'List GitHub installations that can be linked',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },
@@ -222,7 +242,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installations/link',
     tags: ['github'],
-    summary: 'POST /github/installations/link',
+    summary: 'Link a GitHub installation to the account',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },
@@ -298,7 +318,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'POST /github/installation',
+    summary: 'Save a GitHub App installation',
     ...auth,
       request: {
         body: { content: { 'application/json': { schema: AnyObject } } },
@@ -384,7 +404,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'DELETE /github/installation',
+    summary: 'Remove the GitHub App installation',
     ...auth,
       request: {
         query: z.object({}).passthrough(),
@@ -407,6 +427,12 @@ projectsApp.openapi(
         )
       : eq(accountGithubInstallations.accountId, scope.accountId));
 
+  // Disconnecting takes the user authorization with it: a stored token whose
+  // connection is gone can still create repositories, which is not what
+  // "disconnect" means to the person who clicked it.
+  const remaining = await listAccountGitHubInstallations(scope.accountId);
+  if (remaining.length === 0) await deleteGitHubUserTokens(scope.accountId);
+
   return c.json({ ok: true });
 },
 );
@@ -418,7 +444,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/github/installations/{installationId}',
     tags: ['github'],
-    summary: 'DELETE /github/installations/:installationId',
+    summary: 'Remove a GitHub installation',
     ...auth,
       request: {
         params: z.object({ installationId: z.string() }),
@@ -441,4 +467,76 @@ projectsApp.openapi(
 
   return c.json({ ok: true });
 },
+);
+
+// POST /v1/projects/github/user-token
+//
+// Store the caller's GitHub App USER access token for this account. It is used
+// for exactly one thing: `POST /user/repos`, which GitHub refuses for an App
+// installation token, so a repository under a PERSONAL owner needs it.
+//
+// The browser already holds this token — the "Verify with GitHub" popup
+// exchanges the code and posts the result back (`requestGitHubUserProof`), the
+// same value the linkable/link routes take today. The token is verified against
+// GitHub, encrypted with the account-salted envelope, and never read back out
+// to any caller.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/user-token',
+    tags: ['github'],
+    summary: 'Store a GitHub user token',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Stored GitHub user authorization'),
+      ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+    const body = await readJsonObject(c);
+    const scope = await resolveProjectAccount(c, body);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'github_user_token is required' }, 400);
+    }
+
+    let githubLogin: string;
+    try {
+      githubLogin = await resolveGitHubUserLogin(githubUserToken);
+    } catch (error) {
+      const message = (error as Error).message || 'GitHub authorization failed';
+      // A token GitHub rejects is the caller's problem, and a 502 would reach
+      // the browser as a 503 (`EDGE_REWRITTEN_STATUSES`, apps/api/src/index.ts)
+      // — "try again later" for something retrying can never fix. A genuine
+      // GitHub outage keeps the 502.
+      const rejected = /invalid or expired|did not return the authorized user/i.test(message);
+      return c.json({ error: message, code: rejected ? 'github_user_token_invalid' : undefined }, rejected ? 400 : 502);
+    }
+
+    // `expires_in` is seconds and is present only when the App expires user
+    // tokens; the popup forwards what GitHub returned.
+    const expiresInSeconds = Number(body.expires_in ?? body.expiresIn);
+    const expiresAt =
+      Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+        ? new Date(Date.now() + expiresInSeconds * 1000)
+        : null;
+
+    await saveGitHubUserToken({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      githubLogin,
+      token: githubUserToken,
+      refreshToken: normalizeString(body.refresh_token ?? body.refreshToken),
+      expiresAt,
+    });
+
+    // The login only — never the token, not even the one the caller just sent.
+    return c.json({ ok: true, github_login: githubLogin });
+  },
 );

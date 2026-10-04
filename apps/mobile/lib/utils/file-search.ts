@@ -5,11 +5,7 @@
  * Now delegates to workspace-search-service for robust deep-path matching.
  */
 
-import {
-  type WorkspaceSearchEntry,
-  rankWorkspaceSearchEntry,
-  normalizeSearchQuery,
-} from './workspace-search-core';
+import type { WorkspaceSearchEntry } from '@kortix/sdk/workspace-search';
 import { searchWorkspaceFilePaths } from './workspace-search-service';
 
 // Re-export core types for consumers

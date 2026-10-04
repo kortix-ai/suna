@@ -6,6 +6,125 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `ChannelBinding` gains optional `channelUnavailable`: Slack answered that the
+  conversation is deleted or out of the bot's reach. Slack bindings now carry
+  `channelName` (a channel without `#`, the other person's name for a DM, the
+  members for a group DM) and `channelType` (`channel` | `private_channel` |
+  `im` | `mpim`). Absent on older servers.
+- `configureKortix({ eventStreamTransport })`: how the live event stream's bytes
+  arrive, for a host whose `fetch` cannot stream a response body. The SDK calls
+  it once per connection with `{ url, headers, signal }` (auth headers
+  included); it yields `{ data?, id?, retry? }` messages, returns when the
+  server ends the stream and throws when the connection fails. Reconnect,
+  `Last-Event-ID` resume, backoff, heartbeat and coalescing stay in the SDK.
+  Types: `RuntimeEventTransport`, `RuntimeEventMessage`.
+- `notifyHostSignal('visible' | 'online' | 'retry')`: a host without
+  `visibilitychange`/`online` events (React Native) reports the same facts.
+  The SDK re-reads the transcript tail, revives a parked stream, and opens a
+  fresh connection (`visible`/`online` only after 60 s without a frame;
+  `retry` always). Type: `HostSignal`.
+- `subscribeRuntimeStream(listener)` (`@kortix/sdk/react`): observe the live
+  stream for host side effects. Signals: `{ type: 'event', event }` after the
+  SDK applied the event, and `connecting`, `open`, `lost`, `parked`, `closed`.
+  Type: `RuntimeStreamSignal`.
+- `openEventStream({ onConnectionChange })`: `connecting`, `open` (first frame
+  of an attempt), `lost`. Type: `EventStreamConnectionState`.
+- `sessionModelPin(session)`: the `provider/model` a session is pinned to, or
+  null. `setProjectSessionModel` sends the pin as `model` and keeps the pre-W4
+  `opencode_model` key for an older API.
+- `isRuntimeNotReadyResponse(error)`: true for the daemon's 503 while the
+  session runtime cannot take a request, on both harnesses. It matches the
+  `code: "runtime_not_ready"` a current daemon sends and the two `error` texts
+  of an older one (`sandbox runtime not ready`, `opencode not ready`).
+  `RUNTIME_NOT_READY_MARKERS` lists the same three spellings as lower-case
+  substrings, for a host that needs a string list (a telemetry ignore list).
+- `isRuntimeStartingError(error)`: the answer above, plus a sandbox that is
+  not ready and a runtime URL that is not pinned yet. An error boundary
+  retries on it instead of showing a crash.
+- `resetRuntimeQueries(queryClient)` (`@kortix/sdk/react`): drops every cached
+  runtime query. Call it after the session's runtime is replaced (a restart, a
+  config reload).
+- `runtimeKeys.sessionTodo(sessionId)`: the todo-list cache key.
+- `isStepPart(part)`: true for `step-start` and `step-finish` parts.
+- `useSession` option `initialRuntimeSessionId`, and `runtimeSessionId` on the
+  `useSessionMessages` source.
+- `modelRefToKey(ref, gatewayEnabled)`: one parser for a stored model ref
+  (session pin, channel binding, trigger, agent `model`). Gateway on, `kortix/x`
+  and `x` both name the gateway model `x`; gateway off, the ref splits on its
+  first `/` into the native provider and model.
+- `ModelOption` (`FlatModel` plus `id`, the ref a pick stores and sends).
+  `flattenModels` returns it.
+- `AgentConfigResponse` gains optional `harness` (the harness a new session of
+  the project runs) and `ignored_settings` (the `behavior` settings it does
+  not apply).
+- `RuntimeCapability` gains `session.config`: the runtime serves a config
+  document (`/global/config`). OpenCode does; pi does not.
+- One tool taxonomy: `toolKind(name)` returns a `ToolKind` (`read`, `edit`,
+  `bash`, `web_search`, `task`, `question`, …) for any harness's tool name,
+  including pi's and the `oc-`/`oc_`/dashed spellings. Narration families,
+  `toolViewModel`, `getToolInfo`, `toolInfo` categories and the context-tool
+  group all derive from it. `inputPath(input)` reads a file tool's path
+  (`filePath`, `file_path` or pi's `path`).
+- `ToolView` gains optional `kind`, `files` (`ToolFile[]`: path, type,
+  before/after, unified patch, line counts), `diff`, `diagnostics`, `answers`
+  and `childSessionId`, filled from whichever fields the harness sent;
+  `toToolView(part)` builds one from a tool part. `toolViewModel` renders
+  pi's `edits[]` as a file-edit diff.
+- The conversation tree of a project session: `runtimeSessionsOf`,
+  `rootRuntimeSession`, `directSubsessions` and `projectSessionForRuntimeId`
+  read `runtime_sessions`/`runtime_session_id` first and fall back to the
+  pre-W4 names.
+- The Kortix transcript format, `kortix.transcript.v1`
+  (`KORTIX_TRANSCRIPT_SCHEMA`): `KortixMessage` (`{ info, parts }`),
+  `KortixMessageInfo`, the `KortixPart` union and its 12 part types, the
+  message errors (`KortixMessageError`, each with an optional `code`),
+  `KortixSessionEvent` (the 14 session events, including
+  `message.part.delta`), `RuntimeQuestion`, `RuntimeQuestionRequest`,
+  `RuntimePermissionRequest`, `RUNTIME_PERMISSION_REPLIES`,
+  `RUNTIME_PERMISSION_CAPABILITIES`, `TURN_ERROR_CODES` and `isTurnErrorCode`.
+  They keep OpenCode 1.18's field names, so every value a runtime sends
+  today is valid. `Message`, `Part`, `TextPart`, `ToolPart`, `SessionStatus`,
+  `PermissionRequest`, `QuestionRequest` and the other transcript names this
+  package published before are now aliases of these types.
+- Session verbs on a session handle: `messages({ conversationId, limit,
+  before, signal })` reads a page of the transcript from the daemon's Kortix
+  route (`/kortix/runtime/messages`), `pending()` returns the conversation
+  statuses with the waiting permission requests and questions,
+  `answerPermission(id, reply, message?)`, `answerQuestion(id, answers | null)`
+  and `compact(model?)` (resolves with the model used; an `ApiError` with code
+  `MODEL_REQUIRED` when no model is known). New types `TranscriptPage`,
+  `PendingInteractions`, `RuntimeVerbs`, `RuntimeResult`,
+  `RuntimeRequestOptions`, `RuntimeEventStreamOptions`.
+- `openEventStream({ url })`: stream a runtime by its URL.
+- `TeamsInstallation` gains optional `appVersion` (the Teams app version the
+  org catalog serves, or `null` when no publish recorded it),
+  `latestAppVersion` (the version the server publishes), and
+  `appUpdateAvailable` (the org catalog serves an older app, or one with no
+  recorded version, so a Teams admin should publish the update). Absent on
+  older servers.
+- Computers are connector accounts. `addComputerToProject(projectId,
+  { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
+  `project(id).connectors.connections.addComputer`, and
+  `useAddComputerToProject` add a machine the caller already paired to a
+  project as an account of its `computer` connector: private (`share: 'me'`,
+  the default) or shared with the project (`'project'`). `Connection` gains
+  optional `tunnel_id` and `machine` (`online`, `last_heartbeat_at`,
+  `hostname`, `platform`), set on `computer` accounts only.
+- `Connection.machine` gains optional `access` (`{ mode: 'ask' | 'always' |
+  'off', granted_until }` or `null`): who may use the machine, as its owner
+  set it on the computer. `null` or absent for agents that never report it.
+- A paired computer follows its owner: their private account exists in every
+  project they belong to without a call. `addComputerToProject` with
+  `share: 'me'` stays accepted but is no longer needed; `share: 'project'` is
+  how a machine is shared with a project. `useApproveDeviceAuth` needs no
+  `projectId` on current servers, and its `connectionId` is `null` when the
+  approval named no project.
+- `useApproveDeviceAuth` accepts optional `projectId` and `share`, sent as
+  `project_id` and `share`, and returns the created account's optional
+  `connectionId`; `DeviceAuthInfo` gains optional `projectId`;
+  `TunnelConnection` gains optional `ownerUserId`.
+- `useTunnelConnections` accepts an optional `{ refetchInterval }` (default
+  5 s; `false` stops polling).
 - The wire message-id clock is public: `mintWireMessageIdAbove` (mint above a
   known floor clock, with an optional `backdateMs`), `newestWireIdClock`,
   `wireIdClock`, `wireIdClockAt`, `isWireIdAheadOf`, `WIRE_MESSAGE_ID`, and the
@@ -37,7 +156,77 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   LSP diagnostics store and quota-safe storage instead of keeping its own
   copies. Not covered by semver.
 
+### Changed
+- Every turn start goes through the session's durable prompt inbox
+  (`POST .../prompts`), as the web composer and the CLI already did.
+  `session(pid, sid).send(text)` resolves with the `CreateSessionPromptResult`
+  once the prompt is durable, no longer with the runtime's reply message; the
+  reply arrives on `stream()` and in the transcript. A `failed` verdict throws
+  `ApiError` with code `PROMPT_FAILED`. This is a breaking change to the
+  return type. `useSession().send` and `sendParts` post the same inbox prompt
+  (the wire id is placed by the server, `remintOnDelivery`); a text part's
+  `id` stays the host's local correlation key and no longer goes on the wire.
+- `openEventStream` / `session(pid, sid).stream()`: consecutive
+  `message.part.delta` events for one part field in the same 16 ms flush arrive
+  as one event. `properties.delta` is their text joined in order, `id` is the
+  last event's id, and `coalesced` lists the wire events it replaced. Appending
+  `delta` gives the same text. A consumer that dedupes deltas by event id reads
+  the ids from `coalesced` when it is present. The sync store applies the run in
+  one update.
+- Session open, `useSession`: a session-open snapshot that has already answered
+  serves the saved-history read (no second download of the transcript window),
+  and its `models` leg seeds `useModelDefaults`, which then needs no
+  `/model-defaults` request and no `/detail` answer first.
+- `SessionStartResult.capabilities` (optional): what the session's runtime
+  serves, listed by the API with `stage: 'ready'`. `useSession` records it when
+  the session becomes ready, so `useRuntimeSupports` is right before the first
+  `/kortix/health` probe answers. Absent on an older API: the capabilities stay
+  unknown until the probe answers, as before.
+
 ### Deprecated
+- `useSession` option `initialOpenCodeSessionId` (use
+  `initialRuntimeSessionId`) and `opencodeSessionId` on the
+  `useSessionMessages` source (use `runtimeSessionId`). Both keep working; the
+  neutral name wins when both are set.
+- The message-id clock arithmetic (`wireIdClock`, `wireIdClockAt`,
+  `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`,
+  `newestWireIdClock`, `mintWireMessageIdAbove`, `MintedWireMessageId`,
+  `MintWireMessageIdAboveInput`, `WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`,
+  `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS`). Message ids are the
+  Kortix format v1 and opaque to clients; `mintWireMessageId` and
+  `WIRE_MESSAGE_ID` stay. The clock goes with OpenCode support.
+- `SessionHandle.runtime` (the raw runtime client): use the session verbs.
+- `openEventStream({ client })`: pass `url`.
+- The `teams` member of `FeatureFlagKey`. Microsoft Teams graduated out of the
+  flag system: every project can connect Teams. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'teams')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'teams', …)` answers `400`. Removed in the next major.
+- The `session_transcript_history` member of `FeatureFlagKey`. Saved session
+  history graduated out of the flag system: every session saves its transcript
+  and shows it while its computer is off. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'session_transcript_history')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'session_transcript_history', …)` answers `400`.
+  `useSession` now starts its saved-history read at mount instead of after the
+  project detail answers. Removed in the next major.
+- The `agent_tunnel` member of `FeatureFlagKey`. Computers need no flag. It is
+  absent from `FEATURE_FLAG_KEYS`, and `useFeatureFlag(id, 'agent_tunnel')`
+  reports `enabled: true`. Removed in the next major.
+- `ConnectorConfig.tunnelIds` and `ConnectorDraftInput.tunnel_ids`. A
+  `computer` connector no longer carries a machine list; each machine is an
+  account. Servers do not send the first and ignore the second.
+- `@kortix/sdk/react` tunnel hooks whose route the API deleted. They fail at
+  once with `ENDPOINT_RETIRED` and send no request: `useCreateTunnelConnection`
+  (pairing is device auth only), `useTunnelPermissions`,
+  `useGrantTunnelPermission`, `useRevokeTunnelPermission`,
+  `useTunnelPermissionRequests`, `useApprovePermissionRequest`,
+  `useDenyPermissionRequest`, `useTunnelAuditLogs`, and the types
+  `TunnelPermission`, `TunnelPermissionRequest`, `TunnelAuditLog`,
+  `AuditLogPage`, `TunnelConnectionCreateResponse`. Human approval of a risky
+  computer call is a connector policy (`require_approval`).
+- `buildTunnelEventStreamUrl`. It builds the URL of the deleted
+  `/tunnel/permission-requests/stream` route. Removed in the next major.
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
@@ -71,8 +260,36 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`
     and `fetchAdminSandboxProxyToken`; and `useAdminAccountSandboxes`.
     Retired queries never retry or poll.
+- The kortix-master client and its React hooks: every function exported from
+  `core/runtime/kortix-master.ts` (`listTasks`, `createTicket`, `listServices`,
+  …) and `react/use-kortix-master.ts` (`useKortixTasks`, …). The sandbox daemon
+  serves none of their `/kortix/tasks|tickets|projects|services` routes: every
+  call answers `404`. Behavior is unchanged. Removed in the next major.
+- 22 runtime exports that wrap an OpenCode-only route: the MCP hooks
+  (`useOpenCodeMcpStatus`, `useAddMcpServer`, `useConnectMcpServer`,
+  `useDisconnectMcpServer`, `useMcpAuthStart`, `useMcpAuthCallback`,
+  `useMcpAuthRemove`), `useShareSession`, `useUnshareSession`,
+  `useUpdatePart`, `useDeletePart`, `useOpenCodeSkills`, `useOpenCodeToolIds`,
+  `useOpenCodeProjects`, `useDeleteOpenCodeSession`,
+  `getRuntimeProviderAuthMethods`, `authorizeRuntimeProvider`,
+  `completeRuntimeProviderOAuth`, `setRuntimeProviderApiKey`,
+  `getRuntimeConfig`, `updateRuntimeConfig` and `refreshRuntimeConfiguration`.
+  Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `useSession({ chatEngine: false })` no longer reads a transcript for no
+  session. Its inner `useSessionSync('')` went busy with the session, and the
+  busy to idle step started `GET /session//message`, which answered 400 and
+  retried every 15 s.
+- `isSandboxNotReadyError` now classifies `sandbox runtime not ready`, the
+  text a pi runtime (and OpenCode's boot steps) answers with. Before, only
+  `opencode not ready` read as "waking", so a pi session that was still
+  booting showed an error.
+- `useRuntimeSessionTodo` asks only a runtime that lists `session.todo`. A pi
+  runtime is not asked.
+- `narrateStep('edit', …)` counts files, not tool calls. A write then an
+  edit of one file reads "Updated hello.py", not "Updated 2 files"; a group
+  without file paths still counts its calls.
 - `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
   no longer throw when `window.localStorage` resolves to `null` (some
   embedded WebViews do this instead of throwing) or when a resolved storage
@@ -101,7 +318,32 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
 
+### Changed
+- `useRuntimeCommands` loads only when the runtime serves `session.commands`,
+  and `useRuntimeConfig` only when it serves `session.config`. On pi both stay
+  empty instead of asking for documents pi does not have.
+
 ### Removed
+
+- The `@opencode-ai/sdk` dependency. The runtime REST client is this
+  package's own (`RuntimeClient`, same `{ data, error, request, response }`
+  results and the same requests, pinned by a recorded-request test). It
+  implements the 55 routes the SDK and its hosts call; `RuntimeClient` no
+  longer lists the others (`session.fork`, `pty.*`, `lsp.*`, ...), which is a
+  breaking type change for a consumer that called them through
+  `session.runtime`.
+- The OpenCode type re-export. `@kortix/sdk` and `@kortix/sdk/opencode-client`
+  no longer re-export every type of `@opencode-ai/sdk` (1,369 names, among
+  them the 88 `V2Event*` aliases and every `*Data`/`*Responses` request
+  type). The transcript names are Kortix types now (see Added); the runtime
+  types this package still reads (`Session`, `Agent`, `Command`, `Config`,
+  `Model`, `Provider`, `ProviderListResponse`, `McpStatus`, `Project`,
+  `Path`, `Pty`, `VcsFileDiff`, `Worktree*`, `FileContent`, the
+  `ProviderAuth*` types and the `Event` union of the 37 runtime events it
+  handles) are declared in this package, frozen at `@opencode-ai/sdk`
+  1.18.23. A consumer that imported any other OpenCode type from this
+  package must import it from `@opencode-ai/sdk`. This is an intentional
+  breaking type-contract change and requires a breaking SDK release.
 
 - The retired local sandbox value was removed from `AppHostingProvider`. This
   is an intentional breaking type-contract change and requires a breaking SDK

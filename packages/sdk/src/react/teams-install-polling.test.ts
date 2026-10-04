@@ -3,7 +3,7 @@ import { teamsInstallRefetchInterval } from './teams-install-polling';
 import type { TeamsInstallation } from './use-teams-installations';
 
 const base: TeamsInstallation = {
-  tenantId: '36009a52-46d2-44bc-ba56-57a87e485e0a',
+  tenantId: '5a1e0c09-0000-4000-8000-000000000009',
   teamId: null,
   teamName: null,
   botId: null,
@@ -39,5 +39,19 @@ describe('teamsInstallRefetchInterval', () => {
     expect(teamsInstallRefetchInterval({ ...base, publishState: undefined })).toBe(false);
     expect(teamsInstallRefetchInterval(null)).toBe(false);
     expect(teamsInstallRefetchInterval(undefined)).toBe(false);
+  });
+
+  // An outdated app waits on a person (a Teams admin publishes, a team owner
+  // updates), not on the API, so the notice must not keep the row polling.
+  test('does not poll an install whose catalog serves an older app', () => {
+    const outdated: TeamsInstallation = {
+      ...base,
+      orgInstalled: true,
+      publishState: 'published',
+      appVersion: '1.2.0',
+      latestAppVersion: '1.6.0',
+      appUpdateAvailable: true,
+    };
+    expect(teamsInstallRefetchInterval(outdated)).toBe(false);
   });
 });

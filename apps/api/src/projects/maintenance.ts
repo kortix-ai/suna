@@ -1,5 +1,6 @@
 import { projectSessions, projects } from '@kortix/db';
 import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
@@ -7,8 +8,10 @@ import { recordAuditEvent } from '../shared/audit';
 import { runWorkerTick } from '../shared/audit-scope';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
+import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { mapWithConcurrency } from './lib/trigger-scheduler-state';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
@@ -29,6 +32,9 @@ import {
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const GC_BATCH_SIZE = 50;
+// The sweeps of one cycle run on the request pool (5 connections per process).
+// At most this many run at once, so a cycle never holds the whole pool.
+const SWEEP_CONCURRENCY = 3;
 
 const TERMINAL_SESSION_STATUSES = ['stopped', 'completed', 'failed'] as const;
 
@@ -243,6 +249,28 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   return { candidates: rows.length, deleted, skipped, errors };
 }
 
+/**
+ * Run every sweep, at most `limit` at a time. Results keep the input order.
+ * A sweep that rejects does not stop the others: every sweep runs, then the
+ * first rejection is rethrown.
+ */
+export async function runSweepsBounded<const T extends readonly (() => Promise<unknown>)[]>(
+  sweeps: T,
+  limit = SWEEP_CONCURRENCY,
+): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  const settled = await mapWithConcurrency(sweeps, limit, async (sweep) => {
+    try {
+      return { value: await sweep() };
+    } catch (error) {
+      return { error };
+    }
+  });
+  for (const result of settled) if ('error' in result) throw result.error;
+  return settled.map((result) => ('value' in result ? result.value : undefined)) as {
+    -readonly [K in keyof T]: Awaited<ReturnType<T[K]>>;
+  };
+}
+
 /** Test-only visibility into the lock — never used by runtime code. */
 export function __isMaintenanceRunningForTest(): boolean {
   return maintenanceRunning;
@@ -265,7 +293,8 @@ export async function runProjectMaintenance(): Promise<void> {
   }
   const myGeneration = ++maintenanceGeneration;
   maintenanceRunning = true;
-  maintenanceStartedAt = Date.now();
+  const cycleStartedAt = Date.now();
+  maintenanceStartedAt = cycleStartedAt;
   try {
     const [
       idle,
@@ -278,6 +307,7 @@ export async function runProjectMaintenance(): Promise<void> {
       computeTick,
       staleBuilds,
       snapshotGc,
+      appImages,
       connectorAttachments,
       promptAttachments,
       runtimeWakes,
@@ -286,10 +316,10 @@ export async function runProjectMaintenance(): Promise<void> {
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
-    ] = await Promise.all([
+    ] = await runSweepsBounded([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
-      reapAndReconcileSandboxes().catch((err) => {
+      () => reapAndReconcileSandboxes().catch((err) => {
         console.warn(
           '[project-maintenance] reaper failed:',
           err instanceof Error ? err.message : err,
@@ -298,7 +328,7 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // Billing safety net: close metering for any active compute row whose box
       // is not actually running (catches orphans / missed webhooks).
-      reconcileOrphanComputeSessions().catch((err) => {
+      () => reconcileOrphanComputeSessions().catch((err) => {
         console.warn(
           '[project-maintenance] orphan-compute reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -307,10 +337,10 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
       // status with no running box behind them — invisible to the provider reaper
-      // above (which keys off an `active` sandbox row) and the real reason an
-      // account's concurrent-session cap fills up and wedges Slack. DB-only, so
-      // it drains the cap even while Daytona is throttling the box reaper.
-      reconcileStuckActiveSessions().catch((err) => {
+      // above (which keys off an `active` sandbox row). A stuck row reads as a
+      // live session in every list and status view. DB-only, so it drains
+      // even while Daytona is throttling the box reaper.
+      () => reconcileStuckActiveSessions().catch((err) => {
         console.warn(
           '[project-maintenance] stuck-session reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -320,7 +350,7 @@ export async function runProjectMaintenance(): Promise<void> {
       // Prompt-delivery backstop: execute queued session_lifecycle_commands the
       // scheduler drain should have taken minutes ago (leader dead / scheduler
       // disabled) — the other half of "queued — agent picking up" forever.
-      reconcileUndeliveredPrompts().catch((err) => {
+      () => reconcileUndeliveredPrompts().catch((err) => {
         console.warn(
           '[project-maintenance] undelivered-prompt reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -330,7 +360,7 @@ export async function runProjectMaintenance(): Promise<void> {
       // The other end of the same queue: FORWARDED prompts whose ledger
       // confirmation never arrived. It only ever closes rows — a prompt that
       // reads `delivering` for ever is a composer that never stops working.
-      reconcileForwardedPrompts().catch((err) => {
+      () => reconcileForwardedPrompts().catch((err) => {
         console.warn(
           '[project-maintenance] forwarded-prompt reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -340,19 +370,19 @@ export async function runProjectMaintenance(): Promise<void> {
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
       // reaper above structurally can't see. STOP-only, label-scoped, age-gated.
-      reapOrphanProviderBoxes().catch((err) => {
+      () => reapOrphanProviderBoxes().catch((err) => {
         console.warn(
           '[project-maintenance] orphan-box reaper failed:',
           err instanceof Error ? err.message : err,
         );
         return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
       }),
-      sweepExpiredSessionBranches(),
+      () => sweepExpiredSessionBranches(),
       // Partial-bill active compute once its window reaches the maintenance
       // interval, so running-session charges appear before the stop hook.
       // Also reconciles `active` sandboxes left with no open compute row (the
       // close-without-reopen defect — see reconcileMissingComputeSessions).
-      tickRunningComputeCharges().catch((err) => {
+      () => tickRunningComputeCharges().catch((err) => {
         console.warn(
           '[project-maintenance] compute tick failed:',
           err instanceof Error ? err.message : err,
@@ -361,7 +391,7 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // Heal snapshot build-log rows orphaned at "building" by a process
       // restart/crash, globally across all projects.
-      reconcileStaleBuilds().catch((err) => {
+      () => reconcileStaleBuilds().catch((err) => {
         console.warn(
           '[project-maintenance] stale-build reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -371,7 +401,7 @@ export async function runProjectMaintenance(): Promise<void> {
       // GC superseded template snapshots (content-addressed names orphaned by
       // every identity drift) before the 100/org Daytona quota fills up.
       // Pressure-gated + bounded; no-op while the ORG total is small.
-      reconcileSnapshotQuota().catch((err) => {
+      () => reconcileSnapshotQuota().catch((err) => {
         console.warn(
           '[project-maintenance] snapshot quota GC failed:',
           err instanceof Error ? err.message : err,
@@ -386,23 +416,33 @@ export async function runProjectMaintenance(): Promise<void> {
           dryRun: false,
         };
       }),
+      // App deployment images (`kortix-app-<deploymentId>`): one per build,
+      // counted against Platinum's per-org template cap, never reclaimed by the
+      // Daytona-only quota GC above. Deletes only images whose deployment THIS
+      // database holds as unservable (App deleted, deployment failed/deleted),
+      // after removing any runtime that still pins one. Bounded per pass.
+      () => reclaimAppDeploymentImages().catch((err) => {
+        logger.warn('[project-maintenance] App image reclaim failed:',
+          err instanceof Error ? err.message : err);
+        return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
+      }),
       // Private Connector email attachments expire after 24 hours. Successful
       // sends become non-replayable immediately, then this sweep deletes them
       // after the signed-URL ingestion grace window.
-      cleanupExpiredConnectorAttachments().catch((err) => {
+      () => cleanupExpiredConnectorAttachments().catch((err) => {
         console.warn(
           '[project-maintenance] connector-attachment cleanup failed:',
           err instanceof Error ? err.message : err,
         );
         return { deleted: 0, errors: 1 };
       }),
-      import('./prompt-attachments').then(({ cleanupExpiredPromptAttachments }) => cleanupExpiredPromptAttachments()).catch((err) => {
+      () => import('./prompt-attachments').then(({ cleanupExpiredPromptAttachments }) => cleanupExpiredPromptAttachments()).catch((err) => {
         console.warn('[project-maintenance] prompt-attachment cleanup failed:', err instanceof Error ? err.message : err);
         return { deleted: 0, errors: 1 };
       }),
       // A timed-out provider start can complete after its request owner exits.
       // Stop that late VM while the durable row remains stopped and unbilled.
-      reconcileRuntimeWakeFences().catch((err) => {
+      () => reconcileRuntimeWakeFences().catch((err) => {
         console.warn(
           '[project-maintenance] runtime-wake reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -415,7 +455,7 @@ export async function runProjectMaintenance(): Promise<void> {
       // advertised as resumable until a user tripped over it — 16,243 prod rows
       // had never been re-verified, 16 of them already dead (2026-08-13).
       // Rotating + bounded, and it also clears the flag when a runtime is back.
-      verifyParkedRuntimes().catch((err) => {
+      () => verifyParkedRuntimes().catch((err) => {
         console.warn(
           '[project-maintenance] parked-runtime verification failed:',
           err instanceof Error ? err.message : err,
@@ -427,7 +467,7 @@ export async function runProjectMaintenance(): Promise<void> {
       // running the current manifest revision; flag off, zero monitors, or an
       // exceeded budget => no box. Also the ONLY place a persistent monitor box
       // is observed alive, which is what keeps its billing window earning.
-      reconcileMonitorBoxes().catch((err) => {
+      () => reconcileMonitorBoxes().catch((err) => {
         console.warn(
           '[project-maintenance] monitor-box reconcile failed:',
           err instanceof Error ? err.message : err,
@@ -435,7 +475,7 @@ export async function runProjectMaintenance(): Promise<void> {
         return { ...emptyMonitorReconcileResult(), errors: 1 };
       }),
       // 30-day retention on the append-only monitor event log.
-      purgeExpiredMonitorEvents().catch((err) => {
+      () => purgeExpiredMonitorEvents().catch((err) => {
         console.warn(
           '[project-maintenance] monitor-event retention failed:',
           err instanceof Error ? err.message : err,
@@ -444,7 +484,7 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // A deleted session's box is removed until the provider confirms it is
       // gone; one failed remove no longer leaves its disk behind for good.
-      removeArchivedProviderBoxes().catch((err) => {
+      () => removeArchivedProviderBoxes().catch((err) => {
         console.warn(
           '[project-maintenance] archived-box removal failed:',
           err instanceof Error ? err.message : err,
@@ -453,7 +493,7 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // A `provisioning` row whose restart/recovery owner is gone is converged
       // to the provider's state; nothing else ever acts on such a row.
-      convergeStuckProvisioningRuntimes().catch((err) => {
+      () => convergeStuckProvisioningRuntimes().catch((err) => {
         console.warn(
           '[project-maintenance] stuck-provisioning converge failed:',
           err instanceof Error ? err.message : err,
@@ -481,6 +521,9 @@ export async function runProjectMaintenance(): Promise<void> {
         staleBuilds.closedReady ||
         staleBuilds.closedFailed ||
         snapshotGc.deleted ||
+        appImages.released ||
+        appImages.runtimesRemoved ||
+        appImages.errors ||
         connectorAttachments.deleted ||
         connectorAttachments.errors ||
         promptAttachments.deleted ||
@@ -515,6 +558,7 @@ export async function runProjectMaintenance(): Promise<void> {
         computeTick,
         staleBuilds,
         snapshotGc,
+        appImages,
         connectorAttachments,
         promptAttachments,
         runtimeWakes,
@@ -555,6 +599,13 @@ export async function runProjectMaintenance(): Promise<void> {
       `archived_boxes_removed=${archivedRemovals.removed}`,
       `archived_box_remove_failures=${archivedRemovals.failed}`,
       `stuck_provisioning_converged=${stuckProvisioning.examined}`,
+      // A reclaimable App image that stays `pending` pass after pass is one a
+      // sandbox still pins; a growing `listed` with zero `released` is an App
+      // image leak against the provider's template cap.
+      `app_images_listed=${appImages.listed}`,
+      `app_images_released=${appImages.released}`,
+      `app_images_pending=${appImages.pending}`,
+      `app_images_deferred=${appImages.deferred}`,
       // A monitor box only stays billable while this sweep observes it, so
       // `monitor_observed` going flat while boxes exist is the signal that
       // monitor billing has silently stopped earning.
@@ -562,6 +613,10 @@ export async function runProjectMaintenance(): Promise<void> {
       `monitor_observed=${monitorBoxes.observed}`,
       `monitor_created=${monitorBoxes.created}`,
       `monitor_stopped=${monitorBoxes.stopped}`,
+      // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
+      // than the interval makes the next tick skip, which halves every sweep's
+      // rate: alert on this value approaching the interval.
+      `cycle_ms=${Date.now() - cycleStartedAt}`,
       `action=${hadAction}`,
     );
 

@@ -18,7 +18,7 @@ import { loadAuth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
-import { CliError } from './io.ts';
+import { CliError, stringValue } from './io.ts';
 
 /**
  * The Connector gateway client — runs tool calls as the launching user.
@@ -78,20 +78,20 @@ export async function callWithApprovalHandoff<T = unknown>(
   connector: string,
   action: string,
   args: Record<string, unknown>,
-  options: { account?: string | null } = {},
+  options: { account?: string | true | null; approvalContext?: string | true | null } = {},
 ): Promise<ConnectorCallResult<T>> {
-  // Only forward a real name. `parseExecArgs` turns a bare `--account` into the
-  // string 'true', which is a flag typo, not an account — sending it would deny
-  // the call with a confusing "no account named true".
-  const account = options.account?.trim();
-  return client.call<T>(
-    `${connector}.${action}`,
-    args,
-    account && account !== 'true' ? { account } : {},
-  );
+  // A valueless `--account`/`--reason` arrives as `true` — a flag typo, not a
+  // name or a description. Only a real string is forwarded.
+  const account = stringValue(options.account)?.trim();
+  // Same flag-typo guard for the approval context.
+  const approvalContext = stringValue(options.approvalContext)?.trim();
+  return client.call<T>(`${connector}.${action}`, args, {
+    ...(account ? { account } : {}),
+    ...(approvalContext ? { approvalContext } : {}),
+  });
 }
 
-export interface ConnectLinkResult {
+interface ConnectLinkResult {
   provider: string;
   url: string | null;
   slug: string;
@@ -104,7 +104,7 @@ export interface ConnectLinkResult {
   expires_at?: string;
 }
 
-export interface FinalizeConnectionResult {
+interface FinalizeConnectionResult {
   provider: string;
   connected: boolean;
   account_id: string | null;
@@ -268,9 +268,34 @@ export async function mintSecretLink(opts: {
   });
 }
 
+/**
+ * Store secret value(s) the caller already HAS — e.g. a key the human pasted in
+ * chat. Same route as `kortix secrets set`; the API applies the caller's
+ * secret-write permission. `connector` keeps the value server-side.
+ */
+export async function setSecrets(opts: {
+  values: Record<string, string>;
+  scope?: 'runtime' | 'connector';
+  projectOverride?: string;
+}): Promise<string[]> {
+  const entries = Object.entries(opts.values);
+  if (entries.length === 0) throw new CliError('at least one NAME: value pair is required', 'USAGE');
+  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  const saved: string[] = [];
+  for (const [name, value] of entries) {
+    await client.post(`/projects/${projectId}/secrets`, {
+      name,
+      value,
+      ...(opts.scope === 'connector' ? { strategy: 'broker', consumer: 'connector' } : {}),
+    });
+    saved.push(name.toUpperCase());
+  }
+  return saved;
+}
+
 export type BrokerMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-export interface BrokerCallResult {
+interface BrokerCallResult {
   status: number;
   headers: Record<string, string>;
   body_base64: string;

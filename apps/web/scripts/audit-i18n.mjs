@@ -69,7 +69,6 @@ const localizedSiteConfigText = generatedTranslationText(
 const localizedAuditTitleText = generatedTranslationText(
   'components/iam/audit-title-translation-keys.generated.ts',
 );
-const localizedBlogText = generatedTranslationText('i18n/blog-translation-keys.generated.ts');
 const localizedPublicMetadataText = generatedTranslationText(
   'i18n/public-metadata-translation-keys.generated.ts',
 );
@@ -140,6 +139,15 @@ const ignoredPathParts = [
   '/src/app/[locale]/(system)/debug/',
   '/src/types/',
   '/__harness__/',
+  // Unannounced, noindex launch film and /launch page (#8023, #8045): the copy
+  // is still being cut. Remove these three entries and move the copy into i18n
+  // keys when /launch is announced (the #8023 rollout step).
+  '/src/app/[locale]/presentations/film/',
+  '/src/features/marketing/launch/',
+  '/src/app/[locale]/(public)/(marketing)/launch/',
+  // Legal texts are English only by design: one authoritative version, like
+  // the Terms of Service PDF (#8315). Their page chrome still uses i18n keys.
+  '/src/app/[locale]/(public)/(seo)/legal/',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -195,6 +203,15 @@ const allowedLiteralValues = new Set([
   'Slack',
   'GitHub',
   'Linear',
+  // Framework names in the design-system Select demos: proper nouns, like the
+  // product names above.
+  'Next.js',
+  'Remix',
+  'Astro',
+  'Nuxt',
+  'Django',
+  'Ruby on Rails',
+  'Laravel',
   'Discover and read Kortix public API and documentation resources.',
 ]);
 
@@ -827,7 +844,7 @@ function scanFile(file) {
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        ['USE_CASE_OPTIONS', 'STARTER_PROMPTS', 'ENGLISH_KICKOFF_COPY'].includes(catalogRoot);
+        catalogRoot === 'USE_CASE_OPTIONS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
@@ -837,8 +854,6 @@ function scanFile(file) {
       const coveredSnapshotsFallbackCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/snapshots-tab.tsx') &&
         catalogRoot === 'DEFAULT_SNAPSHOTS_COPY';
-      const coveredBlogMetadata =
-        file === path.join(srcDir, 'lib/blog-posts.ts') && localizedBlogText.has(node.text);
       const coveredPublicMetadata =
         file === path.join(srcDir, 'lib/seo/public-content.ts') &&
         localizedPublicMetadataText.has(node.text);
@@ -940,10 +955,6 @@ function scanFile(file) {
           catalogRoot === 'SLOTS') ||
         (file === path.join(srcDir, 'features/marketing/hero-surfaces.tsx') &&
           catalogRoot === 'SURFACES') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/filesystem-scope-editor.tsx') &&
-          catalogRoot === 'MAX_FILE_SIZE_OPTIONS') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/shell-scope-editor.tsx') &&
-          catalogRoot === 'TIMEOUT_OPTIONS') ||
         (file ===
           path.join(
             srcDir,
@@ -995,8 +1006,7 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_BUCKET_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/profile-tab.tsx') &&
           catalogRoot === 'DEFAULT_PROFILE_TAB_COPY') ||
-        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata') ||
-        (file === path.join(srcDir, 'components/home/cli-demo.tsx') && catalogRoot === 'PALETTE');
+        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
       const coveredTechnicalCatalog =
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||
@@ -1106,7 +1116,6 @@ function scanFile(file) {
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&
         !coveredSnapshotsFallbackCopy &&
-        !coveredBlogMetadata &&
         !coveredPublicMetadata &&
         !coveredWallpaperDownload &&
         !coveredDesignToken &&

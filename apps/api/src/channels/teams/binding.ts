@@ -1,8 +1,9 @@
-import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
+import { stripTeamsMentions } from './util';
 
 const PLATFORM = 'teams';
 
@@ -10,22 +11,27 @@ export function teamsChannelCtx(tenantId: string, conversationId: string): Chann
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
 }
 
+/** The tenant's installed projects: every list Teams shows or picks from. */
 export async function listTenantProjects(
   tenantId: string,
-): Promise<Array<{ projectId: string; name: string }>> {
+): Promise<Array<{ projectId: string; name: string; repoUrl: string | null }>> {
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
+  // Only the installed projects. This read had no `where`, so every `/status`,
+  // `/projects` and `/use` loaded the whole projects table to keep a handful.
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
-    .from(projects);
-  const byId = new Map(rows.map((r) => [r.projectId, r.name]));
-  return ids
-    .filter((id) => byId.has(id))
-    .map((id) => ({ projectId: id, name: byId.get(id) ?? id }));
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .from(projects)
+    .where(inArray(projects.projectId, ids));
+  const byId = new Map(rows.map((r) => [r.projectId, r]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [{ projectId: id, name: row.name ?? id, repoUrl: row.repoUrl ?? null }] : [];
+  });
 }
 
 export async function resolveConversationProject(
@@ -119,7 +125,8 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
 }
 
 /**
- * One write per distinct (conversation, name, type) per process.
+ * What this process last wrote for each conversation: one write per change,
+ * not per message.
  *
  * `ensureTeamsConversationBinding` now runs on EVERY inbound message so a
  * conversation's display name is backfilled rather than captured only at
@@ -129,8 +136,13 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
  * would be a write per message; this is the same shape as
  * `persistServiceUrl`'s cache in teams/turn.ts, and a restart simply writes
  * each one once more.
+ *
+ * A write without a name or type keeps the stored one, so it changes nothing
+ * after a write that set them. Each channel message describes its thread
+ * without a name and then `labelTeamsChannelBinding` names it: compared as
+ * whole strings, the two alternated and wrote twice per message.
  */
-const describedBindings = new Map<string, string>();
+const describedBindings = new Map<string, { projectId: string; channelName: string | null; channelType: string | null }>();
 
 export function resetTeamsBindingCacheForTest(): void {
   describedBindings.clear();
@@ -144,8 +156,19 @@ export async function ensureTeamsConversationBinding(input: {
   channelType?: string | null;
 }): Promise<boolean> {
   const cacheKey = `${input.tenantId}:${input.conversationId}`;
-  const described = `${input.projectId}|${input.channelName ?? ''}|${input.channelType ?? ''}`;
-  if (describedBindings.get(cacheKey) === described) return true;
+  const known = describedBindings.get(cacheKey);
+  const described = {
+    projectId: input.projectId,
+    channelName: input.channelName || known?.channelName || null,
+    channelType: input.channelType || known?.channelType || null,
+  };
+  if (
+    known?.projectId === described.projectId &&
+    known.channelName === described.channelName &&
+    known.channelType === described.channelType
+  ) {
+    return true;
+  }
   const [installed] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
@@ -183,6 +206,31 @@ export async function ensureTeamsConversationBinding(input: {
     });
   describedBindings.set(cacheKey, described);
   return true;
+}
+
+/**
+ * The title of each Teams thread's session, by conversation id. Each thread of
+ * a channel is its own binding, and all of them read `Team › Channel`; the
+ * session title is what tells them apart. An early title can carry the bot's
+ * `<at>` mention, which is dropped.
+ */
+export async function teamsThreadTitles(projectId: string, threadIds: string[]): Promise<Map<string, string>> {
+  const titles = new Map<string, string>();
+  if (threadIds.length === 0) return titles;
+  const rows = await db
+    .select({ threadId: chatThreads.threadId, metadata: projectSessions.metadata })
+    .from(chatThreads)
+    .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
+    .where(
+      and(eq(chatThreads.platform, PLATFORM), eq(chatThreads.projectId, projectId), inArray(chatThreads.threadId, threadIds)),
+    );
+  for (const row of rows) {
+    const meta = (row.metadata ?? {}) as Record<string, unknown>;
+    const raw = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim());
+    const title = raw ? stripTeamsMentions(raw) : '';
+    if (title) titles.set(row.threadId, title);
+  }
+  return titles;
 }
 
 export interface TeamsConversationSession {

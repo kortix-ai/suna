@@ -66,6 +66,12 @@ export interface AssignRoleInput {
    * until then (connectionIsReachable reads only the owner for a member row).
    */
   privateConnectionOwnerId?: string;
+  /**
+   * Internal, never read from a request body: `POST /projects/:id/secrets`
+   * writes a NEW secret's audience before the row itself, under a `secret_id`
+   * it generated, so the value is never open to the whole project in between.
+   */
+  pendingSecretId?: string;
   expiresAt?: Date | null;
   source?: AssignmentSource;
   /**
@@ -225,7 +231,7 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
   assertProjectPrincipalShape(input, role, scopeId);
   if (input.object && scopeId) {
-    await assertObjectAssignable(scopeId, input.object, input.privateConnectionOwnerId);
+    await assertObjectAssignable(scopeId, input.object, input.privateConnectionOwnerId, input.pendingSecretId);
   }
 
   await assertPrincipalExists(accountId, input.principal);
@@ -711,7 +717,25 @@ async function assertObjectAssignable(
   projectId: string,
   object: { type: ObjectType; id: string },
   privateConnectionOwnerId?: string,
+  pendingSecretId?: string,
 ): Promise<void> {
+  if (object.type === 'secret') {
+    // A `secret` grant names one SHARED value by `secret_id` — the audience of
+    // that value (projects/lib/secret-audience.ts). A personal override belongs
+    // to its owner and has no audience.
+    if (pendingSecretId && pendingSecretId === object.id) return;
+    const result = await db.execute<{ found: number }>(sql`
+      select 1 as found from kortix.project_secrets
+      where secret_id::text = ${object.id}
+        and project_id = ${projectId}::uuid
+        and owner_user_id is null
+      limit 1`);
+    const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
+    if ((rows as Array<{ found: number }>).length === 0) {
+      throw new HTTPException(404, { message: 'object_id is not a shared secret in this project' });
+    }
+    return;
+  }
   if (object.type !== 'connection') return;
   // Raw SQL, not the `connectorConnections` table object: this module sits
   // under suites that stub `@kortix/db` with an explicit export list, and a new
@@ -756,6 +780,21 @@ async function assertWriterMayAssign(
 ): Promise<void> {
   if (writer === SYSTEM_ACTOR) return;
   const projectObj: Obj = scopeId ? { type: 'project', id: scopeId } : { type: 'account' };
+  // Who may use a secret value or a connector account is a person's decision.
+  // An agent that may write either could otherwise widen one narrowed away
+  // from it, or name itself in the audience, and then use it.
+  if ((objectType === 'secret' || objectType === 'connection') && writer.credential.kind === 'agent_session') {
+    throw new HTTPException(403, {
+      message:
+        objectType === 'secret'
+          ? 'An agent cannot change who can use a secret. A person changes it in Customize → Secrets.'
+          : 'An agent cannot change who can use a connector account. A person changes it in Customize → Connectors.',
+    });
+  }
+  if (objectType === 'secret') {
+    await assertAuthorized(writer, 'project.secret.write', projectObj);
+    return;
+  }
   if (objectType === 'connection') {
     await assertAuthorized(writer, 'project.connector.connections.manage', projectObj);
     return;

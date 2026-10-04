@@ -58,6 +58,9 @@ mock.module('../../../shared/db', () => ({
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
+          // continuationOverrides (queued-continue-delivery.ts) reads the newest
+          // turn that named a model; none here, so the prompt goes out as sent.
+          orderBy: () => ({ limit: async () => [] }),
           limit: async () => {
             if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
@@ -182,6 +185,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+  invalidateSandbox: () => {},
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
@@ -463,6 +467,43 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     expect(outcome).toBe('succeeded');
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
+  });
+
+  // KRTX-683. Stop held A and B; the user rewound the stopped session, then
+  // sent C. The send released A, B and C as one batch. A and B predate the
+  // rewind and must not commit it; C is the replacement prompt and must. In
+  // the drain, C waits behind A and B like any batch tail, so it arrives
+  // carrying the lane's `admission_reason` and `remintOnDelivery` — waiting
+  // behind its own batch is not waiting from before the rewind.
+  function batchRow(name: string, releasedFromHold: boolean) {
+    return inboxRow({
+      commandId: `cmd-${name}`,
+      payload: {
+        text: `prompt ${name}`,
+        clientMessageId: `cm_${name}`,
+        wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn',
+        releasedBatchId: 'b1',
+        releasedFromHold,
+        remintOnDelivery: true,
+      } as unknown as SessionLifecycleCommandRow['payload'],
+      result: { admission_reason: 'older_prompt_pending' } as Record<string, unknown>,
+    });
+  }
+
+  test('Stop, rewind, send: the held prompts fail with the rewind copy and the new send commits the revert', async () => {
+    sessionInfoBody = { id: OC_SESSION_ID, revert: { messageID: 'msg-99' } };
+
+    expect(await executeQueuedContinue(batchRow('a', true))).toBe('failed');
+    expect(await executeQueuedContinue(batchRow('b', true))).toBe('failed');
+    expect(failedCalls.map((call) => [call.commandId, call.message])).toEqual([
+      ['cmd-a', 'queued before the session was rewound — send it again to run it'],
+      ['cmd-b', 'queued before the session was rewound — send it again to run it'],
+    ]);
+    expect(events).not.toContain('prompt');
+
+    expect(await executeQueuedContinue(batchRow('c', false))).toBe('succeeded');
+    expect(events).toContain('prompt');
+    expect(forwardedCalls.map((call) => call.commandId)).toEqual(['cmd-c']);
   });
 });
 

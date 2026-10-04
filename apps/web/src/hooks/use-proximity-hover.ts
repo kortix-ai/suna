@@ -66,6 +66,68 @@ interface UseProximityHoverReturn {
  */
 const measurementAttempts = 3;
 
+// ── 2-D grid path ──────────────────────────────────────────
+// When items wrap into rows and columns, a single-axis nearest
+// pick can't tell which card the cursor is closest to. Resolve
+// by Euclidean distance to each item's center, and prefer any
+// item the cursor is actually inside (point-in-rect).
+export function pickNearestItem(
+  rects: ItemRect[],
+  axis: 'x' | 'y' | 'xy',
+  pointer: { x: number; y: number },
+  container: HTMLElement,
+  containerRect: DOMRect,
+): number | null {
+  let closestIndex: number | null = null;
+  let closestDistance = Infinity;
+  let containingIndex: number | null = null;
+
+  // Convert content-relative rects to viewport coords using live scroll
+  const scrollX = container.scrollLeft;
+  const scrollY = container.scrollTop;
+  const borderX = container.clientLeft;
+  const borderY = container.clientTop;
+  // Item rects are layout values (offset*); the container's bounding rect
+  // reflects any cumulative ancestor transform: scale. Compute the scale
+  // factor so we can map layout coords into the same visual viewport
+  // space the mouse cursor lives in.
+  // Map layout coords into visual/viewport space, accounting for any
+  // cumulative ancestor transform: scale (see the single-axis note
+  // below). X and Y scale independently.
+  const scaleX =
+    container.offsetWidth > 0 ? containerRect.width / container.offsetWidth : 1;
+  const scaleY =
+    container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 1;
+
+  for (let index = 0; index < rects.length; index++) {
+    const r = rects[index];
+    if (!r) continue;
+
+    const left = containerRect.left + (borderX + r.left - scrollX) * scaleX;
+    const top = containerRect.top + (borderY + r.top - scrollY) * scaleY;
+    const width = r.width * scaleX;
+    const height = r.height * scaleY;
+
+    if (
+      (axis === 'y' || (pointer.x >= left && pointer.x <= left + width)) &&
+      (axis === 'x' || (pointer.y >= top && pointer.y <= top + height))
+    ) {
+      containingIndex = index;
+    }
+
+    const dx = pointer.x - (left + width / 2);
+    const dy = pointer.y - (top + height / 2);
+    const distance = axis === 'xy' ? Math.hypot(dx, dy) : Math.abs(axis === 'x' ? dx : dy);
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  }
+
+  return containingIndex ?? closestIndex;
+}
+
 export function useProximityHover<T extends HTMLElement>(
   containerRef: RefObject<T | null>,
   options: UseProximityHoverOptions = {},
@@ -206,103 +268,7 @@ export function useProximityHover<T extends HTMLElement>(
 
         const containerRect = container.getBoundingClientRect();
 
-        // ── 2-D grid path ──────────────────────────────────────────
-        // When items wrap into rows and columns, a single-axis nearest
-        // pick can't tell which card the cursor is closest to. Resolve
-        // by Euclidean distance to each item's center, and prefer any
-        // item the cursor is actually inside (point-in-rect).
-        if (axis === 'xy') {
-          let closestIndex: number | null = null;
-          let closestDistance = Infinity;
-          let containingIndex: number | null = null;
-
-          const rects = itemRectsRef.current;
-          const scrollX = container.scrollLeft;
-          const scrollY = container.scrollTop;
-          const borderX = container.clientLeft;
-          const borderY = container.clientTop;
-          // Map layout coords into visual/viewport space, accounting for any
-          // cumulative ancestor transform: scale (see the single-axis note
-          // below). X and Y scale independently.
-          const scaleX =
-            container.offsetWidth > 0 ? containerRect.width / container.offsetWidth : 1;
-          const scaleY =
-            container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 1;
-
-          for (let index = 0; index < rects.length; index++) {
-            const r = rects[index];
-            if (!r) continue;
-
-            const left = containerRect.left + (borderX + r.left - scrollX) * scaleX;
-            const top = containerRect.top + (borderY + r.top - scrollY) * scaleY;
-            const width = r.width * scaleX;
-            const height = r.height * scaleY;
-
-            if (
-              mouseX >= left &&
-              mouseX <= left + width &&
-              mouseY >= top &&
-              mouseY <= top + height
-            ) {
-              containingIndex = index;
-            }
-
-            const dx = mouseX - (left + width / 2);
-            const dy = mouseY - (top + height / 2);
-            const distance = Math.hypot(dx, dy);
-
-            if (distance < closestDistance) {
-              closestDistance = distance;
-              closestIndex = index;
-            }
-          }
-
-          setActiveIndex(containingIndex ?? closestIndex);
-          return;
-        }
-
-        const mousePos = axis === 'x' ? mouseX : mouseY;
-
-        let closestIndex: number | null = null;
-        let closestDistance = Infinity;
-        let containingIndex: number | null = null;
-
-        const rects = itemRectsRef.current;
-        // Convert content-relative rects to viewport coords using live scroll
-        const scrollOffset = axis === 'x' ? container.scrollLeft : container.scrollTop;
-        const borderOffset = axis === 'x' ? container.clientLeft : container.clientTop;
-        const containerEdge = axis === 'x' ? containerRect.left : containerRect.top;
-        // Item rects are layout values (offset*); the container's bounding rect
-        // reflects any cumulative ancestor transform: scale. Compute the scale
-        // factor so we can map layout coords into the same visual viewport
-        // space the mouse cursor lives in.
-        const layoutSize = axis === 'x' ? container.offsetWidth : container.offsetHeight;
-        const visualSize = axis === 'x' ? containerRect.width : containerRect.height;
-        const scale = layoutSize > 0 ? visualSize / layoutSize : 1;
-
-        for (let index = 0; index < rects.length; index++) {
-          const r = rects[index];
-          if (!r) continue;
-
-          const contentPos = axis === 'x' ? r.left : r.top;
-          const itemStart = containerEdge + (borderOffset + contentPos - scrollOffset) * scale;
-          const itemSize = (axis === 'x' ? r.width : r.height) * scale;
-          const itemEnd = itemStart + itemSize;
-
-          if (mousePos >= itemStart && mousePos <= itemEnd) {
-            containingIndex = index;
-          }
-
-          const itemCenter = itemStart + itemSize / 2;
-          const distance = Math.abs(mousePos - itemCenter);
-
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestIndex = index;
-          }
-        }
-
-        setActiveIndex(containingIndex ?? closestIndex);
+        setActiveIndex(pickNearestItem(itemRectsRef.current, axis, { x: mouseX, y: mouseY }, container, containerRect));
       });
     },
     [axis, containerRef],
@@ -360,19 +326,4 @@ export function useProximityHover<T extends HTMLElement>(
     remeasure,
     measureItems,
   };
-}
-
-/**
- * Hook for child items to register themselves with the proximity hover system.
- * Call in useEffect with the item's ref and index.
- */
-export function useRegisterProximityItem(
-  registerItem: (index: number, element: HTMLElement | null) => void,
-  index: number,
-  ref: RefObject<HTMLElement | null>,
-) {
-  useEffect(() => {
-    registerItem(index, ref.current);
-    return () => registerItem(index, null);
-  }, [index, registerItem, ref]);
 }

@@ -178,7 +178,6 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
 
     const newSession = async (options: {
       saved: boolean;
-      history: boolean;
       /** Hold the saved-copy reads until this settles, instead of READ_DELAY_MS. */
       holdCopy?: Promise<void>;
     }) => {
@@ -195,10 +194,6 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
         [sessionId],
         env.databaseUrl ?? undefined,
       );
-      await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
-        feature: 'session_transcript_history',
-        enabled: options.history,
-      });
       // The computer never comes up in any arm.
       await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
         await held;
@@ -236,7 +231,7 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
 
     // Pay the dev server's first compile of the session route outside the
     // measured arms.
-    const warmup = await newSession({ saved: true, history: false });
+    const warmup = await newSession({ saved: true });
     await page.goto(`/projects/${project.id}/sessions/${warmup}`, { waitUntil: 'commit' });
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
 
@@ -275,22 +270,17 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
 
     const results: Array<Timeline & { label: string }> = [];
 
-    const offByUrl = await newSession({ saved: true, history: false });
-    results.push(await savedArm('saved copy, flag off, open by URL', () => openByUrl(offByUrl)));
+    const byUrl = await newSession({ saved: true });
+    results.push(await savedArm('saved copy, open by URL', () => openByUrl(byUrl)));
 
-    const onByUrl = await newSession({ saved: true, history: true });
-    results.push(await savedArm('saved copy, flag on, open by URL', () => openByUrl(onByUrl)));
-
-    const offBySidebar = await newSession({ saved: true, history: false });
+    const bySidebar = await newSession({ saved: true });
     results.push(
-      await savedArm('saved copy, flag off, open from sidebar', () =>
-        openFromSidebar(offBySidebar),
-      ),
+      await savedArm('saved copy, open from sidebar', () => openFromSidebar(bySidebar)),
     );
 
     // No saved copy: nothing can be read until the computer wakes, so the boot
     // screen is still the honest answer.
-    const unsaved = await newSession({ saved: false, history: false });
+    const unsaved = await newSession({ saved: false });
     await openByUrl(unsaved);
     await expect(page.getByRole('heading', { name: BOOT_HEADING })).toBeVisible({
       timeout: 60_000,
@@ -298,7 +288,7 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
     await expect(page.getByTestId('saved-session-skeleton')).toHaveCount(0);
     const unsavedMarks = await readTimeline(page);
     expect(unsavedMarks.reply, 'no saved copy: no conversation to paint').toBeUndefined();
-    results.push({ label: 'no saved copy, flag off, open by URL', ...unsavedMarks });
+    results.push({ label: 'no saved copy, open by URL', ...unsavedMarks });
 
     const ms = (value: number | undefined) =>
       value === undefined ? 'never' : `${Math.round(value)} ms`;
@@ -326,7 +316,7 @@ test('33 — a session with a saved conversation opens on skeleton rows and then
       const copy = new Promise<void>((resolve) => {
         releaseCopy = resolve;
       });
-      const sessionId = await newSession({ saved: true, history: false, holdCopy: copy });
+      const sessionId = await newSession({ saved: true, holdCopy: copy });
       await page.setViewportSize({ width: view.width, height: view.height });
       await page.emulateMedia({ colorScheme: view.scheme });
       await openByUrl(sessionId);

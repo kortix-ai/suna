@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import {
   createDotm3x3Component,
   snakePath3NormFromIndex,
@@ -10,7 +10,6 @@ import {
   wave3PathOpacityFromNorm,
 } from '@/lib/dotmatrix-core';
 
-export type Dotm3x3_9Props = DotMatrixCommonProps;
 
 const animationResolver: DotAnimationResolver = ({ isActive, index, reducedMotion, phase }) => {
   if (!isActive) {

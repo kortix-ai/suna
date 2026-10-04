@@ -1182,5 +1182,11 @@
     "includes": "Enthalten",
     "askOwner": "Bitte einen Kontoinhaber um einen Platz",
     "notNow": "Nicht jetzt"
+  },
+  "sessions": {
+    "showMoreSubsessions_one": "{{count}} weitere anzeigen",
+    "showMoreSubsessions_other": "{{count}} weitere anzeigen",
+    "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
+    "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
   }
 }

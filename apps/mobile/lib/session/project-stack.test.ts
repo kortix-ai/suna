@@ -296,39 +296,39 @@ describe('drawerThreadMove', () => {
 
   test('a row of another session opens that session', () => {
     expect(
-      drawerThreadMove({ rowSessionId: 'ps-2', targetOpenCodeId: 'oc-2', shownSessionId: 'ps-1', activeOpenCodeId: 'oc-1' })
+      drawerThreadMove({ rowSessionId: 'ps-2', targetRuntimeId: 'oc-2', shownSessionId: 'ps-1', activeRuntimeId: 'oc-1' })
     ).toBe('open');
     expect(
-      drawerThreadMove({ rowSessionId: 'ps-2', targetOpenCodeId: null, shownSessionId: null, activeOpenCodeId: null })
+      drawerThreadMove({ rowSessionId: 'ps-2', targetRuntimeId: null, shownSessionId: null, activeRuntimeId: null })
     ).toBe('open');
   });
 
-  test('the row of the thread already showing that OpenCode session only closes', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-root', activeOpenCodeId: 'oc-root' })).toBe('close');
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-child', activeOpenCodeId: 'oc-child' })).toBe('close');
+  test('the row of the thread already showing that runtime session only closes', () => {
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-root', activeRuntimeId: 'oc-root' })).toBe('close');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-child', activeRuntimeId: 'oc-child' })).toBe('close');
   });
 
   test('a sub-session row of the shown session focuses that sub-session in place', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-child', activeOpenCodeId: 'oc-root' })).toBe('focus');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-child', activeRuntimeId: 'oc-root' })).toBe('focus');
   });
 
   test('the parent row while a sub-session shows focuses the root again', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-root', activeOpenCodeId: 'oc-child' })).toBe('focus');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-root', activeRuntimeId: 'oc-child' })).toBe('focus');
   });
 
   test('the shown session still connecting (no thread yet): queue the target for when the thread opens', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-child', activeOpenCodeId: null })).toBe('queue');
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-root', activeOpenCodeId: null })).toBe('queue');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-child', activeRuntimeId: null })).toBe('queue');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-root', activeRuntimeId: null })).toBe('queue');
   });
 
   test('a sub-session row of a session that is not on screen opens that session', () => {
     expect(
-      drawerThreadMove({ rowSessionId: 'ps-2', targetOpenCodeId: 'oc-2-child', shownSessionId: 'ps-1', activeOpenCodeId: 'oc-1' })
+      drawerThreadMove({ rowSessionId: 'ps-2', targetRuntimeId: 'oc-2-child', shownSessionId: 'ps-1', activeRuntimeId: 'oc-1' })
     ).toBe('open');
   });
 
   test('a row with no OpenCode pin yet on the shown session only closes', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: null, activeOpenCodeId: 'oc-child' })).toBe('close');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: null, activeRuntimeId: 'oc-child' })).toBe('close');
   });
 });
 
@@ -338,10 +338,10 @@ describe('threadOpenTarget', () => {
   });
 
   test('a pending sub-session of this session: that sub-session', () => {
-    expect(threadOpenTarget({ sessionId: 'ps-1', openCodeId: 'oc-child' }, 'ps-1', 'oc-root')).toBe('oc-child');
+    expect(threadOpenTarget({ sessionId: 'ps-1', runtimeId: 'oc-child' }, 'ps-1', 'oc-root')).toBe('oc-child');
   });
 
   test('a pending focus for another session is ignored: the root', () => {
-    expect(threadOpenTarget({ sessionId: 'ps-2', openCodeId: 'oc-other' }, 'ps-1', 'oc-root')).toBe('oc-root');
+    expect(threadOpenTarget({ sessionId: 'ps-2', runtimeId: 'oc-other' }, 'ps-1', 'oc-root')).toBe('oc-root');
   });
 });

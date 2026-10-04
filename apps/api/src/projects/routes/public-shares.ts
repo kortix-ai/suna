@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
   createPublicShare,
@@ -7,11 +7,12 @@ import {
   revokePublicShare,
 } from '../../shared/session-public-shares';
 import { loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -22,7 +23,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/previews',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/previews',
+    summary: 'List preview URLs of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -58,7 +59,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/public-shares',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/public-shares',
+    summary: 'List public shares of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -89,11 +90,18 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/public-shares',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/public-shares',
+    summary: 'Create a public share of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          transcript: z.boolean().optional().openapi({ description: 'true shares the session conversation. Give exactly one of transcript, preview_id, file.' }),
+          preview_id: z.string().optional().openapi({ description: 'Share a session preview by id (from the previews list).' }),
+          file: z.record(z.string(), z.any()).optional().openapi({ description: 'Share a workspace file: { path }.' }),
+          mode: z.string().optional().openapi({ description: 'Access mode of the link.' }),
+          label: z.string().optional().openapi({ description: 'Label of the link.' }),
+          expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'The live transcript share this session already has'),
@@ -131,6 +139,22 @@ projectsApp.openapi(
       );
     }
 
+    const held = await sessionPersonOnlyPlaintextSecrets({
+      accountId: visible.row.accountId,
+      projectId,
+      sessionId,
+    });
+    if (held.length > 0) {
+      return c.json(
+        {
+          error: `This session holds ${held.join(', ')}, shared only with you, and cannot be shared publicly. Start a new session to share.`,
+          code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+          secrets: held,
+        },
+        409,
+      );
+    }
+
     const result = await createPublicShare(body, {
       sessionId,
       projectId,
@@ -151,7 +175,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}/public-shares/{shareId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId/public-shares/:shareId',
+    summary: 'Revoke a public session share',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string(), shareId: z.string() }),

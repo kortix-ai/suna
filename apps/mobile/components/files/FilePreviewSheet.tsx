@@ -13,8 +13,8 @@
  *
  * The body renders markdown, HTML, CSV, JSON, code, text and images. A file it
  * does not render — a PDF, an Office file, an archive, media
- * (`previewsInline`) — shows its file card and fetches nothing; Download hands
- * it to the device instead.
+ * (`previewsInline`) — shows its file card and fetches nothing; Download saves it on the
+ * device instead (`lib/files/save-to-device`).
  */
 import * as React from 'react';
 import { View } from 'react-native';
@@ -29,12 +29,12 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { CopyContentButton, KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { showFileTypeIcon } from '@/components/session/tool/shared/show-helpers';
+import { showFileTypeIcon } from '@/components/session/tool/shared/tool-icons';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { downloadOpenCodeFileToCache } from '@/lib/files/hooks';
-import { openFileOnDevice } from '@/lib/files/open-on-device';
+import { downloadSandboxFileToCache } from '@/lib/files/hooks';
+import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
 import { DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
@@ -169,26 +169,20 @@ export function FilePreviewBody({
     if (!sandboxUrl || downloading) return;
     haptics.tap();
     setDownloading(true);
-    let uri: string;
     try {
-      // Streams to disk natively, so it works for a file of any size or type.
-      uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
+      // The file as it is — same name, same extension, no PDF on mobile —
+      // streamed to the cache natively (any size or type), then saved in a
+      // folder on the device (`lib/files/save-to-device`), never opened in
+      // another app.
+      const uri = await downloadSandboxFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
+      const result = await saveFileToDevice(uri, sandboxFile.name);
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch {
       haptics.warning();
       toast.error('Unable to download the file. Try again.');
-      setDownloading(false);
-      return;
-    }
-    try {
-      // The device opens it in its own app: the PDF, slides, sheet or text app
-      // on Android, Quick Look on iOS. Never the share sheet, never an in-app
-      // viewer (Jay, 2026-09-22).
-      const result = await openFileOnDevice(uri, sandboxFile.name);
-      if (result === 'no-app') toast.info('File downloaded. No app on this device can open it.');
-      else if (result === 'unavailable') toast.info('File downloaded. Update the app to open it.');
-    } catch {
-      haptics.warning();
-      toast.error('File downloaded, but it did not open. Try again.');
     } finally {
       setDownloading(false);
     }
@@ -219,7 +213,7 @@ export function FilePreviewBody({
           <View
             className="flex-1 items-center justify-center"
             style={{ paddingBottom: contentInset }}>
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
           </View>
         ) : failure ? (
           <View
@@ -264,7 +258,7 @@ export function FilePreviewBody({
           variant="secondary"
           className="flex-1 rounded-full"
           disabled={!sandboxUrl || downloading || failure?.kind === 'missing'}
-          onPress={handleDownload}
+          onPress={() => void handleDownload()}
           accessibilityLabel={downloading ? 'Downloading' : 'Download file'}>
           {downloading ? <KortixLoader size="small" /> : <Icon as={DownloadSimpleIcon} size={18} />}
           <Text>Download</Text>

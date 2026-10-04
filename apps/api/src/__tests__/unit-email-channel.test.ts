@@ -50,17 +50,18 @@ let continueCalls: Array<{
 }> = [];
 let createCalls: Array<any> = [];
 
+// The email tools go through the `kortix connectors` CLI, which every harness's
+// shell has. OpenCode alone has the MCP face, so an MCP-only prompt left a pi
+// session unable to read or answer the thread (W1 B8).
 function expectConnectorEmailPrompt(prompt: string) {
-  for (const tool of ['connectors', 'discover', 'describe', 'call']) {
-    expect(prompt).toContain(`\`${tool}\``);
-  }
-  expect(prompt).toContain('"connector":"email"');
-  expect(prompt).toContain('"action":"reply_message"');
-  expect(prompt).toContain('"inbox_id":"inb-1"');
-  expect(prompt).toContain('"message_id":"msg-1"');
-  expect(prompt).toContain('"text":"<reply>"');
+  expect(prompt).toContain(`kortix connectors call email.get_thread '{"inbox_id":"inb-1","thread_id":"thr-1"}'`);
+  expect(prompt).toContain(
+    `kortix connectors call email.reply_message '{"inbox_id":"inb-1","message_id":"msg-1","text":"<reply>"}'`,
+  );
+  expect(prompt).toContain('kortix connectors call email.send_message');
+  expect(prompt).toContain('kortix connectors show email.<action>');
   expect(prompt).toContain('Use `html` instead of `text` only when needed.');
-  expect(prompt).not.toContain('call `email.reply_message`');
+  expect(prompt).not.toContain('MCP');
 }
 
 const {

@@ -259,7 +259,7 @@ const patPost = (path: string, body: unknown) =>
   });
 
 describe('approvals inbox + resolution', () => {
-  test('session reconstruction includes integrity-linked events with partial request context', async () => {
+  test('session reconstruction returns rows without account or project context, in insertion order', async () => {
     if (!ctx) return;
     await db.insert(projects).values({
       projectId: CHAIN_PROJECT,
@@ -340,9 +340,10 @@ describe('approvals inbox + resolution', () => {
     expect(projected.map((event) => event.event_id)).toEqual(
       inserted.map((event) => event.eventId),
     );
-    expect(projected[1]?.integrity_previous_hash).toBe(projected[0]?.integrity_hash);
-    expect(projected[2]?.integrity_previous_hash).toBe(projected[1]?.integrity_hash);
-    expect(projected[3]?.integrity_previous_hash).toBe(projected[2]?.integrity_hash);
+    // No chain any more: new rows carry no sequence and no hashes, and the log order is
+    // the (time-ordered) event_id.
+    expect(projected.every((event) => event.integrity_hash === null)).toBe(true);
+    expect(projected.every((event) => event.integrity_previous_hash === null)).toBe(true);
   });
 
   test('pending → inbox → approve → resolved (leaves inbox) → re-approve 409 → audit shows approver', async () => {
@@ -453,6 +454,32 @@ describe('approvals inbox + resolution', () => {
     expect(after.approvedBy).toBe(humanUserId);
   });
 
+  test("a deny with a note hands the approver's message to the agent", async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const dn = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+      decision: 'deny',
+      note: '  Not yet. Move the meeting to Thursday first.  ',
+    });
+    expect(dn.status).toBe(200);
+    const [after] = await db
+      .select()
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
+    expect(after.resultSummary).toMatchObject({
+      decision: 'deny',
+      decision_note: 'Not yet. Move the meeting to Thursday first.',
+    });
+    const [callback] = await db
+      .select()
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, `approval-resume:${execId}`));
+    const text = (callback?.payload as { text?: string }).text ?? '';
+    expect(text).toContain('was denied');
+    expect(text).toContain('Not yet. Move the meeting to Thursday first.');
+    expect(text).not.toContain('continue without it');
+  });
+
   test('a PAT cannot approve even when it belongs to an account owner', async () => {
     if (!ctx) return;
     const execId = await seedPending();
@@ -488,6 +515,22 @@ describe('approvals inbox + resolution', () => {
       pending: true,
       review_complete: true,
       args_preview: { repo: 'kortix-ai/suna' },
+      approval_context: null,
+    });
+
+    await db
+      .update(connectorCalls)
+      .set({
+        resultSummary: {
+          args_preview: { repo: 'kortix-ai/suna' },
+          args_preview_complete: true,
+          approval_context: 'Deletes the scratch repo created in this session',
+        },
+      })
+      .where(eq(connectorCalls.executionId, execId));
+    const described = await authGet(`/v1/approval-links/${token}`);
+    expect(await described.json()).toMatchObject({
+      approval_context: 'Deletes the scratch repo created in this session',
     });
   });
 

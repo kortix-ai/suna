@@ -24,6 +24,13 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
+ * `review_center`, `agent_tunnel`, `session_transcript_history` and `teams`
+ * are deprecated. `agent_tunnel` graduated like `review_center` below: a
+ * paired computer is a connector account and needs no flag. So did
+ * `session_transcript_history`: every session saves its transcript and shows
+ * it while its computer is off. And `teams`: every project can connect
+ * Microsoft Teams.
+ *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
  * or accepts the key. It stays in this union so code written against the older
@@ -32,10 +39,12 @@ import {
  * `KortixProject.experimental`. Removed in the next major.
  */
 export type FeatureFlagKey =
+  /** @deprecated Graduated — computers need no flag (the platform's `TUNNEL_ENABLED` is the only gate). Removed in the next major. */
   | 'agent_tunnel'
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
+  /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
   | 'llm_gateway'
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
@@ -43,17 +52,22 @@ export type FeatureFlagKey =
   | 'meta_agent'
   | 'apps'
   | 'monitors'
+  | 'reminders'
   | 'warm_sessions'
   | 'secrets_egress'
   | 'pi_worker'
+  /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
   | 'config_releases'
+  /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
   | 'agent_principal'
-  | 'mcp'
+  | 'us_region'
   | 'drives'
-  | 'ephemeral_sandboxes';
+  | 'ephemeral_sandboxes'
+  /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
+  | 'human_messaging';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -61,24 +75,21 @@ export type FeatureFlagKey =
  * drift tests compare this against the API's `FEATURE_FLAG_KEYS`.
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
-  'agent_tunnel',
   'marketplace',
   'connectors_api_discover',
   'agentmail_email',
-  'teams',
   'llm_gateway',
   'meta_agent',
   'apps',
   'monitors',
+  'reminders',
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
-  'session_transcript_history',
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',
-  'agent_principal',
-  'mcp',
+  'us_region',
   'drives',
   'ephemeral_sandboxes',
 ] as const;
@@ -133,7 +144,7 @@ export interface KortixProject {
   effective_project_role?: ProjectRole | null;
   /** Effective on/off for each feature flag for THIS project. The field name is
    *  a stable wire detail — the system is called "Feature flags". Deprecated
-   *  graduated keys (`review_center`) are absent from the wire. */
+   *  graduated keys (`review_center`, `agent_tunnel`) are absent from the wire. */
   experimental?: Record<FeatureFlagKey, boolean>;
   /** Full feature-flag catalog (drives Customize → Feature flags).
    *  Self-describing so the UI never hard-codes the list. */
@@ -178,6 +189,11 @@ export interface ProjectConfigSummary {
     model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** True for a platform-owned agent (SUNA — the coordinator) that the API
+     *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
+     *  hosts render it read-only and never open the agent editor for it.
+     *  Absent/false = an ordinary editable project agent. */
+    platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
@@ -235,6 +251,8 @@ export interface GatewayCatalogModel {
    * split-on-slash heuristic cannot recover it.
    */
   provider?: string;
+  /** The real provider's display name ("OpenCode Go"). Absent on managed models. */
+  provider_name?: string;
   release_date?: string;
   released?: string;
   family?: string;
@@ -573,8 +591,16 @@ export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
+/**
+ * `showErrors: false`: `/new` renders this failure inline, with its own wording
+ * and its own retry. The global handler toasting it as well produced two
+ * different explanations of one failure — prod showed GitHub's raw 403 plus
+ * "Our team has been notified" over an inline message that said something else.
+ */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+  );
 }
 
 /**
@@ -989,6 +1015,8 @@ export async function setProjectOnboardingComplete(projectId: string, completed:
 
 /** Use case the account picked during guided project onboarding. */
 export type OnboardingUseCase =
+  | 'founder'
+  | 'product_design'
   | 'sales'
   | 'support'
   | 'marketing'
@@ -1005,6 +1033,8 @@ export type OnboardingCompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '
  *  partial profile is the normal case, not an error case. */
 export interface OnboardingProfile {
   use_case?: OnboardingUseCase;
+  /** The typed answer when `use_case` is `'other'`. The API trims it and caps it at 120 characters. */
+  use_case_note?: string;
   company_domain?: string;
   company_size?: OnboardingCompanySize;
 }

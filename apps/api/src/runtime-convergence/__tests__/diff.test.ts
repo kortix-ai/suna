@@ -191,13 +191,13 @@ describe('diffRuntime', () => {
 
 /**
  * THE CONTRACT TEST for the key-naming bug: the box's `RUNTIME_TRUTH_COMPONENT_NAMES`
- * (`apps/kortix-sandbox-agent-server/src/runtime-truth.ts`) cannot be imported
+ * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-truth.ts`) cannot be imported
  * here (a different, separately-deployed app) — mirrored as a literal so a
  * rename on either side fails HERE instead of silently reintroducing the bug
  * where `actual.components[name]` always misses.
  */
 describe('COMPONENT_KEY_BY_FIELD — the box/API name mapping stays total', () => {
-  // Keep in sync with apps/kortix-sandbox-agent-server/src/runtime-truth.ts's
+  // Keep in sync with apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-truth.ts's
   // RUNTIME_TRUTH_COMPONENT_NAMES. That file's own test
   // (runtime-truth.test.ts) asserts ITS report always carries exactly this
   // set; this test asserts the API maps every one of them.

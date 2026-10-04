@@ -323,6 +323,8 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const base = { projectId: p.id };
+    // The daemon body (TurnPermissionRelayBodySchema): `permission` and `patterns` are required.
+    const ask = (extra: Record<string, unknown>) => ({ permission: 'bash', patterns: ['git push *'], ...extra });
     const target = '/v1/projects/:projectId/turn-permission';
     const accountId = await withDb(ctx, async (db) =>
       (await db.query('SELECT account_id FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]
@@ -343,19 +345,19 @@ flow(
       await ctx.step('ANON → 401', async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
-          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+          .post(target, ask({ session_id: sessionId, request_id: 'per_1' }), { params: base });
         r.status(401);
       });
       await ctx.step('OWNER user token on its own session → 403 (sandbox credential only)', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+          .post(target, ask({ session_id: sessionId, request_id: 'per_1' }), { params: base });
         r.status(403);
       });
       await ctx.step('NONMEMBER → 403/404', async () => {
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+          .post(target, ask({ session_id: sessionId, request_id: 'per_1' }), { params: base });
         r.status([403, 404]);
       });
 
@@ -376,36 +378,30 @@ flow(
       const relay = (body: Record<string, unknown>) => sandbox().post(target, body, { params: base });
 
       await ctx.step('sandbox credential without session_id → 400', async () => {
-        (await relay({ request_id: 'per_1' })).status(400);
+        (await relay(ask({ request_id: 'per_1' }))).status(400);
       });
       await ctx.step('sandbox credential naming another session of the project → 403', async () => {
-        (await relay({ session_id: otherSessionId, request_id: 'per_1' })).status(403);
+        (await relay(ask({ session_id: otherSessionId, request_id: 'per_1' }))).status(403);
       });
       await ctx.step('sandbox credential without request_id → 400', async () => {
-        (await relay({ session_id: sessionId })).status(400);
+        (await relay(ask({ session_id: sessionId }))).status(400);
       });
       await ctx.step('request_id longer than 256 characters → 400', async () => {
-        (await relay({ session_id: sessionId, request_id: 'p'.repeat(257) })).status(400);
+        (await relay(ask({ session_id: sessionId, request_id: 'p'.repeat(257) }))).status(400);
       });
       await ctx.step('first relay of a request id with the daemon body → 200 notified:true', async () => {
-        const r = await relay({
-          session_id: sessionId,
-          request_id: 'per_1',
-          opencode_session_id: 'ses_synthetic',
-          permission: 'bash',
-          patterns: ['git push *'],
-        });
+        const r = await relay(ask({ session_id: sessionId, request_id: 'per_1', runtime_session_id: 'ses_synthetic' }));
         r.status(200).body().has('$.ok', true).has('$.notified', true);
       });
       await ctx.step('a repeat of the same request id → 200 notified:false (one push per request)', async () => {
-        (await relay({ session_id: sessionId, request_id: 'per_1' }))
+        (await relay(ask({ session_id: sessionId, request_id: 'per_1' })))
           .status(200)
           .body()
           .has('$.ok', true)
           .has('$.notified', false);
       });
       await ctx.step('a new request id in the same session → 200 notified:true', async () => {
-        (await relay({ session_id: sessionId, request_id: 'per_2' })).status(200).body().has('$.notified', true);
+        (await relay(ask({ session_id: sessionId, request_id: 'per_2' }))).status(200).body().has('$.notified', true);
       });
     } finally {
       if (tokenId) {
@@ -542,6 +538,35 @@ flow(
         read.status(200).body().has('$.block.repository_access', false);
       });
     }
+
+    await ctx.step(
+      'the behavior half reads and writes as `behavior`; a round trip that edits only its pre-W4 name `opencode` keeps that edit; two different edits → 400',
+      async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const path = '/v1/projects/:projectId/agents/:agentName/config';
+        const owner = ctx.client.as(ctx.P.OWNER);
+        const current = (await owner.get(path, { params })).status(200).json<any>().block.behavior;
+        const neutral = { ...current, description: 'Written as behavior' };
+        const saved = await owner.put(path, { behavior: neutral }, { params });
+        saved.status(200).body()
+          .has('$.block.behavior.description', 'Written as behavior')
+          .has('$.block.opencode.description', 'Written as behavior');
+        const served = (await owner.get(path, { params })).status(200).json<any>().block;
+        if (JSON.stringify(served.behavior) !== JSON.stringify(served.opencode)) {
+          throw new Error('GET serves different values under behavior and opencode');
+        }
+        const olderClient = { ...served.opencode, description: 'Edited as opencode' };
+        (await owner.put(path, { behavior: served.behavior, opencode: olderClient }, { params }))
+          .status(200);
+        (await owner.get(path, { params })).status(200).body()
+          .has('$.block.behavior.description', 'Edited as opencode');
+        (await owner.put(
+          path,
+          { behavior: { ...current, description: 'A' }, opencode: { ...current, description: 'B' } },
+          { params },
+        )).status(400);
+      },
+    );
 
     await ctx.step('PUT a body with unrecognized top-level keys → 400', async () => {
       const r = await ctx.client
@@ -723,7 +748,7 @@ flow(
 );
 
 // PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
-// project visible (404) → project.customize.write (403) → project LLM gateway
+// project visible (404) → project.model.write (403) → project LLM gateway
 // enabled (404 llm_gateway_disabled). Same caller + same project state → same
 // status on both verbs. Every denial fires before model servability is
 // checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
@@ -767,11 +792,11 @@ flow(
         r.status(200);
       }
     });
-    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is off', async () => {
+    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is off', async () => {
       (await put(user, gatewayOff.id)).status(403);
       (await del(user, gatewayOff.id)).status(403);
     });
-    await ctx.step('project user without customize.write → PUT and DELETE both 403 while the gateway is on', async () => {
+    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is on', async () => {
       (await put(user, gatewayOn.id)).status(403);
       (await del(user, gatewayOn.id)).status(403);
     });

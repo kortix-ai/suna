@@ -6,6 +6,7 @@ import { requireModelPricing, type ModelConfig } from '../config/models';
 import { calculateCost } from './llm';
 import { deductLLMCredits } from './billing';
 import { dollarsToCents, refundActorSpend, reserveActorSpend } from './member-spend';
+import { refundReservation, reserveActorCost } from './reservation';
 import {
   reconcileBillingHold,
   roundBillingAmount,
@@ -38,27 +39,6 @@ function extractText(value: unknown): string {
   if (object.output) return extractText(object.output);
   if (object.input) return extractText(object.input);
   return '';
-}
-
-async function reserveActorCost(
-  actor: ActorContext | null,
-  cost: number,
-  refundCredits: () => Promise<unknown>,
-): Promise<number> {
-  const cents = dollarsToCents(cost);
-  if (!actor || cents <= 0) return 0;
-
-  const reserved = await reserveActorSpend(actor.sandboxId, actor.userId, cents);
-  if (reserved.success) return reserved.reservedCents;
-
-  await refundCredits().catch((error) => {
-    console.error('[LLM] Credit refund after member cap failure failed:', error);
-  });
-  const cap =
-    reserved.capCents === null ? 'configured' : `$${(reserved.capCents / 100).toFixed(2)} / cycle`;
-  throw new HTTPException(402, {
-    message: `Spending cap reached (${cap}). Ask the instance owner to raise or remove the cap.`,
-  });
 }
 
 export async function reserveEstimatedLlmCredits(
@@ -136,7 +116,7 @@ export async function reserveEstimatedLlmCredits(
       expiring: false,
       key: null,
     }),
-  );
+  'LLM');
 
   return {
     accountId,
@@ -269,22 +249,5 @@ export async function refundLlmReservation(
   reservation: LlmCreditReservation | null,
   description: string,
 ): Promise<void> {
-  if (!reservation) return;
-  if (reservation.cost > 0) {
-    await wallet.grant({
-      accountId: reservation.accountId,
-      amount: reservation.cost,
-      kind: 'llm_reservation_refund',
-      description,
-      expiring: false,
-      key: null,
-    });
-  }
-  if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
-    await refundActorSpend(
-      reservation.actor.sandboxId,
-      reservation.actor.userId,
-      reservation.actorReservedCents ?? 0,
-    );
-  }
+  await refundReservation(reservation, 'llm_reservation_refund', description);
 }

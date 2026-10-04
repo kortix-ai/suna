@@ -35,6 +35,13 @@ describe('project sidebar footer ordering', () => {
     expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectFilesNavItem'));
   });
 
+  test('Reminders sits directly above Files in the permanent nav', () => {
+    // It only renders while a reminder can still fire, so it joins the nav
+    // block rather than the alerts above it; below the balance alert, above Files.
+    expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectRemindersNavItem'));
+    expect(orderOf('ProjectRemindersNavItem')).toBeLessThan(orderOf('ProjectFilesNavItem'));
+  });
+
   test('the upgrade button is last in the group', () => {
     // The one deliberate exception to the rule above (Jay, 2026-09-03). Pinned
     // in its new position rather than deleted, so moving it back is also a
@@ -43,6 +50,20 @@ describe('project sidebar footer ordering', () => {
     expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(
       orderOf('ProjectChatGptConnectNavItem'),
     );
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(orderOf('ProjectComputerNavItem'));
+  });
+
+  test('the computer row sits directly below the ChatGPT connect entry', () => {
+    // Both are "connect an account you own" rows: ChatGPT, then your computer.
+    // Nothing else stands between them.
+    const between = source.slice(
+      orderOf('ProjectChatGptConnectNavItem'),
+      orderOf('ProjectComputerNavItem'),
+    );
+    expect(orderOf('ProjectComputerNavItem')).toBeGreaterThan(
+      orderOf('ProjectChatGptConnectNavItem'),
+    );
+    expect(between.match(/<[A-Z]\w+/g)).toEqual(['<ProjectChatGptConnectNavItem']);
   });
 
   test('the permanent nav keeps its own order', () => {

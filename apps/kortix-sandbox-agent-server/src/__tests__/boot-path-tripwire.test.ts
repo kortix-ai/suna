@@ -2,8 +2,7 @@
  * T1–T5 — the boot path is ONE path by construction, not by convention.
  *
  * PLAN-one-boot-path's enforcement section. Each rule is checked against the
- * real source with the TypeScript AST, the way `harness-boundary.test.ts`
- * checks the adapter boundary. The scanners live in
+ * real source with the TypeScript AST. The scanners live in
  * `helpers/boot-path-rules.ts` so the same functions can be pointed at the
  * PRE-refactor tree:
  *
@@ -77,7 +76,7 @@ describe('the one boot path is enforced, not merely intended', () => {
 
   test('T2 negative — a second direct caller is caught', () => {
     const probe: ScannedFile[] = [
-      { name: 'boot-config.ts', source: parse('export async function pointBootLink(){}') },
+      { name: 'services/config-release/boot-config.ts', source: parse('export async function pointBootLink(){}') },
       { name: BOOT_LINK_FILE, source: parse('await pointBootLink(dir, root)') },
       { name: 'harness/open-code/boot.ts', source: parse('await pointBootLink(other)') },
     ]
@@ -135,6 +134,10 @@ describe('the one boot path is enforced, not merely intended', () => {
     expect(runningWriteLeaks(sources)).toEqual([])
   })
 
+  test('T4 on pi — its running config has exactly one writer too, and it is setCurrent', () => {
+    expect(runningWriters(file('harness/pi/config-release.ts').source, 'current')).toEqual(['setCurrent:current'])
+  })
+
   test('T4 negative — a field patch outside the setter is caught', () => {
     const probe = parse(
       'function setRunningConfig(n){ running = { ...running, ...n } }\n' +
@@ -169,7 +172,7 @@ describe('the one boot path is enforced, not merely intended', () => {
   test('anti-stale — every rule still has a target in the tree', () => {
     const names = new Set(sources.map((entry) => entry.name))
     for (const required of [
-      'boot-config.ts',
+      'services/config-release/boot-config.ts',
       BOOT_LINK_FILE,
       BOOT_PATH_FILE,
       CONFIG_STATE_FILE,
@@ -194,7 +197,7 @@ describe('the one boot path is enforced, not merely intended', () => {
     ])
     // And the candidates are built in exactly one function.
     expect([...callers(sources, 'bootCandidates').keys()]).toEqual([BOOT_PATH_FILE])
-    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts'])
+    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts', 'harness/open-code/warm-seed.ts'])
   })
 
   test('the five rules pass as one verdict list, which is what the proof script prints', () => {

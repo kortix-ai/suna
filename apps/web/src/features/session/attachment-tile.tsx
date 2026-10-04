@@ -13,7 +13,7 @@
  * earlier 120px "file rectangle" beside 80px "image squares" gave every
  * message a ragged right edge.
  *
- * Every value is a token (`kortix-brand-guidelines`): `size-24` on the 0.23rem
+ * Every value is a token (`kortix-brand`): `size-24` on the 0.23rem
  * scale (~88px), `rounded-md`, the one `border-border` hairline, `bg-popover`
  * as the lifted-surface fill, `text-xs` for the name. The badge is the design
  * system's `Badge` at `size="xs"`, uppercase — the note at the badge says why.

@@ -3,7 +3,7 @@
 import type { CSSProperties } from 'react';
 
 import '@/components/dotmatrix-loader.css';
-import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion, useSteppedCycle } from '@/lib/dotmatrix-hooks';
 import { useMemo } from 'react';
 
 type MatrixPattern = 'diamond' | 'full' | 'outline' | 'rose' | 'cross' | 'rings';
@@ -1351,6 +1351,63 @@ export function createDotm3x3Component(
 
   Dotm3x3Component.displayName = displayName;
   return Dotm3x3Component;
+}
+
+export function createDotm5x5Component(
+  displayName: string,
+  makeResolver: (cycle: number, reducedMotion: boolean) => DotAnimationResolver,
+  config: {
+    speed: number;
+    size?: number;
+    dotSize?: number;
+    cycleMsBase?: number;
+    steps?: number;
+    idleStep?: number;
+    lockedPattern?: MatrixPattern;
+  },
+) {
+  function Dotm5x5Component({
+    pattern = 'full',
+    animated = true,
+    hoverAnimated = false,
+    speed = config.speed,
+    size = config.size ?? 36,
+    dotSize = config.dotSize ?? 5,
+    ...rest
+  }: DotMatrixCommonProps) {
+    const reducedMotion = usePrefersReducedMotion();
+    const { phase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+      animated: Boolean(animated && !reducedMotion),
+      hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
+      speed,
+    });
+    const active = !reducedMotion && phase !== 'idle';
+    const cyclePhase = useCyclePhase({ active: active && config.steps == null && config.cycleMsBase != null, cycleMsBase: config.cycleMsBase ?? 1000, speed });
+    const step = useSteppedCycle({ active: active && config.steps != null, cycleMsBase: config.cycleMsBase ?? 1000, steps: config.steps ?? 1, idleStep: config.idleStep, speed });
+    const animationResolver = useMemo(
+      () => makeResolver(config.steps == null ? cyclePhase : step, reducedMotion),
+      [cyclePhase, step, reducedMotion],
+    );
+
+    return (
+      <DotMatrixBase
+        {...rest}
+        size={size}
+        dotSize={dotSize}
+        speed={speed}
+        pattern={config.lockedPattern ?? pattern}
+        animated={animated}
+        phase={phase}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        reducedMotion={reducedMotion}
+        animationResolver={animationResolver}
+      />
+    );
+  }
+
+  Dotm5x5Component.displayName = displayName;
+  return Dotm5x5Component;
 }
 
 const GLYPH_SPIN_BASE_OPACITY = 0.09;

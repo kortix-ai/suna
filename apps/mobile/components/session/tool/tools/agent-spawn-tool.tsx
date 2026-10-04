@@ -142,16 +142,10 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('agent_spawn', AgentSpawnTool);
 ToolRegistry.register('agent-spawn', AgentSpawnTool);
 
-ToolRegistry.register('agent_task', AgentSpawnTool);
 ToolRegistry.register('agent-task', AgentSpawnTool);
-ToolRegistry.register('agent_task_create', AgentSpawnTool);
 ToolRegistry.register('agent-task-create', AgentSpawnTool);
-ToolRegistry.register('agent_task_start', AgentSpawnTool);
 ToolRegistry.register('agent-task-start', AgentSpawnTool);
-ToolRegistry.register('task_create', AgentSpawnTool);
 ToolRegistry.register('task-create', AgentSpawnTool);
-ToolRegistry.register('task_start', AgentSpawnTool);
 ToolRegistry.register('task-start', AgentSpawnTool);

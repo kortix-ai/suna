@@ -2,7 +2,7 @@ const { describe, expect, test } = require('bun:test');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
-const { APP_PATH_PREFIXES, isAppPath, isPreviewHost } = require('./nav-rules');
+const { APP_PATH_PREFIXES, isAppPath, isApprovalDialogPath, isPreviewHost } = require('./nav-rules');
 
 /**
  * The web middleware's `DESKTOP_ALLOWED_ROUTES`, read from source. The shell
@@ -54,5 +54,22 @@ describe('desktop navigation gate', () => {
     expect(isPreviewHost('p1.localhost')).toBe(true);
     expect(isPreviewHost('evilkortix.cloud')).toBe(false);
     expect(isPreviewHost('github.com')).toBe(false);
+  });
+});
+
+describe('isApprovalDialogPath', () => {
+  test('keeps the device approval and its sign-in inside the dialog', () => {
+    expect(isApprovalDialogPath('/tunnel/authorize/ABCD-1234')).toBe(true);
+    expect(isApprovalDialogPath('/auth')).toBe(true);
+    expect(isApprovalDialogPath('/auth/callback')).toBe(true);
+  });
+
+  test('treats every other app page as leaving the dialog', () => {
+    // Back replaces the page with the app home: that must close the dialog,
+    // not render the app inside it.
+    expect(isApprovalDialogPath('/projects/p1')).toBe(false);
+    expect(isApprovalDialogPath('/projects/start')).toBe(false);
+    expect(isApprovalDialogPath('/')).toBe(false);
+    expect(isApprovalDialogPath('/tunnelx')).toBe(false);
   });
 });

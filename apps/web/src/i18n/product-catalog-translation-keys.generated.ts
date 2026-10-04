@@ -108,7 +108,7 @@ export const PRODUCT_CATALOG_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   Shell: 'texta733285486d5',
   'Execute commands in a local terminal': 'text3bfe60b0c2cc',
   'Computer Use': 'text5702cfb27036',
-  'Inspect and control local desktop apps through CUA Driver': 'text4b5274edd83f',
+  'See the screen and use the apps on this computer': 'text72cfe7efa2b5',
   'Read files': 'text4e792beef219',
   'Read and list local files and directories': 'texteb327155ad2c',
   'Write files': 'text5557acb8176b',

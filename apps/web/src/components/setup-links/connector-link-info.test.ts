@@ -10,7 +10,7 @@ const INFO: ConnectorSetupLinkInfo = {
   app: 'miro',
   name: 'Miro',
   icon_url: 'https://cdn.example.test/miro.svg',
-  expires_at: '2026-10-01T00:00:00.000Z',
+  expires_at: '2099-01-01T00:00:00.000Z', // far future: a fixed near date expired on 2026-10-01 and broke the suite
 };
 
 describe('createConnectorLinkInfoCache', () => {

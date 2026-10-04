@@ -17,7 +17,7 @@ const input = {
 };
 
 test('imports a staged attachment with identifiers only when the daemon advertises file.import', async () => {
-  const calls: Array<{ route: string; body: unknown }> = [];
+  const calls: Array<{ route: string; body: unknown; binding: string | null }> = [];
   const result = await importRuntimePromptAttachment(
     {
       externalId: 'sbx_import',
@@ -27,10 +27,11 @@ test('imports a staged attachment with identifiers only when the daemon advertis
       attachmentId: '22222222-2222-4222-8222-222222222222',
       partIndex: 3,
     },
-    async (_externalId, _port, _access, _method, route, _query, _headers, body) => {
+    async (_externalId, _port, access, _method, route, _query, _headers, body) => {
       calls.push({
         route,
         body: body?.byteLength ? JSON.parse(new TextDecoder().decode(body)) : null,
+        binding: access.kind === 'principal' ? access.boundCredentialSessionId : null,
       });
       if (route === '/kortix/health') {
         return Response.json({ capabilities: ['file.import', 'file.append'] });
@@ -49,9 +50,10 @@ test('imports a staged attachment with identifiers only when the daemon advertis
     sha256: 'a'.repeat(64),
   });
   expect(calls).toEqual([
-    { route: '/kortix/health', body: null },
+    { route: '/kortix/health', body: null, binding: null },
     {
       route: '/file/import',
+      binding: null,
       body: {
         command_id: '11111111-1111-4111-8111-111111111111',
         attachment_id: '22222222-2222-4222-8222-222222222222',
@@ -227,10 +229,10 @@ test('deletes the temporary file when rename failure echoes the file body', asyn
   expect(JSON.parse(new TextDecoder().decode(requests[2]?.body))).toEqual({ path: temporaryPath });
 });
 
-// The 2026-09-04 incident's second half. The sandbox edge discards a request
-// body over its size ceiling (~104 KB lands, ~115 KB does not) and answers ok,
-// so a single-shot upload of a real photo or PDF never reaches the box. Files
-// past the chunk budget must go up in bounded pieces instead.
+// The 2026-09-04 incident's second half: the sandbox edge then discarded a
+// request body over ~104 KB and answered ok. Platinum has since fixed the edge
+// (bodies to 16 MiB land intact, re-measured 2026-10-02), but a file past the
+// chunk budget still goes up in bounded, size-checked pieces.
 test('splits a file past the chunk budget into bounded appends', async () => {
   const calls: Array<{ path: string; first?: string; offset?: string; bytes: number }> = [];
   const bytes = new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES * 2 + 17).fill(7);
@@ -285,7 +287,7 @@ test('a file within the chunk budget still goes up in one upload', async () => {
     { ...input, bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES) },
     async (_externalId, _port, _access, _method, route) => {
       routes.push(route);
-      if (route === '/file/upload') return Response.json([{ path: '/tmp/x', size: 1 }]);
+      if (route === '/file/upload') return Response.json([{ path: '/tmp/x', size: RUNTIME_PROMPT_CHUNK_BYTES }]);
       return Response.json(true);
     },
     () => 'fixed',
@@ -364,8 +366,8 @@ test('names an unsupported whole-upload route when a successful response is HTML
   expect(error.message).not.toContain('Failed to parse JSON');
 });
 
-test('daemon with no capabilities field and a working /file/append delivers a 300 KiB attachment', async () => {
-  const bytes = new Uint8Array(300 * 1024).map((_, index) => index % 251);
+test('daemon with no capabilities field and a working /file/append delivers an attachment past the chunk budget', async () => {
+  const bytes = new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES + 300 * 1024).map((_, index) => index % 251);
   const routes: string[] = [];
   let stored = new Uint8Array();
   let renamed = '';
@@ -425,6 +427,58 @@ test('daemon with no capabilities field and a working /file/append delivers a 30
   expect(result).toEqual({ path: input.targetPath, size: bytes.byteLength });
   expect(stored).toEqual(bytes);
   expect(renamed).toBe(input.targetPath);
-  expect(routes.filter((route) => route === 'POST /file/append')).toHaveLength(5);
+  expect(routes.filter((route) => route === 'POST /file/append')).toHaveLength(
+    Math.ceil(bytes.byteLength / RUNTIME_PROMPT_CHUNK_BYTES),
+  );
   expect(routes).not.toContain('POST /file/upload');
+});
+
+// 2026-10-02: at 64 KiB a 1 MiB attachment was 16 sequential proxied appends.
+// It now goes up in one request.
+test('a 1 MiB attachment is one upload, not a chain of appends', async () => {
+  const routes: string[] = [];
+  const bytes = new Uint8Array(1024 * 1024).fill(3);
+  await writeRuntimePromptFile(
+    { ...input, bytes },
+    async (_externalId, _port, _access, _method, route) => {
+      routes.push(route);
+      if (route === '/file/upload') return Response.json([{ path: '/tmp/x', size: bytes.byteLength }]);
+      return Response.json(true);
+    },
+    () => 'fixed',
+  );
+  expect(routes).toEqual(['/file/upload', '/file/rename']);
+});
+
+// A whole-file body the box received short must fail and remove the short file,
+// never be renamed into place as a truncated attachment.
+test('a whole-file upload that landed short fails and deletes its temp file', async () => {
+  const routes: string[] = [];
+  const error = await writeRuntimePromptFile(
+    { ...input, bytes: new Uint8Array(4096).fill(1) },
+    async (_externalId, _port, _access, method, route) => {
+      routes.push(`${method} ${route}`);
+      if (route === '/file/upload') return Response.json([{ path: '/tmp/short', size: 1000 }]);
+      return Response.json(true);
+    },
+    () => 'fixed',
+  ).catch((e) => e);
+  expect(String(error)).toContain('landed 1000 of 4096 bytes');
+  expect(routes).toEqual(['POST /file/upload', 'DELETE /file']);
+});
+
+// An empty attachment is not a truncated one: 0 bytes sent, 0 landed, renamed into place.
+test('an empty attachment uploads, lands 0 of 0 and is renamed into place', async () => {
+  const routes: string[] = [];
+  const result = await writeRuntimePromptFile(
+    { ...input, bytes: new Uint8Array(0) },
+    async (_externalId, _port, _access, method, route) => {
+      routes.push(`${method} ${route}`);
+      if (route === '/file/upload') return Response.json([{ path: '/tmp/empty', size: 0 }]);
+      return Response.json(true);
+    },
+    () => 'fixed',
+  );
+  expect(result).toEqual({ path: input.targetPath, size: 0 });
+  expect(routes).toEqual(['POST /file/upload', 'POST /file/rename']);
 });

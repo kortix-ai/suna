@@ -14,12 +14,15 @@ name: drata-compliance-as-code
 
 on:
   push:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
+  # No push to `main` (Actions minutes, 2026-10-03): the daily schedule scans it.
+  schedule:
+    - cron: "37 6 * * *" # 06:37 UTC daily
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
@@ -117,10 +120,9 @@ jobs:
 
       - name: Drata Github Action
         id: drata
-        # Drata currently reports three documented parser/AWS-model false
-        # positives as critical. Keep the scan and findings visible while the
-        # exclusions are recreated in Drata. Checkov and Trivy remain blocking.
-        continue-on-error: true
+        # Blocking. Every finding that is correct by design has a Drata
+        # exclusion with its rationale (infra/terraform/compliance-monitoring/
+        # README.md, "Drata IaC exclusions"); a new critical finding fails.
         uses: drata/compliance-as-code-action@v1.0.0
         env:
           DRATA_API_TOKEN: ${{ env.DRATA_API_TOKEN || secrets.DRATA_IAC_PIPELINE_KEY }}

@@ -15,7 +15,7 @@
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listAccountTokens } from './tokens';
+import { listAccountTokens, listOAuthGrants, revokeOAuthGrant } from './tokens';
 
 let calls: { url: string; method: string }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: [] };
@@ -75,4 +75,24 @@ test('returns the token rows the API answered with', async () => {
   };
   const tokens = await listAccountTokens('acc-1', { mine: true });
   expect(tokens.map((t) => t.token_id)).toEqual(['t1']);
+});
+
+// Connected apps: the OAuth clients (MCP clients, "Sign in with Kortix" apps)
+// the caller approved. Per person, not per account: no account_id on the wire.
+test('listOAuthGrants() reads the caller’s connected apps and returns the grants array', async () => {
+  nextResponse = {
+    status: 200,
+    body: { grants: [{ client_id: 'kortix_client_1', name: 'Claude Code', self_registered: true, active: true }] },
+  };
+  const grants = await listOAuthGrants();
+  expect(last().url).toBe('http://test.local/oauth/grants');
+  expect(last().method).toBe('GET');
+  expect(grants.map((g) => g.client_id)).toEqual(['kortix_client_1']);
+});
+
+test('revokeOAuthGrant(clientId) deletes that grant, escaping the id', async () => {
+  nextResponse = { status: 200, body: { ok: true, revoked_tokens: 2 } };
+  expect(await revokeOAuthGrant('kortix client/1')).toEqual({ ok: true, revoked_tokens: 2 });
+  expect(last().url).toBe('http://test.local/oauth/grants/kortix%20client%2F1');
+  expect(last().method).toBe('DELETE');
 });

@@ -15,7 +15,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
-import { getAccountMembership } from '../lib/git';
+import { getAccountMembership } from '../lib/user-identity';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { guardSession, sessionAccessDenied } from '../lib/session-access';

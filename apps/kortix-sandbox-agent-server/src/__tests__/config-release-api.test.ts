@@ -3,7 +3,7 @@
  * validation, and the archive download (one redirect, no bearer to storage,
  * size cap). Real archives from a real repository; a fake API over HTTP.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,8 +13,13 @@ import {
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
     type ConfigReleaseApi,
-} from '../config-release/api-client'
-import { parseConfigReleaseDescriptor } from '../config-release/descriptor'
+} from '@/services/config-release/api-client'
+import { parseConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
 import {
   buildRelease,
   commitAll,
@@ -46,6 +51,14 @@ beforeAll(() => {
 afterAll(() => {
   api.stop()
   rmSync(root, { recursive: true, force: true })
+})
+
+beforeEach(() => {
+  resetSessionTokenHealthForTests()
+})
+
+afterEach(() => {
+  resetSessionTokenHealthForTests()
 })
 
 describe('fetchConfigReleaseDescriptor', () => {
@@ -83,6 +96,22 @@ describe('fetchConfigReleaseDescriptor', () => {
   test('a malformed descriptor is refused before any field is used', async () => {
     api.respond({ status: 200, json: { ...release.descriptor, release_id: 'not-hex' } })
     await expect(fetchConfigReleaseDescriptor(client)).rejects.toThrow(/release_id/)
+  })
+
+  test('a dead-session-token 401 reports to the shared breaker, and a 2xx clears it', async () => {
+    // KRTX-613: this client is the daemon's config-release path. It must feed
+    // the one signal built for `401 Session token is not active`, so the
+    // runtime-truth tick can stop re-issuing a request the API can never accept.
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      api.respond({ status: 401, json: { error: true, message: 'Session token is not active', status: 401 } })
+      await fetchConfigReleaseDescriptor(client).catch(() => {})
+    }
+    expect(sessionTokenPresumedDead()).toBe(true)
+
+    // A rotated credential answers again; the same response type clears it.
+    serveRelease(api, release)
+    await fetchConfigReleaseDescriptor(client)
+    expect(sessionTokenPresumedDead()).toBe(false)
   })
 })
 

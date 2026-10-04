@@ -32,13 +32,12 @@ import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@kortix/shared/constants';
 import {
   ArrowLeftIcon,
   CaretRightIcon,
-  DownloadSimpleIcon,
   FileXIcon,
 } from '@phosphor-icons/react';
 import JSZip from 'jszip';
@@ -58,6 +57,7 @@ import {
   type ZipEntry,
   type ZipFolder,
 } from './zip-entries';
+import { Download } from '@/features/icon/icons/download';
 
 // ---------------------------------------------------------------------------
 // Reading the archive
@@ -154,7 +154,7 @@ function DownloadArchiveButton({ blob, fileName }: { blob: Blob; fileName: strin
       className="h-7 shrink-0 gap-1.5 active:scale-[0.96]"
       onClick={() => saveBlob(blob, archiveFileName(fileName))}
     >
-      <DownloadSimpleIcon className="size-3.5 shrink-0" />
+      <Download className="size-3.5 shrink-0" />
       {tI18nComplete.raw('textd6eafe823591')}
     </Button>
   );
@@ -579,7 +579,7 @@ export function ZipRenderer({
               onClick={() => void extract(selected)}
               className="size-7 active:scale-[0.96]"
             >
-              <DownloadSimpleIcon className="size-3.5" />
+              <Download className="size-3.5" />
             </Button>
           </Hint>
         </div>

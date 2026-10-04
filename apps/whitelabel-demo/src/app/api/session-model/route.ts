@@ -14,6 +14,7 @@
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { isOwner, isValidProjectId } from '@/server/users';
+import { sessionModelPin } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -65,9 +66,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const session = await ctx.kortix.session(ctx.projectId, ctx.sessionId).get();
-    const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
-    const model = metadata.opencode_model;
-    return Response.json({ model: typeof model === 'string' ? model : null });
+    return Response.json({ model: session ? sessionModelPin(session) : null });
   } catch {
     return Response.json({ model: null });
   }
@@ -92,7 +91,7 @@ export async function PUT(req: NextRequest) {
     // REQUIRED live push may not have. Dropping it here is what made the UI
     // report a half-applied change as saved. See classifyModelChange.
     return Response.json({
-      model: result.opencode_model,
+      model: result.model ?? result.opencode_model,
       appliedLive: result.applied_live,
       ...(result.push_failed ? { pushFailed: true } : {}),
       ...(result.detail ? { detail: result.detail } : {}),

@@ -45,6 +45,9 @@ export type SecretScope = 'runtime' | 'connector';
 
 interface BasePayload {
   exp: number;
+  /** When the link was minted, epoch ms. Tokens minted before this field
+   *  existed decode without it, and `exp` cannot stand in: the TTL varies. */
+  iat?: number;
   nonce: string;
   /** projectId sealed inside the envelope; cross-checked against the outer id. */
   pid: string;
@@ -132,9 +135,10 @@ export function mintSetupLink(
   opts?: { expiresInMinutes?: number | null },
 ): { token: string; expiresAt: number } {
   const defaultTtl = spec.kind === 'approval' ? APPROVAL_TTL_MINUTES : undefined;
-  const exp = Date.now() + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
+  const iat = Date.now();
+  const exp = iat + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
   const nonce = randomBytes(9).toString('base64url');
-  const base: BasePayload = { exp, nonce, pid: projectId, uid: spec.uid ?? null };
+  const base: BasePayload = { exp, iat, nonce, pid: projectId, uid: spec.uid ?? null };
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'

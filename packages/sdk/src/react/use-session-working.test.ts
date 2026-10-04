@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus } from '../core/runtime/runtime-types';
 import { useSyncStore } from '../browser/stores/sync-store';
 import {
   SERVER_OBSERVATION_MAX_MS,

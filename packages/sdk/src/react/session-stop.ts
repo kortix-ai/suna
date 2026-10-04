@@ -6,7 +6,7 @@
  * so `use-session.ts` reaches these here instead of importing that file back.
  * The public names are re-exported from `use-session-send.ts`.
  */
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message } from '../core/runtime/runtime-types';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import type { MessageError } from '../browser/stores/sync-store/types';
@@ -168,7 +168,7 @@ export async function stopWithReceipt(
   // abort's effect", and a timeout is precisely the case where nobody said that.
   // Settling on it wrote 5s of clock into an evidence field: `abortFloor` in
   // `projectWorking` dropped from Infinity to a real instant, the next `/turn`
-  // read — issued while the cancel was still in flight, `abortOpenCodeSession`
+  // read — issued while the cancel was still in flight, `abortRuntimeSession`
   // retries twice — cleared it, and the Stop button came back mid-cancel. The
   // receipt is left unsettled instead and `OPTIMISTIC_ABORT_MAX_MS` bounds it,
   // which is the bound that exists for exactly this case.

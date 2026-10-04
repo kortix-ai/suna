@@ -3,6 +3,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { ConnectionMetadataSchema, ReconcileConnectionInputSchema } from '@kortix/api-contract';
 import { connectorConnections, connectors, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
+import { ensureProjectComputer } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -27,7 +28,12 @@ import { sessionMayEnumerateConnection } from '../lib/connector-connection-visib
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readJsonObject } from '../../shared/http-body';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
-import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
+import {
+  ConnectionViewSchema,
+  computerConnectionFields,
+  loadComputerMachines,
+  serializeConnection,
+} from '../lib/connection-view';
 
 /**
  * The owner/admin roster shape is narrower than Connection.
@@ -160,6 +166,8 @@ projectsApp.openapi(
       isServiceAccount: c.get('authType') === 'service_account',
       agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
     };
+    // The caller's paired machines are their private accounts in every project.
+    await ensureProjectComputer(projectId, actor.isServiceAccount ? null : actor.userId);
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -189,6 +197,7 @@ projectsApp.openapi(
         metadata: connectorConnections.metadata,
         providerType: connectors.providerType,
         connectorConfig: connectors.config,
+        tunnelId: connectorConnections.tunnelId,
       })
       .from(connectorConnections)
       .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
@@ -201,6 +210,7 @@ projectsApp.openapi(
         actingPrincipalIsServiceAccount: actor.isServiceAccount,
         agentPrincipal: actor.agentPrincipal,
       }),
+      agentId: actor.agentPrincipal?.agentId ?? null,
     });
     const listed = rows.map((connection) => {
       const audience = audienceOf(connection.connectionId);
@@ -227,11 +237,16 @@ projectsApp.openapi(
         projectId,
         PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
       ));
-    const sharing = await loadConnectionSharing({
-      projectId,
-      accountId: loaded.row.accountId,
-      projectName: loaded.row.name,
-    });
+    const [sharing, machines] = await Promise.all([
+      loadConnectionSharing({
+        projectId,
+        accountId: loaded.row.accountId,
+        projectName: loaded.row.name,
+      }),
+      loadComputerMachines(
+        listed.filter((item) => item.usable).map((item) => item.connection.tunnelId),
+      ),
+    ]);
     return c.json({
       connections: listed
         .filter(
@@ -241,6 +256,7 @@ projectsApp.openapi(
         )
         .map((item) => ({
           ...serializeConnection(item.connection),
+          ...computerConnectionFields(item.connection, machines),
           ...(item.connection.ownerType === 'project'
             ? { shared_with: sharing.get(item.connection.connectionId) ?? [] }
             : {}),
@@ -387,6 +403,12 @@ projectsApp.openapi(
         409,
       );
     }
+    if (connector.providerType === 'computer') {
+      return c.json(
+        { error: 'Computer accounts are added by pairing a computer (POST /projects/{projectId}/computers)' },
+        409,
+      );
+    }
     // No connector-level gate: every connector can hold both a shared project
     // account and each member's own private one. Refusing here is what left a
     // former `user`-strategy connector with no connect flow at all.
@@ -494,6 +516,12 @@ projectsApp.openapi(
     if (connector.providerType === 'channel') {
       return c.json(
         { error: 'Channel connections are reconciled from verified channel installations' },
+        409,
+      );
+    }
+    if (connector.providerType === 'computer') {
+      return c.json(
+        { error: 'Computer accounts are added by pairing a computer (POST /projects/{projectId}/computers)' },
         409,
       );
     }

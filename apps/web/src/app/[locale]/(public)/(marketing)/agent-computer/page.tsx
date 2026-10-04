@@ -1,14 +1,14 @@
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
 import { BranchGraph } from '@/features/marketing/agent-computer/branch-graph';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAgentComputerContent } from '@/features/marketing/agent-computer/content';
 import { FileTree } from '@/features/marketing/agent-computer/file-tree';
 import { AgentComputerHeroVisual } from '@/features/marketing/agent-computer/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
 import { getTranslations } from '@/i18n/get-translations';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
 /**
@@ -23,20 +23,12 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
-
 /**
  * `/agent-computer` — the one page that explains the primitive under every
  * other page: a session is a machine.
  *
  * Copy lives in `features/marketing/agent-computer/content.ts` and is governed
- * by the `comms` skill. Three rules bite hardest here: never write "container"
+ * by the `kortix-brand` skill. Three rules bite hardest here: never write "container"
  * (the nouns are "agent computer", "cloud computer", "sandbox"); never invent a
  * number ("3,000+ apps" is the only sanctioned one); and never claim blanket
  * "microVM isolation" or a secret "the model never sees" — see the accuracy
@@ -56,7 +48,11 @@ export default async function AgentComputerPage(): Promise<ReactNode> {
         ctaPrimaryHref={hero.ctaPrimaryHref}
         ctaSecondary={hero.ctaSecondary}
         ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<AgentComputerHeroVisual />}
+        visual={
+          <div className="dark w-full">
+            <AgentComputerHeroVisual />
+          </div>
+        }
       />
 
       {/* ── 1 · what happens when a session starts ──────────────────────── */}
@@ -64,7 +60,7 @@ export default async function AgentComputerPage(): Promise<ReactNode> {
         <SectionHeader eyebrow={boot.eyebrow} title={boot.title} description={boot.sub} />
 
         <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
+          <ol className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
             {boot.steps.map((step, i) => (
               <li
                 key={step.n}
@@ -94,7 +90,7 @@ export default async function AgentComputerPage(): Promise<ReactNode> {
             {control.cards.map((card) => (
               <div
                 key={card.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
                 <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
@@ -167,7 +163,7 @@ export default async function AgentComputerPage(): Promise<ReactNode> {
 
           {files.points.map((point, i) => (
             <Reveal key={point.id} delay={0.1 + i * 0.04} className="min-w-0 lg:col-span-4">
-              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6">
+              <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6">
                 <h3 className="text-foreground text-base leading-tight font-medium text-balance">
                   {point.title}
                 </h3>
@@ -191,7 +187,7 @@ export default async function AgentComputerPage(): Promise<ReactNode> {
         />
 
         <Reveal delay={0.06}>
-          <dl className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
+          <dl className="border-border bg-card mt-10 overflow-hidden rounded-xl border">
             {isolation.rows.map((row, i) => (
               <div
                 key={row.id}

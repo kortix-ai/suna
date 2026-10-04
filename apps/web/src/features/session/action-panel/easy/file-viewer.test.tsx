@@ -49,6 +49,42 @@ function count(haystack: string, needle: string): number {
 }
 
 describe('file kind predicates', () => {
+  test('source viewer retains its extension language and rendered-kind contract', () => {
+    const languages = {
+      md: 'markdown',
+      mdx: 'markdown',
+      ts: 'typescript',
+      tsx: 'tsx',
+      js: 'javascript',
+      jsx: 'jsx',
+      json: 'json',
+      py: 'python',
+      rb: 'ruby',
+      go: 'go',
+      rs: 'rust',
+      sh: 'bash',
+      bash: 'bash',
+      yml: 'yaml',
+      yaml: 'yaml',
+      toml: 'toml',
+      css: 'css',
+      html: 'html',
+      htm: 'html',
+      svg: 'xml',
+      sql: 'sql',
+      mmd: 'mermaid',
+      mermaid: 'mermaid',
+    };
+    for (const [ext, language] of Object.entries(languages)) {
+      const name = `file.${ext}`;
+      expect(languageFor(name)).toBe(language);
+      expect(isMarkdown(name)).toBe(ext === 'md' || ext === 'mdx');
+      expect(isHtml(name)).toBe(getFileCategory(name) === 'html');
+    }
+    expect(languageFor('file.unknown')).toBe('text');
+    expect(isSvg('x.svg')).toBe(true);
+  });
+
   test('svg is recognised, and is not confused with the other rendered kind', () => {
     expect(isSvg('logo.svg')).toBe(true);
     expect(isSvg('LOGO.SVG')).toBe(true);
@@ -300,6 +336,39 @@ describe('FileViewer actions', () => {
     const md = render('notes.txt', 'hi');
     expect(md).not.toContain('aria-label="More actions"');
     expect(count(md, 'aria-label="Download"')).toBe(1);
+  });
+});
+
+describe('FileViewer — Save as PDF (markdown only)', () => {
+  /** The rendered `<button …>` opening tag that carries `marker`. */
+  function buttonTag(html: string, marker: string): string {
+    const at = html.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    return html.slice(html.lastIndexOf('<button', at), html.indexOf('>', at) + 1);
+  }
+
+  test('a markdown file offers one Save as PDF button, and Download stays the raw file', () => {
+    for (const name of ['notes.md', 'guide.mdx']) {
+      const md = renderShareable(name, '# Title');
+      expect(count(md, 'data-save-as-pdf=""')).toBe(1);
+      expect(count(md, 'aria-label="Save as PDF"')).toBe(1);
+      expect(buttonTag(md, 'data-save-as-pdf=""')).not.toContain(' disabled=""');
+      // One click each: the PDF is not hidden behind Download, and Download is
+      // not replaced by a menu.
+      expect(count(md, 'data-viewer-download=""')).toBe(1);
+      expect(md.indexOf('data-save-as-pdf=""')).toBeLessThan(md.indexOf('data-viewer-download=""'));
+    }
+  });
+
+  test('no other text file gets it', () => {
+    for (const name of ['notes.txt', 'page.html', 'diagram.mmd', 'logo.svg', 'app.ts']) {
+      expect(renderShareable(name, 'x')).not.toContain('data-save-as-pdf');
+    }
+  });
+
+  test('an empty markdown file shows the button disabled — there is nothing to print', () => {
+    const md = renderShareable('empty.md', '  \n');
+    expect(buttonTag(md, 'data-save-as-pdf=""')).toContain(' disabled=""');
   });
 });
 
