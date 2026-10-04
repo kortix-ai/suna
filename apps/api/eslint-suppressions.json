@@ -2680,7 +2680,7 @@
   },
   "src/sandbox-proxy/routes/public-share.ts": {
     "no-restricted-syntax": {
-      "count": 3
+      "count": 2
     }
   },
   "src/sandbox-proxy/routes/share.ts": {
