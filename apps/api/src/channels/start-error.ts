@@ -87,7 +87,7 @@ export function startErrorMessage(
     case 409:
       return `I couldn't find a Kortix account to run this session as. Connect your account with ${commands.login}, then send your message again.`;
     case 429:
-      return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
+      return "Kortix is getting too many requests from this workspace right now. Wait a minute, then send your message again.";
     case 500:
     case 502:
     case 503:

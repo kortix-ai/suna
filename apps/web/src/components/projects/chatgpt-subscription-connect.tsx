@@ -1,11 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckCircleIcon as CheckCircle2,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
@@ -30,19 +30,13 @@ import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import {
-  listProjectSecrets,
-  pollProjectProviderOAuth,
-  startProjectProviderOAuth,
-} from '@kortix/sdk';
+import { listProjectSecrets, runProjectProviderOAuthFlow } from '@kortix/sdk';
 import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [], groupIds: [] };
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type ChatGptPhase = 'idle' | 'waiting' | 'done';
 type ChatGptChallenge = { url: string; code: string | null };
@@ -181,52 +175,36 @@ export function useChatGptConnectFlow({
     setChallenge(null);
     setPhase('waiting');
     try {
-      const start = await startProjectProviderOAuth(projectId, provider, {
-        sharing: selectionToIntent(sharing),
+      // The SDK drives the device flow (start, poll cadence, deadlines,
+      // cancellation); this hook owns what a React host does with each
+      // outcome: the challenge view, the translated success toast, and the
+      // query invalidations.
+      const result = await runProjectProviderOAuthFlow({
+        projectId,
+        provider,
+        input: { sharing: selectionToIntent(sharing) },
+        onChallenge: (challenge) =>
+          setChallenge({ url: challenge.verification_url, code: challenge.user_code }),
+        isCancelled: () => cancelledRef.current,
       });
-      if (cancelledRef.current) return;
-      setChallenge({ url: start.verification_url, code: start.user_code });
-
-      const interval = Math.max(2000, start.interval_ms || 3000);
-      const deadline = start.expires_at || Date.now() + 10 * 60_000;
-      while (!cancelledRef.current && Date.now() < deadline) {
-        await sleep(interval);
-        if (cancelledRef.current) return;
-        let res;
-        try {
-          res = await pollProjectProviderOAuth(projectId, provider, start.flow_id);
-        } catch {
-          continue;
-        }
-        if (cancelledRef.current) return;
-        if (res.status === 'success') {
-          setPhase('done');
-          successToast(successMessage ?? tI18nComplete.raw('text5630381eeca0'));
-          queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-          refreshProjectProviderState(queryClient, projectId, {
-            expectProviderId: provider === 'openai' ? 'codex' : provider,
-          });
-          onConnected?.();
-          return;
-        }
-        if (res.status === 'failed') {
-          setChallenge(null);
-          setPhase('idle');
-          setError(res.error || 'Authorization failed');
-          return;
-        }
-        if (res.status === 'expired') {
-          setChallenge(null);
-          setPhase('idle');
-          setError('Authorization timed out. Try again.');
-          return;
-        }
+      if (result.status === 'cancelled') return;
+      if (result.status === 'success') {
+        setPhase('done');
+        successToast(successMessage ?? tI18nComplete.raw('text5630381eeca0'));
+        queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+        refreshProjectProviderState(queryClient, projectId, {
+          expectProviderId: provider === 'openai' ? 'codex' : provider,
+        });
+        onConnected?.();
+        return;
       }
-      if (!cancelledRef.current) {
-        setChallenge(null);
-        setPhase('idle');
-        setError('Authorization timed out. Try again.');
-      }
+      setChallenge(null);
+      setPhase('idle');
+      setError(
+        result.status === 'expired'
+          ? 'Authorization timed out. Try again.'
+          : result.error || 'Authorization failed',
+      );
     } catch (err) {
       if (cancelledRef.current) return;
       setChallenge(null);

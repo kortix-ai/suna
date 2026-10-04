@@ -6,6 +6,7 @@
  */
 
 import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
@@ -118,25 +119,6 @@ import type {
 // idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
-
-function isMissingSandboxError(error: unknown): boolean {
-  const err = error as
-    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
-    | null
-    | undefined;
-  if (err?.status === 404 || err?.statusCode === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
-  return (
-    message.includes('not found') ||
-    message.includes('no such sandbox') ||
-    message.includes('sandbox does not exist')
-  );
-}
 
 /**
  * Daytona sandbox lifecycle policy, applied as SDK create() params so a box
@@ -465,7 +447,7 @@ export class DaytonaProvider implements SandboxProvider {
       return status;
     } catch (err) {
       runningStatusCache.delete(externalId);
-      if (isMissingSandboxError(err)) return 'removed';
+      if (isProviderNotFound(err)) return 'removed';
       return 'unknown';
     }
   }

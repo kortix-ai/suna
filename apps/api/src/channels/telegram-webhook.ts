@@ -135,7 +135,6 @@ async function spawnAgentTurn(
       // Title from the user's actual words, not the scaffolded envelope.
       title_source: message.text ?? message.caption ?? null,
     },
-    enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
     idempotencyKey: `telegram:${projectId}:${update.update_id}`,
     // Channel sessions are team-facing — project-visible, not private to the

@@ -126,6 +126,50 @@ describe('selectSessionRowsForViewer', () => {
     });
   });
 
+  test('manager project scope drops a soft-deleted warm draft and keeps a soft-deleted real session', () => {
+    // A deleted "New session" row was never prompted, so its tombstone carries
+    // no conversation or work to audit — keeping it is what left the Sessions
+    // page unable to ever reach its empty state on a fresh project. A deleted
+    // real session keeps its tombstone row for the manager's audit.
+    const deletedWarmDraft = row('deleted-warm-draft', {
+      status: 'stopped',
+      metadata: {
+        warm: true,
+        deletedAt: '2026-07-20T10:00:00.000Z',
+        deletedBy: VIEWER_ID,
+      },
+    });
+    const deletedReal = row('deleted-real', {
+      status: 'completed',
+      metadata: { deletedAt: '2026-07-20T10:00:00.000Z', deletedBy: VIEWER_ID },
+    });
+    const liveWarmDraft = row('live-warm-draft', {
+      status: 'stopped',
+      metadata: { warm: true },
+    });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [deletedWarmDraft, deletedReal, liveWarmDraft],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'deleted-real',
+      'live-warm-draft',
+    ]);
+    expect(selected.items[0]).toMatchObject({
+      deletedAt: '2026-07-20T10:00:00.000Z',
+      deletedBy: VIEWER_ID,
+    });
+  });
+
   test('project scope is denied without project-management rights', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('private-other', { createdBy: OTHER_ID })],
