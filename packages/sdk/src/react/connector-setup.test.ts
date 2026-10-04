@@ -4,7 +4,7 @@
  * hook owns the phase machine, subscriptions and cancellation; the host injects
  * the backend URL, browser storage and popup opening.
  */
-import { expect, jest, test } from 'bun:test';
+import { afterEach, expect, jest, test } from 'bun:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 
@@ -13,6 +13,13 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 const { useConnectorSetup } = await import('./connector-setup');
 
 const BACKEND = 'http://test.local/v1';
+
+// A test that times out never reaches its own `finally { jest.useRealTimers() }`.
+// Restore real timers here too, so one stuck test cannot freeze every later
+// test's fetch and act() behind fake timers (CI, promotion #9124 and #9126).
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 type Setup = ReturnType<typeof useConnectorSetup>;
 
