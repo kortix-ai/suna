@@ -22,17 +22,23 @@ set statement_timeout = '30s';
 -- agents_delete_own, agents_select_marketplace — not flagged by this lint).
 -- No Kortix code reads public.agents as an RLS-restricted role: the table is
 -- not in the managed baseline (schema kortix plus billing objects in public),
--- the API connects as postgres/service_role, and web, mobile and the SDK
--- never query it. The one writer, public.delete_user_data(uuid, uuid), runs
--- SECURITY DEFINER as the table owner, which RLS does not apply to.
--- Baseline databases (fresh installs) never had the table; this migration is
--- a no-op there.
+-- and web, mobile and the SDK never query it. The legacy prod functions that
+-- touch the table — delete_user_data, publish_agent_to_marketplace,
+-- unpublish_agent_from_marketplace, get_marketplace_agents,
+-- get_agent_mcp_config, count_suna_agents_by_version,
+-- find_suna_agents_needing_update — are all SECURITY DEFINER owned by
+-- postgres, the table owner, which RLS does not apply to
+-- (relforcerowsecurity = false on the table). Baseline databases (fresh
+-- installs) never had the table; this migration is a no-op there.
 --
 -- mixed-version-safe: the dropped policy guards no row that
 -- agents_select_marketplace does not already guard (A implies A OR B), and
--- no code path queries public.agents as an RLS-restricted role — a grep over
--- apps/, packages/, infra/, supabase/ and scripts/ finds no reference to the
--- table outside the legacy delete_user_data body, which runs as the owner.
+-- no code path queries public.agents as an RLS-restricted role — the repo
+-- (apps/, packages/, infra/, supabase/, scripts/) has no runtime reference
+-- to the table outside the legacy delete_user_data body (kept for the
+-- process-scheduled-account-deletions pg_cron job by
+-- 20260924205551453_drop_legacy_public_functions), and every prod function
+-- touching the table runs SECURITY DEFINER as the table owner (above).
 DO $$ BEGIN
   IF to_regclass('public.agents') IS NOT NULL THEN
     DROP POLICY IF EXISTS agents_select_own ON public.agents;
