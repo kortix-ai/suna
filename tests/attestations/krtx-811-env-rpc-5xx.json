@@ -1,0 +1,18 @@
+{
+  "source_hash": "2a4aa701c04a041148577231e8eff46f1494d8bfceea59891365ece57ac7dbd5",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-slow-request-stage-log.test.ts",
+    "apps/api/src/lib/request-log-level.test.ts",
+    "apps/api/src/lib/request-log-level.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "d1cda9a7f17f4c33248f0a7f603c6e0926355745d458d7d442e6d9fe57d1fc00",
+  "head": "819d71d89e2ba9c8cceab4d2db99db4c0552adbe",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:36:44.320Z"
+}
