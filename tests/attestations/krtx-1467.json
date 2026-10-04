@@ -1,0 +1,17 @@
+{
+  "source_hash": "20f4487535644eb269559cd82c9c66e487130bebefdd633a88a2ff7dc56b2be1",
+  "diff_files": [
+    "apps/web/src/lib/environment-protection.test.ts",
+    "apps/web/src/lib/environment-protection.ts",
+    "apps/web/src/middleware-cookie-hardening.test.ts"
+  ],
+  "diff_hash": "47e5135e4cbe7faec293a22d8fc80427e6110faf87c01d3761128099c01b4344",
+  "head": "1394a045a57e408fa895e7b3914a6adb43738f1b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:52:33.786Z"
+}
