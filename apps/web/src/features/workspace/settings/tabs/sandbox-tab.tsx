@@ -79,12 +79,12 @@
  * "This dashboard" / `kortix.yaml`, not `platform` / `UI` / `kortix.yaml`;
  * `is_default` is promoted out of the meta line into a `Default` badge.
  *
- * **Gate.** Template CRUD asks for `project.customize.write` — the leaf the
+ * **Gate.** Template CRUD asks for `project.sandbox.write` — the leaf the
  * routes actually assert (`POST|PATCH|DELETE /projects/:id/sandbox-templates`,
  * `sandbox-templates.ts`). It gates the header "New template" button, the empty-state action,
  * and every `TemplateCard` edit/delete/rebuild control. It used to read
  * `effective_project_role === 'manager'`, which showed the controls to a custom
- * role that had been denied `project.customize.write` and hid them from one that
+ * role that had been denied `project.sandbox.write` and hid them from one that
  * had been granted it.
  *
  * **`useTranslations('hardcodedUi')` removed.** `sandbox-view.tsx` routed
@@ -229,7 +229,7 @@ import { SettingsTabHeader } from '../settings-tab-header';
 
 /** One batched probe for the two leaves this tab gates on. */
 const SANDBOX_TAB_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE,
   PROJECT_ACTIONS.PROJECT_WRITE,
 ] as const;
 
@@ -1019,10 +1019,10 @@ export function SandboxTab({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   // Two different leaves, one batched probe. Template CRUD asserts
-  // `project.customize.write`; the provider row asserts `project.write`. They
+  // `project.sandbox.write`; the provider row asserts `project.write`. They
   // are deliberately NOT merged — a role may hold one without the other.
   const caps = useProjectCans(projectId, SANDBOX_TAB_ACTIONS);
-  const canManage = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE]?.allowed === true;
+  const canManage = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]?.allowed === true;
   const canEditProvider = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
 

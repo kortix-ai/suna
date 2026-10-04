@@ -7,12 +7,12 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Button } from '@/components/ui/marketing/button';
-import { ArrowRightIcon } from '@/features/icon/arrow-right';
+import { marketingButtonVariants } from '@/components/ui/marketing/button';
+import { PageHero } from '@/features/marketing/component/page-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { PillLink } from '@/features/marketing/os/primitives';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from '@/components/site-link';
+import { cn } from '@/lib/utils';
 import { useState, type ReactNode } from 'react';
 import { ApplyModal } from './apply-modal';
 import { getLocalizedCareersContent } from './content';
@@ -41,10 +41,10 @@ function Board({ onApply }: { onApply: () => void }): ReactNode {
             >
               <AccordionTrigger className="items-center gap-6 py-6 hover:no-underline sm:py-7">
                 <div className="grid w-full gap-1.5 lg:grid-cols-12 lg:items-baseline lg:gap-10">
-                  <h3 className="text-foreground text-xl font-medium tracking-tight lg:col-span-4">
+                  <h3 className="text-foreground text-xl font-normal tracking-tight lg:col-span-4">
                     {opening.name}
                   </h3>
-                  <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase lg:col-span-3">
+                  <p className="text-muted-foreground font-mono text-xs tracking-widest uppercase lg:col-span-3">
                     {LOCATIONS}
                   </p>
                   <p className="text-muted-foreground text-sm leading-relaxed font-normal lg:col-span-5">
@@ -76,9 +76,16 @@ function Board({ onApply }: { onApply: () => void }): ReactNode {
                       </p>
                     ) : null}
 
-                    <Button size="sm" className="mt-6" onClick={onApply}>
+                    <button
+                      type="button"
+                      onClick={onApply}
+                      className={cn(
+                        marketingButtonVariants({ variant: 'default' }),
+                        'mt-6 h-11 rounded-full px-5 text-base',
+                      )}
+                    >
                       {apply.cta}
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </AccordionContent>
@@ -126,11 +133,18 @@ function Apply({ onApply }: { onApply: () => void }): ReactNode {
       <div className="border-border border-t pt-12 sm:pt-16">
         <SectionHeader eyebrow={apply.eyebrow} title={apply.title} description={apply.body} />
         <Reveal>
-          <Button size="sm" className="mt-8" onClick={onApply}>
+          <button
+            type="button"
+            onClick={onApply}
+            className={cn(
+              marketingButtonVariants({ variant: 'default' }),
+              'mt-8 h-11 rounded-full px-5 text-base',
+            )}
+          >
             {apply.cta}
-          </Button>
+          </button>
 
-          <p className="text-muted-foreground mt-10 font-mono text-[10px] tracking-widest uppercase">
+          <p className="text-muted-foreground mt-10 font-mono text-xs tracking-widest uppercase">
             {apply.directLead}
           </p>
           <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
@@ -168,31 +182,29 @@ export function CareersPage(): ReactNode {
 
   return (
     <main className="bg-background min-h-screen">
-      <section className="mx-auto max-w-7xl px-6 pt-32 pb-12 sm:pt-44 sm:pb-16">
-        <SectionHeader eyebrow={hero.eyebrow} title={hero.title} description={hero.lead} />
-        <Reveal delay={0.06}>
-          <div className="kx-hero-text mt-8 flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
-            <Button
-              size="lg"
-              className="flex-1 active:scale-[0.97] sm:flex-none"
+      <PageHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.lead}
+        actions={
+          <>
+            <button
+              type="button"
               onClick={openApply}
+              className={cn(
+                marketingButtonVariants({ variant: 'default' }),
+                'h-11 rounded-full px-5 text-base',
+              )}
             >
               {hero.ctaPrimary}
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              className="group/arrow-right flex-1 gap-1.5 active:scale-[0.97] sm:flex-none"
-              asChild
-            >
-              <Link href={hero.ctaSecondaryHref}>
-                {hero.ctaSecondary}
-                <ArrowRightIcon aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </Reveal>
-      </section>
+            </button>
+            <PillLink tone="outline" href={hero.ctaSecondaryHref}>
+              {hero.ctaSecondary}
+            </PillLink>
+          </>
+        }
+      />
+      <div className="pt-16" />
 
       <Board onApply={openApply} />
       <Bar />

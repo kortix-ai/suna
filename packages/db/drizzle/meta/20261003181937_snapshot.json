@@ -1,5 +1,5 @@
 {
-  "id": "14aab430-e16a-4302-8ab2-e7aff35b101e",
+  "id": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "prevId": "fa283177-4bf6-4777-aa5c-a4c6a91339a5",
   "version": "7",
   "dialect": "postgresql",
@@ -7407,48 +7407,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_connector_calls_account_created": {
-          "name": "idx_connector_calls_account_created",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connector_calls_account_resolved": {
-          "name": "idx_connector_calls_account_resolved",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "resolved_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -14094,27 +14052,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_project_sessions_account_created": {
-          "name": "idx_project_sessions_account_created",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_project_sessions_project": {
           "name": "idx_project_sessions_project",
           "columns": [
@@ -16033,27 +15970,6 @@
           "columns": [
             {
               "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_provider_events_account_created": {
-          "name": "idx_provider_events_account_created",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -18522,48 +18438,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_session_lifecycle_commands_account_created": {
-          "name": "idx_session_lifecycle_commands_account_created",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_session_lifecycle_commands_account_updated": {
-          "name": "idx_session_lifecycle_commands_account_updated",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_session_lifecycle_commands_forwarded": {
           "name": "idx_session_lifecycle_commands_forwarded",
           "columns": [
@@ -19225,6 +19099,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_sandboxes_parked_verified": {
+          "name": "idx_session_sandboxes_parked_verified",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'parkedVerifiedAt') ASC NULLS FIRST",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -20302,27 +20198,6 @@
         "idx_tunnel_audit_created": {
           "name": "idx_tunnel_audit_created",
           "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_tunnel_audit_account_created": {
-          "name": "idx_tunnel_audit_account_created",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
             {
               "expression": "created_at",
               "isExpression": false,
