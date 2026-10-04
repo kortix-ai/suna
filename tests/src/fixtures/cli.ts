@@ -190,6 +190,14 @@ export class CliSandbox {
       GIT_COMMITTER_EMAIL: 'ke2e@kortix.test',
       // Force non-TTY so prompt-driven branches take their headless path.
       CI: '1',
+      // Cut off the Kortix-managed box's session env file
+      // (/dev/shm/kortix/agent-env.sh): on this class of box the CLI would
+      // otherwise read the host session's own project token and call the real
+      // api.kortix.com instead of the local stack (tests/src/fixtures/cli.ts
+      // builds this env explicitly, so the flag must be set here — CI has no
+      // such file and ignores it). Same rule as the packages lane's
+      // hermeticWorkspaceEnv (tests/bin/package-quality.ts).
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     };
   }
 
