@@ -18,7 +18,10 @@
  * `visible` list scope hides marked rows whose session is not actively
  * provisioning or running (projects/lib/session-inventory.ts): a live box
  * bills compute from creation (warmPoolGrantMs), and a billed session must
- * stay listed so its owner can see and stop it. `recordSessionActivity`
+ * stay listed so its owner can see and stop it. The manager `project` scope
+ * keeps a live warm row for lifecycle inspection too, and drops a soft-deleted
+ * warm draft in every scope: never prompted, nothing to audit, and listing the
+ * tombstone left the Sessions page's empty state unreachable. `recordSessionActivity`
  * DELETES it in the same statement that stamps the first accepted turn
  * (projects/session-activity.ts), so "used" and "last active" are one fact
  * written once and cannot drift apart. From that moment the row lists like
