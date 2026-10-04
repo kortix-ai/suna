@@ -1,0 +1,18 @@
+{
+  "source_hash": "574037559ad0fa1438403ed9d7b3a2bff51ec825541e1908385bd912c2407275",
+  "diff_files": [
+    "tests/src/core/local-profile.ts",
+    "tests/src/core/local-stack.ts",
+    "tests/unit/local-stack-half-reuse.test.ts",
+    "tests/unit/test-runner-contract.test.ts"
+  ],
+  "diff_hash": "98a842809b9dd21ce07270c0bb2bdefbf34b4e26f2c5d980d152f5a948be408c",
+  "head": "3cce76e30569d76084135d2905de5266e962a727",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T02:00:53.973Z"
+}
