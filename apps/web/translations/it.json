@@ -260,10 +260,6 @@
       "fallbackName": "questo spazio",
       "confetti": "Lancia coriandoli"
     },
-    "runtime": {
-      "metaLabel": "Runtime Meta",
-      "metaDescription": "Meta usa una sandbox minima fissa e avvia sessioni specializzate per il lavoro sul progetto."
-    },
     "sandbox": {
       "label": "Modello sandbox",
       "agentEnvironment": "Ambiente dell’agente",
@@ -1112,7 +1108,7 @@
       "noMatches": "Nessun risultato per {query}.",
       "emptyTitle": "Nessuna funzionalità sperimentale",
       "emptyDescription": "Questa installazione non espone funzionalità attivabili per progetto.",
-      "permission": "Per modificare una funzionalità serve l’autorizzazione a modificare la personalizzazione del progetto.",
+      "permission": "Ti serve il permesso per le impostazioni del progetto per modificare un feature flag.",
       "updateFailed": "Impossibile aggiornare {key}",
       "flags": {
         "marketplace": {
@@ -1145,7 +1141,7 @@
         },
         "warm_sessions": {
           "name": "Sessioni preriscaldate",
-          "description": "Mantieni una sandbox pronta per avvii immediati. La sandbox inattiva usa risorse di calcolo e uno slot di sessione simultanea."
+          "description": "Mantieni una sandbox pronta per avvii immediati. La sandbox inattiva usa risorse di calcolo."
         },
         "secrets_egress": {
           "name": "Segreti protetti dalla rete",
@@ -1162,10 +1158,6 @@
         "pi_harness": {
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
-        },
-        "agent_principal": {
-          "name": "Agenti come principali",
-          "description": "Gli agenti agiscono come se stessi: con i loro permessi Kortix, limitati dal loro ruolo. Chi esegue un agente aggiunge solo i propri account."
         },
         "config_releases": {
           "name": "Release di configurazione",
@@ -9460,7 +9452,6 @@
       "text0154297a0f48": "Qualsiasi fase",
       "text01676385135f": "È una bozza, e lo dichiara",
       "text016cec7c484d": "Connettore revocato",
-      "text016e549e6831": "Override del numero massimo di sessioni simultanee",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "La definizione",
       "text018912e44371": "Checkout compilato del progetto scaricato",
@@ -9614,7 +9605,7 @@
       "text062b7c4143e2": "Il proprio branch, creato per sessione",
       "text062bccfdad1c": "Nessun sandbox corrisponde a questa ricerca",
       "text062dddbbb151": "Una frontiera senza ecosistema non è stabile",
-      "text06346e4d9c35": "Per modificare un flag di funzionalità è necessaria l'autorizzazione di personalizzazione-scrittura del progetto.",
+      "text6d484ed8c1a0": "Ti serve il permesso per le impostazioni del progetto per modificare un feature flag.",
       "text06475633ed3e": "Ultima attività",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Cambia cosa può fare {value0} {value1} in {value2}.",
@@ -10255,7 +10246,6 @@
       "text197300839f83": "Copia \"{value0}\"",
       "text19766ed6ccb2": "Annulla",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Limite del piano",
       "text19890c7ac88a": "Impossibile caricare l'accesso al progetto",
       "text1994b6869b97": "SP Entity ID",
       "text19962f19ebb6": "# Clienti",
@@ -11729,7 +11719,6 @@
       "text445d71b74731": "Confronta il libro mastro con l’estratto conto, raggruppa ciò che non coincide per causa probabile e lascia segnalati i casi davvero ambigui invece di abbinarli a forza. L’elenco dei non abbinati è il risultato; un’esecuzione pulita che nasconde tre problemi non lo è.",
       "text446f4eabf99f": "A cosa serve questo agente",
       "text4471a7e4e487": "# Risposta agli incidenti",
-      "text44912abd87c3": "Sessioni simultanee",
       "text449992e55737": "Oltre 3.000 app con un clic",
       "text449a509f5f87": "RBAC avanzato",
       "text44a57b22e03d": "Avviso",
@@ -12894,7 +12883,6 @@
       "text654f8c9688a8": "Le letture partono, le scritture attendono",
       "text65511e543224": "Aggiungi un altro parametro con Field name \"groups\". Nel menu Value seleziona \"User Roles\" (questa voce invia i nomi dei ruoli dell'utente; il concetto separato di \"Groups\" di OneLogin è un attributo diverso). Seleziona \"Include in SAML assertion\" E abilita l'opzione multi-value, così ogni ruolo viene inviato come valore separato.",
       "text65562e698ff8": "Come si compone una pagina di elenco o di gestione: intestazione, barra di ricerca, righe, stato vuoto.",
-      "text655a03fa2bea": "Fai l'upgrade del piano per aumentare il limite oppure contatta il team Kortix per aumentarlo per il tuo account.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Ogni membro del progetto può aprire queste sessioni.",
       "text6562d4f7e6fb": "Il ruolo base dell'account. Nessun accesso implicito ai progetti — vede solo quelli a cui è stato aggiunto, direttamente o tramite un gruppo.",
@@ -16431,7 +16419,6 @@
       "textca3bcc681e99": "Directory Sync invia proattivamente utenti e gruppi da Entra — le disattivazioni si applicano senza attendere un accesso. Riutilizza la stessa applicazione aziendale già registrata per SAML SSO; non è necessario crearne una nuova.",
       "textca3f00ae4063": "Impostazioni · Flag di funzionalità",
       "textca3ff6018449": "Cerca nel CSV",
-      "textca41e8913ee7": "Limite di sessioni per l'intero account. Vuoto eredita il limite del piano.",
       "textca44d7470fff": "3 istruzioni, 0 errori.",
       "textca519bb35fbb": "Abilita applicazione",
       "textca566c8968e7": "Accesso effettuato",
@@ -17015,7 +17002,6 @@
       "textdaaf5ab03267": "Non impostato — usa le istruzioni predefinite",
       "textdacd5f120ffe": "Credenziali crittografate, gestite lato server e mai consegnate al modello.",
       "textdad35b178f11": "Entra admin center — elenco Enterprise applications con New application evidenziato",
-      "textdae85d16887b": "Numero massimo di sessioni simultanee",
       "textdaee28c0c883": "Possiedi tutto.",
       "textdaee7606b339": "Reimposta",
       "textdaf44c9faf1b": "Impossibile caricare la cronologia delle versioni",
@@ -19204,7 +19190,9 @@
       "text48b78a9ab65b": "Come restano isolate le esecuzioni?",
       "text4af0b7d8bfb1": "Ogni sessione gira nella propria sandbox, sul proprio branch git. Nulla è condiviso tra le esecuzioni.",
       "text39207bf34111": "Competenze correlate",
-      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo."
+      "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
+      "text85b7a59cdbd5": "Agente della piattaforma",
+      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20190,7 +20178,7 @@
     "ceilingDefault": "Limite predefinito per agenti",
     "changeCeiling": "Cambia",
     "humanOnly": "Solo persone",
-    "humanOnlyHelp": "Gestire i membri, eliminare il progetto ed emettere credenziali restano alle persone.",
+    "humanOnlyHelp": "L’emissione delle credenziali del progetto resta alle persone.",
     "humanOnlyValue": "Mai concesso",
     "effective": "Permessi effettivi",
     "effectiveHelp": "Permessi Kortix entro il ruolo limite, esclusi i permessi solo per persone. project.read è sempre concesso.",
@@ -20220,9 +20208,7 @@
     "openWithoutGrant": "Nessuna concessione necessaria",
     "grantNote": "L'agente ha bisogno anche di project.app.read nei suoi permessi Kortix.",
     "emptyTitle": "Ancora nessuna App",
-    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga.",
-    "flagOffHint": "Agente come principal è disattivato per questo progetto: la concessione viene salvata ma non controlla ancora nessuna App.",
-    "featureFlags": "Feature flag"
+    "emptyDescription": "Le App distribuite in questo progetto compaiono qui perché l'agente le scelga."
   },
   "connectorsAppReturn": {
     "done": "Fatto. Torna all’app Kortix"
