@@ -638,7 +638,13 @@
       "verified": "Потврђено",
       "unverified": "Непотврђено",
       "signedOutOtherDevices": "Одјављени сте са других уређаја",
-      "signOutOtherDevicesFailed": "Није могуће одјавити се са других уређаја"
+      "signOutOtherDevicesFailed": "Није могуће одјавити се са других уређаја",
+      "currentDevice": "Овај прегледач",
+      "deviceSignedInAt": "Пријављен {date}",
+      "deviceActive": "Активан",
+      "noDevices": "Нема пријављених уређаја",
+      "noDevicesDescription": "Тренутно нисте пријављени ни на једном уређају.",
+      "devicesLoadFailed": "Пријављени уређаји се не могу учитати"
     },
     "appearance": {
       "theme": "Тема",
