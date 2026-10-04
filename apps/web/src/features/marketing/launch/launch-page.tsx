@@ -8,7 +8,6 @@ import SectionHeader from '@/features/marketing/component/section-header';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
 import { RivalEyebrow } from '@/features/marketing/hero';
 import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
-import { CtaSection } from '@/features/marketing/landing/cta-section';
 import { FilmPlayer } from '@/app/[locale]/presentations/film/engine/film';
 import { FPS } from '@/app/[locale]/presentations/film/engine/time';
 import { launchFilm } from '@/app/[locale]/presentations/film/films/launch';
@@ -188,7 +187,6 @@ export function LaunchPage() {
         </div>
       </section>
 
-      <CtaSection />
     </div>
   );
 }
