@@ -74,6 +74,9 @@ export const PROJECT_PAGE_ACTIONS = [
   // Review inbox and the Agents people counts without a second probe.
   PROJECT_ACTIONS.PROJECT_REVIEW_READ,
   PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+  // The Customize bar's Members launcher (`capability-tabs.tsx`). In this
+  // batch so the bar never waits on a probe of its own.
+  PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
 ] as const;
 
 export function useProjectPageCans(projectId: string | undefined): Record<string, CanResult> {

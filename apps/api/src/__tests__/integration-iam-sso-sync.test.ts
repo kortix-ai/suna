@@ -40,6 +40,10 @@ const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const SUPA_SSO = crypto.randomUUID(); // stands in for the Supabase auth.sso_providers id
 const MKT_GROUP = crypto.randomUUID();
+// The account's standing owner, with a real Auth user. A real account always
+// has one; without it, deleting a test's last real Auth user lets the
+// auth.users delete trigger reclaim the account (#9006) mid-suite.
+const ANCHOR_OWNER = crypto.randomUUID();
 const AAD_CLAIM = 'Marketing-AAD'; // what Entra ships in the memberOf claim
 
 // A real-shape Supabase SAML JWT: the auth sso_providers id rides in
@@ -59,6 +63,8 @@ const canWrite = async (userId: string) =>
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sso-sync-test' });
+  await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${ANCHOR_OWNER}::uuid, ${`anchor-${ANCHOR_OWNER}@example.test`})`);
+  await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: ANCHOR_OWNER });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
   await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'sso' });
   // The group grants MANAGER on the project — this is the admin-configured
@@ -86,6 +92,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT)); // cascades sso/mappings/groups/members
+  await db.execute(sql`DELETE FROM auth.users WHERE id=${ANCHOR_OWNER}::uuid`);
 });
 
 describe('Azure AD directory-sync → authorization', () => {

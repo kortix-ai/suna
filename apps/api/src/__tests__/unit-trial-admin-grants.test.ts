@@ -87,7 +87,7 @@ describe('temporaryAccessOverrides (pure)', () => {
     expect(o.auditAccess).toEqual({ value: true, expires_at: END });
     expect(o.branding).toEqual({ value: true, expires_at: END });
     expect(o.managedModels).toEqual({ value: true, expires_at: END });
-    expect(o.maxConcurrentSessions).toEqual({ value: 5000, expires_at: END });
+    expect('maxConcurrentSessions' in o).toBe(false);
   });
 
   test('a non-enterprise plan grants none of them — a Team pilot is not SSO', () => {
@@ -97,7 +97,7 @@ describe('temporaryAccessOverrides (pure)', () => {
     expect(o.rbac).toBeUndefined();
     expect(o.auditAccess).toBeUndefined();
     expect(o.branding).toBeUndefined();
-    expect(o.maxConcurrentSessions).toEqual({ value: 200, expires_at: END });
+    expect('maxConcurrentSessions' in o).toBe(false);
   });
 
   test('managedModels is always stated, including when the plan withholds it', () => {
@@ -131,7 +131,7 @@ describe('grantTemporaryAccess', () => {
     // Overrides: the whole plan, every entry stamped with the window's end.
     const stored = storedRow!.entitlementOverrides as Record<string, unknown>;
     expect((stored.sso as { expires_at: string }).expires_at).toBe(result.endsAt);
-    expect((stored.maxConcurrentSessions as { value: number }).value).toBe(5000);
+    expect(stored.maxConcurrentSessions).toBeUndefined();
 
     // Legacy trial columns, unchanged — the overlay and the console still read them.
     expect(storedRow!.trialStatus).toBe('active');
@@ -194,7 +194,7 @@ describe('grantTemporaryAccess', () => {
     expect(stored.sso).toBeUndefined();
     expect(stored.scim).toBeUndefined();
     expect(stored.computeRateMultiplier).toEqual({ value: 0 });
-    expect((stored.maxConcurrentSessions as { value: number }).value).toBe(200);
+    expect(stored.maxConcurrentSessions).toBeUndefined();
     expect((stored.managedModels as { expires_at: string }).expires_at).toBe(second.endsAt);
   });
 
