@@ -80,6 +80,27 @@ export function syncSessionSecretsToSandbox(
   return runProjectSecretPropagation(projectId, { sessionId });
 }
 
+/** One failed row for the report: zero counts, no proof, and the reason a human reads. */
+function failedTarget(
+  sessionId: string,
+  sandboxId: string | null,
+  reason: string,
+  snapshot?: SandboxEnvSnapshot | null,
+): ProjectSecretPropagationTarget {
+  return {
+    session_id: sessionId,
+    sandbox_id: sandboxId,
+    status: 'failed',
+    scope: snapshot?.scope ?? null,
+    revision: snapshot?.revision ?? null,
+    exported: 0,
+    managed: null,
+    withheld: null,
+    agent_env_written: false,
+    reason,
+  };
+}
+
 async function runProjectSecretPropagation(
   projectId: string,
   opts?: { refreshModels?: boolean; sessionId?: string },
@@ -123,18 +144,7 @@ async function runProjectSecretPropagation(
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
     for (const row of rows) {
       if (row.externalId) continue;
-      report.results.push({
-        session_id: row.sessionId,
-        sandbox_id: null,
-        status: 'failed',
-        scope: null,
-        revision: null,
-        exported: 0,
-        managed: null,
-        withheld: null,
-        agent_env_written: false,
-        reason: 'active sandbox has no external id',
-      });
+      report.results.push(failedTarget(row.sessionId, null, 'active sandbox has no external id'));
     }
     report.targeted = targets.length;
     if (targets.length === 0) {
@@ -149,18 +159,7 @@ async function runProjectSecretPropagation(
       const config = (row.config || {}) as Record<string, unknown>;
       const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
       if (!serviceKey) {
-        report.results.push({
-          session_id: row.sessionId,
-          sandbox_id: row.externalId,
-          status: 'failed',
-          scope: null,
-          revision: null,
-          exported: 0,
-          managed: null,
-          withheld: null,
-          agent_env_written: false,
-          reason: 'active sandbox has no service key',
-        });
+        report.results.push(failedTarget(row.sessionId, row.externalId, 'active sandbox has no service key'));
         return;
       }
       let snapshot: SandboxEnvSnapshot | null = null;
@@ -199,18 +198,7 @@ async function runProjectSecretPropagation(
         });
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        report.results.push({
-          session_id: row.sessionId,
-          sandbox_id: row.externalId,
-          status: 'failed',
-          scope: snapshot?.scope ?? null,
-          revision: snapshot?.revision ?? null,
-          exported: 0,
-          managed: null,
-          withheld: null,
-          agent_env_written: false,
-          reason,
-        });
+        report.results.push(failedTarget(row.sessionId, row.externalId, reason, snapshot));
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,
           reason,
@@ -239,18 +227,7 @@ async function runProjectSecretPropagation(
     );
     report.ok = false;
     report.failed += 1;
-    report.results.push({
-      session_id: '',
-      sandbox_id: null,
-      status: 'failed',
-      scope: null,
-      revision: null,
-      exported: 0,
-      managed: null,
-      withheld: null,
-      agent_env_written: false,
-      reason,
-    });
+    report.results.push(failedTarget('', null, reason));
     return report;
   }
 }
