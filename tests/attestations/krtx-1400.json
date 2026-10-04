@@ -1,5 +1,5 @@
 {
-  "source_hash": "e67275085b95246911f18479c35b57c2cfd9bd5216ac75ec28f7bde8a9f18675",
+  "source_hash": "330414a0413b10a99a3ebe4da04fe729e18313eab9f64e911c4713272c2d8c35",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -10,32 +10,21 @@
     "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
-    "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
     "apps/web/src/lib/seo/content-timestamps.json",
-    "apps/web/translations/de.json",
-    "apps/web/translations/en.json",
-    "apps/web/translations/es.json",
-    "apps/web/translations/fr.json",
-    "apps/web/translations/it.json",
-    "apps/web/translations/ja.json",
-    "apps/web/translations/pt.json",
-    "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json",
     "apps/web/true",
     "apps/whitelabel-demo/tests/e2e/harness.ts",
     "packages/agent-tunnel/src/client/cli.test.ts",
     "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
-    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
     "tests/bin/package-quality.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "cdc8f1f911eeb353bdeba22c58850f4c70d0a6df5e9222e2235691b3f6ba88b5",
-  "head": "5caa07f8a0c0c4625b00084118c224cbcc6ece09",
+  "diff_hash": "b7b36fd1809a346c17f4ab23c4bbcf3b0feecc431e96ff4822d17749c2ee093a",
+  "head": "04576f6a9bcbffd56aee57b467a8200e0e693712",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T00:24:59.614Z"
+  "at": "2026-10-04T01:28:55.576Z"
 }
