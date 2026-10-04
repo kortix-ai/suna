@@ -1,5 +1,5 @@
 {
-  "id": "b6d267e8-6445-4159-9c52-5053c3ce3f9b",
+  "id": "49d6de72-b0d2-4a37-8f98-641f1b8c84f5",
   "prevId": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "version": "7",
   "dialect": "postgresql",
@@ -895,6 +895,36 @@
         }
       },
       "indexes": {
+        "idx_account_invitations_email": {
+          "name": "idx_account_invitations_email",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_invitations_account": {
+          "name": "idx_account_invitations_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_account_invitations_expires_at": {
           "name": "idx_account_invitations_expires_at",
           "columns": [
@@ -5502,6 +5532,21 @@
           "columns": [
             {
               "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chat_pending_auth_messages_project": {
+          "name": "idx_chat_pending_auth_messages_project",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
