@@ -23,7 +23,7 @@
  * line behind. Orphan base markers are exactly as invisible to CI as the
  * conflict that motivated this file.
  */
-export interface ConflictMarker {
+interface ConflictMarker {
   line: number;
   kind: 'open' | 'base' | 'close';
   text: string;

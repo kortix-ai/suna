@@ -132,7 +132,7 @@ export interface CliResult {
   };
 }
 
-export interface CliRunOptions {
+interface CliRunOptions {
   /** Working directory for this invocation. Defaults to a fresh temp dir. */
   cwd?: string;
   /** Extra env vars (merged over the hermetic defaults). */
@@ -141,6 +141,45 @@ export interface CliRunOptions {
   timeoutMs?: number;
   /** stdin to feed the process (e.g. for prompts). Default: empty (EOF). */
   stdin?: string;
+}
+
+/**
+ * One spawn/collect helper for every CLI process this fixture starts: it owns
+ * the spawn options block (the isolated cwd + hermetic env, piped streams,
+ * stdin), the process-budget killer, and the stderr/exit collection. The
+ * caller owns stdout through `readStdout`: the buffered paths drain the stream
+ * whole, while browserLogin consumes it incrementally — the authorize URL must
+ * be parsed while the process is still running. stderr and the exit code are
+ * always collected after stdout is done; the state-mismatch path kills the
+ * process from inside `readStdout`, before that collection.
+ */
+async function runCliProcess(
+  argv: string[],
+  opts: { cwd: string; env: Record<string, string>; stdin?: string; timeoutMs?: number },
+  readStdout: (
+    stdout: ReadableStream<Uint8Array>,
+    kill: () => void,
+  ) => Promise<string> = (stdout) => new Response(stdout).text(),
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, ...argv], {
+    cwd: opts.cwd,
+    env: opts.env,
+    stdin: opts.stdin != null ? new TextEncoder().encode(opts.stdin) : 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const kill = () => {
+    try {
+      proc.kill();
+    } catch {
+      /* already gone */
+    }
+  };
+  const killer = setTimeout(kill, opts.timeoutMs ?? CLI_PROCESS_BUDGET_MS);
+  const stdout = await readStdout(proc.stdout, kill);
+  const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  clearTimeout(killer);
+  return { stdout, stderr, exitCode };
 }
 
 /**
@@ -229,30 +268,12 @@ export class CliSandbox {
 
   /** Run the CLI with the given argv. Captures exit code + decoded streams. */
   async run(args: string[], opts: CliRunOptions = {}): Promise<CliResult> {
-    const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, ...args], {
+    const { stdout, stderr, exitCode } = await runCliProcess(args, {
       cwd: opts.cwd ?? this.cwd,
       env: { ...this.baseEnv(), ...(opts.env ?? {}) },
-      stdin: opts.stdin != null ? new TextEncoder().encode(opts.stdin) : 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
+      stdin: opts.stdin,
+      timeoutMs: opts.timeoutMs,
     });
-
-    const timeoutMs = opts.timeoutMs ?? CLI_PROCESS_BUDGET_MS;
-    const killer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {
-        /* already gone */
-      }
-    }, timeoutMs);
-
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    clearTimeout(killer);
-
     return { exitCode, stdout, stderr, all: `${stdout}\n${stderr}` };
   }
 
@@ -290,16 +311,6 @@ export class CliSandbox {
   }
 }
 
-/** Sugar: make a sandbox, run a single command, dispose, return the result. */
-export async function runCliOnce(args: string[], opts?: CliRunOptions): Promise<CliResult> {
-  const sb = new CliSandbox();
-  try {
-    return await sb.run(args, opts);
-  } finally {
-    sb.dispose();
-  }
-}
-
 /**
  * Drive the CLI's browser-callback login flow (LOGIN-2) WITHOUT a browser.
  *
@@ -316,122 +327,102 @@ export async function browserLogin(
   pat: string,
   opts: { badState?: boolean } = {},
 ): Promise<CliResult> {
-  const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, 'login'], {
-    cwd: sb.cwd,
-    env: { ...sb.baseEnv() },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const callback: NonNullable<CliResult['callback']> = {
+    status: null,
+    body: '',
+    attempts: 0,
+    error: null,
+  };
+  const { stdout, stderr, exitCode } = await runCliProcess(
+    ['login'],
+    { cwd: sb.cwd, env: { ...sb.baseEnv() } },
+    async (stream, kill) => {
+      const decoder = new TextDecoder();
+      let stdoutBuf = '';
+      let callbackUrl: string | null = null;
+      let state: string | null = null;
+      let port: string | null = null;
 
-  const decoder = new TextDecoder();
-  let stdoutBuf = '';
-  let callbackUrl: string | null = null;
-  let state: string | null = null;
-  let port: string | null = null;
-  let callbackStatus: number | null = null;
-  let callbackBody = '';
-  let callbackAttempts = 0;
-  let callbackError: string | null = null;
-
-  // Read stdout incrementally until we see the authorize URL (or the stream ends).
-  const reader = proc.stdout.getReader();
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    const { value, done } = await reader.read();
-    if (value) stdoutBuf += decoder.decode(value, { stream: true });
-    const m = stdoutBuf.match(/callback=([^&\s]+)&state=([0-9a-f]+)/i);
-    if (m) {
-      callbackUrl = decodeURIComponent(m[1]);
-      state = m[2];
-      const pm = callbackUrl.match(/:(\d+)\//);
-      port = pm ? pm[1] : null;
-      break;
-    }
-    if (done) break;
-  }
-
-  if (callbackUrl && port && state) {
-    // Simulate the dashboard POSTing the minted token to the loopback callback.
-    // Retry connection failures only. The CLI starts listening before it prints
-    // the URL, but a short bounded retry removes scheduler-dependent flakes on
-    // constrained CI workers. HTTP responses are product results, not retries.
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      callbackAttempts = attempt;
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/callback`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            state: opts.badState ? `${state}-wrong` : state,
-            token: pat,
-          }),
-        });
-        callbackStatus = response.status;
-        callbackBody = await response.text();
-        callbackError = null;
-        break;
-      } catch (error) {
-        callbackError = error instanceof Error ? error.message : String(error);
-        if (attempt < 3) await Bun.sleep(25 * attempt);
+      // Read stdout incrementally until we see the authorize URL (or the stream ends).
+      const reader = stream.getReader();
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        const { value, done } = await reader.read();
+        if (value) stdoutBuf += decoder.decode(value, { stream: true });
+        const m = stdoutBuf.match(/callback=([^&\s]+)&state=([0-9a-f]+)/i);
+        if (m) {
+          callbackUrl = decodeURIComponent(m[1]);
+          state = m[2];
+          const pm = callbackUrl.match(/:(\d+)\//);
+          port = pm ? pm[1] : null;
+          break;
+        }
+        if (done) break;
       }
-    }
-  }
 
-  // A rejected state leaves the real CLI waiting for another callback. The
-  // 403 already proves rejection, so stop the process immediately instead of
-  // spending the full CLI_PROCESS_BUDGET_MS on a timeout that adds no contract
-  // coverage. This explicit kill is why raising that budget does not slow the
-  // state-mismatch path.
-  if (opts.badState && callbackStatus === 403) {
-    try {
-      proc.kill();
-    } catch {
-      /* already gone */
-    }
-  }
+      if (callbackUrl && port && state) {
+        // Simulate the dashboard POSTing the minted token to the loopback callback.
+        // Retry connection failures only. The CLI starts listening before it prints
+        // the URL, but a short bounded retry removes scheduler-dependent flakes on
+        // constrained CI workers. HTTP responses are product results, not retries.
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          callback.attempts = attempt;
+          try {
+            const response = await fetch(`http://127.0.0.1:${port}/callback`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                state: opts.badState ? `${state}-wrong` : state,
+                token: pat,
+              }),
+            });
+            callback.status = response.status;
+            callback.body = await response.text();
+            callback.error = null;
+            break;
+          } catch (error) {
+            callback.error = error instanceof Error ? error.message : String(error);
+            if (attempt < 3) await Bun.sleep(25 * attempt);
+          }
+        }
+      }
 
-  // After the callback lands, the real CLI still verifies the PAT via
-  // GET /accounts/me and writes its config. Against DEPLOYED staging that
-  // round trip regularly exceeds the old hardcoded 15s, so the killer fired
-  // mid-verify and `login` exited 143 (SIGTERM) instead of 0 — the LOGIN-2
-  // release-gate failure. Use the same budget CliSandbox.run() already gives
-  // every other CLI process.
-  const killer = setTimeout(() => {
-    try {
-      proc.kill();
-    } catch {
-      /* gone */
-    }
-  }, CLI_PROCESS_BUDGET_MS);
-  // Drain the rest of stdout from the SAME reader — the stream is already
-  // locked by getReader() above, so re-wrapping proc.stdout would throw
-  // "ReadableStream has already been used".
-  let restStdout = '';
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (value) restStdout += decoder.decode(value, { stream: true });
-      if (done) break;
-    }
-  } catch {
-    /* stream closed when the process was killed */
-  }
-  reader.releaseLock();
-  const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
-  clearTimeout(killer);
+      // A rejected state leaves the real CLI waiting for another callback. The
+      // 403 already proves rejection, so stop the process immediately instead of
+      // spending the full CLI_PROCESS_BUDGET_MS on a timeout that adds no contract
+      // coverage. This explicit kill is why raising that budget does not slow the
+      // state-mismatch path.
+      if (opts.badState && callback.status === 403) kill();
 
-  const stdout = stdoutBuf + restStdout;
+      // After the callback lands, the real CLI still verifies the PAT via
+      // GET /accounts/me and writes its config. Against DEPLOYED staging that
+      // round trip regularly exceeds the old hardcoded 15s, so the killer fired
+      // mid-verify and `login` exited 143 (SIGTERM) instead of 0 — the LOGIN-2
+      // release-gate failure. Use the same budget CliSandbox.run() already gives
+      // every other CLI process.
+      // Drain the rest of stdout from the SAME reader — the stream is already
+      // locked by getReader() above, so re-wrapping `stream` would throw
+      // "ReadableStream has already been used".
+      let restStdout = '';
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (value) restStdout += decoder.decode(value, { stream: true });
+          if (done) break;
+        }
+      } catch {
+        /* stream closed when the process was killed */
+      }
+      reader.releaseLock();
+      return stdoutBuf + restStdout;
+    },
+  );
+
   return {
     exitCode,
     stdout,
     stderr,
     all: `${stdout}\n${stderr}`,
-    callback: {
-      status: callbackStatus,
-      body: callbackBody,
-      attempts: callbackAttempts,
-      error: callbackError,
-    },
+    callback,
   };
 }

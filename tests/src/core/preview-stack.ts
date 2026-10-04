@@ -13,7 +13,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'PLATINUM_API_KEY',
 ] as const;
 
-export type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
+type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
 export type PreviewRuntimeSecrets = Partial<Record<PreviewRuntimeSecretName, string>>;
 
 export function readPreviewRuntimeSecrets(
@@ -24,7 +24,7 @@ export function readPreviewRuntimeSecrets(
   );
 }
 
-export interface PreviewStackInput {
+interface PreviewStackInput {
   origin: string;
   sha: string;
   apiImage: string;

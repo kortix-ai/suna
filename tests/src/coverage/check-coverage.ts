@@ -9,12 +9,12 @@ import {
   type FlowIdParity,
 } from "./spec-parity";
 
-export interface CoverageOptions {
+interface CoverageOptions {
   updateBaseline?: boolean;
   json?: boolean;
 }
 
-export interface CoverageSummary {
+interface CoverageSummary {
   total: number;
   covered: number;
   allowlisted: number;
@@ -161,7 +161,7 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
     flowIdParity.duplicateSpecifications.length === 0 &&
     (opts.updateBaseline || (newUncovered.length === 0 && newExternal.length === 0));
 
-  if (!opts.json) renderReport(summary, declared, opts);
+  if (!opts.json) renderReport(summary, declared, opts, pass);
 
   return pass;
 }
@@ -170,6 +170,8 @@ function renderReport(
   s: CoverageSummary,
   declared: Map<string, string[]>,
   opts: CoverageOptions,
+  /** The gate verdict runCoverage computed — rendered, not recomputed. */
+  pass: boolean,
 ): void {
   log.info(log.bold("ke2e coverage — spec ↔ flow ↔ route parity"));
   log.info(
@@ -225,12 +227,6 @@ function renderReport(
     for (const id of s.flowIdParity.duplicateSpecifications) log.info(log.dim(`  ${id}`));
   }
 
-  const pass =
-    s.malformed.length === 0 &&
-    s.flowIdParity.missingSpecifications.length === 0 &&
-    s.flowIdParity.missingFlows.length === 0 &&
-    s.flowIdParity.duplicateSpecifications.length === 0 &&
-    (opts.updateBaseline || (s.newUncovered.length === 0 && s.newExternal.length === 0));
   log.info("");
   if (pass) log.pass("coverage gate passed");
   else log.fail("coverage gate failed");

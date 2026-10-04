@@ -9,34 +9,26 @@
  * route contracts are pinned by the audit. OWNER/ANON/PAT_ACCT/APIKEY + the run
  * account are wired here.
  */
-import { Client, throwIfEdgeLaundered, type Identity } from '../core/client';
+import { Client, isKe2eRetryableError, type Identity } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
-import type {
-  CreatedProject,
-  CreatedSession,
-  Fixtures,
-  Harness,
-  Principal,
-  Principals,
-} from '../core/types';
+import type { Fixtures, Principal, Principals } from '../core/types';
 import type { RegisteredFlow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
-import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
-import { stopAllSessionRefresh, type SupabaseSessionAuth } from './supabase-session';
-import { provisionProject } from './provision';
+import { provisionMatrix, synthUser, type Provisioned } from './principals';
+import type { SupabaseSessionAuth } from './supabase-session';
+import { deleteDatabaseProject } from './database-project';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
-import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
 import {
-  createDatabaseProject,
-  createDatabaseSession,
-  deleteDatabaseProject,
-  mergeDatabaseProjectMetadata,
-} from './database-project';
-import { mapWithConcurrency } from '../core/concurrency';
-import { createLocalGitRepository } from './local-git';
+  makeFixtures,
+  teardownWorld,
+  type FixtureDeps,
+} from './fixture-factory';
 import type { FixtureStats } from '../core/result';
+
+export { attemptSuffix, memoizeUntilRejected } from './fixture-factory';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -55,42 +47,7 @@ export interface World {
   teardownAll(): Promise<void>;
 }
 
-/**
- * The per-attempt suffix for every derived name.
- *
- * Attempt 1 gets NO suffix, so the 100+ existing `fixtures.name()` call sites,
- * the `e2e-%` gc patterns, and every recorded fixture name keep the exact bytes
- * they have today. Only a RETRY is renamed, which is the only case that can
- * collide with itself.
- */
-export function attemptSuffix(attempt: number): string {
-  return attempt > 1 ? `-r${attempt}` : '';
-}
-
 const ANON_PRINCIPAL: Principal = { label: 'ANON', auth: { mode: 'none' } };
-
-/**
- * Share one in-flight or settled creation between callers, but forget a
- * rejection so the next caller creates it again.
- *
- * `sharedProject()` used to cache its first promise forever. On preview run
- * 36067774228 that first provision failed on a GitHub rate limit at 23:04Z,
- * and every later flow that asked for the shared project failed in 0.0 s with
- * the same error, through CONN-5 at 23:37Z, without one new attempt.
- */
-export function memoizeUntilRejected<T>(factory: () => Promise<T>): () => Promise<T> {
-  let cached: Promise<T> | null = null;
-  return () => {
-    if (!cached) {
-      const created = factory();
-      cached = created;
-      created.catch(() => {
-        if (cached === created) cached = null;
-      });
-    }
-    return cached;
-  };
-}
 
 function principalsProxy(provided: Partial<Principals>): Principals {
   return new Proxy(provided, {
@@ -212,305 +169,114 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     : undefined;
   // Users synthesized mid-run (team members) — deleted in teardownAll.
   const extraUserIds: string[] = [];
-  let databaseProjectCount = 0;
-  let managedProjectCount = 0;
   // Session create runs managed-git operations (branch push) synchronously, so
   // it can never succeed against a database-only project's ke2e.invalid remote.
   // Sessions on those projects are written straight to the database instead.
   const databaseProjectIds = new Set<string>();
-  // Owns the run-scoped shared projects (see sharedProject below).
+  // Owns the run-scoped shared projects (see fixture-factory.ts).
   const sharedStack = new ResourceStack(adminClient, deleteDatabaseProjectFixture);
 
-  async function createProject(
-    stack: ResourceStack,
-    opts?: {
-      name?: string;
-      accountId?: string;
-      seed?: boolean;
-      managedGit?: boolean;
-      allowAllSecrets?: boolean;
-      allowAllConnectors?: boolean;
-      metadata?: Record<string, unknown>;
-    },
-    signal?: AbortSignal,
-  ): Promise<CreatedProject> {
-    const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
-    const accountId = opts?.accountId ?? owner.accountId!;
-    if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
-      const localRepository =
-        env.target === 'local' && (opts?.seed || opts?.managedGit)
-          ? await createLocalGitRepository(name, {
-              allowAllSecrets: opts?.allowAllSecrets,
-              allowAllConnectors: opts?.allowAllConnectors,
-            })
-          : null;
-      if (localRepository) {
-        stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });
-      }
-      const project = await createDatabaseProject(env, {
-        accountId,
-        userId: owner.userId!,
-        name,
-        repoUrl: localRepository?.repoUrl,
-        metadata: opts?.metadata,
-      });
-      databaseProjectCount++;
-      databaseProjectIds.add(project.id);
-      stack.push('database-project', project.id);
-      return { ...project, accountId };
-    }
-
-    const id = await provisionProject(
-      adminClient,
-      {
-        name,
-        ...(opts?.accountId ? { account_id: opts.accountId } : {}),
-        ...(opts?.seed ? { seed_starter: true } : {}),
-      },
-      { signal },
-    );
-    managedProjectCount++;
-    stack.push('project', id);
-    if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
-    return { id, name, accountId } as CreatedProject;
-  }
-
-  // Run-scoped: no attempt signal. One flow's timeout must not abort the
-  // shared project every other flow is waiting on.
-  const sharedProject = memoizeUntilRejected(() =>
-    createProject(sharedStack, { name: `e2e-${runId}-shared`, managedGit: true }),
-  );
-  const sharedSeededOpenCode = memoizeUntilRejected(() =>
-    createProject(sharedStack, { name: `e2e-${runId}-shared-seeded`, seed: true }),
-  );
-  // The pi twin: the same starter, with the project's `pi_harness` flag on, so
-  // every session in it boots pi (apps/api selectSessionHarness).
-  const sharedSeededPi = memoizeUntilRejected(async () => {
-    const project = await createProject(sharedStack, { name: `e2e-${runId}-shared-seeded-pi`, seed: true });
-    const res = await adminClient.patch(
-      '/v1/projects/:projectId/features',
-      { feature: 'pi_harness', enabled: true },
-      { params: { projectId: project.id } },
-    );
-    throwIfEdgeLaundered(res, 'pi_harness flag');
-    if (res.statusCode !== 200 || res.json<any>()?.experimental?.pi_harness !== true) {
-      throw new Error(`pi_harness flag did not turn on for ${project.id}: ${res.statusCode} ${res.text()}`);
-    }
-    return project;
-  });
-  const sharedSeededProject = (harness: Harness = 'opencode') =>
-    harness === 'pi' ? sharedSeededPi() : sharedSeededOpenCode();
-
-  const fixturesFor = (stack: ResourceStack, attempt = 1, signal?: AbortSignal): Fixtures => {
-    const suffix = attemptSuffix(attempt);
-    return {
-    name: (slug) => `e2e-${runId}-${slug}${suffix}`,
-    sharedProject,
-    sharedSeededProject,
-    async project(opts) {
-      return createProject(stack, opts, signal);
-    },
-    async team(opts) {
-      const res = await adminClient.post('/v1/accounts', {
-        name: opts?.name ?? `e2e-${runId}-team-${rand()}`,
-      });
-      // IAM-22 (run 32306385663) died here on ONE attempt: the edge laundered
-      // an origin blip into a MAINTENANCE_MODE 503, this read found no
-      // account_id, and the plain Error below classified as `fatal`.
-      throwIfEdgeLaundered(res, 'team account create');
-      const accountId = res.json<any>()?.account_id;
-      if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
-      stack.push('account', accountId);
-      if (opts?.enterprise) {
-        // The enterprise-demo PUT is platform-admin-only — the OWNER of this
-        // fixture account gets 403 {code:'admin_required'}. Unlock through the
-        // run-scoped platform admin provisioned above.
-        if (!env.adminToken) {
-          throw new Error(`enterprise team fixture needs a platform admin — ${NO_ADMIN_TOKEN_HINT}`);
-        }
-        const enabled = await adminClient
-          .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
-          .put(
-            '/v1/accounts/:accountId/iam/enterprise-demo',
-            { enabled: true },
-            { params: { accountId } },
-          );
-        if (enabled.statusCode !== 200 || enabled.json<any>()?.enabled !== true) {
-          throw new Error(`enterprise team enable failed: ${enabled.text()}`);
-        }
-      }
-      return {
-        id: accountId,
-        async addMember(role) {
-          const u = await synthUser(env, `MEM-${role}`, runId);
-          extraUserIds.push(u.user.id);
-          // This response used to be DISCARDED. A failed add then surfaced two
-          // steps later as someone else's bug: MEM-4 read `DELETE member → 404`
-          // and IAM-36 read `expected exactly one account-scope system
-          // assignment, got 0` — both of which mean only "the member was never
-          // added". Because addMember runs OUTSIDE ctx.step(), the request was
-          // not even in the step log. Fail here, where the cause is.
-          const added = await adminClient.post(
-            '/v1/accounts/:accountId/members',
-            { email: u.user.email, role },
-            { params: { accountId } },
-          );
-          throwIfEdgeLaundered(added, `team addMember(${role})`);
-          if (added.statusCode !== 201) {
-            throw new Error(
-              `team addMember(${role}) failed: ${added.statusCode} ${added.text()}`,
-            );
-          }
-          return u.principal;
-        },
-        async grantProjectRole(projectId, userId, role) {
-          const granted = await adminClient.put(
-            '/v1/projects/:projectId/access/:userId',
-            { role },
-            { params: { projectId, userId } },
-          );
-          // Same class as addMember above: a swallowed grant becomes a 403 in
-          // whichever later step relies on the role.
-          throwIfEdgeLaundered(granted, `team grantProjectRole(${role})`);
-          if (granted.statusCode !== 200 && granted.statusCode !== 201) {
-            throw new Error(
-              `team grantProjectRole(${role}) failed: ${granted.statusCode} ${granted.text()}`,
-            );
-          }
-        },
-        async project(o) {
-          return createProject(
-            stack,
-            {
-              ...o,
-              name: o?.name ?? `e2e-${runId}-tproj-${rand()}`,
-              accountId,
-            },
-            signal,
-          );
-        },
-      };
-    },
-    async user(opts) {
-      const u = await synthUser(env, opts?.label ?? 'USER', runId);
-      extraUserIds.push(u.user.id);
-      // Personal accounts are lazy. Minting a PAT forces the personal account
-      // and owner membership into existence without joining this user to any
-      // team, which is exactly what account-deletion flows require.
-      const bootstrap = await new Client(env.apiUrl)
-        .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap${suffix}` });
-      throwIfEdgeLaundered(bootstrap, 'standalone user bootstrap');
-      if (bootstrap.statusCode !== 201) {
-        throw new Error(`standalone user bootstrap failed: ${bootstrap.text()}`);
-      }
-      return u.principal;
-    },
-    async userWithEmail(email, opts) {
-      const u = await synthUserWithEmail(env, email.toLowerCase(), opts?.label ?? 'ADDRESSEE');
-      extraUserIds.push(u.user.id);
-      // Same lazy-personal-account bootstrap as `user()` — minting a PAT forces
-      // the personal account + owner membership into existence so subsequent
-      // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
-      const bootstrap = await new Client(env.apiUrl)
-        .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap${suffix}` });
-      throwIfEdgeLaundered(bootstrap, 'standalone user-with-email bootstrap');
-      if (bootstrap.statusCode !== 201) {
-        throw new Error(`standalone user-with-email bootstrap failed: ${bootstrap.text()}`);
-      }
-      return u.principal;
-    },
-    async session(project, opts) {
-      if (databaseProjectIds.has(project.id)) {
-        const id = await createDatabaseSession(env, {
-          projectId: project.id,
-          accountId: project.accountId ?? owner.accountId!,
-          userId: owner.userId!,
-        });
-        // No stack entry: deleting the database-only project cascades to its
-        // sessions (project_sessions.project_id ON DELETE CASCADE).
-        return { id, projectId: project.id } as CreatedSession;
-      }
-      // Use only documented session-create fields. Tests that perform inference
-      // can pin a model explicitly instead of inheriting the deployment default.
-      const res = await adminClient.post(
-        '/v1/projects/:projectId/sessions',
-        {
-          initial_prompt: opts?.prompt ?? 'noop',
-          ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
-          ...(opts?.agentName ? { agent_name: opts.agentName } : {}),
-        },
-        {
-          params: { projectId: project.id },
-        },
-      );
-      throwIfEdgeLaundered(res, 'session create');
-      const body = res.json<any>();
-      const id = body?.session_id ?? body?.sessionId ?? body?.id;
-      if (!id) throw new Error(`session create returned no id: ${res.text()}`);
-      stack.push('session', id, { projectId: project.id });
-      return { id, projectId: project.id } as CreatedSession;
-    },
-    async pat(opts) {
-      const res = await adminClient.post('/v1/accounts/tokens', {
-        name: opts?.name ?? `e2e-${runId}-pat-${rand()}`,
-      });
-      throwIfEdgeLaundered(res, 'token mint');
-      const body = res.json<any>();
-      const secret = body?.secret_key ?? body?.token;
-      const tokenId = body?.id ?? body?.token_id;
-      if (!secret) throw new Error(`token mint returned no secret: ${res.text()}`);
-      if (tokenId) stack.push('token', tokenId);
-      return secret as string;
-    },
-    };
+  const deps: FixtureDeps = {
+    env,
+    runId,
+    adminClient,
+    owner,
+    canCreateDatabaseProject,
+    sharedStack,
+    databaseProjectCount: 0,
+    managedProjectCount: 0,
+    extraUserIds,
+    databaseProjectIds,
+    supabaseUserIds: provisioned.supabaseUserIds,
+    revokePlatformAdmin,
   };
 
   return {
     principals: principalsProxy(provisioned.principals),
     newStack: () => new ResourceStack(adminClient, deleteDatabaseProjectFixture),
-    makeFixtures: fixturesFor,
-    fixtureStats: () => ({ databaseProjectCount, managedProjectCount }),
-    async teardownAll() {
-      stopAllSessionRefresh();
-      log.info(
-        `fixtures: ${databaseProjectCount} database-only projects · ${managedProjectCount} managed repositories`,
-      );
-      await sharedStack.teardown();
-      if (revokePlatformAdmin) {
-        try {
-          await revokePlatformAdmin();
-        } catch (err) {
-          log.warn(`teardown platform admin role failed: ${(err as Error)?.message ?? err}`);
-        }
-      }
-      for (const acct of provisioned.runAccountIds) {
-        try {
-          // delete-immediately resolves the caller's account; account_id in body
-          // overrides for team accounts the OWNER controls.
-          await adminClient.del('/v1/billing/account/delete-immediately', {
-            body: { account_id: acct },
-          });
-        } catch (err) {
-          log.warn(`teardown run account ${acct} failed: ${(err as Error)?.message ?? err}`);
-        }
-      }
-      const userIds = [...provisioned.supabaseUserIds, ...extraUserIds];
-      // A full run synthesizes hundreds of users. Deleting them 2 at a time
-      // added 2-5 min to the tail; 8 matches gc.ts's existing sweep default and
-      // is a Supabase admin call, not a provisioning call, so it does not touch
-      // the GitHub repo-creation budget. Override with KE2E_TEARDOWN_WORKERS.
-      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 8);
-      await mapWithConcurrency(userIds, cleanupWorkers, async (uid) => {
-        try {
-          await adminDeleteUser(env, uid);
-        } catch (err) {
-          log.warn(`teardown user ${uid} failed: ${(err as Error)?.message ?? err}`);
-        }
-      });
-    },
+    makeFixtures: makeFixtures(deps),
+    fixtureStats: () => ({
+      databaseProjectCount: deps.databaseProjectCount,
+      managedProjectCount: deps.managedProjectCount,
+    }),
+    teardownAll: () => teardownWorld(deps),
   };
+}
+
+// Cold provider images can take longer than a flow's runtime deadline. Build
+// one through the real session route before measuring concurrent user flows.
+// The capability+flows guard lives at the call site in core/runner.ts.
+export async function warmDefaultSandboxImage(env: Env, world: World): Promise<void> {
+  const stack = world.newStack();
+  try {
+    const fixtures = world.makeFixtures(stack);
+    const project = await fixtures.sharedSeededProject();
+    const client = new Client(env.apiUrl).as(world.principals.OWNER);
+    const created = await client.post('/v1/projects/:projectId/sessions', {},
+      { params: { projectId: project.id } });
+    created.status(201);
+    const sessionId = created.json<{ session_id: string }>().session_id;
+    if (!sessionId) throw new Error('sandbox setup returned no session_id');
+    stack.push('session', sessionId, { projectId: project.id });
+    // TWO SEQUENTIAL PHASES, TWO INDEPENDENT BUDGETS.
+    //
+    // These waits used to share one `setupDeadline = Date.now() + 900_000`
+    // while the FIRST was itself allowed `timeoutMs: 900_000`. So a cold
+    // image build that legitimately took most of its 15 minutes left the
+    // second wait `Math.max(1, setupDeadline - Date.now())` === 1 ms, and
+    // it "timed out" instantly on a runtime that was never given a chance
+    // to boot.
+    //
+    // That is exactly how every API shard of the release gate died on
+    // v0.13.21, v0.13.22, v0.13.23 and v0.13.24: the log shows phase one
+    // starting, no image-readiness error, the "…image and runtime ready"
+    // line never printed, and `Timed out waiting for sandbox fixture
+    // readiness` at 942 s — 900 s of image build plus overhead, then 1 ms
+    // for the boot. The gate reported the product broken four releases
+    // running while nothing about the product was wrong.
+    //
+    // Budget arithmetic against the shard's own 60-minute cap
+    // (`tests-release.yml`): 15 min image + 10 min runtime = 25 min worst
+    // case, leaving 35 min for the flows, which run in 19-25 min. Both
+    // phases are fast whenever the image is already baked, which is the
+    // normal case; these ceilings only cover a cold deploy.
+    const IMAGE_READY_TIMEOUT_MS = 900_000;
+    const RUNTIME_READY_TIMEOUT_MS = 600_000;
+    log.info('sandbox setup: waiting for the current default image (up to 15 minutes), then its runtime (up to 10 minutes)');
+    // Session boot can use the previous ready image while the current one
+    // builds. The preview gate must exercise this deploy's baked daemon.
+    await waitFor(async () => {
+      const snapshots = await client.get('/v1/projects/:projectId/snapshots',
+        { params: { projectId: project.id } });
+      snapshots.status(200);
+      const template = snapshots.json<{ templates: Array<{
+        is_default: boolean;
+        ready: boolean;
+        provider_coverage?: Array<{ launch_ready: boolean }>;
+      }> }>().templates.find((template) => template.is_default);
+      return template?.ready === true ||
+        template?.provider_coverage?.some((provider) => provider.launch_ready === true) === true;
+    }, { until: (ready) => ready, timeoutMs: IMAGE_READY_TIMEOUT_MS, intervalMs: 5000,
+      // A transport error while staging bakes this deploy's image is not a
+      // verdict on the image: keep polling inside the same deadline.
+      retryOnError: isKe2eRetryableError,
+      description: 'current default sandbox image readiness' });
+    await waitFor(async () => {
+      const ready = await client.post('/v1/projects/:projectId/sessions/:sessionId/start', {},
+        { params: { projectId: project.id, sessionId }, query: { wait_ms: '8000' }, timeoutMs: 30_000 });
+      ready.status(200);
+      const body = ready.json<{ stage: string; retriable: boolean; message?: string }>();
+      if (body.stage === 'error' && !body.retriable) throw new Error(JSON.stringify(body));
+      return body.stage;
+    }, { until: (stage) => stage === 'ready', timeoutMs: RUNTIME_READY_TIMEOUT_MS, intervalMs: 3000,
+      // POST /start is idempotent. One timed-out call during the first boot
+      // on a fresh image killed whole release shards; poll again instead.
+      retryOnError: isKe2eRetryableError,
+      description: 'sandbox fixture readiness' });
+    log.info('sandbox setup: current default image and runtime ready');
+  } finally {
+    await stack.teardown();
+  }
 }
 
 function makeUnavailableFixtures(): Fixtures {
@@ -519,18 +285,13 @@ function makeUnavailableFixtures(): Fixtures {
   };
   return {
     name: (slug) => slug,
-    project: fail as any,
-    sharedProject: fail as any,
-    sharedSeededProject: fail as any,
-    session: fail as any,
-    pat: fail as any,
-    team: fail as any,
-    user: fail as any,
-    userWithEmail: fail as any,
+    project: fail,
+    sharedProject: fail,
+    sharedSeededProject: fail,
+    session: fail,
+    pat: fail,
+    team: fail,
+    user: fail,
+    userWithEmail: fail,
   };
-}
-
-function rand(): string {
-  // Deterministic-free randomness via crypto (Math.random is fine here, not in workflow scripts).
-  return Math.random().toString(36).slice(2, 8);
 }

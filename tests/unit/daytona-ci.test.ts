@@ -15,9 +15,7 @@ import {
   isExactDaytonaWarmBuilder,
   isRetryableDaytonaError,
   retryDaytonaOperation,
-  validateDaytonaCiInput,
 } from '../src/core/daytona-ci';
-import { buildWorkerScript, providerMetadataIdentifier } from '../src/core/platinum-ci';
 
 const sha = 'a'.repeat(40);
 const lockHash = 'b'.repeat(64);
@@ -27,16 +25,6 @@ afterEach(() => {
 });
 
 describe('Daytona CI worker plan', () => {
-  test('accepts bounded provider identifiers and rejects report injection', () => {
-    expect(providerMetadataIdentifier('sandbox:abc-123', 'sandbox ID')).toBe('sandbox:abc-123');
-    expect(() => providerMetadataIdentifier('sandbox\nforged=1', 'sandbox ID')).toThrow(
-      'invalid sandbox ID',
-    );
-    expect(() => providerMetadataIdentifier('x'.repeat(129), 'sandbox ID')).toThrow(
-      'invalid sandbox ID',
-    );
-  });
-
   test('uses one content-addressed warm snapshot for one lockfile', () => {
     expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v4');
     expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v4-bbbbbbbbbbbbbbbb');
@@ -139,41 +127,6 @@ describe('Daytona CI worker plan', () => {
         builderName: 'kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-builder',
       }),
     ).toBe(false);
-  });
-
-  test('uses the unchanged root test command inside Daytona', () => {
-    const script = buildWorkerScript({
-      repository: 'kortix-ai/suna',
-      ref: sha,
-      sha,
-      testArgs: ['--full'],
-      provider: 'daytona',
-    });
-    expect(script).toContain("'pnpm' 'test' '--' '--full'");
-    expect(script).toContain('[daytona-ci] exact_sha=');
-    expect(script).toContain('tests/test-results/daytona');
-    expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');
-    expect(script).not.toContain('tests/test-results/platinum');
-  });
-
-  test('validates provider input before making requests', () => {
-    const valid = {
-      apiUrl: 'https://app.daytona.io/api',
-      apiKey: 'secret',
-      target: 'us',
-      repository: 'kortix-ai/suna',
-      sha,
-      ref: sha,
-      runId: '31320717706',
-      runAttempt: '1',
-      testArgs: [],
-      root: '/tmp/suna',
-    };
-    expect(() => validateDaytonaCiInput(valid)).not.toThrow();
-    expect(() => validateDaytonaCiInput({ ...valid, apiKey: '' })).toThrow('DAYTONA_API_KEY');
-    expect(() => validateDaytonaCiInput({ ...valid, target: 'us west' })).toThrow(
-      'invalid Daytona target',
-    );
   });
 
   test('retries rate limits and provider outages with bounded backoff', async () => {

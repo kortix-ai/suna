@@ -7,7 +7,7 @@
 import type { Client } from "../core/client";
 import { log } from "../core/log";
 
-export interface TrackedResource {
+interface TrackedResource {
   kind: string;
   id: string;
   meta?: Record<string, any>;

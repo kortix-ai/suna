@@ -1,7 +1,8 @@
 /**
  * THE RULE: two sequential setup phases get two independent budgets.
  *
- * `runner.ts`'s deployed-target setup waits for the current default sandbox
+ * The deployed-target setup (`world.warmDefaultSandboxImage` in
+ * `fixtures/world.ts`) waits for the current default sandbox
  * image, then for a session on it to reach `ready`. These are sequential and
  * independent: a cold image build can legitimately consume its whole ceiling,
  * and the runtime boot that follows still needs a full budget of its own.
@@ -22,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const RUNNER = readFileSync(join(__dirname, '..', 'src', 'core', 'runner.ts'), 'utf8');
+const WORLD = readFileSync(join(__dirname, '..', 'src', 'fixtures', 'world.ts'), 'utf8');
 
 /** The `tests-release.yml` API shard cap the two budgets must fit inside. */
 const SHARD_CAP_MS = 60 * 60_000;
@@ -30,8 +31,8 @@ const SHARD_CAP_MS = 60 * 60_000;
 const OBSERVED_FLOW_TIME_MS = 25 * 60_000;
 
 function budget(name: string): number {
-  const m = new RegExp(`const ${name} = ([0-9_]+);`).exec(RUNNER);
-  if (!m) throw new Error(`${name} is not declared in runner.ts`);
+  const m = new RegExp(`const ${name} = ([0-9_]+);`).exec(WORLD);
+  if (!m) throw new Error(`${name} is not declared in world.ts`);
   return Number(m[1].replaceAll('_', ''));
 }
 
@@ -44,8 +45,8 @@ describe('deployed-target setup budgets', () => {
   it('never derives the runtime wait from a deadline the image wait can exhaust', () => {
     // The exact shape of the bug. `setupDeadline` may survive in prose, so
     // assert on the executable form: no wait takes a remaining-time timeout.
-    expect(RUNNER).not.toMatch(/timeoutMs:\s*Math\.max\(1,\s*setupDeadline/);
-    expect(RUNNER).not.toMatch(/timeoutMs:\s*setupDeadline\s*-/);
+    expect(WORLD).not.toMatch(/timeoutMs:\s*Math\.max\(1,\s*setupDeadline/);
+    expect(WORLD).not.toMatch(/timeoutMs:\s*setupDeadline\s*-/);
   });
 
   it('gives the runtime boot a budget a real cold boot can use', () => {
@@ -63,7 +64,7 @@ describe('deployed-target setup budgets', () => {
   it('still fails loudly rather than skipping when a phase genuinely times out', () => {
     // Both waits must keep a description, or a gate failure cannot be told
     // apart from the other phase's.
-    expect(RUNNER).toContain("description: 'current default sandbox image readiness'");
-    expect(RUNNER).toContain("description: 'sandbox fixture readiness'");
+    expect(WORLD).toContain("description: 'current default sandbox image readiness'");
+    expect(WORLD).toContain("description: 'sandbox fixture readiness'");
   });
 });

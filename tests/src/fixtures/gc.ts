@@ -11,6 +11,7 @@ import { mapWithConcurrency } from "../core/concurrency";
 import { loadEnv, type Env } from "../core/env";
 import { log } from "../core/log";
 import { supabaseAdminHeaders } from "../core/supabase-admin";
+import { directDbSsl } from "./database-project";
 import { adminDeleteUser, passwordGrant } from "./supabase";
 
 const SYNTH_PASSWORD = "Ke2e-passw0rd-Aa1!";
@@ -46,7 +47,7 @@ export function resolveGcEmailDomains(env: Env): string[] {
   return [...new Set(domains)];
 }
 
-export interface GcOptions {
+interface GcOptions {
   /** Reclaim accounts created before now minus this duration, e.g. "2h". */
   olderThan?: string;
   /**
@@ -109,17 +110,11 @@ async function listTestUsersViaApi(env: Env): Promise<SupaUser[]> {
 }
 
 /**
- * SSL policy for a direct Postgres connection.
- *
- * Same policy as database-project.ts / platform-admin.ts: Supabase's direct
- * Postgres endpoint presents a chain Node's default trust store rejects
- * ("self signed certificate in certificate chain"), which is what killed both
- * gc sweeps on the first sharded release-gate run (32222342409). A local
- * connection uses no TLS at all.
+ * SSL policy for the gc pool — the canonical predicate from database-project.ts
+ * (gc-sweep.test.ts pins this export's behavior by name).
  */
 export function gcDbSsl(conn: string): false | { rejectUnauthorized: false } {
-  const local = conn.includes("localhost") || conn.includes("127.0.0.1");
-  return local ? false : { rejectUnauthorized: false };
+  return directDbSsl(conn);
 }
 
 /** Minimal shape of the `pg` pool this module uses, so tests can fake it. */
@@ -309,7 +304,7 @@ export async function runGc(opts: GcOptions): Promise<void> {
   }
 }
 
-export interface GcSummary {
+interface GcSummary {
   sessionsStopped: number;
   tokensRevoked: number;
   errors: number;

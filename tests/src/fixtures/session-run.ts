@@ -131,7 +131,7 @@ export async function assertRuntimeHarness(
   }
 }
 
-export interface BootedSession {
+interface BootedSession {
   projectId: string;
   sessionId: string;
   sandboxId: string;
@@ -376,7 +376,7 @@ export function erroredMessageIds(messages: TranscriptMessage[]): Set<string> {
 }
 
 /** `GET /turn`: the turns running now, and how the last one ended. */
-export interface TurnState {
+interface TurnState {
   turns: Array<{ turn_token: string; state: 'delivering' | 'active'; message_id: string | null }>;
   last_ended?: { turn_token: string; end_reason: string | null; ended_at: string | null };
 }
@@ -518,7 +518,7 @@ export function streamedReplies(frames: SseFrame[]): string[] {
 }
 
 /** The root conversation the server pinned for this session (`opencode_session_id`). */
-export async function pinnedRoot(
+async function pinnedRoot(
   ctx: FlowContext,
   projectId: string,
   sessionId: string,

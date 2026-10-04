@@ -5,7 +5,7 @@ import {
 
 import { log } from './log';
 
-export interface TargetSmokeConfig {
+interface TargetSmokeConfig {
   apiUrl: string;
   webUrl: string;
   gatewayUrl: string;

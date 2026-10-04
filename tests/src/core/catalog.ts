@@ -6,7 +6,7 @@ import { allFlows } from "./flow";
 
 const FLOWS_DIR = resolve(import.meta.dir, "../flows");
 
-export interface CatalogFlow {
+interface CatalogFlow {
   id: string;
   domain: string;
   tags: string[];
@@ -89,7 +89,7 @@ export async function buildCatalog(): Promise<Catalog> {
   };
 }
 
-export function renderCatalogHtml(cat: Catalog): string {
+function renderCatalogHtml(cat: Catalog): string {
   const data = JSON.stringify(cat).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

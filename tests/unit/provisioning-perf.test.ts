@@ -322,7 +322,6 @@ describe('buildWorld provisioning parallelism (P1.7)', () => {
             ANON: { label: 'ANON', auth: { mode: 'none' } },
             accountId: 'a',
           },
-          runAccountIds: [],
           supabaseUserIds: ['OWNER-user-id'],
         };
       },

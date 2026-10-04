@@ -8,7 +8,7 @@
  * Bun auto-loads a `.env` in the cwd, so local runs can drop secrets there.
  */
 
-export type TargetName = 'local' | 'dev' | 'staging' | 'prod' | 'custom';
+type TargetName = 'local' | 'dev' | 'staging' | 'prod' | 'custom';
 
 export interface Capabilities {
   /** Real Daytona sandbox provisioning available. */

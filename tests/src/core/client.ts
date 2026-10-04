@@ -51,7 +51,7 @@ export function ke2eRetryDelayMs(
   return Math.min(MAX_RETRY_AFTER_MS, Math.max(fallbackMs, Math.trunc(delay)));
 }
 
-export interface ReqOpts {
+interface ReqOpts {
   /** `:param` substitutions for the URL (template stays the coverage key). */
   params?: Record<string, string | number>;
   query?: Record<string, string | number | boolean | undefined | null>;
@@ -151,15 +151,15 @@ export class Res {
     const codes = Array.isArray(code) ? code : [code];
     if (!codes.includes(this.statusCode) && isKe2eTransientGatewayResponse(this)) {
       const breakerOpen = transientBreaker.isOpen();
-      const error = new Error(
-        `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}] ` +
-          `${describeEdgeResponse(this.statusCode, this.captured.res.headers)}` +
-          (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+      throw markTransientFailure(
+        new Error(
+          `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}] ` +
+            `${describeEdgeResponse(this.statusCode, this.captured.res.headers)}` +
+            (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+        ),
+        breakerOpen,
+        this.header('retry-after'),
       );
-      // With the breaker open the flow-level budget must not re-amplify this.
-      (error as any).ke2eRetryable = !breakerOpen;
-      (error as any).ke2eRetryAfterMs = retryAfterMs(this.header('retry-after'));
-      throw error;
     }
     assert({
       kind: 'status',
@@ -267,14 +267,15 @@ export function isReplaySafeMethod(method: string): boolean {
 export function throwIfEdgeLaundered(response: Res, what: string): void {
   if (!isKe2eTransientGatewayResponse(response)) return;
   const breakerOpen = transientBreaker.isOpen();
-  const error = new Error(
-    `${what}: transient gateway status ${response.statusCode} ` +
-      `${describeEdgeResponse(response.statusCode, response.captured.res.headers)}` +
-      (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+  throw markTransientFailure(
+    new Error(
+      `${what}: transient gateway status ${response.statusCode} ` +
+        `${describeEdgeResponse(response.statusCode, response.captured.res.headers)}` +
+        (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+    ),
+    breakerOpen,
+    response.header('retry-after'),
   );
-  (error as any).ke2eRetryable = !breakerOpen;
-  (error as any).ke2eRetryAfterMs = retryAfterMs(response.header('retry-after'));
-  throw error;
 }
 
 function retryAfterMs(value: string | undefined): number | undefined {
@@ -284,6 +285,23 @@ function retryAfterMs(value: string | undefined): number | undefined {
   const at = Date.parse(value);
   if (!Number.isFinite(at)) return undefined;
   return Math.max(0, at - Date.now());
+}
+
+/**
+ * Mark an error as a transient infrastructure failure for the FLOW-level budget
+ * to re-run against fresh fixtures. One writer for the marker pair —
+ * Res.status(), throwIfEdgeLaundered and request()'s network catch all throw
+ * through it. With the breaker open the flow-level budget must not re-amplify
+ * this.
+ */
+function markTransientFailure(
+  error: Error,
+  breakerOpen: boolean,
+  retryAfter: string | undefined,
+): Error {
+  (error as any).ke2eRetryable = !breakerOpen;
+  (error as any).ke2eRetryAfterMs = retryAfterMs(retryAfter);
+  return error;
 }
 
 /**
@@ -342,7 +360,7 @@ export function transientRetryDelayMs(
   return Math.min(cap, Math.max(jittered, floor));
 }
 
-export interface BreakerOptions {
+interface BreakerOptions {
   /** Transient edge failures within the window that trip the breaker. 0 disables. */
   threshold: number;
   windowMs: number;
@@ -428,6 +446,35 @@ export const transientBreaker = new TransientCircuitBreaker(readBreakerOptions()
 
 function announceBreaker(): void {
   if (transientBreaker.shouldAnnounce()) log.warn(`ke2e ${transientBreaker.describe()}`);
+}
+
+/**
+ * Record one transient failure on the shared breaker, announce a newly-open
+ * circuit once, and either back off for the next in-request attempt or report
+ * that the attempt budget is spent. One owner of the record/isOpen/announce/
+ * backoff sequence both failure paths of request() share; `warn` carries the
+ * gateway retry line and `retryAfterMs` the edge's Retry-After (the network
+ * path passes neither).
+ *
+ * Returns whether to retry, and whether the breaker was open when deciding —
+ * the give-up messages append the breaker description only when it is open.
+ */
+async function retryOrStop(
+  attempt: number,
+  maxAttempts: number,
+  opts: { retryAfterMs?: number; warn?: string } = {},
+): Promise<{ retry: boolean; breakerOpen: boolean }> {
+  transientBreaker.record();
+  const breakerOpen = transientBreaker.isOpen();
+  if (breakerOpen) announceBreaker();
+  if (attempt < maxAttempts && !breakerOpen) {
+    if (opts.warn) log.warn(opts.warn);
+    await new Promise((resolve) =>
+      setTimeout(resolve, transientRetryDelayMs(attempt, { retryAfterMs: opts.retryAfterMs })),
+    );
+    return { retry: true, breakerOpen };
+  }
+  return { retry: false, breakerOpen };
 }
 
 export class Client {
@@ -551,7 +598,9 @@ export class Client {
     const replaySafe = isReplaySafeMethod(method);
     const maxAttempts = replaySafe ? this.transientGatewayRetries + 1 : 1;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // No loop condition: retryOrStop enforces the attempt budget, and the last
+    // attempt always throws or returns, so the loop can never fall past it.
+    for (let attempt = 1; ; attempt++) {
       const started = performance.now();
       let res: Response;
       try {
@@ -572,22 +621,18 @@ export class Client {
           ms,
         };
         record(captured);
-        transientBreaker.record();
-        const breakerOpen = transientBreaker.isOpen();
-        if (breakerOpen) announceBreaker();
-        if (attempt < maxAttempts && !breakerOpen) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, transientRetryDelayMs(attempt)),
-          );
-          continue;
-        }
-        const e = new Error(
-          `network error ${method} ${url} after ${attempt}/${maxAttempts} attempt(s): ` +
-            `${err?.message ?? err}` +
-            (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+        const { retry, breakerOpen } = await retryOrStop(attempt, maxAttempts);
+        if (retry) continue;
+        throw markTransientFailure(
+          new Error(
+            `network error ${method} ${url} after ${attempt}/${maxAttempts} attempt(s): ` +
+              `${err?.message ?? err}` +
+              (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+          ),
+          breakerOpen,
+          // A network failure carries no Retry-After header.
+          undefined,
         );
-        (e as any).ke2eRetryable = !breakerOpen;
-        throw e;
       }
 
       const bodyText = await res.text();
@@ -623,21 +668,13 @@ export class Client {
       record(captured);
       const response = new Res(captured);
       if (isKe2eTransientGatewayResponse(response)) {
-        transientBreaker.record();
-        const breakerOpen = transientBreaker.isOpen();
-        if (breakerOpen) announceBreaker();
-        if (attempt < maxAttempts && !breakerOpen) {
-          log.warn(
+        const { retry, breakerOpen } = await retryOrStop(attempt, maxAttempts, {
+          warn:
             `ke2e retry ${attempt}/${maxAttempts} ${routeTemplate} ` +
-              `${describeEdgeResponse(res.status, resHeaders)}`,
-          );
-          await new Promise((resolve) =>
-            setTimeout(resolve, transientRetryDelayMs(attempt, {
-              retryAfterMs: retryAfterMs(resHeaders['retry-after']),
-            })),
-          );
-          continue;
-        }
+            `${describeEdgeResponse(res.status, resHeaders)}`,
+          retryAfterMs: retryAfterMs(resHeaders['retry-after']),
+        });
+        if (retry) continue;
         log.warn(
           `ke2e giving up ${routeTemplate} after ${attempt}/${maxAttempts} attempt(s) ` +
             `${describeEdgeResponse(res.status, resHeaders)}` +
@@ -650,8 +687,6 @@ export class Client {
       }
       return response;
     }
-
-    throw new Error(`request attempt loop exhausted for ${method} ${url}`);
   }
 }
 

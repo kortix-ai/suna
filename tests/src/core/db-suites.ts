@@ -29,7 +29,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /** One discovery root: a package directory and the files in it that are DB suites. */
-export interface DbSuiteRoot {
+interface DbSuiteRoot {
   /** Package directory, relative to the repository root. `bun test` runs here. */
   cwd: string;
   /** Directory scanned recursively, relative to `cwd`. */
@@ -48,7 +48,7 @@ export interface DbSuiteRoot {
  *   - `packages/db` `test` ignores `*.integration.test.ts`;
  *   - `tests/migration` runs nowhere else.
  */
-export const DB_SUITE_ROOTS: readonly DbSuiteRoot[] = [
+const DB_SUITE_ROOTS: readonly DbSuiteRoot[] = [
   {
     cwd: 'apps/api',
     dir: 'src',
@@ -182,7 +182,7 @@ export function dumpAsSql(dump: string): string {
     .join('\n');
 }
 
-export const TEMPLATE_PREFIX = 'kortix_dbsuite_tpl_';
+const TEMPLATE_PREFIX = 'kortix_dbsuite_tpl_';
 export const SUITE_DATABASE_PREFIX = 'kortix_dbsuite_';
 
 export function templateDatabaseName(hash: string): string {
@@ -232,15 +232,15 @@ export function suiteEnvironment(input: {
 }
 
 /** Local Supabase's superuser. It shares the `postgres` role's local password. */
-export const LOCAL_SUPERUSER = 'supabase_admin';
+const LOCAL_SUPERUSER = 'supabase_admin';
 
-export function withUser(url: string, user: string): string {
+function withUser(url: string, user: string): string {
   const parsed = new URL(url);
   parsed.username = user;
   return parsed.toString();
 }
 
-export interface JunitCounts {
+interface JunitCounts {
   tests: number;
   failures: number;
   errors: number;
@@ -263,7 +263,7 @@ export function parseJunitCounts(xml: string): JunitCounts | null {
   };
 }
 
-export type DbSuiteVerdict =
+type DbSuiteVerdict =
   | { ok: true }
   | { ok: false; reason: string };
 

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,29 +44,30 @@ export async function createLocalGitRepository(
   }
 }
 
-async function git(args: string[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const processResult = spawn("git", args, {
-      stdio: ["ignore", "pipe", "pipe"],
+/**
+ * The canonical git runner for the ke2e fixtures (agent-principals re-exports
+ * it): execFile with a 60 s budget, GIT_TERMINAL_PROMPT disabled, and Bearer
+ * tokens redacted out of failures.
+ */
+export async function git(
+  args: string[],
+  opts: { cwd?: string; env?: Record<string, string> } = {},
+): Promise<string> {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const exec = promisify(execFile);
+  try {
+    const result = await exec('git', args, {
+      cwd: opts.cwd,
+      timeout: 60_000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env ?? {}) },
     });
-    let stdout = "";
-    let stderr = "";
-    processResult.stdout.setEncoding("utf8");
-    processResult.stderr.setEncoding("utf8");
-    processResult.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    processResult.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    processResult.once("error", reject);
-    processResult.once("exit", (exitCode) => {
-      if (exitCode === 0) resolve();
-      else {
-        reject(new Error(`git ${args.join(" ")} failed (${exitCode}): ${(stderr || stdout).trim()}`));
-      }
-    });
-  });
+    return result.stdout + result.stderr;
+  } catch (error: any) {
+    if (error instanceof Error && error.message.startsWith('git ')) throw error;
+    const output = String(error?.stdout ?? '') + String(error?.stderr ?? '');
+    throw new Error(`git ${args.join(' ')} failed (${error?.code}): ${output.replace(/Bearer \S+/g, 'Bearer [redacted]')}`);
+  }
 }
 
 /**

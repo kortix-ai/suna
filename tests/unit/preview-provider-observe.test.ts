@@ -358,27 +358,28 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
 
   /**
    * Drive a promise that sleeps under the fake clock: advance in steps until
-   * it settles, then return its outcome.
+   * it settles, then return its outcome. The outcome is captured and re-thrown
+   * at the end, so a rejection during the clock advance is never an orphaned
+   * rejection.
    */
   async function driveUntilSettled<T>(promise: Promise<T>, ms: number): Promise<T> {
     let settled = false;
-    let outcome: { value?: T; error?: unknown };
-    const tracked = promise.then(
+    let outcome: { value?: T; error?: unknown; failed: boolean };
+    promise.then(
       (value) => {
-        outcome = { value };
+        outcome = { value, failed: false };
         settled = true;
-        return value;
       },
       (error: unknown) => {
-        outcome = { error };
+        outcome = { error, failed: true };
         settled = true;
-        throw error;
       },
     );
     for (let advanced = 0; advanced < ms && !settled; advanced += 30_000) {
       await vi.advanceTimersByTimeAsync(30_000);
     }
     if (!settled) throw new Error('the promise did not settle within the advanced clock');
-    return tracked;
+    if (outcome!.failed) throw outcome!.error;
+    return outcome!.value as T;
   }
 });

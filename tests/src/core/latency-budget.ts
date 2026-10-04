@@ -60,7 +60,7 @@ export const PREFLIGHT_STAGES = [
 /** §2: "API -> box delivery hop — ≤60ms". Resolving ingress and the upstream fetch. */
 export const DELIVERY_STAGES = ['ingress', 'upstream'] as const;
 
-export interface StageBudget {
+interface StageBudget {
   preflightMs: number;
   deliveryMs: number;
   totalMs: number;
@@ -97,7 +97,7 @@ export interface RegionTopology {
   databaseRegion: string | null;
 }
 
-export interface ResolvedBudget {
+interface ResolvedBudget {
   /** true = same region, false = different regions, null = at least one is unknown. */
   colocated: boolean | null;
   budget: StageBudget;
@@ -118,9 +118,9 @@ export function resolveWarmTurnBudget(topology: RegionTopology): ResolvedBudget 
   return { colocated, budget: colocated ? WARM_TURN_BUDGET : SPLIT_REGION_SANITY_BUDGET };
 }
 
-export type BudgetCategory = 'preflight' | 'delivery' | 'total';
+type BudgetCategory = 'preflight' | 'delivery' | 'total';
 
-export interface BudgetViolation {
+interface BudgetViolation {
   category: BudgetCategory;
   /** The single stage responsible for the largest share of the overage. */
   stage: string;
@@ -129,7 +129,7 @@ export interface BudgetViolation {
   overByMs: number;
 }
 
-export interface BudgetVerdict {
+interface BudgetVerdict {
   pass: boolean;
   preflightMs: number;
   deliveryMs: number;
@@ -180,26 +180,28 @@ export function evaluateWarmTurnBudget(
 
   const violations: BudgetViolation[] = [];
 
-  if (preflightMs > budget.preflightMs) {
-    const worst = biggestContributor(marks, PREFLIGHT_STAGES);
+  /** One violation row: the category's worst single stage, named. */
+  const pushViolation = (
+    category: BudgetCategory,
+    actualMs: number,
+    budgetMs: number,
+    worst: TimelineMark | undefined,
+  ): void => {
     violations.push({
-      category: 'preflight',
+      category,
       stage: worst?.label ?? 'unknown',
-      actualMs: preflightMs,
-      budgetMs: budget.preflightMs,
-      overByMs: preflightMs - budget.preflightMs,
+      actualMs,
+      budgetMs,
+      overByMs: actualMs - budgetMs,
     });
+  };
+
+  if (preflightMs > budget.preflightMs) {
+    pushViolation('preflight', preflightMs, budget.preflightMs, biggestContributor(marks, PREFLIGHT_STAGES));
   }
 
   if (deliveryMs > budget.deliveryMs) {
-    const worst = biggestContributor(marks, DELIVERY_STAGES);
-    violations.push({
-      category: 'delivery',
-      stage: worst?.label ?? 'unknown',
-      actualMs: deliveryMs,
-      budgetMs: budget.deliveryMs,
-      overByMs: deliveryMs - budget.deliveryMs,
-    });
+    pushViolation('delivery', deliveryMs, budget.deliveryMs, biggestContributor(marks, DELIVERY_STAGES));
   }
 
   if (totalMs > budget.totalMs) {
@@ -207,17 +209,7 @@ export function evaluateWarmTurnBudget(
     // the stage most responsible for the grand total blowing its budget, even
     // when it belongs to neither named category (e.g. turn-accept bookkeeping,
     // or a stage a concurrent branch just added).
-    const worst = marks.reduce<TimelineMark | undefined>(
-      (biggest, m) => (!biggest || m.deltaMs > biggest.deltaMs ? m : biggest),
-      undefined,
-    );
-    violations.push({
-      category: 'total',
-      stage: worst?.label ?? 'unknown',
-      actualMs: totalMs,
-      budgetMs: budget.totalMs,
-      overByMs: totalMs - budget.totalMs,
-    });
+    pushViolation('total', totalMs, budget.totalMs, biggestContributor(marks, []));
   }
 
   return {

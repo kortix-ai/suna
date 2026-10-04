@@ -3,18 +3,9 @@ import { resolve } from 'node:path';
 
 import {
   DaytonaApi,
-  type DaytonaCiInput,
   type DaytonaSandbox,
-  createDaytonaSandbox,
   deleteSandbox as deleteDaytonaSandbox,
-  downloadArtifacts as downloadDaytonaArtifacts,
-  ensureWarmSnapshot,
-  execute as executeDaytona,
   getSandboxByName,
-  readRemoteExitCode,
-  readRemoteLog,
-  statRemoteLog,
-  waitForSandbox as waitForDaytonaSandbox,
 } from './daytona-ci';
 import {
   PlatinumApi,
@@ -120,14 +111,40 @@ interface PlatinumSandboxPage {
   has_more?: boolean;
 }
 
-interface PreviewLink {
-  url?: string;
-  token?: string;
+/**
+ * The run-scoped exit-status poll shared by the preview deploy and suite: an
+ * absent status file means still running; a non-integer value is an error.
+ */
+function previewStatusExitCode(
+  api: PlatinumApi,
+  sandboxId: string,
+  statusPath: string,
+  label: string,
+) {
+  return async () => {
+    const status = await statPlatinum(api, sandboxId, statusPath, 1);
+    if (!status) return null;
+    const bytes = await api.read(sandboxId, statusPath, undefined, undefined, 1);
+    const value = Number(new TextDecoder().decode(bytes).trim());
+    if (!Number.isInteger(value)) throw new Error(`${label} wrote an invalid exit code`);
+    return value;
+  };
 }
 
-function encodedFileCommand(path: string, content: string, mode = '0600'): string {
-  if (!/^\/[a-z0-9_./-]+$/i.test(path)) throw new Error(`invalid remote path: ${path}`);
-  return `mkdir -p "$(dirname ${path})" && printf %s ${Buffer.from(content).toString('base64')} | base64 -d > ${path} && chmod ${mode} ${path}`;
+/**
+ * The incremental log stream shared by the preview deploy and suite: the
+ * sizes are rebased on the pre-launch log length, so only bytes this run
+ * appends are streamed.
+ */
+function previewLogStream(api: PlatinumApi, sandboxId: string, logPath: string, logStart: number) {
+  return {
+    statLog: async () => {
+      const stat = await statPlatinum(api, sandboxId, logPath, 1);
+      return stat ? { ...stat, size: Math.max(0, Number(stat.size ?? 0) - logStart) } : stat;
+    },
+    readLog: (offset: number, limit: number) =>
+      api.read(sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
+  };
 }
 
 function validatedPreviewUrl(value: string | undefined): string {
@@ -480,26 +497,8 @@ export async function deployPlatinumPreview(
     const exitCode = await observePlatinumWorker({
       startedAt: Date.now(),
       timeoutMs: PREVIEW_TIMEOUT_MS,
-      checkExitCode: async () => {
-        const status = await statPlatinum(api, sandboxId, statusPath, 1);
-        if (!status) return null;
-        const bytes = await api.read(
-          sandboxId,
-          statusPath,
-          undefined,
-          undefined,
-          1,
-        );
-        const value = Number(new TextDecoder().decode(bytes).trim());
-        if (!Number.isInteger(value)) throw new Error('Platinum preview wrote an invalid exit code');
-        return value;
-      },
-      statLog: async () => {
-        const stat = await statPlatinum(api, sandboxId, logPath, 1);
-        return stat ? { ...stat, size: Math.max(0, Number(stat.size ?? 0) - logStart) } : stat;
-      },
-      readLog: (offset, limit) =>
-        api.read(sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
+      checkExitCode: previewStatusExitCode(api, sandboxId, statusPath, 'Platinum preview'),
+      ...previewLogStream(api, sandboxId, logPath, logStart),
     });
     const result: SandboxPreviewResult = {
       provider: 'platinum',
@@ -675,6 +674,12 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
     }
     launched = true;
     let lastSupersedeCheck = Date.now();
+    const readSuiteExitCode = previewStatusExitCode(
+      api,
+      input.sandboxId,
+      statusPath,
+      'Platinum preview suite',
+    );
     const exitCode = await observePlatinumWorker({
       startedAt: Date.now(),
       timeoutMs: PREVIEW_TIMEOUT_MS,
@@ -692,19 +697,9 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
             return PREVIEW_SUITE_SUPERSEDED;
           }
         }
-        const status = await statPlatinum(api, input.sandboxId, statusPath, 1);
-        if (!status) return null;
-        const bytes = await api.read(input.sandboxId, statusPath, undefined, undefined, 1);
-        const value = Number(new TextDecoder().decode(bytes).trim());
-        if (!Number.isInteger(value)) throw new Error('Platinum preview suite wrote an invalid exit code');
-        return value;
+        return readSuiteExitCode();
       },
-      statLog: async () => {
-        const stat = await statPlatinum(api, input.sandboxId, logPath, 1);
-        return stat ? { ...stat, size: Math.max(0, Number(stat.size ?? 0) - logStart) } : stat;
-      },
-      readLog: (offset, limit) =>
-        api.read(input.sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
+      ...previewLogStream(api, input.sandboxId, logPath, logStart),
     });
     if (exitCode === PREVIEW_SUITE_SUPERSEDED) return exitCode;
     await downloadPlatinumArtifacts(api, input.sandboxId, input.root).catch((error) => {

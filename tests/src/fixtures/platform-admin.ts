@@ -8,6 +8,7 @@
  * one run and remove it during teardown.
  */
 import type { Env } from '../core/env';
+import { openDirectDb } from './database-project';
 
 interface RoleDb {
   query(text: string, values?: unknown[]): Promise<unknown>;
@@ -17,14 +18,8 @@ interface RoleDb {
 export type OpenRoleDb = (databaseUrl: string) => Promise<RoleDb>;
 
 async function openRoleDb(databaseUrl: string): Promise<RoleDb> {
-  const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-  const { Client } = await import('pg');
-  const client = new Client({
-    connectionString: databaseUrl,
-    ssl: local ? false : { rejectUnauthorized: false },
-  });
-  await client.connect();
-  return client;
+  // Same direct-DB open + SSL policy as every direct connection (database-project.ts).
+  return openDirectDb(databaseUrl);
 }
 
 async function execute(

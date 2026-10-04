@@ -49,14 +49,14 @@ export const DEFAULT_FLOW_WEIGHT_MS = 120_000;
  * shard, so the only load it inflates is a shard that receives no bin-packed
  * work — it is a reporting constant, not a packing input.
  */
-export const SERIAL_WORKER_PENALTY = 2;
+const SERIAL_WORKER_PENALTY = 2;
 
-export interface ShardSpec {
+interface ShardSpec {
   current: number;
   total: number;
 }
 
-export interface ShardPlan {
+interface ShardPlan {
   /** Flow ids assigned to `spec.current`, sorted for a stable command line. */
   ids: string[];
   /** Projected worker-second load of every shard, indexed from shard 1. */
@@ -77,7 +77,7 @@ export function parseShardSpec(value: string): ShardSpec {
   return { current, total };
 }
 
-export function flowWeightMs(flow: RegisteredFlow): number {
+function flowWeightMs(flow: RegisteredFlow): number {
   const declared = flow.meta.timeoutMs;
   return typeof declared === 'number' && declared > 0 ? declared : DEFAULT_FLOW_WEIGHT_MS;
 }

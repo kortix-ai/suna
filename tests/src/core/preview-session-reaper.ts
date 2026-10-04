@@ -38,7 +38,7 @@ export interface PlatinumListedSandbox {
   metadata?: Record<string, unknown> | null;
 }
 
-export const PREVIEW_HOST_OWNERS = ['kortix-preview', 'kortix-branch-env'] as const;
+const PREVIEW_HOST_OWNERS = ['kortix-preview', 'kortix-branch-env'] as const;
 
 /** Default idle limit for the sweep. Well above the 60 min provider backstop. */
 export const PREVIEW_SESSION_MAX_IDLE_MS = 6 * 60 * 60_000;
@@ -65,7 +65,7 @@ function isRunning(sandbox: PlatinumListedSandbox): boolean {
   return String(sandbox.state ?? '').toLowerCase() === 'running';
 }
 
-export function isPreviewHostSandbox(sandbox: PlatinumListedSandbox): boolean {
+function isPreviewHostSandbox(sandbox: PlatinumListedSandbox): boolean {
   const owner = meta(sandbox, 'owner');
   if ((PREVIEW_HOST_OWNERS as readonly string[]).includes(owner)) return true;
   const name = sandbox.name ?? '';
@@ -84,7 +84,7 @@ export function isPreviewSessionSandbox(sandbox: PlatinumListedSandbox): boolean
 }
 
 /** The host sandbox name a session box belongs to, or null for an untagged box. */
-export function previewSessionOwner(sandbox: PlatinumListedSandbox): string | null {
+function previewSessionOwner(sandbox: PlatinumListedSandbox): string | null {
   const owner = meta(sandbox, 'kortix.instance');
   return owner === '' ? null : owner;
 }
@@ -99,7 +99,7 @@ function timestamp(value: string | null | undefined): number | null {
  * The newest evidence that the box was in use. `null` when the listing carries
  * no parseable time: such a box is never judged idle.
  */
-export function lastUsedAtMs(sandbox: PlatinumListedSandbox): number | null {
+function lastUsedAtMs(sandbox: PlatinumListedSandbox): number | null {
   const times = [sandbox.lastActivityAt, sandbox.startedAt, sandbox.createdAt]
     .map(timestamp)
     .filter((value): value is number => value !== null);
@@ -165,9 +165,9 @@ export function selectIdlePreviewHosts(
     .map((sandbox) => sandbox.id);
 }
 
-export type PreviewSessionStopReason = 'owner-gone' | 'idle';
+type PreviewSessionStopReason = 'owner-gone' | 'idle';
 
-export interface PreviewSessionStop {
+interface PreviewSessionStop {
   id: string;
   owner: string | null;
   reason: PreviewSessionStopReason;
@@ -215,13 +215,13 @@ export function previewHostNames(sandboxes: readonly PlatinumListedSandbox[]): S
   );
 }
 
-export interface PoolConsumer {
+interface PoolConsumer {
   label: string;
   count: number;
   ramMb: number;
 }
 
-export interface PoolUsage {
+interface PoolUsage {
   poolMb: number;
   usedMb: number;
   freeMb: number;

@@ -9,13 +9,25 @@ interface ProjectDb {
 
 export type OpenProjectDb = (databaseUrl: string) => Promise<ProjectDb>;
 
-async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
-  const local =
-    databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+/**
+ * SSL policy for a direct Postgres connection.
+ *
+ * Supabase's direct Postgres endpoint presents a chain Node's default trust
+ * store rejects ("self signed certificate in certificate chain"), which is what
+ * killed both gc sweeps on the first sharded release-gate run (32222342409). A
+ * local connection uses no TLS at all. platform-admin.ts, gc.ts, chat.ts and
+ * session-transcript.ts take their policy from here.
+ */
+export function directDbSsl(databaseUrl: string): false | { rejectUnauthorized: false } {
+  const local = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+  return local ? false : { rejectUnauthorized: false };
+}
+
+export async function openDirectDb(databaseUrl: string): Promise<ProjectDb> {
   const { Client } = await import("pg");
   const client = new Client({
     connectionString: databaseUrl,
-    ssl: local ? false : { rejectUnauthorized: false },
+    ssl: directDbSsl(databaseUrl),
   });
   await client.connect();
   return client;
@@ -45,7 +57,7 @@ export async function createDatabaseProject(
     appsEnabled?: boolean;
     metadata?: Record<string, unknown>;
   },
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<CreatedProject> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "create");
   const projectId = randomUUID();
@@ -113,7 +125,7 @@ export async function setDatabaseEnterpriseDemo(
   env: Env,
   accountId: string,
   enabled: boolean,
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise demo for");
   const client = await open(databaseUrl);
@@ -134,7 +146,7 @@ export async function setDatabaseEnterpriseDemo(
 export async function setDatabaseTriggerRunFailed(
   env: Env,
   input: { projectId: string; slug: string; error: string },
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "fail a trigger run for");
   const client = await open(databaseUrl);
@@ -153,7 +165,7 @@ export async function setDatabaseTriggerRunFailed(
 export async function fundDatabaseAccount(
   env: Env,
   accountId: string,
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "fund account for");
   const client = await open(databaseUrl);
@@ -180,7 +192,7 @@ export async function mergeDatabaseProjectMetadata(
   env: Env,
   projectId: string,
   metadata: Record<string, unknown>,
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "update metadata for");
   const client = await open(databaseUrl);
@@ -209,7 +221,7 @@ export async function createDatabaseSession(
     parentSessionId?: string;
     initiator?: { type: "member" | "trigger" | "channel" | "api" | "system"; id: string | null };
   },
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<string> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "create a session for");
   const sessionId = randomUUID();
@@ -282,7 +294,7 @@ export async function configurePreviousRepositorySession(
     accountId: string;
     preserveRuntime: boolean;
   },
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "configure previous-repository session for");
   const client = await open(databaseUrl);
@@ -325,7 +337,7 @@ export async function configurePreviousRepositorySession(
 export async function readDatabasePromptAttachmentRetention(
   env: Env,
   attachmentId: string,
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<{ references: number; due: boolean }> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "read attachment retention for");
   const client = await open(databaseUrl);
@@ -352,7 +364,7 @@ export async function bindDatabaseSessionCredential(
     accountId: string;
     projectId: string;
   },
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "bind a session credential for");
   const client = await open(databaseUrl);
@@ -389,7 +401,7 @@ export async function bindDatabaseSessionCredential(
 export async function deleteDatabaseProject(
   env: Env,
   projectId: string,
-  open: OpenProjectDb = openProjectDb,
+  open: OpenProjectDb = openDirectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);

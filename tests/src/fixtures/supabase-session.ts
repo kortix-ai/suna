@@ -30,7 +30,7 @@ export interface SupabaseGrant {
   expiresInMs: number;
 }
 
-export type RefreshGrant = (refreshToken: string) => Promise<SupabaseGrant>;
+type RefreshGrant = (refreshToken: string) => Promise<SupabaseGrant>;
 
 /** Schedules the background renewal. Injected by unit tests. */
 export interface RefreshTimer {
@@ -38,7 +38,7 @@ export interface RefreshTimer {
   clear(handle: unknown): void;
 }
 
-export interface SupabaseSessionOptions {
+interface SupabaseSessionOptions {
   /** Principal label, for error messages only. */
   label: string;
   grant: SupabaseGrant;

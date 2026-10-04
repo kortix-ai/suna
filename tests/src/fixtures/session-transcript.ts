@@ -1,5 +1,6 @@
 import { Client } from 'pg';
 import type { Env } from '../core/env';
+import { directDbSsl } from './database-project';
 
 export async function seedSessionTranscript(
   env: Env,
@@ -74,7 +75,7 @@ export async function seedSessionTranscript(
       ],
     },
   ];
-  const db = new Client({ connectionString: env.databaseUrl });
+  const db = new Client({ connectionString: env.databaseUrl, ssl: directDbSsl(env.databaseUrl) });
   await db.connect();
   try {
     await db.query(

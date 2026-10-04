@@ -22,7 +22,6 @@ import { SupabaseSessionAuth } from './supabase-session';
 
 export interface Provisioned {
   principals: Partial<Principals>;
-  runAccountIds: string[];
   supabaseUserIds: string[];
 }
 
@@ -184,5 +183,5 @@ export async function provisionMatrix(env: Env, runId: string): Promise<Provisio
     };
   }
 
-  return { principals, runAccountIds: [], supabaseUserIds };
+  return { principals, supabaseUserIds };
 }

@@ -33,7 +33,7 @@ export function assert(a: Assertion): void {
  * jsonpath-lite: supports `$.a.b`, `a.b[0].c`, leading `$.` optional.
  * Returns undefined for any missing segment.
  */
-export function jsonpath(obj: unknown, path: string): unknown {
+function jsonpath(obj: unknown, path: string): unknown {
   const clean = path.replace(/^\$\.?/, "");
   if (clean === "") return obj;
   const segments = clean.match(/[^.[\]]+/g) ?? [];

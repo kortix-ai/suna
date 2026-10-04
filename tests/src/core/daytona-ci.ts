@@ -1,15 +1,11 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import {
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
-  buildWorkerScript,
   dockerComposeInstallCommand,
   observePlatinumWorker,
-  providerMetadataIdentifier,
 } from './platinum-ci';
+import { ciResourceName, isExactCiSandbox, isRetryableCiError, pollCiState, retryCiOperation } from './ci-shared';
 
 export const DAYTONA_CI_SNAPSHOT_VERSION = 'v4';
 const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v4';
@@ -17,9 +13,7 @@ const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v4';
 const POLL_MS = 3_000;
 const SNAPSHOT_TIMEOUT_MS = 45 * 60_000;
 const SANDBOX_TIMEOUT_MS = 15 * 60_000;
-const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
-const API_ATTEMPTS = 6;
 const DAYTONA_CI_CPU = 6;
 const DAYTONA_CI_MEMORY_GB = 12;
 const DAYTONA_CI_DISK_GB = 40;
@@ -78,39 +72,19 @@ export class DaytonaHttpError extends Error {
   }
 }
 
-export function validateDaytonaCiInput(input: DaytonaCiInput): void {
-  if (!input.apiKey) throw new Error('DAYTONA_API_KEY is required');
-  if (!/^https:\/\//.test(input.apiUrl)) throw new Error('DAYTONA_API_URL must use https');
-  if (!/^[a-z0-9_.-]+$/i.test(input.target))
-    throw new Error(`invalid Daytona target: ${input.target}`);
-  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
-    throw new Error(`invalid GitHub repository: ${input.repository}`);
-  }
-  if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
-  if (!/^[a-z0-9_./-]+$/i.test(input.ref)) throw new Error(`invalid Git ref: ${input.ref}`);
-  if (!/^[a-z0-9_.-]+$/i.test(input.runId)) throw new Error(`invalid run id: ${input.runId}`);
-  if (!/^[a-z0-9_.-]+$/i.test(input.runAttempt)) {
-    throw new Error(`invalid run attempt: ${input.runAttempt}`);
-  }
-}
-
-export async function daytonaLockfileHash(root: string): Promise<string> {
-  return createHash('sha256')
-    .update(await readFile(resolve(root, 'pnpm-lock.yaml')))
-    .digest('hex');
-}
-
 export function daytonaSnapshotName(lockHash: string): string {
-  if (!/^[a-f0-9]{64}$/i.test(lockHash)) throw new Error(`invalid lockfile hash: ${lockHash}`);
-  return `kortix-ci-daytona-${DAYTONA_CI_SNAPSHOT_VERSION}-${lockHash.slice(0, 16)}`;
+  return ciResourceName({ flavour: `daytona-${DAYTONA_CI_SNAPSHOT_VERSION}`, lockHash });
 }
 
 export function daytonaBaseSnapshotName(lockHash: string): string {
-  if (!/^[a-f0-9]{64}$/i.test(lockHash)) throw new Error(`invalid lockfile hash: ${lockHash}`);
-  return `kortix-ci-daytona-${DAYTONA_CI_BASE_SNAPSHOT_VERSION}-${lockHash.slice(0, 16)}-base`;
+  return ciResourceName({
+    flavour: `daytona-${DAYTONA_CI_BASE_SNAPSHOT_VERSION}`,
+    lockHash,
+    suffix: '-base',
+  });
 }
 
-export function daytonaWorkerName(runId: string, runAttempt: string): string {
+function daytonaWorkerName(runId: string, runAttempt: string): string {
   return `kortix-ci-${runId}-${runAttempt}`.slice(0, 64);
 }
 
@@ -199,12 +173,11 @@ export function isExactDaytonaWarmBuilder(
 }
 
 export function isRetryableDaytonaError(error: unknown): boolean {
-  if (error instanceof DaytonaHttpError) return TRANSIENT_STATUS_CODES.has(error.status);
-  if (error instanceof SyntaxError) return true;
-  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  return /abort|connection reset|econnreset|fetch failed|network|socket|timed?\s*out/i.test(
-    message,
-  );
+  return isRetryableCiError(error, {
+    status: error instanceof DaytonaHttpError ? error.status : undefined,
+    message: error instanceof DaytonaHttpError ? error.message : undefined,
+    transientStatuses: TRANSIENT_STATUS_CODES,
+  });
 }
 
 export async function retryDaytonaOperation<T>(input: {
@@ -213,23 +186,11 @@ export async function retryDaytonaOperation<T>(input: {
   attempts?: number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<T> {
-  const attempts = input.attempts ?? API_ATTEMPTS;
-  const wait = input.sleep ?? sleep;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await input.operation();
-    } catch (error) {
-      lastError = error;
-      if (attempt === attempts || !isRetryableDaytonaError(error)) throw error;
-      const delayMs = Math.min(15_000, 1_000 * 2 ** (attempt - 1));
-      console.warn(
-        `[daytona-ci] retry label=${input.label} attempt=${attempt + 1}/${attempts} delay_ms=${delayMs} error=${String(error)}`,
-      );
-      await wait(delayMs);
-    }
-  }
-  throw lastError;
+  return retryCiOperation({
+    ...input,
+    isRetryableError: isRetryableDaytonaError,
+    logPrefix: 'daytona-ci',
+  });
 }
 
 export class DaytonaApi {
@@ -271,26 +232,6 @@ export class DaytonaApi {
       ? operation()
       : retryDaytonaOperation({ label: `${method} ${path}`, operation });
   }
-
-  async bytes(url: string, attempts = API_ATTEMPTS): Promise<Uint8Array> {
-    return retryDaytonaOperation({
-      label: `GET ${new URL(url).pathname}`,
-      attempts,
-      operation: async () => {
-        const response = await fetch(url, {
-          headers: this.headers,
-          signal: AbortSignal.timeout(5 * 60_000),
-        });
-        if (!response.ok) {
-          throw new DaytonaHttpError(
-            `Daytona file GET -> ${response.status}: ${await response.text()}`,
-            response.status,
-          );
-        }
-        return new Uint8Array(await response.arrayBuffer());
-      },
-    });
-  }
 }
 
 function snapshotState(snapshot: DaytonaSnapshot): string {
@@ -308,29 +249,33 @@ async function waitForSnapshot(
   api: DaytonaApi,
   snapshot: DaytonaSnapshot,
 ): Promise<DaytonaSnapshot> {
-  const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
-  let current = snapshot;
-  let lastState = '';
-  while (Date.now() < deadline) {
-    const state = snapshotState(current);
-    if (state !== lastState) {
-      console.log(`[daytona-ci] snapshot=${current.name} state=${state}`);
-      lastState = state;
-    }
-    if (state === 'active') return current;
-    if (['error', 'build_failed', 'failed'].includes(state)) {
-      throw new Error(
-        `Daytona snapshot ${current.name} entered state=${state}: ${current.errorReason ?? ''}`,
+  return pollCiState({
+    initial: snapshot,
+    read: (previous) => {
+      const current = previous ?? snapshot;
+      return api.json<DaytonaSnapshot>(
+        `/snapshots/${encodeURIComponent(current.id || current.name)}`,
       );
-    }
-    await sleep(POLL_MS);
-    current = await api.json<DaytonaSnapshot>(
-      `/snapshots/${encodeURIComponent(current.id || current.name)}`,
-    );
-  }
-  throw new Error(
-    `Daytona snapshot ${current.name} did not become active within ${SNAPSHOT_TIMEOUT_MS}ms`,
-  );
+    },
+    ready: (state) => state === 'active',
+    terminal: (current, state) =>
+      ['error', 'build_failed', 'failed'].includes(state)
+        ? new Error(
+            `Daytona snapshot ${current.name} entered state=${state}: ${current.errorReason ?? ''}`,
+          )
+        : null,
+    log: (current, state) => {
+      console.log(`[daytona-ci] snapshot=${current.name} state=${state}`);
+    },
+    timeoutError: () =>
+      new Error(
+        `Daytona snapshot ${snapshot.name} did not become active within ${SNAPSHOT_TIMEOUT_MS}ms`,
+      ),
+    startAt: Date.now(),
+    timeoutMs: SNAPSHOT_TIMEOUT_MS,
+    pollMs: POLL_MS,
+    sleep,
+  });
 }
 
 async function ensureBaseSnapshot(
@@ -372,27 +317,31 @@ async function ensureBaseSnapshot(
 }
 
 export async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise<DaytonaSandbox> {
-  const deadline = Date.now() + SANDBOX_TIMEOUT_MS;
-  let current = sandbox;
-  let lastState = '';
-  while (Date.now() < deadline) {
-    const state = String(current.state ?? '').toLowerCase();
-    if (state !== lastState) {
+  return pollCiState({
+    initial: sandbox,
+    read: (previous) => {
+      const current = previous ?? sandbox;
+      return api.json<DaytonaSandbox>(`/sandbox/${encodeURIComponent(current.id)}`);
+    },
+    ready: (state) => state === 'started',
+    terminal: (current, state) =>
+      ['error', 'build_failed', 'destroyed', 'archived'].includes(state)
+        ? new Error(
+            `Daytona sandbox ${current.id} entered state=${state}: ${current.errorReason ?? ''}`,
+          )
+        : null,
+    log: (current, state) => {
       console.log(`[daytona-ci] sandbox=${current.id} state=${state}`);
-      lastState = state;
-    }
-    if (state === 'started') return current;
-    if (['error', 'build_failed', 'destroyed', 'archived'].includes(state)) {
-      throw new Error(
-        `Daytona sandbox ${current.id} entered state=${state}: ${current.errorReason ?? ''}`,
-      );
-    }
-    await sleep(POLL_MS);
-    current = await api.json<DaytonaSandbox>(`/sandbox/${encodeURIComponent(current.id)}`);
-  }
-  throw new Error(
-    `Daytona sandbox ${current.id} did not become started within ${SANDBOX_TIMEOUT_MS}ms`,
-  );
+    },
+    timeoutError: () =>
+      new Error(
+        `Daytona sandbox ${sandbox.id} did not become started within ${SANDBOX_TIMEOUT_MS}ms`,
+      ),
+    startAt: Date.now(),
+    timeoutMs: SANDBOX_TIMEOUT_MS,
+    pollMs: POLL_MS,
+    sleep,
+  });
 }
 
 export async function getSandboxByName(api: DaytonaApi, name: string): Promise<DaytonaSandbox | null> {
@@ -556,6 +505,74 @@ async function waitForWarmSnapshotOwner(
   );
 }
 
+/**
+ * Run the warm preparation inside the owned builder, verify the marker, then
+ * capture the warm snapshot from it and wait until it is active.
+ */
+async function captureDaytonaWarmSnapshot(
+  api: DaytonaApi,
+  builder: DaytonaSandbox,
+  name: string,
+): Promise<DaytonaSnapshot> {
+  const warmScript = buildDaytonaWarmScript();
+  const uploaded = await execute(
+    api,
+    builder,
+    base64Command(warmScript, '/workspace/prepare-daytona-warm.sh'),
+    60,
+  );
+  if (uploaded.exitCode !== 0)
+    throw new Error(`Daytona warm script upload failed: ${uploaded.result}`);
+  const launched = await execute(
+    api,
+    builder,
+    'setsid -f /workspace/prepare-daytona-warm.sh >/workspace/daytona-warm-bootstrap.log 2>&1 </dev/null',
+    30,
+  );
+  if (launched.exitCode !== 0)
+    throw new Error(`Daytona warm script launch failed: ${launched.result}`);
+  const prepareExitCode = await observePlatinumWorker({
+    startedAt: Date.now(),
+    timeoutMs: SNAPSHOT_TIMEOUT_MS,
+    pollMs: POLL_MS,
+    checkExitCode: () =>
+      readRemoteExitCode(api, builder, '/workspace/daytona-warm.exit', 'warm preparation'),
+    statLog: () => statRemoteLog(api, builder, '/workspace/daytona-warm.log', 'warm preparation'),
+    readLog: (offset, limit) =>
+      readRemoteLog(
+        api,
+        builder,
+        '/workspace/daytona-warm.log',
+        offset,
+        Math.min(limit, LOG_CHUNK_BYTES),
+        'warm preparation',
+      ),
+  });
+  if (prepareExitCode !== 0)
+    throw new Error(`Daytona warm preparation exited with code ${prepareExitCode}`);
+  const marker = await execute(
+    api,
+    builder,
+    'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && ! pgrep -x containerd >/dev/null && test ! -S /var/run/docker.sock && cat /workspace/.kortix-ci-warm-ready',
+    30,
+  );
+  if (marker.exitCode !== 0) throw new Error('Daytona warm snapshot marker is not valid');
+  console.log(`[daytona-ci] warm_sandbox_ready=1 docker_images=${marker.result.trim()}`);
+
+  await api.json(
+    `/sandbox/${encodeURIComponent(builder.id)}/snapshot`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    },
+    { retry: false, timeoutMs: SNAPSHOT_TIMEOUT_MS },
+  );
+
+  const created = await findSnapshot(api, name);
+  if (!created) throw new Error(`Daytona warm snapshot ${name} was not created`);
+  return waitForSnapshot(api, created);
+}
+
 export async function ensureWarmSnapshot(
   api: DaytonaApi,
   input: DaytonaCiInput,
@@ -626,70 +643,13 @@ export async function ensureWarmSnapshot(
       if (ownedSnapshot) return ownedSnapshot;
     }
 
-    const warmScript = buildDaytonaWarmScript();
-    const uploaded = await execute(
-      api,
-      builder,
-      base64Command(warmScript, '/workspace/prepare-daytona-warm.sh'),
-      60,
-    );
-    if (uploaded.exitCode !== 0)
-      throw new Error(`Daytona warm script upload failed: ${uploaded.result}`);
-    const launched = await execute(
-      api,
-      builder,
-      'setsid -f /workspace/prepare-daytona-warm.sh >/workspace/daytona-warm-bootstrap.log 2>&1 </dev/null',
-      30,
-    );
-    if (launched.exitCode !== 0)
-      throw new Error(`Daytona warm script launch failed: ${launched.result}`);
-    const prepareExitCode = await observePlatinumWorker({
-      startedAt: Date.now(),
-      timeoutMs: SNAPSHOT_TIMEOUT_MS,
-      pollMs: POLL_MS,
-      checkExitCode: () =>
-        readRemoteExitCode(api, builder!, '/workspace/daytona-warm.exit', 'warm preparation'),
-      statLog: () =>
-        statRemoteLog(api, builder!, '/workspace/daytona-warm.log', 'warm preparation'),
-      readLog: (offset, limit) =>
-        readRemoteLog(
-          api,
-          builder!,
-          '/workspace/daytona-warm.log',
-          offset,
-          Math.min(limit, LOG_CHUNK_BYTES),
-          'warm preparation',
-        ),
-    });
-    if (prepareExitCode !== 0)
-      throw new Error(`Daytona warm preparation exited with code ${prepareExitCode}`);
-    const marker = await execute(
-      api,
-      builder,
-      'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && ! pgrep -x containerd >/dev/null && test ! -S /var/run/docker.sock && cat /workspace/.kortix-ci-warm-ready',
-      30,
-    );
-    if (marker.exitCode !== 0) throw new Error('Daytona warm snapshot marker is not valid');
-    console.log(`[daytona-ci] warm_sandbox_ready=1 docker_images=${marker.result.trim()}`);
-
-    await api.json(
-      `/sandbox/${encodeURIComponent(builder.id)}/snapshot`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ name }),
-      },
-      { retry: false, timeoutMs: SNAPSHOT_TIMEOUT_MS },
-    );
-
-    const created = await findSnapshot(api, name);
-    if (!created) throw new Error(`Daytona warm snapshot ${name} was not created`);
-    return waitForSnapshot(api, created);
+    return captureDaytonaWarmSnapshot(api, builder, name);
   } finally {
     if (builder) await deleteSandbox(api, builder.id).catch(() => {});
   }
 }
 
-export async function readRemoteExitCode(
+async function readRemoteExitCode(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -709,7 +669,7 @@ export async function readRemoteExitCode(
   return exitCode;
 }
 
-export async function statRemoteLog(
+async function statRemoteLog(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -729,7 +689,7 @@ export async function statRemoteLog(
   return { size };
 }
 
-export async function readRemoteLog(
+async function readRemoteLog(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -747,160 +707,21 @@ export async function readRemoteLog(
   return Uint8Array.from(Buffer.from(result.result.trim(), 'base64'));
 }
 
-export async function downloadArtifacts(
-  api: DaytonaApi,
-  sandbox: DaytonaSandbox,
-  root: string,
-): Promise<void> {
-  const url = `${toolboxBase(sandbox)}/files/download?path=${encodeURIComponent('/workspace/kortix-test-results.tar.gz')}`;
-  const bytes = await api.bytes(url);
-  const outputDir = resolve(root, 'tests/test-results');
-  const archive = resolve(outputDir, 'daytona-worker.tar.gz');
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(archive, bytes);
-  const extracted = Bun.spawn(['tar', '-xzf', archive, '-C', root], {
-    stdin: 'ignore',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-  const code = await extracted.exited;
-  if (code !== 0) throw new Error(`Daytona artifact extraction exited with code ${code}`);
-}
-
-export async function runDaytonaCi(input: DaytonaCiInput): Promise<number> {
-  validateDaytonaCiInput(input);
-  const totalStartedAt = Date.now();
-  const api = new DaytonaApi(input.apiUrl, input.apiKey);
-  const lockHash = await daytonaLockfileHash(input.root);
-  const snapshotStartedAt = Date.now();
-  const snapshot = await ensureWarmSnapshot(api, input, lockHash);
-  const snapshotDurationMs = Date.now() - snapshotStartedAt;
-  console.log(`[daytona-ci] snapshot=${snapshot.name} id=${snapshot.id}`);
-
-  let sandbox: DaytonaSandbox | null = null;
-  const cleanup = async () => {
-    if (!sandbox) return;
-    const id = sandbox.id;
-    await deleteSandbox(api, id);
-    console.log(`[daytona-ci] deleted sandbox=${id}`);
-    sandbox = null;
-  };
-  const onSignal = (signal: string) => {
-    void cleanup().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
-  };
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
-
-  const createStartedAt = Date.now();
-  let workerStartedAt = 0;
-  try {
-    sandbox = await waitForSandbox(
-      api,
-      await createDaytonaSandbox(
-        api,
-        buildDaytonaWorkerRequest({
-          snapshot: snapshot.name,
-          target: input.target,
-          repository: input.repository,
-          sha: input.sha,
-          runId: input.runId,
-          runAttempt: input.runAttempt,
-        }),
-      ),
-    );
-    const sandboxCreateDurationMs = Date.now() - createStartedAt;
-
-    const marker = await execute(
-      api,
-      sandbox,
-      'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && ! pgrep -x containerd >/dev/null && test ! -S /var/run/docker.sock && cat /workspace/.kortix-ci-warm-ready',
-      30,
-    );
-    if (marker.exitCode !== 0) throw new Error('Daytona worker did not restore the warm marker');
-    console.log(`[daytona-ci] warm_snapshot_restored=1 docker_images=${marker.result.trim()}`);
-
-    const workerScript = buildWorkerScript({ ...input, provider: 'daytona' });
-    const uploaded = await execute(
-      api,
-      sandbox,
-      base64Command(workerScript, '/workspace/run-kortix-tests.sh'),
-      60,
-    );
-    if (uploaded.exitCode !== 0)
-      throw new Error(`Daytona worker script upload failed: ${uploaded.result}`);
-    const launched = await execute(
-      api,
-      sandbox,
-      'setsid -f /workspace/run-kortix-tests.sh >/workspace/daytona-bootstrap.log 2>&1 </dev/null',
-      30,
-    );
-    if (launched.exitCode !== 0)
-      throw new Error(`Daytona worker launch failed: ${launched.result}`);
-
-    workerStartedAt = Date.now();
-    const exitCode = await observePlatinumWorker({
-      startedAt: workerStartedAt,
-      timeoutMs: WORKER_TIMEOUT_MS,
-      pollMs: POLL_MS,
-      checkExitCode: () =>
-        readRemoteExitCode(api, sandbox!, '/workspace/kortix-test.exit', 'worker'),
-      statLog: () => statRemoteLog(api, sandbox!, '/workspace/kortix-test.log', 'worker'),
-      readLog: (offset, limit) =>
-        readRemoteLog(
-          api,
-          sandbox!,
-          '/workspace/kortix-test.log',
-          offset,
-          Math.min(limit, LOG_CHUNK_BYTES),
-          'worker',
-        ),
-    });
-    const workerDurationMs = Date.now() - workerStartedAt;
-    await downloadArtifacts(api, sandbox, input.root);
-    await writeFile(
-      resolve(input.root, 'tests/test-results/daytona-worker.json'),
-      `${JSON.stringify(
-        {
-          provider: 'daytona',
-          sandboxId: providerMetadataIdentifier(sandbox.id, 'Daytona sandbox ID'),
-          snapshotId: providerMetadataIdentifier(snapshot.id, 'Daytona snapshot ID'),
-          snapshotName: providerMetadataIdentifier(snapshot.name, 'Daytona snapshot name'),
-          repository: input.repository,
-          ref: input.ref,
-          gitSha: input.sha,
-          command: ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])],
-          snapshotDurationMs,
-          sandboxCreateDurationMs,
-          workerDurationMs,
-          totalDurationMs: Date.now() - totalStartedAt,
-          exitCode,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    console.log(
-      `[daytona-ci] exit=${exitCode} snapshot_ms=${snapshotDurationMs} sandbox_ms=${sandboxCreateDurationMs} worker_ms=${workerDurationMs} total_ms=${Date.now() - totalStartedAt}`,
-    );
-    return exitCode;
-  } finally {
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
-    await cleanup();
-  }
-}
-
 export function isExactDaytonaCiSandbox(
   sandbox: DaytonaSandbox,
   runId: string,
   runAttempt: string,
 ): boolean {
-  return (
-    sandbox.name === daytonaWorkerName(runId, runAttempt) &&
-    sandbox.labels?.['kortix-ci'] === 'true' &&
-    sandbox.labels?.['kortix-ci-run-id'] === runId &&
-    sandbox.labels?.['kortix-ci-run-attempt'] === runAttempt
-  );
+  return isExactCiSandbox({
+    name: sandbox.name,
+    owner: sandbox.labels?.['kortix-ci'],
+    runId: sandbox.labels?.['kortix-ci-run-id'],
+    runAttempt: sandbox.labels?.['kortix-ci-run-attempt'],
+    expectedName: daytonaWorkerName(runId, runAttempt),
+    expectedOwner: 'true',
+    expectedRunId: runId,
+    expectedRunAttempt: runAttempt,
+  });
 }
 
 export async function cleanupDaytonaCiSandbox(input: {

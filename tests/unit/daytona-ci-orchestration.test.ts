@@ -319,24 +319,34 @@ function builderDeletes(api: FakeDaytona): Call[] {
 
 /** Drive a polling promise that sleeps under the fake clock. */
 async function runWithClock<T>(promise: Promise<T>, ms: number): Promise<T> {
-  const collected: { value?: T; error?: unknown; settled: boolean } = { settled: false };
-  const tracked = promise.then(
+  // Capture the outcome instead of returning a rethrowing derived promise:
+  // a rejection that fires while this function is still awaiting the clock
+  // advance would otherwise have no handler yet and surface as an unhandled
+  // rejection even when the caller awaits this function's own rejection.
+  const collected: { value?: T; error?: unknown; failed: boolean; settled: boolean } = {
+    failed: false,
+    settled: false,
+  };
+  promise.then(
     (value) => {
       collected.value = value;
       collected.settled = true;
-      return value;
     },
     (error: unknown) => {
       collected.error = error;
+      collected.failed = true;
       collected.settled = true;
-      throw error;
     },
   );
   await vi.advanceTimersByTimeAsync(ms);
   if (!collected.settled) {
     await vi.advanceTimersByTimeAsync(ms);
   }
-  return tracked;
+  if (!collected.settled) {
+    throw new Error('the promise did not settle within the advanced clock');
+  }
+  if (collected.failed) throw collected.error;
+  return collected.value as T;
 }
 
 describe('Daytona warm-snapshot orchestration (characterization)', () => {

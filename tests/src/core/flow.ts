@@ -41,9 +41,9 @@ export const KE2E_FLOW_TIMEOUT = 'ke2eFlowTimeout';
 /** Marker set by markSessionReadinessTimeoutRetryable. */
 export const KE2E_RETRY_CLASS = 'ke2eRetryClass';
 
-export type FlowRetryClass = 'assertion' | 'timeout' | 'session-runtime' | 'infra' | 'fatal';
+type FlowRetryClass = 'assertion' | 'timeout' | 'session-runtime' | 'infra' | 'fatal';
 
-export interface AttemptPolicy {
+interface AttemptPolicy {
   /** Budget for ordinary marked-retryable infra errors (network, laundered 503). */
   infra: number;
   /** Budget for a flow-level timeout. */

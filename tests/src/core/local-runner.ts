@@ -14,14 +14,14 @@ import {
 } from './local-stack';
 import { assertTargetSmokeHealth, resolveTargetSmokeConfig } from './target-smoke';
 
-export interface LocalTestLane {
+interface LocalTestLane {
   name: string;
   command: string[];
   cwd?: string;
   env?: Record<string, string>;
 }
 
-export interface LocalTestPlan {
+interface LocalTestPlan {
   mode:
     | 'core'
     | 'flows'
@@ -87,48 +87,43 @@ function assertShardValue(value: string | undefined, flag: string): void {
   }
 }
 
+/**
+ * One row per mode-selecting CLI flag. Everything that branches on "which
+ * mode" derives from this table: the more-than-one-mode guard, the flowArgs
+ * filter, the attestation partial-set check in runLocalTests, and the uniform
+ * single-lane dispatch in buildLocalTestPlan. Only the composed modes (target,
+ * target-full, full, core) keep real branches.
+ */
+const MODE_FLAGS: { flag: string; mode: LocalTestPlan['mode'] }[] = [
+  { flag: '--full', mode: 'full' },
+  { flag: '--flows-only', mode: 'flows' },
+  { flag: '--sdk-only', mode: 'sdk' },
+  { flag: '--db-only', mode: 'db' },
+  { flag: '--browser-only', mode: 'browser' },
+  { flag: '--packages-only', mode: 'packages' },
+  { flag: '--target-smoke', mode: 'target' },
+  { flag: '--target-full', mode: 'target-full' },
+  { flag: '--target-api-full', mode: 'target-api-full' },
+  { flag: '--target-browser-full', mode: 'target-browser-full' },
+  { flag: '--latency', mode: 'latency' },
+];
+
+const MODE_FLAG_SET = new Set(MODE_FLAGS.map((row) => row.flag));
+
 export function buildLocalTestPlan(args: string[]): LocalTestPlan {
-  const full = args.includes('--full');
-  const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
-  const sdkOnly = args.includes('--sdk-only');
-  const dbOnly = args.includes('--db-only');
-  const browserOnly = args.includes('--browser-only');
-  const packagesOnly = args.includes('--packages-only');
-  const targetSmoke = args.includes('--target-smoke');
-  const targetFull = args.includes('--target-full');
-  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs, each
-  // sharded, so `max(api, browser)` replaces a contended sum on one 2-vCPU
-  // runner. `--target-full` still runs both lanes in one process for
-  // deploy-preview (one sandbox origin, one job by construction) and local use.
-  const targetApiFullOnly = args.includes('--target-api-full');
-  const targetBrowserFullOnly = args.includes('--target-browser-full');
-  // §5 of the turn-latency spec (PR #7840): `pnpm test -- --latency --target <origin>`.
-  // Deliberately NOT one of DEPLOYED_TARGET_MODES below — that preflight pins
-  // staging.kortix.com by hostname (resolveTargetSmokeConfig), but this lane's
-  // whole point is to run against an arbitrary deployed origin (dev today,
-  // preview or staging tomorrow). tests/bin/latency-bench.ts owns its own
-  // minimal target validation and health probe instead.
-  const latencyOnly = args.includes('--latency');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
-  const modes = [
-    full,
-    flowsOnly,
-    sdkOnly,
-    dbOnly,
-    browserOnly,
-    packagesOnly,
-    targetSmoke,
-    targetFull,
-    targetApiFullOnly,
-    targetBrowserFullOnly,
-    latencyOnly,
-  ].filter(Boolean).length;
-  if (modes > 1) {
+  // One mode per run. A flow filter (--domain/--id/--tag/--smoke) is the flows
+  // mode without its flag.
+  const selected = MODE_FLAGS.filter((row) => args.includes(row.flag)).map((row) => row.mode);
+  if (hasFlowFilter(args) && !selected.includes('flows')) selected.push('flows');
+  if (selected.length > 1) {
+    const flags = MODE_FLAGS.map((row) => row.flag);
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, or --latency',
+      `choose only one of ${flags.slice(0, -1).join(', ')}, or ${flags[flags.length - 1]}`,
     );
   }
+  const mode = selected.length === 1 ? selected[0] : undefined;
   if (browserShardArgs.length > 1) {
     throw new Error('choose only one --browser-shard value');
   }
@@ -138,30 +133,21 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
   if (browserShardArgs.length === 1) {
     assertShardValue(browserShard, '--browser-shard');
-    if (!browserOnly && !targetBrowserFullOnly) {
+    if (mode !== 'browser' && mode !== 'target-browser-full') {
       throw new Error('--browser-shard requires --browser-only or --target-browser-full');
     }
   }
   const apiShard = apiShardArgs[0]?.slice('--api-shard='.length);
   if (apiShardArgs.length === 1) {
     assertShardValue(apiShard, '--api-shard');
-    if (!targetApiFullOnly) {
+    if (mode !== 'target-api-full') {
       throw new Error('--api-shard requires --target-api-full');
     }
   }
 
   const flowArgs = args.filter(
     (arg) =>
-      arg !== '--full' &&
-      arg !== '--flows-only' &&
-      arg !== '--sdk-only' &&
-      arg !== '--db-only' &&
-      arg !== '--browser-only' &&
-      arg !== '--packages-only' &&
-      arg !== '--target-smoke' &&
-      arg !== '--target-full' &&
-      arg !== '--target-api-full' &&
-      arg !== '--target-browser-full' &&
+      !MODE_FLAG_SET.has(arg) &&
       !arg.startsWith('--browser-shard=') &&
       !arg.startsWith('--api-shard='),
   );
@@ -179,7 +165,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // arguments through as file-path filters.
   const dbSuites: LocalTestLane = {
     name: 'db-suites',
-    command: ['bun', 'tests/bin/db-suites.ts', ...(dbOnly ? flowArgs : [])],
+    command: ['bun', 'tests/bin/db-suites.ts', ...(mode === 'db' ? flowArgs : [])],
   };
   const runnerUnit: LocalTestLane = {
     name: 'flow-runner-unit',
@@ -211,10 +197,20 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // `--target <origin>`, `--iterations N`, etc. reach the binary untouched —
   // it owns its own arg parsing, matching how `flowArgs` treats `--id`/`--domain`.
   const latencyArgs = args.filter((arg) => arg !== '--latency');
+  // §5 of the turn-latency spec (PR #7840): `pnpm test -- --latency --target <origin>`.
+  // Deliberately NOT one of DEPLOYED_TARGET_MODES below — that preflight pins
+  // staging.kortix.com by hostname (resolveTargetSmokeConfig), but this lane's
+  // whole point is to run against an arbitrary deployed origin (dev today,
+  // preview or staging tomorrow). tests/bin/latency-bench.ts owns its own
+  // minimal target validation and health probe instead.
   const latency: LocalTestLane = {
     name: 'latency',
     command: ['bun', 'tests/bin/latency-bench.ts', ...latencyArgs],
   };
+  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs, each
+  // sharded, so `max(api, browser)` replaces a contended sum on one 2-vCPU
+  // runner. `--target-full` still runs both lanes in one process for
+  // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApi: LocalTestLane = {
     name: 'target-api-smoke',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--smoke'],
@@ -270,31 +266,27 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     },
   };
 
-  if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
-  if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
-  if (dbOnly) return { mode: 'db', lanes: [dbSuites], stages: [[dbSuites]] };
-  if (browserOnly) return { mode: 'browser', lanes: [browser], stages: [[browser]] };
-  if (packagesOnly) {
-    return { mode: 'packages', lanes: [packageQuality], stages: [[packageQuality]] };
+  // The eight single-lane modes share one dispatch — the mode's one lane, one
+  // stage. Only the composed modes below keep real branches.
+  const singleLane: Partial<Record<LocalTestPlan['mode'], LocalTestLane>> = {
+    flows,
+    sdk,
+    db: dbSuites,
+    browser,
+    packages: packageQuality,
+    latency,
+    'target-api-full': targetApiFull,
+    'target-browser-full': targetBrowserFull,
+  };
+  if (mode !== undefined) {
+    const lane = singleLane[mode];
+    if (lane) return { mode, lanes: [lane], stages: [[lane]] };
   }
-  if (targetSmoke) {
+  if (mode === 'target') {
     const lanes = [targetApi, targetBrowser];
-    return { mode: 'target', lanes, stages: [lanes] };
+    return { mode, lanes, stages: [lanes] };
   }
-  if (latencyOnly) {
-    return { mode: 'latency', lanes: [latency], stages: [[latency]] };
-  }
-  if (targetApiFullOnly) {
-    return { mode: 'target-api-full', lanes: [targetApiFull], stages: [[targetApiFull]] };
-  }
-  if (targetBrowserFullOnly) {
-    return {
-      mode: 'target-browser-full',
-      lanes: [targetBrowserFull],
-      stages: [[targetBrowserFull]],
-    };
-  }
-  if (targetFull) {
+  if (mode === 'target-full') {
     // Lanes run CONCURRENTLY (one stage). A serialize experiment was tried to
     // fix RUN-*/SESS-* "session runtime ready" timeouts, but that was a
     // MISDIAGNOSIS: the flow lane ALONE (serialized, browser idle) still timed
@@ -308,7 +300,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     const lanes = [targetApiFull, targetBrowserFull];
     return { mode: 'target-full', lanes, stages: [lanes] };
   }
-  if (full) {
+  if (mode === 'full') {
     const fullFlows: LocalTestLane = {
       ...flows,
       command: [...flows.command, '--api-workers', '4'],
@@ -609,9 +601,9 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   }
   console.log(`[test] benchmark ${outputPath}`);
   // A filtered (--id, path filter) or sharded run proves less than its lane
-  // name says, so it never writes an attestation.
-  const MODE_FLAGS = ['--', '--full', '--flows-only', '--sdk-only', '--db-only', '--browser-only', '--packages-only'];
-  const partial = args.some((a) => !MODE_FLAGS.includes(a));
+  // name says, so it never writes an attestation. '--' is a pass-through
+  // separator, not a filter.
+  const partial = args.some((a) => a !== '--' && !MODE_FLAG_SET.has(a));
   if (ATTESTED_MODES.has(plan.mode) && !partial) {
     // Attestation lanes group the runner lanes. A group is written only when
     // every member ran (or was skipped) in this run, or when one failed.

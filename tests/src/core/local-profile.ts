@@ -32,12 +32,12 @@ export interface LocalSupabaseEnvironment {
   S3_PROTOCOL_ACCESS_KEY_SECRET?: string;
 }
 
-export interface LocalProfileInput {
+interface LocalProfileInput {
   worktree?: LocalWorktreeConfig | null;
   supabase: LocalSupabaseEnvironment;
 }
 
-export interface LocalFlowExclusion {
+interface LocalFlowExclusion {
   id: string;
   reason: string;
 }

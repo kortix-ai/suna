@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildCatalog } from "./catalog";
 
-export interface UiDataResult {
+interface UiDataResult {
   flows: number;
   passed: number;
   skipped: number;

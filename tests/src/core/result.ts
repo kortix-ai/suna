@@ -5,7 +5,7 @@
 
 export type Status = "pass" | "fail" | "skip" | "todo";
 
-export interface CapturedRequest {
+interface CapturedRequest {
   method: string;
   url: string;
   /** Redacted at capture time. */
@@ -13,7 +13,7 @@ export interface CapturedRequest {
   body?: string;
 }
 
-export interface CapturedResponse {
+interface CapturedResponse {
   status: number;
   headers: Record<string, string>;
   bodyText: string;
@@ -66,7 +66,7 @@ export interface FlowResult {
   asserted?: boolean;
 }
 
-export interface RunSummary {
+interface RunSummary {
   total: number;
   passed: number;
   failed: number;

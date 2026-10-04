@@ -57,6 +57,8 @@ import { randomUUID } from 'node:crypto';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
 import { sleep } from '../core/poll';
+import { fundDatabaseAccount, openDirectDb } from './database-project';
+import { git } from './local-git';
 
 export interface Db {
   query<R = any>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
@@ -66,11 +68,9 @@ export interface Db {
 export async function openDb(ctx: FlowContext): Promise<Db> {
   const databaseUrl = ctx.env.databaseUrl;
   if (!databaseUrl) throw new Error('AGP fixtures need KE2E_DATABASE_URL (requires: database)');
-  const { Client: PgClient } = await import('pg');
-  const local = /localhost|127\.0\.0\.1/.test(databaseUrl);
-  const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
-  await db.connect();
-  return db as unknown as Db;
+  // The canonical direct-DB open + SSL policy (database-project.ts). The Db
+  // interface's typed query result keeps this one narrowing cast.
+  return (await openDirectDb(databaseUrl)) as unknown as Db;
 }
 
 /** Response of a raw HTTP call made with a session credential. */
@@ -95,7 +95,7 @@ export interface AgentSession {
   onBehalfOfColumn: boolean;
 }
 
-export interface MintOptions {
+interface MintOptions {
   agent: string;
   /** The human who starts the session. `null` = a trigger run with no human. */
   launcher: Principal | null;
@@ -217,15 +217,7 @@ export class AgentPrincipalsWorld {
 
   /** Fund the account so prompts and trigger fires pass billing admission. */
   async fund(): Promise<void> {
-    await this.db.query(
-      `INSERT INTO kortix.credit_accounts
-         (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-       VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
-       ON CONFLICT (account_id) DO UPDATE SET
-         balance = 1000, balance_precise = 1000,
-         non_expiring_credits = 1000, non_expiring_credits_precise = 1000, tier = 'tier_2_20'`,
-      [this.accountId],
-    );
+    await fundDatabaseAccount(this.ctx.env, this.accountId);
   }
 
   /**
@@ -491,27 +483,5 @@ export function assertDenial(
   }
 }
 
-export async function git(
-  args: string[],
-  opts: { cwd?: string; env?: Record<string, string>; expectFailure?: boolean } = {},
-): Promise<string> {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const exec = promisify(execFile);
-  try {
-    const result = await exec('git', args, {
-      cwd: opts.cwd,
-      timeout: 60_000,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env ?? {}) },
-    });
-    if (opts.expectFailure) throw new Error(`git ${args[0]}: expected a rejection, got success`);
-    return result.stdout + result.stderr;
-  } catch (error: any) {
-    if (opts.expectFailure && typeof error?.code === 'number') {
-      return String(error.stdout ?? '') + String(error.stderr ?? '');
-    }
-    if (error instanceof Error && error.message.startsWith('git ')) throw error;
-    const output = String(error?.stdout ?? '') + String(error?.stderr ?? '');
-    throw new Error(`git ${args.join(' ')} failed (${error?.code}): ${output.replace(/Bearer \S+/g, 'Bearer [redacted]')}`);
-  }
-}
+/** The canonical git runner lives in local-git.ts; re-exported for the flows. */
+export { git };

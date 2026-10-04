@@ -40,7 +40,7 @@ describe('local test runner contract', () => {
   });
 
   it('starts a fresh Supabase stack before migrations without waiting on schema health', () => {
-    const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
+    const source = readFileSync(resolve(root, 'tests/src/core/local-supabase.ts'), 'utf8');
 
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
   });

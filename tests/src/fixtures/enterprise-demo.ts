@@ -32,11 +32,16 @@ export function asPlatformAdmin(ctx: FlowContext): Client {
  * Asserts the 200 `{enabled:true}` contract so a silent failure can never leave
  * the caller asserting entitlement-gated routes against a still-locked account.
  */
-export async function enableEnterpriseDemo(ctx: FlowContext, accountId: string): Promise<void> {
-  const r = await asPlatformAdmin(ctx).put(
+export async function enableEnterpriseDemoAs(client: Client, accountId: string): Promise<void> {
+  const r = await client.put(
     '/v1/accounts/:accountId/iam/enterprise-demo',
     { enabled: true },
     { params: { accountId } },
   );
   r.status(200).body().has('$.enabled', true);
+}
+
+/** The flow-level entry: the run-scoped platform admin + the entitlement PUT. */
+export async function enableEnterpriseDemo(ctx: FlowContext, accountId: string): Promise<void> {
+  await enableEnterpriseDemoAs(asPlatformAdmin(ctx), accountId);
 }

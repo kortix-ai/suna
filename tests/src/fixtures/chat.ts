@@ -6,9 +6,13 @@
 import { createHmac } from "node:crypto";
 import { Client as PgClient } from "pg";
 import type { FlowContext } from "../core/types";
+import { directDbSsl } from "./database-project";
 
 export async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
-  const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
+  const db = new PgClient({
+    connectionString: ctx.env.databaseUrl!,
+    ssl: directDbSsl(ctx.env.databaseUrl!),
+  });
   await db.connect();
   try {
     return await run(db);

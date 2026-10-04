@@ -2,7 +2,7 @@ import { buildPreviewGuardInstall } from './preview-guard';
 
 export type SandboxPreviewProvider = 'auto' | 'platinum';
 
-export interface SandboxPreviewInput {
+interface SandboxPreviewInput {
   provider: SandboxPreviewProvider;
   prNumber: number;
   repository: string;
@@ -127,7 +127,7 @@ printf 'ready\n' > "$PHASE"
 `;
 }
 
-export interface PreviewSandboxRecord {
+interface PreviewSandboxRecord {
   id: string;
   /** Present on Platinum records; teardown matches on it as well as ownership. */
   name?: string;
@@ -143,7 +143,7 @@ function shellQuote(value: string): string {
  * self-host updater already pins, so it is present on a warm sandbox and
  * installing the guard never needs a pull.
  */
-export const PREVIEW_DOCKER_CLI_IMAGE =
+const PREVIEW_DOCKER_CLI_IMAGE =
   'docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b';
 
 export function buildPreviewBootstrapScript(input: {
@@ -410,7 +410,7 @@ export function previewSandboxName(prNumber: number): string {
   return `kortix-preview-pr-${prNumber}`;
 }
 
-export interface PreviewSandboxIdentity {
+interface PreviewSandboxIdentity {
   name: string;
   owner: 'kortix-preview' | 'kortix-branch-env';
   autoArchiveDays: number;
