@@ -300,7 +300,7 @@ export function resultFromExistingCommand(row: SessionLifecycleCommandRow): Sess
   const reason = typeof result.reason === 'string' ? result.reason : undefined;
   const error =
     typeof row.lastError === 'string'
-      ? { status: 500, body: { error: row.lastError } }
+      ? { status: 500 as const, body: { error: row.lastError } }
       : undefined;
 
   if (row.status === 'succeeded') {

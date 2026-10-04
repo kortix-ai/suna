@@ -38,7 +38,7 @@ export function requireFeatureFlag(
   c: Context,
   metadata: unknown,
   key: FeatureFlagKey,
-): Response | null {
+) {
   if (resolveFeatureFlag(metadata, key)) return null;
   return c.json(featureDisabledBody(key), 403);
 }

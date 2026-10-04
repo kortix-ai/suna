@@ -55,7 +55,7 @@ mock.module('../channels/teams/session', () => ({
   },
 }));
 
-const { postApprovalCard } = await import('../channels/approval-card-relay');
+const { postApprovalCard, markApprovalCardDecided } = await import('../channels/approval-card-relay');
 const { handleAdaptiveCardAction } = await import('../channels/teams/interactivity');
 const { decideConnectorApproval, loadApprovalRow } = await import('../projects/lib/connector-approval-decision');
 
@@ -206,6 +206,8 @@ test('a decision made in Kortix updates the Teams card', async () => {
     chat_card: { platform: 'teams', session_id: sessionId, activity_id: 'activity-7' },
   });
   const row = await loadApprovalRow(project.project_id, executionId);
+  // The web surface supplies the card relay as the decision's observer (see
+  // routes/approvals.ts); the decision core itself stays out of channels.
   await decideConnectorApproval({
     projectId: project.project_id,
     accountId: project.account_id,
@@ -215,6 +217,14 @@ test('a decision made in Kortix updates the Teams card', async () => {
     actorUserId: MANAGER,
     auditSource: 'human',
     resume: 'queue',
+    updateStaleCard: () =>
+      markApprovalCardDecided({
+        projectId: project.project_id,
+        row: row!,
+        decision: 'approve',
+        note: '',
+        actorUserId: MANAGER,
+      }),
   });
   await Bun.sleep(100);
   expect(cardUpdates).toHaveLength(1);

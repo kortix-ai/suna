@@ -1,0 +1,16 @@
+{
+  "source_hash": "55b03e05e9b16349ab3f7bc741e5c623f0e377635a5e9c086db8861c865fa8d3",
+  "diff_files": [
+    "apps/cli/src/__tests__/sessions-parity.test.ts",
+    "apps/cli/src/commands/sessions.ts"
+  ],
+  "diff_hash": "d0902a6de8a9a9cd953811560e3ef9a48630a7597f82b167f86b739e9d10e376",
+  "head": "6588db45985c3b7d21aaa3756ffd7803c79ae365",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T20:45:07.391Z"
+}

@@ -1,4 +1,4 @@
-import { relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
+import { postTurnStream, relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
@@ -164,32 +164,27 @@ export async function relayTurnEndToApi(
   // A credential the API has refused, repeatedly and without contradiction,
   if (sessionTokenPresumedDead()) return
 
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
   // This is the ONLY signal that finalizes a turn the agent ended without
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          session_id: sessionId,
-          kind: 'end',
-          status: effectiveStatus,
-          opencode_session_id: opencodeSessionId,
-          turn_message_id: turn.parentMessageId ?? undefined,
-          ...(error
-            ? {
-                error_name: error.name,
-                error_message: error.message,
-                error_status: error.statusCode,
-                error_retryable: error.isRetryable,
-                error_provider: error.providerID,
-              }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(15_000),
+      // No `error_code`: Slack and Teams classify an OpenCode error from its
+      // name, status and message text, and a code would replace that heuristic.
+      const res = await postTurnStream({
+        kind: 'end',
+        status: effectiveStatus,
+        runtime_session_id: opencodeSessionId,
+        turn_message_id: turn.parentMessageId ?? undefined,
+        ...(error
+          ? {
+              error_name: error.name,
+              error_message: error.message,
+              error_status: error.statusCode,
+              error_retryable: error.isRetryable,
+              error_provider: error.providerID,
+            }
+          : {}),
       })
+      if (!res) return
       if (res.ok) {
         const data = (await res.json().catch(() => null)) as {
           ok?: boolean
@@ -243,7 +238,7 @@ export async function relayTurnEndToApi(
     }
     if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
   }
-  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId: ctx.sessionId, status: effectiveStatus })
 }
 
 /** Settle an orphan by its own message identity even when OpenCode never stamped completion. */

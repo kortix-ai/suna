@@ -4,7 +4,7 @@ import { logger } from '@/lib/log/logger'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper, materializeRepo, materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/lib/git/git'
 import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
-import { waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
+import { bakedCatalogPath, waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
@@ -302,7 +302,7 @@ export async function runWarmSeedMode(
       const llmApiKey = process.env.KORTIX_TOKEN
       if (llmBaseUrl && llmApiKey) {
         const currentCatalogFile =
-          process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json'
+          process.env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath()
         const targetCatalogFile = `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`
         const refresh = await refreshGatewayCatalogFile({
           currentCatalogFile,

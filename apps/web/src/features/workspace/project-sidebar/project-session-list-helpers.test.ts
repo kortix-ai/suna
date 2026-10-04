@@ -115,6 +115,31 @@ describe('shouldPollProjectSessions', () => {
     expect(shouldPollProjectSessions([makeSession({ status: 'provisioning' })])).toBe(true);
   });
 
+  // A warm session (`metadata.warm`, pre-created and never prompted) reports
+  // `provisioning` for as long as its idle box lives (KRTX-1466). That status
+  // is not a transition in flight — the next real change is the marker drop at
+  // the first accepted turn, which happens while the user is in the session
+  // and the open-session interval covers it — so a warm row must not hold the
+  // 5s provisioning poll for up to the warm grant (~60 min).
+  test('does not poll for a warm row serialized as provisioning', () => {
+    expect(
+      shouldPollProjectSessions([
+        makeSession({ status: 'provisioning', metadata: { warm: true } }),
+      ]),
+    ).toBe(false);
+  });
+
+  test('still polls a warm row that is genuinely booting alongside a live row', () => {
+    // The warm skip is per row: a live provisioning row in the same list keeps
+    // the fast poll alive.
+    expect(
+      shouldPollProjectSessions([
+        makeSession({ status: 'provisioning', metadata: { warm: true } }),
+        makeSession({ session_id: 's2', status: 'provisioning' }),
+      ]),
+    ).toBe(true);
+  });
+
   test('does not poll when every session has settled', () => {
     const sessions = [
       makeSession({ status: 'running' }),

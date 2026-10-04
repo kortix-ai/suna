@@ -1,45 +1,20 @@
 /**
- * The shim's BLOCKED_REQUEST_HEADERS is a hand-copied mirror of the broker's
- * list (apps/api/src/secrets/http-broker.ts) — the daemon must not import
- * apps/api. A copy can drift, and one already did: `accept-encoding` was added
- * to the broker's list while the shim still SENT it, so every relay 400'd and
- * every deployed daemon broke (2026-08-19, spec §4 "old daemons keep working").
- *
- * This file reads the broker's real list off disk and asserts the two agree —
- * so a future edit to either side that breaks the contract fails here instead
- * of in a guest.
+ * The shim and the broker share one BLOCKED_REQUEST_HEADERS list
+ * (`@kortix/api-contract/secret-relay`). A hand copy drifted once:
+ * `accept-encoding` was added to the broker's list while the shim still SENT
+ * it, so every relay 400'd and every deployed daemon broke (2026-08-19).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
-import { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
+import { BLOCKED_REQUEST_HEADERS } from '@kortix/api-contract/secret-relay'
 
-function brokerBlockedHeaders(): Set<string> {
-  const src = readFileSync(
-    join(import.meta.dir, '../../../../api/src/secrets/http-broker.ts'),
-    'utf8',
-  )
-  const block = src.match(/BLOCKED_REQUEST_HEADERS = new Set\(\[([\s\S]*?)\]\)/)
-  const body = block?.[1]
-  if (!body) throw new Error('could not find BLOCKED_REQUEST_HEADERS in http-broker.ts')
-  const names: string[] = []
-  for (const m of body.matchAll(/'([^']+)'/g)) if (m[1]) names.push(m[1])
-  return new Set(names)
-}
-
-describe('shim/broker blocked-header agreement', () => {
-  test('the two lists are identical', () => {
-    const broker = brokerBlockedHeaders()
-    expect(broker.size).toBeGreaterThan(5)
-    expect([...BLOCKED_REQUEST_HEADERS].sort()).toEqual([...broker].sort())
-  })
-
-  // The two lists could agree and still both be wrong. `accept-encoding` must
-  // pass, because the shim forces `accept-encoding: identity` on every relay
-  // and the broker drops+forces it server-side. `authorization` and `cookie`
-  // must pass, because they are the substitution surfaces
-  // (`Authorization: Bearer <handle>`, `Cookie: …=<handle>`).
-  test.each(['accept-encoding', 'authorization', 'cookie'])('the lists do not block %s', (header) => {
+describe('the shared blocked-header list', () => {
+  // `accept-encoding` must pass, because the shim forces
+  // `accept-encoding: identity` on every relay and the broker drops+forces it
+  // server-side. `authorization` and `cookie` must pass, because they are the
+  // substitution surfaces (`Authorization: Bearer <handle>`, `Cookie: …=<handle>`).
+  test.each(['accept-encoding', 'authorization', 'cookie'])('does not block %s', (header) => {
     expect(BLOCKED_REQUEST_HEADERS.has(header)).toBe(false)
   })
 })
@@ -51,18 +26,18 @@ describe('shim/broker blocked-header agreement', () => {
  * the build shape that makes the import possible inside the guest binary.
  */
 describe('the shared relay contract fits in the sandbox binary', () => {
-  test('the shared module is dependency-free', () => {
-    // `bun build --compile` must pull THIS module and not `index.ts`, not zod,
-    // not anything node-only. A stray import here would drag the whole contract
-    // package into the guest binary. CI does not rebuild the daemon when only
-    // `packages/api-contract/**` changes, so this is the guard for that edit.
-    const codec = readFileSync(
-      join(import.meta.dir, '../../../../../packages/api-contract/src/secret-relay.ts'),
-      'utf8',
-    )
-    const imports = [...codec.matchAll(/^\s*import .*/gm)].map((m) => m[0])
-    expect(imports).toEqual([])
-  })
+  // `bun build --compile` must pull THESE modules and not `index.ts`, not zod,
+  // not anything node-only. A stray import here would drag the whole contract
+  // package into the guest binary. CI does not rebuild the daemon when only
+  // `packages/api-contract/**` changes, so this is the guard for that edit.
+  test.each(['secret-relay.ts', 'egress-shim-rules.ts', 'fallback-models.ts', 'sandbox-layout.ts'])(
+    'the shared module %s is dependency-free',
+    (file) => {
+      const source = readFileSync(join(import.meta.dir, '../../../../../packages/api-contract/src', file), 'utf8')
+      const imports = [...source.matchAll(/^\s*import .*/gm)].map((m) => m[0])
+      expect(imports).toEqual([])
+    },
+  )
 
   // The daemon builds STANDALONE: `apps/sandbox/Dockerfile` copies only this
   // app's package.json + bun.lock and reaches the contract through the tsconfig
