@@ -1,18 +1,16 @@
 {
-  "source_hash": "6c1c04079fdb4c9fd9e6b4d1152458323c22d5b96b80e446d2b84b29e74e90f9",
+  "source_hash": "e6d569a5acaba73483109d4d778d4660ead5f279a96e2742979ff20698e972b8",
   "diff_files": [
-    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
     "apps/web/src/features/workspace/new/new-workspace-page.name-input.test.tsx",
-    "apps/web/src/features/workspace/new/new-workspace-page.tsx",
-    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts"
+    "apps/web/src/features/workspace/new/new-workspace-page.tsx"
   ],
-  "diff_hash": "7ca644b0911b0ef124535c55b4c59c6c8e34ad3c7c1b7aaee22b9908c70760f9",
-  "head": "4a78a6a0ba20c3956a95ffbb51525fbcf02537fe",
+  "diff_hash": "0770f6053479e9eee5e19d11dbc73f3b17a18bcc79cacc198060617789c3cb29",
+  "head": "e75446f2a0ecc1c0553cfbb721e9914718ea299e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T03:02:08.857Z"
+  "at": "2026-10-04T03:20:50.001Z"
 }
