@@ -35,8 +35,11 @@ import { mayResolveApproval } from '../projects/lib/approval-authority';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
+import type { AppEnv } from '../types';
 
-const approvalLinksApp = new Hono();
+// AppEnv: every route here is authenticated and the project gate reads the
+// auth variables the middleware sets (authType, accountId, ...).
+const approvalLinksApp = new Hono<AppEnv>();
 
 /** GET /v1/approval-links/:token — what am I being asked to approve? */
 approvalLinksApp.get('/:token', async (c) => {

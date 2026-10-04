@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
 import { HTTPException } from 'hono/http-exception';
 import { accountMemberships, projects } from '@kortix/db';
 // Straight from the engine + the actor builder, not the barrel: the barrel is
@@ -153,7 +154,7 @@ export async function ensureOrgMembership(
   return 'member';
 }
 
-export async function resolveProjectAccount(c: Context, body?: Record<string, unknown>) {
+export async function resolveProjectAccount(c: Context<AppEnv>, body?: Record<string, unknown>) {
   const userId = c.get('userId') as string;
   const requested = normalizeString(
     c.req.query('account_id') ??
@@ -186,7 +187,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   if (!membership) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
-  (c as any).set('accountId', membership.accountId);
+  c.set('accountId', membership.accountId);
   setContextField('accountId', membership.accountId);
 
   return {
@@ -384,7 +385,7 @@ export function deriveEffectiveRole(input: {
  * account-membership 403.
  */
 async function resolveProjectGate(
-  c: Context,
+  c: Context<AppEnv>,
   userId: string,
   projectId: string,
   accountId: string,
@@ -417,7 +418,7 @@ async function resolveProjectGate(
   // iam_policies, already evaluated by the engine `verdict` above. Don't apply
   // the human membership hard-gate to it (that would 403 every SA before its
   // standing role is ever consulted); fall through to the verdict check.
-  const isServiceAccount = ((c as unknown as { get(k: string): unknown }).get('authType') as string | undefined) === 'service_account';
+  const isServiceAccount = c.get('authType') === 'service_account';
 
   // Platform-admin READ-ONLY bypass: an explicit `x-kortix-admin-bypass`
   // header from a real `platform_user_roles` admin/super_admin lets support
@@ -511,7 +512,7 @@ async function denyProjectAccess(input: {
   throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
 }
 
-export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
+export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   if (!isUuid(projectId)) return null;
   const [row] = await db
@@ -558,7 +559,7 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
       : false,
     callerRole: callerRole as ProjectRole,
   });
-  (c as any).set('accountId', row.accountId);
+  c.set('accountId', row.accountId);
 
   return {
     row,

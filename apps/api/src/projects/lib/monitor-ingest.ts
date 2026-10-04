@@ -9,6 +9,7 @@
 import { projectMonitorBoxes, projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { MONITOR_LIVE_BOX_STATUSES } from './monitor-box-core';
 import {
   MONITOR_BURST_WINDOW_MS,
   MONITOR_RATE_WINDOW_MS,
@@ -17,8 +18,7 @@ import {
   nextMonitorSuppression,
 } from './monitor-events';
 
-/** Box states that may ingest. A stopped/error/deleted box has no live runner. */
-const LIVE_BOX_STATUSES = ['provisioning', 'starting', 'running', 'stopping'] as const;
+/** Box states that may ingest — the live statuses `monitor-box-core.ts` owns. */
 
 export interface MonitorBoxRow {
   boxId: string;
@@ -57,7 +57,7 @@ export async function loadMonitorBoxForToken(input: {
         eq(projectMonitorBoxes.boxId, input.sandboxId),
         eq(projectMonitorBoxes.projectId, input.projectId),
         eq(projectMonitorBoxes.accountId, input.accountId),
-        inArray(projectMonitorBoxes.status, [...LIVE_BOX_STATUSES]),
+        inArray(projectMonitorBoxes.status, [...MONITOR_LIVE_BOX_STATUSES]),
       ),
     )
     .limit(1);

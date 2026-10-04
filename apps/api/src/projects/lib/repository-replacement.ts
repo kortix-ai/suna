@@ -1,11 +1,11 @@
-import { changeRequests, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
-import * as iamAuthorize from '../../iam/authorize';
+import { changeRequests, projectGitConnections, projectGitCredentials, projectSessions, projects } from '@kortix/db';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGitHubRepoUrl, verifyGitHubInstallationAdmin, type GitHubRepo } from '../github';
 import { invalidateProjectMirror } from '../git';
-import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
+import { encryptProjectSecret } from '../secrets';
+import { copySharedSecretsIntoProject, type SharedSecretCopy } from './repository-secret-copy';
 import {
   buildProjectGitConnectionValues,
   buildProjectGitMetadata,
@@ -16,9 +16,6 @@ import { resolveGitHubImportWithPat } from './git';
 export class RepositoryChangedError extends Error {}
 export class RepositoryManifestMissingError extends Error {}
 export class RepositoryValidationError extends Error {}
-export class RepositorySecretCopyError extends Error {}
-
-type SharedSecretCopy = { sourceProjectId: string; identifiers: string[] };
 
 /** Verify the new repository before replacing the project and credential together. */
 export async function replaceProjectRepository(input: {
@@ -123,51 +120,16 @@ export async function persistProjectRepositoryReplacement(input: {
       )).limit(1);
     if (openChangeRequest) throw new RepositoryChangedError('Close or merge open change requests before changing the repository');
 
+    // The optional secret-copy sub-job runs inside this same transaction: a
+    // refusal throws and aborts the whole swap (repository-secret-copy.ts).
     if (input.copySharedSecrets) {
-      const { sourceProjectId, identifiers } = input.copySharedSecrets;
-      const unique = [...new Set(identifiers)];
-      if (sourceProjectId === input.projectId || unique.length !== identifiers.length || unique.length === 0) {
-        throw new RepositorySecretCopyError('Select distinct shared secret identifiers from another project');
-      }
-      const [source] = await tx.select({ accountId: projects.accountId, status: projects.status })
-        .from(projects).where(eq(projects.projectId, sourceProjectId)).limit(1);
-      if (!source || source.accountId !== input.accountId || source.status !== 'active') {
-        throw new RepositorySecretCopyError('Secret source project is not available in this account');
-      }
-      const sourceRows = await tx.select().from(projectSecrets).where(and(
-        eq(projectSecrets.projectId, sourceProjectId),
-        inArray(projectSecrets.identifier, unique),
-        isNull(projectSecrets.ownerUserId),
-      ));
-      const sourceByIdentifier = new Map(sourceRows.map((row) => [row.identifier, row]));
-      const existing = await tx.select({ identifier: projectSecrets.identifier }).from(projectSecrets).where(and(
-        eq(projectSecrets.projectId, input.projectId),
-        inArray(projectSecrets.identifier, unique),
-        isNull(projectSecrets.ownerUserId),
-      ));
-      if (existing.length) throw new RepositorySecretCopyError(`Target already has ${existing[0]!.identifier}`);
-      // A value narrowed to an audience stays in its project: a copy would be
-      // open to everyone in the target (secret-audience.ts).
-      const narrowed = await iamAuthorize.loadObjectGrants(sourceProjectId, 'secret');
-      for (const identifier of unique) {
-        const row = sourceByIdentifier.get(identifier);
-        if (!row || !row.active) throw new RepositorySecretCopyError(`Source has no active shared ${identifier}`);
-        if (narrowed.has(row.secretId)) {
-          throw new RepositorySecretCopyError(`${identifier} is shared with specific people and cannot be copied`);
-        }
-        if (row.scope !== 'runtime' || row.strategy !== 'runtime' || identifier.toUpperCase().startsWith('KORTIX_') || identifier.toUpperCase() === 'CODEX_AUTH_JSON') {
-          throw new RepositorySecretCopyError(`${identifier} cannot be copied with a repository replacement`);
-        }
-      }
-      await tx.insert(projectSecrets).values(unique.map((identifier) => {
-        const row = sourceByIdentifier.get(identifier)!;
-        return {
-          projectId: input.projectId, identifier, name: row.name,
-          valueEnc: encryptProjectSecret(input.projectId, decryptProjectSecret(sourceProjectId, row.valueEnc)),
-          scope: row.scope, strategy: row.strategy, consumer: row.consumer,
-          description: row.description, createdBy: input.actorId, updatedAt: now,
-        };
-      }));
+      await copySharedSecretsIntoProject(tx, {
+        ...input.copySharedSecrets,
+        targetProjectId: input.projectId,
+        accountId: input.accountId,
+        actorId: input.actorId,
+        now,
+      });
     }
 
     let credentialId: string | null = null;
