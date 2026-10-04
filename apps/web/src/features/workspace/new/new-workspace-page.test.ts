@@ -40,16 +40,11 @@ function elementText(src: string, tag: string, from: number) {
   throw new Error(`unbalanced <${tag}> from ${from}`);
 }
 
-/**
- * KRTX-1424: the browser used to clamp the field at 120 characters, so the
- * documented too-long error was unreachable for typed input. See
- * `workspace-name.ts` for the surfacing decision.
- */
+/** KRTX-1424: the browser used to clamp the field at 120; the surfacing decision lives in `workspace-name.ts`. */
 describe('/new: the too-long-name message fires for typed input (KRTX-1424)', () => {
   test('the name field does not clamp input at the limit — the validator, not the browser, rejects it', () => {
     expect(code).not.toContain('maxLength');
-    // Paired presence check: the field that must NOT clamp is still the one
-    // wired to the validator through live form state.
+    // Paired presence check: an absent attribute alone passes vacuously.
     expect(code).toContain('value={state.name}');
   });
 

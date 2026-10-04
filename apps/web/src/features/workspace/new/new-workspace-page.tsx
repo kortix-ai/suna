@@ -202,8 +202,7 @@ export function NewWorkspacePage() {
 
   // Only surface a name error after the field has been left once. Validating
   // on the first keystroke would tell the user "Name is required" while they
-  // are still typing the name. What may surface now — the over-limit error
-  // while typing, the rest after a blur — is `workspaceNameError`'s decision.
+  // are still typing the name; what may surface now is `workspaceNameError`'s call.
   const nameError = useMemo(() => {
     const error = workspaceNameError(state.name, touched);
     if (!error) return null;

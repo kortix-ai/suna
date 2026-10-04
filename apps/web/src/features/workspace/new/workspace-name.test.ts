@@ -52,11 +52,11 @@ describe('validateWorkspaceName', () => {
 
 /** The page's whole "which error may surface now" decision — see the helper's docstring. */
 describe('workspaceNameError — which name error /new shows right now', () => {
+  const tooLong = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 1);
+  const tooLongError = `Name must be ${WORKSPACE_NAME_MAX_LENGTH} characters or fewer`;
+
   test('shows the over-limit error while the user is still typing, before any blur', () => {
-    const tooLong = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 1);
-    expect(workspaceNameError(tooLong, false)).toBe(
-      `Name must be ${WORKSPACE_NAME_MAX_LENGTH} characters or fewer`,
-    );
+    expect(workspaceNameError(tooLong, false)).toBe(tooLongError);
   });
 
   test('the required and charset errors still wait for the first blur', () => {
@@ -70,10 +70,7 @@ describe('workspaceNameError — which name error /new shows right now', () => {
     expect(workspaceNameError('café', true)).toBe(
       'Use only letters, numbers, spaces, hyphens, underscores or dots',
     );
-    const tooLong = 'a'.repeat(WORKSPACE_NAME_MAX_LENGTH + 1);
-    expect(workspaceNameError(tooLong, true)).toBe(
-      `Name must be ${WORKSPACE_NAME_MAX_LENGTH} characters or fewer`,
-    );
+    expect(workspaceNameError(tooLong, true)).toBe(tooLongError);
   });
 
   test('a valid name surfaces nothing, touched or not', () => {
