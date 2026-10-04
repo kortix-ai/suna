@@ -86,7 +86,7 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
   }
 }
 
-export async function buildSessionSandboxEnvVars(input: {
+type SessionSandboxEnvInput = {
   accountId: string;
   projectId: string;
   sessionId: string;
@@ -133,15 +133,15 @@ export async function buildSessionSandboxEnvVars(input: {
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
   repositoryAccess?: boolean;
-}): Promise<Record<string, string>> {
-  // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
-  // minted by provisionSessionSandbox() and injected at the provider boundary,
-  // then reused by the daemon for both API calls and proxy HMAC validation.
-  // Resolved AS the session's OWNER (createdBy, read below). This keeps personal
-  // override selection consistent for server consumers without delivering the
-  // value to the sandbox. Every OTHER secret is project-wide (secret
-  // sharing was retired — authorization is centralized on the running agent's
-  // `secrets` grant, applied below by identifier).
+};
+
+/** Compile the session's agent config and resolve its secret grant (one manifest read). */
+async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise<{
+  agentGrantEnv: string[] | 'all' | undefined;
+  compiledAgentConfig: string | null;
+  manifestHarness: 'opencode' | 'pi' | null;
+  manifestPackages: unknown[];
+}> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
@@ -165,7 +165,6 @@ export async function buildSessionSandboxEnvVars(input: {
   // BEFORE this builder runs (createSession), and never reaches it.
   let manifestHarness: 'opencode' | 'pi' | null = null;
   let manifestPackages: unknown[] = [];
-  let harness: 'opencode' | 'pi' = 'opencode';
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -213,32 +212,116 @@ export async function buildSessionSandboxEnvVars(input: {
       sessionAgent: input.agentName,
     });
   }
-  {
-    // One indexed read for the flag: the callers hold the project row in
-    // different shapes (or not at all on the reload paths), and the flag must
-    // apply on every provisioning path, not only create.
-    const [projectRow] = await db
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, input.projectId))
-      .limit(1);
-    // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
-    const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
-    if (input.platformMetaAgent) {
-      // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
-      // whenever the LLM gateway is on — pi has no other model path, so a
-      // gateway-off project falls back to OpenCode. pi reads the SAME
-      // KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
-      // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
-      harness = llmGateway ? 'pi' : 'opencode';
-    } else {
-      harness = selectSessionHarness({
-        piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
-        runtime: manifestHarness,
-        llmGateway,
-      });
-    }
+  return { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages };
+}
+
+/** The harness the daemon boots, from the project flags and the manifest runtime. */
+async function resolveSessionHarness(
+  input: SessionSandboxEnvInput,
+  manifestHarness: 'opencode' | 'pi' | null,
+): Promise<'opencode' | 'pi'> {
+  // One indexed read for the flag: the callers hold the project row in
+  // different shapes (or not at all on the reload paths), and the flag must
+  // apply on every provisioning path, not only create.
+  const [projectRow] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, input.projectId))
+    .limit(1);
+  // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
+  const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
+  if (input.platformMetaAgent) {
+    // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
+    // whenever the LLM gateway is on — pi has no other model path, so a
+    // gateway-off project falls back to OpenCode. pi reads the SAME
+    // KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
+    // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
+    return llmGateway ? 'pi' : 'opencode';
+  } else {
+    return selectSessionHarness({
+      piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
+      runtime: manifestHarness,
+      llmGateway,
+    });
   }
+}
+
+/** Read the session's runtime secrets and drop the ones the sandbox must never hold. */
+async function loadSessionRuntimeSecrets(
+  input: SessionSandboxEnvInput,
+  secretsPrincipalUserId: Awaited<ReturnType<typeof resolveSessionPersonalOwner>>,
+  grantEnvForSession: ReturnType<typeof intersectSecretGrants>,
+  agentGrantEnv: string[] | 'all' | undefined,
+): Promise<{
+  env: Record<string, string>;
+  names: string[];
+  revision: string;
+  capabilitiesJson: string;
+}> {
+  let runtimeSecrets: {
+    env: Record<string, string>;
+    names: string[];
+    revision: string;
+    capabilitiesJson: string;
+  };
+  try {
+    runtimeSecrets = await listProjectSecretsSnapshotForUser(
+      input.projectId,
+      secretsPrincipalUserId,
+      grantEnvForSession,
+      // Non-`runtime` rows are delivered as a per-session handle, so the
+      // chokepoint needs the session this env is being built FOR. Without it it
+      // withholds them rather than falling back to plaintext.
+      input.sessionId,
+    );
+  } catch (err) {
+    if (err instanceof AmbiguousSecretGrantError) {
+      console.error(
+        `[session ${input.sessionId}] agent '${input.agentName}' secrets grant is ambiguous: ${err.message}`,
+      );
+    }
+    throw err;
+  }
+  if (Array.isArray(agentGrantEnv) && agentGrantEnv.length > 0) {
+    console.log(
+      `[session ${input.sessionId}] agent '${input.agentName}' env-scoped to ${agentGrantEnv.length} granted identifier(s)`,
+    );
+  }
+  // The Slack signing secret only verifies inbound webhooks (an apps/api job).
+  // The in-sandbox agent never needs it — keep it out of the sandbox env.
+  delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
+  // The Slack BOT TOKEN no longer belongs in the sandbox either: the `slack`
+  // shim now runs every Web API call through the Connector (server-side token)
+  // and its file ops through the server-side file proxy. Keeping it out means a
+  // compromised/prompt-injected agent can't exfiltrate the raw bot token — only
+  // make scoped, audited, policy-gated channel calls. (KORTIX-206 Phase C2.)
+  delete runtimeSecrets.env.SLACK_BOT_TOKEN;
+  // Guardrail: drop any project secret whose name would clobber the sandbox's
+  // own runtime env (PORT/PATH/KORTIX_*/…). Without this, one stray secret
+  // silently breaks every session — and `kortix env push` of a server .env
+  // makes that a one-command footgun.
+  const droppedReserved = Object.keys(runtimeSecrets.env).filter(isReservedSandboxEnvName);
+  for (const name of droppedReserved) delete runtimeSecrets.env[name];
+  if (droppedReserved.length > 0) {
+    console.warn(
+      `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
+    );
+  }
+  return runtimeSecrets;
+}
+
+export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput): Promise<Record<string, string>> {
+  // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
+  // minted by provisionSessionSandbox() and injected at the provider boundary,
+  // then reused by the daemon for both API calls and proxy HMAC validation.
+  // Resolved AS the session's OWNER (createdBy, read below). This keeps personal
+  // override selection consistent for server consumers without delivering the
+  // value to the sandbox. Every OTHER secret is project-wide (secret
+  // sharing was retired — authorization is centralized on the running agent's
+  // `secrets` grant, applied below by identifier).
+  const { agentGrantEnv, compiledAgentConfig, manifestHarness, manifestPackages } =
+    await resolveSessionAgentConfig(input);
+  const harness = await resolveSessionHarness(input, manifestHarness);
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
   const piPackagesBundle =
     harness === 'pi' && manifestPackages.length > 0
@@ -307,55 +390,12 @@ export async function buildSessionSandboxEnvVars(input: {
     });
   }
 
-  let runtimeSecrets: {
-    env: Record<string, string>;
-    names: string[];
-    revision: string;
-    capabilitiesJson: string;
-  };
-  try {
-    runtimeSecrets = await listProjectSecretsSnapshotForUser(
-      input.projectId,
-      secretsPrincipalUserId,
-      grantEnvForSession,
-      // Non-`runtime` rows are delivered as a per-session handle, so the
-      // chokepoint needs the session this env is being built FOR. Without it it
-      // withholds them rather than falling back to plaintext.
-      input.sessionId,
-    );
-  } catch (err) {
-    if (err instanceof AmbiguousSecretGrantError) {
-      console.error(
-        `[session ${input.sessionId}] agent '${input.agentName}' secrets grant is ambiguous: ${err.message}`,
-      );
-    }
-    throw err;
-  }
-  if (Array.isArray(agentGrantEnv) && agentGrantEnv.length > 0) {
-    console.log(
-      `[session ${input.sessionId}] agent '${input.agentName}' env-scoped to ${agentGrantEnv.length} granted identifier(s)`,
-    );
-  }
-  // The Slack signing secret only verifies inbound webhooks (an apps/api job).
-  // The in-sandbox agent never needs it — keep it out of the sandbox env.
-  delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
-  // The Slack BOT TOKEN no longer belongs in the sandbox either: the `slack`
-  // shim now runs every Web API call through the Connector (server-side token)
-  // and its file ops through the server-side file proxy. Keeping it out means a
-  // compromised/prompt-injected agent can't exfiltrate the raw bot token — only
-  // make scoped, audited, policy-gated channel calls. (KORTIX-206 Phase C2.)
-  delete runtimeSecrets.env.SLACK_BOT_TOKEN;
-  // Guardrail: drop any project secret whose name would clobber the sandbox's
-  // own runtime env (PORT/PATH/KORTIX_*/…). Without this, one stray secret
-  // silently breaks every session — and `kortix env push` of a server .env
-  // makes that a one-command footgun.
-  const droppedReserved = Object.keys(runtimeSecrets.env).filter(isReservedSandboxEnvName);
-  for (const name of droppedReserved) delete runtimeSecrets.env[name];
-  if (droppedReserved.length > 0) {
-    console.warn(
-      `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
-    );
-  }
+  const runtimeSecrets = await loadSessionRuntimeSecrets(
+    input,
+    secretsPrincipalUserId,
+    grantEnvForSession,
+    agentGrantEnv,
+  );
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /
