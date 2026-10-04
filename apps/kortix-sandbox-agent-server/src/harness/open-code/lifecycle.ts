@@ -834,7 +834,7 @@ const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 /** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
  *  run on a box whose image already carries the real catalog, where the image
  *  file would otherwise answer for a missing one. */
-const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
+export const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
  *  Returns null when missing, unreadable, or empty so callers can fall through. */
