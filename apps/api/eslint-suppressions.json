@@ -745,15 +745,7 @@
       "count": 2
     }
   },
-  "src/connectors/connector-list.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    }
-  },
   "src/connectors/db-deps.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 2
     }
@@ -775,11 +767,6 @@
   },
   "src/connectors/pipedream-index.ts": {
     "no-console": {
-      "count": 1
-    }
-  },
-  "src/connectors/router.ts": {
-    "no-restricted-imports": {
       "count": 1
     }
   },

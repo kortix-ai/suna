@@ -145,7 +145,7 @@ import type {
   ConnectorPrincipal,
   ConnectorRouterDeps,
   ListCatalogOptions,
-} from './router';
+} from './router-contract';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { resolveShareSubject } from './share';
 import {
