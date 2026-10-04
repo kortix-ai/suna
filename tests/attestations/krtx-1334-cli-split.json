@@ -1,5 +1,5 @@
 {
-  "source_hash": "ebe1025faa177363b1610794d20dd8a7a636d6753e8ba6fa3368744ff881b500",
+  "source_hash": "44a014047e2eb2ca8757e18855aa1808bdd05ed64d3325efa2a8807d42b42815",
   "diff_files": [
     "apps/cli/src/__tests__/access-parity.test.ts",
     "apps/cli/src/__tests__/agents-command.test.ts",
@@ -83,16 +83,17 @@
     "apps/cli/src/git-ops.ts",
     "apps/cli/src/prompts.ts",
     "apps/cli/src/style.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "packages/sdk/src/core/models/composer-models.test.ts",
     "packages/sdk/src/core/rest/projects-client/model-defaults.ts"
   ],
-  "diff_hash": "3b457ab928f8bd1c54a2fbc8cdbfe0383a415fe2b35a3c7d817a40a22698fb47",
-  "head": "bb5b1b5b5340cbefa5ceabb49c8eb84148ae3e61",
-  "passed": false,
+  "diff_hash": "3fd0dab161b1864ddc643af7d0f81b2e4ec997cebf3b722f072659eb2416de21",
+  "head": "8b1b264f8d856a387d66e47b785e60fb17f13c57",
+  "passed": true,
   "lanes": {
-    "db-suites": "fail",
     "core": "pass",
-    "packages": "fail"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T04:33:41.699Z"
+  "at": "2026-10-04T05:16:18.939Z"
 }
