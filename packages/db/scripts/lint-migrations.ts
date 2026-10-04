@@ -445,6 +445,39 @@ function loadConcurrentLockTimeoutGrandfatherSet(): Set<string> {
   }
 }
 
+/**
+ * A migration this checkout adds must sort after every migration already on
+ * main. node-pg-migrate's order check halts on an older-dated pending file, and
+ * Deploy Dev applies migrations first, so one such file blocks every dev deploy
+ * (incident #8846). db-migrations.yml checks this only after the merge; this is
+ * the same rule in the local lint, the pre-merge gate.
+ */
+export function lintMigrationSequence(local: string[], merged: string[]): string[] {
+  const mergedSet = new Set(merged);
+  const mergedMax = merged.map((f) => TS_RE.exec(f)?.[1]).filter(Boolean).sort().at(-1);
+  if (!mergedMax) return [];
+  return local
+    .filter((f) => !mergedSet.has(f))
+    .filter((f) => (TS_RE.exec(f)?.[1] ?? '') <= mergedMax)
+    .map(
+      (f) =>
+        `${f}: out of sequence — its timestamp is not after main's newest migration (${mergedMax}). Re-date it (git mv to a current timestamp) so it sorts last; node-pg-migrate's order check would halt every dev deploy.`,
+    );
+}
+
+/** Migration filenames on origin/main, or null when that ref is not available. */
+function mergedMigrationFiles(): string[] | null {
+  const git = Bun.spawnSync(['git', 'ls-tree', '--name-only', 'origin/main', '--', 'packages/db/migrations/'], {
+    cwd: join(import.meta.dir, '..', '..', '..'),
+  });
+  if (git.exitCode !== 0) return null;
+  return git.stdout
+    .toString()
+    .split('\n')
+    .map((path) => path.split('/').at(-1) ?? '')
+    .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'));
+}
+
 function main(): void {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -466,6 +499,8 @@ function main(): void {
     warnings.push(...w);
   }
   errors.push(...lintMigrationSet(files));
+  const merged = mergedMigrationFiles();
+  if (merged) errors.push(...lintMigrationSequence(files, merged));
 
   for (const w of warnings) console.log(`::warning::${w}`);
   for (const e of errors) console.error(`::error::${e}`);

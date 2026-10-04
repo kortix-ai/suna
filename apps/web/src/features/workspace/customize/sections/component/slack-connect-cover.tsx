@@ -14,7 +14,7 @@
  * right; hand-drawing the replacement was not, because `BlogCover`
  * (`@/components/blog/blog-cover`) already renders exactly this treatment:
  * real brand SVGs on chips over the Kortix gradient with the grain overlay,
- * theme-aware, already used by `post-card.tsx` and the blog post page.
+ * theme-aware, the treatment the blog's post cards were drawn with.
  *
  * So the cover is now the shipped component, and this module is the thin
  * wrapper holding the Slack-specific configuration.

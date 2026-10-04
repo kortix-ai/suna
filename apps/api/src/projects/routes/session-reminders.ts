@@ -9,7 +9,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { assertAgentScope, isBorrowedSessionPrincipal, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
@@ -17,7 +17,6 @@ import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from 
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -49,7 +48,7 @@ async function authorizeReminderSession(c: any) {
   const disabled = requireFeatureFlag(c, loaded.row.metadata, 'reminders');
   if (disabled) return { response: disabled };
   const agentCaller = isProjectSessionPrincipal(c);
-  if (agentCaller && callerKortixSessionId(c) !== sessionId) {
+  if (isBorrowedSessionPrincipal(c) && callerKortixSessionId(c) !== sessionId) {
     return {
       response: c.json({ error: 'An agent session can manage reminders on its own session only' }, 403),
     };
@@ -187,23 +186,12 @@ projectsApp.openapi(
     // allowed to run it now, as with a prompt.
     await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
 
-    // Fast refusal before on_behalf_of is cleared; the locked insert below is the authoritative cap.
+    // Fast refusal; the locked insert below is the authoritative cap.
     if ((await countActiveSessionReminders(projectId, sessionId)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
       return c.json(
         { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` },
         409,
       );
-    }
-
-    // A reminder is a prompt authored now and delivered later. The delivery never
-    // clears `on_behalf_of` (`channelPrompterForOnBehalfOf`), so a human other
-    // than the session's `on_behalf_of` clears it here, as the prompt route does.
-    if (!agentCaller) {
-      await clearSessionOnBehalfOfForPrompt({
-        accountId: loaded.row.accountId,
-        sessionId,
-        prompterUserId: loaded.userId,
-      });
     }
 
     const spec = reminderSpec({
@@ -212,6 +200,8 @@ projectsApp.openapi(
       agent: visible.row.agentName ?? 'default',
       draft,
       now,
+      // A person's reminder is their deferred prompt: the fire acts as them.
+      promptAuthorUserId: agentCaller ? null : loaded.userId,
     });
     const inserted = await insertSessionReminderWithinCaps({
       projectId,

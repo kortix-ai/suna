@@ -597,11 +597,13 @@ describe('forwardToSandbox authentication failures', () => {
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
   });
 
-  // pi (and OpenCode's boot steps) refuse with another text, and a W6 daemon
-  // adds `code: runtime_not_ready`. Both must release the claim too.
-  for (const [name, body] of [
-    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}'],
-    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}'],
+  // pi (and OpenCode's boot steps) refuse with another text, a W6 daemon adds
+  // `code: runtime_not_ready`, and every daemon names its boot phase in
+  // `X-Kortix-Boot-Phase`. Each must release the claim on its own.
+  for (const [name, body, headers] of [
+    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}', {}],
+    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}', {}],
+    ['only the boot-phase header', '{"error":"starting"}', { 'X-Kortix-Boot-Phase': 'opencode-starting' }],
   ] as const) {
     test(`a not-ready 503 with ${name} passes through and releases the dedupe claim`, async () => {
       const args = {
@@ -611,7 +613,7 @@ describe('forwardToSandbox authentication failures', () => {
         body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
         headers: jsonHeaders({ 'idempotency-key': `nr-${name}` }),
       } as const;
-      queueFetch(new Response(body, { status: 503 }));
+      queueFetch(new Response(body, { status: 503, headers }));
       const first = await forward(args);
       expect(first.status).toBe(503);
       expect(await first.text()).toBe(body);
@@ -622,6 +624,22 @@ describe('forwardToSandbox authentication failures', () => {
       expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
     });
   }
+
+  test('a 503 that only mentions "not ready" in an unrelated body keeps the claim', async () => {
+    const args = {
+      method: 'POST',
+      path: '/session/sess-1/message',
+      port: 8000,
+      body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
+      headers: jsonHeaders({ 'idempotency-key': 'nr-ambiguous' }),
+    } as const;
+    queueFetch(new Response('{"error":"gateway not ready","code":"upstream_unavailable"}', { status: 503 }));
+    expect((await forward(args)).status).toBe(503);
+
+    // The runtime may hold the message: the retry dedupes instead of re-sending.
+    const retry = await forward(args);
+    expect(await retry.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
 });
 
 // ── redirects, CORS, cookies — originMode vs the path form ───────────────────

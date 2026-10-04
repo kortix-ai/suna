@@ -38,7 +38,7 @@ const ALLOWED: Record<'inlineArgError' | 'helpPreamble' | 'parseFlags', readonly
     'triggers.ts',
   ],
   helpPreamble: ['access.ts', 'agents.ts', 'connectors.ts', 'grants.ts', 'marketplace.ts', 'secrets.ts', 'triggers.ts'],
-  parseFlags: ['init.ts', 'marketplace.ts', 'system-skills.ts', 'validate.ts'],
+  parseFlags: ['init.ts', 'marketplace.ts', 'system-skills.ts'],
 };
 
 /** `process.stderr.write(`${status.err(X)}\n`)` directly followed by `return 2`. */

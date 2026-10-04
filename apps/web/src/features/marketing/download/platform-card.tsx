@@ -90,7 +90,7 @@ export function PlatformCard({
             <div className="min-w-0 flex-1">
               <p className="text-foreground truncate text-sm font-medium">{row.label}</p>
               {row.meta ? (
-                <p className="text-muted-foreground truncate text-xs">{row.meta}</p>
+                <p className="text-muted-foreground text-xs">{row.meta}</p>
               ) : null}
             </div>
 
@@ -113,7 +113,7 @@ export function PlatformCard({
                 asChild
                 size="sm"
                 variant={row.id === filled ? 'default' : 'outline'}
-                className="shrink-0 active:scale-[0.97]"
+                className="shrink-0 active:scale-[0.96]"
               >
                 <Link
                   href={row.href}

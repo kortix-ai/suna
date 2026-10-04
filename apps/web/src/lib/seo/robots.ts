@@ -26,6 +26,7 @@ Content-Signal: ai-train=no, search=yes, ai-input=yes
 
 # Sitemap
 Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
+Sitemap: ${CANONICAL_ORIGIN}/blog/sitemap.xml
 
 # Disallow sensitive routes
 Disallow: /api/
