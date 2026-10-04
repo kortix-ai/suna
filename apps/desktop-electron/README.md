@@ -341,8 +341,8 @@ tunnel's `ai.kortix.agent-tunnel*` or the standalone engine's
   Screen Recording, Accessibility and Microphone use to the responsible
   process, which is the app bundle of the Kortix binary: the prompts and the
   System Settings entries name **Kortix**. This is the same chain the computer
-  agent uses for Computer Use; it cannot be proven headlessly (see the device
-  checklist).
+  agent uses for Computer Use; it cannot be proven headlessly (see
+  [Real-device checklist](#real-device-checklist)).
 - **The service.** Every 30 s it reads `desktop.json` (the person's switches)
   and the engine's `sync status`, then runs or stops
   `kortix-capture record --supervised` (screen, audio, the library's sync)
@@ -385,6 +385,33 @@ tunnel's `ai.kortix.agent-tunnel*` or the standalone engine's
   AppImage mount, whose path changes per launch. Linux ships no engine yet;
   copy both out of the mount (like the tunnel's vendored runner) before a
   Linux engine is pinned.
+
+### Real-device checklist
+
+Run it on a signed build installed in `/Applications`, before a release that
+changes the Capture service or pins a new engine. Headless runs cannot prove
+steps 2–5 (macOS attributes permissions and keeps login items only for a real
+session and a signed app).
+
+1. Turn on Capture in a project with `capture` on. Expect
+   `~/Library/LaunchAgents/ai.kortix.desktop.capture.<hex>.plist`; the dialog
+   shows "Recording".
+2. Screen Recording, Accessibility (and Microphone with Audio on) name
+   **Kortix**, with no "sh" or "kortix-capture" entry. Recording resumes on
+   its own after you allow them.
+3. Quit Kortix. Activity Monitor still shows the Kortix service process and
+   `kortix-capture`; the device stays live on the web.
+4. Restart the Mac without opening Kortix. Recording continues.
+5. Install an app update. After the next launch the unit points at the new
+   app path; no new sign-in, no Keychain prompt.
+6. Turn Record off. The job is disabled and does not return at login. Turn it
+   on: recording resumes.
+7. Turn the project's `capture` flag off. Within 10 min the dialog says
+   "Sign in again" and no `kortix-capture` runs.
+8. Sign out. The plist and the job are gone.
+9. The dialog at 720×480, light and dark: no overlap with the window controls.
+10. Windows: the Scheduled Task `ai.kortix.desktop.capture.<hex>` exists;
+    steps 3, 4 and 8 behave the same.
 
 ### Sign-in without a second browser trip
 
