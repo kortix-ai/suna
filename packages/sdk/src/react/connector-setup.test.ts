@@ -249,21 +249,28 @@ test('reopening the popup resets the poll deadline instead of inheriting an expi
 
   try {
     // Run the first window to exhaustion: 5 minutes of 3s+5s polls.
+    // Each act() scope ends on real timers: act's closing flush can wait on a
+    // macrotask, and under fake timers that wait never ends. On the CI runner
+    // it never did, and the open act scope stalled every later test in the
+    // file (promotions #9124, #9126, #9144, #9146).
     await act(async () => {
       for (let second = 0; second < 310; second++) {
         jest.advanceTimersByTime(1_000);
         for (let hop = 0; hop < 10; hop++) await Promise.resolve();
       }
+      jest.useRealTimers();
     });
     const pollsBefore = calls.filter((c) => c.endsWith('/finalize')).length;
     expect(pollsBefore).toBeGreaterThan(50); // ~60 polls fit in the window
     expect(setup.value?.phase).toBe('opened');
 
     // Reopen: a fresh 5-minute window starts, so polls resume.
+    jest.useFakeTimers();
     await setup.connect();
     await act(async () => {
       jest.advanceTimersByTime(6_000);
       for (let hop = 0; hop < 30; hop++) await Promise.resolve();
+      jest.useRealTimers();
     });
     const pollsAfter = calls.filter((c) => c.endsWith('/finalize')).length;
     expect(pollsAfter).toBeGreaterThan(pollsBefore);
