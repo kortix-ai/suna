@@ -1,5 +1,5 @@
 {
-  "source_hash": "c3df666bd6403bb467a5f862d68c38327ca946cde166f61134ec29ffcfb8b72a",
+  "source_hash": "7ba610eecf8aed58f37c33d1e741fa2cd79fdac0772709a53fa742de679f9321",
   "diff_files": [
     ".githooks/pre-push",
     "apps/cli/src/__tests__/connectors-session-flag.test.ts",
@@ -7,12 +7,12 @@
     "apps/cli/src/index.ts"
   ],
   "diff_hash": "0412a91d94d7b3308621341f46f6445d689b862f7124616e93c1bbfed405776b",
-  "head": "8f731a49134b4b59601b327b6836d050ed0eaf49",
+  "head": "27906079d68089129809b467892ec010b0ca2f6f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T20:30:32.516Z"
+  "at": "2026-10-04T00:21:15.236Z"
 }
