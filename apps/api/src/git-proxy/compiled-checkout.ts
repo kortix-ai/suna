@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -7,6 +6,7 @@ import * as tar from 'tar';
 import { validateRef, validateSha } from '../projects/git-ref';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
+import { sha256File } from '../shared/sha256-file';
 
 export const COMPILED_CHECKOUT_FORMAT = 'kortix.compiled-checkout.v1';
 export const COMPILED_CHECKOUT_CONTENT_TYPE =
@@ -66,12 +66,6 @@ function artifactKey(projectId: string, ref: string, sourceSha: string): string 
   return createHash('sha256')
     .update(`${COMPILED_CHECKOUT_FORMAT}\0${projectId}\0${ref}\0${sourceSha}`)
     .digest('hex');
-}
-
-async function sha256File(path: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
 }
 
 async function readCachedArtifact(

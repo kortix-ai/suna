@@ -10,6 +10,7 @@ import { config } from '../lib/config';
 import { validateSha } from '../projects/git-ref';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
+import { sha256File } from '../shared/sha256-file';
 import { normalizeSnapshotRef, PROJECT_SNAPSHOT_MARKER_PATH, type ProjectSnapshotMarker } from './project-snapshot';
 import { PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE, PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE, getObjectText, headObject, projectSnapshotBlobsKey, projectSnapshotManifestKey, projectSnapshotTreeKey, projectSnapshotObjectPrefix, putObjectIfAbsent, type ProjectSnapshotManifest, type ProjectSnapshotRepository } from './project-snapshot-store';
 
@@ -31,12 +32,6 @@ export class ProjectSnapshotSourceMissingError extends Error {
 
 function buildRoot(): string {
   return process.env.KORTIX_PROJECT_SNAPSHOT_BUILD_DIR || join(tmpdir(), 'kortix-project-snapshot');
-}
-
-async function sha256File(path: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
 }
 
 async function mirrorHasCommit(mirror: string, sha: string): Promise<boolean> {
