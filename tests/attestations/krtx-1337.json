@@ -1,0 +1,25 @@
+{
+  "source_hash": "1a46e558bcd3e809fe7fa31e5437600c758976e073f03c8e90ef780f9ec7d9da",
+  "diff_files": [
+    "apps/cli/src/__tests__/access-assignments.test.ts",
+    "apps/cli/src/commands/access.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/static-web-credential-read.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/shared/src/tool-output/testing.ts"
+  ],
+  "diff_hash": "efcdcefb90e7b63ef91322e7d543df619fddfd3fbd5529477c70b7f4d4122702",
+  "head": "ba169ea41315faf2ff99d69ce66d15ac921f19d5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:34:19.086Z"
+}
