@@ -72,6 +72,7 @@ import {
   yourComputerMenu,
 } from '@/features/tunnel/computer-connect';
 import { LocalComputerModal, YourComputersModal } from '@/features/tunnel/local-computer-modal';
+import { useCaptureHere } from '@/features/capture/computer-capture-section';
 import { DESKTOP_CAPTURE_SETTINGS_COMMAND } from '@/lib/desktop';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
@@ -340,6 +341,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               </DropdownMenuItem>
 
               <YourComputerMenuItem
+                projectId={projectId}
                 onSelect={(dialog) => deferAfterClose(() => setComputerDialog(dialog))}
               />
 
@@ -423,16 +425,24 @@ type ComputerDialog = ReturnType<typeof yourComputerMenu>['dialog'];
  * "Your computer", on the web and in the desktop app. Hidden on a deployment
  * with computers disabled, like the promo.
  */
-function YourComputerMenuItem({ onSelect }: { onSelect: (dialog: ComputerDialog) => void }) {
+function YourComputerMenuItem({
+  projectId,
+  onSelect,
+}: {
+  projectId: string;
+  onSelect: (dialog: ComputerDialog) => void;
+}) {
   const t = useI18nTranslations('sidebar');
   const { status, tunnelId, state, computersEnabled } = useThisComputerState();
   const { owned } = useOwnsPairedComputer();
+  const captureHere = useCaptureHere(projectId);
   if (!computersEnabled) return null;
   const { dialog, dot } = yourComputerMenu({
     tunnelId,
     state,
     oneClickHere: Boolean(status?.available),
     owned,
+    captureHere,
   });
   return (
     <DropdownMenuItem onSelect={() => onSelect(dialog)} size="sm">

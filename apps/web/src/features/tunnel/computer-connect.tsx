@@ -307,13 +307,17 @@ export function yourComputerMenu({
   state,
   oneClickHere,
   owned,
+  captureHere = false,
 }: {
   tunnelId?: string;
   state?: ComputerState | null;
   oneClickHere: boolean;
   owned: readonly { isLive: boolean }[];
+  /** The desktop app can record this computer into the current project (Capture): its section lives in `this`. */
+  captureHere?: boolean;
 }): { dialog: 'this' | 'mine' | 'connect'; dot: ComputerState | null } {
   if (tunnelId) return { dialog: 'this', dot: state ?? null };
+  if (captureHere) return { dialog: 'this', dot: null };
   if (!oneClickHere && owned.length > 0) {
     return { dialog: 'mine', dot: owned.some((machine) => machine.isLive) ? 'online' : 'offline' };
   }

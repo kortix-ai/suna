@@ -56,6 +56,13 @@ function useCaptureProject(projectId: string | null | undefined) {
   );
 }
 
+/** This desktop can record this computer into `projectId`: the Capture section shows in Your computer. */
+export function useCaptureHere(projectId: string): boolean {
+  const status = useDesktopCaptureStatus();
+  const project = useCaptureProject(projectId);
+  return Boolean(status.data?.available && project);
+}
+
 type Grant = 'screen' | 'accessibility' | 'microphone';
 const GRANTS: readonly { key: Grant; icon: Icon }[] = [
   { key: 'screen', icon: MonitorIcon },

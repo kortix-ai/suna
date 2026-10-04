@@ -164,6 +164,11 @@ describe('yourComputerMenu', () => {
     });
   });
 
+  test('a desktop that can record this computer into the project (Capture) opens this computer, paired or not', () => {
+    expect(yourComputerMenu({ oneClickHere: true, owned: [], captureHere: true })).toEqual({ dialog: 'this', dot: null });
+    expect(yourComputerMenu({ oneClickHere: false, owned: [live], captureHere: true })).toEqual({ dialog: 'this', dot: null });
+  });
+
   test('nothing paired, or a desktop that can pair itself, opens the connect dialog', () => {
     expect(yourComputerMenu({ oneClickHere: false, owned: [] })).toEqual({
       dialog: 'connect',

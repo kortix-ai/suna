@@ -205,7 +205,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
     return (
       <>
         <ComputerHeader name={t('localComputerTitle')} status={t('notConnected')} />
-        <ModalBody className="space-y-5">
+        <ModalBody className="min-h-0 space-y-5 overflow-y-auto">
           <p className="text-muted-foreground text-sm text-pretty">
             {status?.error || t('desktopUnavailable')}
           </p>
@@ -224,7 +224,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
           name={reconnect ? name : t('localComputerTitle')}
           status={reconnect ? <StatusText state="needsReconnect" /> : t('notConnected')}
         />
-        <ModalBody className="space-y-5">
+        <ModalBody className="min-h-0 space-y-5 overflow-y-auto">
           {reconnect ? (
             <InfoBanner tone="warning" icon={WarningIcon} title={t('needsReconnectHint')} />
           ) : null}
