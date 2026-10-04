@@ -1,5 +1,6 @@
 # Hermetic baseline for the unit suites (apps/api/scripts/test.sh,
-# apps/cli/scripts/test.sh). Source it; it edits the current environment.
+# apps/cli/scripts/test.sh, apps/kortix-sandbox-agent-server/scripts/test.sh).
+# Source it; it edits the current environment.
 #
 # The unit suites must be hermetic: identical on a laptop, a CI runner and a
 # Kortix worker sandbox (apps/api/scripts/test.env states the contract). A
