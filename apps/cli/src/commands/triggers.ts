@@ -636,12 +636,11 @@ async function triggersSetLive(
   if (tf.cron) {
     body.cron = tf.cron;
     body.run_at = null;
-    body.timezone = tf.timezone ?? 'UTC';
   } else if (tf.runAt) {
     body.run_at = tf.runAt;
     body.cron = null;
-    body.timezone = tf.timezone ?? 'UTC';
-  } else if (tf.timezone) {
+  }
+  if (tf.timezone) {
     body.timezone = tf.timezone;
   }
   if (Object.keys(body).length === 0) {

@@ -1108,7 +1108,7 @@
       "noMatches": "Aucun résultat pour {query}.",
       "emptyTitle": "Aucune fonctionnalité expérimentale",
       "emptyDescription": "Cette installation ne propose aucun indicateur de fonctionnalité par projet.",
-      "permission": "Vous devez disposer de l’autorisation de modification de la personnalisation du projet pour changer une fonctionnalité.",
+      "permission": "Vous avez besoin de l’autorisation de paramètres du projet pour modifier un indicateur de fonctionnalité.",
       "updateFailed": "Impossible de mettre à jour {key}",
       "flags": {
         "marketplace": {
@@ -9605,7 +9605,7 @@
       "text062b7c4143e2": "Sa propre branche, créée pour chaque session",
       "text062bccfdad1c": "Aucun bac à sable ne correspond à cette recherche",
       "text062dddbbb151": "Une frontière sans écosystème n’est pas stable",
-      "text06346e4d9c35": "Vous avez besoin de l'autorisation de personnalisation-écriture du projet pour modifier un indicateur de fonctionnalité.",
+      "text6d484ed8c1a0": "Vous avez besoin de l’autorisation de paramètres du projet pour modifier un indicateur de fonctionnalité.",
       "text06475633ed3e": "Dernière activité",
       "text064f6ac1a789": "Pop-up",
       "text065f04fd94d6": "Modifiez ce que {value0} {value1} peut faire dans {value2}.",
