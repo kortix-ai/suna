@@ -58,29 +58,27 @@ const ROW_NULL = '33333333-3333-4333-8333-333333333333';
  *  `slot` says which expression the command carries (prod shapes: SELECT,
  *  UPDATE and DELETE policies are USING-only; the INSERT policy is
  *  WITH CHECK-only). */
-const POLICY_DEFS = [
-  {
-    name: 'Account members can view resources for their accounts',
-    cmd: 'SELECT',
-    slot: 'USING',
-  },
-  {
-    name: 'Account members can update resources for their accounts',
-    cmd: 'UPDATE',
-    slot: 'USING',
-  },
-  {
-    name: 'Account members can insert resources for their accounts',
-    cmd: 'INSERT',
-    slot: 'WITH CHECK',
-  },
-  {
-    name: 'Account members can delete resources for their accounts',
-    cmd: 'DELETE',
-    slot: 'USING',
-  },
-] as const;
-const UPDATE_POLICY = POLICY_DEFS.find((policy) => policy.cmd === 'UPDATE')!;
+const VIEW_POLICY = {
+  name: 'Account members can view resources for their accounts',
+  cmd: 'SELECT',
+  slot: 'USING',
+} as const;
+const UPDATE_POLICY = {
+  name: 'Account members can update resources for their accounts',
+  cmd: 'UPDATE',
+  slot: 'USING',
+} as const;
+const INSERT_POLICY = {
+  name: 'Account members can insert resources for their accounts',
+  cmd: 'INSERT',
+  slot: 'WITH CHECK',
+} as const;
+const DELETE_POLICY = {
+  name: 'Account members can delete resources for their accounts',
+  cmd: 'DELETE',
+  slot: 'USING',
+} as const;
+const POLICY_DEFS = [VIEW_POLICY, UPDATE_POLICY, INSERT_POLICY, DELETE_POLICY];
 
 let client: pg.Client;
 
