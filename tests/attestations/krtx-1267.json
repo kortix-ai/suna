@@ -1,0 +1,22 @@
+{
+  "source_hash": "57e9cd011daa324f1f35d448f2b7fd23fdf688d77e8a2e91d1ff1f38bbbe5920",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/helpers/open-code-harness.ts",
+    "apps/mobile/components/files/FilePreviewRenderers.tsx",
+    "apps/mobile/components/files/mermaid-renderers.test.tsx",
+    "apps/mobile/components/session/tool/tools/show-content-renderer.tsx",
+    "apps/mobile/lib/session/tools/web-show.test.ts",
+    "apps/mobile/lib/session/tools/web-show.ts",
+    "tests/bin/package-quality.ts",
+    "tests/src/fixtures/cli.ts"
+  ],
+  "diff_hash": "ae9f49cfefa6ad7294ec0930fadf7d30915a3b0107440b1ba328ea0fb244fd1e",
+  "head": "8db83ac6089d7d31edb3556aea93166265ea367a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T00:57:57.122Z"
+}

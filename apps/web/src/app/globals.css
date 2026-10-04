@@ -790,6 +790,18 @@
   }
 }
 
+/* AI OS lattice: each dot brightens once per cycle, delayed by its diagonal,
+   so a soft wave crosses the grid. Opacity only. */
+@keyframes kx-os-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* Hero enter — the landing fold, and nothing else.
 
    `.kx-stagger` above is route-level motion: one curve, one duration, delays

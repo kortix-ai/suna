@@ -108,7 +108,7 @@ function originLabel(flag: FeatureFlagView): string {
 
 test.describe("19 — Feature flags UI", () => {
   // Coverage note: the viewer/read-only case (a member WITHOUT
-  // project.customize.write sees the switches disabled) is NOT covered here.
+  // project.settings.write sees the switches disabled) is NOT covered here.
   // It needs a second auth user, an account invite, and a custom project role
   // seeded per run — heavier than the rest of this spec put together. The
   // capability gate itself is unit-covered by the `canEdit` fail-closed logic
