@@ -1,5 +1,5 @@
 {
-  "source_hash": "a42273c6dd32429ec463b5f7482d453f63d3d4d3de622e4074694a2f47c808ce",
+  "source_hash": "877589d27d3355e1f312655737852c5e6938a2d5626b3729936e57fe360c21ba",
   "diff_files": [
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
     "apps/cli/src/__tests__/access-assignments.test.ts",
@@ -11,15 +11,17 @@
     "apps/kortix-sandbox-agent-server/src/__tests__/static-web-credential-read.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts"
+    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/shared/src/tool-output/testing.ts"
   ],
-  "diff_hash": "95a3b1218c41a4df8ded473b57cfb6a6cb741873309e948f09956966f7bb2167",
-  "head": "4089e29032c647d7d3a554d59b64b79a0b0c50c4",
+  "diff_hash": "d614e0c7eeb19d4fe810da051bf60ad1a4f5c535d3ef9a1fb73523a721869402",
+  "head": "0c11f736c8376a9b015835955a365d54e913c2a4",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T21:20:24.109Z"
+  "at": "2026-10-04T02:09:26.731Z"
 }
