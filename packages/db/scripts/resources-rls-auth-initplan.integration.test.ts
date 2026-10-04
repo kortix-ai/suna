@@ -24,9 +24,9 @@
  *      exception keeps applying everywhere the old policy applied it (and
  *      nowhere it did not), and a re-apply leaves the same four policies.
  *
- * The lane role owns the table (as prod's API role does), so FORCE RLS puts it
- * under the policies for the row-access probe. The probe role is NOBYPASSRLS,
- * so the plan it gets is the plan an authenticated client gets.
+ * The probe role is not the table owner and NOBYPASSRLS, so RLS applies to it
+ * exactly as it applies to an authenticated client, and the plan it gets is
+ * the plan that client gets.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -54,37 +54,33 @@ const ROW_A = '11111111-1111-4111-8111-111111111111';
 const ROW_B = '22222222-2222-4222-8222-222222222222';
 const ROW_NULL = '33333333-3333-4333-8333-333333333333';
 
-/** The four legacy policies exactly as prod carries them (bare auth.uid()). */
+/** The four legacy policies exactly as prod carries them (bare auth.uid()).
+ *  `slot` says which expression the command carries (prod shapes: SELECT,
+ *  UPDATE and DELETE policies are USING-only; the INSERT policy is
+ *  WITH CHECK-only). */
 const POLICY_DEFS = [
   {
     name: 'Account members can view resources for their accounts',
     cmd: 'SELECT',
     slot: 'USING',
-    expression:
-      '(account_id IS NULL) OR (EXISTS ( SELECT 1 FROM basejump.account_user WHERE ((account_user.account_id = resources.account_id) AND (account_user.user_id = auth.uid()))))',
   },
   {
     name: 'Account members can update resources for their accounts',
     cmd: 'UPDATE',
     slot: 'USING',
-    expression:
-      '(account_id IS NULL) OR (EXISTS ( SELECT 1 FROM basejump.account_user WHERE ((account_user.account_id = resources.account_id) AND (account_user.user_id = auth.uid()))))',
   },
   {
     name: 'Account members can insert resources for their accounts',
     cmd: 'INSERT',
     slot: 'WITH CHECK',
-    expression:
-      '(account_id IS NULL) OR (EXISTS ( SELECT 1 FROM basejump.account_user WHERE ((account_user.account_id = resources.account_id) AND (account_user.user_id = auth.uid()))))',
   },
   {
     name: 'Account members can delete resources for their accounts',
     cmd: 'DELETE',
     slot: 'USING',
-    expression:
-      'EXISTS ( SELECT 1 FROM basejump.account_user WHERE ((account_user.account_id = resources.account_id) AND (account_user.user_id = auth.uid())))',
   },
 ] as const;
+const UPDATE_POLICY = POLICY_DEFS.find((policy) => policy.cmd === 'UPDATE')!;
 
 let client: pg.Client;
 
@@ -300,15 +296,16 @@ describe.skipIf(!databaseUrl)('public.resources RLS initplan migration — real 
     }
     // The UPDATE policy keeps USING-only: no explicit WITH CHECK, so Postgres
     // applies the USING expression as the implicit check, as prod does.
-    const update = rows.find((r) => r.policyname === POLICY_DEFS[1].name);
+    const update = rows.find((r) => r.policyname === UPDATE_POLICY.name);
     expect(update?.with_check).toBeNull();
 
     expect(await probePlan(USER_A)).toContain('InitPlan');
 
     // A second apply leaves the same four policies with the same shapes.
     await applyMigration();
-    expect(await policies()).toHaveLength(4);
-    expect(flagged(await policies())).toHaveLength(0);
+    const rowsAfterReapply = await policies();
+    expect(rowsAfterReapply).toHaveLength(4);
+    expect(flagged(rowsAfterReapply)).toHaveLength(0);
   });
 
   test('row access is unchanged: own account writable, other accounts invisible, NULL account_id exactly as before', async () => {
@@ -318,8 +315,7 @@ describe.skipIf(!databaseUrl)('public.resources RLS initplan migration — real 
     await raw(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${TABLE} TO ${PROBE_ROLE}`);
     // The probe role is not the table owner, so RLS applies to it without
     // FORCE — the same rows an authenticated client would see.
-    {
-      // User A (account A): sees own row + the NULL-account row.
+    // User A (account A): sees own row + the NULL-account row.
       await asUser(USER_A, async (query) => {
         const visible = await query(`SELECT id::text, account_id::text FROM ${TABLE} ORDER BY id`);
         expect(visible.rows.map((r) => r.id)).toEqual([ROW_A, ROW_NULL]);
@@ -395,7 +391,6 @@ describe.skipIf(!databaseUrl)('public.resources RLS initplan migration — real 
         const foreign = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_B}' RETURNING id::text`);
         expect(foreign.rowCount).toBe(0);
       });
-    }
   });
 
   test('is a no-op where the legacy table does not exist (baseline databases)', async () => {
