@@ -54,6 +54,7 @@ const jwt = (memberOf: string[]) => ({
   },
 });
 
+
 const canWrite = async (userId: string) =>
   (await authorize(actorForUser(userId, ACCOUNT), PROJECT_ACTIONS.PROJECT_WRITE, { type: 'project', id: PROJECT })).allowed;
 
@@ -299,6 +300,12 @@ describe('Azure AD directory-sync → authorization', () => {
       expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(1);
       expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
     } finally {
+      // Delete the memberships before the auth users. The 20261003182500000
+      // reclaim trigger deletes an account whose last LIVE member's auth user
+      // is deleted — and this suite's other members are sync-created user ids
+      // with no auth.users row, so the fixture account counts as orphaned and
+      // the later tests FK-fail on it.
+      await db.execute(sql`DELETE FROM kortix.account_memberships WHERE account_id=${ACCOUNT}::uuid AND user_id IN (${oldUser}::uuid, ${ssoUser}::uuid)`);
       await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
       await db.update(accountSsoProviders).set({ domainVerifiedAt: new Date() }).where(eq(accountSsoProviders.accountId, ACCOUNT));
     }
@@ -335,7 +342,12 @@ describe('Azure AD directory-sync → authorization', () => {
       expect(superSsoRow?.isSuperAdmin).toBe(false);
     } finally {
       await db.execute(sql`DELETE FROM kortix.role_assignments WHERE account_id=${ACCOUNT}::uuid AND principal_id IN (${owner}::uuid, ${superAdmin}::uuid, ${ownerSso}::uuid, ${superAdminSso}::uuid)`);
-      await db.execute(sql`DELETE FROM auth.users WHERE id IN (${owner}::uuid, ${superAdmin}::uuid)`);
+      // Delete the memberships before the auth users. The 20261003182500000
+      // reclaim trigger deletes an account whose last live member's auth user
+      // is deleted, which would take this suite's fixture account with them
+      // and FK-fail every later test.
+      await db.execute(sql`DELETE FROM kortix.account_memberships WHERE account_id=${ACCOUNT}::uuid AND user_id IN (${owner}::uuid, ${superAdmin}::uuid, ${ownerSso}::uuid, ${superAdminSso}::uuid)`);
+      await db.execute(sql`DELETE FROM auth.users WHERE id IN (${owner}::uuid, ${superAdmin}::uuid, ${ownerSso}::uuid, ${superAdminSso}::uuid)`);
     }
   });
 
@@ -396,6 +408,8 @@ describe('Azure AD directory-sync → authorization', () => {
         ambiguous: false,
       });
     } finally {
+      // Same cleanup order as above: memberships first, then the auth users.
+      await db.execute(sql`DELETE FROM kortix.account_memberships WHERE account_id=${ACCOUNT}::uuid AND user_id IN (${manualUser}::uuid, ${ssoUser}::uuid)`);
       await db.execute(sql`DELETE FROM auth.users WHERE id IN (${manualUser}::uuid, ${ssoUser}::uuid)`);
     }
   });
