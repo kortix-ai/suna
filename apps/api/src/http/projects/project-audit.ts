@@ -41,7 +41,7 @@ import {
   readSessionAuditEvents,
   serializeAuditEvent,
 } from '../../services/audit/audit-query';
-import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../services/audit/audit-schema';
+import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../lib/audit-schema';
 import { currentInboundAuditScope } from '../../services/audit/audit-scope';
 import { db } from '../../lib/db';
 import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../services/audit/opencode-audit-ingestion';

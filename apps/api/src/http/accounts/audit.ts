@@ -38,7 +38,7 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../../services/audit/audit-query';
-import { AuditActorTypeSchema, AuditListSchema } from '../../services/audit/audit-schema';
+import { AuditActorTypeSchema, AuditListSchema } from '../lib/audit-schema';
 import { readExportPage } from '../../services/audit/audit-archive/export-page';
 import { auditArchiveStore } from '../../services/audit/audit-archive/store';
 import { reconcileAuditEvents } from '../../services/audit/audit-reconciliation';

@@ -49,7 +49,7 @@
   },
   "src/http/accounts/audit.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 10
     },
     "no-restricted-imports": {
       "count": 2
@@ -1241,7 +1241,7 @@
   },
   "src/http/projects/project-audit.ts": {
     "kortix-api/service-surface": {
-      "count": 15
+      "count": 14
     },
     "no-console": {
       "count": 1
@@ -2363,11 +2363,6 @@
       "count": 2
     }
   },
-  "src/services/audit/audit-schema.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/services/audit/audit-webhooks.ts": {
     "kortix-api/service-surface": {
       "count": 2
@@ -2388,11 +2383,6 @@
     },
     "no-restricted-properties": {
       "count": 3
-    }
-  },
-  "src/services/audit/dead-credential-log.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/audit/opencode-audit-rate-guard.ts": {
@@ -2577,11 +2567,6 @@
   "src/services/channels/core/identity.ts": {
     "kortix-api/service-surface": {
       "count": 4
-    }
-  },
-  "src/services/channels/core/install-completion.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/channels/core/sessions.ts": {
@@ -3738,9 +3723,6 @@
   "src/services/projects/lib/compile-agent-config.ts": {
     "no-console": {
       "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/projects/lib/config-convergence-triggers.ts": {
@@ -4702,9 +4684,6 @@
   },
   "src/services/secrets/secret-writes.ts": {
     "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },

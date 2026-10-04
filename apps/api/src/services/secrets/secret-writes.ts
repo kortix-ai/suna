@@ -1,8 +1,6 @@
-/** Shared by the secret write routes: the write response, delivery-sync summary, and boundary checks. */
+/** Shared by the secret write routes: the delivery-sync summary and boundary checks. The write response schema is http/projects/secret-write-result.ts. */
 import { db } from '../../lib/db';
 import { type ProjectSecretPropagationResult } from '../sandboxes/sandbox-env-sync';
-import { z } from '@hono/zod-openapi';
-import { SecretSchema as ContractSecretSchema } from '@kortix/api-contract';
 import {
   findBoundaryDestinationConflict,
   type BoundaryDestinationConflict,
@@ -18,28 +16,13 @@ import { and, eq, isNull } from 'drizzle-orm';
 // no fan-out ran. It is NOT part of `SecretSchema` — a secret READ has no sync
 // to report.
 
-const SecretDeliverySyncSchema = z
-  .object({
-    ok: z.boolean(),
-    targeted: z.number(),
-    synced: z.number(),
-    failed: z.number(),
-    failures: z.array(
-      z.object({
-        session_id: z.string(),
-        sandbox_id: z.string().nullable(),
-        reason: z.string(),
-      }),
-    ),
-  })
-  .nullable()
-  .optional();
-
-export type SecretDeliverySync = NonNullable<z.infer<typeof SecretDeliverySyncSchema>>;
-
-export const SecretWriteResultSchema = ContractSecretSchema.extend({
-  delivery_sync: SecretDeliverySyncSchema,
-}).openapi('SecretWriteResult');
+export interface SecretDeliverySync {
+  ok: boolean;
+  targeted: number;
+  synced: number;
+  failed: number;
+  failures: Array<{ session_id: string; sandbox_id: string | null; reason: string }>;
+}
 
 /** Keep the per-sandbox reasons; drop the rows that succeeded. */
 export function summarizeDeliverySync(result: ProjectSecretPropagationResult): SecretDeliverySync {

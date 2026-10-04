@@ -19,14 +19,8 @@ import { loadProjectForUser, assertProjectCapability } from '../lib/project-acce
 import { projectsApp } from './app';
 import { isSystemProjectSecretName, loadSecretViewsForUser } from '../../services/projects/lib/serializers';
 import { readJsonObject } from '../lib/http-body';
-import {
-  SecretWriteResultSchema,
-  type SecretDeliverySync,
-  boundaryConflictBody,
-  boundaryDestinationConflict,
-  connectorSecretBindings,
-  summarizeDeliverySync,
-} from '../../services/secrets/secret-writes';
+import { type SecretDeliverySync, boundaryConflictBody, boundaryDestinationConflict, connectorSecretBindings, summarizeDeliverySync } from '../../services/secrets/secret-writes';
+import { SecretWriteResultSchema } from './secret-write-result';
 export function registerSecretDeliveryRoutes(): void {
   projectsApp.openapi(
     createRoute({

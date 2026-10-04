@@ -45,14 +45,8 @@ import {
   type SecretAgentGrantConfig,
 } from '../../services/projects/lib/serializers';
 import { readJsonObject } from '../lib/http-body';
-import {
-  SecretWriteResultSchema,
-  type SecretDeliverySync,
-  boundaryConflictBody,
-  boundaryDestinationConflict,
-  connectorSecretBindings,
-  summarizeDeliverySync,
-} from '../../services/secrets/secret-writes';
+import { type SecretDeliverySync, boundaryConflictBody, boundaryDestinationConflict, connectorSecretBindings, summarizeDeliverySync } from '../../services/secrets/secret-writes';
+import { SecretWriteResultSchema } from './secret-write-result';
 import { resolveSecretWriteInput } from '../../services/secrets/secret-write-input';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { loadConnectionSharing } from '../../services/projects/lib/connection-sharing';
