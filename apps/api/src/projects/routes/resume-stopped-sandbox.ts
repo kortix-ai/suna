@@ -269,6 +269,8 @@ export async function resumeStoppedSandbox(
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
       // a no-op — no opencode restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');
+      // Drives attached, detached or granted while the box slept.
+      void import('../../drives/service').then(({ reconcileSessionDrives }) => reconcileSessionDrives(row.sessionId));
       return true;
     },
     fail: async (reason) => {
