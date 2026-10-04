@@ -22,9 +22,7 @@
  *   2. A member can WRITE the session model on a session they own
  *      (`PUT /sessions/:sid/model`), and that route is floored 'session'.
  *   3. A member still CANNOT write project-level model configuration
- *      (`PUT /model-enablement`) — that asserts project.model.write (the
- *      project.customize.write catch-all was split per topic in #9050; this
- *      route is now governed by the model leaf).
+ *      (`PUT /model-enablement`) — that asserts project.model.write (one permission per topic, #9050).
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';

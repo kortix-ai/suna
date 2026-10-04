@@ -20,7 +20,7 @@ export function ConnectSection() {
       <SectionHeader eyebrow={connect.eyebrow} title={connect.title} description={connect.sub} />
 
       <Reveal delay={0.06}>
-        <div className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-3">
+        <div className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-3">
           {connect.routes.map((route, i) => (
             <article
               key={route.id}

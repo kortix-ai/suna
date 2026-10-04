@@ -1,5 +1,5 @@
 {
-  "id": "1fb9960c-e5ff-41bd-a004-d89e7271a574",
+  "id": "f96de21b-5586-4ad4-96a5-5afd5f1a7f86",
   "prevId": "fa283177-4bf6-4777-aa5c-a4c6a91339a5",
   "version": "7",
   "dialect": "postgresql",
@@ -11197,6 +11197,21 @@
         }
       },
       "indexes": {
+        "idx_oauth_clients_account": {
+          "name": "idx_oauth_clients_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_oauth_clients_app": {
           "name": "idx_oauth_clients_app",
           "columns": [
@@ -19084,6 +19099,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_sandboxes_parked_verified": {
+          "name": "idx_session_sandboxes_parked_verified",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'parkedVerifiedAt') ASC NULLS FIRST",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
