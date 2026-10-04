@@ -1,5 +1,5 @@
 {
-  "source_hash": "9205bac491d7f75caa76f4ba4d7251ea8bc31f1aa4a75398f5deeb271f612888",
+  "source_hash": "4aa4e4f02a914a629504e24bb833a2793b67f2341e9343e21c1e521f96406330",
   "diff_files": [
     "apps/api/src/__tests__/unit-account-deletion-schedule.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
@@ -10,12 +10,12 @@
     "packages/db/scripts/retire-scheduled-account-deletions.integration.test.ts"
   ],
   "diff_hash": "8fac35022501516232fdb0a5c904fcbb5e0045f4aba031e2e58502704fd31049",
-  "head": "c2541fa708a48a8d2b366710f4fda11468708c0a",
+  "head": "6f6b2f1ff6c33e42a78ce8d4b36d4e3ecb3c6f8d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T02:30:14.756Z"
+  "at": "2026-10-04T06:57:18.820Z"
 }
