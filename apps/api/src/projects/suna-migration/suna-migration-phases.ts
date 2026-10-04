@@ -206,10 +206,10 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
         branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
-        // 'completed', NOT 'stopped': the default session list
-        // (selectSessionRowsForViewer) hides stopped sessions that have no
-        // session_sandboxes row — which is every migrated session until its
-        // first open — so 'stopped' makes the whole migration invisible.
+        // 'completed' is the truthful status for a migrated thread: it never
+        // ran a turn in this system, so it is neither running nor stopped.
+        // (The old reason to avoid 'stopped' — the session list hid stopped
+        // rows with no sandbox row — is gone since KRTX-1452.)
         agentName: 'default', status: 'completed', createdBy: ctx.accountId, visibility: 'project',
         metadata: {
           // Carry the legacy thread's own title over; nothing ever re-titles a
