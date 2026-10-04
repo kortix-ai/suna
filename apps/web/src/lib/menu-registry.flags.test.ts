@@ -1,5 +1,4 @@
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { visibleCapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
@@ -42,7 +41,12 @@ describe('menu registry feature-flag gating', () => {
     // a permanent sidebar row and this palette row, so it is no longer a
     // Customize capability tab. Neither entry point declares a flag. Voice and
     // Marketplace have no flag any more: both were removed from the product.
-    const keys = visibleCapabilityTabs({}).map((tab) => tab.key);
+    // The capability bar renders the static CAPABILITY_TABS list since #9042
+    // moved visibility gating into the shell, so the removed-feature assertion
+    // reads the same list the bar renders. Neither entry point declares a
+    // flag. Voice and Marketplace have no flag any more: both were removed
+    // from the product.
+    const keys = CAPABILITY_TABS.map((tab) => tab.key);
     expect(keys).not.toContain('review');
     expect(keys).not.toContain('voice');
     expect(keys).not.toContain('marketplace');
