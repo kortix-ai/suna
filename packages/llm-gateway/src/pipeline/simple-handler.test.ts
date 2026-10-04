@@ -74,8 +74,11 @@ describe('simple gateway pipeline', () => {
         hooks: {
           ...hooks([], []),
           resolveUpstream: async () => [
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'first', apiKey: 'first' },
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'second', apiKey: 'second' },
+            // Loopback by address: `upstream.url` reports `localhost`, which does
+            // not resolve on a platform sandbox — the pool would answer 502
+            // (connection refused) instead of exercising the 429 failover.
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'first', apiKey: 'first' },
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'second', apiKey: 'second' },
           ],
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },

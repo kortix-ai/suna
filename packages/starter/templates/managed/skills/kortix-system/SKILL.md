@@ -112,7 +112,7 @@ Rules for both harnesses:
 <capabilities>
 ## What Kortix can do
 
-Kortix is an open-source AI Management System. Your agents, skills, memory,
+Kortix is an open-source AI Operating System. Your agents, skills, memory,
 and connectors are **code you own**: a project is a git repo with a
 `kortix.yaml` at its root; a session is one unit of agent work on its own
 cloud computer and branch; work becomes permanent only via a
@@ -755,7 +755,8 @@ project.agent.read  project.agent.write
 project.skill.read  project.skill.write
 project.command.read  project.command.write
 project.file.read  project.file.write
-project.customize.read  project.customize.write
+project.settings.write  project.sandbox.write
+project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here

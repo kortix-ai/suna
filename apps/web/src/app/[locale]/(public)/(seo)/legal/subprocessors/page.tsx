@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import Link from '@/components/site-link';
+import { PageHero } from '@/features/marketing/component/page-hero';
 import {
   Table,
   TableBody,
@@ -169,15 +170,9 @@ function RowsTable({ rows }: { rows: Row[] }) {
 export default function SubprocessorsPage() {
   return (
     <main className="bg-background min-h-screen">
-      <div className="mx-auto max-w-4xl px-6 pt-28 pb-24 sm:pt-36">
-        <h1 className="text-3xl font-medium tracking-tight text-balance md:text-4xl">
-          Subprocessors
-        </h1>
-        <p className="text-muted-foreground mt-2 text-sm tabular-nums">
-          Last updated {LAST_UPDATED}
-        </p>
-
-        <div className="mt-8 space-y-4">
+      <PageHero size="band" title="Subprocessors" sub={`Last updated ${LAST_UPDATED}`} />
+      <div className="mx-auto max-w-4xl px-6 pt-12 pb-24">
+        <div className="space-y-4">
           <p className={PROSE}>
             Kortix AI Corp engages the third parties below to process customer personal data when we
             provide the managed cloud Services. Each is bound by written data protection terms no
