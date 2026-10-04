@@ -1,6 +1,9 @@
 'use client';
 
-import { CtaSection } from '@/features/marketing/landing/cta-section';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
+import { useOsContent } from '@/features/marketing/os/use-os-content';
+import { DemoPill, PillLink } from '@/features/marketing/os/primitives';
 import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
@@ -115,13 +118,33 @@ const Footer = () => {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const footerSections = localizeUiCatalog(FOOTER_SECTIONS, tI18nComplete, FOOTER_TRANSLATION_KEYS);
   const currentYear = new Date().getFullYear();
+  const { closing, osHero } = useOsContent();
 
   return (
-    <section className="from-card to-background relative overflow-hidden border-t bg-linear-to-b from-30% to-90% pt-12">
-      <CtaSection />
+    <section className="dark bg-background text-foreground relative overflow-hidden">
+      {/* The close every marketing page ends on, on the Beams art. */}
+      <div className="relative overflow-hidden">
+        <BeamsBackdrop fade="band" />
+        <div className="relative mx-auto flex max-w-7xl flex-col items-center gap-8 px-6 py-30 text-center md:py-40">
+          <h2 className="text-foreground max-w-3xl text-3xl font-normal tracking-tight text-balance sm:text-5xl">
+            {closing.title}
+          </h2>
+          <div className="flex flex-wrap justify-center gap-3">
+            <PillLink href={closing.primary.href}>{closing.primary.label}</PillLink>
+            <DemoPill source="footer-closing">{closing.secondary.label}</DemoPill>
+          </div>
+        </div>
+      </div>
 
-      <footer id="site-footer" className="relative z-10">
-        <div className="mx-auto mb-12 max-w-7xl px-6">
+      <footer id="site-footer" className="relative z-10 border-t">
+        <div className="mx-auto grid max-w-7xl gap-12 px-6 pt-16 pb-12 lg:grid-cols-[1fr_3fr]">
+          <div className="flex flex-col items-start gap-5">
+            <KortixLogo size={22} variant="logomark" />
+            <p className="text-muted-foreground max-w-xs text-sm text-pretty">{osHero.title}</p>
+            <PillLink href={closing.primary.href} className="h-9 px-4 text-sm">
+              {closing.primary.label}
+            </PillLink>
+          </div>
           <nav>
             <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-5">
               {footerSections.map((section) => (
@@ -155,21 +178,23 @@ const Footer = () => {
         </div>
       </footer>
 
-      {/* Dithered wordmark: an alpha mask painted with the foreground token, so it follows the theme. */}
-      <div
-        aria-hidden
-        className="bg-foreground mx-auto mt-6 aspect-[1440/381] w-full max-w-7xl opacity-15"
-        style={{
-          maskImage: 'url(/marketing/dither-wordmark.png)',
-          WebkitMaskImage: 'url(/marketing/dither-wordmark.png)',
-          maskSize: 'contain',
-          WebkitMaskSize: 'contain',
-          maskRepeat: 'no-repeat',
-          WebkitMaskRepeat: 'no-repeat',
-          maskPosition: 'bottom',
-          WebkitMaskPosition: 'bottom',
-        }}
-      />
+      {/* The giant wordmark, cropped by the bottom edge of the page. An alpha
+          mask painted with the foreground token. */}
+      <div aria-hidden className="h-[20vw] overflow-hidden">
+        <div
+          className="bg-foreground aspect-[1440/381] w-full opacity-15"
+          style={{
+            maskImage: 'url(/marketing/dither-wordmark.png)',
+            WebkitMaskImage: 'url(/marketing/dither-wordmark.png)',
+            maskSize: 'contain',
+            WebkitMaskSize: 'contain',
+            maskRepeat: 'no-repeat',
+            WebkitMaskRepeat: 'no-repeat',
+            maskPosition: 'top',
+            WebkitMaskPosition: 'top',
+          }}
+        />
+      </div>
     </section>
   );
 };

@@ -6,7 +6,7 @@ export { DitherField } from './dither-field';
 
 /** Section heading type: one size for every section heading on /developers (not the hero). */
 export const SECTION_HEADING =
-  'text-foreground text-[1.75rem]/8 font-medium tracking-[-0.72px] text-balance lg:text-[2.25rem]/[2.5rem]';
+  'text-foreground text-3xl font-normal tracking-tight text-balance sm:text-5xl';
 
 /** Two-line headline: first line muted, second line ink. */
 export function TwoToneHeading({

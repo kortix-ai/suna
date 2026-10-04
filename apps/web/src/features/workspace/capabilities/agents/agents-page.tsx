@@ -29,6 +29,7 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -196,7 +197,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       filters={
-        config ? (
+        // The row holds its height while the manifest loads, so the grid
+        // below does not drop when the count and the selector land.
+        detailQuery.isLoading ? (
+          <>
+            <Skeleton className="h-4 w-40 rounded-sm py-0" />
+            <Skeleton className="h-8 w-44 rounded-md py-0" />
+          </>
+        ) : config ? (
           <>
             <p className="text-muted-foreground text-xs">
               {agents.length} {agents.length === 1 ? 'agent' : 'agents'}{' '}
