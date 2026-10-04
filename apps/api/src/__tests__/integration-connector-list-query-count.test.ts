@@ -125,9 +125,9 @@ describe('listConnectors issues a bounded number of queries, not O(connector cou
       return { list: result, dbQueryCount: stageSnapshot().db?.count ?? 0 };
     });
 
-    expect(listed.filter((view) => view.provider === 'computer').map((view) => view.slug)).toEqual([
-      'computer',
-    ]);
+    // The fixture pairs no machine, so the built-in computer connector stays
+    // out of the list (KRTX-1492) — hidden, not absent from the query plan.
+    expect(listed.filter((view) => view.provider === 'computer')).toEqual([]);
     const list = listed.filter((view) => view.provider !== 'computer');
     // Correctness: every connector still resolves as connected for its owner.
     expect(list).toHaveLength(OPENAPI_CONNECTOR_COUNT + COMPOSIO_CONNECTOR_COUNT);
