@@ -75,7 +75,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   blocks.push({
     type: 'image',
     image_url: heroUrl,
-    alt_text: 'Kortix — the open-source AI Management System',
+    alt_text: 'Kortix — the open-source AI Operating System',
   });
   blocks.push({
     type: 'header',
