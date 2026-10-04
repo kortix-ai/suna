@@ -1471,7 +1471,7 @@
   },
   "src/projects/lib/sandbox-env-push.ts": {
     "kortix-api/replica-local": {
-      "count": 3
+      "count": 1
     },
     "no-console": {
       "count": 9
