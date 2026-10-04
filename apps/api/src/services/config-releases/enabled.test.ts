@@ -45,7 +45,7 @@ describe('config-release storage is decoupled from the snapshot producer', () =>
     // The two features share ONE object store implementation and may share one
     // physical bucket, but they read SEPARATE settings on purpose: the
     // snapshot bucket setting is what gates the producer worker
-    // (services/git-proxy/project-snapshot-worker.ts), so sharing it would start the
+    // (workers/project-snapshots.ts), so sharing it would start the
     // leader worker in every environment that only wants config archives.
     const asMutable = config as unknown as Record<string, string>;
     const snapshotBucket = asMutable.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET;

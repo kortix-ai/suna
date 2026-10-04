@@ -1,52 +1,40 @@
 import { logger as appLogger, isLoggingTransportError } from '../lib/logger';
 import { captureException, flushSentry } from '../lib/sentry';
-import { startAppDeploymentWorker, stopAppDeploymentWorker } from '../services/apps/deployment-worker';
-import { startAppIdleReaper, stopAppIdleReaper } from '../services/apps/idle-reaper';
-import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from '../services/sandboxes/daytona/pi-worker-pool';
 import { stopModelPricing } from '../services/llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from '../services/llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from '../services/connectors/pipedream';
 import { runtimeAssetsManifest, warmRuntimeChunkIndex } from '../http/runtime-assets';
-import { startAccessControlCache, stopAccessControlCache } from '../services/access-control/access-control-cache';
 import { shutdownAuditEvents } from '../services/audit/audit';
-import {
-  startAuditReconciliationWorker,
-  stopAuditReconciliationWorker,
-} from '../services/audit/audit-reconciliation-worker';
-import { startAuditPartitionWorker, stopAuditPartitionWorker } from '../services/audit/audit-partition-worker';
-import { startAuditArchiveWorker, stopAuditArchiveWorker } from '../services/audit/audit-archive/worker';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../services/audit/audit-webhooks';
-import {
-  startProjectSnapshotWorker,
-  stopProjectSnapshotWorker,
-} from '../services/git-proxy/project-snapshot-worker';
 import {
   runsSingletonWorkers,
   startLeaderElection,
   stopLeaderElection,
 } from '../lib/leader-election';
-import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from '../services/projects';
-import { startActiveTurnRenewal, stopActiveTurnRenewal } from '../services/sandboxes/active-turn-renewal';
-import { startProjectMaintenance, stopProjectMaintenance } from '../services/sandboxes/maintenance';
-import {
-  startProviderTransitionWorker,
-  stopProviderTransitionWorker,
-} from '../services/sandboxes/provider-transition/provider-transition-worker';
-import {
-  startSunaMigrationWorker,
-  stopSunaMigrationWorker,
-} from '../services/projects/suna-migration/suna-migration-worker';
-import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from '../services/sessions/lifecycle/worker';
 import { kickStartupPreBuild } from '../services/snapshots/builder';
-import { startTmpReaper, stopTmpReaper } from '../services/snapshots/tmp-reaper';
-import { startTunnelService, stopTunnelService } from '../http/tunnel';
-import { startBillingRotation, stopBillingRotation } from '../services/billing/rotation-schedule';
-import { startSlackTurnGc, stopSlackTurnGc } from '../services/channels/slack/turn';
-import { startTeamsTurnGc, stopTeamsTurnGc } from '../services/channels/teams/turn';
-import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from '../services/channels/teams-auth';
 import { warnIfPreviewOriginsMissing } from '../services/sandbox-proxy/preview-hosts';
 import { maintenanceSetting } from '../http/platform-endpoints';
-import { startEventLoopLagSampler, stopEventLoopLagSampler } from '../http/system';
+import { startAccessControlCache, stopAccessControlCache } from '../workers/access-control-cache';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from '../workers/active-turn-renewal';
+import { startAppDeploymentWorker, stopAppDeploymentWorker } from '../workers/app-deployments';
+import { startAppIdleReaper, stopAppIdleReaper } from '../workers/app-idle-reaper';
+import { startAuditArchiveWorker, stopAuditArchiveWorker } from '../workers/audit-archive';
+import { startAuditPartitionWorker, stopAuditPartitionWorker } from '../workers/audit-partitions';
+import { startAuditReconciliationWorker, stopAuditReconciliationWorker } from '../workers/audit-reconciliation';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../workers/audit-webhooks';
+import { startBillingRotation, stopBillingRotation } from '../workers/billing-rotation';
+import { startEventLoopLagSampler, stopEventLoopLagSampler } from '../workers/event-loop-lag';
+import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from '../workers/pi-worker-pool';
+import { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance';
+import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from '../workers/project-snapshots';
+import { startProviderTransitionWorker, stopProviderTransitionWorker } from '../workers/provider-transition';
+import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from '../workers/session-lifecycle';
+import { startSlackTurnGc, stopSlackTurnGc } from '../workers/slack-turn-gc';
+import { startSunaMigrationWorker, stopSunaMigrationWorker } from '../workers/suna-migration';
+import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from '../workers/teams-bot-token-refresh';
+import { startTeamsTurnGc, stopTeamsTurnGc } from '../workers/teams-turn-gc';
+import { startTmpReaper, stopTmpReaper } from '../workers/tmp-reaper';
+import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from '../workers/trigger-scheduler';
+import { startTunnelService, stopTunnelService } from '../workers/tunnel';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -221,10 +209,10 @@ async function startSingletonWorkers() {
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
-  const { startGrantExpirySweeper } = await import('../services/iam/expiry-sweeper');
+  const { startGrantExpirySweeper } = await import('../workers/iam-grant-expiry');
   startGrantExpirySweeper();
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
-  const { startOAuthSweeper } = await import('../services/oauth/sweeper');
+  const { startOAuthSweeper } = await import('../workers/oauth-sweep');
   startOAuthSweeper();
   // Hourly trial expiry + credit rotations. Idempotent per account and month,
   // so a leadership flap that runs one twice costs a scan, not money.
@@ -249,9 +237,9 @@ async function stopSingletonWorkers() {
   stopAuditPartitionWorker();
   stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
-  const { stopGrantExpirySweeper } = await import('../services/iam/expiry-sweeper');
+  const { stopGrantExpirySweeper } = await import('../workers/iam-grant-expiry');
   stopGrantExpirySweeper();
-  const { stopOAuthSweeper } = await import('../services/oauth/sweeper');
+  const { stopOAuthSweeper } = await import('../workers/oauth-sweep');
   stopOAuthSweeper();
   stopBillingRotation();
   stopSlackTurnGc();

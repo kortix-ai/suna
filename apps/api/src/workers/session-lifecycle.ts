@@ -1,5 +1,5 @@
-import { config } from '../../../lib/config';
-import { drainSessionLifecycleQueue } from './drain';
+import { config } from '../lib/config';
+import { drainSessionLifecycleQueue } from '../services/sessions/lifecycle/drain';
 
 const state = globalThis as typeof globalThis & {
   __kortixLifecycleWorker?: ReturnType<typeof setInterval>;

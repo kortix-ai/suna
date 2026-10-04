@@ -150,19 +150,8 @@ export async function prewarmTeamsBotToken(): Promise<boolean> {
 /** Keep the bot-connector token warm for the life of the process. */
 export const TEAMS_TOKEN_REFRESH_MS = 50 * 60 * 1000;
 
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-
-export function startTeamsBotTokenRefresh(): void {
-  if (refreshTimer || !teamsConfigured()) return;
-  void prewarmTeamsBotToken();
-  refreshTimer = setInterval(() => {
-    tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
-    void prewarmTeamsBotToken();
-  }, TEAMS_TOKEN_REFRESH_MS);
-  refreshTimer.unref();
-}
-
-export function stopTeamsBotTokenRefresh(): void {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = null;
+/** One refresh: drop the cached bot-connector token, then mint a new one. Never throws. */
+export function refreshTeamsBotToken(): Promise<boolean> {
+  tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
+  return prewarmTeamsBotToken();
 }

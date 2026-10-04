@@ -94,3 +94,4 @@ export {
   resourceTypeForAction,
   type ResourceType,
 } from './actions';
+export { runGrantExpirySweepOnce } from './expiry-sweeper';

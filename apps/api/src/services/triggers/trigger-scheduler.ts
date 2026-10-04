@@ -1,8 +1,6 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { config } from '../../lib/config';
 import { db } from '../../lib/db';
-import { runWorkerTick } from '../audit/audit-scope';
 import { isLeader } from '../../lib/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from './trigger-execution-store';
 import type { GitTriggerSpec } from './index';
@@ -10,9 +8,8 @@ import { drainMonitorEvents } from '../projects/lib/monitor-observer';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
-import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, triggerSchedulerIntervalMs, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, triggersPausedForProject, withTimeout, globalForProjectTriggers, type TriggerSchedulerTimer } from './trigger-scheduler-state';
+import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, triggersPausedForProject, withTimeout } from './trigger-scheduler-state';
 
-export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
 
@@ -248,87 +245,65 @@ export async function drainTriggerExecutionQueue(
   }
 }
 
-export function startProjectTriggerScheduler(): void {
-  if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
-  if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
-    clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
+/** One scheduler tick. Each part runs detached; the tick returns once all are started. */
+export function runProjectTriggerSchedulerTick(): void {
+  // Watchdog: if we're the leader but the sweep has stalled (started and never
+  // completed within the stale window), make it LOUD. A silent dead scheduler
+  // is what turned a single hung fire into an ~18h fleet-wide outage.
+  if (schedulerSweepIsStale(isLeader())) {
+    console.error(
+      '[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed',
+      {
+        lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
+        lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
+      },
+    );
   }
-  const tickBody = () => {
-    // Watchdog: if we're the leader but the sweep has stalled (started and never
-    // completed within the stale window), make it LOUD. A silent dead scheduler
-    // is what turned a single hung fire into an ~18h fleet-wide outage.
-    if (schedulerSweepIsStale(isLeader())) {
-      console.error(
-        '[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed',
-        {
-          lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
-          lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
-        },
-      );
-    }
 
-    runProjectTriggerSweep()
-      .then(() => drainTriggerExecutionQueue())
-      .then((result) => {
-        if (result.fired || result.queued || result.failed || result.skipped) {
-          console.log('[project-triggers] execution drain completed', result);
-        }
-      })
-      .catch((error) => {
-        console.error('[project-triggers] scheduler tick failed:', error);
-      });
+  runProjectTriggerSweep()
+    .then(() => drainTriggerExecutionQueue())
+    .then((result) => {
+      if (result.fired || result.queued || result.failed || result.skipped) {
+        console.log('[project-triggers] execution drain completed', result);
+      }
+    })
+    .catch((error) => {
+      console.error('[project-triggers] scheduler tick failed:', error);
+    });
 
-    // Monitor events land in their own append-only log, so they drain beside
-    // the execution queue rather than through it — one slow monitor fire must
-    // not stall a due cron slot, and vice versa.
-    drainMonitorEvents()
-      .then((result) => {
-        if (result.fired || result.failed || result.skipped) {
-          console.log('[project-monitors] event drain completed', result);
-        }
-      })
-      .catch((error) => {
-        console.error('[project-monitors] event drain failed:', error);
-      });
+  // Monitor events land in their own append-only log, so they drain beside
+  // the execution queue rather than through it — one slow monitor fire must
+  // not stall a due cron slot, and vice versa.
+  drainMonitorEvents()
+    .then((result) => {
+      if (result.fired || result.failed || result.skipped) {
+        console.log('[project-monitors] event drain completed', result);
+      }
+    })
+    .catch((error) => {
+      console.error('[project-monitors] event drain failed:', error);
+    });
 
-    // Connector reconcile backstop — slower cadence than the trigger sweep so
-    // we don't re-read every manifest each tick. Catches out-of-band manifest
-    // edits (raw git push / CLI) and heals any DB drift / retries error rows.
-    if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
-      lastConnectorSweepAt = Date.now();
-      runProjectConnectorSweep()
-        .then(() => {
-          if (initialCatalogBackfillIncomplete(schedulerHealth)) {
-            // On a new scheduler release, drain the bounded catalog batches
-            // continuously instead of waiting two minutes between each batch.
-            // Once both cursors complete a full cycle with no pending rows, the
-            // normal connector cadence resumes. Individual project failures
-            // retry on that bounded cadence; a permanently inaccessible repo
-            // must not force an unbounded full-fleet reconciliation loop.
-            lastConnectorSweepAt = 0;
-          }
-        })
-        .catch((error) => {
+  // Connector reconcile backstop — slower cadence than the trigger sweep so
+  // we don't re-read every manifest each tick. Catches out-of-band manifest
+  // edits (raw git push / CLI) and heals any DB drift / retries error rows.
+  if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
+    lastConnectorSweepAt = Date.now();
+    runProjectConnectorSweep()
+      .then(() => {
+        if (initialCatalogBackfillIncomplete(schedulerHealth)) {
+          // On a new scheduler release, drain the bounded catalog batches
+          // continuously instead of waiting two minutes between each batch.
+          // Once both cursors complete a full cycle with no pending rows, the
+          // normal connector cadence resumes. Individual project failures
+          // retry on that bounded cadence; a permanently inaccessible repo
+          // must not force an unbounded full-fleet reconciliation loop.
           lastConnectorSweepAt = 0;
-          console.error('[project-connectors] sweep failed:', error);
-        });
-    }
-  };
-  // Everything the tick starts (sweep, drains, connector reconcile) inherits
-  // the worker context through AsyncLocalStorage.
-  const tick = () => void runWorkerTick('trigger-scheduler', tickBody);
-  tick();
-  triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
-  globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
-}
-
-export function stopProjectTriggerScheduler(): void {
-  if (triggerSchedulerTimer) {
-    clearInterval(triggerSchedulerTimer);
-    triggerSchedulerTimer = null;
-  }
-  if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
-    clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
-    globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = null;
+        }
+      })
+      .catch((error) => {
+        lastConnectorSweepAt = 0;
+        console.error('[project-connectors] sweep failed:', error);
+      });
   }
 }

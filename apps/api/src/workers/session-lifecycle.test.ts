@@ -4,8 +4,8 @@ let drainMs = 0;
 let concurrent = 0;
 let maxConcurrent = 0;
 const config = { KORTIX_TRIGGER_SCHEDULER_ENABLED: true };
-mock.module('../../../lib/config', () => ({ config }));
-mock.module('./drain', () => ({
+mock.module('../lib/config', () => ({ config }));
+mock.module('../services/sessions/lifecycle/drain', () => ({
   drainSessionLifecycleQueue: async () => {
     drains++;
     concurrent++;
@@ -15,7 +15,7 @@ mock.module('./drain', () => ({
     return {};
   },
 }));
-const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('./worker');
+const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('./session-lifecycle');
 afterEach(async () => {
   stopSessionLifecycleWorker();
   await Bun.sleep(drainMs + 20);

@@ -24,55 +24,64 @@ import { join, relative } from 'node:path';
 const SRC = new URL('..', import.meta.url).pathname;
 const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 
-/** Worker name → the file whose tick is wrapped in `runWorkerTick('<name>'`. */
+/**
+ * Worker name → the file whose tick is wrapped in `runWorkerTick('<name>'`.
+ * A loop's timer lives in workers/<name>.ts. Four ticks are wrapped in
+ * services/ instead, because something other than their timer also runs
+ * them: a request kick (app-deployments, pi-worker-pool), a NOTIFY wake
+ * (tunnel-rpc-forwarder), or a direct drain call (session-lifecycle).
+ * startup-prebuild is a one-shot kick, not a loop.
+ */
 const WORKERS: Record<string, string> = {
-  'active-turn-renewal': 'services/sandboxes/active-turn-renewal.ts',
-  'project-maintenance': 'services/sandboxes/maintenance.ts',
-  'trigger-scheduler': 'services/triggers/trigger-scheduler.ts',
+  'active-turn-renewal': 'workers/active-turn-renewal.ts',
+  'project-maintenance': 'workers/project-maintenance.ts',
+  'trigger-scheduler': 'workers/trigger-scheduler.ts',
   'startup-prebuild': 'services/snapshots/builder.ts',
-  'suna-migration': 'services/projects/suna-migration/suna-migration-worker.ts',
-  'provider-transition': 'services/sandboxes/provider-transition/provider-transition-worker.ts',
+  'suna-migration': 'workers/suna-migration.ts',
+  'provider-transition': 'workers/provider-transition.ts',
   'app-deployments': 'services/apps/deployment-worker.ts',
-  'app-idle-reaper': 'services/apps/idle-reaper.ts',
+  'app-idle-reaper': 'workers/app-idle-reaper.ts',
   'pi-worker-pool': 'services/sandboxes/daytona/pi-worker-pool.ts',
-  'audit-webhooks': 'services/audit/audit-webhooks.ts',
-  'audit-reconciliation': 'services/audit/audit-reconciliation-worker.ts',
-  'audit-partitions': 'services/audit/audit-partition-worker.ts',
-  'audit-archive': 'services/audit/audit-archive/worker.ts',
-  'project-snapshots': 'services/git-proxy/project-snapshot-worker.ts',
-  'iam-grant-expiry': 'services/iam/expiry-sweeper.ts',
-  'oauth-sweep': 'services/oauth/sweeper.ts',
+  'audit-webhooks': 'workers/audit-webhooks.ts',
+  'audit-reconciliation': 'workers/audit-reconciliation.ts',
+  'audit-partitions': 'workers/audit-partitions.ts',
+  'audit-archive': 'workers/audit-archive.ts',
+  'project-snapshots': 'workers/project-snapshots.ts',
+  'iam-grant-expiry': 'workers/iam-grant-expiry.ts',
+  'oauth-sweep': 'workers/oauth-sweep.ts',
   'session-lifecycle': 'services/sessions/lifecycle/drain.ts',
-  'tunnel-cleanup': 'http/tunnel/index.ts',
+  'tunnel-cleanup': 'workers/tunnel.ts',
   'tunnel-rpc-forwarder': 'services/tunnel/core/cluster-forwarder.ts',
-  'billing-trial-expiry': 'services/billing/rotation-schedule.ts',
-  'billing-yearly-rotation': 'services/billing/rotation-schedule.ts',
-  'billing-free-tier-rotation': 'services/billing/rotation-schedule.ts',
-  'slack-turn-gc': 'services/channels/slack/turn.ts',
-  'teams-turn-gc': 'services/channels/teams/turn.ts',
+  'billing-trial-expiry': 'workers/billing-rotation.ts',
+  'billing-yearly-rotation': 'workers/billing-rotation.ts',
+  'billing-free-tier-rotation': 'workers/billing-rotation.ts',
+  'slack-turn-gc': 'workers/slack-turn-gc.ts',
+  'teams-turn-gc': 'workers/teams-turn-gc.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
 const NOT_WORKERS: Record<string, string> = {
   'services/apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'services/apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
-  'services/channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
-  'http/system.ts': 'measures event-loop lag',
+  'workers/teams-bot-token-refresh.ts': 'refreshes the in-memory Teams bot token',
+  'workers/event-loop-lag.ts': 'measures event-loop lag',
   'services/llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'services/sessions/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'services/sandboxes/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'http/projects/session-stream.ts': 'heartbeat on one open session stream',
   'services/sessions/lifecycle/command-lease.ts':
     'renews the lock of one claimed command while its drain lane or inline create runs',
-  'services/sessions/lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
+  'workers/session-lifecycle.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
+  'workers/app-deployments.ts': 'timer that calls triggerAppDeploymentWorker, which wraps its tick',
+  'workers/pi-worker-pool.ts': 'timer that calls maintainPiWorkerPool, which wraps itself',
   'services/llm-gateway/models/model-pricing.ts': 'refreshes the in-memory model pricing',
   'services/sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
   'services/sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
-  'services/access-control/access-control-cache.ts': 'refreshes the in-memory access-control cache',
-  'services/snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
+  'workers/access-control-cache.ts': 'refreshes the in-memory access-control cache',
+  'workers/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
 };
 
-/** Start calls in index.ts → the worker they run, or why they are not one. */
+/** Start calls in bootstrap.ts → the worker they run, or why they are not one. */
 const STARTS: Record<string, string> = {
   startActiveTurnRenewal: 'active-turn-renewal',
   startProjectMaintenance: 'project-maintenance',
@@ -147,7 +156,7 @@ describe('background jobs run as named workers', () => {
   });
 
   test('everything bootstrap.ts starts on the leader or every replica is classified', () => {
-    const bootstrap = read('bootstrap.ts');
+    const bootstrap = read('app/bootstrap.ts');
     const started = ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
       [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
     );

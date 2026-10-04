@@ -48,7 +48,14 @@ export {
   relayTurnAnswer,
   relayTurnEnd,
 } from "./slack-webhook";
-export { prewarmTeamsBotToken } from "./teams-auth";
+export {
+  prewarmTeamsBotToken,
+  refreshTeamsBotToken,
+  teamsConfigured,
+  TEAMS_TOKEN_REFRESH_MS,
+} from "./teams-auth";
+export { sweepStaleSlackTurns } from "./slack/turn";
+export { sweepStaleTeamsTurns } from "./teams/turn";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,

@@ -1,6 +1,6 @@
-import { config } from '../../lib/config';
-import { runWorkerTick } from '../audit/audit-scope';
-import { logger } from '../../lib/logger';
+import { config } from '../lib/config';
+import { runWorkerTick } from '../services/audit/audit-scope';
+import { logger } from '../lib/logger';
 
 // The hourly billing sweeps. bootstrap.ts starts them with the other singleton
 // workers, so they run on the elected leader only, not on every replica.
@@ -18,20 +18,20 @@ export function startBillingRotation(): void {
   timers = [
     hourly('trial expiry', () =>
       runWorkerTick('billing-trial-expiry', async () => {
-        const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
+        const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('../services/billing/services/trial-admin');
         await sweepExpiredTrials();
         await sweepTrialMonthlyGrants();
       }),
     ),
     hourly('yearly rotation', () =>
       runWorkerTick('billing-yearly-rotation', async () => {
-        const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
+        const { processYearlyCreditRotation } = await import('../services/billing/services/yearly-rotation');
         await processYearlyCreditRotation();
       }),
     ),
     hourly('free-tier rotation', () =>
       runWorkerTick('billing-free-tier-rotation', async () => {
-        const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
+        const { processFreeTierCreditRotation } = await import('../services/billing/services/free-tier-rotation');
         await processFreeTierCreditRotation();
       }),
     ),

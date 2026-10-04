@@ -26,14 +26,16 @@ export {
   resolveProjectAutomationActor,
 } from '../sessions/lifecycle';
 
-// Trigger + manifest helpers (consumed by channels / connector / the boot
-// sequence in src/app/index.ts).
+// Trigger + manifest helpers (consumed by channels / connector / the trigger
+// scheduler loop in src/workers/trigger-scheduler.ts).
 export {
   drainTriggerExecutionQueue,
   runProjectTriggerSweep,
   resolveGitTriggerActor,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
+  runProjectTriggerSchedulerTick,
+  triggerSchedulerIntervalMs,
+  globalForProjectTriggers,
+  type TriggerSchedulerTimer,
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
