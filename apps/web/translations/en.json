@@ -19203,7 +19203,8 @@
       "text39207bf34111": "Related skills",
       "text73112526c03a": "Agent turn failed. No reason was reported.",
       "text85b7a59cdbd5": "Platform agent",
-      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
+      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
+      "text6c4af31cd4ab": "Signed out on this device, but the server could not confirm the sign-out."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

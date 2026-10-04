@@ -19192,7 +19192,8 @@
       "text39207bf34111": "Compétences associées",
       "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
       "text85b7a59cdbd5": "Agent de la plateforme",
-      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici."
+      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici.",
+      "text6c4af31cd4ab": "Déconnecté sur cet appareil, mais le serveur n'a pas pu confirmer la déconnexion."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

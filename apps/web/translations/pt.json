@@ -19192,7 +19192,8 @@
       "text39207bf34111": "Habilidades relacionadas",
       "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado.",
       "text85b7a59cdbd5": "Agente da plataforma",
-      "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui."
+      "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui.",
+      "text6c4af31cd4ab": "Sessão encerrada neste dispositivo, mas o servidor não pôde confirmar o término da sessão."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

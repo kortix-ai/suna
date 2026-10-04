@@ -1,0 +1,29 @@
+{
+  "source_hash": "abcfeb3c085cf888d2682fdcbf60be93a4369bb0d11c312bba8aa0d2c0e25653",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
+    "apps/web/src/lib/auth/perform-sign-out.ts",
+    "apps/web/src/lib/auth/sign-out-notice.test.ts",
+    "apps/web/src/lib/auth/sign-out-notice.ts",
+    "apps/web/src/lib/auth/sign-out-sequence.test.ts",
+    "apps/web/src/lib/auth/sign-out-sequence.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "297ca3c2060d8b45afe96a6efa59bf6b1a37a4c32b694fef04ecd9e633233099",
+  "head": "a4031c13954cee7bf70c9860a88a3f96b5408a1b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:50:50.734Z"
+}

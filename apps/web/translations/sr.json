@@ -19192,7 +19192,8 @@
       "text39207bf34111": "Сродне вештине",
       "text73112526c03a": "Корак агента није успео. Разлог није пријављен.",
       "text85b7a59cdbd5": "Agent platforme",
-      "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti."
+      "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti.",
+      "text6c4af31cd4ab": "Odjavljeni ste na ovom uređaju, ali server nije potvrdio odjavu."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

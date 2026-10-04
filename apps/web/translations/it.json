@@ -19192,7 +19192,8 @@
       "text39207bf34111": "Competenze correlate",
       "text73112526c03a": "Il turno dell'agente non è riuscito. Non è stato indicato alcun motivo.",
       "text85b7a59cdbd5": "Agente della piattaforma",
-      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui."
+      "textd9c0c74b514b": "Meta è un agente della piattaforma che coordina il tuo lavoro. La sua configurazione è fissa: puoi avviare una sessione con lui, ma non si può configurare qui.",
+      "text6c4af31cd4ab": "Disconnesso su questo dispositivo, ma il server non ha potuto confermare la disconnessione."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
