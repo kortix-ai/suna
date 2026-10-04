@@ -638,7 +638,13 @@
       "verified": "Verificado",
       "unverified": "Não verificado",
       "signedOutOtherDevices": "Desconectado dos seus outros dispositivos",
-      "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos"
+      "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos",
+      "currentDevice": "Este navegador",
+      "deviceSignedInAt": "Conectado em {date}",
+      "deviceActive": "Ativo",
+      "noDevices": "Nenhum dispositivo conectado",
+      "noDevicesDescription": "Você não está conectado em nenhum dispositivo neste momento.",
+      "devicesLoadFailed": "Não foi possível carregar seus dispositivos conectados"
     },
     "appearance": {
       "theme": "Tema",

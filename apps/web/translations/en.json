@@ -464,7 +464,13 @@
       "verified": "verified",
       "unverified": "unverified",
       "signedOutOtherDevices": "Signed out of your other devices",
-      "signOutOtherDevicesFailed": "Could not sign out other devices"
+      "signOutOtherDevicesFailed": "Could not sign out other devices",
+      "currentDevice": "This browser",
+      "deviceSignedInAt": "Signed in {date}",
+      "deviceActive": "Active",
+      "noDevices": "No signed-in devices",
+      "noDevicesDescription": "You are not signed in on any device right now.",
+      "devicesLoadFailed": "Couldn’t load your signed-in devices"
     },
     "appearance": {
       "theme": "Theme",
