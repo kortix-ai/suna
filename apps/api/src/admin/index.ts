@@ -10,7 +10,6 @@
  * credit ledger, and grant/debit credits (through the billing wallet). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
-import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
@@ -21,6 +20,25 @@ import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
 import { readJsonObject } from '../shared/http-body';
 import { errorSqlstate } from '../shared/error-cause';
+import {
+  deleteSessionSandbox,
+  findAccountName,
+  findProject,
+  findProjectSession,
+  findSessionSandbox,
+  listAccountNames,
+  listAdminAccountMembers,
+  listAdminAccountProjects,
+  listAdminAccountsPage,
+  listAdminCreditLedger,
+  listAdminProjectsPage,
+  listAdminSandboxes,
+  listProviderEventsSince,
+  readProviderDistribution,
+  saveProviderDistribution,
+  saveProviderFallback,
+} from './queries';
+import { summarizeProviderAnalytics } from './provider-analytics';
 
 /** SQLSTATE Postgres raises when `statement_timeout` cancels a query. */
 const STATEMENT_TIMEOUT_SQLSTATE = '57014';
@@ -117,11 +135,7 @@ adminApp.openapi(
   }),
   async (c: any) => {
   try {
-    const { db } = await import('../shared/db');
-    const { accounts, creditAccounts } = await import('@kortix/db');
-    const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
-      await import('drizzle-orm');
-    const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
+    const { parseAdminAccountsListQuery } = await import('./accounts-query');
     const { accountDisplayName } = await import('../accounts/core/app');
     // PURE resolver — no I/O, no cache, no clock of its own. It runs over the
     // row this query already selects, so the `plan` block below costs zero
@@ -129,71 +143,8 @@ adminApp.openapi(
     // enforces for that account.
     const { resolveBillingFromRow } = await import('../billing/services/resolve-billing');
 
-    const {
-      search,
-      accountId: accountIdFilter,
-      tierValues,
-      paymentStatusValues,
-      paidOnly,
-      hasSubscription,
-      minBalance,
-      maxBalance,
-      sortBy,
-      sortDir,
-      page,
-      limit,
-      offset,
-    } = parseAdminAccountsListQuery((k: string) => c.req.query(k));
-    const dir = sortDir === 'asc' ? asc : desc;
-
-    // The PRIMARY owner's email, matching how the product derives an account's
-    // identity (resolveAccountDisplayNames): the personal-account owner first
-    // (`user_id = account_id` — a personal account's id IS its creator's user
-    // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
-    // which let a support operator added as a second owner displace the real
-    // customer whenever their address sorted first alphabetically.
-    const ownerEmail = sql<string | null>`(
-      SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
-      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
-               CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
-               am.joined_at ASC, au.email ASC
-      LIMIT 1)`;
-    const memberCount = sql<number>`(
-      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${qualifiedColumn(accounts.accountId)})`;
-
-    const conds: any[] = [];
-    // Exact-id lookup — the sheet's live row, immune to the list's filters.
-    if (accountIdFilter) conds.push(eq(accounts.accountId, accountIdFilter));
-    if (search) {
-      // The search predicate is shared by the list and count queries; see
-      // accounts-search.ts for why the email branch must stay users-first.
-      const { adminAccountsSearchCondition } = await import('./accounts-search');
-      conds.push(adminAccountsSearchCondition(search));
-    }
-    if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
-    // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
-    if (paidOnly) {
-      conds.push(and(isNotNull(creditAccounts.tier), notInArray(creditAccounts.tier, [...UNPAID_TIERS])));
-    }
-    if (paymentStatusValues.length) conds.push(inArray(creditAccounts.paymentStatus, paymentStatusValues));
-    // "Has subscription" → a Stripe or RevenueCat subscription is on file.
-    if (hasSubscription === true) {
-      conds.push(
-        or(isNotNull(creditAccounts.stripeSubscriptionId), isNotNull(creditAccounts.revenuecatSubscriptionId)),
-      );
-    } else if (hasSubscription === false) {
-      conds.push(
-        and(isNull(creditAccounts.stripeSubscriptionId), isNull(creditAccounts.revenuecatSubscriptionId)),
-      );
-    }
-    if (minBalance) conds.push(gte(creditAccounts.balance, minBalance));
-    if (maxBalance) conds.push(lte(creditAccounts.balance, maxBalance));
-    const where = conds.length ? and(...conds) : undefined;
-
-    const sortCol =
-      sortBy === 'balance' ? creditAccounts.balance : sortBy === 'name' ? accounts.name : accounts.createdAt;
+    const query = parseAdminAccountsListQuery((k: string) => c.req.query(k));
+    const { page, limit } = query;
 
     // Both reads run inside their own guard: `accounts LEFT JOIN
     // credit_accounts` ordered/paginated (or counted) is the query that hit
@@ -205,55 +156,7 @@ adminApp.openapi(
     // (genuine) admin errors.
     const queryResult = await (async () => {
       try {
-        const rows = await db
-          .select({
-            accountId: accounts.accountId,
-            name: accounts.name,
-            createdAt: accounts.createdAt,
-            balance: creditAccounts.balance,
-            expiringCredits: creditAccounts.expiringCredits,
-            nonExpiringCredits: creditAccounts.nonExpiringCredits,
-            dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
-            tier: creditAccounts.tier,
-            paymentStatus: creditAccounts.paymentStatus,
-            provider: creditAccounts.provider,
-            planType: creditAccounts.planType,
-            stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-            // Read by resolveBillingFromRow's per-seat self-heal (a live seat
-            // subscription outranks a stale non-paid `tier`). Not rendered.
-            stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-            billingModel: creditAccounts.billingModel,
-            seatCount: creditAccounts.seatCount,
-            trialStatus: creditAccounts.trialStatus,
-            trialTier: creditAccounts.trialTier,
-            trialSeats: creditAccounts.trialSeats,
-            trialStartedAt: creditAccounts.trialStartedAt,
-            trialEndsAt: creditAccounts.trialEndsAt,
-            trialNote: creditAccounts.trialNote,
-            managedModelsOverride: creditAccounts.managedModelsOverride,
-            demoEnterprise: creditAccounts.demoEnterprise,
-            enterpriseEntitled: creditAccounts.enterpriseEntitled,
-            // The resolver takes ONE row and reads the JSONB overrides FIRST,
-            // so a projection without them reports the legacy columns' answer
-            // for an account whose real answer expired.
-            entitlementOverrides: creditAccounts.entitlementOverrides,
-            ownerEmail,
-            memberCount,
-          })
-          .from(accounts)
-          .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-          .where(where)
-          .orderBy(dir(sortCol))
-          .limit(limit)
-          .offset(offset);
-
-        const [{ total }] = await db
-          .select({ total: sql<number>`count(*)::int` })
-          .from(accounts)
-          .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-          .where(where);
-
-        return { ok: true as const, rows, total };
+        return { ok: true as const, ...(await listAdminAccountsPage(query)) };
       } catch (error) {
         if (errorSqlstate(error) === STATEMENT_TIMEOUT_SQLSTATE) {
           console.error('[admin/accounts] list query failed — returning typed unavailability:', error);
@@ -354,23 +257,7 @@ adminApp.openapi(
   async (c: any) => {
   try {
     const accountId = c.req.param('id');
-    const { db } = await import('../shared/db');
-    const { sql } = await import('drizzle-orm');
-
-    const result: any = await db.execute(sql`
-      SELECT au.id AS user_id, au.email,
-             am.account_role AS account_role,
-             au.created_at AS signed_up_at,
-             au.last_sign_in_at AS last_sign_in_at,
-             au.email_confirmed_at AS email_confirmed_at,
-             au.banned_until AS banned_until,
-             au.raw_app_meta_data->>'provider' AS provider,
-             au.raw_app_meta_data->'providers' AS providers
-      FROM kortix.account_members am
-      INNER JOIN auth.users au ON au.id = am.user_id
-      WHERE am.account_id = ${accountId}
-      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC`);
-    const users = Array.isArray(result) ? result : (result?.rows ?? []);
+    const users = await listAdminAccountMembers(accountId);
     return c.json({ users });
   } catch (e: any) {
     return c.json({ users: [], error: adminErrorMessage(e) }, 500);
@@ -422,10 +309,6 @@ adminApp.openapi(
       return c.json({ error: 'role must be one of owner|admin|member' }, 400);
     }
     const role = roleRaw;
-
-    const { db } = await import('../shared/db');
-    const { accountMembers } = await import('@kortix/db');
-    const { and, eq } = await import('drizzle-orm');
 
     // The role comes from `role_assignments`, not from the legacy column: an
     // assignment written straight through `assignRole()` leaves that column
@@ -507,36 +390,7 @@ adminApp.openapi(
   async (c: any) => {
   try {
     const accountId = c.req.param('id');
-    const { db } = await import('../shared/db');
-    const { projects, projectSessions } = await import('@kortix/db');
-    const { eq, desc, sql } = await import('drizzle-orm');
-
-    const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
-    const activeSessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
-        AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
-    const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
-
-    const rows = await db
-      .select({
-        projectId: projects.projectId,
-        name: projects.name,
-        status: projects.status,
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        createdAt: projects.createdAt,
-        updatedAt: projects.updatedAt,
-        lastOpenedAt: projects.lastOpenedAt,
-        sessionCount,
-        activeSessionCount,
-        lastSessionAt,
-      })
-      .from(projects)
-      .where(eq(projects.accountId, accountId))
-      .orderBy(desc(projects.updatedAt));
+    const rows = await listAdminAccountProjects(accountId);
 
     return c.json({
       projects: rows.map((r) => ({
@@ -584,14 +438,10 @@ adminApp.openapi(
   }),
   async (c: any) => {
   try {
-    const { db } = await import('../shared/db');
-    const { accounts, projects, projectSessions } = await import('@kortix/db');
-    const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
     const { parseAdminProjectsListQuery } = await import('./projects-query');
-    const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
 
-    const { search, accountId, invalidAccountId, statusValues, sortBy, sortDir, page, limit, offset } =
-      parseAdminProjectsListQuery((k: string) => c.req.query(k));
+    const query = parseAdminProjectsListQuery((k: string) => c.req.query(k));
+    const { invalidAccountId, page, limit } = query;
 
     // A malformed accountId narrows to nothing rather than widening to
     // everything — an operator who mistypes an id must not be handed the fleet.
@@ -599,82 +449,7 @@ adminApp.openapi(
       return c.json({ projects: [], total: 0, page, limit });
     }
 
-    // The PRIMARY owner's email, matching how the product derives an account's
-    // identity (resolveAccountDisplayNames): the personal-account owner first
-    // (`user_id = account_id` — a personal account's id IS its creator's user
-    // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
-    // which let a support operator added as a second owner displace the real
-    // customer whenever their address sorted first alphabetically.
-    const ownerEmail = sql<string | null>`(
-      SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
-      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
-               CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
-               am.joined_at ASC, au.email ASC
-      LIMIT 1)`;
-    const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
-    // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
-    // as a single value and matches nothing.
-    const activeStatuses = sql.join(
-      ACTIVE_SESSION_STATUSES.map((s) => sql`${s}`),
-      sql`, `,
-    );
-    const activeSessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
-        AND ps.status::text IN (${activeStatuses}))`;
-    const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
-
-    const conds: any[] = [];
-    if (search) {
-      conds.push(
-        or(
-          ilike(projects.name, `%${search}%`),
-          ilike(accounts.name, `%${search}%`),
-          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${qualifiedColumn(projects.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
-        ),
-      );
-    }
-    if (accountId) conds.push(eq(projects.accountId, accountId));
-    if (statusValues.length) conds.push(inArray(projects.status, statusValues));
-    const where = conds.length ? and(...conds) : undefined;
-
-    const dirSql = sortDir === 'asc' ? sql`asc` : sql`desc`;
-    const sortExpr =
-      sortBy === 'created' ? sql`${projects.createdAt}` : sortBy === 'sessions' ? sessionCount : lastSessionAt;
-    // `project_id` breaks ties so pagination cannot repeat or skip a row when
-    // many projects share a sort value (e.g. sessionCount 0).
-    const orderBy = sql`${sortExpr} ${dirSql} nulls last, ${projects.projectId} desc`;
-
-    const rows = await db
-      .select({
-        projectId: projects.projectId,
-        name: projects.name,
-        status: projects.status,
-        accountId: projects.accountId,
-        accountName: accounts.name,
-        ownerEmail,
-        createdAt: projects.createdAt,
-        sessionCount,
-        activeSessionCount,
-        lastSessionAt,
-      })
-      .from(projects)
-      .innerJoin(accounts, eq(accounts.accountId, projects.accountId))
-      .where(where)
-      .orderBy(orderBy)
-      .limit(limit)
-      .offset(offset);
-
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(projects)
-      .innerJoin(accounts, eq(accounts.accountId, projects.accountId))
-      .where(where);
+    const { rows, total } = await listAdminProjectsPage(query);
 
     const list = rows.map((r) => ({
       projectId: r.projectId,
@@ -718,15 +493,7 @@ adminApp.openapi(
   try {
     const accountId = c.req.param('id');
     const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
-    const { db } = await import('../shared/db');
-    const { creditLedger } = await import('@kortix/db');
-    const { eq, desc } = await import('drizzle-orm');
-    const entries = await db
-      .select()
-      .from(creditLedger)
-      .where(eq(creditLedger.accountId, accountId))
-      .orderBy(desc(creditLedger.createdAt))
-      .limit(limit);
+    const entries = await listAdminCreditLedger(accountId, limit);
     return c.json({ entries });
   } catch (e: any) {
     return c.json({ entries: [], error: adminErrorMessage(e) }, 500);
@@ -1544,13 +1311,8 @@ adminApp.openapi(
   }),
   async (c: any) => {
     const { config } = await import('../config');
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { eq } = await import('drizzle-orm');
-    const { PROVIDER_DISTRIBUTION_KEY } = await import('../platform/services/provider-balancer');
-    const [row] = await db.select({ value: platformSettings.value }).from(platformSettings)
-      .where(eq(platformSettings.key, PROVIDER_DISTRIBUTION_KEY)).limit(1);
-    return c.json({ allowed: config.ALLOWED_SANDBOX_PROVIDERS, default: config.getDefaultProvider(), weights: row?.value ?? {} });
+    const weights = await readProviderDistribution();
+    return c.json({ allowed: config.ALLOWED_SANDBOX_PROVIDERS, default: config.getDefaultProvider(), weights: weights ?? {} });
   },
 );
 
@@ -1572,11 +1334,8 @@ adminApp.openapi(
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
       const w = Number(src[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { PROVIDER_DISTRIBUTION_KEY, invalidateProviderDistributionCache } = await import('../platform/services/provider-balancer');
-    await db.insert(platformSettings).values({ key: PROVIDER_DISTRIBUTION_KEY, value: weights, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value: weights, updatedAt: new Date() } });
+    const { invalidateProviderDistributionCache } = await import('../platform/services/provider-balancer');
+    await saveProviderDistribution(weights);
     invalidateProviderDistributionCache();
     return c.json({ ok: true, weights });
   },
@@ -1608,11 +1367,8 @@ adminApp.openapi(
   async (c: any) => {
     const body = await readJsonObject(c);
     const value = { enabled: body.enabled === true };
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: PROVIDER_FALLBACK_KEY, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    const { invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
+    await saveProviderFallback(value);
     invalidateRuntimeSettings();
     await refreshRuntimeSettings();
     return c.json({ ok: true, ...value });
@@ -1628,23 +1384,13 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'sandboxes'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const { db } = await import('../shared/db');
-    const { sessionSandboxes } = await import('@kortix/db');
-    const { desc, eq, and, sql } = await import('drizzle-orm');
     const limit = Math.min(Number(c.req.query('limit') || 200), 1000);
-    const conds: any[] = [];
-    const prov = c.req.query('provider'); const st = c.req.query('status');
-    if (prov) conds.push(eq(sessionSandboxes.provider, prov as any));
-    if (st) conds.push(eq(sessionSandboxes.status, st as any));
-    const rows = await db.select({
-      sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId,
-      accountId: sessionSandboxes.accountId, projectId: sessionSandboxes.projectId,
-      provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId,
-      status: sessionSandboxes.status, lastUsedAt: sessionSandboxes.lastUsedAt,
-    }).from(sessionSandboxes).where(conds.length ? and(...conds) : undefined)
-      .orderBy(desc(sessionSandboxes.updatedAt)).limit(limit);
-    const byProvider = await db.execute(sql`SELECT provider AS provider, count(*)::int AS count FROM kortix.session_sandboxes WHERE status <> 'archived' GROUP BY provider`);
-    return c.json({ sandboxes: rows, byProvider: (byProvider as any).rows ?? byProvider });
+    const { rows, byProvider } = await listAdminSandboxes({
+      limit,
+      provider: c.req.query('provider'),
+      status: c.req.query('status'),
+    });
+    return c.json({ sandboxes: rows, byProvider });
   },
 );
 
@@ -1664,15 +1410,12 @@ adminApp.openapi(
     const target = String(body.targetProvider || '');
     const { config } = await import('../config');
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
-    const { db } = await import('../shared/db');
-    const { sessionSandboxes, projectSessions, projects } = await import('@kortix/db');
-    const { eq } = await import('drizzle-orm');
-    const [sb] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId)).limit(1);
+    const sb = await findSessionSandbox(sessionId);
     if (!sb) return c.json({ error: 'sandbox not found' }, 404);
     if (sb.provider === target) return c.json({ error: 'already on target provider' }, 400);
-    const [sess] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
+    const sess = await findProjectSession(sessionId);
     if (!sess) return c.json({ error: 'session not found' }, 404);
-    const [proj] = await db.select().from(projects).where(eq(projects.projectId, sess.projectId)).limit(1);
+    const proj = await findProject(sess.projectId);
     if (!proj) return c.json({ error: 'project not found' }, 404);
     const oldProvider = sb.provider;
     if (sb.externalId) {
@@ -1686,7 +1429,7 @@ adminApp.openapi(
     }
     // A placeholder that never acquired an external provider object contains no
     // user data and can safely be reassigned.
-    await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
+    await deleteSessionSandbox(sessionId);
     const { allocateRuntimeOnOpen } = await import('../projects/routes/shared');
     await allocateRuntimeOnOpen(
       { row: proj as any, userId: sess.createdBy ?? '' },
@@ -1715,108 +1458,10 @@ adminApp.openapi(
     responses: { 200: json(z.record(z.string(), z.any()), 'analytics'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const { db } = await import('../shared/db');
-    const { providerEvents } = await import('@kortix/db');
-    const { gte, desc } = await import('drizzle-orm');
     const days = Math.min(Math.max(Number(c.req.query('days') || 7), 1), 90);
     const cutoff = new Date(Date.now() - days * 86_400_000);
-    const rows = await db.select().from(providerEvents)
-      .where(gte(providerEvents.createdAt, cutoff))
-      .orderBy(desc(providerEvents.createdAt)).limit(20_000);
-
-    const pct = (xs: number[], p: number): number => {
-      if (!xs.length) return 0;
-      const s = [...xs].sort((a, b) => a - b);
-      return Math.round(s[Math.min(s.length - 1, Math.floor((p / 100) * (s.length - 1)))]);
-    };
-    const normLabel = (l: string): string =>
-      l.startsWith('provider-create') ? 'provider-create'
-        : (l === 'image-built' || l === 'image-cached') ? 'image' : l;
-    const dayKey = (d: Date): string => new Date(d).toISOString().slice(0, 10);
-
-    const provision = rows.filter((r: any) => r.kind === 'provision');
-    const migrate = rows.filter((r: any) => r.kind === 'migrate');
-    const provNames = Array.from(new Set(provision.map((r: any) => r.provider))).sort();
-
-    // Per-provider summary + phase breakdown.
-    const providers = provNames.map((p) => {
-      const evs = provision.filter((r: any) => r.provider === p);
-      const ok = evs.filter((r: any) => r.outcome === 'ok');
-      const error = evs.filter((r: any) => r.outcome === 'error');
-      const stopped = evs.filter((r: any) => r.outcome === 'stopped');
-      const okMs = ok.map((r: any) => r.totalMs ?? 0).filter((n: number) => n > 0);
-      const finished = ok.length + error.length;
-      const phaseTotals: Record<string, { sum: number; n: number }> = {};
-      for (const r of ok) {
-        for (const m of (r.marks as any[]) ?? []) {
-          const k = normLabel(String(m.label));
-          const d = Number(m.deltaMs) || 0;
-          (phaseTotals[k] ||= { sum: 0, n: 0 }).sum += d;
-          phaseTotals[k].n += 1;
-        }
-      }
-      const phases = Object.entries(phaseTotals).map(([label, v]) => ({ label, avgMs: Math.round(v.sum / v.n) }));
-      return {
-        provider: p,
-        provisions: evs.length, ok: ok.length, error: error.length, stopped: stopped.length,
-        successRate: finished ? Math.round((ok.length / finished) * 100) : null,
-        p50Ms: pct(okMs, 50), p95Ms: pct(okMs, 95),
-        avgMs: okMs.length ? Math.round(okMs.reduce((a: number, b: number) => a + b, 0) / okMs.length) : 0,
-        phases,
-      };
-    });
-
-    // Daily time-series: provision count + p50 latency per provider per day.
-    const dayBuckets: Record<string, Record<string, number[]>> = {};
-    for (const r of provision as any[]) {
-      const dk = dayKey(r.createdAt);
-      ((dayBuckets[dk] ||= {})[r.provider] ||= []);
-      if (r.outcome === 'ok' && r.totalMs) dayBuckets[dk][r.provider].push(r.totalMs);
-    }
-    const allDays: string[] = [];
-    for (let i = days - 1; i >= 0; i--) allDays.push(dayKey(new Date(Date.now() - i * 86_400_000)));
-    const countByDay: Record<string, Record<string, number>> = {};
-    for (const r of provision as any[]) {
-      const dk = dayKey(r.createdAt);
-      (countByDay[dk] ||= {});
-      countByDay[dk][r.provider] = (countByDay[dk][r.provider] || 0) + 1;
-    }
-    const latencyByDay = allDays.map((d) => {
-      const row: Record<string, unknown> = { date: d };
-      for (const p of provNames) row[p] = dayBuckets[d]?.[p]?.length ? pct(dayBuckets[d][p], 50) : null;
-      return row;
-    });
-    const volumeByDay = allDays.map((d) => {
-      const row: Record<string, unknown> = { date: d };
-      for (const p of provNames) row[p] = countByDay[d]?.[p] ?? 0;
-      return row;
-    });
-
-    // Migration flows.
-    const flowMap: Record<string, number> = {};
-    for (const r of migrate as any[]) {
-      const key = `${r.fromProvider ?? '?'}→${r.provider}`;
-      flowMap[key] = (flowMap[key] || 0) + 1;
-    }
-    const migrations = Object.entries(flowMap).map(([flow, count]) => ({ flow, count }));
-
-    const okTot = provision.filter((r: any) => r.outcome === 'ok').length;
-    const errTot = provision.filter((r: any) => r.outcome === 'error').length;
-    const recentErrors = (rows as any[])
-      .filter((r) => r.outcome === 'error')
-      .slice(0, 10)
-      .map((r) => ({ provider: r.provider, errorClass: r.errorClass, error: r.error, createdAt: r.createdAt }));
-
-    return c.json({
-      days,
-      totals: {
-        provisions: provision.length, ok: okTot, error: errTot,
-        stopped: provision.filter((r: any) => r.outcome === 'stopped').length,
-        migrations: migrate.length,
-        successRate: okTot + errTot ? Math.round((okTot / (okTot + errTot)) * 100) : null,
-      },
-      providers, latencyByDay, volumeByDay, migrations, recentErrors,
-    });
+    const rows = await listProviderEventsSince(cutoff);
+    return c.json(summarizeProviderAnalytics(rows, days));
   },
 );
 
@@ -1879,16 +1524,9 @@ adminApp.openapi(
         return c.json({ error: 'account_id must be a uuid' }, 400);
       }
 
-      const { db } = await import('../shared/db');
-      const { accounts } = await import('@kortix/db');
-      const { eq } = await import('drizzle-orm');
       // Refuse a grant on an account that does not exist. A row pointing at a
       // typo'd uuid would sit in the table looking like a real support session.
-      const [account] = await db
-        .select({ accountId: accounts.accountId, name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
-        .limit(1);
+      const account = await findAccountName(accountId);
       if (!account) return c.json({ error: 'account not found' }, 404);
 
       const { createImpersonationGrant, impersonationExpiryFrom, IMPERSONATION_START_ACTION } =
@@ -2017,15 +1655,9 @@ adminApp.openapi(
       const adminUserId = c.get('userId') as string;
       const { listActiveImpersonationGrants } = await import('../shared/impersonation');
       const grants = await listActiveImpersonationGrants(adminUserId);
-      const { db } = await import('../shared/db');
-      const { accounts } = await import('@kortix/db');
-      const { inArray } = await import('drizzle-orm');
       const names = new Map<string, string | null>();
       if (grants.length > 0) {
-        const rows = await db
-          .select({ accountId: accounts.accountId, name: accounts.name })
-          .from(accounts)
-          .where(inArray(accounts.accountId, grants.map((g) => g.targetAccountId)));
+        const rows = await listAccountNames(grants.map((g) => g.targetAccountId));
         for (const row of rows) names.set(row.accountId, row.name ?? null);
       }
       return c.json({
