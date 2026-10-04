@@ -50,7 +50,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { authHeaders, getSessionToken } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import type { SessionPublicShare } from '@kortix/sdk';
+import { resolvePublicShareUrl } from '@kortix/sdk';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -63,25 +63,6 @@ function statusVariant(status?: string) {
   if (status === 'online') return 'default' as const;
   if (status === 'offline') return 'destructive' as const;
   return 'secondary' as const;
-}
-
-/** Best-effort copyable URL for a public share, defensively reading its shape. */
-function shareUrl(share: SessionPublicShare): string {
-  // `public_url` first: it is the share's own origin, already absolute. The
-  // others are paths on the API origin and only work where no preview domain is
-  // configured.
-  const raw: string =
-    share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
-  if (!raw) return '';
-  if (/^https?:\/\//.test(raw)) return raw;
-  if (typeof window !== 'undefined') {
-    try {
-      return new URL(raw, window.location.origin).toString();
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
 }
 
 async function copy(text: string) {
@@ -503,7 +484,12 @@ export function PreviewPanel({
         ) : (
           <ul className="max-h-48 space-y-1.5 overflow-auto scrollbar-thin">
             {shares.map((share) => {
-              const url = shareUrl(share);
+              // Relative paths resolve against this page's origin; the SDK
+              // function owns the field fallback order beside the type.
+              const url = resolvePublicShareUrl(
+                share,
+                typeof window !== 'undefined' ? window.location.origin : undefined,
+              );
               const revoked = !!share.revoked_at;
               return (
                 <li

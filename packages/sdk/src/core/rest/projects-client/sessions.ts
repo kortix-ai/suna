@@ -525,6 +525,37 @@ export interface CreateSessionPublicShareInput {
 }
 
 /**
+ * The copyable URL of one public share, best-effort.
+ *
+ * `public_url` first: it is the share's own origin, already absolute. The
+ * others are paths on the API origin and only work where no preview domain is
+ * configured, so a relative path resolves against `origin` — the caller's own
+ * `window.location.origin` in a browser, or nothing outside one (Node, RN),
+ * where the raw path comes back untouched.
+ *
+ * Pure: pass a share from `listSessionPublicShares`.
+ */
+export function resolvePublicShareUrl(
+  share: Pick<
+    SessionPublicShare,
+    'public_url' | 'public_path' | 'proxy_path' | 'public_token'
+  >,
+  origin?: string,
+): string {
+  const raw = share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
+  if (!raw) return '';
+  if (/^https?:\/\//.test(raw)) return raw;
+  if (origin) {
+    try {
+      return new URL(raw, origin).toString();
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+/**
  * The live transcript share among a session's shares (newest first), or null.
  * Live means not revoked and not expired at `now`. Pure: pass the `shares`
  * from `listSessionPublicShares`.
