@@ -145,9 +145,10 @@ a person:
 2. A merge that changes `kortix.yaml` also needs the permission the direct
    route for that change needs: `agents.*` → `project.agent.write`;
    `triggers` → `project.trigger.create`, `.update`, or `.delete`;
-   `default_agent` → `project.customize.write`. A person's role holds these
-   through `project.gitops.merge`. An agent's `kortix_permissions` must list
-   them, or be `all`. So an agent that may only merge cannot widen itself.
+   `default_agent` → `project.agent.write`. The Manager role holds these,
+   and the role editor adds them to any role that gets
+   `project.gitops.merge`. An agent's `kortix_permissions` must list them, or
+   be `all`. So an agent that may only merge cannot widen itself.
 3. An agent grants only what it holds. When an agent writes any agent's grant
    (the agent editor, the scope and secret-grant routes, or a change request
    it merges), every permission, connector, secret and App the write adds must
@@ -198,7 +199,5 @@ agent can do** panel shows:
 
 This page applies to every agent a project declares under `agents:` in
 `kortix.yaml`. A project with no `agents:` map declares no governed agent, so
-there is nothing to switch on — and nothing on **Settings → Feature flags** to
-find. One project can be put back on the old launcher-role model for a single
-release; ask support, who set it with `PATCH /v1/projects/:id/features`. That
-switch is removed in the release after this one.
+there is nothing to switch on. There is no switch back to the old
+launcher-role model.

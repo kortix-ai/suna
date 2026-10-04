@@ -141,7 +141,7 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              <h2 className="text-foreground mt-3 text-3xl leading-tight font-normal tracking-tight text-balance sm:text-5xl">
                 {t('whyTitle')}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
@@ -150,13 +150,13 @@ const EnterprisePage = () => {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <div className="border-border bg-card grid overflow-hidden rounded-sm border lg:grid-cols-12">
+            <div className="border-border bg-card grid overflow-hidden rounded-xl border lg:grid-cols-12">
               <article className="border-border group border-b p-8 transition-colors duration-200 lg:col-span-7 lg:border-r">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
                   <MdShield weight="fill" className="size-4" />
                   {t('moatEyebrow')}
                 </div>
-                <p className="text-foreground mt-5 max-w-2xl text-2xl leading-tight font-medium tracking-tight text-balance">
+                <p className="text-foreground mt-5 max-w-2xl text-2xl leading-tight font-normal tracking-tight text-balance">
                   {t('moatTitle')}
                 </p>
               </article>
@@ -200,7 +200,7 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              <h2 className="text-foreground mt-3 text-3xl leading-tight font-normal tracking-tight text-balance sm:text-5xl">
                 {t('architectureTitle')}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
@@ -213,7 +213,7 @@ const EnterprisePage = () => {
               {ARCHITECTURE.map(({ icon: Icon, titleKey, descriptionKey }) => (
                 <div
                   key={titleKey}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                  className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
                 >
                   <Icon className="text-foreground size-5" />
                   <h3 className="text-foreground mt-5 text-lg leading-tight font-medium">
@@ -231,7 +231,7 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              <h2 className="text-foreground mt-3 text-3xl leading-tight font-normal tracking-tight text-balance sm:text-5xl">
                 {t('securityTitle')}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
@@ -241,12 +241,12 @@ const EnterprisePage = () => {
           </Reveal>
           <Reveal delay={0.1}>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
+              <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
                   <FaUsers weight="fill" className="size-4" />
                   {t('identityAccessEyebrow')}
                 </div>
-                <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
+                <h3 className="text-foreground mt-5 text-2xl leading-tight font-normal tracking-tight">
                   {t('identityAccessTitle')}
                 </h3>
                 <ul className="mt-6 space-y-3">
@@ -265,12 +265,12 @@ const EnterprisePage = () => {
                 </ul>
               </div>
 
-              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
+              <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
                   <Server className="size-4" />
                   {t('runtimeAuditEyebrow')}
                 </div>
-                <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
+                <h3 className="text-foreground mt-5 text-2xl leading-tight font-normal tracking-tight">
                   {t('runtimeAuditTitle')}
                 </h3>
                 <ul className="mt-6 space-y-3">
@@ -295,7 +295,7 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              <h2 className="text-foreground mt-3 text-3xl leading-tight font-normal tracking-tight text-balance sm:text-5xl">
                 {t('deploymentTitle')}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">

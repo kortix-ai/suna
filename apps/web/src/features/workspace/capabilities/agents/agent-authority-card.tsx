@@ -5,12 +5,8 @@
  *
  *   Kortix permissions (kortix.yaml) ∩ ceiling role (IAM) − human-only
  *
- * This is how Kortix works, not a mode the project chose, so the card states
- * it flatly and never mentions a feature flag. The one remaining off-switch
- * (`agent_principal`, spec §5) is a support lever for a single migrating
- * project and is deleted next release — a project that used it sees a card
- * that overstates the agent's independence for that one release, which is the
- * accepted cost of not advertising the switch.
+ * This is how Kortix works, not a mode the project chose: there is no switch,
+ * so the card states it flatly.
  *
  * Read-only. The Kortix permissions are edited on the same tab (the checklist
  * above this card, which writes kortix.yaml); the ceiling is an IAM role an
