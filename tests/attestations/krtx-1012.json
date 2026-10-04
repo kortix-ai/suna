@@ -1,10 +1,6 @@
 {
-  "source_hash": "76873c12a3043aec72a090883b1f0ed54d3576d20b053cf5e280dc4c51bae8a2",
+  "source_hash": "d5bf1d1e2451512115102fb1d4be7a1fc1fec4de9a576b8867eb918d0ae86b80",
   "diff_files": [
-    "apps/api/src/git-proxy/compiled-pi-runtime.test.ts",
-    "apps/api/src/git-proxy/compiled-pi-runtime.ts",
-    "apps/api/src/git-proxy/compiled-runtime.test.ts",
-    "apps/api/src/git-proxy/compiled-runtime.ts",
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/package.json",
     "apps/web/src/components/ai-elements/checkpoint.test.tsx",
@@ -45,13 +41,13 @@
     "packages/sdk/src/react/index.ts",
     "pnpm-lock.yaml"
   ],
-  "diff_hash": "8771fc4cec8bd97cffbb422692a763cd526618eae33c68d6e21e4929d293bf60",
-  "head": "2b608588213ffb044d7b51f5358eae626f9dd300",
+  "diff_hash": "6bee681cdcf0aad5214810e67fe0dcc5b52ac92d94965c1aab5c9a2255c19802",
+  "head": "4ad3f252ac7d8d4b0599fb15e812965a85137c96",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T20:14:25.601Z"
+  "at": "2026-10-04T07:24:32.826Z"
 }
