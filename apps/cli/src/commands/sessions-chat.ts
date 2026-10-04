@@ -1,5 +1,11 @@
 import { createInterface } from 'node:readline';
-import { findSessionAttachments, type MessageWithParts, type Part } from '@kortix/sdk';
+import {
+  extractGatewayErrorDetails,
+  findSessionAttachments,
+  type MessageWithParts,
+  type Part,
+  unwrapError,
+} from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -130,12 +136,15 @@ export function printMessage(msg: MessageWithParts): void {
       process.stdout.write(`  ${line}\n`);
     }
   }
-  if (
-    msg.info.role === 'assistant' &&
-    (msg.info as { error?: { message?: string } | null }).error
-  ) {
-    const e = (msg.info as { error?: { message?: string } | null }).error;
-    process.stdout.write(`  ${C.red}error: ${e?.message ?? 'unknown'}${C.reset}\n`);
+  const error = msg.info.role === 'assistant' ? msg.info.error : undefined;
+  if (error) {
+    // The transcript contract carries the failure reason on `error.data.*` —
+    // never a top-level `message` — with a gateway body in `data.responseBody`.
+    // Same extraction as the web's turn renderer: the gateway's own sentence
+    // wins over the HTTP status text.
+    process.stdout.write(
+      `  ${C.red}error: ${extractGatewayErrorDetails(error)?.message || unwrapError(error)}${C.reset}\n`,
+    );
   }
 }
 
