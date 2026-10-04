@@ -28,8 +28,9 @@ const BASE64_PREFIX = 'base64-';
 
 /** sessionStorage survives the mail detour within one tab; cookies may not. */
 const STASH_KEY = 'kortix:pkce-verifier';
-/** One shot: a re-seeded exchange that still bounces goes to the resend screen. */
-const RESUME_GUARD_KEY = 'kortix:pkce-resume-armed';
+/** One shot, keyed to the bounced code: a re-seeded exchange that still
+ * bounces goes to the resend screen; a DIFFERENT code's bounce still resumes. */
+const RESUME_GUARD_PREFIX = 'kortix:pkce-resume-armed:';
 
 /**
  * The stash lives as long as the link it belongs to could still be opened:
@@ -139,22 +140,23 @@ export function seedPkceVerifierForResume(): boolean {
 }
 
 /** Arm the one-shot guard before re-entering the callback with the seeded cookie. */
-export function armPkceResumeGuard(): void {
+export function armPkceResumeGuard(authCode: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.setItem(RESUME_GUARD_KEY, '1');
+    window.sessionStorage.setItem(RESUME_GUARD_PREFIX + authCode, '1');
   } catch {
     // Without the guard a failed re-entry could loop; the callback's own
     // bounce then runs one extra time and the visitor retries by hand.
   }
 }
 
-/** True when the previous re-seeded exchange already bounced once. */
-export function consumePkceResumeGuard(): boolean {
+/** True when this exact code already bounced through a re-seeded exchange. */
+export function consumePkceResumeGuard(authCode: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const armed = window.sessionStorage.getItem(RESUME_GUARD_KEY) === '1';
-    if (armed) window.sessionStorage.removeItem(RESUME_GUARD_KEY);
+    const key = RESUME_GUARD_PREFIX + authCode;
+    const armed = window.sessionStorage.getItem(key) === '1';
+    if (armed) window.sessionStorage.removeItem(key);
     return armed;
   } catch {
     return false;

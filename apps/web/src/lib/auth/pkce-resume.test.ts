@@ -1,10 +1,8 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 
-import { createServerClient } from '@supabase/ssr';
+import { combineChunks } from '@supabase/ssr';
 
-import {
-  KORTIX_SUPABASE_AUTH_COOKIE,
-} from '@/lib/supabase/constants';
+import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import {
   armPkceResumeGuard,
   consumePkceResumeGuard,
@@ -30,7 +28,7 @@ import {
 const VERIFIER = '1ffd816ebf77ce9cd0905b34c6a7555b7a48b205012be16ca4df39064c4f0a32';
 const VERIFIER_COOKIE = `${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`;
 const STASH_KEY = 'kortix:pkce-verifier';
-const GUARD_KEY = 'kortix:pkce-resume-armed';
+const GUARD_PREFIX = 'kortix:pkce-resume-armed:';
 
 /** A string-backed cookie jar standing in for document.cookie. */
 let cookieJar = '';
@@ -157,26 +155,33 @@ describe('stash and seed', () => {
     setVerifierCookie(null);
     expect(seedPkceVerifierForResume()).toBe(true);
 
-    // The same storage read path the route handler's exchange uses: the ssr
-    // client wraps getAll + decodeChunkedCookieValue, and auth-js JSON.parses
-    // what comes out. This proves the seed format against the real package,
-    // not against the module's own decoder.
-    const client = createServerClient('https://placeholder.invalid', 'placeholder-key', {
-      cookieOptions: { name: KORTIX_SUPABASE_AUTH_COOKIE, path: '/' },
-      cookies: {
-        getAll: () =>
-          cookieJar
-            .split('; ')
-            .filter(Boolean)
-            .map((part) => {
-              const [name, ...rest] = part.split('=');
-              return { name, value: rest.join('=') };
-            }),
-        setAll: async () => {},
-      },
-    });
-    const seeded = await client.auth.storage.getItem(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`);
-    expect(seeded).toBe(JSON.stringify(VERIFIER));
+    // The same cookie-chunk layer the route handler's exchange reads through:
+    // `combineChunks` is @supabase/ssr's PUBLIC chunk assembly (the storage
+    // adapters call it before decodeChunkedCookieValue, which strips `base64-`),
+    // and auth-js JSON.parses the result. This proves the seed format against
+    // the real package's public read path, not against the module's own
+    // decoder and not through the client's protected `auth.storage`.
+    const allCookies = () =>
+      cookieJar
+        .split('; ')
+        .filter(Boolean)
+        .map((part) => {
+          const [name, ...rest] = part.split('=');
+          return { name, value: rest.join('=') };
+        });
+    const chunked = await combineChunks(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`, async (chunkName) =>
+      allCookies().find(({ name }) => name === chunkName)?.value ?? null,
+    );
+    expect(chunked).not.toBeNull();
+    expect(chunked!.startsWith('base64-')).toBe(true);
+    const decoded = atob(
+      chunked!
+        .slice('base64-'.length)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/') +
+        '='.repeat((4 - (chunked!.length - 'base64-'.length) % 4) % 4),
+    );
+    expect(JSON.parse(decoded)).toBe(VERIFIER);
   });
 
   test('no snapshot and no cookie means no seed', () => {
@@ -209,11 +214,15 @@ describe('stash expiry', () => {
 });
 
 describe('resume guard', () => {
-  test('arms once, consumes once, then stays clear', () => {
-    expect(consumePkceResumeGuard()).toBe(false);
-    armPkceResumeGuard();
-    expect(consumePkceResumeGuard()).toBe(true);
-    expect(consumePkceResumeGuard()).toBe(false);
-    expect(fakeSessionStorage.getItem(GUARD_KEY)).toBeNull();
+  test('arms once per code, consumes once, then stays clear', () => {
+    expect(consumePkceResumeGuard('code-a')).toBe(false);
+    armPkceResumeGuard('code-a');
+    expect(consumePkceResumeGuard('code-a')).toBe(true);
+    expect(consumePkceResumeGuard('code-a')).toBe(false);
+    // A DIFFERENT code's bounce is not blocked by this code's guard.
+    armPkceResumeGuard('code-a');
+    expect(consumePkceResumeGuard('code-b')).toBe(false);
+    // code-a's guard is untouched by code-b's consumption.
+    expect(consumePkceResumeGuard('code-a')).toBe(true);
   });
 });

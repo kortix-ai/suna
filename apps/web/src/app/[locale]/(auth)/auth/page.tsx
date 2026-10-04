@@ -856,7 +856,7 @@ function AuthContent() {
     const resendUrl = new URL('/auth', window.location.origin);
     resendUrl.searchParams.set('expired', 'true');
     if (returnUrl) resendUrl.searchParams.set('returnUrl', returnUrl);
-    if (consumePkceResumeGuard() || !seedPkceVerifierForResume()) {
+    if (consumePkceResumeGuard(pkceResumeCode) || !seedPkceVerifierForResume()) {
       // The re-seeded exchange already bounced once, or this tab holds no
       // snapshot (the link was opened elsewhere) and no cookie. The exchange
       // cannot complete here either way — the resend screen is the honest
@@ -864,7 +864,7 @@ function AuthContent() {
       window.location.assign(resendUrl.toString());
       return;
     }
-    armPkceResumeGuard();
+    armPkceResumeGuard(pkceResumeCode);
     const target = new URL('/auth/callback', window.location.origin);
     target.searchParams.set('code', pkceResumeCode);
     if (returnUrl) target.searchParams.set('returnUrl', returnUrl);
