@@ -95,9 +95,12 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // 20260819015727000 when the cli-token / project-PAT routes stopped gating on
     // the coarse `manage` alias (routes.md §5.2), + `project.gitops.ref.any` /
     // `.ref.delete` (20260901124321557), + `token.personal.create` /
-    // `.revoke` (20260921121500000 — a member may mint their own PAT), and
-    // `project.usage.read` (project-scoped costs).
-    expect(seeded).toHaveLength(75);
+    // `.revoke` (20260921121500000 — a member may mint their own PAT),
+    // `project.usage.read` (project-scoped costs), and the four topic leaves that
+    // split `project.customize.*` (20261003235127508: settings.write,
+    // sandbox.write, model.read, model.write). The two retired customize rows
+    // stay until the contract migration; the API no longer lists them.
+    expect(seeded).toHaveLength(79);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -150,7 +153,8 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
   test('the project roles are a strict chain: member ⊂ manager', async () => {
     const manager = await systemRoleActions('manager', 'project');
     const member = await systemRoleActions('member', 'project');
-    expect([manager.length, member.length]).toEqual([46, 15]);
+    // Manager: +4 topic leaves from the customize split (agent.write it held).
+    expect([manager.length, member.length]).toEqual([50, 15]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this
@@ -195,7 +199,9 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
       PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
       PROJECT_ACTIONS.PROJECT_FILE_WRITE,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
+      PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
       PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
       PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
@@ -211,15 +217,15 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
     ];
-    // Sensitive / Customize reads that are manager-tier: files, secrets, and the
-    // Connectors/Skills/Customize surface. Those object types stay
+    // Sensitive reads that are manager-tier: files, secrets, the
+    // Connectors/Skills surface, and model routing. Those object types stay
     // unscoped-is-OPEN, so holding the leaf would grant the whole surface.
     const managerReadLeaves = [
       PROJECT_ACTIONS.PROJECT_FILE_READ,
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
       PROJECT_ACTIONS.PROJECT_SKILL_READ,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+      PROJECT_ACTIONS.PROJECT_MODEL_READ,
     ];
 
     for (const a of writeLeaves) {

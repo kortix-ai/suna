@@ -207,6 +207,16 @@ describe('cancelSubscription', () => {
     }
   });
 
+  test('mirrors the pending cancellation into paymentStatus for the account state, without waiting on the webhook', async () => {
+    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) =>
+      createMockStripeSubscription({ ...params, cancel_at: Date.now() / 1000 + 86400 * 30 });
+
+    await cancelSubscription('acc_test_123');
+
+    const mirror = updateCreditAccountCalls.find((call) => 'paymentStatus' in call.data);
+    expect(mirror?.data.paymentStatus).toBe('cancelling');
+  });
+
   test('allows cancel after commitment expires', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
@@ -233,6 +243,13 @@ describe('reactivateSubscription', () => {
     const result = await reactivateSubscription('acc_test_123');
     expect(result.success).toBe(true);
     expect(updateParams.cancel_at_period_end).toBe(false);
+  });
+
+  test('mirrors the reactivation into paymentStatus for the account state', async () => {
+    await reactivateSubscription('acc_test_123');
+
+    const mirror = updateCreditAccountCalls.find((call) => 'paymentStatus' in call.data);
+    expect(mirror?.data.paymentStatus).toBe('active');
   });
 });
 
