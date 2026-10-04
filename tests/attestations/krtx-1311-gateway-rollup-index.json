@@ -1,20 +1,20 @@
 {
-  "source_hash": "94c447a1b71de63c59dd5c78b8b92e8c462249561aec39489bee46d698af169a",
+  "source_hash": "30648abaa9e6abe95f1ce437c5cd01e0def9762d77cf023cfc7eeadafd8ec20a",
   "diff_files": [
     "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/drizzle/meta/20261003182953_snapshot.json",
+    "packages/db/drizzle/meta/20261004033003_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261004032106868_gateway_logs_session_rollup_index.concurrent.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-session-rollup-index.test.ts"
   ],
-  "diff_hash": "91d5cca4bbaac3b22af30ca02cbc2680b00014b9dafa90af2698ab132852e206",
-  "head": "774dbbffca367f5aa3836032d5b4364f65d97072",
+  "diff_hash": "07076e49a6fe0e212921e69176d0e997a6c945d42fe99b8234ee5226f0d9bd13",
+  "head": "da6c179d9555a888b54ade0d53bbe7690d67c838",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:22:32.174Z"
+  "at": "2026-10-04T06:14:34.644Z"
 }
