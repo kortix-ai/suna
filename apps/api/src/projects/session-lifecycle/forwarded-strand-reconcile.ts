@@ -146,7 +146,7 @@ const liveDeps: StrandReconcileDeps = {
     const payload = (row.payload ?? {}) as { redeliveries?: unknown };
     const redeliveries = Number(payload.redeliveries ?? 0) + 1;
     if (redeliveries > MAX_STRAND_REDELIVERIES) return 'exhausted';
-    await db
+    const requeued = await db
       .update(sessionLifecycleCommands)
       .set({
         status: 'queued',
@@ -167,7 +167,14 @@ const liveDeps: StrandReconcileDeps = {
           eq(sessionLifecycleCommands.commandId, row.commandId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
         ),
-      );
+      )
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    // The guard is the whole point of the write: a concurrent cancel (which
+    // deletes a succeeded row) or redelivery sweep (requeue and dead-letter
+    // are both guarded on `succeeded`) can take the row between the read
+    // above and this UPDATE. Then NOTHING was re-queued — say so, so the
+    // reconciler does not count or log a redelivery that never happened.
+    if (requeued.length === 0) return 'not_open';
     return 'requeued';
   },
   kickDrain(sessionId) {
