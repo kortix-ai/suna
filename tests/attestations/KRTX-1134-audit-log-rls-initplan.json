@@ -1,16 +1,16 @@
 {
-  "source_hash": "5ccb4cc95fe7b7cd682f8818a530257fbf97a55459b8aed5219f57984216d6a3",
+  "source_hash": "0d4942b4d63170ddd6ee940ac23b2af045ec45a9b6ea88bcf132a72fd615915a",
   "diff_files": [
-    "packages/db/migrations/20261004033649758_audit_log_rls_initplan.sql",
+    "packages/db/migrations/20261004173000009_audit_log_rls_initplan.sql",
     "packages/db/scripts/audit-log-rls-initplan.integration.test.ts"
   ],
-  "diff_hash": "2a8ca7ceaaa08d9e81578fd63b86764b5172561e0ab7a23f32da7bb9c3af40f6",
-  "head": "0eca8b724ce7b5f85dedec8e07461cd4a21560d1",
+  "diff_hash": "f9ee9d0383e4c4abe7e355e2a8fbd3de061af4d6faee6326c01f313567f35f8e",
+  "head": "c4ba5d15c1369df3ba0db58d2f4075fae0c8d1c0",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:51:49.408Z"
+  "at": "2026-10-04T17:46:23.619Z"
 }
