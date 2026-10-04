@@ -120,7 +120,10 @@ describe('the config etag read stays fresh without a whole-mirror fetch', () => 
     for (const name of ['resolveCompiledAgentConfigForSession', 'resolveSelectedAgentConfigForSession']) {
       const body = src.split(`export async function ${name}(`)[1]?.split('\n}\n')[0];
       expect(body).toBeTruthy();
-      expect(body).toContain('forceRefresh: options.forceRefresh');
+      // KRTX-1497 collapsed the shared read+parse prologue into
+      // readParsedManifest, so the threading is the argument both entry points
+      // pass it — the one seam that can drop the refresh.
+      expect(body).toContain('readParsedManifest(project, ref, options.forceRefresh)');
     }
   });
 
