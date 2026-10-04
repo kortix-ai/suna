@@ -4,7 +4,7 @@
  *
  * INCIDENT (2026-09-27 dev benchmark). `syncSandboxEnvForPrompt` already
  * remembered the last signature it pushed to each sandbox — see
- * `lastPromptModelSignature`/`lastPromptEnvPushAt` in `sandbox-env-sync.ts`,
+ * `lastPromptModelSignature` in `sandbox-env-push.ts`,
  * added 2026-09-14 (#7016 T3). That memo is an in-PROCESS `Map`, and dev (and
  * prod) run the API at `desired_count = 2`. A load balancer round-robins
  * requests across replicas, so a session's turns routinely land on a

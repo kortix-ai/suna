@@ -16,17 +16,18 @@
  * Both writes assert `project.model.write`.
  */
 
+import type { ModelDefaultsResponse } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 
 /** One entry of GET /projects/:id/model-picker `models` (GatewayCatalogModel). */
 interface PickerModel {
@@ -44,17 +45,6 @@ interface ModelPicker {
   modelOverrides?: Record<string, boolean>;
   usingDefaults?: boolean;
   defaultModel?: string;
-}
-
-/** GET /projects/:id/model-defaults (routes/models.ts). */
-interface ModelDefaults {
-  platformDefault: string | null;
-  accountDefault: string | null;
-  agentDefaults: Record<string, string>;
-  projectDefault: string | null;
-  resolvedForCaller: string | null;
-  resolvedSource?: string;
-  freeTier?: boolean;
 }
 
 const HELP = help`Usage: kortix models <subcommand> [options]
@@ -163,7 +153,14 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     return p !== 0 ? p : aId.localeCompare(bId);
   });
   if (rows.length === 0) {
-    process.stdout.write(`  ${C.dim}No models served for this project.${C.reset}\n`);
+    // Same state the web Models tab's empty state answers ("Add a key on the
+    // Providers tab"): a fresh account on internal billing serves nothing until
+    // a provider key is connected. Name the CLI path instead of a bare dead end.
+    process.stdout.write(
+      `  ${C.dim}No models yet — connect a provider key with ${C.reset}${C.cyan}kortix providers set <provider>${C.reset}` +
+        `${C.dim} or ${C.reset}${C.cyan}kortix providers login <provider>${C.reset}${C.dim}.` +
+        ` The models it unlocks show up here.${C.reset}\n`,
+    );
     return 0;
   }
   const idW = Math.min(44, Math.max(...rows.map(([id]) => id.length), 5));
@@ -177,7 +174,9 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     if (on) enabledCount += 1;
     const isDefault = id === picker.defaultModel;
     const marker = isDefault ? `${C.green}●${C.reset} ` : '  ';
-    const state = on ? `${C.green}${pad('on', 6)}${C.reset}` : `${C.faded}${pad('off', 6)}${C.reset}`;
+    const state = on
+      ? `${C.green}${pad('on', 6)}${C.reset}`
+      : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
       `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
@@ -199,7 +198,10 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
 }
 
 /** How a model is paid for: a ChatGPT subscription, a provider API key, or Kortix. */
-export function paidVia(id: string, provider: string | undefined): 'ChatGPT' | 'API key' | 'Kortix' {
+export function paidVia(
+  id: string,
+  provider: string | undefined,
+): 'ChatGPT' | 'API key' | 'Kortix' {
   if (id.startsWith('codex/') || provider === 'codex') return 'ChatGPT';
   if (!id.includes('/') || provider === 'kortix') return 'Kortix';
   return 'API key';
@@ -224,9 +226,15 @@ async function modelsToggle(
   const known = new Set(Object.keys(picker.models ?? {}));
   const unknown = ids.filter((id) => !known.has(id));
   if (unknown.length > 0) {
+    // With nothing served, "list the ids with models ls" points at an empty
+    // list — the dead end behind KRTX-1538. Answer how to get models instead.
+    const hint =
+      known.size === 0
+        ? `This project serves no models yet — connect one with ${C.cyan}kortix providers set <provider>${C.reset} ` +
+          `or ${C.cyan}kortix providers login <provider>${C.reset}; ${C.cyan}kortix models ls${C.reset} lists what they unlock.`
+        : `List the ids with ${C.cyan}kortix models ls${C.reset}.`;
     process.stderr.write(
-      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ` +
-        `List the ids with ${C.cyan}kortix models ls${C.reset}.\n`,
+      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ${hint}\n`,
     );
     return 1;
   }
@@ -282,7 +290,7 @@ async function modelsDefault(
   }
 
   if (!model) {
-    const d = await client.get<ModelDefaults>(path);
+    const d = await client.get<ModelDefaultsResponse>(path);
     if (opts.json) {
       emitJson(d);
       return 0;
@@ -323,8 +331,4 @@ function row(label: string, value: string | null): void {
   process.stdout.write(
     `  ${C.dim}${pad(label, 9)}${C.reset} ${value ? `${C.cyan}${value}${C.reset}` : `${C.faded}unset${C.reset}`}\n`,
   );
-}
-
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }

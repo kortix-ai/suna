@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Elige las claves compartidas que puede usar esta sesión.",
     "sessionKeyPool": "Grupo de claves de sesión",
     "sharedSessionKeys": "Esta sesión está compartida con el proyecto, así que aquí solo funcionan las claves compartidas con todo el proyecto. Las claves que te concedieron funcionan en tus sesiones privadas.",
+    "promptedSessionKeys": "Otro miembro ha escrito en esta sesión, así que ya no actúa por su propietario. Aquí solo funcionan las claves compartidas con todo el proyecto.",
+    "noPersonSessionKeys": "Esta sesión no actúa por ninguna persona: empezó antes de que existieran las claves personales o sin supervisión. Aquí solo funcionan las claves compartidas con todo el proyecto. Inicia una sesión nueva para usar tus propias claves.",
     "projectDefaultShort": "Valor predeterminado del proyecto",
     "rateLimitDescription": "La pasarela alterna entre las claves seleccionadas cuando un proveedor indica un límite de solicitudes.",
     "enableGateway": "Activa la pasarela LLM en la configuración del proyecto para usar grupos de claves.",
@@ -577,7 +579,7 @@
       "keepMyAccount": "Mantener mi cuenta",
       "deleteDialogTitle": "¿Eliminar tu cuenta?",
       "immediateWarning": "Esto elimina su cuenta de inmediato. No hay período de gracia ni forma de deshacerlo.",
-      "gracePeriodWarning": "Su cuenta está programada para ser eliminada después de un período de gracia de 30 días, durante el cual puede cancelar.",
+      "gracePeriodWarning": "Su cuenta se programará para ser eliminada después de un período de gracia de 30 días, durante el cual puede cancelar.",
       "whenDeleted": "Cuando se elimina su cuenta:",
       "agentsDeleted": "Todos los agentes que posees se eliminan",
       "threadsDeleted": "Se eliminan todas las sesiones y mensajes",
@@ -19201,6 +19203,8 @@
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
       "text39207bf34111": "Habilidades relacionadas",
       "text73112526c03a": "El turno del agente falló. No se informó ningún motivo.",
+      "text0e5f7f6732e0": "Bifurcar conversación",
+      "text32ad3abe4479": "Error al bifurcar la conversación",
       "text85b7a59cdbd5": "Agente de la plataforma",
       "textd9c0c74b514b": "Meta es un agente de la plataforma que coordina tu trabajo. Su configuración es fija: puedes iniciar una sesión con él, pero no se puede configurar aquí.",
       "text4ee2ff5e821c": "La principal alternativa de código abierto a Claude Cowork y ChatGPT Work",
@@ -19294,7 +19298,8 @@
       "text4e2e4291b764": "Ejecútalo en tu propia infraestructura",
       "text5f4339690d5f": "Qué se lanzó y cuándo",
       "text72e9cb3a34a8": "El AI Operating System",
-      "textcfc0925e41a1": "Un sistema operativo de código abierto para tus agentes, personas y herramientas: agentes, skills, memoria, conectores y computadoras en un repositorio git que es tuyo."
+      "textcfc0925e41a1": "Un sistema operativo de código abierto para tus agentes, personas y herramientas: agentes, skills, memoria, conectores y computadoras en un repositorio git que es tuyo.",
+      "text6c4af31cd4ab": "Has cerrado sesión en este dispositivo, pero el servidor no pudo confirmar el cierre de sesión."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

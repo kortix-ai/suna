@@ -130,6 +130,8 @@
     "chooseSharedKeys": "Choose the shared keys this session can use.",
     "sessionKeyPool": "Session key pool",
     "sharedSessionKeys": "This session is shared with the project, so only keys shared with the whole project work here. Keys granted to you work in your private sessions.",
+    "promptedSessionKeys": "Another member has prompted this session, so it no longer acts for its owner. Only keys shared with the whole project work here.",
+    "noPersonSessionKeys": "This session does not act for a person: it started before personal keys existed, or unattended. Only keys shared with the whole project work here. Start a new session to use your own keys.",
     "projectDefaultShort": "Project default",
     "rateLimitDescription": "The gateway rotates through selected keys when a provider reports a rate limit.",
     "enableGateway": "Enable LLM gateway in project settings to use pooled keys.",
@@ -403,7 +405,7 @@
       "keepMyAccount": "Keep my account",
       "deleteDialogTitle": "Delete your account?",
       "immediateWarning": "This deletes your account right away. There is no grace period and no way to undo it.",
-      "gracePeriodWarning": "Your account is scheduled for deletion after a 30-day grace period, during which you can cancel.",
+      "gracePeriodWarning": "Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.",
       "whenDeleted": "When your account is deleted:",
       "agentsDeleted": "Every agent you own is deleted",
       "threadsDeleted": "Every session and message is deleted",
@@ -19212,6 +19214,8 @@
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
       "text39207bf34111": "Related skills",
       "text73112526c03a": "Agent turn failed. No reason was reported.",
+      "text0e5f7f6732e0": "Fork conversation",
+      "text32ad3abe4479": "Failed to fork conversation",
       "text85b7a59cdbd5": "Platform agent",
       "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
       "text4ee2ff5e821c": "The leading open-source alternative to Claude Cowork and ChatGPT Work",
@@ -19305,7 +19309,8 @@
       "text4e2e4291b764": "Run it on your own infrastructure",
       "text5f4339690d5f": "What shipped, and when",
       "text72e9cb3a34a8": "The AI Operating System",
-      "textcfc0925e41a1": "One open-source operating system for your agents, people and tools: agents, skills, memory, connectors and computers in one git repo you own."
+      "textcfc0925e41a1": "One open-source operating system for your agents, people and tools: agents, skills, memory, connectors and computers in one git repo you own.",
+      "text6c4af31cd4ab": "Signed out on this device, but the server could not confirm the sign-out."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

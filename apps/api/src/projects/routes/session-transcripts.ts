@@ -8,7 +8,7 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { AnyObject, projectsApp } from '../lib/app';
+import { AnyObject, projectsApp, SessionTranscriptReadSchema } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import {
@@ -60,11 +60,11 @@ projectsApp.openapi(
       }),
     },
     responses: {
-      200: json(AnyObject, 'Compact session transcript'),
+      200: json(SessionTranscriptReadSchema, 'The transcript: compact digest, or the sync window with `shape=sync`'),
       ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -158,7 +158,7 @@ projectsApp.openapi(
     request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
     responses: { 200: json(AnyObject, 'Message authors'), ...errors(400, 403, 404) },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
