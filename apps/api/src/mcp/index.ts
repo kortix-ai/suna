@@ -730,29 +730,8 @@ async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slu
 
 async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
   switch (name) {
-    case 'list_projects': {
-      const accounts = await callApi(ctx, 'GET', '/v1/accounts');
-      if (accounts.status >= 400) return apiResult(accounts);
-      const parsed = JSON.parse(accounts.body);
-      const list = (Array.isArray(parsed) ? parsed : (parsed.accounts ?? [])) as { account_id: string; name?: string }[];
-      const perAccount = await Promise.all(
-        list.map(async (account) => {
-          const r = await callApi(ctx, 'GET', '/v1/projects', { query: { account_id: account.account_id } });
-          const rows = r.status < 400 ? (JSON.parse(r.body) as any[]) : [];
-          return rows.map((p) => ({
-            project_id: p.project_id,
-            name: p.name,
-            account: account.name ?? account.account_id,
-            account_id: account.account_id,
-            repository: p.repo_url ?? null,
-            default_branch: p.default_branch ?? null,
-            role: p.effective_project_role ?? null,
-          }));
-        }),
-      );
-      const projects = perAccount.flat();
-      return text(projects.length ? JSON.stringify(projects, null, 2) : 'No projects. Create one in the web app or with `kortix init`.');
-    }
+    case 'list_projects':
+      return listProjectsTool(ctx, input);
     case 'start_session': {
       const body = startSessionBody(input);
       const r = await callApi(ctx, 'POST', `/v1/projects/${projectArg(input)}/sessions`, { body });
@@ -766,142 +745,20 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         ),
       );
     }
-    case 'send_message': {
-      const sessionId = arg(input, 'session_id');
-      const message = arg(input, 'text');
-      const path = await sessionPath(sessionId);
-      const found = await callApi(ctx, 'GET', path);
-      if (found.status >= 400) return apiResult(found);
-      const session = JSON.parse(found.body);
-      // The same body `kortix sessions chat --queue` sends (apps/cli/src/commands/sessions-queue.ts).
-      const model = typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : '';
-      const slash = model.indexOf('/');
-      const overrides = {
-        ...(session.agent_name ? { agent: session.agent_name } : {}),
-        ...(slash > 0 ? { model: { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) } } : {}),
-      };
-      const clientMessageId = crypto.randomUUID();
-      const messageId = mintWireMessageId();
-      const queued = await callApi(ctx, 'POST', `${path}/prompts`, {
-        body: {
-          client_message_id: clientMessageId,
-          message_id: messageId,
-          parts: [{ type: 'text', text: message }],
-          client_sent_at_ms: Date.now(),
-          remint_on_delivery: true,
-          ...(Object.keys(overrides).length ? { overrides } : {}),
-        },
-      });
-      if (queued.status >= 400) return apiResult(queued);
-      // Start after the prompt is queued: start drains the inbox of a stopped session.
-      const start = await callApi(ctx, 'POST', `${path}/start`, { body: {} });
-      return text(
-        JSON.stringify({ queued: true, started: start.status < 400, session_id: sessionId, message_id: messageId, client_message_id: clientMessageId }, null, 2),
-      );
-    }
-    case 'read_session': {
-      const path = await sessionPath(arg(input, 'session_id'));
-      const limit = limitArg(input, 'limit', 10, 100);
-      const wait = input.wait_seconds === undefined ? 0 : limitArg(input, 'wait_seconds', 1, 45) * 1000;
-      // The activity poll and the transcript read must both end inside the request budget.
-      const deadline = Math.min(Date.now() + wait, ctx.deadline - 12_000);
-      let activity = await sessionActivity(ctx, path);
-      while (!('error' in activity) && activity.busy && Date.now() + 2_000 < deadline) {
-        await sleep(2_000);
-        activity = await sessionActivity(ctx, path);
-      }
-      if ('error' in activity) return apiResult(activity.error!);
-      const late = Symbol('late');
-      const transcript = await Promise.race([
-        callApi(ctx, 'GET', `${path}/transcript`, { query: { limit, chars: 1500, detail: 'full' } }),
-        sleep(Math.max(ctx.deadline - Date.now() - 2_000, 0)).then(() => late),
-      ]);
-      const note = typeof transcript === 'symbol' ? 'transcript: not read inside the request budget; call again' : transcript.status >= 400 ? `transcript: HTTP ${transcript.status} ${transcript.body}` : null;
-      if (note) return text(`${JSON.stringify(activity.summary, null, 2)}\n\n${note}`);
-      return text(shapeTranscript(activity.summary, JSON.parse((transcript as ApiReply).body)));
-    }
+    case 'send_message':
+      return sendMessageTool(ctx, input);
+    case 'read_session':
+      return readSessionTool(ctx, input);
     case 'list_sessions': {
       const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, { query: listSessionsQuery(input) });
       if (r.status >= 400) return apiResult(r);
       const rows = (JSON.parse(r.body) as any[]).map(listSessionRow);
       return text(JSON.stringify({ sessions: rows, next_cursor: r.nextCursor ?? null }, null, 2));
     }
-    case 'run_command': {
-      const started = Date.now();
-      const sessionId = arg(input, 'session_id');
-      const existing = optionalArg(input, 'job_id');
-      if (existing && !/^[0-9a-f]{16}$/.test(existing)) throw new ToolInputError('job_id is the 16-character id a running result returned');
-      if (existing && optionalArg(input, 'command')) throw new ToolInputError('pass command (start a command) or job_id (follow one), not both');
-      if (input.cancel === true && !existing) throw new ToolInputError('cancel needs the job_id of a running command');
-      const rawTimeout = input.timeout_seconds;
-      if (rawTimeout !== undefined && rawTimeout !== null && !(Number(rawTimeout) > 0)) throw new ToolInputError('timeout_seconds must be a positive number');
-      const command = existing ? undefined : arg(input, 'command');
-      const jobId = existing ?? crypto.randomUUID().replaceAll('-', '').slice(0, 16);
-      // One session lookup for the launch and every poll of this call.
-      const sandbox = await resolveSandbox(ctx, sessionId);
-      if (!('session' in sandbox)) return apiResult(sandbox);
-      const exec = (script: string, env: Record<string, string>, cwd?: string) => sandboxExec(ctx, sandbox, script, { KMCP_JOB: jobId, ...env }, cwd);
-      let finishedBefore = false;
-      if (existing && input.cancel === true) {
-        const r = await exec(JOB_CANCEL, {});
-        if ('error' in r) return r.error;
-        finishedBefore = r.stdout.trim() === 'finished';
-      } else if (!existing) {
-        const timeout = bounded(rawTimeout, JOB_DEFAULT_TIMEOUT_SECONDS, JOB_MAX_TIMEOUT_SECONDS);
-        const r = await exec(JOB_LAUNCH, { KMCP_CMD: command!, KMCP_TIMEOUT: String(timeout) }, optionalArg(input, 'cwd'));
-        if ('error' in r) return r.error;
-        // A launch that fails (a cwd that does not exist, no space left) says why, before any poll.
-        if (r.exitCode !== 0) return text(`Could not start the command (exit ${r.exitCode}): ${r.stderr.trim() || 'no error output'}`, true);
-      }
-      // Wait for the exit file, fast at first (most commands finish in well
-      // under a second), then every second, leaving ~6 s for the final read.
-      const sep = `--kortix-mcp-${crypto.randomUUID()}--`;
-      const poll = async (): Promise<{ error: ToolResult } | { job: JobState }> => {
-        const r = await exec(JOB_POLL, { KMCP_TAIL: String(JOB_TAIL_BYTES), KMCP_SEP: sep });
-        return 'error' in r ? r : { job: parseJobPoll(r.stdout, sep) };
-      };
-      let delay = 200;
-      for (;;) {
-        const r = await poll();
-        if ('error' in r) return r.error;
-        if (r.job.state === 'missing') return text(`No job ${jobId} in this session's sandbox (a restarted sandbox loses its jobs).`, true);
-        if (r.job.state === 'done' || Date.now() + delay > ctx.deadline - 6_000) {
-          const rendered = renderJob(jobId, r.job, Date.now() - started);
-          return text(finishedBefore && r.job.state === 'done' ? `job already finished (${r.job.exit === 'cancelled' ? 'cancelled' : `exit ${r.job.exit}`})\n${rendered}` : rendered);
-        }
-        await sleep(delay);
-        delay = Math.min(delay * 2, 1_000);
-      }
-    }
-    case 'read_file': {
-      const path = arg(input, 'path');
-      needTarget(input);
-      const sessionId = optionalArg(input, 'session_id');
-      if (!sessionId) {
-        const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files/content`, { query: { path, ref: optionalArg(input, 'ref') } });
-        if (r.status >= 400) return apiResult(r);
-        const file = JSON.parse(r.body);
-        // The route returns git's stdout as a string; a NUL byte means binary, never text.
-        if (String(file.content).includes('\0')) return text(`${path} is a binary file. Read it through a session (read_file with session_id) or clone the repository.`);
-        return pageLines(file.content, input);
-      }
-      const sandbox = await resolveSandbox(ctx, sessionId);
-      if (!('session' in sandbox)) return apiResult(sandbox);
-      const home = await expandHome(ctx, sandbox, path);
-      if ('error' in home) return home.error;
-      const r = await callSandbox(ctx, sandbox, 'GET', '/file/content', { query: { path: home.path } });
-      if (r.status >= 400) return apiResult(r);
-      const file = JSON.parse(r.body);
-      if (file.type === 'text') return pageLines(file.content, input);
-      if (String(file.mimeType).startsWith('image/')) {
-        if (file.size > IMAGE_MAX_BYTES) return text(`Image (${file.mimeType}, ${file.size} bytes) is over the ${IMAGE_MAX_BYTES} byte limit for inline images. Resize it with run_command first.`);
-        return { content: [{ type: 'image', data: file.content, mimeType: file.mimeType }] };
-      }
-      if (String(file.content).length > BINARY_INLINE_CHARS) {
-        return text(`${home.path} is binary, ${file.size} bytes (${file.mimeType}) — use run_command (e.g. base64 -w0 ${home.path} | cut -c 1-40000) to fetch it.`);
-      }
-      return text(`Binary file (${file.mimeType}, ${file.size} bytes). Base64:\n${file.content}`);
-    }
+    case 'run_command':
+      return runCommandTool(ctx, input);
+    case 'read_file':
+      return readFileTool(ctx, input);
     case 'write_file': {
       const content = input.content;
       if (typeof content !== 'string') throw new ToolInputError('content is required');
@@ -919,142 +776,315 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       });
       return envRpcResult(r, () => `wrote ${home.path}`);
     }
-    case 'list_files': {
-      needTarget(input);
-      const path = optionalArg(input, 'path');
-      const sessionId = optionalArg(input, 'session_id');
-      const offset = intArg(input, 'offset') ?? 0;
-      if (!sessionId) {
-        const repoPath = path?.replace(/^\/+/, '');
-        const ref = optionalArg(input, 'ref');
-        const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files`, { query: { path: repoPath, ref } });
-        if (r.status >= 400) return apiResult(r);
-        const files = JSON.parse(r.body) as { path: string }[];
-        return text(files.length ? page(files.map((f) => f.path), offset, undefined, 'entries') : `No files${repoPath ? ` under ${repoPath}` : ''} at ${ref ? `${ref} (or that ref does not exist)` : 'the default branch'}.`);
-      }
-      const sandbox = await resolveSandbox(ctx, sessionId);
-      if (!('session' in sandbox)) return apiResult(sandbox);
-      const home = await expandHome(ctx, sandbox, path ?? '/workspace');
-      if ('error' in home) return home.error;
-      const r = await callSandbox(ctx, sandbox, 'GET', '/file', { query: { path: home.path } });
-      if (r.status >= 400) return apiResult(r);
-      const nodes = JSON.parse(r.body) as { absolute: string; type: string }[];
-      return text(nodes.length ? page(nodes.map((n) => (n.type === 'directory' ? `${n.absolute}/` : n.absolute)), offset, undefined, 'entries') : 'Empty directory.');
-    }
-    case 'read_skill': {
-      const name = optionalArg(input, 'name');
-      const file = optionalArg(input, 'file');
-      const projectId = optionalArg(input, 'project_id');
-      const own = projectId ? await projectSkills(ctx, projectArg(input)) : [];
-      if (own instanceof Error) throw own;
-      const mine = name ? own.find((s) => s.slug === name || s.name === name) : undefined;
-      if (mine) {
-        const dir = mine.path.slice(0, mine.path.lastIndexOf('/') + 1);
-        if (file) {
-          if (file.split('/').includes('..')) throw new ToolInputError('file must stay inside the skill directory');
-          const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: `${dir}${file.replace(/^\/+/, '')}` } });
-          return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
-        }
-        const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: mine.path } });
-        if (r.status >= 400) return apiResult(r);
-        const refs = mine.files.filter((f) => f !== mine.path).map((f) => `- ${f.slice(dir.length)}`);
-        const body = JSON.parse(r.body).content as string;
-        return text(refs.length ? `${body}\n\nReference files (read_skill with project_id, name and file):\n${refs.join('\n')}` : body);
-      }
-      if (!name) {
-        const r = await callApi(ctx, 'GET', '/v1/skills');
-        if (r.status >= 400) return apiResult(r);
-        const skills = JSON.parse(r.body).skills as { name: string; description: string }[];
-        const guides = skills.map((s) => `${s.name} — ${s.description}`).join('\n\n');
-        if (!projectId) return text(guides);
-        const project = own.map((s) => `${s.slug} — ${s.description ?? '(no description)'}`).join('\n\n');
-        return text(`Project skills (read_skill with project_id and name):\n\n${project || '(none: the project has no skills/ directory)'}\n\nPlatform guides:\n\n${guides}`);
-      }
-      if (file) {
-        const r = await callApi(ctx, 'GET', `/v1/skills/${encodeURIComponent(name)}/file`, { query: { path: file } });
-        return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
-      }
-      // The body and its reference paths, as `kortix system-skills get` prints
-      // them: every reference inline (`?full=1`) is ~280 KB for kortix-system.
-      const r = await callApi(ctx, 'GET', `/v1/skills/${encodeURIComponent(name)}`);
-      if (r.status >= 400) return apiResult(r);
-      const skill = JSON.parse(r.body) as { body: string; references?: { path: string }[] };
-      const refs = (skill.references ?? []).map((f) => `- ${f.path}`);
-      return text(refs.length ? `${skill.body}\n\nReference files (read_skill with file):\n${refs.join('\n')}` : skill.body);
-    }
-    case 'kortix': {
-      const args = parseArgs(input.args);
-      if (typeof args === 'string') throw new ToolInputError(args);
-      const projectId = optionalArg(input, 'project_id');
-      const sessionId = optionalArg(input, 'session_id');
-      if ((projectId && !isUuid(projectId)) || (sessionId && !isUuid(sessionId))) throw new ToolInputError('project_id and session_id must be UUIDs (list_projects, list_sessions)');
-      const timeoutMs = Math.min(45_000, ctx.deadline - Date.now() - 4_000);
-      if (timeoutMs < 2_000) throw new ToolInputError('Not enough time left in this MCP request for a command. Call again.');
-      const run = await runCli({
-        args,
-        // The caller's own credential, as sent: the CLI then acts as exactly this user through this API.
-        token: ctx.authorization.replace(/^Bearer\s+/i, ''),
-        apiUrl: `http://127.0.0.1:${Number(process.env.PORT) || 8008}/v1`,
-        projectId,
-        sessionId,
-        timeoutMs,
-      });
-      return run.ok ? text(run.json, run.exitCode !== 0) : text(run.error, true);
-    }
+    case 'list_files':
+      return listFilesTool(ctx, input);
+    case 'read_skill':
+      return readSkillTool(ctx, input);
+    case 'kortix':
+      return kortixCliTool(ctx, input);
     case 'search_api': {
       const { ops } = await loadCatalog(ctx);
       const hits = searchOperations(ops, arg(input, 'query'), limitArg(input, 'limit', 20, 100));
       if (hits.length === 0) return text('No matching routes. Try broader keywords.');
       return text(hits.map((op) => `${op.method} ${op.path}${op.summary && !op.summary.startsWith(op.method) ? ` — ${op.summary}` : ''}`).join('\n'));
     }
-    case 'describe_api': {
-      const { ops, doc } = await loadCatalog(ctx);
-      const method = arg(input, 'method').toUpperCase();
-      const path = arg(input, 'path').replace(/:([A-Za-z_]+)/g, '{$1}');
-      const op = ops.find((o) => o.method === method && o.path === path);
-      if (!op) return text(`No route ${method} ${path}. Use search_api to find it.`, true);
-      const responses = op.spec.responses ?? {};
-      const success = responses['200'] ?? responses['201'] ?? responses['202'];
-      return text(
-        JSON.stringify(
-          resolveRefs(
-            {
-              method,
-              path,
-              summary: op.summary,
-              description: op.description || undefined,
-              parameters: op.spec.parameters,
-              requestBody: requestBodyShape(resolveRefs(op.spec.requestBody, doc)),
-              response: success?.content?.['application/json']?.schema,
-            },
-            doc,
-          ),
-          null,
-          2,
-        ),
-      );
-    }
-    case 'call_api': {
-      const method = arg(input, 'method').toUpperCase();
-      let path = arg(input, 'path');
-      if (/\{projectId\}|:projectId/.test(path)) {
-        const projectId = projectArg(input);
-        path = path.replaceAll('{projectId}', projectId).replaceAll(':projectId', projectId);
-      }
-      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new ToolInputError(`method ${method} is not allowed`);
-      if (!path.startsWith('/v1/')) throw new ToolInputError('path must start with /v1/ and not target /v1/oauth or an MCP endpoint');
-      const open = /\{[^}/]+\}/.exec(path.split('?')[0]!)?.[0];
-      if (open) throw new ToolInputError(`path still has ${open}: replace it with the real value, e.g. /v1/projects/{projectId}/secrets/MY_KEY`);
-      const query = input.query && typeof input.query === 'object' ? (input.query as Record<string, unknown>) : undefined;
-      let body = input.body;
-      // A client that types `body` as a string sends JSON text: parse it, never double-encode it.
-      if (typeof body === 'string') body = (() => { try { return JSON.parse(body as string); } catch { return body; } })();
-      return apiResult(await callApi(ctx, method, path, { query, body, summarizeBinary: true }), `${method} ${path}`);
-    }
+    case 'describe_api':
+      return describeApiTool(ctx, input);
+    case 'call_api':
+      return callApiTool(ctx, input);
     default:
       if (isConnectorTool(name)) return runConnectorTool(name, input, connectorHost(ctx));
       throw Object.assign(new Error(`Unknown tool: ${name}`), { rpcCode: -32602 });
   }
+}
+
+async function listProjectsTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const accounts = await callApi(ctx, 'GET', '/v1/accounts');
+  if (accounts.status >= 400) return apiResult(accounts);
+  const parsed = JSON.parse(accounts.body);
+  const list = (Array.isArray(parsed) ? parsed : (parsed.accounts ?? [])) as { account_id: string; name?: string }[];
+  const perAccount = await Promise.all(
+    list.map(async (account) => {
+      const r = await callApi(ctx, 'GET', '/v1/projects', { query: { account_id: account.account_id } });
+      const rows = r.status < 400 ? (JSON.parse(r.body) as any[]) : [];
+      return rows.map((p) => ({
+        project_id: p.project_id,
+        name: p.name,
+        account: account.name ?? account.account_id,
+        account_id: account.account_id,
+        repository: p.repo_url ?? null,
+        default_branch: p.default_branch ?? null,
+        role: p.effective_project_role ?? null,
+      }));
+    }),
+  );
+  const projects = perAccount.flat();
+  return text(projects.length ? JSON.stringify(projects, null, 2) : 'No projects. Create one in the web app or with `kortix init`.');
+}
+
+async function sendMessageTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const sessionId = arg(input, 'session_id');
+  const message = arg(input, 'text');
+  const path = await sessionPath(sessionId);
+  const found = await callApi(ctx, 'GET', path);
+  if (found.status >= 400) return apiResult(found);
+  const session = JSON.parse(found.body);
+  // The same body `kortix sessions chat --queue` sends (apps/cli/src/commands/sessions-queue.ts).
+  const model = typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : '';
+  const slash = model.indexOf('/');
+  const overrides = {
+    ...(session.agent_name ? { agent: session.agent_name } : {}),
+    ...(slash > 0 ? { model: { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) } } : {}),
+  };
+  const clientMessageId = crypto.randomUUID();
+  const messageId = mintWireMessageId();
+  const queued = await callApi(ctx, 'POST', `${path}/prompts`, {
+    body: {
+      client_message_id: clientMessageId,
+      message_id: messageId,
+      parts: [{ type: 'text', text: message }],
+      client_sent_at_ms: Date.now(),
+      remint_on_delivery: true,
+      ...(Object.keys(overrides).length ? { overrides } : {}),
+    },
+  });
+  if (queued.status >= 400) return apiResult(queued);
+  // Start after the prompt is queued: start drains the inbox of a stopped session.
+  const start = await callApi(ctx, 'POST', `${path}/start`, { body: {} });
+  return text(
+    JSON.stringify({ queued: true, started: start.status < 400, session_id: sessionId, message_id: messageId, client_message_id: clientMessageId }, null, 2),
+  );
+}
+
+async function readSessionTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const path = await sessionPath(arg(input, 'session_id'));
+  const limit = limitArg(input, 'limit', 10, 100);
+  const wait = input.wait_seconds === undefined ? 0 : limitArg(input, 'wait_seconds', 1, 45) * 1000;
+  // The activity poll and the transcript read must both end inside the request budget.
+  const deadline = Math.min(Date.now() + wait, ctx.deadline - 12_000);
+  let activity = await sessionActivity(ctx, path);
+  while (!('error' in activity) && activity.busy && Date.now() + 2_000 < deadline) {
+    await sleep(2_000);
+    activity = await sessionActivity(ctx, path);
+  }
+  if ('error' in activity) return apiResult(activity.error!);
+  const late = Symbol('late');
+  const transcript = await Promise.race([
+    callApi(ctx, 'GET', `${path}/transcript`, { query: { limit, chars: 1500, detail: 'full' } }),
+    sleep(Math.max(ctx.deadline - Date.now() - 2_000, 0)).then(() => late),
+  ]);
+  const note = typeof transcript === 'symbol' ? 'transcript: not read inside the request budget; call again' : transcript.status >= 400 ? `transcript: HTTP ${transcript.status} ${transcript.body}` : null;
+  if (note) return text(`${JSON.stringify(activity.summary, null, 2)}\n\n${note}`);
+  return text(shapeTranscript(activity.summary, JSON.parse((transcript as ApiReply).body)));
+}
+
+async function runCommandTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const started = Date.now();
+  const sessionId = arg(input, 'session_id');
+  const existing = optionalArg(input, 'job_id');
+  if (existing && !/^[0-9a-f]{16}$/.test(existing)) throw new ToolInputError('job_id is the 16-character id a running result returned');
+  if (existing && optionalArg(input, 'command')) throw new ToolInputError('pass command (start a command) or job_id (follow one), not both');
+  if (input.cancel === true && !existing) throw new ToolInputError('cancel needs the job_id of a running command');
+  const rawTimeout = input.timeout_seconds;
+  if (rawTimeout !== undefined && rawTimeout !== null && !(Number(rawTimeout) > 0)) throw new ToolInputError('timeout_seconds must be a positive number');
+  const command = existing ? undefined : arg(input, 'command');
+  const jobId = existing ?? crypto.randomUUID().replaceAll('-', '').slice(0, 16);
+  // One session lookup for the launch and every poll of this call.
+  const sandbox = await resolveSandbox(ctx, sessionId);
+  if (!('session' in sandbox)) return apiResult(sandbox);
+  const exec = (script: string, env: Record<string, string>, cwd?: string) => sandboxExec(ctx, sandbox, script, { KMCP_JOB: jobId, ...env }, cwd);
+  let finishedBefore = false;
+  if (existing && input.cancel === true) {
+    const r = await exec(JOB_CANCEL, {});
+    if ('error' in r) return r.error;
+    finishedBefore = r.stdout.trim() === 'finished';
+  } else if (!existing) {
+    const timeout = bounded(rawTimeout, JOB_DEFAULT_TIMEOUT_SECONDS, JOB_MAX_TIMEOUT_SECONDS);
+    const r = await exec(JOB_LAUNCH, { KMCP_CMD: command!, KMCP_TIMEOUT: String(timeout) }, optionalArg(input, 'cwd'));
+    if ('error' in r) return r.error;
+    // A launch that fails (a cwd that does not exist, no space left) says why, before any poll.
+    if (r.exitCode !== 0) return text(`Could not start the command (exit ${r.exitCode}): ${r.stderr.trim() || 'no error output'}`, true);
+  }
+  // Wait for the exit file, fast at first (most commands finish in well
+  // under a second), then every second, leaving ~6 s for the final read.
+  const sep = `--kortix-mcp-${crypto.randomUUID()}--`;
+  const poll = async (): Promise<{ error: ToolResult } | { job: JobState }> => {
+    const r = await exec(JOB_POLL, { KMCP_TAIL: String(JOB_TAIL_BYTES), KMCP_SEP: sep });
+    return 'error' in r ? r : { job: parseJobPoll(r.stdout, sep) };
+  };
+  let delay = 200;
+  for (;;) {
+    const r = await poll();
+    if ('error' in r) return r.error;
+    if (r.job.state === 'missing') return text(`No job ${jobId} in this session's sandbox (a restarted sandbox loses its jobs).`, true);
+    if (r.job.state === 'done' || Date.now() + delay > ctx.deadline - 6_000) {
+      const rendered = renderJob(jobId, r.job, Date.now() - started);
+      return text(finishedBefore && r.job.state === 'done' ? `job already finished (${r.job.exit === 'cancelled' ? 'cancelled' : `exit ${r.job.exit}`})\n${rendered}` : rendered);
+    }
+    await sleep(delay);
+    delay = Math.min(delay * 2, 1_000);
+  }
+}
+
+async function readFileTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const path = arg(input, 'path');
+  needTarget(input);
+  const sessionId = optionalArg(input, 'session_id');
+  if (!sessionId) {
+    const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files/content`, { query: { path, ref: optionalArg(input, 'ref') } });
+    if (r.status >= 400) return apiResult(r);
+    const file = JSON.parse(r.body);
+    // The route returns git's stdout as a string; a NUL byte means binary, never text.
+    if (String(file.content).includes('\0')) return text(`${path} is a binary file. Read it through a session (read_file with session_id) or clone the repository.`);
+    return pageLines(file.content, input);
+  }
+  const sandbox = await resolveSandbox(ctx, sessionId);
+  if (!('session' in sandbox)) return apiResult(sandbox);
+  const home = await expandHome(ctx, sandbox, path);
+  if ('error' in home) return home.error;
+  const r = await callSandbox(ctx, sandbox, 'GET', '/file/content', { query: { path: home.path } });
+  if (r.status >= 400) return apiResult(r);
+  const file = JSON.parse(r.body);
+  if (file.type === 'text') return pageLines(file.content, input);
+  if (String(file.mimeType).startsWith('image/')) {
+    if (file.size > IMAGE_MAX_BYTES) return text(`Image (${file.mimeType}, ${file.size} bytes) is over the ${IMAGE_MAX_BYTES} byte limit for inline images. Resize it with run_command first.`);
+    return { content: [{ type: 'image', data: file.content, mimeType: file.mimeType }] };
+  }
+  if (String(file.content).length > BINARY_INLINE_CHARS) {
+    return text(`${home.path} is binary, ${file.size} bytes (${file.mimeType}) — use run_command (e.g. base64 -w0 ${home.path} | cut -c 1-40000) to fetch it.`);
+  }
+  return text(`Binary file (${file.mimeType}, ${file.size} bytes). Base64:\n${file.content}`);
+}
+
+async function listFilesTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  needTarget(input);
+  const path = optionalArg(input, 'path');
+  const sessionId = optionalArg(input, 'session_id');
+  const offset = intArg(input, 'offset') ?? 0;
+  if (!sessionId) {
+    const repoPath = path?.replace(/^\/+/, '');
+    const ref = optionalArg(input, 'ref');
+    const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files`, { query: { path: repoPath, ref } });
+    if (r.status >= 400) return apiResult(r);
+    const files = JSON.parse(r.body) as { path: string }[];
+    return text(files.length ? page(files.map((f) => f.path), offset, undefined, 'entries') : `No files${repoPath ? ` under ${repoPath}` : ''} at ${ref ? `${ref} (or that ref does not exist)` : 'the default branch'}.`);
+  }
+  const sandbox = await resolveSandbox(ctx, sessionId);
+  if (!('session' in sandbox)) return apiResult(sandbox);
+  const home = await expandHome(ctx, sandbox, path ?? '/workspace');
+  if ('error' in home) return home.error;
+  const r = await callSandbox(ctx, sandbox, 'GET', '/file', { query: { path: home.path } });
+  if (r.status >= 400) return apiResult(r);
+  const nodes = JSON.parse(r.body) as { absolute: string; type: string }[];
+  return text(nodes.length ? page(nodes.map((n) => (n.type === 'directory' ? `${n.absolute}/` : n.absolute)), offset, undefined, 'entries') : 'Empty directory.');
+}
+
+async function readSkillTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const name = optionalArg(input, 'name');
+  const file = optionalArg(input, 'file');
+  const projectId = optionalArg(input, 'project_id');
+  const own = projectId ? await projectSkills(ctx, projectArg(input)) : [];
+  if (own instanceof Error) throw own;
+  const mine = name ? own.find((s) => s.slug === name || s.name === name) : undefined;
+  if (mine) {
+    const dir = mine.path.slice(0, mine.path.lastIndexOf('/') + 1);
+    if (file) {
+      if (file.split('/').includes('..')) throw new ToolInputError('file must stay inside the skill directory');
+      const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: `${dir}${file.replace(/^\/+/, '')}` } });
+      return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
+    }
+    const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: mine.path } });
+    if (r.status >= 400) return apiResult(r);
+    const refs = mine.files.filter((f) => f !== mine.path).map((f) => `- ${f.slice(dir.length)}`);
+    const body = JSON.parse(r.body).content as string;
+    return text(refs.length ? `${body}\n\nReference files (read_skill with project_id, name and file):\n${refs.join('\n')}` : body);
+  }
+  if (!name) {
+    const r = await callApi(ctx, 'GET', '/v1/skills');
+    if (r.status >= 400) return apiResult(r);
+    const skills = JSON.parse(r.body).skills as { name: string; description: string }[];
+    const guides = skills.map((s) => `${s.name} — ${s.description}`).join('\n\n');
+    if (!projectId) return text(guides);
+    const project = own.map((s) => `${s.slug} — ${s.description ?? '(no description)'}`).join('\n\n');
+    return text(`Project skills (read_skill with project_id and name):\n\n${project || '(none: the project has no skills/ directory)'}\n\nPlatform guides:\n\n${guides}`);
+  }
+  if (file) {
+    const r = await callApi(ctx, 'GET', `/v1/skills/${encodeURIComponent(name)}/file`, { query: { path: file } });
+    return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
+  }
+  // The body and its reference paths, as `kortix system-skills get` prints
+  // them: every reference inline (`?full=1`) is ~280 KB for kortix-system.
+  const r = await callApi(ctx, 'GET', `/v1/skills/${encodeURIComponent(name)}`);
+  if (r.status >= 400) return apiResult(r);
+  const skill = JSON.parse(r.body) as { body: string; references?: { path: string }[] };
+  const refs = (skill.references ?? []).map((f) => `- ${f.path}`);
+  return text(refs.length ? `${skill.body}\n\nReference files (read_skill with file):\n${refs.join('\n')}` : skill.body);
+}
+
+async function kortixCliTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const args = parseArgs(input.args);
+  if (typeof args === 'string') throw new ToolInputError(args);
+  const projectId = optionalArg(input, 'project_id');
+  const sessionId = optionalArg(input, 'session_id');
+  if ((projectId && !isUuid(projectId)) || (sessionId && !isUuid(sessionId))) throw new ToolInputError('project_id and session_id must be UUIDs (list_projects, list_sessions)');
+  const timeoutMs = Math.min(45_000, ctx.deadline - Date.now() - 4_000);
+  if (timeoutMs < 2_000) throw new ToolInputError('Not enough time left in this MCP request for a command. Call again.');
+  const run = await runCli({
+    args,
+    // The caller's own credential, as sent: the CLI then acts as exactly this user through this API.
+    token: ctx.authorization.replace(/^Bearer\s+/i, ''),
+    apiUrl: `http://127.0.0.1:${Number(process.env.PORT) || 8008}/v1`,
+    projectId,
+    sessionId,
+    timeoutMs,
+  });
+  return run.ok ? text(run.json, run.exitCode !== 0) : text(run.error, true);
+}
+
+async function describeApiTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const { ops, doc } = await loadCatalog(ctx);
+  const method = arg(input, 'method').toUpperCase();
+  const path = arg(input, 'path').replace(/:([A-Za-z_]+)/g, '{$1}');
+  const op = ops.find((o) => o.method === method && o.path === path);
+  if (!op) return text(`No route ${method} ${path}. Use search_api to find it.`, true);
+  const responses = op.spec.responses ?? {};
+  const success = responses['200'] ?? responses['201'] ?? responses['202'];
+  return text(
+    JSON.stringify(
+      resolveRefs(
+        {
+          method,
+          path,
+          summary: op.summary,
+          description: op.description || undefined,
+          parameters: op.spec.parameters,
+          requestBody: requestBodyShape(resolveRefs(op.spec.requestBody, doc)),
+          response: success?.content?.['application/json']?.schema,
+        },
+        doc,
+      ),
+      null,
+      2,
+    ),
+  );
+}
+
+async function callApiTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {
+  const method = arg(input, 'method').toUpperCase();
+  let path = arg(input, 'path');
+  if (/\{projectId\}|:projectId/.test(path)) {
+    const projectId = projectArg(input);
+    path = path.replaceAll('{projectId}', projectId).replaceAll(':projectId', projectId);
+  }
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new ToolInputError(`method ${method} is not allowed`);
+  if (!path.startsWith('/v1/')) throw new ToolInputError('path must start with /v1/ and not target /v1/oauth or an MCP endpoint');
+  const open = /\{[^}/]+\}/.exec(path.split('?')[0]!)?.[0];
+  if (open) throw new ToolInputError(`path still has ${open}: replace it with the real value, e.g. /v1/projects/{projectId}/secrets/MY_KEY`);
+  const query = input.query && typeof input.query === 'object' ? (input.query as Record<string, unknown>) : undefined;
+  let body = input.body;
+  // A client that types `body` as a string sends JSON text: parse it, never double-encode it.
+  if (typeof body === 'string') body = (() => { try { return JSON.parse(body as string); } catch { return body; } })();
+  return apiResult(await callApi(ctx, method, path, { query, body, summarizeBinary: true }), `${method} ${path}`);
 }
 
 /** What ./connectors.ts needs from this file: the in-process transport and the sandbox file read. */
