@@ -1,270 +1,184 @@
 /**
  * The `multiple_permissive_policies` fix for the legacy `public.credit_usage`,
- * against a real PostgreSQL.
+ * against a real PostgreSQL. The fixture rebuilds the prod state KRTX-1140
+ * (20261002214601090) left behind — both policies `roles={public}`, auth calls
+ * wrapped — and proves the advisor's overlap rule counts three roles before
+ * the migration and zero after, with predicates and access unchanged.
  *
- * The Supabase performance advisor (splinter lints/0006) groups every
- * permissive policy by (table, role, action) — expanding FOR ALL to all four
- * actions — and flags a group with more than one. public.credit_usage carries
- * two permissive policies that both apply to every role (roles={public}), so
- * each role's SELECT group counts two and the advisor reports the table. The
- * migration scopes each policy to the only role its predicate can pass, which
- * leaves every (role, action) group with one policy and no predicate changed.
- *
- * Runs against the lane's fresh migrated database (TEST_DATABASE_URL): the
- * fixture rebuilds the legacy prod state — the pre-baseline table plus the two
- * policies exactly as KRTX-1140 (20261002214601090) recreated them, auth calls
- * wrapped, both roles={public} — then applies the migration and checks the
- * advisor predicate, the policy shape and the per-role row visibility before
- * and after. Also proves the run is idempotent and a no-op where the legacy
- * table is absent (fresh baseline installs).
+ * The overlap count covers anon, authenticated and service_role directly, so
+ * it does not depend on the image's role attributes (the hosted lint also
+ * drops rolbypassrls roles, and current Supabase images mark service_role
+ * BYPASSRLS). Run against the lane's fresh migrated database (TEST_DATABASE_URL).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { join } from 'node:path';
 import pg from 'pg';
 
-const databaseUrl = process.env.TEST_DATABASE_URL;
-const suite = databaseUrl ? describe : describe.skip;
-
-const migrationDirectory = resolve(import.meta.dir, '..', 'migrations');
-const migrationNames = Array.from(
-  new Bun.Glob('*_public_credit_usage_policy_roles.sql').scanSync({ cwd: migrationDirectory }),
+const url = process.env.TEST_DATABASE_URL;
+const suite = url ? describe : describe.skip;
+const migrationPath = join(
+  import.meta.dir,
+  '../migrations/20261004002924533_public_credit_usage_policy_roles.sql',
 );
 
 const ACCOUNT_A = '11111111-1111-1111-1111-111111111111';
 const ACCOUNT_B = '22222222-2222-2222-2222-222222222222';
 
-/**
- * supabase/splinter lints/0006_multiple_permissive_policies.sql — the query
- * the hosted advisor runs — verbatim from `from pg_catalog.pg_policy` through
- * the `having` (the view wrapper only names it). Every permissive policy is
- * grouped by table, role and action (FOR ALL expands to the four actions);
- * a group with more than one policy is a finding.
- */
-const ADVISOR_LINT = `
-  select n.nspname as schema, c.relname as name, r.rolname as role, act.cmd as action
-  from pg_catalog.pg_policy p
-  join pg_catalog.pg_class c on p.polrelid = c.oid
-  join pg_catalog.pg_namespace n on c.relnamespace = n.oid
-  join pg_catalog.pg_roles r
-    on p.polroles @> array[r.oid]
-    or p.polroles = array[0::oid]
-  left join pg_catalog.pg_depend dep
-    on c.oid = dep.objid
-    and dep.deptype = 'e'
-    and dep.classid = 'pg_catalog.pg_class'::regclass,
-  lateral (
-    select x.cmd
-    from unnest((
-      select case p.polcmd
-        when 'r' then array['SELECT']
-        when 'a' then array['INSERT']
-        when 'w' then array['UPDATE']
-        when 'd' then array['DELETE']
-        when '*' then array['SELECT', 'INSERT', 'UPDATE', 'DELETE']
-        else array['ERROR']
-      end as actions
-    )) x(cmd)
-  ) act(cmd)
-  where c.relkind = 'r'
-    and p.polpermissive
-    and n.nspname not in ('_timescaledb_cache', '_timescaledb_catalog', '_timescaledb_config', '_timescaledb_internal', 'auth', 'cron', 'extensions', 'graphql', 'graphql_public', 'information_schema', 'net', 'pgmq', 'pgroonga', 'pgsodium', 'pgsodium_masks', 'pgtle', 'pgbouncer', 'pg_catalog', 'realtime', 'repack', 'storage', 'supabase_functions', 'supabase_migrations', 'tiger', 'topology', 'vault')
-    and r.rolname not like 'pg_%'
-    and r.rolname not like 'supabase%admin'
-    and not r.rolbypassrls
-    and dep.objid is null
-  group by n.nspname, c.relname, r.rolname, act.cmd
-  having count(1) > 1
-`;
-
-/** The lint's findings for the one table this issue is about. */
-async function advisorFindings(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ role: string; action: string }>(
-    `select * from (
-       ${ADVISOR_LINT}
-     ) f where f.schema = 'public' and f.name = 'credit_usage' order by f.role, f.action`,
-  );
-  return rows.map((row) => `${row.role}/${row.action}`);
-}
-
-/** cmd + roles + permissive + qual, one line per policy, sorted. */
-async function policyShape(client: pg.Client): Promise<string[]> {
-  const { rows } = await client.query<{ line: string }>(
-    `select policyname || ' [' || cmd || ' roles=' || roles::text || ' ' || permissive || '] qual=' || qual as line
-       from pg_policies
-      where schemaname = 'public' and tablename = 'credit_usage'
-      order by policyname`,
-  );
-  return rows.map((row) => row.line);
-}
-
-/** Rows each session sees in public.credit_usage under Supabase's role/GUC
- *  pairing (PostgREST switches to the role the JWT claim names), plus the one
- *  service-role write probe. */
-async function accessMatrix(client: pg.Client): Promise<Record<string, string>> {
-  const visible = async (role: string, gucs: [string, string][]): Promise<string> => {
-    const sets = gucs.map(([name, value]) => `set local ${name} = '${value}'`).join('; ');
-    await client.query(`begin; set local role ${role}; ${sets}`);
-    try {
-      const { rows } = await client.query<{ seen: string | null }>(
-        `select string_agg(description, ',' order by description) as seen from public.credit_usage`,
-      );
-      return rows[0]?.seen ?? '';
-    } finally {
-      await client.query('rollback');
-    }
-  };
-  const matrix: Record<string, string> = {
-    authenticated_own: await visible('authenticated', [['request.jwt.claim.sub', ACCOUNT_A]]),
-    authenticated_other: await visible('authenticated', [['request.jwt.claim.sub', ACCOUNT_B]]),
-    anon: await visible('anon', [['request.jwt.claim.role', 'anon']]),
-    service_role: await visible('service_role', [['request.jwt.claim.role', 'service_role']]),
-  };
-  // The service role manages the table; a user cannot write at all (no write
-  // grant, and the user policy is SELECT-only).
-  await client.query(
-    "begin; set local role service_role; set local request.jwt.claim.role = 'service_role'",
-  );
-  await client.query(
-    `insert into public.credit_usage (account_id, amount_dollars, description)
-     values ('${ACCOUNT_B}', 9.00, 'svc-write-probe')`,
-  );
-  await client.query("delete from public.credit_usage where description = 'svc-write-probe'");
-  await client.query('rollback');
-  // The denied insert aborts its batch mid-transaction; clean the session up
-  // before the caller issues anything else.
-  await expect(
-    client.query(
-      `begin; set local role authenticated;
-       set local request.jwt.claim.sub = '${ACCOUNT_A}';
-       insert into public.credit_usage (account_id, amount_dollars, description)
-       values ('${ACCOUNT_A}', 5.00, 'user-write-probe')`,
-    ),
-  ).rejects.toThrow(/permission denied/);
-  await client.query('rollback');
-  return matrix;
-}
-
-/**
- * Rebuild the legacy prod shape the advisor flagged: the pre-baseline table
- * plus the two policies exactly as prod carries them after KRTX-1140
- * (20261002214601090) — auth calls wrapped, no explicit role, so both policies
- * apply to every role. The functional auth functions stand in for Supabase's
- * (the prereq stubs return NULL, which would make the visibility checks
- * assert nothing); each suite gets its own cloned database, and a real
- * Supabase auth schema keeps its platform-owned functions untouched.
- */
-const fixture = `
-  do $auth$ begin
-    create or replace function auth.uid() returns uuid language sql stable as
-      'select nullif(current_setting(''request.jwt.claim.sub'', true), '''')::uuid';
-    create or replace function auth.role() returns text language sql stable as
-      'select coalesce(nullif(current_setting(''request.jwt.claim.role'', true), ''''), ''anon'')';
-  exception when insufficient_privilege then null; end $auth$;
-  create table if not exists public.credit_usage (
-    id uuid primary key default gen_random_uuid(),
-    account_id uuid not null,
-    amount_dollars numeric(10,2) not null,
-    description text
-  );
-  alter table public.credit_usage enable row level security;
-  drop policy if exists "Users can view their own credit usage" on public.credit_usage;
-  drop policy if exists "Service role can manage all credit usage" on public.credit_usage;
-  create policy "Users can view their own credit usage" on public.credit_usage
-    for select using ((select auth.uid()) = account_id);
-  create policy "Service role can manage all credit usage" on public.credit_usage
-    using ((select auth.role()) = 'service_role'::text);
-  grant select on public.credit_usage to anon, authenticated;
-  grant select, insert, update, delete on public.credit_usage to service_role;
-  truncate public.credit_usage;
-  insert into public.credit_usage (account_id, amount_dollars, description) values
-    ('${ACCOUNT_A}', 1.00, 'acct-a'),
-    ('${ACCOUNT_A}', 2.00, 'acct-a-2'),
-    ('${ACCOUNT_B}', 3.00, 'acct-b');
-`;
-
-async function migrationSql(): Promise<string> {
-  const name = migrationNames.at(0);
-  if (!name) throw new Error('migration file missing — the exactly-one test reports it');
-  return Bun.file(resolve(migrationDirectory, name)).text();
-}
-
 suite('public.credit_usage policy roles migration — real PostgreSQL', () => {
   let client: pg.Client;
-  let beforeFindings: string[] = [];
-  let beforeMatrix: Record<string, string> = {};
+  let migration: string;
 
   beforeAll(async () => {
-    if (migrationNames.length !== 1) return;
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new pg.Client({ connectionString: url });
     await client.connect();
-    await client.query(fixture);
-    // RED, for the stated reason: both policies are permissive and apply to
-    // every role, so every role's SELECT group counts two — exactly what the
-    // prod advisor reported on 2026-10-02.
-    beforeFindings = await advisorFindings(client);
-    beforeMatrix = await accessMatrix(client);
-  }, 30_000);
+    migration = await Bun.file(migrationPath).text();
+  });
 
   afterAll(async () => {
-    await client?.end();
+    await client.end();
   });
 
-  test('exactly one migration scopes the legacy policies, and the fixture seeds the prod state', async () => {
-    expect(migrationNames.length).toBe(1);
-    const shape = await policyShape(client);
-    expect(shape).toContain(
-      'Users can view their own credit usage [SELECT roles={public} PERMISSIVE] qual=(( SELECT auth.uid() AS uid) = account_id)',
+  /** The legacy prod shape the advisor flagged: both policies roles={public}. */
+  async function fixture() {
+    await client.query(`
+      BEGIN;
+      CREATE SCHEMA IF NOT EXISTS auth;
+      CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
+        AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+      CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE
+        AS $$ SELECT coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon') $$;
+      DROP TABLE IF EXISTS public.credit_usage;
+      CREATE TABLE public.credit_usage (
+        id uuid primary key default gen_random_uuid(),
+        account_id uuid not null,
+        amount_dollars numeric(10,2) not null,
+        description text
+      );
+      ALTER TABLE public.credit_usage ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY "Users can view their own credit usage" ON public.credit_usage
+        FOR SELECT USING ((select auth.uid()) = account_id);
+      CREATE POLICY "Service role can manage all credit usage" ON public.credit_usage
+        USING ((select auth.role()) = 'service_role'::text);
+      GRANT SELECT ON public.credit_usage TO anon, authenticated;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON public.credit_usage TO service_role;
+      INSERT INTO public.credit_usage (account_id, amount_dollars, description) VALUES
+        ('${ACCOUNT_A}', 1.00, 'acct-a'),
+        ('${ACCOUNT_A}', 2.00, 'acct-a-2'),
+        ('${ACCOUNT_B}', 3.00, 'acct-b');
+    `);
+  }
+
+  /** supabase/splinter lints/0006's rule: permissive ALL/SELECT policies per
+   *  role on this table; more than one per role is the advisor finding. */
+  async function overlaps() {
+    const result = await client.query(`
+      SELECT count(*)::integer AS count FROM (
+        SELECT r.rolname FROM pg_policies p CROSS JOIN pg_roles r
+        WHERE p.schemaname = 'public' AND p.tablename = 'credit_usage'
+          AND p.permissive = 'PERMISSIVE' AND p.cmd IN ('ALL', 'SELECT')
+          AND r.rolname IN ('anon', 'authenticated', 'service_role')
+          AND ('public' = ANY(p.roles) OR r.rolname = ANY(p.roles))
+        GROUP BY r.rolname HAVING count(*) > 1
+      ) AS policy_overlaps
+    `);
+    return result.rows[0].count;
+  }
+
+  async function policyShape() {
+    const { rows } = await client.query(
+      "SELECT policyname, cmd, permissive, qual, with_check FROM pg_policies WHERE schemaname='public' AND tablename='credit_usage' ORDER BY policyname",
     );
-    expect(shape).toContain(
-      "Service role can manage all credit usage [ALL roles={public} PERMISSIVE] qual=(( SELECT auth.role() AS role) = 'service_role'::text)",
+    return rows;
+  }
+
+  async function policyRoles() {
+    const { rows } = await client.query(
+      "SELECT roles::text FROM pg_policies WHERE schemaname='public' AND tablename='credit_usage' ORDER BY policyname",
     );
+    return rows.map((row) => row.roles);
+  }
+
+  async function seen(): Promise<string | null> {
+    const { rows } = await client.query(
+      "SELECT string_agg(description, ',') AS seen FROM public.credit_usage",
+    );
+    return rows[0]?.seen ?? null;
+  }
+
+  test('scopes the overlapping policies, preserves predicates, and is idempotent', async () => {
+    try {
+      await fixture();
+      expect(await overlaps()).toBe(3);
+      const before = await policyShape();
+      await client.query(migration);
+      expect(await overlaps()).toBe(0);
+      expect(await policyShape()).toEqual(before);
+      expect(await policyRoles()).toEqual(['{service_role}', '{authenticated}']);
+      await client.query(migration);
+      expect(await overlaps()).toBe(0);
+    } finally {
+      await client.query('ROLLBACK');
+    }
   });
 
-  test('the seeded legacy shape reproduces the advisor finding (red before the fix)', () => {
-    // anon and authenticated are RLS-evaluated roles in every Supabase image,
-    // so their rows are the stable red signal; the lint's own predicate drops
-    // rolbypassrls roles and current Supabase images mark service_role
-    // BYPASSRLS, so a service_role row would be an image property, not part
-    // of the lint contract. The post-fix policy shape pins the service_role
-    // scoping instead.
-    expect(beforeFindings).toContain('anon/SELECT');
-    expect(beforeFindings).toContain('authenticated/SELECT');
+  test('row visibility and write access are unchanged by the scoping', async () => {
+    try {
+      await fixture();
+      await client.query(migration);
+      await client.query(
+        `SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '${ACCOUNT_A}'; SET LOCAL request.jwt.claim.role = 'authenticated'`,
+      );
+      expect(await seen()).toBe('acct-a,acct-a-2');
+      await client.query(`SET LOCAL request.jwt.claim.sub = '${ACCOUNT_B}'`);
+      expect(await seen()).toBe('acct-b');
+      await client.query(
+        `RESET ROLE; SET LOCAL ROLE anon; SET LOCAL request.jwt.claim.role = 'anon'; SET LOCAL request.jwt.claim.sub = ''`,
+      );
+      expect(await seen()).toBe(null);
+      await client.query(
+        `RESET ROLE; SET LOCAL ROLE service_role; SET LOCAL request.jwt.claim.role = 'service_role'`,
+      );
+      expect(
+        (
+          await client.query(
+            `INSERT INTO public.credit_usage (account_id, amount_dollars, description) VALUES ('${ACCOUNT_B}', 9.00, 'svc-write-probe') RETURNING description`,
+          )
+        ).rows,
+      ).toEqual([{ description: 'svc-write-probe' }]);
+      await client.query(`DELETE FROM public.credit_usage WHERE description = 'svc-write-probe'`);
+      // A user still has no write grant and the user policy is SELECT-only.
+      // This aborts the transaction; the finally's ROLLBACK cleans it up.
+      await expect(
+        client.query(
+          `SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '${ACCOUNT_A}';
+           INSERT INTO public.credit_usage (account_id, amount_dollars, description) VALUES ('${ACCOUNT_A}', 5.00, 'user-write-probe')`,
+        ),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      await client.query('ROLLBACK');
+    }
   });
 
-  test('the legacy shape already shows every role its post-migration rows (matrix is meaningful)', () => {
-    expect(beforeMatrix).toEqual({
-      authenticated_own: 'acct-a,acct-a-2',
-      authenticated_other: 'acct-b',
-      anon: '',
-      service_role: 'acct-a,acct-a-2,acct-b',
-    });
-  });
-
-  test('the migration scopes both policies; the advisor predicate stops flagging the table', async () => {
-    const migration = await migrationSql();
-    // node-pg-migrate runs each file in one transaction; mirror that.
-    await client.query(`begin;\n${migration}\ncommit;`);
-
-    expect(await advisorFindings(client)).toEqual([]);
-    expect(await policyShape(client)).toEqual([
-      "Service role can manage all credit usage [ALL roles={service_role} PERMISSIVE] qual=(( SELECT auth.role() AS role) = 'service_role'::text)",
-      'Users can view their own credit usage [SELECT roles={authenticated} PERMISSIVE] qual=(( SELECT auth.uid() AS uid) = account_id)',
-    ]);
-
-    // A second run is a no-op: every statement is guarded.
-    await client.query(`begin;\n${migration}\ncommit;`);
-    expect(await advisorFindings(client)).toEqual([]);
-  });
-
-  test('row visibility and write access are unchanged after the fix', async () => {
-    expect(await accessMatrix(client)).toEqual(beforeMatrix);
-  });
-
-  test('the migration is a no-op where the legacy table is absent (fresh baseline installs)', async () => {
-    const migration = await migrationSql();
-    // Drop the table inside a transaction that rolls back, so the fixture
-    // state survives.
-    await client.query(`begin;\ndrop table public.credit_usage;\n${migration}\nrollback;`);
-    expect(await advisorFindings(client)).toEqual([]);
+  test('is safe when the legacy table or either policy is absent', async () => {
+    try {
+      await client.query('BEGIN');
+      await fixture();
+      await client.query('DROP TABLE public.credit_usage');
+      await client.query(migration);
+      await client.query('ROLLBACK');
+      await fixture();
+      await client.query(
+        'DROP POLICY "Users can view their own credit usage" ON public.credit_usage',
+      );
+      await client.query(migration);
+      expect(await overlaps()).toBe(0);
+      await client.query(
+        'DROP POLICY "Service role can manage all credit usage" ON public.credit_usage',
+      );
+      await client.query(migration);
+      expect(await overlaps()).toBe(0);
+    } finally {
+      await client.query('ROLLBACK');
+    }
   });
 });
