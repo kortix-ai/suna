@@ -2,9 +2,18 @@ import { writeFile } from 'node:fs/promises';
 import { type SessionCostSort, fetchCostExportCsv } from '@kortix/sdk';
 import { dollarsToCredits, formatCreditsWithSign, formatDollarsAsCredits } from '@kortix/shared';
 import { withKortixScope } from '../api/sdk.ts';
-import { type AccountContext, emitJson, fail, missing, takeFlagValue } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
-import { COST_SORTS, type Flags, credits, money, query } from './billing.ts';
+import {
+  type AccountContext,
+  emitJson,
+  fail,
+  missing,
+  query,
+  takeFlagValue,
+} from '../command-helpers.ts';
+import { C, credits, money, pad, status } from '../style.ts';
+import type { Flags } from './billing.ts';
+
+const COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
 
 function integer(value: string | undefined, label: string): number | undefined {
   if (value === undefined) return undefined;

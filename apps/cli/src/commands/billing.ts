@@ -8,12 +8,14 @@ import {
   type AccountContext,
   emitJson,
   fail,
+  query,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, credits, help, money, pad, status } from '../style.ts';
+
 import { costsCommand } from './billing-costs.ts';
 
 // Account billing — the READ-ONLY CLI mirror of /accounts/<id>?tab=billing.
@@ -65,8 +67,6 @@ Examples:
   kortix billing costs --by session --csv sessions.csv
 `;
 
-export const COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
-
 export interface Flags {
   account?: string;
   host?: string;
@@ -88,31 +88,11 @@ export interface Flags {
   usage: boolean;
 }
 
-export function money(value: unknown): string {
-  const n = Number(value);
-  return Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
-}
-
-export function credits(value: unknown): string {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? `${formatDollarsAsCredits(value)} credits`
-    : '—';
-}
-
 function integer(value: string | undefined, label: string): number | undefined {
   if (value === undefined) return undefined;
   const n = Number(value);
   if (!Number.isInteger(n) || n < 0) throw new Error(`${label} must be a non-negative integer`);
   return n;
-}
-
-export function query(params: Record<string, string | number | undefined>): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== '') search.set(key, String(value));
-  }
-  const rendered = search.toString();
-  return rendered ? `?${rendered}` : '';
 }
 
 export async function runBilling(argv: string[]): Promise<number> {

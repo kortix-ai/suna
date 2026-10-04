@@ -176,6 +176,16 @@ export function emitJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
+/** Render `params` as a `?a=b&c=d` query string, skipping undefined and empty values. */
+export function query(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  }
+  const rendered = search.toString();
+  return rendered ? `?${rendered}` : '';
+}
+
 // ── Cross-host/account/project resource discovery ───────────────────────────
 //
 // Every session/project route is scoped to a specific Kortix host (a project
