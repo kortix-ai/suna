@@ -1,6 +1,6 @@
 /** Account GitHub App installations: read, list, link, and unlink. */
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import {
@@ -15,7 +15,7 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations } from '@kortix/db';
 import { and, eq, ne } from 'drizzle-orm';
-import { resolveProjectAccount } from '../../services/projects/lib/access';
+import { resolveProjectAccount } from '../lib/project-access';
 import { deleteGitHubUserTokens, saveGitHubUserToken } from '../../services/github/github-user-token';
 import { AnyObject, projectsApp } from './app';
 import {
@@ -30,7 +30,7 @@ import {
   serializeGitHubInstallation,
   serializeGitHubInstallations,
 } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 // GET /v1/projects/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;

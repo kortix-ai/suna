@@ -1,6 +1,6 @@
 /** Project access requests: request, list, approve, and reject. */
 import { PROJECT_ACTIONS, authorize } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../services/iam/roles';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
@@ -8,16 +8,12 @@ import { isAccountManager } from '../../services/projects/access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectAccessRequests, projects } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
-import {
-  ensureOrgMembership,
-  grantProjectRole,
-  loadProjectForUser,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { ensureOrgMembership, grantProjectRole } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { notifyProjectAccessRequestManagers } from '../../services/projects/lib/access-requests';
 import { projectsApp } from './app';
 import { getAccountMembership } from '../../services/projects/lib/user-identity';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {

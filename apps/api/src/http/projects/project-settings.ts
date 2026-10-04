@@ -1,12 +1,12 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope } from '../../services/iam/agent-scope';
+import { assertAgentScope } from '../lib/agent-scope';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { loadProjectForUser, assertProjectCapability } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import {
   AnyObject,
   SandboxProviderPatchResultSchema,
@@ -14,7 +14,7 @@ import {
   projectsApp,
 } from './app';
 import { serializeProject } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { isPlainObject } from '../../lib/json';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../../services/projects/lib/metadata-merge';
 import { isFeatureFlagKey } from '../../services/feature-flags/registry';

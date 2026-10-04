@@ -16,13 +16,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { isDemoEnterprise } from '../../../services/billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../../../services/billing/services/account-write-owner';
 import { isPlatformAdmin } from '../../../services/iam/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 
 const DemoStateSchema = z.object({ enabled: z.boolean() }).openapi('EnterpriseDemoState');
 export function registerIamEnterpriseDemoRoutes(): void {

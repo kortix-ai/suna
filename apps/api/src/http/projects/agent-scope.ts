@@ -31,11 +31,11 @@ import {
   grantSecretToAgentV2,
   normalizeRequiredConnectorAliases,
 } from '../../services/projects/lib/agent-config-v2';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { assertNoGrantEscalation } from '../../services/iam/agent-grant-ceiling';
-import { isBorrowedSessionPrincipal } from '../../services/iam/agent-scope';
+import { governedAgentWriter, isBorrowedSessionPrincipal } from '../lib/agent-scope';
 import { db } from '../../lib/db';
 import { isValidIdentifier } from '../../services/secrets/secrets';
 import { commitManifest, loadManifestForEdit } from '../../services/triggers/trigger-runtime';
@@ -198,7 +198,7 @@ export function registerAgentScopeRoutes(): void {
       const problem = check.errors.find((e) => e.name === agentName);
       if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
       // An agent grants only what it holds (services/iam/agent-grant-ceiling.ts).
-      await assertNoGrantEscalation(c, projectId, grantsBefore, grantsByAgent(check));
+      await assertNoGrantEscalation(governedAgentWriter(c), projectId, grantsBefore, grantsByAgent(check));
 
       const committed = await commitManifest(
         loaded.row,
@@ -380,7 +380,7 @@ export function registerAgentScopeRoutes(): void {
       // An agent grants only what it holds: a governed agent cannot hand itself
       // (or another agent) a secret outside its own `secrets:` list.
       await assertNoGrantEscalation(
-        c,
+        governedAgentWriter(c),
         projectId,
         grantsByAgent(extractAgents(manifest)),
         grantsByAgent(extractAgents({ ...manifest, raw: applied.raw })),

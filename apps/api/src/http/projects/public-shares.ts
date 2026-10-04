@@ -6,11 +6,11 @@ import {
   listPublicSharesForSession,
   revokePublicShare,
 } from '../../services/sessions/session-public-shares';
-import { loadProjectForUser } from '../../services/projects/lib/access';
+import { loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
-import { guardSession, guardSessionSharing, sessionAccessDenied } from '../../services/sessions/session-access';
+import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
 import { isUuid } from '../../lib/validate';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { sessionHasPersonalConnectorBinding } from '../../services/sessions/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../../services/secrets/secret-audience';
 export function registerPublicSharesRoutes(): void {

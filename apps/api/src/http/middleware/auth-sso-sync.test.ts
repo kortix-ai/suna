@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realAuthAudit from '../../services/audit/auth-audit';
+import * as realAuthAudit from './auth-audit';
 import * as realSentry from '../../lib/sentry';
 import * as realSsoSync from '../../services/iam/sso-sync';
 
@@ -32,7 +32,7 @@ mock.module('../../services/iam/sso-sync', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../services/audit/auth-audit', () => ({ ...realAuthAudit, ...realAuthAudit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+mock.module('./auth-audit', () => ({ ...realAuthAudit, ...realAuthAudit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
 mock.module('../../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in

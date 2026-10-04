@@ -13,7 +13,7 @@ import { catalogModelForWireModel } from '../../services/llm-gateway/models/cata
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../openapi';
 import { PROJECT_ACTIONS } from '../../services/iam/actions';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   assertGatewayBudget,

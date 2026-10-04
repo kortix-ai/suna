@@ -7,7 +7,7 @@ import { projects } from '@kortix/db';
 import { groupProjectGrants } from '../../../services/iam/read-models';
 import { db } from '../../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import {
   invalidateIamCacheForGroup,
   invalidateIamCacheForUser,
@@ -31,8 +31,8 @@ import {
   GroupMemberSchema,
   ProjectGrantSchema,
 } from './app';
-import { auditIam, isUniqueViolation, requireEntitlement } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 
 // Groups are an Enterprise-only construct (no free-tier group concept). The
 // `rbac` entitlement gates every route that CREATES or GROWS group state

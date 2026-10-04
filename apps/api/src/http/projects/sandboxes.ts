@@ -17,21 +17,17 @@ import { ttlMemo } from '../../lib/ttl-memo';
 import { templateSlugFromBuildSlug } from '../../services/snapshots/build-slug';
 import { TemplateNotFoundError } from '../../services/snapshots/templates';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, assertProjectCapability } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { AnyObject, SnapshotSchema, projectsApp } from './app';
 import { loadGitProject } from '../../services/git/project-git';
 import { allowStaleMirrorReads } from '../../services/git/mirror';
-import {
-  normalizeString,
-  requestAuditContext,
-  serializeBuildSummary,
-  serializeTemplate,
-} from '../../services/projects/lib/serializers';
-import { sendSessionCreateError } from '../../services/sessions/sessions';
+import { normalizeString, serializeBuildSummary, serializeTemplate } from '../../services/projects/lib/serializers';
+import { requestAuditContext } from '../lib/request-audit';
+import { sendSessionCreateError } from '../lib/session-create-error';
 import { createSession } from '../../services/sessions/lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../services/snapshots/provider-actions';
 import { templateProviderObservation } from '../../services/sandboxes/template-provider-observation';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize

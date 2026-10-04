@@ -15,7 +15,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { assertAllowedSourceAddress } from '../../services/marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import {
@@ -24,7 +24,7 @@ import {
   recordAuditEvent,
 } from '../../services/audit/audit';
 import { auditCredentialNames } from '../../services/audit/audit-credential-names';
-import { requestClientIp } from '../../lib/client-ip';
+import { requestClientIp } from '../lib/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -44,8 +44,8 @@ import { auditArchiveStore } from '../../services/audit/audit-archive/store';
 import { reconcileAuditEvents } from '../../services/audit/audit-reconciliation';
 import type { AppEnv } from '../../types/app-env';
 import { type AuditFilterInput, buildFilters } from '../../services/accounts/audit-filters';
-import { requireEntitlement } from '../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../lib/http-body';
+import { requireEntitlement } from './iam/helpers';
+import { readJsonObject } from '../lib/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 

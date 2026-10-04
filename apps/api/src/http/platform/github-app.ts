@@ -66,7 +66,7 @@ import {
   envManagedConflictBody,
   resolveInstanceGitMutability,
 } from '../../services/platform/services/instance-git-mutability';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 

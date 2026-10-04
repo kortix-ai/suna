@@ -14,7 +14,7 @@ import {
   startOpencodeDeviceAuth,
 } from '../../services/llm-gateway/credentials/opencode-console';
 import { resolveCatalogUpstream } from '../../services/llm-gateway/models/provider-registry';
-import { requestPersonalOwner } from '../../services/projects/lib/personal-resources';
+import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   decryptProjectSecret,
   encryptProjectSecret,
@@ -29,17 +29,14 @@ import { encryptAccountSecret, memberMayReadProject } from '../../services/secre
 import { resolveFeatureFlag } from '../../services/feature-flags/registry';
 import { projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import {
-  loadProjectForUser,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   loadSecretViewsForUser,
   normalizeString,
 } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //

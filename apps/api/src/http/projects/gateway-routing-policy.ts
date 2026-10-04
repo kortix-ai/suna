@@ -10,11 +10,7 @@ import { catalogModelForWireModel } from '../../services/llm-gateway/models/cata
 import { platformDefaultModelId } from '../../services/llm-gateway/models/served-managed-models';
 import { auth, errors, json } from '../openapi';
 import { PROJECT_ACTIONS } from '../../services/iam/actions';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  projectCapabilityAllowed,
-} from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
 import { config } from '../../lib/config';
 import { accountMayUseManagedModels } from '../../services/billing/services/entitlements';

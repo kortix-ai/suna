@@ -41,7 +41,8 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { auditApiRequest, recordAuditEvent } = await import('../services/audit/audit');
+const { recordAuditEvent } = await import('../services/audit/audit');
+const { auditApiRequest } = await import('../http/middleware/audit');
 const { runInboundAudit } = await import('../services/audit/audit-edge');
 const { annotateAuditEvent, setInboundAuditEntrypoint } = await import('../services/audit/audit-scope');
 

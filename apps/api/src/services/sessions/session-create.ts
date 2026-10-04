@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
@@ -120,11 +119,6 @@ export type SessionCreateError = {
   body: Record<string, unknown>;
   headers?: Record<string, string>;
 };
-
-export function sendSessionCreateError(c: Context, error: SessionCreateError) {
-  for (const [key, value] of Object.entries(error.headers ?? {})) c.header(key, value);
-  return c.json(error.body, error.status);
-}
 
 /** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
 type PostgresErrorFields = {

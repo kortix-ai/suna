@@ -41,12 +41,13 @@ import {
   RELAY_VERSION_HEADER,
 } from '@kortix/api-contract/secret-relay';
 import { config } from '../../lib/config';
-import { getAgentGrant } from '../../services/iam/agent-scope';
+import { getAgentGrant } from '../lib/agent-scope';
 import { auth, errors } from '../openapi';
-import { requestEgressIp, verifySandboxEgressIp } from '../../services/platform/services/sandbox-egress-pin';
-import { loadProjectForUser } from '../../services/projects/lib/access';
+import { verifySandboxEgressIp } from '../../services/platform/services/sandbox-egress-pin';
+import { requestEgressIp } from '../lib/client-ip';
+import { loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
-import { prepareRelayRequest, refuse, runRelayHops } from '../../services/secrets/relay-hop';
+import { prepareRelayRequest, refuse, runRelayHops } from './secret-relay-hop';
 export function registerSecretRelayRoutes(): void {
   projectsApp.openapi(
     createRoute({

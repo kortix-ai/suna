@@ -50,10 +50,9 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
-  enforceProjectQuota,
   getProjectMemberRole,
   grantProjectRole,
-  resolveProjectAccount,
+  projectQuotaDenial,
 } from './lib/access';
 import {
   buildConnectionRef,
@@ -83,7 +82,6 @@ import {
   normalizeString,
   serializeProject,
 } from './lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
 import { setContextField } from '../../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
@@ -106,9 +104,9 @@ const FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000;
  * Kept as a literal union, not `number`, so `c.json(result.body,
  * result.status)` is checked against the route's declared responses instead
  * of a route silently casting the mismatch away with `as never`. 403 is
- * produced here too — `enforceProjectQuota` (`lib/access.ts`) returns a raw
- * `c.json({...}, 403)` `Response` when the account is at its project limit,
- * not only from each route's own pre-`runProvision` `authorize()` gate.
+ * produced here too — `projectQuotaDenial` (`lib/project-quota.ts`) answers
+ * the body when the account is at its project limit, not only from each
+ * route's own pre-`runProvision` `authorize()` gate.
  */
 export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 
@@ -147,27 +145,8 @@ export function createRepoFailureResult(error: unknown): ProvisionResult {
 }
 
 export interface ProvisionContext {
-  /**
-   * Hono request context. Kept, rather than reshaped, ONLY so
-   * `enforceProjectQuota(c, accountId)` can stay byte-identical — it already
-   * returns a ready-made `Response`, which `runProvision` unwraps into a
-   * `ProvisionResult` below.
-   */
-  c: any;
   body: Record<string, unknown>;
   scope: { userId: string; accountId: string; accountRole: AccountRole };
-}
-
-/**
- * Reads the request body and resolves the caller's account scope — the part
- * of the old `POST /provision` handler that runs BEFORE the
- * `PROJECT_CREATE` authorization check. Kept out of `runProvision` itself so
- * a caller (either route) can still 403 before any provisioning work starts.
- */
-export async function buildProvisionContext(c: any): Promise<ProvisionContext> {
-  const body = await readJsonObject(c);
-  const scope = await resolveProjectAccount(c, body);
-  return { c, body, scope };
 }
 
 /**
@@ -488,7 +467,7 @@ async function replayOrEnforceProjectQuota(
   ctx: ProvisionContext,
   idempotencyKey: string | null,
 ): Promise<ProvisionResult | null> {
-  const { c, scope } = ctx;
+  const { scope } = ctx;
   // IDEMPOTENCY — MUST STAY ABOVE `backend.createRepo`. Provision mints a
   // brand-new managed repo per call, so a repeat (a reload, a second tab, a
   // retry after a lost response) used to create a genuine duplicate project
@@ -539,15 +518,9 @@ async function replayOrEnforceProjectQuota(
     };
   }
 
-  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
+  const provisionQuota = await projectQuotaDenial(scope.accountId);
   if (provisionQuota) {
-    // `enforceProjectQuota` hands back a raw Hono `Response` — `.status` is
-    // a plain `number` at the type level even though its only failure branch
-    // is a literal `403` (see `lib/access.ts`). This is the one place a
-    // `number` from an external `Response` crosses into
-    // `ProvisionResultStatus`; narrowed here instead of widening the field
-    // for every other, fully-literal return in this function.
-    return { status: provisionQuota.status as ProvisionResultStatus, body: await provisionQuota.json() };
+    return { status: 403, body: provisionQuota };
   }
   return null;
 }

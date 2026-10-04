@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { Context } from 'hono';
+import type { HeaderReader } from '../../lib/client-ip';
 import { normalizeString } from '../projects/lib/serializers';
 
 /**
@@ -80,14 +80,14 @@ export function parseWebhookJsonBody(rawBody: string): unknown {
   }
 }
 
-export function webhookPayload(c: Context, rawBody: string) {
+export function webhookPayload(header: HeaderReader, rawBody: string) {
   const body = parseWebhookJsonBody(rawBody);
   return {
     body,
     headers: {
-      content_type: c.req.header('content-type') ?? null,
-      user_agent: c.req.header('user-agent') ?? null,
-      forwarded_for: c.req.header('x-forwarded-for') ?? null,
+      content_type: header('content-type') ?? null,
+      user_agent: header('user-agent') ?? null,
+      forwarded_for: header('x-forwarded-for') ?? null,
     },
   };
 }

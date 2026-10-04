@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { connectors, projectSecrets, projectSessionSecretHandles, roleAssignments } from '@kortix/db';
 import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realAccess from '../services/projects/lib/access';
 import type {
   ProjectSecretPropagationResult,
   ProjectSecretPropagationTarget,
@@ -204,8 +203,9 @@ mock.module('../lib/db', () => ({ hasDatabase: true, db: databaseMock }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     // Egress delivery is gated by the experimental `secrets_egress` flag; these
     // tests exercise the egress POLICY handling, not the gate, so the project

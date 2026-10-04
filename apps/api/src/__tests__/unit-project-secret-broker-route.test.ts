@@ -9,7 +9,6 @@ import {
 } from '@kortix/db';
 import { Hono } from 'hono';
 import { config } from '../lib/config';
-import * as realAccess from '../services/projects/lib/access';
 import * as realProjectSecrets from '../services/secrets/secrets';
 import { mintHandle } from '../services/secrets/strategy';
 
@@ -117,8 +116,9 @@ const databaseMock = {
 };
 
 mock.module('../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
-mock.module('../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: USER_ID,

@@ -12,9 +12,9 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../../services/auth
 import { isInconclusiveVerifyFailure } from '../../services/auth/jwt-verify-outcome';
 import { setSentryUser } from '../../lib/sentry';
 import { setContextField } from '../../lib/request-context';
-import { auditLoginFail, auditLoginSuccess } from '../../services/audit/auth-audit';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
 import { markDeadCredential } from '../../services/audit/dead-credential-log';
-import { requestClientKey } from '../../lib/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { isOAuthAccessToken } from '../../services/oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { withActor } from './auth-actor';

@@ -8,7 +8,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import type { Context } from 'hono';
 
 // Records every statement the pin issues. The real-PostgreSQL interleaving
 // proof is `src/__tests__/integration-sandbox-metadata-race.test.ts` (the
@@ -30,10 +29,9 @@ mock.module('../../../lib/db', () => ({
   },
 }));
 
-const { pinSandboxEgressIp, requestEgressIp } = await import('./sandbox-egress-pin');
+const { pinSandboxEgressIp, egressIpFromHeaders } = await import('./sandbox-egress-pin');
 
-const ctx = (headers: Record<string, string>) =>
-  ({ req: { header: (n: string) => headers[n.toLowerCase()] } }) as unknown as Context;
+const ctx = (headers: Record<string, string>) => (n: string) => headers[n.toLowerCase()];
 
 describe('which address counts as the caller', () => {
   test('cf-connecting-ip wins over a spoofed x-forwarded-for', () => {
@@ -42,7 +40,7 @@ describe('which address counts as the caller', () => {
     // can therefore put the pinned address in x-forwarded-for. Reading the edge
     // header first means the pin sees where the request really came from.
     expect(
-      requestEgressIp(
+      egressIpFromHeaders(
         ctx({
           'x-forwarded-for': '198.51.100.21, 172.68.1.1',
           'cf-connecting-ip': '203.0.113.9',
@@ -53,7 +51,7 @@ describe('which address counts as the caller', () => {
 
   test('cf-connecting-ip wins over a spoofed x-real-ip too', () => {
     expect(
-      requestEgressIp(ctx({ 'x-real-ip': '198.51.100.21', 'cf-connecting-ip': '203.0.113.9' })),
+      egressIpFromHeaders(ctx({ 'x-real-ip': '198.51.100.21', 'cf-connecting-ip': '203.0.113.9' })),
     ).toBe('203.0.113.9');
   });
 
@@ -61,7 +59,7 @@ describe('which address counts as the caller', () => {
     // Deployments that do not sit behind Cloudflare send no edge header. They
     // must keep the forwarded-for behaviour, not lose the address entirely.
     expect(
-      requestEgressIp(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '198.51.100.21' })),
+      egressIpFromHeaders(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '198.51.100.21' })),
     ).toBe('198.51.100.21');
   });
 
@@ -69,27 +67,27 @@ describe('which address counts as the caller', () => {
     // Cloudflare fronts this API and appends. Taking the last hop would pin
     // Cloudflare's own address — identical for every sandbox on earth, which
     // would make the check pass for everyone and protect no one.
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '198.51.100.21, 172.68.1.1' }))).toBe(
+    expect(egressIpFromHeaders(ctx({ 'x-forwarded-for': '198.51.100.21, 172.68.1.1' }))).toBe(
       '198.51.100.21',
     );
   });
 
   test('whitespace around a hop is tolerated', () => {
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '  198.51.100.21 , 172.68.1.1' }))).toBe(
+    expect(egressIpFromHeaders(ctx({ 'x-forwarded-for': '  198.51.100.21 , 172.68.1.1' }))).toBe(
       '198.51.100.21',
     );
   });
 
   test('x-real-ip is the fallback', () => {
-    expect(requestEgressIp(ctx({ 'x-real-ip': '198.51.100.35' }))).toBe('198.51.100.35');
+    expect(egressIpFromHeaders(ctx({ 'x-real-ip': '198.51.100.35' }))).toBe('198.51.100.35');
   });
 
   test('an empty forwarded-for does not become an empty-string pin', () => {
     // '' is falsy but IS a string — pinning it would then "match" every later
     // request that also had no address, quietly disabling the check.
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '' }))).toBeNull();
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '   ' }))).toBeNull();
-    expect(requestEgressIp(ctx({}))).toBeNull();
+    expect(egressIpFromHeaders(ctx({ 'x-forwarded-for': '' }))).toBeNull();
+    expect(egressIpFromHeaders(ctx({ 'x-forwarded-for': '   ' }))).toBeNull();
+    expect(egressIpFromHeaders(ctx({}))).toBeNull();
   });
 });
 

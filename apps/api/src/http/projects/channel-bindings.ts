@@ -43,7 +43,7 @@ import {
 import { type AccountModelDefaults, getAccountModelDefaults } from "../../services/repositories/model-preferences";
 import { PROJECT_ACTIONS } from "../../services/iam";
 import { auth, errors, json } from "../openapi";
-import { loadProjectForUser, assertProjectCapability } from "../../services/projects/lib/access";
+import { loadProjectForUser, assertProjectCapability } from "../lib/project-access";
 import { projectsApp } from "./app";
 
 /** The three Slack conversation-join policies (services/channels/slack/participants.ts). */

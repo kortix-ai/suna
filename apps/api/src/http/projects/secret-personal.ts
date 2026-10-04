@@ -8,11 +8,11 @@ import { projectSecrets } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { roleAllows } from '../../services/projects/access';
-import { loadProjectForUser } from '../../services/projects/lib/access';
+import { loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
-import { requestPersonalOwner } from '../../services/projects/lib/personal-resources';
+import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   isSystemProjectSecretName,

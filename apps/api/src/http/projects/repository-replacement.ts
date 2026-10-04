@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json } from '../openapi';
 import { kickProjectTemplatePrebuilds } from '../../services/snapshots/builder';
-import { loadProjectForUser, assertProjectCapability } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp, ProjectSchema } from './app';
 import { RepositoryChangedError, RepositoryManifestMissingError, RepositorySecretCopyError, RepositoryValidationError, replaceProjectRepository } from '../../services/projects/lib/repository-replacement';
 import { serializeProject, serializeProjectGitConnection } from '../../services/projects/lib/serializers';

@@ -27,7 +27,8 @@ import {
 import type { GitScope, UpstreamGit } from '../../services/git/backends';
 import type { ProjectRow } from '../../services/projects/lib/serializers';
 import type { AppEnv } from '../../types/app-env';
-import { deriveRequestContext } from '../../services/iam/cache';
+import { deriveRequestContext } from '../lib/iam-request-context';
+import { getAgentGrant } from '../lib/agent-scope';
 import {
   MAX_COMMAND_SECTION_BYTES,
   encodeReportStatus,
@@ -496,8 +497,9 @@ async function gateReceivePack(
   // denial is worth an authorization check, so a session pushing its own branch
   // and a person pushing anything both reach the upstream without one.
   const projectRef = { projectId: auth.project.projectId, accountId: auth.project.accountId };
+  const refCaller = { agentGrant: getAgentGrant(c), ctx: deriveRequestContext(c) };
   const denials: { ref: string; reason: string }[] = await denialsAfterScopes(
-    c,
+    refCaller,
     auth.principal,
     projectRef,
     evaluateRefUpdates(auth.principal, { defaultBranch: auth.project.defaultBranch }, parsed.updates),
@@ -509,7 +511,7 @@ async function gateReceivePack(
   if (
     denials.length === 0 &&
     toDefault.length > 0 &&
-    !(await sessionMayBypassGrantReview(c, auth.principal, projectRef))
+    !(await sessionMayBypassGrantReview(refCaller, auth.principal, projectRef))
   ) {
     for (const u of toDefault) {
       denials.push({

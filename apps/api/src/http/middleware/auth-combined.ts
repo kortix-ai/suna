@@ -13,8 +13,8 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../../services/auth
 import { isInconclusiveVerifyFailure } from '../../services/auth/jwt-verify-outcome';
 import { setSentryUser } from '../../lib/sentry';
 import { setContextField } from '../../lib/request-context';
-import { auditLoginFail, auditLoginSuccess } from '../../services/audit/auth-audit';
-import { requestClientKey } from '../../lib/client-ip';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
+import { requestClientKey } from '../lib/client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../../services/oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { withActor } from './auth-actor';

@@ -22,13 +22,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroups, accountMembers, connectors } from '@kortix/db';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { config } from '../../lib/config';
-import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../../services/projects/lib/access';
+import { lookupEmailsByUserIds, parseExpiresAtBody } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp } from './app';
 import { normalizeString } from '../../services/projects/lib/serializers';
 import { isUuid } from '../../lib/validate';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../../services/sessions/session-connector-bindings';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../../services/projects/agents';
 import { resolveSessionAgentGrant } from '../../services/secrets/secret-grant';
 

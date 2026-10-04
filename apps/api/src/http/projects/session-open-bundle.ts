@@ -52,14 +52,10 @@ import { projectLlmGatewayEnabled } from '../../services/llm-gateway/enablement'
 import { platformDefaultModelId } from '../../services/llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../services/llm-gateway/resolution/default-model';
 import { getAccountModelDefaults } from '../../services/repositories/model-preferences';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  sessionIsTombstoned,
-} from '../../services/projects/lib/access';
+import { loadVisibleSession, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp, SessionSnapshotSchema } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../../services/projects/lib/serializers';
 import { parseBoundedPositiveInt } from '../../services/projects/lib/serializers';
 import { isUuid } from '../../lib/validate';

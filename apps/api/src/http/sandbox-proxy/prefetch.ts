@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { type SandboxRecord, loadSandbox } from './backend';
+import { type SandboxRecord, loadSandbox } from '../../services/sandbox-proxy/backend';
 
 // The sandbox row, read as soon as the caller is authenticated and within its
 // rate limit (see `http/sandbox-proxy/index.ts` for the order), so the read

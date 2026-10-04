@@ -3,7 +3,7 @@ import * as realCrypto from '../../lib/crypto';
 import { Hono } from 'hono';
 import * as realPreviewOwnership from '../../services/sessions/preview-ownership';
 import * as realRequestContext from '../../lib/request-context';
-import * as realAuthAudit from '../../services/audit/auth-audit';
+import * as realAuthAudit from './auth-audit';
 import * as realSentry from '../../lib/sentry';
 import * as realSsoSync from '../../services/iam/sso-sync';
 
@@ -166,7 +166,7 @@ mock.module('../../services/sessions/preview-ownership', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../services/audit/auth-audit', () => ({
+mock.module('./auth-audit', () => ({
   ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},

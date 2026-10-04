@@ -3,7 +3,7 @@ import {
   SecretBrokerResponseSchema,
 } from '@kortix/api-contract';
 import { createRoute, z } from '@hono/zod-openapi';
-import { getAgentGrant } from '../../services/iam/agent-scope';
+import { getAgentGrant } from '../lib/agent-scope';
 import { auth, errors, json } from '../openapi';
 import { executeSecretBrokerRequest, SecretBrokerError } from '../../services/secrets/http-broker';
 import {
@@ -15,13 +15,11 @@ import { authorizeSecretRelay } from '../../services/secrets/relay-authorize';
 import { recordAuditEvent } from '../../services/audit/audit';
 import { intersectSecretGrants } from '../../services/secrets/secrets';
 import { config } from '../../lib/config';
-import { loadProjectForUser } from '../../services/projects/lib/access';
-import {
-  requestEgressIp,
-  verifySandboxEgressIp,
-} from '../../services/platform/services/sandbox-egress-pin';
+import { loadProjectForUser } from '../lib/project-access';
+import { verifySandboxEgressIp } from '../../services/platform/services/sandbox-egress-pin';
+import { requestEgressIp } from '../lib/client-ip';
 import { projectsApp } from './app';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerSecretBrokerRoutes(): void {
   projectsApp.openapi(
     createRoute({

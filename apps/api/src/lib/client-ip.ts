@@ -1,4 +1,3 @@
-import type { Context } from 'hono';
 import { config } from './config';
 
 /**
@@ -31,7 +30,7 @@ export function trustedProxyHops(): number {
   return Number.isInteger(hops) && hops >= 1 ? hops : 2;
 }
 
-type HeaderReader = (name: string) => string | null | undefined;
+export type HeaderReader = (name: string) => string | null | undefined;
 
 export function clientIpFromHeaders(
   header: HeaderReader,
@@ -47,11 +46,6 @@ export function clientIpFromHeaders(
   return header('x-real-ip')?.trim() || null;
 }
 
-/** `clientIpFromHeaders` for a Hono request; `null` when neither header is set. */
-export function requestClientIp(c: Context): string | null {
-  return clientIpFromHeaders((name) => c.req.header(name));
-}
-
 /**
  * The caller's rate-limit bucket key: the client address, or `'unknown'` when
  * neither header is set. Every request without an address shares that one
@@ -59,9 +53,4 @@ export function requestClientIp(c: Context): string | null {
  */
 export function clientKeyFromHeaders(header: HeaderReader): string {
   return clientIpFromHeaders(header) ?? 'unknown';
-}
-
-/** `clientKeyFromHeaders` for a Hono request. */
-export function requestClientKey(c: Context): string {
-  return clientKeyFromHeaders((name) => c.req.header(name));
 }

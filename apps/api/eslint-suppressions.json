@@ -49,7 +49,7 @@
   },
   "src/http/accounts/audit.ts": {
     "kortix-api/service-surface": {
-      "count": 13
+      "count": 11
     },
     "no-restricted-imports": {
       "count": 2
@@ -60,7 +60,7 @@
   },
   "src/http/accounts/branding.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 1
     },
     "no-console": {
       "count": 1
@@ -74,7 +74,7 @@
   },
   "src/http/accounts/core/accounts.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 7
     },
     "no-console": {
       "count": 2
@@ -93,7 +93,7 @@
   },
   "src/http/accounts/core/invites.ts": {
     "kortix-api/service-surface": {
-      "count": 9
+      "count": 8
     },
     "no-restricted-imports": {
       "count": 2
@@ -104,7 +104,7 @@
   },
   "src/http/accounts/core/members.ts": {
     "kortix-api/service-surface": {
-      "count": 9
+      "count": 8
     },
     "no-console": {
       "count": 4
@@ -118,7 +118,7 @@
   },
   "src/http/accounts/core/tokens.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 6
     },
     "no-restricted-imports": {
       "count": 2
@@ -129,7 +129,7 @@
   },
   "src/http/accounts/iam/assignments.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-imports": {
       "count": 2
@@ -140,7 +140,7 @@
   },
   "src/http/accounts/iam/custom-roles-policy.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -151,7 +151,7 @@
   },
   "src/http/accounts/iam/custom-roles.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -162,7 +162,7 @@
   },
   "src/http/accounts/iam/enterprise-demo.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 2
@@ -170,7 +170,7 @@
   },
   "src/http/accounts/iam/groups.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-imports": {
       "count": 2
@@ -179,9 +179,17 @@
       "count": 10
     }
   },
+  "src/http/accounts/iam/helpers.ts": {
+    "kortix-api/service-surface": {
+      "count": 3
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
   "src/http/accounts/iam/members.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -192,7 +200,7 @@
   },
   "src/http/accounts/iam/mfa.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 1
     },
     "no-restricted-imports": {
       "count": 2
@@ -203,16 +211,13 @@
   },
   "src/http/accounts/iam/oauth-clients.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 7
     }
   },
   "src/http/accounts/iam/policies.ts": {
-    "kortix-api/service-surface": {
-      "count": 2
-    },
     "no-restricted-imports": {
       "count": 2
     },
@@ -222,7 +227,7 @@
   },
   "src/http/accounts/iam/resource-grants.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 2
@@ -233,7 +238,7 @@
   },
   "src/http/accounts/iam/scim-tokens.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 3
@@ -241,7 +246,7 @@
   },
   "src/http/accounts/iam/service-accounts.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 4
@@ -249,7 +254,7 @@
   },
   "src/http/accounts/iam/session-oversight.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 2
@@ -260,7 +265,7 @@
   },
   "src/http/accounts/iam/sso.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 2
     },
     "no-console": {
       "count": 2
@@ -271,7 +276,7 @@
   },
   "src/http/accounts/index.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     }
   },
   "src/http/accounts/invites.ts": {
@@ -323,7 +328,7 @@
   },
   "src/http/apps/routes.ts": {
     "kortix-api/service-surface": {
-      "count": 19
+      "count": 16
     },
     "no-console": {
       "count": 2
@@ -337,7 +342,7 @@
   },
   "src/http/auth/headless.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 1
@@ -348,7 +353,7 @@
   },
   "src/http/auth/index.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 2
@@ -370,7 +375,7 @@
   },
   "src/http/billing/account-deletion.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 5
@@ -378,7 +383,7 @@
   },
   "src/http/billing/account-state.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-console": {
       "count": 2
@@ -399,15 +404,20 @@
   },
   "src/http/billing/payments.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 9
     },
     "no-restricted-syntax": {
       "count": 2
     }
   },
+  "src/http/billing/require-billing-write.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    }
+  },
   "src/http/billing/subscriptions.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 3
@@ -523,7 +533,7 @@
   },
   "src/http/config-releases/routes.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 9
     },
     "no-restricted-imports": {
       "count": 2
@@ -580,9 +590,14 @@
       "count": 1
     }
   },
+  "src/http/connectors/principal.ts": {
+    "kortix-api/service-surface": {
+      "count": 3
+    }
+  },
   "src/http/connectors/router.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     }
   },
   "src/http/connectors/settings.ts": {
@@ -603,7 +618,7 @@
       "count": 2
     },
     "kortix-api/service-surface": {
-      "count": 25
+      "count": 24
     },
     "no-console": {
       "count": 15
@@ -613,6 +628,66 @@
     },
     "no-restricted-syntax": {
       "count": 6
+    }
+  },
+  "src/http/lib/agent-access.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/lib/agent-scope.ts": {
+    "kortix-api/service-surface": {
+      "count": 4
+    }
+  },
+  "src/http/lib/client-ip.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/lib/connection-mutation.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/lib/feature-flag-gate.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    }
+  },
+  "src/http/lib/iam-request-context.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/lib/personal-resources.ts": {
+    "kortix-api/service-surface": {
+      "count": 3
+    }
+  },
+  "src/http/lib/project-access.ts": {
+    "kortix-api/service-surface": {
+      "count": 6
+    }
+  },
+  "src/http/lib/request-audit.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/lib/resolve-account.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/lib/session-access.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    }
+  },
+  "src/http/lib/session-create-error.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
     }
   },
   "src/http/llm-gateway/internal-routes.ts": {
@@ -647,7 +722,25 @@
       "count": 2
     }
   },
+  "src/http/middleware/actor.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/http/middleware/audit.ts": {
+    "kortix-api/service-surface": {
+      "count": 3
+    }
+  },
   "src/http/middleware/auth-actor.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/http/middleware/auth-audit.ts": {
     "kortix-api/service-surface": {
       "count": 3
     },
@@ -657,18 +750,13 @@
   },
   "src/http/middleware/auth-combined.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 7
     },
     "no-console": {
       "count": 1
     }
   },
   "src/http/middleware/auth-oauth.ts": {
-    "kortix-api/service-surface": {
-      "count": 2
-    }
-  },
-  "src/http/middleware/auth-principal.ts": {
     "kortix-api/service-surface": {
       "count": 1
     }
@@ -691,7 +779,7 @@
   },
   "src/http/middleware/auth.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 7
     },
     "no-console": {
       "count": 2
@@ -709,7 +797,7 @@
   },
   "src/http/middleware/http-middleware.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-properties": {
       "count": 2
@@ -746,6 +834,14 @@
       "count": 3
     }
   },
+  "src/http/middleware/session-gate.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 2
+    }
+  },
   "src/http/middleware/token-attempt-budget.ts": {
     "kortix-api/service-surface": {
       "count": 1
@@ -761,7 +857,7 @@
   },
   "src/http/oauth/index.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 6
     },
     "no-restricted-imports": {
       "count": 2
@@ -854,7 +950,7 @@
   },
   "src/http/projects/access-requests.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -865,7 +961,7 @@
   },
   "src/http/projects/agent-config.ts": {
     "kortix-api/service-surface": {
-      "count": 16
+      "count": 15
     },
     "no-restricted-imports": {
       "count": 2
@@ -876,7 +972,7 @@
   },
   "src/http/projects/agent-scope.ts": {
     "kortix-api/service-surface": {
-      "count": 9
+      "count": 7
     },
     "no-console": {
       "count": 1
@@ -890,7 +986,7 @@
   },
   "src/http/projects/approvals.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 6
     },
     "no-restricted-imports": {
       "count": 2
@@ -901,7 +997,7 @@
   },
   "src/http/projects/change-request-actions.ts": {
     "kortix-api/service-surface": {
-      "count": 14
+      "count": 13
     },
     "no-console": {
       "count": 3
@@ -915,7 +1011,7 @@
   },
   "src/http/projects/change-requests.ts": {
     "kortix-api/service-surface": {
-      "count": 10
+      "count": 7
     },
     "no-console": {
       "count": 3
@@ -926,7 +1022,7 @@
   },
   "src/http/projects/channel-bindings.ts": {
     "kortix-api/service-surface": {
-      "count": 15
+      "count": 14
     },
     "no-restricted-syntax": {
       "count": 2
@@ -934,7 +1030,7 @@
   },
   "src/http/projects/channel-email.ts": {
     "kortix-api/service-surface": {
-      "count": 9
+      "count": 8
     },
     "no-restricted-syntax": {
       "count": 5
@@ -942,7 +1038,7 @@
   },
   "src/http/projects/channel-slack.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 10
     },
     "no-restricted-imports": {
       "count": 2
@@ -953,7 +1049,7 @@
   },
   "src/http/projects/channel-teams.ts": {
     "kortix-api/service-surface": {
-      "count": 10
+      "count": 9
     },
     "no-restricted-syntax": {
       "count": 11
@@ -961,7 +1057,7 @@
   },
   "src/http/projects/computers.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -972,7 +1068,7 @@
   },
   "src/http/projects/connection-actions.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 9
     },
     "no-restricted-imports": {
       "count": 2
@@ -983,7 +1079,7 @@
   },
   "src/http/projects/connections.ts": {
     "kortix-api/service-surface": {
-      "count": 10
+      "count": 7
     },
     "no-restricted-imports": {
       "count": 2
@@ -994,7 +1090,7 @@
   },
   "src/http/projects/gateway-keys.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 3
@@ -1002,7 +1098,7 @@
   },
   "src/http/projects/gateway-logs.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 2
@@ -1013,7 +1109,7 @@
   },
   "src/http/projects/gateway-playground.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 1
@@ -1021,7 +1117,7 @@
   },
   "src/http/projects/gateway-providers.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 1
@@ -1029,7 +1125,7 @@
   },
   "src/http/projects/gateway-routing-policy.ts": {
     "kortix-api/service-surface": {
-      "count": 12
+      "count": 11
     },
     "no-restricted-syntax": {
       "count": 4
@@ -1056,7 +1152,7 @@
   },
   "src/http/projects/github-installations.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 4
     },
     "no-restricted-imports": {
       "count": 2
@@ -1067,7 +1163,7 @@
   },
   "src/http/projects/github-repositories.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 1
@@ -1075,7 +1171,7 @@
   },
   "src/http/projects/group-grants.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 6
     },
     "no-restricted-imports": {
       "count": 2
@@ -1086,12 +1182,12 @@
   },
   "src/http/projects/lib/route-bindings.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     }
   },
   "src/http/projects/manifest-validation.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 1
@@ -1099,7 +1195,7 @@
   },
   "src/http/projects/marketplace-install-session.ts": {
     "kortix-api/service-surface": {
-      "count": 13
+      "count": 9
     },
     "no-restricted-syntax": {
       "count": 1
@@ -1107,7 +1203,7 @@
   },
   "src/http/projects/models.ts": {
     "kortix-api/service-surface": {
-      "count": 16
+      "count": 14
     },
     "no-restricted-imports": {
       "count": 2
@@ -1118,7 +1214,7 @@
   },
   "src/http/projects/monitors.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 2
@@ -1129,7 +1225,7 @@
   },
   "src/http/projects/oauth2-connectors.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-imports": {
       "count": 2
@@ -1137,7 +1233,7 @@
   },
   "src/http/projects/project-access.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 7
     },
     "no-restricted-syntax": {
       "count": 3
@@ -1145,7 +1241,7 @@
   },
   "src/http/projects/project-audit.ts": {
     "kortix-api/service-surface": {
-      "count": 17
+      "count": 15
     },
     "no-console": {
       "count": 1
@@ -1162,7 +1258,7 @@
   },
   "src/http/projects/project-credentials.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 4
@@ -1170,7 +1266,7 @@
   },
   "src/http/projects/project-detail.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 10
     },
     "no-console": {
       "count": 2
@@ -1181,7 +1277,7 @@
   },
   "src/http/projects/project-files.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     },
     "no-console": {
       "count": 3
@@ -1192,7 +1288,7 @@
   },
   "src/http/projects/project-from-repository.ts": {
     "kortix-api/service-surface": {
-      "count": 17
+      "count": 15
     },
     "no-console": {
       "count": 1
@@ -1203,7 +1299,7 @@
   },
   "src/http/projects/project-git.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 3
@@ -1225,7 +1321,7 @@
   },
   "src/http/projects/project-sessions.ts": {
     "kortix-api/service-surface": {
-      "count": 22
+      "count": 18
     },
     "no-restricted-imports": {
       "count": 2
@@ -1233,7 +1329,7 @@
   },
   "src/http/projects/project-settings.ts": {
     "kortix-api/service-surface": {
-      "count": 9
+      "count": 7
     },
     "no-console": {
       "count": 1
@@ -1247,7 +1343,7 @@
   },
   "src/http/projects/projects.ts": {
     "kortix-api/service-surface": {
-      "count": 10
+      "count": 8
     },
     "no-restricted-imports": {
       "count": 2
@@ -1258,7 +1354,7 @@
   },
   "src/http/projects/prompt-attachments.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 1
@@ -1266,7 +1362,7 @@
   },
   "src/http/projects/provider-oauth.ts": {
     "kortix-api/service-surface": {
-      "count": 15
+      "count": 13
     },
     "no-restricted-imports": {
       "count": 3
@@ -1277,7 +1373,7 @@
   },
   "src/http/projects/provider-secret-pools.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 9
     },
     "no-restricted-imports": {
       "count": 2
@@ -1288,7 +1384,7 @@
   },
   "src/http/projects/public-shares.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 4
@@ -1296,7 +1392,7 @@
   },
   "src/http/projects/repository-replacement.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 3
     },
     "no-console": {
       "count": 1
@@ -1310,7 +1406,7 @@
       "count": 1
     },
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 6
     },
     "no-console": {
       "count": 2
@@ -1324,7 +1420,7 @@
   },
   "src/http/projects/review-items.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -1335,7 +1431,7 @@
   },
   "src/http/projects/sandbox-templates.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 6
     },
     "no-restricted-syntax": {
       "count": 5
@@ -1343,7 +1439,7 @@
   },
   "src/http/projects/sandboxes.ts": {
     "kortix-api/service-surface": {
-      "count": 14
+      "count": 12
     },
     "no-console": {
       "count": 1
@@ -1354,7 +1450,7 @@
   },
   "src/http/projects/secret-broker.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 6
     },
     "no-console": {
       "count": 1
@@ -1362,7 +1458,7 @@
   },
   "src/http/projects/secret-delivery.ts": {
     "kortix-api/service-surface": {
-      "count": 12
+      "count": 10
     },
     "no-restricted-imports": {
       "count": 2
@@ -1373,7 +1469,7 @@
   },
   "src/http/projects/secret-personal.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -1382,9 +1478,14 @@
       "count": 2
     }
   },
+  "src/http/projects/secret-relay-hop.ts": {
+    "kortix-api/service-surface": {
+      "count": 9
+    }
+  },
   "src/http/projects/secret-relay.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 1
     },
     "no-console": {
       "count": 1
@@ -1395,7 +1496,7 @@
   },
   "src/http/projects/secret-sync.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 2
     },
     "no-console": {
       "count": 1
@@ -1406,7 +1507,7 @@
   },
   "src/http/projects/secrets.ts": {
     "kortix-api/service-surface": {
-      "count": 19
+      "count": 16
     },
     "no-console": {
       "count": 2
@@ -1420,7 +1521,7 @@
   },
   "src/http/projects/session-attachments.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 2
     },
     "no-console": {
       "count": 2
@@ -1428,7 +1529,7 @@
   },
   "src/http/projects/session-config.ts": {
     "kortix-api/service-surface": {
-      "count": 17
+      "count": 15
     },
     "no-restricted-imports": {
       "count": 1
@@ -1439,12 +1540,12 @@
   },
   "src/http/projects/session-environment.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 1
     }
   },
   "src/http/projects/session-open-bundle.ts": {
     "kortix-api/service-surface": {
-      "count": 16
+      "count": 15
     },
     "no-console": {
       "count": 1
@@ -1452,7 +1553,7 @@
   },
   "src/http/projects/session-participants.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-imports": {
       "count": 2
@@ -1460,7 +1561,7 @@
   },
   "src/http/projects/session-presence.ts": {
     "kortix-api/service-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-imports": {
       "count": 2
@@ -1468,12 +1569,12 @@
   },
   "src/http/projects/session-prompts.ts": {
     "kortix-api/service-surface": {
-      "count": 17
+      "count": 14
     }
   },
   "src/http/projects/session-reminders.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 6
@@ -1481,12 +1582,12 @@
   },
   "src/http/projects/session-runtime.ts": {
     "kortix-api/service-surface": {
-      "count": 12
+      "count": 9
     }
   },
   "src/http/projects/session-scope-decide.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 9
     },
     "no-restricted-imports": {
       "count": 2
@@ -1497,7 +1598,7 @@
   },
   "src/http/projects/session-scope.ts": {
     "kortix-api/service-surface": {
-      "count": 15
+      "count": 13
     },
     "no-restricted-imports": {
       "count": 2
@@ -1508,7 +1609,7 @@
   },
   "src/http/projects/session-stream.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 6
     },
     "no-restricted-imports": {
       "count": 2
@@ -1519,12 +1620,12 @@
   },
   "src/http/projects/session-transcripts.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     }
   },
   "src/http/projects/setup-links.ts": {
     "kortix-api/service-surface": {
-      "count": 10
+      "count": 9
     },
     "no-restricted-syntax": {
       "count": 2
@@ -1532,7 +1633,7 @@
   },
   "src/http/projects/suna-migration/suna-migration-routes.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-imports": {
       "count": 2
@@ -1543,7 +1644,7 @@
   },
   "src/http/projects/trigger-webhooks.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -1551,7 +1652,7 @@
   },
   "src/http/projects/triggers.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 7
     },
     "no-restricted-imports": {
       "count": 2
@@ -1570,7 +1671,7 @@
   },
   "src/http/projects/turn-questions.ts": {
     "kortix-api/service-surface": {
-      "count": 10
+      "count": 8
     },
     "no-console": {
       "count": 2
@@ -1594,9 +1695,6 @@
     }
   },
   "src/http/projects/turn-stream.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 2
     },
@@ -1606,7 +1704,7 @@
   },
   "src/http/projects/warm-sessions.ts": {
     "kortix-api/service-surface": {
-      "count": 17
+      "count": 13
     },
     "no-console": {
       "count": 2
@@ -1623,17 +1721,19 @@
       "count": 2
     }
   },
-  "src/http/router/generation.ts": {
+  "src/http/router/actor-context.ts": {
     "kortix-api/service-surface": {
       "count": 1
-    },
+    }
+  },
+  "src/http/router/generation.ts": {
     "no-restricted-imports": {
       "count": 2
     }
   },
   "src/http/router/llm.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 4
     },
     "no-console": {
       "count": 2
@@ -1684,7 +1784,7 @@
   },
   "src/http/router/usage.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 5
     },
     "no-restricted-imports": {
       "count": 2
@@ -1705,9 +1805,14 @@
   },
   "src/http/sandbox-proxy/index.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
+      "count": 1
+    }
+  },
+  "src/http/sandbox-proxy/prefetch.ts": {
+    "kortix-api/service-surface": {
       "count": 1
     }
   },
@@ -1718,7 +1823,7 @@
   },
   "src/http/sandbox-proxy/preview.ts": {
     "kortix-api/service-surface": {
-      "count": 9
+      "count": 7
     }
   },
   "src/http/sandbox-proxy/public-share.ts": {
@@ -1791,7 +1896,7 @@
   },
   "src/http/setup-links/approval-app.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 4
     },
     "no-restricted-imports": {
       "count": 2
@@ -1846,7 +1951,7 @@
   },
   "src/http/tunnel/auth.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-imports": {
       "count": 2
@@ -1868,7 +1973,7 @@
   },
   "src/http/tunnel/device-auth.ts": {
     "kortix-api/service-surface": {
-      "count": 8
+      "count": 7
     },
     "no-restricted-imports": {
       "count": 2
@@ -1899,11 +2004,6 @@
       "count": 1
     }
   },
-  "src/lib/client-ip.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/lib/config.ts": {
     "kortix-api/layers": {
       "count": 2
@@ -1931,11 +2031,6 @@
     },
     "no-restricted-properties": {
       "count": 4
-    }
-  },
-  "src/lib/http-body.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/lib/instance.ts": {
@@ -2045,17 +2140,6 @@
       "count": 3
     }
   },
-  "src/services/accounts/iam/helpers.ts": {
-    "kortix-api/service-surface": {
-      "count": 3
-    },
-    "no-console": {
-      "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/services/accounts/mailtrap-contacts.ts": {
     "no-console": {
       "count": 1
@@ -2074,7 +2158,7 @@
       "count": 2
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/admin/queries.ts": {
@@ -2302,19 +2386,8 @@
     "no-console": {
       "count": 4
     },
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-properties": {
       "count": 3
-    }
-  },
-  "src/services/audit/auth-audit.ts": {
-    "no-console": {
-      "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/audit/dead-credential-log.ts": {
@@ -2339,14 +2412,6 @@
   },
   "src/services/auth/token-hash.ts": {
     "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
-  "src/services/billing/require-billing-write.ts": {
-    "kortix-api/service-surface": {
-      "count": 4
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -2968,13 +3033,10 @@
   },
   "src/services/connectors/db-deps-principal.ts": {
     "kortix-api/service-surface": {
-      "count": 7
+      "count": 4
     },
     "no-console": {
       "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 2
     }
   },
   "src/services/connectors/db-deps-rows.ts": {
@@ -3044,9 +3106,6 @@
   "src/services/connectors/router-contract.ts": {
     "kortix-api/service-surface": {
       "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/connectors/sync.ts": {
@@ -3055,11 +3114,6 @@
     },
     "no-console": {
       "count": 3
-    }
-  },
-  "src/services/feature-flags/gate.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/feature-flags/registry.ts": {
@@ -3174,10 +3228,7 @@
   },
   "src/services/git-proxy/ref-scopes.ts": {
     "kortix-api/service-surface": {
-      "count": 5
-    },
-    "no-restricted-imports": {
-      "count": 1
+      "count": 3
     }
   },
   "src/services/git/backends/code-storage.ts": {
@@ -3319,23 +3370,12 @@
     }
   },
   "src/services/iam/actor.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "no-restricted-properties": {
-      "count": 1
-    }
-  },
-  "src/services/iam/agent-grant-ceiling.ts": {
-    "no-restricted-imports": {
       "count": 1
     }
   },
   "src/services/iam/agent-scope.ts": {
     "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },
@@ -3363,11 +3403,6 @@
       "count": 3
     }
   },
-  "src/services/iam/cache.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/services/iam/catalog.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -3388,17 +3423,6 @@
   },
   "src/services/iam/self-host-operator.ts": {
     "no-restricted-properties": {
-      "count": 2
-    }
-  },
-  "src/services/iam/session-gate.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 2
-    },
-    "no-restricted-imports": {
       "count": 2
     }
   },
@@ -3621,11 +3645,6 @@
       "count": 1
     }
   },
-  "src/services/platform/services/sandbox-egress-pin.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/services/platform/services/sandbox-region.ts": {
     "kortix-api/service-surface": {
       "count": 2
@@ -3713,7 +3732,7 @@
       "count": 3
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/projects/lib/compile-agent-config.ts": {
@@ -3737,11 +3756,6 @@
   "src/services/projects/lib/connection-hosted-connect.ts": {
     "kortix-api/service-surface": {
       "count": 4
-    }
-  },
-  "src/services/projects/lib/connection-mutation.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/projects/lib/connection-sharing.ts": {
@@ -3801,9 +3815,6 @@
   "src/services/projects/lib/on-behalf-of.ts": {
     "no-console": {
       "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/projects/lib/personal-resources.ts": {
@@ -3811,9 +3822,6 @@
       "count": 2
     },
     "no-console": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },
@@ -3829,10 +3837,10 @@
   },
   "src/services/projects/lib/project-access.ts": {
     "kortix-api/service-surface": {
-      "count": 11
+      "count": 10
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/projects/lib/project-deletion.ts": {
@@ -3842,9 +3850,6 @@
   },
   "src/services/projects/lib/project-quota.ts": {
     "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },
@@ -3872,9 +3877,6 @@
   "src/services/projects/lib/serializers.ts": {
     "kortix-api/service-surface": {
       "count": 13
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/projects/lib/service-key-reconcile.ts": {
@@ -3919,9 +3921,6 @@
     },
     "no-console": {
       "count": 6
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/services/projects/review-items.ts": {
@@ -4183,11 +4182,6 @@
     },
     "no-console": {
       "count": 3
-    }
-  },
-  "src/services/sandbox-proxy/prefetch.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/sandbox-proxy/preview-audit.ts": {
@@ -4686,14 +4680,6 @@
       "count": 1
     }
   },
-  "src/services/secrets/relay-hop.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/services/secrets/secret-audience.ts": {
     "kortix-api/service-surface": {
       "count": 8
@@ -4725,11 +4711,6 @@
   "src/services/secrets/secrets.ts": {
     "kortix-api/service-surface": {
       "count": 2
-    }
-  },
-  "src/services/sessions/caller-session.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/services/sessions/heal-session-token.ts": {
@@ -5054,14 +5035,6 @@
       "count": 3
     }
   },
-  "src/services/sessions/session-access.ts": {
-    "kortix-api/service-surface": {
-      "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/services/sessions/session-audience.ts": {
     "kortix-api/service-surface": {
       "count": 2
@@ -5110,7 +5083,7 @@
       "count": 10
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/sessions/session-failure-notifier.ts": {
@@ -5477,9 +5450,6 @@
   },
   "src/services/triggers/trigger-webhook-auth.ts": {
     "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },

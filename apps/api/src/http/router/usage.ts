@@ -7,7 +7,7 @@ import { PROJECT_ACTIONS } from '../../services/iam/actions';
 import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { CSV_ROW_CAP, toCsv } from '../../services/usage/cost-csv';
 import { getCostSummary, listCostByProject } from '../../services/usage/cost-rollups';
 import {
@@ -19,7 +19,7 @@ import {
   parseCostWindow,
 } from '../../services/usage/cost-window';
 import { db } from '../../lib/db';
-import { resolveScopedAccountId } from '../../services/accounts/resolve-account';
+import { resolveScopedAccountId } from '../lib/resolve-account';
 import { getSessionCostRecord, listSessionCosts } from '../../services/usage/session-costs';
 import type { AppEnv } from '../../types/app-env';
 import {

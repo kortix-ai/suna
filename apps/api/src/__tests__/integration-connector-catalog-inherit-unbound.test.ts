@@ -22,6 +22,7 @@ import {
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { dbConnectorRouterDeps } from '../services/connectors/db-deps';
+import { dbConnectorRouterAuth } from '../http/connectors/principal';
 import { createConnectorRouter } from '../http/connectors/router';
 import {
   resolveProjectDefaultConnectorConnection,
@@ -324,6 +325,7 @@ describe('connector catalog and call resolver use one session scope', () => {
     const principal = principalFor(SESSION_EMPTY);
     const app = createConnectorRouter({
       ...dbConnectorRouterDeps,
+      ...dbConnectorRouterAuth,
       resolvePrincipal: async () => principal,
       resolveProjectPrincipal: async (_c, projectId) => (projectId === PROJECT ? principal : null),
     });

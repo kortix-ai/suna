@@ -10,7 +10,7 @@ process.env.SUPABASE_JWT_SECRET = SECRET;
 process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '0';
 
 mock.module('../lib/db', () => ({ db: {}, hasDatabase: () => false }));
-mock.module('../services/audit/auth-audit', () => ({
+mock.module('../http/middleware/auth-audit', () => ({
   auditLoginFail: () => {}, auditLoginSuccess: () => {}, auditLogout: () => {}, auditSessionFirstSight: () => {},
 }));
 mock.module('../http/middleware/auth-principal', () => ({

@@ -90,8 +90,11 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   test('the lookup precedes the quota check, so a retry is not refused by its own project', async () => {
     const handler = await runProvisionSource();
 
+    // The quota check is `projectQuotaDenial` (the plain-value core of the
+    // route-level `enforceProjectQuota`).
+    expect(handler.indexOf('projectQuotaDenial(')).toBeGreaterThan(-1);
     expect(handler.indexOf('findIdempotentProvision(')).toBeLessThan(
-      handler.indexOf('enforceProjectQuota('),
+      handler.indexOf('projectQuotaDenial('),
     );
   });
 

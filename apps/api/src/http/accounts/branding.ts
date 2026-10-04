@@ -25,15 +25,15 @@ import { type AccountBrandingRecord, accounts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { accountHasEntitlement } from '../../services/billing/services/entitlements';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { auth, errors, json } from '../openapi';
 import { config } from '../../lib/config';
 import { db } from '../../lib/db';
 import { rewriteStorageOrigin } from '../../lib/storage-url';
 import { getSupabase } from '../../lib/supabase';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
-import { readJsonObject } from '../../lib/http-body';
-import { auditIam, requireEntitlement } from '../../services/accounts/iam/helpers';
+import { readJsonObject } from '../lib/http-body';
+import { auditIam, requireEntitlement } from './iam/helpers';
 
 export const BRANDING_BUCKET = 'branding';
 /** Same ceiling the bucket enforces (`storage.buckets.file_size_limit`). */

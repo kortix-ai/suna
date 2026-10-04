@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSecrets } from '@kortix/db';
 import { Hono } from 'hono';
 import { PROJECT_ACTIONS } from '../services/iam/actions';
-import * as realAccess from '../services/projects/lib/access';
 import * as realTriggers from '../services/triggers/trigger-runtime';
 import { parseManifestString, synthesizeBlankManifest } from '../services/triggers';
 import type { ParsedManifest } from '../services/triggers';
@@ -104,8 +103,9 @@ const databaseMock = {
 };
 
 mock.module('../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
-mock.module('../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, name: 'demo' },
     userId: USER_ID,

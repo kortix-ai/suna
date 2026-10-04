@@ -6,7 +6,7 @@ import { previewConfig } from './preview-config';
 import { publicShareApp } from './public-share';
 import { shareApp } from './share';
 import { invalidateSandbox, loadSandbox } from '../../services/sandbox-proxy/backend';
-import { prefetchSandbox } from '../../services/sandbox-proxy/prefetch';
+import { prefetchSandbox } from './prefetch';
 import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
 import { makeOpenApiApp } from '../openapi';
 import type { Context, Next } from 'hono';

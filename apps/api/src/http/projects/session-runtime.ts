@@ -3,16 +3,12 @@ import { checkBillingAdmission } from '../../services/billing/services/billing-g
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  sessionIsTombstoned,
-} from '../../services/projects/lib/access';
-import { resolveAndAuthorizeAgent } from '../../services/projects/lib/agent-access';
-import { assertAgentScope } from '../../services/iam/agent-scope';
+import { loadVisibleSession, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { assertAgentScope } from '../lib/agent-scope';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from './app';
 import {
   sessionUsesCurrentRepository,

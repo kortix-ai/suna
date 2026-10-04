@@ -4,14 +4,14 @@ import { iamRoles, projects, serviceAccounts, accountMembers, accountGroups } fr
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { assignRole, revokeAssignment, updateAssignment, type AssignmentRow } from '../../../services/iam/assignments';
 import type { ScopeType } from '../../../services/iam/catalog';
 import { customRoleBindings, legacyToCanonicalPrincipal, type CustomRoleBinding } from '../../../services/iam/read-models';
 import { invalidateIamCacheForPolicyPrincipal } from '../../../services/iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, requireEntitlement } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 import { loadSystemRoles } from '../../../services/iam/catalog';
 
 export function systemRoleWireId(scopeType: string, key: string): string {

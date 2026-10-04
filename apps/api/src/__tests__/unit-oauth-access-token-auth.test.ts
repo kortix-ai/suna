@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
-import * as realAuthAudit from '../services/audit/auth-audit';
+import * as realAuthAudit from '../http/middleware/auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../services/iam/sso-sync';
 import * as realCrypto from '../lib/crypto';
@@ -87,7 +87,7 @@ mock.module('../services/sessions/preview-ownership', () => ({
   resolveSandboxProjectId: async () => null,
 }));
 
-mock.module('../services/audit/auth-audit', () => ({
+mock.module('../http/middleware/auth-audit', () => ({
   ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},

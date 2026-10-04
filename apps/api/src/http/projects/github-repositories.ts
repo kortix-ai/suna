@@ -1,5 +1,5 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../services/iam';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { auth, errors, json } from '../openapi';
 import {
   createInstallationToken,
@@ -7,7 +7,7 @@ import {
   listInstallationRepositories,
   listRepositoryBranches,
 } from '../../services/github/github';
-import { resolveProjectAccount } from '../../services/projects/lib/access';
+import { resolveProjectAccount } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   createGitHubInstallationInstallUrl,

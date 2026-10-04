@@ -11,7 +11,7 @@ import {
   revokeProjectRole,
   SYSTEM_ACTOR,
 } from '../../services/iam/assignments';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import {
   accountRoleMap,
   groupProjectGrants,
@@ -23,11 +23,12 @@ import { db } from '../../lib/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../../services/projects/lib/access';
+import { parseExpiresAtBody } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { GroupGrantSchema, projectsApp } from './app';
 import { normalizeString } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
-import { requireEntitlement } from '../../services/accounts/iam/helpers';
+import { readJsonObject } from '../lib/http-body';
+import { requireEntitlement } from '../accounts/iam/helpers';
 
 /**
  * A group→project role grant. `kortix.project_group_grants` is a view over

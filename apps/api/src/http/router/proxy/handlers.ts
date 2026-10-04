@@ -8,7 +8,8 @@ import {
   extractUsage,
   settleStreamUsage,
 } from '../../../services/router/services/llm';
-import { resolveActorFromRequest, type ActorContext } from '../../../services/router/actor-context';
+import { type ActorContext } from '../../../services/router/actor-context';
+import { requestActorContext } from '../actor-context';
 import { assertSafeEgressUrl, UnsafeEgressError } from '../../../lib/ssrf-guard';
 import type { ToolCreditReservation } from './app';
 import {
@@ -168,7 +169,7 @@ async function handleKortixProxy(
     });
   }
 
-  const actor = resolveActorFromRequest(c, { logPrefix: '[PROXY]' });
+  const actor = requestActorContext(c, '[PROXY]');
 
   // Use alternate target/key injection for Kortix-managed if configured (e.g. OpenRouter)
   const baseUrl = service.kortixTargetBaseUrl || service.targetBaseUrl;

@@ -1,6 +1,6 @@
 /** Project credentials: project-scoped CLI tokens and the BYO git credential. */
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { isProjectSessionPrincipal } from '../lib/agent-scope';
 import { auth, errors, json, lenientBody } from '../openapi';
 import {
   PatPolicyError,
@@ -9,10 +9,7 @@ import {
   revokeAccountToken,
 } from '../../services/repositories/account-tokens';
 import { createRoute, z } from '@hono/zod-openapi';
-import {
-  loadProjectForUser,
-  assertProjectCapability,
-} from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   getProjectGitConnection,
@@ -22,7 +19,7 @@ import {
   upsertProjectGitCredential,
 } from '../../services/git/project-git';
 import { normalizeString, serializeProjectGitConnection } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerProjectCredentialsRoutes(): void {
   // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
   // These are PATs (`kortix_pat_...`) bound to a single project. The auth

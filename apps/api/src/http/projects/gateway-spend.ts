@@ -4,12 +4,8 @@ import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../lib/db';
 import { auth, errors, json } from '../openapi';
 import { PROJECT_ACTIONS } from '../../services/iam/actions';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  lookupEmailsByUserIds,
-  projectCapabilityAllowed,
-} from '../../services/projects/lib/access';
+import { lookupEmailsByUserIds } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
 import { listProjectGatewaySessionSpend } from '../../services/usage/session-costs';
 import {

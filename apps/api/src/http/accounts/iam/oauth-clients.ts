@@ -10,7 +10,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import {
   createOAuthClient,
   deleteOAuthClient,
@@ -26,8 +26,8 @@ import {
 } from '../../../services/repositories/oauth-clients';
 import { OAUTH_SCOPES } from '../../../services/oauth/access-token';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 import { isUuid } from '../../../lib/validate';
 
 export const OAuthClientSchema = z

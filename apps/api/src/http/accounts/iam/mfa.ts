@@ -11,11 +11,11 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { invalidateIamCacheForAccount } from '../../../services/iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam } from '../../../services/accounts/iam/helpers';
-import { readJsonObject } from '../../../lib/http-body';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../lib/http-body';
 export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({

@@ -72,9 +72,9 @@ function fakeProjectRow(over: Record<string, unknown> = {}) {
 
 // ── Auth/quota/access — no DB. `resolveProjectAccount` bypasses the real
 // membership lookup entirely; `enforceProjectQuota` always allows.
-const realAccess = await import('../../services/projects/lib/access');
-mock.module('../../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   resolveProjectAccount: async () => ({ userId: FAKE_USER_ID, accountId: FAKE_ACCOUNT_ID }),
   enforceProjectQuota: async () => null,
 }));

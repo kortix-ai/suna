@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { isSandboxAuthored } from '../../services/sandboxes/sandbox-deadline';
-import { takePrefetchedSandbox } from '../../services/sandbox-proxy/prefetch';
+import { takePrefetchedSandbox } from './prefetch';
 import { jsonProxyError } from '../../services/sandbox-proxy/pre-prompt-env-sync';
 import { forwardToSandbox } from '../../services/sandbox-proxy/forward';
 

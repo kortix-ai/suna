@@ -10,7 +10,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../openapi';
 import { TriggerFireResultSchema, projectWebhooksApp } from './app';
 import { withProjectGitAuth } from '../../services/git/project-git';
-import { requestAuditContext } from '../../services/projects/lib/serializers';
+import { requestAuditContext } from '../lib/request-audit';
 import { isUuid } from '../../lib/validate';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../../services/triggers/trigger-runtime';
 import {
@@ -122,7 +122,7 @@ export function registerTriggerWebhooksRoutes(): void {
     (c as any).set('accountId', project.accountId);
 
     const payload = {
-      ...webhookPayload(c, rawBody),
+      ...webhookPayload((name) => c.req.header(name), rawBody),
       trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
       fired_at: new Date().toISOString(),
     };

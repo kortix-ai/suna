@@ -19,7 +19,7 @@ import {
 // exports would otherwise lose these names and fail at import.
 import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../../services/git/branches';
 import { createRoute, z } from '@hono/zod-openapi';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { resourceDenierForRequest } from '../../services/projects/lib/project-resources';
 import { CommitSchema, projectsApp } from './app';
 import { isGitRefNotFoundError } from '../../services/git/mirror';

@@ -7,7 +7,7 @@ import { setContextField } from '../../lib/request-context';
 import { isSessionSandboxCredential } from '../middleware/session-sandbox-credential';
 import { auth, errors } from '../openapi';
 import { db } from '../../lib/db';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { AnyObject, projectsApp } from './app';
 import {
   type TurnStreamBody,

@@ -16,7 +16,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realAccess from '../../services/projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -83,8 +82,9 @@ const databaseMock = {
 
 mock.module('../../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
 
-mock.module('../../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../lib/project-access');
+mock.module('../lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (_c: unknown, projectId: string, action: string) => {
     loadProjectCalls.push({ projectId, action });
     return loadedProject;

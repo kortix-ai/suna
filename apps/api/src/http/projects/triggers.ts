@@ -3,17 +3,17 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../services/connectors/manifest-mutation';
-import { assertMayRunAgent } from '../../services/projects/lib/agent-access';
+import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json, lenientBody } from '../openapi';
 import { db } from '../../lib/db';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from './app';
-import { guardSession } from '../../services/sessions/session-access';
+import { guardSession } from '../lib/session-access';
 import { withProjectGitAuth } from '../../services/git/project-git';
 import { metadataMerge } from '../../services/projects/lib/metadata-merge';
-import { requestAuditContext } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { requestAuditContext } from '../lib/request-audit';
+import { readJsonObject } from '../lib/http-body';
 import {
   draftToSpec,
   fireGitTrigger,

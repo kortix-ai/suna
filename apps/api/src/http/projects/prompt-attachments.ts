@@ -1,9 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope } from '../../services/iam/agent-scope';
+import { assertAgentScope } from '../lib/agent-scope';
 import { isSessionSandboxCredential } from '../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../openapi';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   assertChunkedPromptAttachmentUpload,

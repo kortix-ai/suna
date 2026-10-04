@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import { buildActor } from '../../services/iam/actor';
+import { buildActor } from './actor';
 import { credentialFromContext } from '../../services/audit/audit-credential';
 import { bindAuditPrincipal } from '../../services/audit/audit-scope';
 

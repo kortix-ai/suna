@@ -25,7 +25,7 @@ import { featureDisabledBody } from '../../services/feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json } from '../openapi';
 import { loadProjectAgents } from '../../services/projects/agents';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { AnyObject, projectsApp } from './app';
 import { loadEmailInstallConnectionId } from '../../services/sessions/session-connector-bindings';
 

@@ -1,20 +1,16 @@
 /**
  * ONE mutation rule for a connector connection. Every route that changes a
  * connection (label, credential, revoke, activate, default, connect, OAuth2
- * setup) loads it through `loadMutableConnection`.
+ * setup) loads it through `loadMutableConnection` (http/lib/connection-mutation.ts).
  */
 import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import type { Context } from 'hono';
-import { PROJECT_ACTIONS } from '../../iam';
 import { db } from '../../../lib/db';
-import { loadProjectForUser, projectCapabilityAllowed } from './access';
 import {
   type ConnectionReachabilityActor,
   type ConnectionReachabilityRow,
   connectionRowIsReachable,
 } from './connection-access';
-import { requestAgentPrincipalReach } from './personal-resources';
 
 export interface ConnectionMutationActor extends ConnectionReachabilityActor {
   /** The caller holds `project.connector.connections.manage`. */
@@ -43,14 +39,10 @@ export function mayMutateConnection(
 }
 
 /**
- * The project and the connection the caller may mutate, or `null`. The
- * project load needs only `read`: the mutation rule above is the gate. Callers
- * answer `null` with 404, so a caller cannot probe for connections they cannot
- * reach.
+ * The connection row a mutation route acts on, joined with its connector, or
+ * null when the project of `accountId` has no such connection.
  */
-export async function loadMutableConnection(c: Context, projectId: string, connectionId: string) {
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return null;
+export async function loadConnectionForMutation(projectId: string, connectionId: string, accountId: string) {
   const [connection] = await db
     .select({
       accountId: connectorConnections.accountId,
@@ -80,28 +72,9 @@ export async function loadMutableConnection(c: Context, projectId: string, conne
       and(
         eq(connectorConnections.connectionId, connectionId),
         eq(connectorConnections.projectId, projectId),
-        eq(connectorConnections.accountId, loaded.row.accountId),
+        eq(connectorConnections.accountId, accountId),
       ),
     )
     .limit(1);
-  if (!connection) return null;
-  const [mayManageSystemConnections, agentPrincipal] = await Promise.all([
-    projectCapabilityAllowed(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-    ),
-    requestAgentPrincipalReach(c, loaded.actor),
-  ]);
-  const actor = {
-    userId: loaded.userId,
-    isServiceAccount: c.get('authType') === 'service_account',
-    mayManageSystemConnections,
-    agentPrincipal,
-  };
-  return mayMutateConnection(connection, actor)
-    ? { loaded, connection, mayManageSystemConnections }
-    : null;
+  return connection ?? null;
 }

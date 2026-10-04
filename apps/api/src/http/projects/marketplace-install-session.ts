@@ -19,19 +19,20 @@ import {
   getCachedAccountTier,
 } from '../../services/billing/services/entitlements';
 import { isPaidTier } from '../../services/billing/services/tiers';
-import { requireFeatureFlag } from '../../services/feature-flags/gate';
-import { isProjectSessionPrincipal } from '../../services/iam/agent-scope';
+import { requireFeatureFlag } from '../lib/feature-flag-gate';
+import { isProjectSessionPrincipal } from '../lib/agent-scope';
 import { projectLlmGatewayEnabled } from '../../services/llm-gateway/enablement';
 import { resolveEffectiveModel } from '../../services/llm-gateway/resolution/default-model';
 import { getCatalogEntry } from '../../services/marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../openapi';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { readManifestFromRepo } from '../../services/git/files';
-import { loadProjectForUser } from '../../services/projects/lib/access';
+import { loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { loadGitProject } from '../../services/git/project-git';
-import { normalizeString, requestAuditContext } from '../../services/projects/lib/serializers';
-import { sendSessionCreateError } from '../../services/sessions/sessions';
+import { normalizeString } from '../../services/projects/lib/serializers';
+import { requestAuditContext } from '../lib/request-audit';
+import { sendSessionCreateError } from '../lib/session-create-error';
 import { createSession } from '../../services/sessions/lifecycle';
 import {
   buildRegistryProjectInstallPrompt,

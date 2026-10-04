@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { normalizeJsonObject } from './json';
+import { normalizeJsonObject } from '../../lib/json';
 
 /**
  * The request's JSON body as a plain object.

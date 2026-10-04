@@ -11,8 +11,8 @@ import {
   insertPurchase,
 } from '../../services/billing/repositories/transactions';
 import { BillingError } from '../../services/billing/errors';
-import { resolveScopedAccountId } from '../../services/accounts/resolve-account';
-import { resolveBillingWriteAccountId } from '../../services/billing/require-billing-write';
+import { resolveScopedAccountId } from '../lib/resolve-account';
+import { resolveBillingWriteAccountId } from './require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../openapi';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();

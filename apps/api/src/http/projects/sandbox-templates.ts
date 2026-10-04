@@ -15,13 +15,13 @@ import {
   updateTemplate,
 } from '../../services/snapshots/templates';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, assertProjectCapability } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { SandboxTemplateSchema, projectsApp } from './app';
 import { loadGitProject } from '../../services/git/project-git';
 import { allowStaleMirrorReads } from '../../services/git/mirror';
 import { serializeTemplate } from '../../services/projects/lib/serializers';
 import { templateProviderObservation } from '../../services/sandboxes/template-provider-observation';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 export function registerSandboxTemplatesRoutes(): void {
   // ─── Template CRUD ─────────────────────────────────────────────────────────
   // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-

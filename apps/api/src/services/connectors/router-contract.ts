@@ -6,7 +6,6 @@
  */
 import type { UpdateConnectionCredentialInput } from '@kortix/api-contract';
 import type { AgentGrant } from '@kortix/db';
-import type { Context } from 'hono';
 import type { FeatureFlagKey } from '../feature-flags/registry';
 import type { ConnectorConnectOwner } from '../projects/lib/connection-access';
 import type { ConnectorAttachmentStore } from './attachments';
@@ -150,15 +149,13 @@ export interface ListCatalogOptions {
   includeSchemas?: boolean;
 }
 
-export interface ConnectorRouterDeps {
-  /** Gateway auth: resolve the connector token → principal, or null for 401. */
-  resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null>;
-  /**
-   * Gateway auth for the project-EXPLICIT routes (/projects/:id/{catalog,call}).
-   * Runs under combinedAuth; accepts ANY valid principal (session token OR a
-   * logged-in user token) and pins the project from the path. Null → 403.
-   */
-  resolveProjectPrincipal(c: Context, projectId: string): Promise<ConnectorPrincipal | null>;
+/**
+ * The connector router's dependencies that take plain values. The request
+ * authorizers (`resolvePrincipal`, `resolveAdmin`, …) read the Hono request and
+ * live in `http/connectors/principal.ts`, which composes the two into
+ * `ConnectorRouterDeps`.
+ */
+export interface ConnectorServiceDeps {
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ConnectorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
@@ -172,24 +169,6 @@ export interface ConnectorRouterDeps {
    * decide what the gated routes see rather than silently opening them.
    */
   featureFlagEnabled(projectId: string, key: FeatureFlagKey): Promise<boolean>;
-  /** Admin auth: resolve user + verify project access, or null for 401/403. */
-  resolveAdmin(
-    c: Context,
-    projectId: string,
-  ): Promise<{ accountId: string; userId: string } | null>;
-  /** Read-tier auth for the connectors LIST: `project.connector.read` is in the
-   *  member baseline (the Connectors/Channels rail sections gate on it), so the
-   *  list must not require connector.write like the mutations do. Falls back to
-   *  resolveAdmin when a deps implementation doesn't provide it. */
-  resolveReader?(
-    c: Context,
-    projectId: string,
-  ): Promise<{ accountId: string; userId: string } | null>;
-  /** Read-tier authorization for exact project secret identifiers. */
-  resolveSecretReader?(
-    c: Context,
-    projectId: string,
-  ): Promise<{ accountId: string; userId: string } | null>;
   /**
    * `actingUserId`: whose own credentialed accounts count toward "connected"
    * for a connector with no project-wide shared credential (connection-access.ts
@@ -227,11 +206,6 @@ export interface ConnectorRouterDeps {
     slug: string,
     secretIdentifier: string | null,
   ): Promise<CrudOutcome>;
-  /** Secret binding requires both connector-write and secret-write. */
-  resolveSecretBindingAdmin?(
-    c: Context,
-    projectId: string,
-  ): Promise<{ accountId: string; userId: string } | null>;
   /** `userId` is accepted for back-compat but unused — a connector has exactly
    *  one (shared) credential since `per_user` was removed 2026-07-05. */
   deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
@@ -406,15 +380,6 @@ export interface ConnectorRouterDeps {
     /** The connection's label after finalize. A generic default becomes `connectedAs`. */
     label?: string;
   } | null>;
-  /**
-   * Does this caller hold the connections-manage capability on the project?
-   * The same gate the project-owned connection create (routes/connections.ts) asserts — connecting an
-   * account the WHOLE project can then use is administration, not self-service.
-   */
-  resolveConnectionsManager?(
-    c: Context,
-    projectId: string,
-  ): Promise<{ accountId: string; userId: string } | null>;
   /** Connectors this session's agent asked a human to authorize, and whether
    *  each is connected yet. Drives the in-session Connect button. */
   listSessionConnectRequests?(

@@ -22,7 +22,7 @@ import {
   isTunnelToken,
   verifySecretKey,
 } from '../../lib/crypto';
-import { requestClientKey } from '../../lib/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { isUuid } from '../../lib/validate';
 import { tunnelRateLimiter } from '../../services/tunnel/core/rate-limiter';
 import type { AppEnv } from '../../types/app-env';
@@ -31,7 +31,7 @@ import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../../services/tunnel/core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../../services/tunnel/core/rpc-core';
 import { retryOnDeadlock } from '../../lib/error-cause';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { uniqueComputerLabel } from '../../services/connectors/computers';
 
 /** Permissive connection row shape, as persisted + serialized. */

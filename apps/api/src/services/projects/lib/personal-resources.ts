@@ -29,8 +29,7 @@ import { loadTokenBinding, type Actor } from '../../iam/actor';
 import { agentPrincipalModeFor, isGovernedAgentGrant } from '../../iam/agent-principal';
 import { db } from '../../../lib/db';
 import type { ConnectionAgentPrincipalReach } from './connection-access';
-import type { Context } from 'hono';
-import { getRequestOnBehalfOf, resolveSessionOnBehalfOf } from './on-behalf-of';
+import { resolveSessionOnBehalfOf } from './on-behalf-of';
 
 export type PersonalSessionVisibility = 'private' | 'project' | 'restricted';
 
@@ -202,17 +201,21 @@ export async function tokenAgentPrincipalScope(input: {
  * and the visibility of the credential's own session. Null for every legacy
  * or human caller, which keeps their rule unchanged.
  */
-export async function requestAgentPrincipalReach(
-  c: Context,
-  actor?: Actor | null,
-): Promise<ConnectionAgentPrincipalReach | null> {
-  const resolvedActor = actor ?? ((c.get('actor') as Actor | undefined) ?? null);
-  const scope = actorPersonalScope(resolvedActor, getRequestOnBehalfOf(c));
+export async function agentPrincipalReach(request: {
+  /** The request's Actor. */
+  actor: Actor | null;
+  /** The fresh on_behalf_of the auth middleware read. */
+  onBehalfOfUserId: string | null;
+  /** The auth middleware's `sessionId`, used when the credential names none. */
+  sessionId: string | null;
+}): Promise<ConnectionAgentPrincipalReach | null> {
+  const resolvedActor = request.actor;
+  const scope = actorPersonalScope(resolvedActor, request.onBehalfOfUserId);
   if (!scope.agentPrincipal) return null;
   const credential = resolvedActor?.credential;
   const sessionId =
     (credential?.kind === 'agent_session' ? credential.sessionId : null) ??
-    ((c.get('sessionId') as string | undefined) ?? null);
+    request.sessionId;
   // The agent's own service account: a shared account whose audience names it
   // is reachable in every session of that agent (connection-access.ts).
   const agentId = credential?.kind === 'agent_session' ? credential.serviceAccountId : null;
@@ -223,24 +226,4 @@ export async function requestAgentPrincipalReach(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   return { onBehalfOfUserId: scope.onBehalfOfUserId, visibility: session?.visibility ?? null, agentId };
-}
-
-/**
- * Request-time owner of personal resources for a project route: the caller
- * (`loaded.userId`) for a human or legacy credential; under the
- * agent-principal model the on-behalf-of human of a private session, else
- * null (shared resources only).
- */
-export async function requestPersonalOwner(
-  c: Context,
-  loaded: { userId: string; actor?: Actor | null },
-): Promise<string | null> {
-  const reach = await requestAgentPrincipalReach(c, loaded.actor ?? null);
-  if (!reach) return loaded.userId;
-  return personalResourceOwner({
-    agentPrincipal: true,
-    legacyUserId: loaded.userId,
-    onBehalfOfUserId: reach.onBehalfOfUserId,
-    visibility: reach.visibility,
-  });
 }

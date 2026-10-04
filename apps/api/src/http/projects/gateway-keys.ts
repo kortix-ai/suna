@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../openapi';
 import { PROJECT_ACTIONS } from '../../services/iam/actions';
-import { loadProjectForUser, projectCapabilityAllowed } from '../../services/projects/lib/access';
+import { loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
 import {
   createGatewayKey,

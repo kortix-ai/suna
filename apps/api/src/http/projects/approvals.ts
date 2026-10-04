@@ -14,14 +14,15 @@ import {
   mayResolveApproval,
   maySeeSessionApprovals,
 } from '../../services/projects/lib/approval-authority';
-import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../../services/projects/lib/access';
+import { lookupEmailsByUserIds } from '../../services/projects/lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/project-access';
 import { isUuid } from '../../lib/validate';
 import { AnyObject, OkSchema, projectsApp } from './app';
 import {
   normalizeString,
   parseBoundedPositiveInt,
 } from '../../services/projects/lib/serializers';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import {
   approvalTargetSession,
   decideConnectorApproval,
@@ -30,7 +31,7 @@ import {
   normalizeApprovalNote,
 } from '../../services/projects/lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../services/channels/approval-card-relay';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals
   // The approval inbox: connector actions a policy gated as `require_approval` that
@@ -354,7 +355,7 @@ export function registerApprovalsRoutes(): void {
         decision,
         note,
         actorUserId: loaded.userId,
-        auditSource: inferAuditSource(c, 'human'),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
         resume: 'queue',
         updateStaleCard: () =>
           markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),

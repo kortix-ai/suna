@@ -61,9 +61,9 @@ mock.module('../services/platform/providers', () => ({
 const prefetched: string[] = [];
 // Bun patches a mocked module's namespace in place: keep the real functions.
 const { prefetchSandbox: realPrefetchSandbox, takePrefetchedSandbox } = await import(
-  '../services/sandbox-proxy/prefetch'
+  '../http/sandbox-proxy/prefetch'
 );
-mock.module('../services/sandbox-proxy/prefetch', () => ({
+mock.module('../http/sandbox-proxy/prefetch', () => ({
   takePrefetchedSandbox,
   prefetchSandbox: (...args: Parameters<typeof realPrefetchSandbox>) => {
     prefetched.push(args[1]);

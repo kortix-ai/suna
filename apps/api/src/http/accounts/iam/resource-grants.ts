@@ -22,7 +22,7 @@ import { accountGroups, projects } from '@kortix/db';
 import { objectGrantRows } from '../../../services/iam/read-models';
 import { db } from '../../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../services/iam';
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { lookupEmailsByUserIds } from '../../../services/projects/lib/access';
 import { isUuid } from '../../../lib/validate';
 import { iamRouter, AccountIdParam } from './app';

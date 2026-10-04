@@ -31,9 +31,9 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { summarizeArgsPreview } from '../../services/connectors/args-preview';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { mayResolveApproval } from '../../services/projects/lib/approval-authority';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { db } from '../../lib/db';
 import { resolveSetupLink } from '../../services/setup-links/token';
 

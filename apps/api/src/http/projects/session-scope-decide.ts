@@ -14,17 +14,13 @@ import { SessionScopeInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { assertAgentScope } from '../../services/iam/agent-scope';
+import { assertAgentScope } from '../lib/agent-scope';
 import { db } from '../../lib/db';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { DEFAULT_AGENT_SENTINEL } from '../../services/projects/agents';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  loadVisibleSession,
-  projectCapabilityAllowed,
-} from '../../services/projects/lib/access';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { loadVisibleSession } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { resolveSessionPersonalOwner } from '../../services/projects/lib/personal-resources';
 import { secretAudienceSubject } from '../../services/secrets/secret-audience';
 import { resolveSessionAgentGrant } from '../../services/secrets/secret-grant';

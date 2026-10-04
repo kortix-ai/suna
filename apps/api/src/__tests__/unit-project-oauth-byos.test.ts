@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, accountSecretResources } from '@kortix/db';
-import * as realAccess from '../services/projects/lib/access';
 
 // Bring your own ChatGPT subscription (pooled provider secrets): a project
 // member without project.secret.write connects and reconnects their OWN
@@ -60,8 +59,9 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../services/projects/lib/access', () => ({
-  ...realAccess,
+const realProjectAccess = await import('../http/lib/project-access');
+mock.module('../http/lib/project-access', () => ({
+  ...realProjectAccess,
   loadProjectForUser: async (c: any) => {
     const userId = c.get('userId') as string;
     return {

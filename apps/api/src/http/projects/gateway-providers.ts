@@ -2,7 +2,7 @@ import { type AuthedPrincipal } from '@kortix/llm-gateway';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../openapi';
 import { PROJECT_ACTIONS } from '../../services/iam/actions';
-import { assertProjectCapability, loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { verifyProviderConnection } from '../../services/llm-gateway/provider-verify';
 import { assertGatewayBudget, GatewayBudgetExceededError } from '../../services/llm-gateway/hooks';

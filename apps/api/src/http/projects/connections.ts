@@ -8,13 +8,9 @@ import { PROJECT_ACTIONS } from '../../services/iam';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import { isUniqueViolation } from '../../lib/postgres-errors';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  projectCapabilityAllowed,
-} from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/project-access';
 import { projectsApp } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { callerKortixSessionId } from '../lib/caller-session';
 import {
   type ConnectionAudienceReach,
   type ConnectionOwnerType,
@@ -25,8 +21,8 @@ import {
 import { audiencePersonId, loadConnectionAudience } from '../../services/projects/lib/connection-audience';
 import { loadConnectionSharing } from '../../services/projects/lib/connection-sharing';
 import { sessionMayEnumerateConnection } from '../../services/projects/lib/connector-connection-visibility';
-import { requestAgentPrincipalReach } from '../../services/projects/lib/personal-resources';
-import { readJsonObject } from '../../lib/http-body';
+import { requestAgentPrincipalReach } from '../lib/personal-resources';
+import { readJsonObject } from '../lib/http-body';
 import { canonicalConnectorAlias } from '../../services/sessions/session-connector-bindings';
 import {
   ConnectionViewSchema,

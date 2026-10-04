@@ -1,7 +1,8 @@
-import { resolveScopedAccountId } from '../accounts/resolve-account';
-import { assertAuthorized } from '../iam/authorize';
-import { actorOf } from '../iam/actor';
-import { ACCOUNT_ACTIONS } from '../iam/actions';
+import type { Context } from 'hono';
+import { resolveScopedAccountId } from '../lib/resolve-account';
+import { assertAuthorized } from '../../services/iam/authorize';
+import { actorOf } from '../middleware/actor';
+import { ACCOUNT_ACTIONS } from '../../services/iam/actions';
 
 /**
  * Resolve the account a billing *write* targets AND assert the caller is
@@ -21,7 +22,7 @@ import { ACCOUNT_ACTIONS } from '../iam/actions';
  * billing." on denial.
  */
 export async function resolveBillingWriteAccountId(
-  c: any,
+  c: Context,
   source: 'query' | 'body' = 'body',
 ): Promise<string> {
   const accountId = await resolveScopedAccountId(c, source);

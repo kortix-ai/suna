@@ -5,7 +5,7 @@ import { accountMembers, accountMemberships, accounts, projects } from "@kortix/
 import { config } from "../../../lib/config";
 import { db } from "../../../lib/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../../services/iam";
-import { actorOf } from '../../../services/iam/actor';
+import { actorOf } from '../../middleware/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../../services/iam/assignments';
 import { accountRolesForUser } from '../../../services/iam/read-models';
 import { impersonatedAccountFor } from "../../../services/iam/impersonation";
@@ -15,7 +15,7 @@ import { sortAccountsForListing } from "../../../services/accounts/core/account-
 import { bootstrapPersonalAccount } from "../../../services/accounts/core/bootstrap-personal-account";
 import { AccountDetailSchema, AccountIdParam, AccountSummarySchema, accountsRouter, autoClaimPendingInvites, getMembership, normalizeString, resolveAccountDisplayNames, serializeAccount } from './app';
 import { accountDisplayName } from '../../../services/accounts/core/account-name';
-import { readJsonObject } from '../../../lib/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).

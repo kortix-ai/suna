@@ -16,10 +16,10 @@ import {
   SessionEnvironmentError,
   stopSessionEnvironment,
 } from '../../services/platform/services/session-environment';
-import { assertProjectCapability, type loadProjectForUser } from '../../services/projects/lib/access';
+import { assertProjectCapability, type loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
-import { guardSession, sessionAccessDenied, type SessionNeed } from '../../services/sessions/session-access';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { guardSession, sessionAccessDenied, type SessionNeed } from '../lib/session-access';
 
 const EnvironmentSchema = z.object({
   session_id: z.string(),

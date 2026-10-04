@@ -4,8 +4,9 @@ import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { db } from '../../lib/db';
 import { PROJECT_ACTIONS } from '../../services/iam';
-import { callerKortixSessionId } from '../../services/sessions/caller-session';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { loadVisibleSession, sessionIsTombstoned } from '../../services/projects/lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/project-access';
 import { projectsApp } from './app';
 import { extendSandboxDeadline, previewGrantMs } from '../../services/sandboxes/sandbox-deadline';
 export function registerSessionPresenceRoutes(): void {

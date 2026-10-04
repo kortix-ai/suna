@@ -16,11 +16,11 @@ import { accountSessionActivity } from '@kortix/db';
 import { db } from '../../lib/db';
 import { supabaseAuth } from '../middleware/auth';
 import type { AppEnv } from '../../types/app-env';
-import { auditLogout } from '../../services/audit/auth-audit';
+import { auditLogout } from '../middleware/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from '../../services/auth/gotrue';
 import { forgetJwtLiveness } from '../../services/auth/jwt-liveness';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 

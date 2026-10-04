@@ -34,11 +34,11 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from '../../services/oauth/discovery';
 import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../../services/repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../middleware/rate-limit';
-import { requestClientKey } from '../../lib/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from '../../services/oauth/access-token';
 import { isUuid } from '../../lib/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
-import { actorOf } from '../../services/iam/actor';
+import { actorOf } from '../middleware/actor';
 import { resolveAccountId } from '../../services/accounts/resolve-account';
 import { AUTH_REQUEST_TTL_MS, SELF_REGISTERED_DESCRIPTION } from '../../services/oauth/requests';
 

@@ -13,12 +13,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types/app-env';
 import { supabaseAuth } from '../middleware/auth';
-import { requestClientIp } from '../../lib/client-ip';
+import { requestClientIp } from '../lib/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';
 import { isUuid } from '../../lib/validate';
-import { readJsonObject } from '../../lib/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { errorSqlstate } from '../../lib/error-cause';
 import {
   deleteSessionSandbox,
