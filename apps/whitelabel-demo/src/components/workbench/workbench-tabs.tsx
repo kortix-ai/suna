@@ -84,13 +84,6 @@ export function WorkbenchTabs({
  * The restart/down-recovery plumbing lives in `useRuntimeRecovery`.
  */
 function Thread({ session: c }: { session: UseSessionResult }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [c.messages, c.isBusy, c.hasPending]);
-
   const { restart, runtimeReady, runtimeDown } = useRuntimeRecovery(c);
 
   // No stall watchdog here any more. `c.isBusy` is the working projection
@@ -101,58 +94,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
 
   return (
     <>
-      <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
-          {c.isLoading && (
-            <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
-              <Loading className="size-4" /> Loading conversation…
-            </div>
-          )}
-          {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
-            <div className="grid place-items-center py-16 text-center">
-              <Sparkles className="size-6 text-muted-foreground" />
-              <p className="mt-3 text-sm text-muted-foreground">
-                Send a message to get the agent working.
-              </p>
-            </div>
-          )}
-
-          {c.messages.map((m) => (
-            <MessageView key={m.info.id} message={m} />
-          ))}
-
-          {c.pending && (
-            <Message align="end">
-              <Bubble variant="secondary" align="end" className="opacity-70">
-                <BubbleContent>{c.pending}</BubbleContent>
-              </Bubble>
-            </Message>
-          )}
-
-          {c.permissions.map((p) => (
-            <PermissionPrompt key={p.id} request={p} onAnswer={c.answerPermission} />
-          ))}
-          {c.questions.map((q) => (
-            <QuestionPrompt
-              key={q.id}
-              request={q}
-              onAnswer={c.answerQuestion}
-              onCancel={c.cancel}
-            />
-          ))}
-
-          {c.isBusy && !c.hasPending && (
-            <Marker className="py-1">
-              <MarkerIcon>
-                <Loading />
-              </MarkerIcon>
-              <MarkerContent className="shimmer text-sm">
-                {c.pending ? 'Sending…' : 'Agent is working…'}
-              </MarkerContent>
-            </Marker>
-          )}
-        </div>
-      </div>
+      <MessageList session={c} />
 
       <div className="shrink-0 px-5 pb-5">
         <div className="mx-auto max-w-3xl">
@@ -219,5 +161,69 @@ function Thread({ session: c }: { session: UseSessionResult }) {
         </div>
       </div>
     </>
+  );
+}
+
+function MessageList({ session: c }: { session: UseSessionResult }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [c.messages, c.isBusy, c.hasPending]);
+
+  return (
+    <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
+      <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
+        {c.isLoading && (
+          <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
+            <Loading className="size-4" /> Loading conversation…
+          </div>
+        )}
+        {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
+          <div className="grid place-items-center py-16 text-center">
+            <Sparkles className="size-6 text-muted-foreground" />
+            <p className="mt-3 text-sm text-muted-foreground">
+              Send a message to get the agent working.
+            </p>
+          </div>
+        )}
+
+        {c.messages.map((m) => (
+          <MessageView key={m.info.id} message={m} />
+        ))}
+
+        {c.pending && (
+          <Message align="end">
+            <Bubble variant="secondary" align="end" className="opacity-70">
+              <BubbleContent>{c.pending}</BubbleContent>
+            </Bubble>
+          </Message>
+        )}
+
+        {c.permissions.map((p) => (
+          <PermissionPrompt key={p.id} request={p} onAnswer={c.answerPermission} />
+        ))}
+        {c.questions.map((q) => (
+          <QuestionPrompt
+            key={q.id}
+            request={q}
+            onAnswer={c.answerQuestion}
+            onCancel={c.cancel}
+          />
+        ))}
+
+        {c.isBusy && !c.hasPending && (
+          <Marker className="py-1">
+            <MarkerIcon>
+              <Loading />
+            </MarkerIcon>
+            <MarkerContent className="shimmer text-sm">
+              {c.pending ? 'Sending…' : 'Agent is working…'}
+            </MarkerContent>
+          </Marker>
+        )}
+      </div>
+    </div>
   );
 }

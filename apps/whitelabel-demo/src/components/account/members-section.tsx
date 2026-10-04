@@ -113,28 +113,21 @@ function MemberRow({
   );
 }
 
-export function MembersSection({ accountId }: { accountId: string }) {
-  const qc = useQueryClient();
-  const membersKey = ['account-members', accountId] as const;
-  const members = useQuery({
-    queryKey: membersKey,
-    queryFn: () => kortix.accounts.members(accountId),
-  });
-
+function MemberInviteForm({
+  accountId,
+  onInvited,
+}: {
+  accountId: string;
+  onInvited: () => void;
+}) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
-
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: membersKey });
-    qc.invalidateQueries({ queryKey: ['account-invites', accountId] });
-    qc.invalidateQueries({ queryKey: ['account', accountId] });
-  };
 
   const invite = useMutation({
     mutationFn: () => kortix.accounts.invite(accountId, { email: email.trim(), role }),
     onSuccess: (result) => {
       setEmail('');
-      refresh();
+      onInvited();
       if (result.status === 'pending') toast.success(`Invitation sent to ${result.email}`);
       else toast.success(`${result.email} added`);
     },
@@ -143,6 +136,57 @@ export function MembersSection({ accountId }: { accountId: string }) {
       toast.error(conflict ? 'Already a member or invited' : 'Could not invite');
     },
   });
+
+  return (
+    <Card className="p-4">
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (email.trim()) invite.mutate();
+        }}
+      >
+        <Input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="teammate@company.com"
+          type="email"
+          className="flex-1"
+        />
+        <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+          <SelectTrigger className="w-full sm:w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLES.map((r) => (
+              <SelectItem key={r} value={r} className="capitalize">
+                {r}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="submit" disabled={!email.trim() || invite.isPending}>
+          {invite.isPending && <Loading className="size-4" />}
+          Invite
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+export function MembersSection({ accountId }: { accountId: string }) {
+  const qc = useQueryClient();
+  const membersKey = ['account-members', accountId] as const;
+  const members = useQuery({
+    queryKey: membersKey,
+    queryFn: () => kortix.accounts.members(accountId),
+  });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: membersKey });
+    qc.invalidateQueries({ queryKey: ['account-invites', accountId] });
+    qc.invalidateQueries({ queryKey: ['account', accountId] });
+  };
 
   const changeRole = useMutation({
     mutationFn: (vars: { userId: string; role: Role }) =>
@@ -170,39 +214,7 @@ export function MembersSection({ accountId }: { accountId: string }) {
       <h3 className="text-sm font-semibold text-foreground">Members</h3>
 
       {/* Invite — accounts.invite */}
-      <Card className="p-4">
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (email.trim()) invite.mutate();
-          }}
-        >
-          <Input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="teammate@company.com"
-            type="email"
-            className="flex-1"
-          />
-          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-            <SelectTrigger className="w-full sm:w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLES.map((r) => (
-                <SelectItem key={r} value={r} className="capitalize">
-                  {r}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" disabled={!email.trim() || invite.isPending}>
-            {invite.isPending && <Loading className="size-4" />}
-            Invite
-          </Button>
-        </form>
-      </Card>
+      <MemberInviteForm accountId={accountId} onInvited={refresh} />
 
       {/* List — accounts.members */}
       <Card className="divide-y divide-border p-0">

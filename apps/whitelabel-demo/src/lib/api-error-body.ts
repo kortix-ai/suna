@@ -10,7 +10,7 @@
  *
  * Reading through one function means the next classifier cannot get this wrong.
  */
-export interface ServerErrorBody {
+interface ServerErrorBody {
   code?: unknown;
   error?: unknown;
   connector?: unknown;

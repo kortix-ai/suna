@@ -2,8 +2,6 @@
 
 /**
  * The Automations tab: pause/resume, the add form, and the trigger list.
- * The form owns its create; each row owns its presentation; fire/remove stay
- * here so their pending state spans every row, as before.
  */
 
 import Loading from '@/components/ui/loading';
@@ -87,18 +85,7 @@ export function AddTriggerForm({ projectId }: { projectId: string }) {
               placeholder="Nightly digest"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Type</Label>
-            <Select value={type} onValueChange={(v) => setType(v as TriggerType)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cron">cron</SelectItem>
-                <SelectItem value="webhook">webhook</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <TriggerTypeSelect value={type} onValueChange={setType} />
         </div>
         {type === 'cron' && (
           <div className="space-y-1.5">
@@ -130,6 +117,29 @@ export function AddTriggerForm({ projectId }: { projectId: string }) {
         </div>
       </form>
     </Card>
+  );
+}
+
+function TriggerTypeSelect({
+  value,
+  onValueChange,
+}: {
+  value: TriggerType;
+  onValueChange: (value: TriggerType) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Type</Label>
+      <Select value={value} onValueChange={(v) => onValueChange(v as TriggerType)}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="cron">cron</SelectItem>
+          <SelectItem value="webhook">webhook</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -266,18 +276,7 @@ function EditTriggerDialog({
               rows={3}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Enabled</Label>
-            <Select value={enabled} onValueChange={(v) => setEnabled(v as 'on' | 'off')}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="on">Enabled</SelectItem>
-                <SelectItem value="off">Disabled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <TriggerEnabledSelect value={enabled} onValueChange={setEnabled} />
         </div>
         <DialogFooter>
           <Button disabled={update.isPending} onClick={() => update.mutate()}>
@@ -287,6 +286,29 @@ function EditTriggerDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TriggerEnabledSelect({
+  value,
+  onValueChange,
+}: {
+  value: 'on' | 'off';
+  onValueChange: (value: 'on' | 'off') => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Enabled</Label>
+      <Select value={value} onValueChange={(v) => onValueChange(v as 'on' | 'off')}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="on">Enabled</SelectItem>
+          <SelectItem value="off">Disabled</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -330,29 +352,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card className="p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Zap className="size-4 text-muted-foreground" /> Automations
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {paused
-                ? 'All triggers are paused — nothing auto-runs.'
-                : 'Triggers run automatically on schedule or webhook.'}
-            </p>
-          </div>
-          <Button
-            variant={paused ? 'default' : 'outline'}
-            size="sm"
-            disabled={setActivation.isPending}
-            onClick={() => setActivation.mutate(!paused)}
-          >
-            {setActivation.isPending && <Loading className="size-4" />}
-            {paused ? 'Resume all' : 'Pause all'}
-          </Button>
-        </div>
-      </Card>
+      <TriggersPauseCard paused={paused} setActivation={setActivation} />
 
       <AddTriggerForm projectId={projectId} />
 
@@ -383,5 +383,39 @@ export function TriggersTab({ projectId }: { projectId: string }) {
         })}
       </Card>
     </div>
+  );
+}
+
+function TriggersPauseCard({
+  paused,
+  setActivation,
+}: {
+  paused: boolean;
+  setActivation: { isPending: boolean; mutate: (next: boolean) => void };
+}) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Zap className="size-4 text-muted-foreground" /> Automations
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {paused
+              ? 'All triggers are paused — nothing auto-runs.'
+              : 'Triggers run automatically on schedule or webhook.'}
+          </p>
+        </div>
+        <Button
+          variant={paused ? 'default' : 'outline'}
+          size="sm"
+          disabled={setActivation.isPending}
+          onClick={() => setActivation.mutate(!paused)}
+        >
+          {setActivation.isPending && <Loading className="size-4" />}
+          {paused ? 'Resume all' : 'Pause all'}
+        </Button>
+      </div>
+    </Card>
   );
 }

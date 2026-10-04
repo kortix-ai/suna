@@ -20,7 +20,7 @@ import type {
 
 export type ScopeRowKey = 'model' | 'agent' | 'secrets' | 'connections';
 
-export interface SessionScopeRow {
+interface SessionScopeRow {
   key: ScopeRowKey;
   label: string;
   /** The short "can I change this now?" badge. */
@@ -34,7 +34,7 @@ export interface SessionScopeRow {
   control: 'model' | null;
 }
 
-export interface SessionScopeRowsInput {
+interface SessionScopeRowsInput {
   /** `session.agent_name` — null when the project default agent runs. */
   agentName: string | null | undefined;
   /** `session.secrets_allowlist` — null/undefined = never narrowed. */

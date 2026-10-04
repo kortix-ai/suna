@@ -95,7 +95,7 @@ export function sessionApprovalsView(
   };
 }
 
-export type ApprovalFailureKind =
+type ApprovalFailureKind =
   | 'requires_human'
   | 'already_resolved'
   | 'not_permitted'

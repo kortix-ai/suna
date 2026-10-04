@@ -19,7 +19,7 @@
  * Nothing else is buffered. Long-lived session streams remain active.
  */
 
-import { getRequestSession } from '@/server/auth';
+import { getRequestSession, type SessionPayload } from '@/server/auth';
 import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
@@ -84,6 +84,28 @@ async function handle(
     token: apiKey,
   });
 
+  if (
+    policy.filterProjectsList ||
+    policy.recordProvisionOwner ||
+    policy.recordRuntimeProjectId
+  ) {
+    return await rewriteOwnedResponse(upstreamRes, policy, session);
+  }
+
+  // The SDK returns a sanitized, streaming response.
+  return upstreamRes;
+}
+
+/**
+ * Buffer only responses that update or filter wrapper ownership state, apply
+ * the record/filter side effects, and re-serialize. Everything else streams
+ * through untouched.
+ */
+async function rewriteOwnedResponse(
+  upstreamRes: Response,
+  policy: ReturnType<typeof evaluatePolicy>,
+  session: SessionPayload,
+) {
   // Buffer only responses that update or filter wrapper ownership state.
   if (
     policy.filterProjectsList ||
@@ -132,9 +154,6 @@ async function handle(
 
     return Response.json(body, { status: upstreamRes.status });
   }
-
-  // The SDK returns a sanitized, streaming response.
-  return upstreamRes;
 }
 
 export {

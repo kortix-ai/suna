@@ -51,7 +51,7 @@ export function signSession(userId: string): string {
 }
 
 /** Verify a signed session token. Returns `null` on any invalid/expired/missing input. */
-export function verifySession(token: string | null | undefined): SessionPayload | null {
+function verifySession(token: string | null | undefined): SessionPayload | null {
   if (!token) return null;
   const dot = token.indexOf('.');
   if (dot < 0) return null;

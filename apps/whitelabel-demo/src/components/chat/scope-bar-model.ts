@@ -32,9 +32,9 @@ import type { ProjectSecret } from '@kortix/sdk';
 // ── Which controls may touch THIS session ───────────────────────────────────
 
 /** Same four rows the scope panel names, so the two cannot disagree. */
-export type ScopeControlKey = ScopeRowKey;
+type ScopeControlKey = ScopeRowKey;
 
-export interface ScopeControl {
+interface ScopeControl {
   key: ScopeControlKey;
   /** Does a control here change the RUNNING session, or only the next one? */
   live: boolean;
@@ -76,7 +76,7 @@ export const START_NEW_SESSION_ACTION = 'Start a new session with this scope';
  * app cannot enumerate and may be smaller than the rows shown. Saying "allowed"
  * there would be a claim about secret access that nothing verified.
  */
-export type SecretMembership = 'allowed' | 'excluded' | 'agent_grant';
+type SecretMembership = 'allowed' | 'excluded' | 'agent_grant';
 
 export const SECRET_MEMBERSHIP_LABEL: Record<SecretMembership, string> = {
   allowed: 'Allowed',
@@ -84,7 +84,7 @@ export const SECRET_MEMBERSHIP_LABEL: Record<SecretMembership, string> = {
   agent_grant: 'Agent grant',
 };
 
-export interface ScopeBarSecretRow {
+interface ScopeBarSecretRow {
   /** What the allowlist addresses. Unique per project. */
   identifier: string;
   /** The env KEY the value lands on. Deliberately NOT unique. */
@@ -172,7 +172,7 @@ export function scopeBarSecrets(input: {
 
 // ── The draft carried into the next session ─────────────────────────────────
 
-export type ScopeDraftIssueKind = 'not_created' | 'key_collision';
+type ScopeDraftIssueKind = 'not_created' | 'key_collision';
 
 /** A drafted allowlist entry that would make the create fail, named before it does. */
 export interface ScopeDraftIssue {
@@ -260,7 +260,7 @@ export function classifyTypedIdentifier(
 
 // ── Connections ─────────────────────────────────────────────────────────────
 
-export interface ScopeBarConnector {
+interface ScopeBarConnector {
   alias: string;
   /** What THIS session is bound to. null = the project default. */
   bound: string | null;

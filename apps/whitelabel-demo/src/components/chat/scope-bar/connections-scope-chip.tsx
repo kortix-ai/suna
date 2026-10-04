@@ -21,6 +21,47 @@ import { hasScopeDraft, scopeControl, type ScopeBarConnectors } from '../scope-b
 import type { ConnectorBindingChoice } from '@/server/bindable-connections';
 import type { ReactNode } from 'react';
 
+/** The rows this session is bound to, with each unavailable alias's reason. */
+function ConnectionRows({ connections }: { connections: ScopeBarConnectors }) {
+  return (
+    <div className="mt-3 space-y-2">
+
+      {connections.rows.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          This project has no connectors connected yet.
+        </p>
+      )}
+      {connections.rows.map((row) => (
+        <div key={row.alias} className="space-y-0.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {row.alias}
+            </span>
+            <span className="truncate text-xs">
+              {row.bound ?? 'Project default'}
+            </span>
+          </div>
+          {/* The remedy is always a teammate. A wrapper acts under one
+              credential for many end-users, so it has no upstream identity
+              to connect WITH, and the interactive flow that would is
+              refused for it outright. */}
+          {row.notice && (
+            <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <div className="text-xs">{row.notice.title}</div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  {row.notice.detail}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ConnectionsScopeChip({
   projectId,
   sessionId,
@@ -51,40 +92,7 @@ export function ConnectionsScopeChip({
       badge={scopeControl('connections').badge}
       note={scopeControl('connections').note}
     >
-      <div className="mt-3 space-y-2">
-        {connections.rows.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            This project has no connectors connected yet.
-          </p>
-        )}
-        {connections.rows.map((row) => (
-          <div key={row.alias} className="space-y-0.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-mono text-xs text-muted-foreground">
-                {row.alias}
-              </span>
-              <span className="truncate text-xs">
-                {row.bound ?? 'Project default'}
-              </span>
-            </div>
-            {/* The remedy is always a teammate. A wrapper acts under one
-                credential for many end-users, so it has no upstream identity
-                to connect WITH, and the interactive flow that would is
-                refused for it outright. */}
-            {row.notice && (
-              <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <div className="text-xs">{row.notice.title}</div>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    {row.notice.detail}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      <ConnectionRows connections={connections} />
 
       <ScopeEditor
         label="Bind different accounts for this session"

@@ -109,7 +109,7 @@ function CompareToBaseCard({
   );
 }
 
-export function CommitsView({
+function CommitSessionCard({
   projectId,
   sessionId,
 }: {
@@ -118,17 +118,6 @@ export function CommitsView({
 }) {
   const qc = useQueryClient();
   const [message, setMessage] = useState('');
-  const [openSha, setOpenSha] = useState<string | null>(null);
-
-  const branches = useQuery({
-    queryKey: ['project-branches', projectId],
-    queryFn: () => kortix.project(projectId).git.branches(),
-  });
-
-  const commits = useQuery({
-    queryKey: ['project-commits', projectId],
-    queryFn: () => kortix.project(projectId).git.commits(),
-  });
 
   const commitSession = useMutation({
     mutationFn: () =>
@@ -150,77 +139,163 @@ export function CommitsView({
     onError: () => toast.error('Could not commit session changes'),
   });
 
+  return (
+    <Card className="shrink-0">
+      {/* Commit session changes */}
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <GitCommitHorizontal className="size-4 text-muted-foreground" />
+          Commit session changes
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Commit message (optional)"
+          rows={2}
+          className="resize-none font-mono text-xs"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate font-mono text-[0.7rem] text-muted-foreground">
+            {sessionId}
+          </span>
+          <Button
+            size="sm"
+            onClick={() => commitSession.mutate()}
+            disabled={commitSession.isPending}
+          >
+            {commitSession.isPending ? (
+              <Loading className="size-3.5" />
+            ) : (
+              <Check className="size-3.5" />
+            )}
+            Commit
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BranchBadges({
+  items,
+  isLoading,
+}: {
+  items: ProjectBranch[];
+  isLoading: boolean;
+}) {
+  return (
+    <div className="shrink-0">
+      {/* Branches */}
+      <div className="mb-1.5 flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
+        <GitBranch className="size-3.5" />
+        Branches
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-8 w-full" />
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((b) => (
+            <Badge
+              key={b.name}
+              variant={b.is_default ? 'default' : 'outline'}
+              className="gap-1 font-mono"
+              title={`${b.subject ?? ''} · ${b.committer_name ?? ''}`}
+            >
+              <GitBranch className="size-3" />
+              {b.name}
+              {b.is_default && <span className="opacity-70">(default)</span>}
+            </Badge>
+          ))}
+          {items.length === 0 && (
+            <span className="text-xs text-muted-foreground">No branches.</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommitList({
+  items,
+  isLoading,
+  onOpen,
+}: {
+  items: ProjectCommit[];
+  isLoading: boolean;
+  onOpen: (sha: string) => void;
+}) {
+  return (
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="space-y-1 pr-2">
+        {isLoading ? (
+          <>
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </>
+        ) : items.length === 0 ? (
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+            No commits yet.
+          </div>
+        ) : (
+          items.map((c) => (
+            <Button
+              key={c.hash}
+              type="button"
+              variant="outline"
+              onClick={() => onOpen(c.hash)}
+              className="h-auto w-full items-start justify-start gap-2 whitespace-normal rounded-lg bg-card/50 px-2.5 py-2 text-left hover:bg-card"
+            >
+              <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-foreground">
+                  {c.subject || '(no message)'}
+                </div>
+                <div className="mt-0.5 flex items-center gap-2 text-[0.7rem] text-muted-foreground">
+                  <span className="font-mono">{c.short_hash}</span>
+                  <span>{c.author_name}</span>
+                  <span>{relativeTime(c.committed_at ?? c.authored_at)}</span>
+                </div>
+              </div>
+            </Button>
+          ))
+        )}
+      </div>
+    </ScrollArea>
+  );
+}
+
+export function CommitsView({
+  projectId,
+  sessionId,
+}: {
+  projectId: string;
+  sessionId: string;
+}) {
+  const [openSha, setOpenSha] = useState<string | null>(null);
+
+  const branches = useQuery({
+    queryKey: ['project-branches', projectId],
+    queryFn: () => kortix.project(projectId).git.branches(),
+  });
+
+  const commits = useQuery({
+    queryKey: ['project-commits', projectId],
+    queryFn: () => kortix.project(projectId).git.commits(),
+  });
+
   const branchItems: ProjectBranch[] = branches.data?.branches ?? [];
   const commitItems: ProjectCommit[] = commits.data?.commits ?? [];
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      {/* Commit session changes */}
-      <Card className="shrink-0">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <GitCommitHorizontal className="size-4 text-muted-foreground" />
-            Commit session changes
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Commit message (optional)"
-            rows={2}
-            className="resize-none font-mono text-xs"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate font-mono text-[0.7rem] text-muted-foreground">
-              {sessionId}
-            </span>
-            <Button
-              size="sm"
-              onClick={() => commitSession.mutate()}
-              disabled={commitSession.isPending}
-            >
-              {commitSession.isPending ? (
-                <Loading className="size-3.5" />
-              ) : (
-                <Check className="size-3.5" />
-              )}
-              Commit
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <CommitSessionCard projectId={projectId} sessionId={sessionId} />
 
       <CompareToBaseCard projectId={projectId} sessionId={sessionId} />
 
-      {/* Branches */}
-      <div className="shrink-0">
-        <div className="mb-1.5 flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
-          <GitBranch className="size-3.5" />
-          Branches
-        </div>
-        {branches.isLoading ? (
-          <Skeleton className="h-8 w-full" />
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {branchItems.map((b) => (
-              <Badge
-                key={b.name}
-                variant={b.is_default ? 'default' : 'outline'}
-                className="gap-1 font-mono"
-                title={`${b.subject ?? ''} · ${b.committer_name ?? ''}`}
-              >
-                <GitBranch className="size-3" />
-                {b.name}
-                {b.is_default && <span className="opacity-70">(default)</span>}
-              </Badge>
-            ))}
-            {branchItems.length === 0 && (
-              <span className="text-xs text-muted-foreground">No branches.</span>
-            )}
-          </div>
-        )}
-      </div>
+      <BranchBadges items={branchItems} isLoading={branches.isLoading} />
 
       <Separator />
 
@@ -229,43 +304,7 @@ export function CommitsView({
         <GitCommitHorizontal className="size-3.5" />
         Commits
       </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-1 pr-2">
-          {commits.isLoading ? (
-            <>
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </>
-          ) : commitItems.length === 0 ? (
-            <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-              No commits yet.
-            </div>
-          ) : (
-            commitItems.map((c) => (
-              <Button
-                key={c.hash}
-                type="button"
-                variant="outline"
-                onClick={() => setOpenSha(c.hash)}
-                className="h-auto w-full items-start justify-start gap-2 whitespace-normal rounded-lg bg-card/50 px-2.5 py-2 text-left hover:bg-card"
-              >
-                <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-foreground">
-                    {c.subject || '(no message)'}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[0.7rem] text-muted-foreground">
-                    <span className="font-mono">{c.short_hash}</span>
-                    <span>{c.author_name}</span>
-                    <span>{relativeTime(c.committed_at ?? c.authored_at)}</span>
-                  </div>
-                </div>
-              </Button>
-            ))
-          )}
-        </div>
-      </ScrollArea>
+      <CommitList items={commitItems} isLoading={commits.isLoading} onOpen={setOpenSha} />
 
       <CommitDetailDialog projectId={projectId} sha={openSha} onClose={() => setOpenSha(null)} />
     </div>

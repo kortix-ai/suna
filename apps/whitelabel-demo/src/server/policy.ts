@@ -17,7 +17,7 @@
  * see the per-rule comments for the reasoning, not just the shape.
  */
 
-export interface PolicyResult {
+interface PolicyResult {
   allow: boolean;
   /** Only meaningful when `allow` is false. */
   status: number;

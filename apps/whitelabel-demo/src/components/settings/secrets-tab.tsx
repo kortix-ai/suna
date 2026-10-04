@@ -41,7 +41,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { GitCredentialCard } from './secrets/git-credential-card';
 import { SecretUpsertForm } from './secrets/secret-upsert-form';
-import { Notice, ROTATION_REACHES_RUNNING_SESSIONS_LATE, ALLOWLIST_IS_CREATE_ONLY } from './secrets/shared';
+import {
+  Notice,
+  ROTATION_REACHES_RUNNING_SESSIONS_LATE,
+  ALLOWLIST_IS_CREATE_ONLY,
+} from './secrets/shared';
 
 export function SecretsTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -113,44 +117,9 @@ function SecretRow({
   removing: boolean;
 }) {
   const name = secret.name;
-  const mine = secret.mine;
   const effective = secret.effective_source;
   const scope = secretScope(secret);
   const scopeNote = scopeExplanation(scope);
-  const [personal, setPersonal] = useState('');
-  const [rotated, setRotated] = useState('');
-
-  const rotate = useMutation({
-    mutationFn: () =>
-      kortix.project(projectId).secrets.upsert(buildSecretRotateInput(secret, rotated)),
-    onSuccess: () => {
-      setRotated('');
-      onChanged();
-      toast.success(`${secret.identifier} rotated`);
-    },
-    onError: () => toast.error('Could not rotate secret'),
-  });
-
-  const setPersonalMut = useMutation({
-    mutationFn: (input: { value?: string; active?: boolean }) =>
-      // The personal-override route addresses the env KEY, not the identifier.
-      kortix.project(projectId).secrets.setPersonal(name, input),
-    onSuccess: () => {
-      setPersonal('');
-      onChanged();
-      toast.success('Personal override saved');
-    },
-    onError: () => toast.error('Could not save override'),
-  });
-
-  const removePersonalMut = useMutation({
-    mutationFn: () => kortix.project(projectId).secrets.removePersonal(name),
-    onSuccess: () => {
-      onChanged();
-      toast.success('Override removed');
-    },
-    onError: () => toast.error('Could not remove override'),
-  });
 
   return (
     <div className="px-4 py-3">
@@ -193,6 +162,34 @@ function SecretRow({
         </div>
       </div>
 
+      <SecretRowNotices name={name} collidesWith={collidesWith} scopeNote={scopeNote} />
+
+      {scope === 'runtime' && (
+        <>
+          <Separator className="my-2" />
+
+          <SecretRotateBlock projectId={projectId} secret={secret} onChanged={onChanged} />
+
+          <Separator className="my-2" />
+
+          <SecretPersonalOverride projectId={projectId} secret={secret} onChanged={onChanged} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function SecretRowNotices({
+  name,
+  collidesWith,
+  scopeNote,
+}: {
+  name: string;
+  collidesWith: string[];
+  scopeNote: string | null;
+}) {
+  return (
+    <>
       {collidesWith.length > 0 && (
         <div className="mt-2">
           <Notice tone="destructive">
@@ -208,89 +205,166 @@ function SecretRow({
           <Notice>{scopeNote}</Notice>
         </div>
       )}
+    </>
+  );
+}
 
-      {scope === 'runtime' && (
-        <>
-          <Separator className="my-2" />
+function SecretRotateBlock({
+  projectId,
+  secret,
+  onChanged,
+}: {
+  projectId: string;
+  secret: ProjectSecret;
+  onChanged: () => void;
+}) {
+  const [rotated, setRotated] = useState('');
 
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <RotateCw className="size-3.5" /> Rotate
-            </Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                value={rotated}
-                onChange={(e) => setRotated(e.target.value)}
-                placeholder="new value"
-                type="password"
-                aria-label={`New value for ${secret.identifier}`}
-                className="h-8 min-w-[10rem] flex-1 font-mono"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!rotated || rotate.isPending}
-                onClick={() => rotate.mutate()}
-              >
-                {rotate.isPending && <Loading className="size-4" />}
-                Rotate
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {ROTATION_REACHES_RUNNING_SESSIONS_LATE} The identifier and its env KEY stay the same,
-              so every agent grant and every session allowlist that names it keeps working.
-            </p>
-          </div>
+  const rotate = useMutation({
+    mutationFn: () =>
+      kortix.project(projectId).secrets.upsert(buildSecretRotateInput(secret, rotated)),
+    onSuccess: () => {
+      setRotated('');
+      onChanged();
+      toast.success(`${secret.identifier} rotated`);
+    },
+    onError: () => toast.error('Could not rotate secret'),
+  });
 
-          <Separator className="my-2" />
-
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <UserCog className="size-3.5" /> Personal override
-            </Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                value={personal}
-                onChange={(e) => setPersonal(e.target.value)}
-                placeholder="your own value"
-                type="password"
-                aria-label={`Personal value for ${name}`}
-                className="h-8 min-w-[10rem] flex-1 font-mono"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!personal || setPersonalMut.isPending}
-                onClick={() => setPersonalMut.mutate({ value: personal, active: true })}
-              >
-                Use mine
-              </Button>
-              {mine && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={setPersonalMut.isPending}
-                    onClick={() => setPersonalMut.mutate({ active: !mine.active })}
-                  >
-                    {mine.active ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-destructive"
-                    disabled={removePersonalMut.isPending}
-                    onClick={() => removePersonalMut.mutate()}
-                  >
-                    Remove mine
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+  return (
+    <div className="space-y-2">
+      <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <RotateCw className="size-3.5" /> Rotate
+      </Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={rotated}
+          onChange={(e) => setRotated(e.target.value)}
+          placeholder="new value"
+          type="password"
+          aria-label={`New value for ${secret.identifier}`}
+          className="h-8 min-w-[10rem] flex-1 font-mono"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!rotated || rotate.isPending}
+          onClick={() => rotate.mutate()}
+        >
+          {rotate.isPending && <Loading className="size-4" />}
+          Rotate
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {ROTATION_REACHES_RUNNING_SESSIONS_LATE} The identifier and its env KEY stay the same, so
+        every agent grant and every session allowlist that names it keeps working.
+      </p>
     </div>
+  );
+}
+
+function SecretPersonalOverride({
+  projectId,
+  secret,
+  onChanged,
+}: {
+  projectId: string;
+  secret: ProjectSecret;
+  onChanged: () => void;
+}) {
+  const name = secret.name;
+  const mine = secret.mine;
+  const [personal, setPersonal] = useState('');
+
+  const setPersonalMut = useMutation({
+    mutationFn: (input: { value?: string; active?: boolean }) =>
+      // The personal-override route addresses the env KEY, not the identifier.
+      kortix
+        .project(projectId)
+        .secrets.setPersonal(name, input),
+    onSuccess: () => {
+      setPersonal('');
+      onChanged();
+      toast.success('Personal override saved');
+    },
+    onError: () => toast.error('Could not save override'),
+  });
+
+  const removePersonalMut = useMutation({
+    mutationFn: () => kortix.project(projectId).secrets.removePersonal(name),
+    onSuccess: () => {
+      onChanged();
+      toast.success('Override removed');
+    },
+    onError: () => toast.error('Could not remove override'),
+  });
+
+  return (
+    <div className="space-y-2">
+      <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <UserCog className="size-3.5" /> Personal override
+      </Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={personal}
+          onChange={(e) => setPersonal(e.target.value)}
+          placeholder="your own value"
+          type="password"
+          aria-label={`Personal value for ${name}`}
+          className="h-8 min-w-[10rem] flex-1 font-mono"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!personal || setPersonalMut.isPending}
+          onClick={() => setPersonalMut.mutate({ value: personal, active: true })}
+        >
+          Use mine
+        </Button>
+        {mine && (
+          <PersonalMineActions
+            mine={mine}
+            setPersonalMut={setPersonalMut}
+            removePersonalMut={removePersonalMut}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PersonalMineActions({
+  mine,
+  setPersonalMut,
+  removePersonalMut,
+}: {
+  mine: { active: boolean; updated_at: string };
+  setPersonalMut: {
+    isPending: boolean;
+    mutate: (input: { value?: string; active?: boolean }) => void;
+  };
+  removePersonalMut: { isPending: boolean; mutate: () => void };
+}) {
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={setPersonalMut.isPending}
+        onClick={() => setPersonalMut.mutate({ active: !mine.active })}
+      >
+        {mine.active ? 'Disable' : 'Enable'}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-muted-foreground hover:text-destructive"
+        disabled={removePersonalMut.isPending}
+        onClick={() => removePersonalMut.mutate()}
+      >
+        Remove mine
+      </Button>
+    </>
   );
 }
 

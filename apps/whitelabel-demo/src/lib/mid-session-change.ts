@@ -43,7 +43,7 @@ export const MID_SESSION_CAPABILITIES = {
   runtime_context: 'fixed_at_create',
 } as const satisfies Record<string, MidSessionCapability>;
 
-export type ModelChangeOutcome =
+type ModelChangeOutcome =
   | { kind: 'applied'; message: string; detail?: string }
   | { kind: 'stored'; message: string; detail?: string }
   | { kind: 'half_applied'; message: string; detail?: string };

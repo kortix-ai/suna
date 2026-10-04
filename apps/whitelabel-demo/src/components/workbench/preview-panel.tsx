@@ -29,7 +29,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { authHeaders, getSessionToken } from '@/lib/session';
 import { qk } from '@/lib/query-keys';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import type { SessionPreviewCandidate } from '@kortix/sdk';
+import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
   ExternalLink,
   Globe,
@@ -243,41 +244,13 @@ export function PreviewPanel({
       <SessionSharing projectId={projectId} sessionId={sessionId} selected={selected} />
 
       {/* Preview surface */}
-      <Card className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-border bg-card/50 p-0">
-        {loadingPreviews ? (
-          <div className="flex h-full flex-col gap-3 p-4">
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="min-h-0 flex-1" />
-          </div>
-        ) : previewUrlQuery.isError ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-            <Globe className="size-8 text-destructive/60" />
-            <p className="text-sm font-medium text-foreground">Preview unavailable</p>
-            <p className="max-w-md text-xs text-muted-foreground">
-              {previewUrlQuery.error instanceof Error
-                ? previewUrlQuery.error.message
-                : 'Could not resolve preview URL'}
-            </p>
-          </div>
-        ) : previewSrc ? (
-          <iframe
-            key={`${selected?.id}-${reloadNonce}`}
-            src={previewSrc}
-            title={selected?.label || `Preview on port ${selected?.port}`}
-            className="h-full min-h-0 w-full flex-1 border-0 bg-white"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-          />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-            <Globe className="size-8 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">No preview yet</p>
-            <p className="max-w-xs text-xs text-muted-foreground">
-              The agent hasn't exposed a port. Once it starts a dev server the preview will
-              appear here automatically.
-            </p>
-          </div>
-        )}
-      </Card>
+      <PreviewSurface
+        loadingPreviews={loadingPreviews}
+        previewUrlQuery={previewUrlQuery}
+        previewSrc={previewSrc}
+        selected={selected}
+        reloadNonce={reloadNonce}
+      />
 
       {/* Public shares */}
       <PublicSharesList projectId={projectId} sessionId={sessionId} />
@@ -319,5 +292,57 @@ export function PreviewPanel({
         </form>
       </div>
     </div>
+  );
+}
+
+function PreviewSurface({
+  loadingPreviews,
+  previewUrlQuery,
+  previewSrc,
+  selected,
+  reloadNonce,
+}: {
+  loadingPreviews: boolean;
+  previewUrlQuery: UseQueryResult<PreviewUrlResponse, Error>;
+  previewSrc: string | null;
+  selected: SessionPreviewCandidate | null;
+  reloadNonce: number;
+}) {
+  return (
+    <Card className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-border bg-card/50 p-0">
+      {loadingPreviews ? (
+        <div className="flex h-full flex-col gap-3 p-4">
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="min-h-0 flex-1" />
+        </div>
+      ) : previewUrlQuery.isError ? (
+        <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+          <Globe className="size-8 text-destructive/60" />
+          <p className="text-sm font-medium text-foreground">Preview unavailable</p>
+          <p className="max-w-md text-xs text-muted-foreground">
+            {previewUrlQuery.error instanceof Error
+              ? previewUrlQuery.error.message
+              : 'Could not resolve preview URL'}
+          </p>
+        </div>
+      ) : previewSrc ? (
+        <iframe
+          key={`${selected?.id}-${reloadNonce}`}
+          src={previewSrc}
+          title={selected?.label || `Preview on port ${selected?.port}`}
+          className="h-full min-h-0 w-full flex-1 border-0 bg-white"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+        />
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+          <Globe className="size-8 text-muted-foreground/50" />
+          <p className="text-sm font-medium text-foreground">No preview yet</p>
+          <p className="max-w-xs text-xs text-muted-foreground">
+            The agent hasn't exposed a port. Once it starts a dev server the preview will
+            appear here automatically.
+          </p>
+        </div>
+      )}
+    </Card>
   );
 }

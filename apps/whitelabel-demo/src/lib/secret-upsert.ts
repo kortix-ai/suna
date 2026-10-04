@@ -22,7 +22,7 @@ import { normalizeSecretKey } from './secret-collisions';
  * request that omits it teaches the reader the opposite.
  */
 
-export interface SecretDraft {
+interface SecretDraft {
   /** Unique per project. What grants and session allowlists reference. */
   identifier: string;
   /** The env KEY injected into the sandbox. Not unique. */

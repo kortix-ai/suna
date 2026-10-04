@@ -13,7 +13,7 @@ import type { CreateProjectSessionInput } from '@kortix/sdk';
  */
 
 /** Which project secrets a session may read. `null` = don't narrow at all. */
-export type SecretsAllowlist = string[] | null;
+type SecretsAllowlist = string[] | null;
 
 export interface SessionOverrides {
   /** Agent name; null = the project's default agent. */
@@ -40,7 +40,7 @@ export const NO_OVERRIDES: SessionOverrides = {
   runtimeContext: null,
 };
 
-export interface SessionCreateExtras {
+interface SessionCreateExtras {
   sessionId: string;
   name?: string;
   sandboxSlug?: string;

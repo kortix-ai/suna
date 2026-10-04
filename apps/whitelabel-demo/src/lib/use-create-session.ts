@@ -24,7 +24,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 /** The create this hook sends: overrides plus the optional body extras. */
-export interface CreateSessionCall {
+interface CreateSessionCall {
   overrides: SessionOverrides;
   name?: string;
   sandboxSlug?: string;

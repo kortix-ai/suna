@@ -105,78 +105,11 @@ export function FilesPanel({ projectId }: { projectId: string }) {
       {/* Body — two panes */}
       <div className="flex min-h-0 flex-1">
         {/* Left — search + list */}
-        <div className="flex w-72 min-h-0 shrink-0 flex-col border-r border-border">
-          <div className="relative shrink-0 p-2">
-            <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search files..."
-              className="h-8 pl-7 text-xs"
-            />
-          </div>
-
-          <div className="flex shrink-0 items-center justify-between px-3 pb-1.5 text-[0.7rem] text-muted-foreground">
-            <span>{searching ? 'Search results' : 'Workspace'}</span>
-            {rowsReady && (
-              <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
-                {rows.length}
-              </Badge>
-            )}
-          </div>
-
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-0.5 px-2 pb-2">
-              {rowsLoading &&
-                Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="h-7 w-full" />
-                ))}
-
-              {rowsReady && rows.length === 0 && (
-                <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-                  {searching ? 'No matches.' : 'No files yet.'}
-                </div>
-              )}
-
-              {rows.map((item, i) => {
-                const path = item.path;
-                const active = path === selected;
-                const lineText = item.lineText;
-                return (
-                  <div
-                    key={`${path}-${i}`}
-                    className={cn(
-                      'group flex items-center gap-1 rounded-md',
-                      active && 'bg-accent',
-                    )}
-                  >
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setSelected(path)}
-                      title={path}
-                      className={cn(
-                        'h-auto min-w-0 flex-1 justify-start gap-2 whitespace-normal px-2 py-1.5 text-left text-xs',
-                        active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      <FileIcon className="size-3.5 shrink-0 opacity-70" />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-mono">{basename(path)}</span>
-                        {searching && lineText && (
-                          <span className="truncate font-mono text-[0.65rem] opacity-60">
-                            {lineText.trim()}
-                          </span>
-                        )}
-                      </span>
-                    </Button>
-                    <FileHistory projectId={projectId} path={path} />
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        </div>
+        <FileListPane
+          projectId={projectId} query={query} onQueryChange={setQuery}
+          searching={searching} rows={rows} rowsLoading={rowsLoading}
+          rowsReady={rowsReady} selected={selected} onSelect={setSelected}
+        />
 
         {/* Right — content viewer */}
         <div className="flex min-h-0 flex-1 flex-col">
@@ -191,6 +124,130 @@ export function FilesPanel({ projectId }: { projectId: string }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+function FileListPane({
+  projectId,
+  query,
+  onQueryChange,
+  searching,
+  rows,
+  rowsLoading,
+  rowsReady,
+  selected,
+  onSelect,
+}: {
+  projectId: string;
+  query: string;
+  onQueryChange: (value: string) => void;
+  searching: boolean;
+  rows: Array<{ path: string; lineText?: string }>;
+  rowsLoading: boolean;
+  rowsReady: boolean;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <div className="flex w-72 min-h-0 shrink-0 flex-col border-r border-border">
+      <div className="relative shrink-0 p-2">
+        <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search files..."
+          className="h-8 pl-7 text-xs"
+        />
+      </div>
+
+      <div className="flex shrink-0 items-center justify-between px-3 pb-1.5 text-[0.7rem] text-muted-foreground">
+        <span>{searching ? 'Search results' : 'Workspace'}</span>
+        {rowsReady && (
+          <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
+            {rows.length}
+          </Badge>
+        )}
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-0.5 px-2 pb-2">
+          {rowsLoading &&
+            Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-7 w-full" />
+            ))}
+
+          {rowsReady && rows.length === 0 && (
+            <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+              {searching ? 'No matches.' : 'No files yet.'}
+            </div>
+          )}
+
+          <FileRows
+            projectId={projectId}
+            rows={rows}
+            searching={searching}
+            selected={selected}
+            onSelect={onSelect}
+          />
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+/** The normalized file rows (workspace tree entries or search matches). */
+function FileRows({
+  projectId,
+  rows,
+  searching,
+  selected,
+  onSelect,
+}: {
+  projectId: string;
+  rows: Array<{ path: string; lineText?: string }>;
+  searching: boolean;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <>
+      {rows.map((item, i) => {
+        const path = item.path;
+        const active = path === selected;
+        const lineText = item.lineText;
+        return (
+          <div
+            key={`${path}-${i}`}
+            className={cn(
+              'group flex items-center gap-1 rounded-md',
+              active && 'bg-accent',
+            )}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onSelect(path)}
+              title={path}
+              className={cn(
+                'h-auto min-w-0 flex-1 justify-start gap-2 whitespace-normal px-2 py-1.5 text-left text-xs',
+                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <FileIcon className="size-3.5 shrink-0 opacity-70" />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-mono">{basename(path)}</span>
+                {searching && lineText && (
+                  <span className="truncate font-mono text-[0.65rem] opacity-60">
+                    {lineText.trim()}
+                  </span>
+                )}
+              </span>
+            </Button>
+            <FileHistory projectId={projectId} path={path} />
+          </div>
+        );
+      })}
+    </>
   );
 }
 

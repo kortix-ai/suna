@@ -299,6 +299,44 @@ function ChangeRequestDetail({
   );
 }
 
+/** The head/base ref inputs of the open form. */
+function OpenCrRefs({
+  headRef,
+  baseRef,
+  setHeadRef,
+  setBaseRef,
+}: {
+  headRef: string;
+  baseRef: string;
+  setHeadRef: (value: string) => void;
+  setBaseRef: (value: string) => void;
+}) {
+  return (
+    <>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
+              <Input
+                value={headRef}
+                onChange={(e) => setHeadRef(e.target.value)}
+                placeholder="head branch"
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
+              <Input
+                value={baseRef}
+                onChange={(e) => setBaseRef(e.target.value)}
+                placeholder="default branch"
+                className="font-mono text-xs"
+              />
+            </div>
+          </div>
+    </>
+  );
+}
+
 /** The "Open change request" form (`changeRequests.open`) in a dialog. */
 function OpenChangeRequestDialog({
   projectId,
@@ -360,26 +398,12 @@ function OpenChangeRequestDialog({
             rows={3}
             className="resize-none"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
-              <Input
-                value={headRef}
-                onChange={(e) => setHeadRef(e.target.value)}
-                placeholder="head branch"
-                className="font-mono text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
-              <Input
-                value={baseRef}
-                onChange={(e) => setBaseRef(e.target.value)}
-                placeholder="default branch"
-                className="font-mono text-xs"
-              />
-            </div>
-          </div>
+          <OpenCrRefs
+            headRef={headRef}
+            baseRef={baseRef}
+            setHeadRef={setHeadRef}
+            setBaseRef={setBaseRef}
+          />
         </div>
         <DialogFooter>
           <Button

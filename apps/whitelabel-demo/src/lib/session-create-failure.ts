@@ -12,7 +12,7 @@ import { serverErrorBody } from './api-error-body';
  * Returns a title plus whether retrying could possibly help, so the UI does not
  * offer a retry button for a refusal that will refuse identically forever.
  */
-export interface SessionCreateFailure {
+interface SessionCreateFailure {
   title: string;
   detail: string;
   retryable: boolean;

@@ -22,7 +22,7 @@ import {
 import type { ProjectSecret } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
-import { useState } from 'react';
+import { Dispatch, SetStateAction, useState } from 'react';
 import { toast } from 'sonner';
 import { Notice, ROTATION_REACHES_RUNNING_SESSIONS_LATE, ALLOWLIST_IS_CREATE_ONLY } from './shared';
 
@@ -73,13 +73,7 @@ export function SecretUpsertForm({
       <div className="flex items-center gap-2 text-sm font-medium">
         <KeyRound className="size-4 text-muted-foreground" /> Shared secrets
       </div>
-      <p className="text-xs text-muted-foreground">
-        Environment variables + API keys available to every member at runtime. A secret has a
-        unique <span className="font-mono">identifier</span> and an env{' '}
-        <span className="font-mono">KEY</span>: agents and session allowlists reference the
-        identifier, the sandbox receives the KEY. They are the same thing until you make them
-        different.
-      </p>
+      <SecretFormIntro />
       <form
         className="mt-3 space-y-2"
         onSubmit={(e) => {
@@ -87,81 +81,176 @@ export function SecretUpsertForm({
           if (canSubmit) upsert.mutate();
         }}
       >
-        <div className="flex flex-wrap gap-2">
-          <div className="min-w-[10rem] flex-1 space-y-1">
-            <Label htmlFor="secret-identifier" className="text-xs text-muted-foreground">
-              Identifier
-            </Label>
-            <Input
-              id="secret-identifier"
-              value={draftIdentifier}
-              onChange={(e) => {
-                setIdentifier(e.target.value);
-                setIdentifierEdited(e.target.value.length > 0);
-              }}
-              placeholder="STRIPE_KEY"
-              className="font-mono"
-            />
-          </div>
-          <div className="min-w-[10rem] flex-1 space-y-1">
-            <Label htmlFor="secret-name" className="text-xs text-muted-foreground">
-              Env KEY
-            </Label>
-            <Input
-              id="secret-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="STRIPE_KEY"
-              className="font-mono"
-            />
-          </div>
-          <div className="min-w-[10rem] flex-1 space-y-1">
-            <Label htmlFor="secret-value" className="text-xs text-muted-foreground">
-              Value
-            </Label>
-            <Input
-              id="secret-value"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="value"
-              type="password"
-              className="font-mono"
-            />
-          </div>
-        </div>
+        <SecretDraftFields
+          draftIdentifier={draftIdentifier}
+          name={name}
+          value={value}
+          setIdentifier={setIdentifier}
+          setIdentifierEdited={setIdentifierEdited}
+          setName={setName}
+          setValue={setValue}
+        />
 
-        {intent.kind === 'retarget' && (
-          <Notice tone="destructive">
-            <span className="font-mono">{draftIdentifier}</span> already stores{' '}
-            <span className="font-mono">{intent.existingKey}</span>. An identifier is a stable
-            handle — pointing it at another KEY would re-aim every agent grant that names it, so
-            the server refuses it. Delete that secret first, or choose another identifier.
-          </Notice>
-        )}
-        {intent.kind === 'rotate' && (
-          <Notice>
-            <span className="font-mono">{draftIdentifier}</span> already exists — saving replaces
-            its value. {ROTATION_REACHES_RUNNING_SESSIONS_LATE}
-          </Notice>
-        )}
-        {collidesWith.length > 0 && (
-          <Notice tone="destructive">
-            <span className="font-mono">{name.trim().toUpperCase()}</span> is already stored by{' '}
-            <span className="font-mono">{collidesWith.join(', ')}</span>. Both may exist, but one
-            session cannot allowlist both identifiers — that create is refused with 409
-            SECRET_IDENTIFIER_KEY_COLLISION.
-          </Notice>
-        )}
+        <SecretDraftNotices
+          intent={intent}
+          draftIdentifier={draftIdentifier}
+          name={name}
+          collidesWith={collidesWith}
+        />
 
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">{ALLOWLIST_IS_CREATE_ONLY}</p>
-          <Button type="submit" disabled={!canSubmit}>
-            {upsert.isPending && <Loading className="size-4" />}
-            {intent.kind === 'rotate' ? 'Rotate' : 'Save'}
-          </Button>
-        </div>
+        <SecretDraftSubmit intent={intent} canSubmit={canSubmit} upsert={upsert} />
       </form>
 
+      <SecretUpsertSnippet projectId={projectId} draftIdentifier={draftIdentifier} name={name} />
+    </Card>
+  );
+}
+
+function SecretFormIntro() {
+  return (
+    <p className="text-xs text-muted-foreground">
+      Environment variables + API keys available to every member at runtime. A secret has a unique{' '}
+      <span className="font-mono">identifier</span> and an env{' '}
+      <span className="font-mono">KEY</span>: agents and session allowlists reference the
+      identifier, the sandbox receives the KEY. They are the same thing until you make them
+      different.
+    </p>
+  );
+}
+
+function SecretDraftFields({
+  draftIdentifier,
+  name,
+  value,
+  setIdentifier,
+  setIdentifierEdited,
+  setName,
+  setValue,
+}: {
+  draftIdentifier: string;
+  name: string;
+  value: string;
+  setIdentifier: Dispatch<SetStateAction<string>>;
+  setIdentifierEdited: Dispatch<SetStateAction<boolean>>;
+  setName: Dispatch<SetStateAction<string>>;
+  setValue: Dispatch<SetStateAction<string>>;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <div className="min-w-[10rem] flex-1 space-y-1">
+        <Label htmlFor="secret-identifier" className="text-xs text-muted-foreground">
+          Identifier
+        </Label>
+        <Input
+          id="secret-identifier"
+          value={draftIdentifier}
+          onChange={(e) => {
+            setIdentifier(e.target.value);
+            setIdentifierEdited(e.target.value.length > 0);
+          }}
+          placeholder="STRIPE_KEY"
+          className="font-mono"
+        />
+      </div>
+      <div className="min-w-[10rem] flex-1 space-y-1">
+        <Label htmlFor="secret-name" className="text-xs text-muted-foreground">
+          Env KEY
+        </Label>
+        <Input
+          id="secret-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="STRIPE_KEY"
+          className="font-mono"
+        />
+      </div>
+      <div className="min-w-[10rem] flex-1 space-y-1">
+        <Label htmlFor="secret-value" className="text-xs text-muted-foreground">
+          Value
+        </Label>
+        <Input
+          id="secret-value"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="value"
+          type="password"
+          className="font-mono"
+        />
+      </div>
+    </div>
+  );
+}
+
+function SecretDraftNotices({
+  intent,
+  draftIdentifier,
+  name,
+  collidesWith,
+}: {
+  intent: SecretWriteIntent;
+  draftIdentifier: string;
+  name: string;
+  collidesWith: string[];
+}) {
+  return (
+    <>
+      {intent.kind === 'retarget' && (
+        <Notice tone="destructive">
+          <span className="font-mono">{draftIdentifier}</span> already stores{' '}
+          <span className="font-mono">{intent.existingKey}</span>. An identifier is a stable handle
+          — pointing it at another KEY would re-aim every agent grant that names it, so the server
+          refuses it. Delete that secret first, or choose another identifier.
+        </Notice>
+      )}
+      {intent.kind === 'rotate' && (
+        <Notice>
+          <span className="font-mono">{draftIdentifier}</span> already exists — saving replaces its
+          value. {ROTATION_REACHES_RUNNING_SESSIONS_LATE}
+        </Notice>
+      )}
+      {collidesWith.length > 0 && (
+        <Notice tone="destructive">
+          <span className="font-mono">{name.trim().toUpperCase()}</span> is already stored by{' '}
+          <span className="font-mono">{collidesWith.join(', ')}</span>. Both may exist, but one
+          session cannot allowlist both identifiers — that create is refused with 409
+          SECRET_IDENTIFIER_KEY_COLLISION.
+        </Notice>
+      )}
+    </>
+  );
+}
+
+function SecretDraftSubmit({
+  intent,
+  canSubmit,
+  upsert,
+}: {
+  intent: SecretWriteIntent;
+  canSubmit: boolean;
+  upsert: { isPending: boolean };
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-xs text-muted-foreground">{ALLOWLIST_IS_CREATE_ONLY}</p>
+      <Button type="submit" disabled={!canSubmit}>
+        {upsert.isPending && <Loading className="size-4" />}
+        {intent.kind === 'rotate' ? 'Rotate' : 'Save'}
+      </Button>
+    </div>
+  );
+}
+
+function SecretUpsertSnippet({
+  projectId,
+  draftIdentifier,
+  name,
+}: {
+  projectId: string;
+  draftIdentifier: string;
+  name: string;
+}) {
+  return (
+    <>
       {/* Create and rotate are one call, and the snippet takes the identifier
           and the KEY only — the typed value is never rendered anywhere. */}
       <div className="mt-3">
@@ -180,6 +269,6 @@ export function SecretUpsertForm({
           }}
         />
       </div>
-    </Card>
+    </>
   );
 }

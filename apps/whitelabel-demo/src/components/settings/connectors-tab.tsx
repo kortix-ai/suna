@@ -115,21 +115,7 @@ function AddConnectorForm({ projectId }: { projectId: string }) {
             placeholder="My Tool"
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Provider</Label>
-          <Select value={provider} onValueChange={(v) => setProvider(v as ConnectorProvider)}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CONNECTOR_PROVIDERS.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <ConnectorProviderSelect value={provider} onValueChange={setProvider} />
         <div className="space-y-1.5">
           <Label htmlFor="c-url">URL (optional)</Label>
           <Input
@@ -147,6 +133,32 @@ function AddConnectorForm({ projectId }: { projectId: string }) {
         </div>
       </form>
     </Card>
+  );
+}
+
+function ConnectorProviderSelect({
+  value,
+  onValueChange,
+}: {
+  value: ConnectorProvider;
+  onValueChange: (value: ConnectorProvider) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Provider</Label>
+      <Select value={value} onValueChange={(v) => onValueChange(v as ConnectorProvider)}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CONNECTOR_PROVIDERS.map((p) => (
+            <SelectItem key={p} value={p}>
+              {p}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -283,7 +295,6 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
     },
     onError: () => toast.error('Sync failed'),
   });
-
   const remove = useMutation({
     mutationFn: (s: string) => kortix.project(projectId).connectors.remove(s),
     onSuccess: () => {

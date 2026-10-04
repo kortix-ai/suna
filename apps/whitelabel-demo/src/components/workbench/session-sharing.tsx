@@ -30,7 +30,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { qk } from '@/lib/query-keys';
 import { resolvePublicShareUrl } from '@kortix/sdk';
-import type { SessionPreviewCandidate } from '@kortix/sdk';
+import type { SessionPreviewCandidate, SessionPublicShare } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -53,7 +53,8 @@ async function copy(text: string) {
   }
 }
 
-export function SessionSharing({
+/** The create-share dialog: its trigger, form state, and mint mutation. */
+function CreateShareDialog({
   projectId,
   sessionId,
   selected,
@@ -65,25 +66,10 @@ export function SessionSharing({
   const qc = useQueryClient();
   const session = kortix.session(projectId, sessionId);
 
-  const [sharingMode, setSharingMode] = useState<string>('project');
   // Create-share dialog state.
   const [createOpen, setCreateOpen] = useState(false);
   const [shareLabel, setShareLabel] = useState('');
   const [shareInteractive, setShareInteractive] = useState('interactive');
-
-  const setSharingMut = useMutation({
-    mutationFn: (value: string) => {
-      const opt = SHARING_OPTIONS.find((o) => o.value === value) ?? SHARING_OPTIONS[0];
-      return session.setSharing(opt.intent);
-    },
-    onSuccess: (_data, value) => {
-      setSharingMode(value);
-      qc.invalidateQueries({ queryKey: qk.sessionShares(projectId, sessionId) });
-      toast.success('Sharing updated');
-    },
-    onError: (err: unknown) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to update sharing'),
-  });
 
   const createMut = useMutation({
     mutationFn: () => {
@@ -110,6 +96,145 @@ export function SessionSharing({
   });
 
   return (
+    <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="ml-auto h-8 gap-1.5"
+          disabled={!selected}
+        >
+          <Plus className="size-3.5" />
+          Create public share
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create public share</DialogTitle>
+          <DialogDescription>
+            Mint a public link for{' '}
+            <span className="font-mono text-foreground">
+              {selected ? `:${selected.port}${selected.path ?? ''}` : 'the preview'}
+            </span>
+            .
+          </DialogDescription>
+        </DialogHeader>
+        <CreateShareForm
+          selected={selected}
+          shareLabel={shareLabel}
+          setShareLabel={setShareLabel}
+          shareInteractive={shareInteractive}
+          setShareInteractive={setShareInteractive}
+          setCreateOpen={setCreateOpen}
+          createMut={createMut}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The create-share form: its label and mode fields plus the create/cancel actions. */
+function CreateShareForm({
+  selected,
+  shareLabel,
+  setShareLabel,
+  shareInteractive,
+  setShareInteractive,
+  setCreateOpen,
+  createMut,
+}: {
+  selected: SessionPreviewCandidate | null;
+  shareLabel: string;
+  setShareLabel: (value: string) => void;
+  shareInteractive: string;
+  setShareInteractive: (value: string) => void;
+  setCreateOpen: (open: boolean) => void;
+  createMut: { isPending: boolean; mutate: () => void };
+}) {
+  return (
+    <>
+      <div className="space-y-3 py-1">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Label</label>
+          <Input
+            value={shareLabel}
+            onChange={(e) => setShareLabel(e.target.value)}
+            placeholder={selected?.label || 'My preview'}
+            className="h-8 text-xs"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Mode</label>
+          <Select value={shareInteractive} onValueChange={setShareInteractive}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="interactive" className="text-xs">
+                Interactive
+              </SelectItem>
+              <SelectItem value="view" className="text-xs">
+                View only
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setCreateOpen(false)}
+          disabled={createMut.isPending}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={() => createMut.mutate()}
+          disabled={createMut.isPending || !selected}
+        >
+          {createMut.isPending ? (
+            <Loading className="size-3.5" />
+          ) : (
+            <Share2 className="size-3.5" />
+          )}
+          Create link
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+export function SessionSharing({
+  projectId,
+  sessionId,
+  selected,
+}: {
+  projectId: string;
+  sessionId: string;
+  selected: SessionPreviewCandidate | null;
+}) {
+  const qc = useQueryClient();
+  const session = kortix.session(projectId, sessionId);
+
+  const [sharingMode, setSharingMode] = useState<string>('project');
+  const setSharingMut = useMutation({
+    mutationFn: (value: string) => {
+      const opt = SHARING_OPTIONS.find((o) => o.value === value) ?? SHARING_OPTIONS[0];
+      return session.setSharing(opt.intent);
+    },
+    onSuccess: (_data, value) => {
+      setSharingMode(value);
+      qc.invalidateQueries({ queryKey: qk.sessionShares(projectId, sessionId) });
+      toast.success('Sharing updated');
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : 'Failed to update sharing'),
+  });
+
+  return (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
       <Share2 className="size-4 shrink-0 text-muted-foreground" />
       <span className="text-xs text-muted-foreground">Session visibility</span>
@@ -131,82 +256,71 @@ export function SessionSharing({
       </Select>
       {setSharingMut.isPending && <Loading className="size-3.5 text-muted-foreground" />}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogTrigger asChild>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="ml-auto h-8 gap-1.5"
-            disabled={!selected}
-          >
-            <Plus className="size-3.5" />
-            Create public share
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create public share</DialogTitle>
-            <DialogDescription>
-              Mint a public link for{' '}
-              <span className="font-mono text-foreground">
-                {selected ? `:${selected.port}${selected.path ?? ''}` : 'the preview'}
-              </span>
-              .
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-1">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Label</label>
-              <Input
-                value={shareLabel}
-                onChange={(e) => setShareLabel(e.target.value)}
-                placeholder={selected?.label || 'My preview'}
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Mode</label>
-              <Select value={shareInteractive} onValueChange={setShareInteractive}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="interactive" className="text-xs">
-                    Interactive
-                  </SelectItem>
-                  <SelectItem value="view" className="text-xs">
-                    View only
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setCreateOpen(false)}
-              disabled={createMut.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => createMut.mutate()}
-              disabled={createMut.isPending || !selected}
-            >
-              {createMut.isPending ? (
-                <Loading className="size-3.5" />
-              ) : (
-                <Share2 className="size-3.5" />
-              )}
-              Create link
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateShareDialog
+        projectId={projectId}
+        sessionId={sessionId}
+        selected={selected}
+      />
     </div>
+  );
+}
+
+/** One public-share row: its label, resolved URL, and copy/revoke actions. */
+function ShareRow({
+  share,
+  url,
+  revoked,
+  revokeMut,
+}: {
+  share: SessionPublicShare;
+  url: string;
+  revoked: boolean;
+  revokeMut: { isPending: boolean; mutate: (shareId: string) => void };
+}) {
+  return (
+    <li
+      className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-2.5 py-2"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-xs font-medium text-foreground">
+            {share.label || `Port ${share.port ?? '—'}`}
+          </span>
+          {revoked ? (
+            <Badge variant="destructive" className="px-1.5 py-0 text-[0.65rem]">
+              revoked
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="px-1.5 py-0 text-[0.65rem]">
+              {share.mode || 'view'}
+            </Badge>
+          )}
+        </div>
+        <p className="truncate font-mono text-[0.7rem] text-muted-foreground">
+          {url || '—'}
+        </p>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0"
+        disabled={!url}
+        onClick={() => copy(url)}
+        title="Copy URL"
+      >
+        <Copy className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 text-destructive hover:text-destructive"
+        disabled={revoked || revokeMut.isPending}
+        onClick={() => revokeMut.mutate(share.share_id)}
+        title="Revoke share"
+      >
+        <Trash2 className="size-3.5" />
+      </Button>
+    </li>
   );
 }
 
@@ -263,50 +377,13 @@ export function PublicSharesList({
             );
             const revoked = !!share.revoked_at;
             return (
-              <li
+              <ShareRow
                 key={share.share_id}
-                className="flex items-center gap-2 rounded-lg border border-border bg-card/50 px-2.5 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {share.label || `Port ${share.port ?? '—'}`}
-                    </span>
-                    {revoked ? (
-                      <Badge variant="destructive" className="px-1.5 py-0 text-[0.65rem]">
-                        revoked
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="px-1.5 py-0 text-[0.65rem]">
-                        {share.mode || 'view'}
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="truncate font-mono text-[0.7rem] text-muted-foreground">
-                    {url || '—'}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 shrink-0"
-                  disabled={!url}
-                  onClick={() => copy(url)}
-                  title="Copy URL"
-                >
-                  <Copy className="size-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 shrink-0 text-destructive hover:text-destructive"
-                  disabled={revoked || revokeMut.isPending}
-                  onClick={() => revokeMut.mutate(share.share_id)}
-                  title="Revoke share"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </li>
+                share={share}
+                url={url}
+                revoked={revoked}
+                revokeMut={revokeMut}
+              />
             );
           })}
         </ul>

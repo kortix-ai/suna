@@ -7,7 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 /** Ref archived/read by default — the repo tip. */
-export const DEFAULT_ARCHIVE_REF = 'HEAD';
+const DEFAULT_ARCHIVE_REF = 'HEAD';
 
 export function useProjectArchive(projectId: string) {
   return useMutation({
