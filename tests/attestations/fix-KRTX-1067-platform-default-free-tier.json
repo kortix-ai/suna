@@ -33,10 +33,12 @@
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
   "diff_hash": "97f14212a3bbb28fb9db059edf04a47c25e35f23f211513f7339bafab502631c",
-  "head": "59bf1ed17641ddcc7a507707f00e906952025c3a",
+  "head": "6b3753a2a7e75a8778376e64a31b65ec5f6054d4",
   "passed": true,
   "lanes": {
-    "packages": "skipped-sandbox-image"
+    "packages": "skipped-sandbox-image",
+    "core": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T01:01:49.270Z"
+  "at": "2026-10-04T01:01:59.358Z"
 }
