@@ -1,5 +1,5 @@
 {
-  "source_hash": "220b2b12bef84a2f8649116e693f4326a049d8ac12064c6d5aecf0429f75fb29",
+  "source_hash": "07072c72e6154315245ca213753c144cb6d7659546850cd834066a139072c104",
   "diff_files": [
     "apps/api/src/__tests__/integration-approval-card-relay.test.ts",
     "apps/api/src/__tests__/integration-monthly-compute-accrual.test.ts",
@@ -27,16 +27,15 @@
     "apps/api/src/projects/lib/trigger-scheduler-state.ts",
     "apps/api/src/projects/lib/trigger-scheduler.ts",
     "apps/api/src/projects/lib/triggers.ts",
-    "apps/api/src/projects/routes/approvals.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/api/src/projects/routes/approvals.ts"
   ],
-  "diff_hash": "1b59f893869c161e4a6e64c02172d11c7f88dfeaaa5885d1b8f321b4b5143f0b",
-  "head": "c71dfeedf8e7c357899103da80d90bacfa002592",
+  "diff_hash": "36dee4ed13f221e78a1602f7015031fabadcf27801cde2bd9ded82f2244777d6",
+  "head": "aa0c10d321548e32f8ed8b8b9040493d71f0ffd1",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T06:41:38.686Z"
+  "at": "2026-10-04T07:07:16.060Z"
 }
