@@ -1,5 +1,5 @@
 {
-  "source_hash": "dc4dcc0178b267586c8684ee881447f89773559890d39e279c949849e1d00d9d",
+  "source_hash": "7caeb71a6d2918cd1aa51a24ca9c6b18555e842ec93adda5931bcf785ac499db",
   "diff_files": [
     "apps/web/src/features/session/header/session-site-header.test.tsx",
     "apps/web/src/features/session/header/session-site-header.tsx",
@@ -21,13 +21,13 @@
     "packages/sdk/src/react/use-opencode-sessions/sessions.test.ts",
     "packages/sdk/src/react/use-opencode-sessions/sessions.ts"
   ],
-  "diff_hash": "3c383632a34360a32127a31fb18f06bbd87923d7acac1fa6a492eb5b84049550",
-  "head": "38178088096d2a0cd65068c80baa08c619476f36",
+  "diff_hash": "5f5463947cb521de63191258088fc6c86c001132c7eea264e9b8e0efc508a84d",
+  "head": "0c298641a5aad72f9aa7f66fcf60676dd89d098b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:45:21.128Z"
+  "at": "2026-10-04T00:06:19.536Z"
 }
