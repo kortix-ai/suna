@@ -234,6 +234,16 @@ describe('resolveProjectContext: the directory link outranks the session env', (
     expect(ctx?.projectId).toBe('proj-explicit');
   });
 
+  it('an empty --project= flag value falls through to the link', async () => {
+    writeLink('other');
+    writeFileSync(
+      configPath(),
+      JSON.stringify({ active: 'home', hosts: { other: hostEntry(OTHER_TOKEN) } }),
+    );
+    const ctx = await resolveProjectContext({ projectArg: '' });
+    expect(ctx?.projectId).toBe(LINKED_PROJECT);
+  });
+
   it('without a link the session env project still resolves (unchanged)', async () => {
     const ctx = await resolveProjectContext();
     expect(ctx?.projectId).toBe(SESSION_PROJECT);

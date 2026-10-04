@@ -172,7 +172,7 @@ export function renderContext(): string {
   const linkedHost =
     linkHostName && (linkAuth?.token || !hasEnvTokenHost()) ? getHost(linkHostName) : null;
   const active = activeHostEntry();
-  const name = linkedHost ? linkHostName! : active.name;
+  const name = linkedHost && linkHostName ? linkHostName : active.name;
   const host = linkedHost ?? active.host;
   const signedIn = Boolean(host.token);
   const authState = hostAuthState(

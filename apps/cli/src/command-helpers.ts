@@ -122,8 +122,9 @@ export async function resolveProjectContext(
     // the sandbox env's session project (KORTIX_PROJECT_ID) so a linked
     // clone reaches ITS project. `resolveProjectId` (no arg) supplies the
     // remaining env → host-default chain; its own link lookup returns null
-    // only when the one above did.
-    projectId = opts.projectArg ?? loadLink()?.project_id ?? resolveProjectId();
+    // only when the one above did. `||` (not `??`) so an empty `--project=`
+    // flag value falls through like `resolveProjectId` treats it.
+    projectId = opts.projectArg || (loadLink()?.project_id ?? resolveProjectId());
     if (!projectId) {
       // The always-bound invariant: recover by binding a default project right
       // here instead of dead-ending. (Inside a sandbox the env-token host
