@@ -123,7 +123,7 @@
     }
   },
   "version": "1.0.0",
-  "description": "<div align=\"center\">",
+  "description": "Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
   "main": "index.js",
   "directories": {
     "test": "tests"

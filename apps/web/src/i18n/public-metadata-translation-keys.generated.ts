@@ -24,7 +24,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'text3efe2d7294ba',
   'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.':
     'textb57f2c70525f',
-  'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix command center.':
+  'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix AI Operating System.':
     'text3661bf7ae497',
   'Get Kortix for macOS, Windows, Linux, iOS, and Android.': 'textd587acccbf63',
   'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.':
