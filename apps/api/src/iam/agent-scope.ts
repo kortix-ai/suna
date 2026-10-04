@@ -30,7 +30,8 @@ export function isProjectSessionPrincipal(c: Context): boolean {
 
 /**
  * A session that borrows a human's authority: a project session that is NOT a
- * governed agent principal (flag `agent_principal` off, or a null grant). Its
+ * governed agent principal (a null grant: `meta`, or a v1 project with no
+ * `[[agents]]`). Its
  * permission check is the launcher's role, so routes keep their extra
  * agent-session refusals for it. A governed agent principal authorizes as its
  * own service account, so its permissions alone decide, like a human's.

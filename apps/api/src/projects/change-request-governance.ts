@@ -4,6 +4,8 @@
 // (`requiredManifestActions`), so a merge cannot do what the merger could not
 // do directly.
 
+import type { AgentGrant } from '@kortix/db';
+import { grantsOfManifestText } from './agents/grants';
 import { requiredManifestActions } from './change-request-policy';
 import { readManifestFromRepo } from './git/files';
 import { getMergeBase } from './git/merge';
@@ -28,6 +30,19 @@ export async function manifestChangeRequiredActions(
   project: GitBackedProject,
   cr: { baseRef: string; headRef: string },
 ): Promise<string[]> {
+  return (await manifestChange(project, cr)).required;
+}
+
+/**
+ * What merging `cr` does to the manifest: the permissions it needs
+ * (`manifestChangeRequiredActions`) and every agent's grant before and after,
+ * for the non-escalation check (iam/agent-grant-ceiling.ts). Throws like
+ * `manifestChangeRequiredActions`.
+ */
+export async function manifestChange(
+  project: GitBackedProject,
+  cr: { baseRef: string; headRef: string },
+): Promise<{ required: string[]; grantsBefore: Map<string, AgentGrant>; grantsAfter: Map<string, AgentGrant> }> {
   const { manifestCandidatePaths, manifestFormatForPath } = await import('@kortix/manifest-schema');
   const candidates = manifestCandidatePaths(project.manifestPath).map((cand) => cand.path);
   // One ls-remote per ref when it has not moved; a fetch when it has or when
@@ -41,5 +56,11 @@ export async function manifestChangeRequiredActions(
   ]);
   const baseFormat = manifestFormatForPath(before?.path ?? after?.path ?? 'kortix.yaml');
   const headFormat = manifestFormatForPath(after?.path ?? before?.path ?? 'kortix.yaml');
-  return requiredManifestActions(before?.content ?? null, after?.content ?? null, baseFormat, headFormat);
+  const baseText = before?.content ?? null;
+  const headText = after?.content ?? null;
+  return {
+    required: requiredManifestActions(baseText, headText, baseFormat, headFormat),
+    grantsBefore: grantsOfManifestText(baseText, baseFormat),
+    grantsAfter: grantsOfManifestText(headText, headFormat),
+  };
 }
