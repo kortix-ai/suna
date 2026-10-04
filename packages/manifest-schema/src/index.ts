@@ -442,10 +442,10 @@ export function validateGrantList(
   if (typeof value === 'string') {
     // Runtime parseGrantSet treats "" the same as "none" (default-deny).
     const v = value.trim().toLowerCase();
-    if (v !== '' && v !== 'all' && v !== 'none') {
+    if (v !== '' && v !== 'all' && v !== '*' && v !== 'none') {
       issues.push({
         path: where,
-        message: `${label} string must be "all" or "none" (or an array of names).`,
+        message: `${label} string must be "all", "*" or "none" (or an array of names).`,
         severity: 'error',
       });
     }

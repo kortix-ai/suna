@@ -210,7 +210,6 @@ async function createThreadSession(
       // this session has any user text — title from the subject.
       title_source: messageSubject(event) ?? messageSummary(event),
     },
-    enforceAccountCap: false,
     mayManageSystemConnections: true,
     queuePolicy: 'on_backpressure',
     // One key per message, never per thread: the lifecycle keeps a key
