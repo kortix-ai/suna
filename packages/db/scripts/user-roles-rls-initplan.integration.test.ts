@@ -9,6 +9,8 @@ let migration = '';
 
 beforeAll(async () => {
   await client.connect();
+  // pg_policies omits a schema that is on search_path; pin it so `auth.` prints.
+  await client.query('SET search_path TO public');
   const names = Array.from(new Bun.Glob('*_user_roles_rls_initplan.sql').scanSync({
     cwd: join(import.meta.dir, '..', 'migrations'),
   }));
