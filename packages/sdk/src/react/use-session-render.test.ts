@@ -351,7 +351,15 @@ describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () 
     let transcriptRenders = 0;
     let liveText = '';
     function Transcript({ session }: { session: Parameters<typeof useSessionMessages>[0] }) {
-      const messages = useSessionMessages(session, { throttleMs: 50 });
+      // 2500 ms, not a tight window: the leading-edge assertion below must
+      // hold while the 200 synchronous act() calls are still inside the
+      // throttle interval. A 50 ms window held on dedicated CI vCPUs but
+      // broke whenever the runner's stage-1 lanes (flows + db-suites) shared
+      // a CPU-capped box with this lane — the interval edge then fired
+      // mid-stream and the leading-edge count read 2. The pinned contract
+      // (leading edge at once, exactly one trailing flush with the latest
+      // rows) is unchanged.
+      const messages = useSessionMessages(session, { throttleMs: 2500 });
       transcriptRenders++;
       liveText = (messages[messages.length - 1]?.parts[0] as TextPart | undefined)?.text ?? '';
       return null;
@@ -376,7 +384,7 @@ describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () 
     expect(liveText).toBe(`${base} tok`);
 
     await act(async () => {
-      await Bun.sleep(80);
+      await Bun.sleep(2600);
     });
     expect(transcriptRenders - before).toBe(2);
     expect(liveText).toBe(`${base}${' tok'.repeat(STREAMED_DELTAS)}`);
