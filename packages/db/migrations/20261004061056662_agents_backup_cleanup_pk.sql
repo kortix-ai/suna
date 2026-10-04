@@ -25,8 +25,7 @@
 -- Guarded on the table existing: the migration chain never creates it (the
 -- table predates the repo's migration history), so on a fresh self-host
 -- install, the CI shadow database and every db-suite database the table is
--- absent and this is a no-op — the same guard as
--- 20261004035710009_basejump_config_primary_key.
+-- absent and this is a no-op.
 set lock_timeout = '2s';
 set statement_timeout = '30s';
 
