@@ -132,7 +132,8 @@ export type SessionDisplayStatus = SessionListStatus;
 
 /** Tooltip + section copy. Never "Active": `running` means the sandbox is up,
  *  not that the agent is working, and the payload carries no signal for that. */
-export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string> = {  'needs-you': SESSION_LIST_STATUS['needs-you'].label,
+export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string> = {
+  'needs-you': SESSION_LIST_STATUS['needs-you'].label,
   starting: SESSION_LIST_STATUS.starting.label,
   running: SESSION_LIST_STATUS.running.label,
   done: SESSION_LIST_STATUS.done.label,

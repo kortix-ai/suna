@@ -190,6 +190,15 @@ export class CliSandbox {
       GIT_COMMITTER_EMAIL: 'ke2e@kortix.test',
       // Force non-TTY so prompt-driven branches take their headless path.
       CI: '1',
+      // Cut off the Kortix-shared `sandboxEnvValue()` path (packages/shared/
+      // host-config/sandbox-env.ts): inside a Kortix sandbox the platform
+      // bakes /dev/shm/kortix/agent-env.sh with the SESSION's own host, token
+      // and project id, which would override this fixture's isolated config
+      // and aim every CLI command at the platform instead of the ke2e target.
+      // The flag every other spawn harness in the repo already sets
+      // (tests/bin/package-quality.ts, apps/cli unit tests); on a laptop or a
+      // GitHub runner the file does not exist and this is a no-op.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     };
   }
 
