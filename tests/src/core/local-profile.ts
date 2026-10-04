@@ -134,3 +134,13 @@ export const LOCAL_AUTH_EMAIL_HOOK_SECRET =
  * local stack.
  */
 export const LOCAL_STRIPE_WEBHOOK_SECRET = 'whsec_local_flow_runner_disabled';
+
+/**
+ * Gateway-to-API internal token for the local profile. Fixed (not random) so
+ * `ensureLocalStack` can respawn one half while the other survives from a
+ * previous run: a surviving process keeps the token it started with, so both
+ * spawn sites must agree on one value. The profile is loopback-only
+ * (`assertLoopbackHttpUrl`), so a source-visible constant authorizes nothing
+ * beyond this machine.
+ */
+export const LOCAL_GATEWAY_INTERNAL_TOKEN = 'local-flow-runner-gateway-internal-token';

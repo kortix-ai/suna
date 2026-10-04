@@ -1,6 +1,6 @@
 import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { PillLink } from '@/features/marketing/os/primitives';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
@@ -48,7 +48,7 @@ export function SolutionsHubPage(): ReactNode {
               <li key={role.slug}>
                 <Link
                   href={`/solutions/${role.slug}`}
-                  className="border-border bg-card hover:bg-accent/40 flex h-full flex-col rounded-sm border p-6 transition-colors"
+                  className="border-border bg-card hover:bg-accent/40 flex h-full flex-col rounded-xl border p-6 transition-colors"
                 >
                   <Eyebrow>{String(i + 1).padStart(2, '0')}</Eyebrow>
                   <span className="text-foreground mt-3 text-lg leading-tight font-medium">
@@ -108,15 +108,9 @@ export function SolutionsHubPage(): ReactNode {
 
         <Reveal delay={0.1}>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button size="lg" variant="secondary" asChild>
-              <Link href="/agent-computer">{tI18nComplete.raw('text495a8a5d24a9')}</Link>
-            </Button>
-            <Button size="lg" variant="secondary" asChild>
-              <Link href="/connectors">{tI18nComplete.raw('textc3d2e79ebdd0')}</Link>
-            </Button>
-            <Button size="lg" variant="secondary" asChild>
-              <Link href="/security">{tI18nComplete.raw('text8f6fb4eb7f42')}</Link>
-            </Button>
+            <PillLink tone="outline" href="/agent-computer">{tI18nComplete.raw('text495a8a5d24a9')}</PillLink>
+            <PillLink tone="outline" href="/connectors">{tI18nComplete.raw('textc3d2e79ebdd0')}</PillLink>
+            <PillLink tone="outline" href="/security">{tI18nComplete.raw('text8f6fb4eb7f42')}</PillLink>
           </div>
         </Reveal>
       </Section>
