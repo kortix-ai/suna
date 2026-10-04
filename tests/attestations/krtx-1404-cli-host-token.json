@@ -1,16 +1,16 @@
 {
-  "source_hash": "dfe6943dd90a1290443ad84e1d3c9547ba6c406ff685110ca0a65f9c70ea5bd0",
+  "source_hash": "a4dfe650608f8a15630e483f6d8822d6a92d901779f3803ffe72c163e100449d",
   "diff_files": [
     "apps/cli/src/__tests__/host-project-context.test.ts",
     "apps/cli/src/__tests__/secrets.test.ts"
   ],
   "diff_hash": "cc8d57702cf78bf9942867798077f06ce467f0e7082a21d5cd13639d6f9ccc10",
-  "head": "3646c2a8cf20f79f9a303a6781ce2bc839b6d984",
+  "head": "369fa52e853d8638fd58a660abd405740dd89b7d",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T03:20:22.477Z"
+  "at": "2026-10-04T03:43:14.246Z"
 }
