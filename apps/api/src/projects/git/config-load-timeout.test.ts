@@ -35,17 +35,6 @@ const PROJECT = {
   manifestPath: 'kortix.yaml',
 };
 
-/** Rejects if `promise` has not settled — turns an unbounded hang into a
- *  countable failure instead of a test-timeout with no output. */
-function failAfter<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} did not settle within ${ms}ms`)), ms),
-    ),
-  ]);
-}
-
 afterEach(() => {
   failure = null;
   delete process.env.KORTIX_PROJECT_CONFIG_TIMEOUT_MS;
@@ -54,17 +43,12 @@ afterEach(() => {
 describe('loadProjectConfig — bounded against a hung git mirror', () => {
   test('rejects in bounded time with a retryable GitOperationError', async () => {
     process.env.KORTIX_PROJECT_CONFIG_TIMEOUT_MS = '1500';
-    const err: unknown = await failAfter(
-      loadProjectConfig(PROJECT).then(
-        () => null,
-        (e) => e,
-      ),
-      5_000,
-      'loadProjectConfig',
+    // Without the bound the load never settles: bun's own 5 s test timeout
+    // fails it, so an unbounded hang can never pass.
+    const err: unknown = await loadProjectConfig(PROJECT).then(
+      () => null,
+      (e) => e,
     );
-
-    // Without the bound this never settles: the assertion below fails on the
-    // sentinel error instead of passing on an unbounded hang.
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).name).toBe('GitOperationError');
     expect((err as { kind?: string }).kind).toBe('timeout');
@@ -77,13 +61,9 @@ describe('loadProjectConfig — bounded against a hung git mirror', () => {
   test('a load error that is not a timeout propagates unchanged', async () => {
     process.env.KORTIX_PROJECT_CONFIG_TIMEOUT_MS = '5000';
     failure = new Error('synthetic manifest parse failure');
-    const err: unknown = await failAfter(
-      loadProjectConfig(PROJECT).then(
-        () => null,
-        (e) => e,
-      ),
-      5_000,
-      'loadProjectConfig',
+    const err: unknown = await loadProjectConfig(PROJECT).then(
+      () => null,
+      (e) => e,
     );
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).name).toBe('Error');
