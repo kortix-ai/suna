@@ -82,7 +82,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
   // shape changes and project.app.deploy for anything that changes what the
-  // public hostname serves. Gating on project.customize.write let a custom role
+  // public hostname serves. Gating on a broader settings leaf let a custom role
   // that granted Apps still render read-only, and one that revoked Apps still
   // render the controls.
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;

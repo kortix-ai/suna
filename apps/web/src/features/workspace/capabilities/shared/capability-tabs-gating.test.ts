@@ -5,9 +5,9 @@
 // filter on the probe, and a pending probe reads `allowed: false`, so the bar
 // painted empty and the tabs flew in when `/effective` answered. Access is now
 // decided in the content area (`CapabilityAccessGate`), and only on a denial
-// the engine returned. `project.customize.read` left the member floor role in
-// #6522 (`apps/api/src/iam/role-perms.ts`), so a plain member who types a
-// Customize URL gets a no-access body under every tab.
+// the engine returned. Each tab's body follows its own read leaf, with no
+// surface-wide leaf: a plain member (project.agent.read, project.trigger.read)
+// opens Agents and Triggers and gets a no-access body under every other tab.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -46,10 +46,18 @@ describe('capabilityTabDenied', () => {
     expect(deniedKeys(allowExcept())).toEqual([]);
   });
 
-  test('a project member (no project.customize.read) is denied every tab', () => {
-    expect(deniedKeys(allowExcept(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ))).toEqual(
-      CAPABILITY_TABS.map((t) => t.key),
+  test('a project member is denied exactly the tabs whose read leaf it lacks', () => {
+    const member = allowExcept(
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+      PROJECT_ACTIONS.PROJECT_SKILL_READ,
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+      PROJECT_ACTIONS.PROJECT_MODEL_READ,
+      PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
     );
+    expect(CAPABILITY_TABS.map((t) => t.key).filter((k) => !deniedKeys(member).includes(k)).sort()).toEqual([
+      'agent',
+      'triggers',
+    ]);
   });
 
   test('a custom role denied one leaf is denied exactly that tab', () => {
@@ -92,7 +100,6 @@ describe('Customize permission wiring', () => {
   // the sidebar already cached, so it adds no request and no wait.
   test('the shared page batch covers every leaf the surface reads', () => {
     const batch: readonly string[] = PROJECT_PAGE_ACTIONS;
-    expect(batch).toContain(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
     expect(batch).toContain(PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
     for (const tab of CAPABILITY_TABS) {
       const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);

@@ -39,7 +39,7 @@ export type ManifestUnknownReason =
   | 'unparsable'
   /** Parses, but declares no usable integer `kortix_version`. */
   | 'undeclared'
-  /** Hidden from this caller — no `project.customize.read`. */
+  /** Hidden from this caller — no `project.file.read`. */
   | 'restricted';
 
 export interface ProjectManifestVerdict {
