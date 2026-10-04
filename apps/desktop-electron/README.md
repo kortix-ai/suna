@@ -241,13 +241,14 @@ from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
 ## Kortix Capture (the engine inside the app)
 
 The app bundles the Kortix Capture engine from the private repository
-`kortix-ai/capture`, so a person installs one app. The engine runs as a child
-of the Kortix app: macOS attributes Screen Recording, Accessibility and the
-Microphone to Kortix, and there is one set of grants. The engine's own tray
-app (`kortix-tray`) is not shipped. The Kortix tray is the only icon and the
-only supervisor. Pieces: `src/capture.js` (rules, parsing, supervision;
-unit-tested), `src/capture-host.js` (processes and commands), and
-`scripts/fetch-capture-engine.js` (build-time fetch).
+`kortix-ai/capture`, so a person installs one app. The engine runs under the
+Capture service, an OS service that runs the Kortix binary itself: macOS
+attributes Screen Recording, Accessibility and the Microphone to Kortix, and
+there is one set of grants. The engine's own tray app (`kortix-tray`) is not
+shipped. The Kortix tray is the only icon. Pieces: `src/capture.js` (rules,
+parsing, supervision; unit-tested), `src/capture-service.js` (the OS service
+and its installer), `src/capture-host.js` (the app as controller, and the
+commands), and `scripts/fetch-capture-engine.js` (build-time fetch).
 
 ### Bundling: `capture-engine.lock.json`
 
@@ -313,41 +314,84 @@ GH_TOKEN="$(gh auth token)" node apps/desktop-electron/scripts/fetch-capture-eng
 The release builds macOS on an arm64 runner only and has no Linux build, so
 `darwin-x64` and `linux-x64` stay `null` until the capture workflow adds them.
 
-### Lifecycle
+### Lifecycle: an OS service, like the computer agent
 
-- **Processes.** While Capture is on and signed in, the app runs
-  `kortix-capture record --supervised` (screen, audio, and the library's sync).
-  While the person's Actions switch is on and the project policy allows
-  actions, it also runs `kortix-backend --service` under a stdin guard (the
-  app's own binary as Node). Both end when the app quits or crashes: the app
-  holds their stdin. A child that exits restarts after 2 s, doubling to 60 s; a
-  minute of uptime resets the backoff. After 5 crashes in a row the status
-  says `crashed`, and restarts continue.
+Capture runs as its own OS service, so it keeps recording after Quit, after a
+crash of the app, and across reboots. `src/capture-service.js` is the
+service. `scripts/ensure-runtime.js` bundles it with bun (plus the agent
+tunnel's service drivers) into `vendor/capture-service.js`, shipped outside
+the asar as `Resources/capture-service/capture-service.js`.
+
+| OS | Service | Restart | "Turn off" |
+| --- | --- | --- | --- |
+| macOS | LaunchAgent `~/Library/LaunchAgents/ai.kortix.desktop.capture.<8 hex>.plist`, `RunAtLoad` | `KeepAlive` (any exit), at most every 10 s | `launchctl disable` + `bootout` |
+| Linux | systemd user unit `~/.config/systemd/user/ai.kortix.desktop.capture.<8 hex>.service`, `WantedBy=default.target`, lingering on | `Restart=always`, 5 s | `systemctl --user disable --now` |
+| Windows | Scheduled Task `ai.kortix.desktop.capture.<8 hex>` at logon, running a PowerShell loop | the loop, 5 s | `schtasks /Change /DISABLE` + `/End` |
+
+The installer is the agent tunnel's driver table
+(`packages/agent-tunnel/src/agent/service-drivers.ts`) with Capture's
+`ServicePaths`: label `ai.kortix.desktop.capture.<sha8(library)>` (never the
+tunnel's `ai.kortix.agent-tunnel*` or the standalone engine's
+`ai.kortix.capture.tray`), logs `<library>/logs/capture-service.{out,err}.log`.
+
+- **Who macOS holds responsible.** The unit runs `/bin/sh -lc "exec <Kortix
+  binary> capture-service.js run"` with `ELECTRON_RUN_AS_NODE=1`. The
+  `exec` leaves the Kortix binary as the launchd job's process, and the
+  service starts the engine as its own child. macOS attributes a child's
+  Screen Recording, Accessibility and Microphone use to the responsible
+  process, which is the app bundle of the Kortix binary: the prompts and the
+  System Settings entries name **Kortix**. This is the same chain the computer
+  agent uses for Computer Use; it cannot be proven headlessly (see the device
+  checklist).
+- **The service.** Every 30 s it reads `desktop.json` (the person's switches)
+  and the engine's `sync status`, then runs or stops
+  `kortix-capture record --supervised` (screen, audio, the library's sync)
+  and, while Actions is on and the project policy allows actions,
+  `kortix-backend --service` under a stdin guard. Both end when the service
+  ends. A child that exits restarts after 2 s, doubling to 60 s; a minute of
+  uptime resets the backoff; after 5 crashes in a row the status says
+  `crashed` and restarts continue. After a new macOS grant it restarts the
+  recorder once. It writes `<library>/service.json` (pid, children, last
+  probe) as its heartbeat; a second service for the same library exits.
+- **The app is the controller** (`src/capture-host.js`,
+  `capture.serviceAction`). It runs
+  `<Kortix binary> capture-service.js install|pause|resume|uninstall|status --json`:
+  - Capture on and signed in: install when the unit is missing or no longer
+    matches this app (`upToDate: false`: the app was updated or moved; this is
+    how a new app version takes over), resume when disabled, reinstall at
+    most every 5 min when installed but not running.
+  - Capture off ("Record" switch): the service is disabled; it does not start
+    at login.
+  - Pause in the tray or the dialog: the engine's own `pause --for`; the
+    service keeps running.
+  - Sign out: the service is uninstalled, then the device token is removed.
+  - A copy that runs from a disk image or ~/Downloads never installs.
 - **Library.** `<userData>/capture/<sha8(api origin)>/` (`KORTIX_CAPTURE_DIR`):
-  one library and one sign-in per Kortix instance, separate from a standalone
-  Kortix Capture install. The engine's config there sets `updates.public_key`
-  to empty: the engine never updates itself; it updates with the app.
-  The device token is a mode-0600 file in the library
+  one library, one sign-in and one service per Kortix instance, separate from
+  a standalone Kortix Capture install. The engine's config there sets
+  `updates.public_key` to empty: the engine never updates itself; it updates
+  with the app. The device token is a mode-0600 file in the library
   (`KORTIX_CAPTURE_KEY_STORE=file`), not a Keychain item: a Keychain item
   belongs to the code signature that wrote it, and every app update re-signs
-  the engine.
-- **Login.** Turning Capture on sets the app's login item (the "Open at login"
-  checkbox in the tray). There is no second login item: the engine tray, which
-  installs one, never runs. Linux has no login item: start Kortix by hand.
-- **Updates.** An app update quits the app (the children stop) and relaunches
-  it; `desktop.json` in the library says Capture is on, so it starts again with
-  the new engine.
+  the engine. The engine's own tray, with its LaunchAgent
+  (`ai.kortix.capture.tray`), never runs.
 - **Refusal.** A device that Kortix refuses (revoked in the web app, the
   project's `capture` flag off, the project archived) stops: every 10 minutes
-  the app runs `kortix-capture sync test`, which fetches fresh credentials; a
-  401 or 403 marks the sign-in refused, and the app stops both children within
-  30 s. Capture shows "Sign in again".
+  the service runs `kortix-capture sync test`, which fetches fresh
+  credentials; a 401 or 403 marks the sign-in refused, and the service stops
+  both children within 30 s. The service stays installed and idle; Capture
+  shows "Sign in again".
+- **Linux AppImage.** The engine and the service file live inside the
+  AppImage mount, whose path changes per launch. Linux ships no engine yet;
+  copy both out of the mount (like the tunnel's vendored runner) before a
+  Linux engine is pinned.
 
 ### Sign-in without a second browser trip
 
 1. The page calls `capture_sign_in_start`. The app runs
    `kortix-capture --json sync setup --provider kortix --issuer <API origin> --no-browser`
-   and answers with the code the engine printed.
+   and answers with the code the engine printed. While it runs,
+   `<library>/sign-in.pending` keeps the service's engine stopped.
 2. The page approves the code with the person's own session:
    `approveCaptureDeviceGrant(userCode, projectId)` from `@kortix/sdk`
    (`POST /v1/capture/device/grants/:user_code/approve`).
@@ -365,7 +409,7 @@ orchestration.
 | `capture_sign_in_start` / `_finish` / `_cancel` | See above. `finish` answers `{ ok, error?, status }`. |
 | `capture_set { on?, screen?, actions?, audio? }` | Changes the person's switches; answers the status. |
 | `capture_pause { minutes }` / `capture_resume` | The engine's `pause --for` / `resume`. |
-| `capture_sign_out` | Stops Capture and forgets the device token (`sync sign-out`). The page revokes the device in Kortix first. |
+| `capture_sign_out` | Uninstalls the Capture service and forgets the device token (`sync sign-out`). The page revokes the device in Kortix first. |
 | `capture_open_timeline` | Opens the engine's timeline window (`kortix-capture ui`). |
 | `capture_open_permission { permission }` | Opens the System Settings pane: `screen`, `accessibility`, `microphone`, `inputMonitoring` (macOS). |
 | `capture_open_logs` | Opens `<library>/logs` (`recorder.log`, `actions.log`). |
@@ -374,6 +418,7 @@ The web app shows **Capture** in the workspace menu when the engine is
 available and the person has a project with Capture on. The tray shows the
 Capture state, the policy notice, Pause/Resume, Open Capture Timeline and
 Capture Settings…; the last one opens the same dialog in the app window.
+`capture_status` also answers `service: { installed, enabled, running, upToDate }`.
 
 ## Package
 

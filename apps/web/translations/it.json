@@ -20557,7 +20557,7 @@
       "crashed": "Capture si è fermato dopo vari arresti anomali. Kortix continua a riprovare.",
       "policyNotice": "Da chi gestisce questo progetto",
       "record": "Registra",
-      "recordDescription": "Kortix registra mentre è in esecuzione e si apre all’accesso.",
+      "recordDescription": "Capture registra in background, anche quando l’app Kortix è chiusa, e si avvia all’accesso.",
       "layersTitle": "Cosa registra Capture",
       "layers": {
         "screen": "Schermo",

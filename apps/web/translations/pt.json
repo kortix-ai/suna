@@ -20557,7 +20557,7 @@
       "crashed": "O Capture parou após falhas repetidas. O Kortix continua tentando.",
       "policyNotice": "De quem gerencia este projeto",
       "record": "Gravar",
-      "recordDescription": "O Kortix grava enquanto está aberto e abre ao iniciar a sessão.",
+      "recordDescription": "O Capture grava em segundo plano, mesmo com o app Kortix fechado, e inicia ao entrar na sessão.",
       "layersTitle": "O que o Capture grava",
       "layers": {
         "screen": "Tela",

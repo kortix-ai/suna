@@ -20557,7 +20557,7 @@
       "crashed": "Capture はクラッシュが続いたため停止しました。Kortix は再試行を続けます。",
       "policyNotice": "このプロジェクトの管理者から",
       "record": "記録",
-      "recordDescription": "Kortix は起動中に記録し、ログイン時に起動します。",
+      "recordDescription": "Capture はバックグラウンドで記録します。Kortix アプリを閉じていても記録し、ログイン時に起動します。",
       "layersTitle": "Capture が記録するもの",
       "layers": {
         "screen": "画面",

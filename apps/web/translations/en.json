@@ -20557,7 +20557,7 @@
       "crashed": "Capture stopped after repeated crashes. Kortix keeps trying.",
       "policyNotice": "From the people who manage this project",
       "record": "Record",
-      "recordDescription": "Kortix records while it runs and opens at login.",
+      "recordDescription": "Capture records in the background, also while the Kortix app is closed, and starts at login.",
       "layersTitle": "What Capture records",
       "layers": {
         "screen": "Screen",

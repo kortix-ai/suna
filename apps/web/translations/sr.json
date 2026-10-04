@@ -20557,7 +20557,7 @@
       "crashed": "Capture се зауставио после поновљених падова. Kortix наставља да покушава.",
       "policyNotice": "Од људи који управљају овим пројектом",
       "record": "Снимај",
-      "recordDescription": "Kortix снима док ради и отвара се при пријави.",
+      "recordDescription": "Capture снима у позадини, и када је апликација Kortix затворена, и покреће се при пријави.",
       "layersTitle": "Шта Capture снима",
       "layers": {
         "screen": "Екран",

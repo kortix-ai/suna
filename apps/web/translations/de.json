@@ -20557,7 +20557,7 @@
       "crashed": "Capture wurde nach wiederholten Abstürzen gestoppt. Kortix versucht es weiter.",
       "policyNotice": "Von den Personen, die dieses Projekt verwalten",
       "record": "Aufnehmen",
-      "recordDescription": "Kortix nimmt auf, solange es läuft, und startet bei der Anmeldung.",
+      "recordDescription": "Capture nimmt im Hintergrund auf, auch wenn die Kortix-App geschlossen ist, und startet bei der Anmeldung.",
       "layersTitle": "Was Capture aufnimmt",
       "layers": {
         "screen": "Bildschirm",

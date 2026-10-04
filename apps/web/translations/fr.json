@@ -20557,7 +20557,7 @@
       "crashed": "Capture s’est arrêté après plusieurs plantages. Kortix continue d’essayer.",
       "policyNotice": "De la part des personnes qui gèrent ce projet",
       "record": "Enregistrer",
-      "recordDescription": "Kortix enregistre tant qu’il tourne et s’ouvre à la connexion.",
+      "recordDescription": "Capture enregistre en arrière-plan, même quand l’app Kortix est fermée, et démarre à la connexion.",
       "layersTitle": "Ce que Capture enregistre",
       "layers": {
         "screen": "Écran",

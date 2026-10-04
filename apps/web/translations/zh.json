@@ -20557,7 +20557,7 @@
       "crashed": "Capture 多次崩溃后已停止。Kortix 会继续尝试。",
       "policyNotice": "来自此项目的管理者",
       "record": "记录",
-      "recordDescription": "Kortix 运行时记录，并在登录时打开。",
+      "recordDescription": "Capture 在后台记录，即使 Kortix 应用已关闭，并在登录时启动。",
       "layersTitle": "Capture 记录的内容",
       "layers": {
         "screen": "屏幕",

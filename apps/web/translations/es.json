@@ -20557,7 +20557,7 @@
       "crashed": "Capture se detuvo tras varios fallos. Kortix sigue intentándolo.",
       "policyNotice": "De quienes gestionan este proyecto",
       "record": "Grabar",
-      "recordDescription": "Kortix graba mientras se ejecuta y se abre al iniciar sesión.",
+      "recordDescription": "Capture graba en segundo plano, también con la app de Kortix cerrada, y se inicia al iniciar sesión.",
       "layersTitle": "Qué graba Capture",
       "layers": {
         "screen": "Pantalla",
