@@ -15,7 +15,9 @@ import {
   projectHasResource,
   projectResourcesFromConfig,
   loadConfigWithFiles,
+  loadConfigWithFilesCached,
 } from '../lib/project-resources';
+import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -51,6 +53,32 @@ export function mayForceMirrorRefresh(projectId: string, now = Date.now()): bool
 /** @internal tests */
 export function __resetForcedRefreshCooldown(): void {
   lastForcedRefresh.clear();
+}
+
+/** Wall-clock budget for the picker's cached config read. */
+const CONFIG_LOAD_BUDGET_MS = configuredTimeoutMs(
+  'KORTIX_RESOURCE_GRANTS_CONFIG_BUDGET_MS',
+  5_000,
+  1_000,
+);
+
+/**
+ * The GET picker's config read: the 20 s TTL cache, bounded.
+ *
+ * The git-backed load runs on the request path and can hold a read for tens
+ * of seconds: a mirror re-clone after the reaper's LRU eviction
+ * (`reapGitCacheOverBudget`), a stalled `git fetch` (30 s per-op budget), or
+ * a slow credential resolve. KRTX-821 measured that tail at the 25 s request
+ * deadline — p95 25005 ms on the route while the config stage dominated every
+ * slow read. The handler already degrades to empty grantable resources when
+ * the config fails to load; the bound turns the hang into that same failure
+ * in seconds. The losing load keeps running and the TTL memo keeps its
+ * result for the next read.
+ */
+export function loadPickerConfig(
+  row: Parameters<typeof loadConfigWithFilesCached>[0],
+): ReturnType<typeof loadConfigWithFilesCached> {
+  return withTimeout(loadConfigWithFilesCached(row), CONFIG_LOAD_BUDGET_MS, 'resource-grants config load');
 }
 
 // ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
@@ -112,7 +140,7 @@ projectsApp.openapi(
     } = { agents: [], skills: [] };
     let configLoaded = false;
     try {
-      const config = await loadConfigWithFiles(loaded.row);
+      const config = await loadPickerConfig(loaded.row);
       const fromConfig = projectResourcesFromConfig(config);
       const scopeByAgent = new Map(config.agents.map((a) => [a.name, a.scope]));
       resources.agents = fromConfig.agents.map((a) => ({

@@ -1,17 +1,18 @@
 {
-  "source_hash": "36f19ef641781f7e4ebeb2f43a5ef1ea9fbdab1eae478cb78baaff413cb26852",
+  "source_hash": "846713e8cbe24b9b2f83862a9b8c2789e497c9faaa731b47329701a2bbeeb240",
   "diff_files": [
-    "apps/api/src/projects/routes/resource-grants-view-stale.test.ts",
-    "apps/api/src/projects/routes/resource-grants.ts",
-    "apps/web/src/lib/menu-registry.flags.test.ts"
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-04T003157Z-a-read-path-that-loads-git-backed-project-resources-bounds-t.md",
+    "apps/api/src/__tests__/unit-resource-grants-config-bound.test.ts",
+    "apps/api/src/projects/routes/resource-grants.ts"
   ],
-  "diff_hash": "c3493cab264de9e0bd4c23ed9cc8aa7d448df7345791bb5b24c7f764dce208ad",
-  "head": "dbeb8fa310ad961a0e18c06674372050d5735e68",
+  "diff_hash": "13aed4c8e13a2d1c115f590c6634c2f97174a8962e53cfc4f8351e954a12a2a9",
+  "head": "d938fbac1d3214a32bfcb34f0101eb6c0bbaaeb0",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T04:42:00.765Z"
+  "at": "2026-10-04T00:44:45.888Z"
 }
