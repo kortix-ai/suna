@@ -37,7 +37,7 @@ mock.module('./preview-auth', () => ({
   },
 }));
 let wsUpstreamResolutions = 0;
-mock.module('./routes/preview', () => ({
+mock.module('./forward', () => ({
   resolvePreviewWsUpstream: async () => {
     wsUpstreamResolutions += 1;
     return { ok: true, url: 'wss://upstream.test/hmr', headers: {} };

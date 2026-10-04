@@ -22,7 +22,7 @@ import {
   runtimeAgentRoster,
 } from './agent-availability';
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
-import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
+import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import {
   WORKSPACE,
