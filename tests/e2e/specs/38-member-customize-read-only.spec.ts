@@ -15,11 +15,11 @@ import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
  *
  * `project.customize.read` used to gate the whole surface, so a member saw
  * none of it. It was split into one leaf per topic, and there is no surface
- * gate any more: each tab shows when its own read leaf is held. A plain
+ * gate any more: each tab's body opens when its own read leaf is held. A plain
  * project member holds `project.agent.read` and `project.trigger.read`, so it
- * must see exactly Agents and Triggers, read-only — and neither page may fire
- * a project request the member is not allowed to make (a 403 here is a
- * control or a load the member can never complete).
+ * opens Agents and Triggers read-only and gets the no-access body elsewhere —
+ * and no page may fire a project request the member is not allowed to make (a
+ * 403 here is a control or a load the member can never complete).
  */
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -37,7 +37,7 @@ interface AccountSummary {
 }
 
 test.describe('38 — a project member sees Customize read-only', () => {
-  test('Agents and Triggers only, both load, no forbidden project request', async ({ page }) => {
+  test('Agents and Triggers open, the rest show no-access, no forbidden project request', async ({ page }) => {
     test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
     test.setTimeout(180_000);
 
@@ -92,19 +92,29 @@ test.describe('38 — a project member sees Customize read-only', () => {
       await page.goto(`/projects/${projectId}/customize/agents`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
-      const tabs = page.getByRole('tab');
+      // The tab bar is static (#9042): every label paints on the first frame.
+      // Access is decided in the body, per tab, by that tab's own read leaf.
+      const noAccess = page.locator('[data-slot="capability-no-access"]');
       await expect(page.getByRole('tab', { name: 'Agents' })).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByRole('tab', { name: 'Triggers' })).toBeVisible();
-      await expect.poll(async () => (await tabs.allInnerTexts()).map((t) => t.trim()).sort()).toEqual([
-        'Agents',
-        'Triggers',
-      ]);
-      for (const hidden of ['Skills', 'Connectors', 'Models', 'Secrets', 'Settings']) {
-        await expect(page.getByRole('tab', { name: hidden })).toHaveCount(0);
-      }
+      await page.waitForLoadState('networkidle');
+      await expect(noAccess).toHaveCount(0);
 
       await page.getByRole('tab', { name: 'Triggers' }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/customize/triggers`));
+      await page.waitForLoadState('networkidle');
+      await expect(noAccess).toHaveCount(0);
+
+      // A tab whose read leaf the member lacks shows the no-access body and
+      // fires none of that page's requests.
+      for (const [label, segment] of [
+        ['Connectors', 'connectors'],
+        ['Secrets', 'secrets'],
+        ['Settings', 'settings'],
+      ] as const) {
+        await page.getByRole('tab', { name: label }).click();
+        await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/customize/${segment}`));
+        await expect(noAccess).toBeVisible();
+      }
       await page.waitForLoadState('networkidle');
 
       expect(forbidden).toEqual([]);
