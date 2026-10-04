@@ -18,6 +18,8 @@ import {
   type SessionListStatus,
 } from '@kortix/sdk';
 
+import { stripChatMentionMarkup } from '@kortix/shared';
+
 import type { ProjectSession } from '@/lib/projects/projects-client';
 
 // ── Display title ────────────────────────────────────────────────────────
@@ -31,7 +33,9 @@ export const UNTITLED_SESSION_LABEL = 'New session';
 export function resolveSessionTitle(session: ProjectSession): string | null {
   const metadata = session.metadata as Record<string, unknown> | null | undefined;
   const legacyMetadataName = typeof metadata?.session_name === 'string' ? metadata.session_name : null;
-  return session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
+  return stripChatMentionMarkup(session.custom_name ?? '') ||
+    stripChatMentionMarkup(session.name ?? '') ||
+    stripChatMentionMarkup(legacyMetadataName ?? '') || null;
 }
 
 /**
