@@ -1,0 +1,16 @@
+{
+  "source_hash": "46bc754dbf73226a1253100b2498f53fab7617ad32ab003d1076691f0112bc61",
+  "diff_files": [
+    "packages/db/migrations/20261004003421735_drop_legacy_agents_select_own_policy.sql",
+    "packages/db/scripts/drop-legacy-agents-select-own-policy.integration.test.ts"
+  ],
+  "diff_hash": "5c4cdf274f5b9a86788de24ae008f42efeb4c5831b86d19321be18f6a8e1956d",
+  "head": "ca7d2215671511d1ba2bdfa8db50e36985392332",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:16:39.685Z"
+}
