@@ -10,7 +10,7 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, takeFlagBool, takeFlagValue, fail, missing } from '../command-helpers.ts';
+import { emitJson, fail, missing, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -182,9 +182,7 @@ function hostsLs(json = false): number {
   // Auth-status column: "✓ signed in as <user/email>" vs "○ not signed in".
   // Width is measured on the visible text (glyph + label), ANSI stripped.
   const statusText = (r: (typeof rows)[number]): string =>
-    r.host.token
-      ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}`
-      : '○ not signed in';
+    r.host.token ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}` : '○ not signed in';
   const statusW = Math.max(...rows.map((r) => statusText(r).length), 8);
 
   process.stdout.write('\n');
@@ -310,7 +308,7 @@ async function hostsAdd(args: string[]): Promise<number> {
   try {
     url = takeFlagValue(args, ['--url', '--api']);
     dashboardUrl = takeFlagValue(args, ['--dashboard-url']);
-    runLoginFlow = removeBoolFlag(args, ['--login']);
+    runLoginFlow = takeFlagBool(args, ['--login']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -393,7 +391,7 @@ async function hostsAdd(args: string[]): Promise<number> {
 async function hostsRm(args: string[]): Promise<number> {
   let force = false;
   try {
-    force = removeBoolFlag(args, ['--force', '-f']);
+    force = takeFlagBool(args, ['--force', '-f']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -508,14 +506,4 @@ function hostJson(name: string, host: Host, active: boolean) {
     logged_in_at: host.logged_in_at || null,
     active,
   };
-}
-
-function removeBoolFlag(argv: string[], names: string[]): boolean {
-  for (let i = 0; i < argv.length; i += 1) {
-    if (names.includes(argv[i])) {
-      argv.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
 }
