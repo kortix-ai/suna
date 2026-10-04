@@ -17,7 +17,7 @@
  * `Result.err` rather than letting them escape.
  */
 
-import { makeTransport, type RpcTransport } from './rpc-transport.ts';
+import { makeTransport, ResponseError, type RpcTransport } from './rpc-transport.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
@@ -39,9 +39,12 @@ class FileErrorLike extends Error {
 }
 
 /**
- * A failure of the transport itself — `transport.call` threw, so the operation
- * never reached the daemon and retrying cannot repeat it. A FileErrorLike
- * subclass keeps the caller-visible error shape; rpc() retries it once.
+ * A failure of the transport itself — `transport.call` threw before any
+ * response was received, so the operation never reached the daemon and
+ * retrying cannot repeat it. A FileErrorLike subclass keeps the
+ * caller-visible error shape; rpc() retries it once. A failure AFTER a
+ * response was received (`ResponseError`) is delivered, may have executed,
+ * and never retries.
  */
 class TransportErrorLike extends FileErrorLike {
   constructor(message: string) {
@@ -135,8 +138,11 @@ export class KortixExecutionEnv {
     } catch (e: any) {
       // Never throw. A dead environment is a Result, not an exception. A
       // transport throw is classified here, at the boundary, so rpc() can
-      // retry exactly the failures that never reached the daemon.
+      // retry exactly the failures that never received a response. A
+      // response-received failure (HTTP status, malformed body) means the
+      // request was delivered and the operation may have run — never retried.
       if (e === RPC_TIMEOUT) return err(new FileErrorLike('unknown', RPC_TIMEOUT.message));
+      if (e instanceof ResponseError) return err(new FileErrorLike('unknown', String(e?.message ?? e)));
       return err(new TransportErrorLike(String(e?.message ?? e)));
     }
   }
