@@ -89,7 +89,8 @@ test('the password form still offers the email link as an explicit choice', asyn
         : typeof children === 'string' && children.includes('Email me a link');
     });
     expect(linkButton).toBeDefined();
-    await act(async () => linkButton!.props.onClick());
+    if (!linkButton) throw new Error('Email-link button did not render');
+    await act(async () => linkButton.props.onClick());
     expect(emailCodeSends).toBe(1);
   } finally {
     await act(async () => root.unmount());
@@ -120,7 +121,7 @@ test('a degraded existence check keeps the magic-link default', async () => {
   }
 });
 
-test('a closed signup address keeps the magic-link default (the action carries the refusal copy)', async () => {
+test('a closed signup address keeps the magic-link default', async () => {
   resolvedMode = 'closed';
   emailCodeSends = 0;
   const root = await continueWithEmail('closed@example.test');
