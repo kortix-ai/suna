@@ -120,7 +120,8 @@ export async function getAuthTokenWithRetry(
  *   - `retryOnAuthError`: replay a 401 once with a fresh token (default `true`).
  *   - `timeoutMs`: override the default deadline (`DEFAULT_FETCH_TIMEOUT_MS`)
  *     for bodies large enough that it is a throughput limit rather than a hang
- *     detector (`uploadTimeoutMsForBytes` in `core/files/client.ts`). A caller
+ *     detector (`uploadTimeoutMsForBytes` in `core/files/client.ts`), or `null`
+ *     for no transport deadline — the caller's signal is the only one. A caller
  *     `init.signal` still composes with it; whichever fires first wins.
  */
 export async function authenticatedFetch(
@@ -128,7 +129,7 @@ export async function authenticatedFetch(
   init?: RequestInit,
   options?: {
     retryOnAuthError?: boolean;
-    timeoutMs?: number;
+    timeoutMs?: number | null;
   },
 ): Promise<Response> {
   try {
