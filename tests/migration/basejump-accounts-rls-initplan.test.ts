@@ -131,11 +131,17 @@ suite('basejump.accounts RLS initplan (throwaway Postgres)', () => {
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
     let ready = false;
     for (let i = 0; i < 60; i++) {
+      // Probe the container's own TCP listener, never the Unix socket: the
+      // entrypoint's temporary init server answers the socket while the real
+      // server (the one the published port proxies to) is not up yet, so a
+      // socket-ready poll lets runMigrate's first psql die mid-init.
       ready = sh([
         'docker',
         'exec',
         CONTAINER,
         'pg_isready',
+        '-h',
+        '127.0.0.1',
         '-U',
         'postgres',
         '-d',
