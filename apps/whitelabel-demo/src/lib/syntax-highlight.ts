@@ -42,7 +42,7 @@ export type TokenKind =
   | 'method'
   | 'path';
 
-export interface Token {
+interface Token {
   text: string;
   kind: TokenKind;
 }
@@ -135,7 +135,9 @@ function isDigit(char: string): boolean {
 }
 
 function isIdentifierStart(char: string): boolean {
-  return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_' || char === '$';
+  return (
+    (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char === '_' || char === '$'
+  );
 }
 
 function isIdentifierPart(char: string): boolean {
@@ -147,6 +149,13 @@ function isIdentifierPart(char: string): boolean {
  * Runs are consumed whole rather than character by character, so this merges
  * rarely and the token list stays short enough to render as spans.
  */
+/** `source[index]` for a call whose caller has already checked `index` is in
+ *  range — indexed access is `string | undefined` under noUncheckedIndexedAccess,
+ *  and four scanners re-proving the same bound read worse than one helper. */
+function charAt(source: string, index: number): string {
+  return source.charAt(index);
+}
+
 function push(tokens: Token[], text: string, kind: TokenKind): void {
   if (text.length === 0) return;
   const last = tokens[tokens.length - 1];
@@ -161,7 +170,7 @@ function push(tokens: Token[], text: string, kind: TokenKind): void {
  *  the first character matches, which is what keeps every scanner advancing. */
 function runEnd(source: string, from: number, matches: (char: string) => boolean): number {
   let index = from;
-  while (index < source.length && matches(source[index] as string)) index += 1;
+  while (index < source.length && matches(charAt(source, index))) index += 1;
   return index;
 }
 
@@ -199,7 +208,7 @@ function precedesColon(source: string, from: number): boolean {
 function tokenizeTs(source: string, tokens: Token[]): void {
   let index = 0;
   while (index < source.length) {
-    const char = source[index] as string;
+    const char = charAt(source, index);
 
     if (isWhitespace(char)) {
       const end = runEnd(source, index, isWhitespace);
@@ -258,7 +267,7 @@ function tokenizeTs(source: string, tokens: Token[]): void {
       // `/` is punctuation AND the start of a comment, so a run of operators
       // stops rather than swallowing the `//` that follows `);`.
       let end = index;
-      while (end < source.length && TS_PUNCTUATION.has(source[end] as string)) {
+      while (end < source.length && TS_PUNCTUATION.has(charAt(source, end))) {
         const opensComment =
           source[end] === '/' && (source[end + 1] === '/' || source[end + 1] === '*');
         if (end > index && opensComment) break;
@@ -290,7 +299,7 @@ function tokenizeTs(source: string, tokens: Token[]): void {
 function tokenizeJson(source: string, tokens: Token[], from = 0): void {
   let index = from;
   while (index < source.length) {
-    const char = source[index] as string;
+    const char = charAt(source, index);
 
     if (isWhitespace(char)) {
       const end = runEnd(source, index, isWhitespace);
@@ -360,11 +369,11 @@ function tokenizeHttp(source: string, tokens: Token[]): void {
   const head = separator === -1 ? source : source.slice(0, separator);
 
   const lines = head.split('\n');
-  for (let line = 0; line < lines.length; line += 1) {
-    if (line > 0) push(tokens, '\n', 'plain');
-    if (line === 0) tokenizeRequestLine(lines[line] as string, tokens);
-    else tokenizeHeaderLine(lines[line] as string, tokens);
-  }
+  lines.forEach((line, i) => {
+    if (i > 0) push(tokens, '\n', 'plain');
+    if (i === 0) tokenizeRequestLine(line, tokens);
+    else tokenizeHeaderLine(line, tokens);
+  });
 
   if (separator === -1) return;
   push(tokens, '\n\n', 'plain');
