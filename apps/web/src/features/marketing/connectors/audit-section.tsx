@@ -19,7 +19,7 @@ export function AuditSection() {
       <SectionHeader eyebrow={audit.eyebrow} title={audit.title} description={audit.sub} />
 
       <Reveal delay={0.06}>
-        <div className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
+        <div className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-3">
           {audit.fields.map((field, i) => (
             <div
               key={field.id}

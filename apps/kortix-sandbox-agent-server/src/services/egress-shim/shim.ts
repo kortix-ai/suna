@@ -38,7 +38,7 @@ import net from 'node:net'
 import type { Duplex } from 'node:stream'
 import zlib from 'node:zlib'
 
-import { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
+import { BLOCKED_REQUEST_HEADERS } from '@kortix/api-contract/secret-relay'
 import { LeafIssuer, type EphemeralCa } from './ca'
 import {
   canStreamDecode,
@@ -46,7 +46,7 @@ import {
   relayStreaming,
   RelayRefusedError,
 } from './relay-client'
-import type { ShimBrokerRule } from './rules'
+import type { ShimBrokerRule } from '@kortix/api-contract/egress-shim-rules'
 
 export interface EgressShimOptions {
   readonly ca: EphemeralCa

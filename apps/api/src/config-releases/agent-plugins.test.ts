@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readComposedRelease, resolveReleaseTreeSource, selectedOpenCodePlugins, configArchiveRoute } from './builder';
 import { serveConfigArchive } from './serve-archive';
-import { MemoryConfigArchiveStore } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 describe('OpenCode plugin selection', () => {
   test('global plus agent opt-in/out; legacy remains auto-discovered', () => {

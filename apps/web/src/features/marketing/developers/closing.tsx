@@ -1,4 +1,5 @@
 import { FaqSection } from '@/features/marketing/faq/faq-section';
+import { cn } from '@/lib/utils';
 import { localizedDevelopersCopy } from './content';
 import { useTranslations } from '@/i18n/use-translations';
 import { SECTION_HEADING } from './shared';
@@ -11,7 +12,7 @@ export function DevelopersClosing() {
       eyebrow=""
       title={closing.title}
       items={closing.faq}
-      titleClassName={SECTION_HEADING}
+      titleClassName={cn(SECTION_HEADING, 'sm:text-[1.75rem]/8')}
     />
   );
 }

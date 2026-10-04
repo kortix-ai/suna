@@ -166,7 +166,7 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             group_id: z.string().openapi({ description: 'Group id.' }),
-            role: z.enum(['manager,member']).openapi({ description: 'Project role for the group.' }),
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
             expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
           }) } } },
       },
@@ -247,7 +247,7 @@ projectsApp.openapi(
       request: {
         params: z.object({ projectId: z.string(), groupId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            role: z.enum(['manager,member']).openapi({ description: 'Project role for the group.' }),
+            role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
             expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
           }) } } },
       },

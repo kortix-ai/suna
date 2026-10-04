@@ -402,6 +402,16 @@ describe('kortix access grant — everyone in the project, and connector account
     expect(stripAnsi(stdout)).toContain('to everyone in project');
   });
 
+  test.each([
+    ['--agent', 'support-bot'],
+    ['--connection', CONNECTION],
+  ])('--everyone with %s refuses an explicit role before any request', async (flag, objectId) => {
+    const code = await runAccess(['grant', '--everyone', flag, objectId, '--role', 'manager']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('--everyone holds an agent or a connection, never a role.');
+    expect(requests).toHaveLength(0);
+  });
+
   test('--connection narrows a shared connector account to a group', async () => {
     const code = await runAccess(['grant', '--group', GROUP, '--connection', CONNECTION]);
     expect(code).toBe(0);

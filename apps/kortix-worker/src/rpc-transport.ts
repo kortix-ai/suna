@@ -38,6 +38,14 @@ export interface RpcTransport {
   readonly kind: string;
 }
 
+/**
+ * A failure after a server response was received — the request was delivered,
+ * so the operation may have run (a proxy 502/504 after forwarding, a body
+ * that failed to parse). The environment surfaces this as a plain error
+ * Result and never retries it.
+ */
+export class ResponseError extends Error {}
+
 export class FetchTransport implements RpcTransport {
   readonly kind = 'fetch';
   constructor(private readonly baseUrl: string, private readonly headers: Record<string, string> = {}) {}
@@ -47,7 +55,7 @@ export class FetchTransport implements RpcTransport {
       headers: { 'content-type': 'application/json', ...this.headers },
       body: JSON.stringify({ op, args, cwd }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new ResponseError(`HTTP ${res.status}`);
     return res.json();
   }
   async close() {}
@@ -81,7 +89,7 @@ export class KeepAliveTransport implements RpcTransport {
           res.setEncoding('utf8');
           res.on('data', (c) => (body += c));
           res.on('end', () => {
-            try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+            try { resolve(JSON.parse(body)); } catch (e) { reject(new ResponseError('malformed JSON body', { cause: e })); }
           });
         },
       );

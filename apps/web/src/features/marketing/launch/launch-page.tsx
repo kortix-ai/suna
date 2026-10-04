@@ -1,15 +1,21 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { Button } from '@/components/ui/marketing/button';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
-import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
+import { RivalEyebrow } from '@/features/marketing/hero';
+import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
+import { CtaSection } from '@/features/marketing/landing/cta-section';
 import { FilmPlayer } from '@/app/[locale]/presentations/film/engine/film';
 import { FPS } from '@/app/[locale]/presentations/film/engine/time';
 import { launchFilm } from '@/app/[locale]/presentations/film/films/launch';
+import { useTranslations } from '@/i18n/use-translations';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
+import { ArrowRightIcon, ArrowUpRightIcon, GithubLogoIcon } from '@phosphor-icons/react';
 import { useCallback, useRef, useState } from 'react';
 import { hero, kit, pillars, start } from './content';
 
@@ -27,8 +33,8 @@ function FilmHero() {
   const active = chapters.findLastIndex((c) => frame >= c.frame);
 
   return (
-    <div className="w-full">
-      <div className="border-border bg-background aspect-video overflow-hidden rounded-xl border">
+    <div className="mx-auto mt-12 w-full max-w-6xl px-6">
+      <div className="border-border bg-background aspect-video overflow-hidden rounded-2xl border shadow-2xl">
         <FilmPlayer ref={player} film={launchFilm} autoPlay loop onFrame={onFrame} />
       </div>
       <ol className="mt-4 flex gap-1 overflow-x-auto pb-2">
@@ -38,7 +44,7 @@ function FilmHero() {
               type="button"
               onClick={() => player.current?.seek(c.frame)}
               className={cn(
-                'hover:bg-hover flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition-colors duration-fast active:scale-[0.96]',
+                'hover:bg-hover flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors duration-fast active:scale-[0.96]',
                 i === active ? 'bg-muted text-foreground' : 'text-muted-foreground',
               )}
             >
@@ -58,22 +64,46 @@ function FilmHero() {
  * around it is drawn from the same marketing components as the home page.
  */
 export function LaunchPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { heroEyebrow } = getLocalizedLandingContent(tI18nComplete);
+
   return (
     <div className="bg-background relative">
-      <CapabilityHero
-        eyebrow="Kortix"
-        title={hero.title}
-        sub={hero.sub}
-        ctaPrimary={hero.ctaPrimary}
-        ctaPrimaryHref={hero.ctaPrimaryHref}
-        ctaSecondary={hero.ctaSecondary}
-        ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<FilmHero />}
-      />
+      <section id="hero" className="relative overflow-hidden pt-32 pb-16 sm:pt-36">
+        <div className="inset-0 z-0 hidden mask-t-from-70% lg:absolute" aria-hidden data-a11y-decorative>
+          <WallpaperBackground wallpaperId="brandmark" />
+        </div>
+        <div className="relative z-10">
+          <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-6 text-center">
+            <RivalEyebrow content={heroEyebrow} />
+            <h1 className="text-foreground mt-5 max-w-3xl text-4xl font-medium tracking-tight text-balance sm:text-6xl">
+              {hero.title}
+            </h1>
+            <p className="text-muted-foreground mt-6 max-w-xl text-base leading-relaxed text-pretty sm:text-lg">
+              {hero.sub}
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Button size="lg" asChild>
+                <HoverPrefetchLink href={hero.ctaPrimaryHref} onClick={trackCtaSignup}>
+                  {hero.ctaPrimary}
+                  <ArrowRightIcon className="size-4" />
+                </HoverPrefetchLink>
+              </Button>
+              <Button size="lg" variant="secondary" asChild>
+                <a href={hero.ctaSecondaryHref} target="_blank" rel="noreferrer">
+                  <GithubLogoIcon className="size-4" />
+                  {hero.ctaSecondary}
+                </a>
+              </Button>
+            </div>
+          </div>
+          <FilmHero />
+        </div>
+      </section>
 
       <section id="pillars" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeader eyebrow={pillars.eyebrow} title={pillars.title} description={pillars.sub} />
-        <ul className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2">
+        <ul className="border-border mt-10 grid overflow-hidden rounded-2xl border sm:grid-cols-2">
           {pillars.items.map((item, i) => (
             <li
               key={item.id}
@@ -120,7 +150,7 @@ export function LaunchPage() {
           <ArrowUpRightIcon className="size-3.5" />
         </HoverPrefetchLink>
 
-        <div className="border-border mt-10 grid overflow-hidden rounded-xl border lg:grid-cols-3">
+        <div className="border-border mt-10 grid overflow-hidden rounded-2xl border lg:grid-cols-3">
           <div className="bg-card space-y-4 p-6 sm:p-8">
             <h3 className="text-foreground text-sm font-medium">Color</h3>
             <ul className="space-y-2">
@@ -138,7 +168,7 @@ export function LaunchPage() {
             <h3 className="text-foreground text-sm font-medium">Type</h3>
             {kit.type.map((t) => (
               <div key={t.spec} className="space-y-2">
-                <p className={cn('text-foreground text-2xl font-normal tracking-tight', 'mono' in t && 'font-mono')}>
+                <p className={cn('text-foreground text-2xl font-medium tracking-tight', 'mono' in t && 'font-mono')}>
                   {t.sample}
                 </p>
                 <p className="text-muted-foreground text-xs">{t.spec}</p>
@@ -158,6 +188,7 @@ export function LaunchPage() {
         </div>
       </section>
 
+      <CtaSection />
     </div>
   );
 }

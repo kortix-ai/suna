@@ -31,7 +31,7 @@ mock.module('./client', () => ({
   }),
 }));
 
-const { supabaseMFAService } = await import('./mfa');
+const { supabaseMFAService, mfaChallengeRequired } = await import('./mfa');
 
 const CUTOFF_ISO = '2025-12-24T00:09:30.000Z';
 
@@ -199,5 +199,59 @@ describe('getAAL error paths', () => {
     user = null;
 
     expect(supabaseMFAService.getAAL()).rejects.toThrow('Failed to get AAL: User not found');
+  });
+});
+
+/**
+ * `mfaChallengeRequired` decides when a session must pass a TOTP challenge
+ * before the app grants access: a verified TOTP factor is enrolled, but the
+ * session itself is still at aal1 (a fresh first-factor sign-in). This is the
+ * KRTX-1386 gate: an enrolled factor that never re-asks protects nothing.
+ */
+describe('mfaChallengeRequired', () => {
+
+  const totp = (status: string) => ({ id: 'f-totp', factor_type: 'totp', status });
+  const phone = (status: string) => ({ id: 'f-phone', factor_type: 'phone', status });
+
+  test('aal1 → aal2 with a verified TOTP factor: challenge required', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal2', factors: [totp('verified')] })).toBe(true);
+  });
+
+  test('aal2 → aal2 (already verified this session): no challenge', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal2', next_level: 'aal2', factors: [totp('verified')] })).toBe(false);
+  });
+
+  test('aal1 → aal1 (nothing verified enrolled): no challenge', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal1', factors: [] })).toBe(false);
+  });
+
+  test('an unverified TOTP factor (enrollment in progress) does not enforce', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal1', factors: [totp('unverified')] })).toBe(false);
+  });
+
+  test('a verified phone factor alone does not enforce (its challenge needs an SMS round trip)', () => {
+    expect(mfaChallengeRequired({ current_level: 'aal1', next_level: 'aal2', factors: [phone('verified')] })).toBe(false);
+  });
+
+  test('no AAL answer yet does not enforce', () => {
+    expect(mfaChallengeRequired(undefined)).toBe(false);
+  });
+
+  test('the no-session safe defaults never enforce', () => {
+    // getAAL returns these exact safe defaults before a session exists.
+    expect(
+      mfaChallengeRequired({
+        current_level: 'aal1',
+        next_level: 'aal1',
+        current_authentication_methods: [],
+        action_required: 'none',
+        phone_verification_required: false,
+        user_created_at: undefined,
+        cutoff_date: CUTOFF_ISO,
+        verification_required: false,
+        is_verified: false,
+        factors: [],
+      }),
+    ).toBe(false);
   });
 });

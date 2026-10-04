@@ -1,11 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { BookmarkSimpleIcon, type IconProps } from '@phosphor-icons/react';
-import type { ComponentProps, HTMLAttributes } from 'react';
-import Hint from '../ui/hint';
+import type { HTMLAttributes } from 'react';
 import { Label } from '../ui/label';
 
 export type CheckpointProps = HTMLAttributes<HTMLDivElement>;
@@ -33,26 +31,3 @@ export const CheckpointLabel = ({ className, children, ...props }: CheckpointLab
     {children}
   </Label>
 );
-
-export type CheckpointTriggerProps = ComponentProps<typeof Button> & {
-  tooltip?: string;
-};
-
-export const CheckpointTrigger = ({
-  children,
-  variant = 'ghost',
-  size = 'sm',
-  tooltip,
-  ...props
-}: CheckpointTriggerProps) =>
-  tooltip ? (
-    <Hint label={tooltip} align="start" side="bottom">
-      <Button size={size} type="button" variant={variant} {...props}>
-        {children}
-      </Button>
-    </Hint>
-  ) : (
-    <Button size={size} type="button" variant={variant} {...props}>
-      {children}
-    </Button>
-  );

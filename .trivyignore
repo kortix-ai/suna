@@ -20,3 +20,21 @@ AVD-DS-0002
 # generates keys and signs certificates and never verifies an RSA signature.
 # apps/web lists the package but imports nothing from it. Remove when fixed upstream.
 CVE-2026-85393
+
+# DS-0010 (RUN using sudo): only apps/sandbox/Dockerfile uses sudo. Those stages
+# run as the sandbox user, which has passwordless sudo by design (same reason as
+# AVD-DS-0002 above); hadolint DL3004 carries the same documented exception.
+AVD-DS-0010
+
+# CVE-2026-93687 (braces 3.0.3, DoS on deeply nested patterns): no fixed release
+# exists. The one runtime path is @daytonaio/sdk -> fast-glob, used only by
+# Image.extractCopySources (Dockerfile COPY globbing); apps/api never builds a
+# Daytona Image from a Dockerfile or local files. Every other path is lint, dev,
+# or build tooling. Remove when a fixed braces ships.
+CVE-2026-93687
+
+# CVE-2026-93748 (http-cache-semantics 4.2.0, max-stale disclosure): no fixed
+# release exists. Reached only through Electron build tooling (@electron/get,
+# electron-builder, node-gyp) and the docs-site build (blume/astro), never in a
+# server request path. Remove when a fixed release ships.
+CVE-2026-93748

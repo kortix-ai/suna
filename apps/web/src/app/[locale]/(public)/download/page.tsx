@@ -19,12 +19,14 @@ import {
   pickDesktopAsset,
 } from '@/features/marketing/download/releases';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
-import { marketingMetadata } from '@/lib/seo/metadata';
+import { localizedMarketingMetadata } from '@/lib/seo/metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 import { headers } from 'next/headers';
 
-export const metadata: Metadata = marketingMetadata('/download');
+export function generateMetadata(): Promise<Metadata> {
+  return localizedMarketingMetadata('/download');
+}
 
 const DESKTOP_MARKS: Record<DesktopOs, CardRow['Mark']> = {
   macos: AppleMark,
@@ -115,7 +117,7 @@ export default async function DownloadPage({
       <DownloadCloseButton />
 
       <header className="mb-10 text-center">
-        <h1 className="text-foreground text-3xl font-normal tracking-tight text-balance sm:text-4xl">
+        <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
           {hero.title}
         </h1>
         <p className="text-muted-foreground mx-auto mt-3 max-w-md text-balance">{hero.sub}</p>
