@@ -11,7 +11,7 @@ const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 // value the hermetic scrub below removes (measured: the API suite's compiled
 // runtime then rejects the foreign KORTIX_PROJECT_ID). This runner itself is
 // bun, so dropping it here cleans every child at the source.
-delete process.env.BASH_ENV;
+Reflect.deleteProperty(process.env, 'BASH_ENV');
 
 /**
  * Runner controls that must survive the hermetic scrub below.
@@ -35,6 +35,28 @@ const RUNNER_CONTROLS = new Set([
   'KORTIX_PACKAGE_SKIP_SDK_TESTS',
 ]);
 
+/**
+ * CI installs Playwright's Chromium for this lane (tests.yml does it for the
+ * core and packages lanes); the apps/web layout test that launches Chromium
+ * (`platform-card.test.tsx`) resolves it through CHROMIUM_PATH, falling back
+ * to Playwright's registry. A factory sandbox has neither a usable registry
+ * (the platform's PLAYWRIGHT_BROWSERS_PATH dir can lag the lockfile's browser
+ * revision) nor a CI install, but the platform browser image ships a Chrome on
+ * PATH — point CHROMIUM_PATH at it so the test runs the same assertion CI
+ * runs instead of failing on a missing or stale binary. On a CI runner the
+ * registry browser IS the lane's browser, so discovery stays off there rather
+ * than silently swapping it for a system Chrome.
+ */
+function discoverChromiumPath(): string | undefined {
+  if (process.env.CHROMIUM_PATH?.trim()) return process.env.CHROMIUM_PATH;
+  if (process.env.CI === 'true') return undefined;
+  for (const binary of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
+    const found = Bun.which(binary);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const [name, value] of Object.entries(process.env)) {
@@ -52,6 +74,8 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   // Same rule for the image's baked managed-skills dir: suites assert the
   // exact skill lists their fixtures create, and CI has no baked dir.
   env.KORTIX_MANAGED_SKILLS_DIR = '/nonexistent/kortix-test-managed-skills';
+  const chromium = discoverChromiumPath();
+  if (chromium) env.CHROMIUM_PATH = chromium;
   return env;
 }
 
