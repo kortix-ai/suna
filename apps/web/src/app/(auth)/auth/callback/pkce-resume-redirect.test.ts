@@ -46,6 +46,9 @@ mock.module('@/lib/public-env-server', () => ({
     BACKEND_URL: '',
     BILLING_ENABLED: false,
   }),
+  // The refactor moved the backend-URL normalization into this helper; the
+  // empty value keeps the billing-aware landing skipped exactly as before.
+  serverBackendUrl: () => '',
 }));
 
 const { GET } = await import('./route');
