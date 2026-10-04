@@ -1,0 +1,28 @@
+{
+  "source_hash": "c48313c81d20055c195d0054b0d9dc7becee4c90f6fc90282caf04979f076080",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
+    "apps/api/src/shared/platinum.test.ts",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "apps/whitelabel-demo/tests/e2e/harness.ts",
+    "packages/agent-tunnel/src/client/cli.test.ts",
+    "packages/db/drizzle/meta/20261003191654_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261003182500001_session_sandboxes_wake_fence_stats.sql",
+    "packages/db/migrations/20261003182500002_session_sandboxes_wake_fence_index.concurrent.ts",
+    "packages/db/scripts/session-sandboxes-wake-fence-index.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
+    "tests/unit/test-runner-contract.test.ts"
+  ],
+  "diff_hash": "d0016469cf51c67f3298eb1fcf485bc9e0f606d3b4e2fe151bc9308a558b831a",
+  "head": "837dd6a86edbac948d70391544813db9d11d23da",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T00:13:36.159Z"
+}
