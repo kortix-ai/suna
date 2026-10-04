@@ -568,6 +568,12 @@ const envSchema = z.object({
   // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
   // baked-agent path. `shadow` verifies both artifacts without using them.
   // `prefer` uses both artifacts with legacy fallback. `required` fails closed.
+  // Boot artifacts: `<volume>@<tag>`, a Platinum volume holding one release's
+  // prebuilt runtime (daemon, CLI, OpenCode, managed skills), published by
+  // scripts/boot-artifacts/publish.ts. Every Platinum session mounts that tag
+  // read-only at /opt/kortix-artifacts and boots from it instead of
+  // downloading. Unset = off.
+  KORTIX_BOOT_ARTIFACTS: optStr,
   KORTIX_COMPILED_BOOT_MODE: z
     .enum(['off', 'shadow', 'prefer', 'required'])
     .optional()
@@ -1346,6 +1352,7 @@ export const config = {
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
+  KORTIX_BOOT_ARTIFACTS: env.KORTIX_BOOT_ARTIFACTS,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
