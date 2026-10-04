@@ -9,7 +9,7 @@
   },
   "src/app/bootstrap.ts": {
     "kortix-api/service-surface": {
-      "count": 35
+      "count": 12
     }
   },
   "src/app/ensure-schema.ts": {
@@ -1857,7 +1857,7 @@
   },
   "src/http/tunnel/connections.ts": {
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 7
     },
     "no-restricted-imports": {
       "count": 2
@@ -1879,10 +1879,10 @@
   },
   "src/http/tunnel/index.ts": {
     "kortix-api/service-surface": {
-      "count": 6
+      "count": 5
     },
     "no-console": {
-      "count": 12
+      "count": 1
     },
     "no-restricted-imports": {
       "count": 2
@@ -2118,7 +2118,7 @@
       "count": 4
     },
     "no-restricted-properties": {
-      "count": 5
+      "count": 3
     }
   },
   "src/services/apps/environment.ts": {
@@ -2138,10 +2138,7 @@
   },
   "src/services/apps/idle-reaper.ts": {
     "kortix-api/service-surface": {
-      "count": 2
-    },
-    "no-restricted-properties": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/apps/images.ts": {
@@ -2250,7 +2247,7 @@
   },
   "src/services/audit/audit-archive/worker.ts": {
     "no-console": {
-      "count": 4
+      "count": 1
     },
     "no-restricted-properties": {
       "count": 1
@@ -2261,22 +2258,12 @@
       "count": 2
     }
   },
-  "src/services/audit/audit-partition-worker.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
   "src/services/audit/audit-queue.ts": {
     "no-console": {
       "count": 4
     },
     "no-restricted-properties": {
       "count": 5
-    }
-  },
-  "src/services/audit/audit-reconciliation-worker.ts": {
-    "no-console": {
-      "count": 2
     }
   },
   "src/services/audit/audit-schema.ts": {
@@ -2289,7 +2276,7 @@
       "count": 2
     },
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/audit/audit.ts": {
@@ -2347,11 +2334,6 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/services/billing/rotation-schedule.ts": {
-    "kortix-api/service-surface": {
       "count": 1
     }
   },
@@ -2694,10 +2676,10 @@
   },
   "src/services/channels/slack/turn.ts": {
     "kortix-api/service-surface": {
-      "count": 4
+      "count": 3
     },
     "no-console": {
-      "count": 10
+      "count": 9
     },
     "no-restricted-properties": {
       "count": 1
@@ -2817,10 +2799,10 @@
       "count": 1
     },
     "kortix-api/service-surface": {
-      "count": 5
+      "count": 4
     },
     "no-console": {
-      "count": 8
+      "count": 7
     }
   },
   "src/services/channels/vision-model.ts": {
@@ -3155,11 +3137,8 @@
     }
   },
   "src/services/git-proxy/project-snapshot-worker.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
     "no-console": {
-      "count": 4
+      "count": 2
     }
   },
   "src/services/git-proxy/project-snapshot.ts": {
@@ -3379,11 +3358,8 @@
     }
   },
   "src/services/iam/expiry-sweeper.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/iam/self-host-operator.ts": {
@@ -3548,14 +3524,6 @@
   "src/services/oauth/access-token.ts": {
     "kortix-api/service-surface": {
       "count": 1
-    }
-  },
-  "src/services/oauth/sweeper.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 2
     }
   },
   "src/services/pi-packages/bundle.ts": {
@@ -3940,11 +3908,8 @@
     }
   },
   "src/services/projects/suna-migration/suna-migration-worker.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
     "no-restricted-properties": {
-      "count": 3
+      "count": 1
     }
   },
   "src/services/projects/suna-migration/suna-push.ts": {
@@ -4243,11 +4208,8 @@
     }
   },
   "src/services/sandboxes/active-turn-renewal.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
     "no-restricted-properties": {
-      "count": 2
+      "count": 1
     }
   },
   "src/services/sandboxes/daytona/images.ts": {
@@ -4347,13 +4309,13 @@
   },
   "src/services/sandboxes/maintenance.ts": {
     "kortix-api/service-surface": {
-      "count": 14
+      "count": 13
     },
     "no-console": {
-      "count": 26
+      "count": 25
     },
     "no-restricted-properties": {
-      "count": 4
+      "count": 3
     }
   },
   "src/services/sandboxes/platinum/images-templates.ts": {
@@ -4440,11 +4402,8 @@
     }
   },
   "src/services/sandboxes/provider-transition/provider-transition-worker.ts": {
-    "kortix-api/service-surface": {
-      "count": 1
-    },
     "no-restricted-properties": {
-      "count": 3
+      "count": 1
     }
   },
   "src/services/sandboxes/reaper-constants.ts": {
@@ -4950,11 +4909,6 @@
   },
   "src/services/sessions/lifecycle/undelivered-prompts.ts": {
     "kortix-api/service-surface": {
-      "count": 1
-    }
-  },
-  "src/services/sessions/lifecycle/worker.ts": {
-    "no-console": {
       "count": 1
     }
   },
@@ -5464,7 +5418,7 @@
   },
   "src/services/triggers/trigger-scheduler.ts": {
     "kortix-api/service-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
       "count": 8
@@ -5506,6 +5460,16 @@
       "count": 1
     }
   },
+  "src/services/tunnel/registrations.ts": {
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/services/tunnel/relay-persistence.ts": {
+    "no-console": {
+      "count": 6
+    }
+  },
   "src/services/usage/gateway-logs.ts": {
     "kortix-api/service-surface": {
       "count": 1
@@ -5519,6 +5483,170 @@
   "src/services/usage/usage-events.ts": {
     "no-console": {
       "count": 1
+    }
+  },
+  "src/workers/access-control-cache.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/workers/active-turn-renewal.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
+  "src/workers/app-deployments.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    },
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "src/workers/app-idle-reaper.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "src/workers/audit-archive.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 3
+    }
+  },
+  "src/workers/audit-partitions.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 3
+    }
+  },
+  "src/workers/audit-reconciliation.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/workers/audit-webhooks.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/workers/billing-rotation.ts": {
+    "kortix-api/service-surface": {
+      "count": 4
+    }
+  },
+  "src/workers/iam-grant-expiry.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/workers/oauth-sweep.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/workers/pi-worker-pool.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/workers/project-maintenance.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 1
+    },
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
+  "src/workers/project-snapshots.ts": {
+    "kortix-api/service-surface": {
+      "count": 3
+    },
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/workers/provider-transition.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "src/workers/session-lifecycle.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/workers/slack-turn-gc.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/workers/suna-migration.ts": {
+    "kortix-api/service-surface": {
+      "count": 2
+    },
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "src/workers/teams-turn-gc.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/workers/tmp-reaper.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/workers/trigger-scheduler.ts": {
+    "kortix-api/service-surface": {
+      "count": 1
+    }
+  },
+  "src/workers/tunnel.ts": {
+    "kortix-api/service-surface": {
+      "count": 6
+    },
+    "no-console": {
+      "count": 3
     }
   }
 }

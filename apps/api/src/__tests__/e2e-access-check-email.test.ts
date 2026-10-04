@@ -27,8 +27,6 @@ mock.module('../lib/db', () => ({
 mock.module('../services/access-control/access-control-cache', () => ({
   areSignupsEnabled: () => signupsOpen,
   canSignUp: (email: string) => signupsOpen || allowlisted.has(email.toLowerCase()),
-  startAccessControlCache: () => {},
-  stopAccessControlCache: () => {},
 }));
 
 // The same rule as the real `ssoEnforcedForEmail`: enforcement needs a

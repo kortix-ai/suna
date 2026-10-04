@@ -30,6 +30,7 @@ import {
   generateWebhookSecret,
   replayAuditWebhookDelivery,
 } from '../../services/audit/audit-webhooks';
+import { wakeAuditWebhookWorker } from '../../workers/audit-webhooks';
 import { db } from '../../lib/db';
 import {
   buildAuditCursorCondition,
@@ -819,6 +820,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    wakeAuditWebhookWorker();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,

@@ -11,7 +11,6 @@ import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { serializeAuditEvent } from './audit-query';
 import { auditWebhookFailureSummary } from './audit-webhook-privacy';
 import { db } from '../../lib/db';
-import { runWorkerTick } from './audit-scope';
 import { safeEgressFetch } from '../../lib/ssrf-guard';
 import { exponentialBackoffMs } from '../../lib/backoff';
 
@@ -72,13 +71,7 @@ export interface DeliveryResult {
 
 const MAX_DELIVERY_ATTEMPTS = 8;
 const DELIVERY_BATCH_SIZE = 50;
-const WORKER_IDLE_MS = 2_000;
-const WORKER_ERROR_MS = 5_000;
 const WORKER_ID = `audit-webhook-${process.pid}-${randomBytes(4).toString('hex')}`;
-let workerTimer: ReturnType<typeof setTimeout> | null = null;
-let workerRunning = false;
-let workerStopped = true;
-let activeWorkerTick: Promise<void> | null = null;
 
 interface ClaimedDelivery extends Record<string, unknown> {
   deliveryId: string;
@@ -203,45 +196,11 @@ async function processDelivery(deliveryId: string): Promise<void> {
     );
 }
 
-async function workerTick(): Promise<void> {
-  if (workerRunning || workerStopped) return;
-  workerRunning = true;
-  try {
-    const ids = await claimDeliveries();
-    await Promise.all(ids.map(processDelivery));
-    scheduleWorker(ids.length > 0 ? 0 : WORKER_IDLE_MS);
-  } catch (error) {
-    console.warn('[audit-webhook] worker tick failed', error);
-    scheduleWorker(WORKER_ERROR_MS);
-  } finally {
-    workerRunning = false;
-  }
-}
-
-function scheduleWorker(delay: number): void {
-  if (workerStopped || workerTimer) return;
-  workerTimer = setTimeout(() => {
-    workerTimer = null;
-    const tick = runWorkerTick('audit-webhooks', workerTick);
-    activeWorkerTick = tick;
-    void tick.finally(() => {
-      if (activeWorkerTick === tick) activeWorkerTick = null;
-    });
-  }, delay);
-  workerTimer.unref?.();
-}
-
-export function startAuditWebhookWorker(): void {
-  if (!workerStopped) return;
-  workerStopped = false;
-  scheduleWorker(0);
-}
-
-export async function stopAuditWebhookWorker(): Promise<void> {
-  workerStopped = true;
-  if (workerTimer) clearTimeout(workerTimer);
-  workerTimer = null;
-  await activeWorkerTick;
+/** One pass: claim due deliveries and attempt them all. Returns how many were claimed. */
+export async function runAuditWebhookDeliveryPass(): Promise<number> {
+  const ids = await claimDeliveries();
+  await Promise.all(ids.map(processDelivery));
+  return ids.length;
 }
 
 export async function replayAuditWebhookDelivery(
@@ -268,7 +227,6 @@ export async function replayAuditWebhookDelivery(
       ),
     )
     .returning({ deliveryId: auditWebhookDeliveries.deliveryId });
-  if (rows.length > 0) scheduleWorker(0);
   return rows.length > 0;
 }
 

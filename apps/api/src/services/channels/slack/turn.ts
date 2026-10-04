@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../../lib/db';
-import { runWorkerTick } from '../../audit/audit-scope';
 import { registerSessionFailureNotifier } from '../../sessions/session-failure-notifier';
 import { config } from '../../../lib/config';
 import { sessionWebUrl } from './util';
@@ -184,27 +183,6 @@ export async function sweepStaleSlackTurns(): Promise<void> {
     await abortDeadRuntimeTurn(row.sessionId);
   }
   await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
-}
-
-let gcTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Leader-only (bootstrap.ts): one replica sweeps, not all of them. */
-export function startSlackTurnGc(): void {
-  if (gcTimer) return;
-  gcTimer = setInterval(() => {
-    void runWorkerTick('slack-turn-gc', async () => {
-      try {
-        await sweepStaleSlackTurns();
-      } catch (err) {
-        console.warn('[slack-webhook] gc tick failed', err);
-      }
-    });
-  }, 5 * 60 * 1000);
-}
-
-export function stopSlackTurnGc(): void {
-  if (gcTimer) clearInterval(gcTimer);
-  gcTimer = null;
 }
 
 /**

@@ -11,7 +11,8 @@
 // This sweep runs on EVERY replica (build contexts are created on any pod during
 // on-demand session boot, not just the leader) and removes kortix-* temp dirs
 // whose mtime is older than MAX_AGE — long past the seconds-to-minutes a context
-// is actually needed, so in-flight builds are never touched.
+// is actually needed, so in-flight builds are never touched. The timer is in
+// workers/tmp-reaper.ts.
 
 import { readdir, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,11 +21,8 @@ import { logger } from '../../lib/logger';
 
 const PREFIX = 'kortix-';
 const MAX_AGE_MS = 30 * 60 * 1000; // older than this ⇒ abandoned
-const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
-let timer: ReturnType<typeof setInterval> | null = null;
-
-async function sweepOnce(): Promise<void> {
+export async function runTmpReaperSweep(): Promise<void> {
   const dir = tmpdir();
   let entries: string[];
   try {
@@ -64,20 +62,5 @@ async function sweepOnce(): Promise<void> {
     logger.warn('[tmp-reaper] git-cache sweep failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-export function startTmpReaper(): void {
-  if (timer) return;
-  void sweepOnce();
-  timer = setInterval(() => void sweepOnce(), SWEEP_INTERVAL_MS);
-  // Don't keep the process alive for the reaper.
-  if (typeof timer.unref === 'function') timer.unref();
-}
-
-export function stopTmpReaper(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
   }
 }
