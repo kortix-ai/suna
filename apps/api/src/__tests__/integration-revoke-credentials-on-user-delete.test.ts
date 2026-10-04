@@ -89,6 +89,13 @@ beforeAll(async () => {
     { accountId: GONE, userId: GONE, accountRole: 'owner' },
     { accountId: KEPT, userId: KEPT, accountRole: 'owner' },
     { accountId: TEAM, userId: GONE, accountRole: 'owner' },
+    // A surviving member. Since 20261003182500000 the auth-user delete
+    // reclaims an account whose every live member is gone — a TEAM whose only
+    // member is the deleted user would cascade away with its service account,
+    // SCIM token and gateway key before this file could prove they are
+    // "untouched". The untouched-credential contract needs an account that
+    // outlives the delete.
+    { accountId: TEAM, userId: KEPT, accountRole: 'member' },
   ]);
   await db.insert(projects).values({
     projectId: PROJECT,

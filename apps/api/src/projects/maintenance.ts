@@ -337,9 +337,9 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
       // status with no running box behind them — invisible to the provider reaper
-      // above (which keys off an `active` sandbox row) and the real reason an
-      // account's concurrent-session cap fills up and wedges Slack. DB-only, so
-      // it drains the cap even while Daytona is throttling the box reaper.
+      // above (which keys off an `active` sandbox row). A stuck row reads as a
+      // live session in every list and status view. DB-only, so it drains
+      // even while Daytona is throttling the box reaper.
       () => reconcileStuckActiveSessions().catch((err) => {
         console.warn(
           '[project-maintenance] stuck-session reconcile failed:',
