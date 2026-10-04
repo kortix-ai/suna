@@ -328,6 +328,45 @@ export function isPlatinumSandboxNotRunningError(err: unknown): boolean {
   return err instanceof PlatinumSandboxNotRunningError;
 }
 
+/**
+ * Expected, transient Platinum faults on a background path — the provider
+ * working as designed or its control plane briefly unavailable. The caller's
+ * response is identical for every one of these (skip the row, retry next
+ * pass), so they are counted as transient instead of one error line per box:
+ *   - a gateway blip: `PlatinumHttpError` 502/503/504. Cloudflare answers its
+ *     OWN html error page when the control plane misses the edge timeout, so
+ *     the body carries no `code` — classify by the structured `status`
+ *     (KRTX-345: the reaper logged one error line per box per pass during the
+ *     2026-10-03 burst of 504s on the renewal `/exec`),
+ *   - `platinumFetch`'s bounded-call timeout (a plain `Error` named
+ *     `TimeoutError` whose message is `platinum <method> <path> timed out
+ *     after <budget>`),
+ *   - the per-org write bucket 429 ("too many write requests for this org").
+ *     NOT the other 429 — `org_template_quota_exceeded` never self-clears and
+ *     must stay loud (see `isRetryablePlatinumBuildError`),
+ *   - the guest vsock EOF a lifecycle no-op exec reports when the guest agent
+ *     died mid-restart; the next pass re-runs the exec.
+ * A plain 500 keeps paging: an unexpected 5xx with a JSON body is not a
+ * gateway blip (same conservatism as `isDaytonaTransientProviderError`).
+ */
+export function isPlatinumTransientProviderError(err: unknown): boolean {
+  if (err instanceof PlatinumHttpError) {
+    return (
+      err.status === 502 ||
+      err.status === 503 ||
+      err.status === 504 ||
+      (err.status === 429 && err.message.includes('too many write requests for this org'))
+    );
+  }
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'TimeoutError' && err.message.startsWith('platinum ')) return true;
+  return (
+    err.message.includes('Platinum lifecycle renewal failed') &&
+    err.message.includes('guest vsock') &&
+    err.message.includes('unreachable after 5s: EOF')
+  );
+}
+
 // Platinum signals a stopped box with `409 {"code":"sandbox_not_running"}`.
 // Match the structured `code` field (not a message substring) so a different
 // 409 reason never gets misclassified into the "expected" bucket.

@@ -19194,7 +19194,9 @@
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
       "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
       "text39207bf34111": "Habilidades relacionadas",
-      "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado."
+      "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado.",
+      "text85b7a59cdbd5": "Agente de plataforma",
+      "textd9c0c74b514b": "A Meta é um agente de plataforma que orquestra o seu trabalho. A configuração dele é fixa: inicie uma sessão com ele, mas não é possível configurá-lo aqui."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -185,3 +185,102 @@ test('a 500 / non-JSON 409 stays a generic Error (unexpected failures stay loud)
 
   globalThis.fetch = originalFetch;
 });
+
+// ── isPlatinumTransientProviderError (KRTX-345) ─────────────────────────────
+// The reaper counts these as transient (retry next pass) instead of one error
+// line per box; the classes and their boundaries are documented on the
+// classifier itself. These pin each boundary.
+
+test('isPlatinumTransientProviderError: gateway blips 502/503/504 classify, html body or not', async () => {
+  const { PlatinumHttpError, isPlatinumTransientProviderError } = await import('./platinum');
+  for (const status of [502, 503, 504]) {
+    expect(
+      isPlatinumTransientProviderError(
+        new PlatinumHttpError(
+          `platinum POST /v1/sandboxes/sbx_1/exec -> ${status} <!DOCTYPE html>`,
+          status,
+          '<!DOCTYPE html><html class="no-js">error</html>',
+        ),
+      ),
+    ).toBe(true);
+  }
+});
+
+test('isPlatinumTransientProviderError: the write-bucket 429 classifies; the quota 429 and a plain 500 stay loud', async () => {
+  const { PlatinumHttpError, isPlatinumTransientProviderError } = await import('./platinum');
+  expect(
+    isPlatinumTransientProviderError(
+      new PlatinumHttpError(
+        'platinum POST /v1/sandboxes/sbx_1/exec -> 429 {"error":"too many write requests for this org (0.4/s sustained)"}',
+        429,
+        '{"error":"too many write requests for this org (0.4/s sustained)"}',
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    isPlatinumTransientProviderError(
+      new PlatinumHttpError(
+        'platinum POST /v1/templates/from-build -> 429 {"code":"org_template_quota_exceeded"}',
+        429,
+        '{"code":"org_template_quota_exceeded"}',
+      ),
+    ),
+  ).toBe(false);
+  expect(
+    isPlatinumTransientProviderError(
+      new PlatinumHttpError(
+        'platinum POST /v1/sandboxes/sbx_1/exec -> 500 {"error":"internal"}',
+        500,
+        '{"error":"internal"}',
+      ),
+    ),
+  ).toBe(false);
+  expect(
+    isPlatinumTransientProviderError(
+      new PlatinumHttpError('platinum GET /v1/sandboxes/sbx_1 -> 404 not found', 404, 'not found'),
+    ),
+  ).toBe(false);
+});
+
+test('isPlatinumTransientProviderError: platinumFetch bounded-call timeout classifies; a foreign TimeoutError does not', async () => {
+  const { isPlatinumTransientProviderError } = await import('./platinum');
+  expect(
+    isPlatinumTransientProviderError(
+      Object.assign(
+        new Error('platinum POST /v1/sandboxes/sbx_1/exec timed out after 20000ms (default)'),
+        { name: 'TimeoutError' },
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    isPlatinumTransientProviderError(Object.assign(new Error('llm gateway timed out'), { name: 'TimeoutError' })),
+  ).toBe(false);
+  // Right message, wrong name — platinumFetch always names its rethrow.
+  expect(
+    isPlatinumTransientProviderError(new Error('platinum POST /v1/sandboxes/sbx_1/exec timed out after 20000ms')),
+  ).toBe(false);
+});
+
+test('isPlatinumTransientProviderError: the guest-vsock renewal failure classifies, other renewal failures do not', async () => {
+  const { isPlatinumTransientProviderError } = await import('./platinum');
+  expect(
+    isPlatinumTransientProviderError(
+      new Error('Platinum lifecycle renewal failed for sbx_1: exit unknown: guest vsock unreachable after 5s: EOF'),
+    ),
+  ).toBe(true);
+  expect(
+    isPlatinumTransientProviderError(
+      new Error('Platinum lifecycle renewal failed for sbx_1: exit 1: command not found'),
+    ),
+  ).toBe(false);
+});
+
+test('a 504 thrown by platinumJson itself classifies as transient (the prod KRTX-345 shape, end to end)', async () => {
+  fetchScenario = { status: 504, body: '<!DOCTYPE html><html class="no-js">504 Gateway Timeout</html>' };
+  mockFetchScenario();
+  const { platinumJson, PlatinumHttpError, isPlatinumTransientProviderError } = await import('./platinum');
+  const err = await platinumJson('/v1/sandboxes/sbx_1/exec', { method: 'POST' }).catch((e) => e);
+  expect(err).toBeInstanceOf(PlatinumHttpError);
+  expect(isPlatinumTransientProviderError(err)).toBe(true);
+  globalThis.fetch = originalFetch;
+});

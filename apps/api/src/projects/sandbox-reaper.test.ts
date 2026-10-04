@@ -3,6 +3,7 @@ import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessio
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { PlatinumHttpError } from '../shared/platinum';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
 // ── mock state ──────────────────────────────────────────────────────────────
@@ -2595,8 +2596,12 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   test('a Platinum org write throttle during renewal is transient, not a reaper error', async () => {
     candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
     statusByExternal['ext-1'] = 'running';
-    lifecycleRenewErrorByExternal['ext-1'] = new Error(
+    // The shape production throws: platinumJsonResponse wraps the non-2xx in a
+    // PlatinumHttpError carrying the structured status.
+    lifecycleRenewErrorByExternal['ext-1'] = new PlatinumHttpError(
       'platinum POST /v1/sandboxes/sbx_synthetic/exec -> 429 {"code":"rate_limited","error":"too many write requests for this org"}',
+      429,
+      '{"code":"rate_limited","error":"too many write requests for this org"}',
     );
     const logged: string[] = [];
     const realError = console.error;
@@ -2610,6 +2615,69 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     } finally {
       console.error = realError;
     }
+  });
+
+  test('a Platinum gateway blip during renewal is transient, not a reaper error', async () => {
+    // The prod shape (KRTX-345, 2026-10-03): Cloudflare answers its own HTML
+    // error page when the Platinum control plane misses the edge timeout, and
+    // the reaper logged one error line per box for the pass that hit it.
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new PlatinumHttpError(
+      'platinum POST /v1/sandboxes/sbx_synthetic/exec -> 504 <!DOCTYPE html><html class="no-js">504 Gateway Timeout</html>',
+      504,
+      '<!DOCTYPE html><html class="no-js">504 Gateway Timeout</html>',
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
+  });
+
+  test('a Platinum bounded-call timeout during renewal is transient, not a reaper error', async () => {
+    // KRTX-345's folded timeout variant: platinumFetch's own budget fires
+    // before the control plane answers.
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = Object.assign(
+      new Error('platinum POST /v1/sandboxes/sbx_synthetic/exec timed out after 20000ms (default)'),
+      { name: 'TimeoutError' },
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
+  });
+
+  test('a Platinum 429 that is not the write bucket stays a reaper error', async () => {
+    // Platinum answers 429 for two opposite conditions; only the per-org write
+    // bucket self-clears. The template-quota cap never does and must stay loud.
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new PlatinumHttpError(
+      'platinum POST /v1/templates/from-build -> 429 {"code":"org_template_quota_exceeded"}',
+      429,
+      '{"code":"org_template_quota_exceeded"}',
+    );
+    const r = await reapAndReconcileSandboxes(NOW);
+    expect(r.errors).toBe(1);
+    expect(r.transient).toBe(0);
   });
 
   test('an unreachable Platinum guest during renewal retries without paging each pass', async () => {

@@ -38,6 +38,7 @@ import { type SandboxProvider, type SandboxStatus, getProvider } from '../../pla
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
+import { isPlatinumTransientProviderError } from '../../shared/platinum';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
@@ -883,24 +884,18 @@ export async function reapAndReconcileSandboxes(
         }
       } catch (err) {
         // An expected, transient provider failure — a Daytona org-wide 429
-        // (`ThrottlerException`) or a gateway blip — is the provider working as
-        // designed. Every other call site classifies it (`shared/daytona-rate-limit.ts`,
-        // `shared/daytona-transient.ts`) so it never pages; the reaper must too,
-        // or one org throttle across a live fleet emits an error line per box.
+        // (`ThrottlerException`), a gateway blip, or the Platinum equivalents
+        // in `isPlatinumTransientProviderError` — is the provider working as
+        // designed. Every other call site classifies these
+        // (`shared/daytona-rate-limit.ts`, `shared/daytona-transient.ts`,
+        // `shared/platinum.ts`) so it never pages; the reaper must too, or one
+        // provider blip across a live fleet emits an error line per box.
         // Counting it separately and logging NOTHING here keeps this page quiet
         // while the next pass still retries the renewal.
         if (
           isDaytonaRateLimitError(err) ||
           isDaytonaTransientProviderError(err) ||
-          (row.provider === 'platinum' &&
-            err instanceof Error &&
-            /^platinum POST \/v1\/sandboxes\/[^/]+\/exec -> 429\b/.test(err.message) &&
-            err.message.includes('too many write requests for this org')) ||
-          (row.provider === 'platinum' &&
-            err instanceof Error &&
-            err.message.includes('Platinum lifecycle renewal failed') &&
-            err.message.includes('guest vsock') &&
-            err.message.includes('unreachable after 5s: EOF'))
+          (row.provider === 'platinum' && isPlatinumTransientProviderError(err))
         ) {
           result.transient += 1;
         } else {
