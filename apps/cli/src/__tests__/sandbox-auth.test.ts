@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
+import { activeHost } from '../api/config.ts';
 import { resolveProjectContext } from '../command-helpers.ts';
 import { connectorProjectContext } from '../connector-gateway/gateway.ts';
 import { resolveProjectId, resolveProjectRef } from '../project-link.ts';

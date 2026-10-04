@@ -87,8 +87,7 @@ function startHost(opts: { token: string; ownProject: string; number_: number })
         return Response.json(
           {
             error: true,
-            message:
-              `Project-scoped token cannot access a different project [check=token-project-scope:cross-project principal=session-scoped-pat project=${opts.ownProject} path=${url.pathname}]`,
+            message: `Project-scoped token cannot access a different project [check=token-project-scope:cross-project principal=session-scoped-pat project=${opts.ownProject} path=${url.pathname}]`,
             status: 403,
           },
           { status: 403 },
