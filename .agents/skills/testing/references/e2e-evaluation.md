@@ -322,5 +322,25 @@ At checkpoint `c804eb6191`, the branch was local and unmerged, with no PR, deplo
 Its repository attestation was red and its required full browser gate remained incomplete.
 Main `146b4fb046` is subsequently merged, including the upstream Meta guide assertion fix and Customize-page fixes.
 
+The live journey passes on that merged source with complete cleanup: one selected pass, zero skips, zero flaky results.
+The root duration is 203.7 seconds, including a 41.48-second app startup and cold cloud-image setup.
+Its agent step takes 12.81 seconds and three model calls. The post-run audit finds zero pilot projects and auth users.
+
+A fourth full attempt on `b908fb6ef2` reaches test 69 of 83 before the runner and owned application processes disappear.
+The tool reports exit one; no final benchmark or attestation is produced. The termination cause remains unknown.
+Its partial browser results are 59 passes, seven failures, and three skips. The remaining 14 tests are unverified.
+The seven failures cover the remembered deleted project, session usage, two desktop-parity variants,
+the web Create-project navigation, model access, and the identity-proof popup.
+All application/package sources, existing browser tests, fixtures, and browser configuration match merged main `146b4fb046`.
+Every application/package dependency importer is unchanged; only the root test-tooling importer changes.
+The pilot is excluded from this full run. These observations support classifying the browser failures as unrelated main-code failures;
+they do not establish a passing full suite.
+
+The full attempt also times out the existing five-second documentation guard.
+The guard now checks Git's candidate files with the same regex in V8, preserving citation boundaries and binary checks.
+Focused guard and runner verification passes 27 tests; the repository scan takes 498 milliseconds.
+No test deadline or performance threshold changes.
+Delivery requires the normal default gate and a fresh passing attestation. The PR must disclose the incomplete full evidence.
+
 The seeded false-pass campaign, layout-change comparison, and 20-run reliability criteria remain pending.
 The final delivery status must include the most recent completed repository gate; the evidence above does not claim a green broad gate.
