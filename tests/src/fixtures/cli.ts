@@ -182,6 +182,13 @@ export class CliSandbox {
       // Make the CLI deterministic + non-interactive-friendly.
       KORTIX_CONFIG_FILE: this.configFile,
       KORTIX_DEFAULT_API_BASE: targetApiBase(),
+      // The documented opt-out (packages/shared/src/host-config/sandbox-env.ts).
+      // This env object is explicit, so the child inherits nothing else — and
+      // on a Kortix box the platform file (/dev/shm/kortix/agent-env.sh) would
+      // still feed sandboxEnvValue(): resolveApiBase() then ships to the box's
+      // own host and resolveProjectId() binds to the box's project instead of
+      // the ke2e target and fixture project.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       // A stable git identity so `create`/`ship` commits don't fail on a
       // machine without a configured user.
       GIT_AUTHOR_NAME: 'ke2e',
