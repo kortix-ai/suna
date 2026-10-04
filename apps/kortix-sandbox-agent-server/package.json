@@ -1,7 +1,7 @@
 {
   "name": "kortixd",
   "version": "0.1.0",
-  "description": "kortixd — the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
+  "description": "kortixd \u2014 the Kortix sandbox agent daemon and its self-update manager (single compiled binary).",
   "type": "module",
   "main": "src/main.ts",
   "engines": {

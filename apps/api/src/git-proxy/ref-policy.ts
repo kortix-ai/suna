@@ -60,6 +60,7 @@
  * ruleset does NOT block the change-request merge path, because that path
  * pushes an ordinary fast-forward or merge commit. See the PR description.
  */
+import { MANIFEST_WRITE_ACTIONS } from '../projects/change-request-policy';
 import { isDelete, type RefUpdate } from './receive-pack';
 
 /**
@@ -120,7 +121,10 @@ export interface RefDenial {
 }
 
 /** Capability leaves that widen ref authority. Mirrors PROJECT_ACTIONS. */
-export type GitRefScope = 'project.gitops.ref.any' | 'project.gitops.ref.delete';
+export type GitRefScope =
+  | 'project.gitops.ref.any'
+  | 'project.gitops.ref.delete'
+  | (typeof MANIFEST_WRITE_ACTIONS)[number];
 
 const HEADS_PREFIX = 'refs/heads/';
 
@@ -174,14 +178,23 @@ function denyFor(
       const requires: GitRefScope[] = [];
       if (outsideLane) requires.push('project.gitops.ref.any');
       if (isDelete(update)) requires.push('project.gitops.ref.delete');
+      // A push to the default branch skips the change-request merge, and with
+      // it the manifest check there. It needs every permission that check could
+      // ask for, so it cannot land an agent or trigger change its pusher could
+      // not merge. A person's push role implies them; an agent names them.
+      if (update.ref === `${HEADS_PREFIX}${ctx.defaultBranch}`) requires.push(...MANIFEST_WRITE_ACTIONS);
       if (requires.length === 0) return null;
+      const toDefault = !isDelete(update) && update.ref === `${HEADS_PREFIX}${ctx.defaultBranch}`;
       return {
-        reason: outsideLane
-          ? `a session may only push its own branch (${principal.branch}); ` +
-            'commit there and open a change request to land this elsewhere'
-          : // The session branch is the head of any change request opened from
-            // this session; deleting it strands the CR with an unresolvable head.
-            'a session may not delete its own branch',
+        reason: toDefault
+          ? `pushing ${ctx.defaultBranch} skips change-request review and needs agent and trigger ` +
+            `write permission; push your own branch (${principal.branch}) and open a change request`
+          : outsideLane
+            ? `a session may only push its own branch (${principal.branch}); ` +
+              'commit there and open a change request to land this elsewhere'
+            : // The session branch is the head of any change request opened from
+              // this session; deleting it strands the CR with an unresolvable head.
+              'a session may not delete its own branch',
         requires,
       };
     }

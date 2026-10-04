@@ -1,6 +1,6 @@
 /** Secret delivery strategy: `PUT /:projectId/secrets/:identifier/strategy`. */
 import { PROJECT_ACTIONS } from '../../iam';
-import { isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
@@ -67,7 +67,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
     );
-    if (isProjectSessionPrincipal(c)) {
+    if (isBorrowedSessionPrincipal(c)) {
       return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
     }
     if (isSystemProjectSecretName(identifier)) {
