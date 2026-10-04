@@ -1,5 +1,5 @@
 {
-  "source_hash": "5926e1fc694cc087e549f3897a01e0be904193f9b7ccd959c20a20f7589afcbe",
+  "source_hash": "7ea04bfb0a942260bb8e5de220c08e86281e431f323d819e62665b1fce708f7c",
   "diff_files": [
     "apps/api/src/__tests__/integration-approval-card-relay.test.ts",
     "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
@@ -12,6 +12,7 @@
     "apps/api/src/channels/approval-card-relay.ts",
     "apps/api/src/channels/core/approval-decision.ts",
     "apps/api/src/projects/index.ts",
+    "apps/api/src/projects/lib/agent-config-v2.test.ts",
     "apps/api/src/projects/lib/agent-config-v2.ts",
     "apps/api/src/projects/lib/compile-agent-config.ts",
     "apps/api/src/projects/lib/connector-approval-decision.ts",
@@ -31,13 +32,13 @@
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/scripts/db-sync-shadow-repair.integration.test.ts"
   ],
-  "diff_hash": "fdf602cd27add315b5cb23202141341d9044367627f1a1af466adee14582c497",
-  "head": "e20e2365a80bf217ed2e0efeda8ea04ed526693b",
+  "diff_hash": "09c18d0ee585e3e64875de3b23cd68898dbef83ae3aff583ebabd3d5549bc074",
+  "head": "3788e36a3d12645958665ab158f5531aacf85d9a",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:05:57.510Z"
+  "at": "2026-10-04T04:38:39.649Z"
 }
