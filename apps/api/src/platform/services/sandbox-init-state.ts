@@ -1,4 +1,4 @@
-import { WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
+import { SnapshotStillBuildingError, WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 
@@ -27,7 +27,10 @@ function errorMessage(error: unknown): string {
 }
 
 function isSnapshotStillBuilding(error: unknown): boolean {
-  return /snapshot .+ is building/i.test(errorMessage(error));
+  if (error instanceof SnapshotStillBuildingError) return true;
+  // legacy: Daytona refuses a create from a snapshot it is still building with
+  // only this text. Delete when Daytona types the refusal.
+  return (error as Error | null)?.name?.startsWith('Daytona') === true && /snapshot .+ is building/i.test(errorMessage(error));
 }
 
 export function deriveSandboxInitStatus(

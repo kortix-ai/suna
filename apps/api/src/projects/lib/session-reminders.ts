@@ -139,6 +139,7 @@ export function reminderSpec(input: {
   agent: string;
   draft: ReminderDraft;
   now: Date;
+  promptAuthorUserId?: string | null;
 }): GitTriggerSpec {
   const { draft } = input;
   const oneShot = !draft.everySeconds && !draft.cron;
@@ -163,7 +164,11 @@ export function reminderSpec(input: {
     pinnedSessionId: input.sessionId,
     sessionKey: null,
     filter: null,
-    reminder: { everySeconds: draft.everySeconds, createdAt: input.now.toISOString() },
+    reminder: {
+      everySeconds: draft.everySeconds,
+      createdAt: input.now.toISOString(),
+      ...(input.promptAuthorUserId ? { promptAuthorUserId: input.promptAuthorUserId } : {}),
+    },
   };
 }
 

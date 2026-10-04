@@ -213,7 +213,7 @@ export async function buildSessionSandboxEnvVars(input: {
       sessionAgent: input.agentName,
     });
   }
-  if (!input.platformMetaAgent) {
+  {
     // One indexed read for the flag: the callers hold the project row in
     // different shapes (or not at all on the reload paths), and the flag must
     // apply on every provisioning path, not only create.
@@ -222,12 +222,22 @@ export async function buildSessionSandboxEnvVars(input: {
       .from(projects)
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
-    harness = selectSessionHarness({
-      piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
-      runtime: manifestHarness,
-      // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
-      llmGateway: projectLlmGatewayEnabled(projectRow?.metadata),
-    });
+    // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
+    const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
+    if (input.platformMetaAgent) {
+      // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
+      // whenever the LLM gateway is on — pi has no other model path, so a
+      // gateway-off project falls back to OpenCode. pi reads the SAME
+      // KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
+      // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
+      harness = llmGateway ? 'pi' : 'opencode';
+    } else {
+      harness = selectSessionHarness({
+        piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
+        runtime: manifestHarness,
+        llmGateway,
+      });
+    }
   }
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
   const piPackagesBundle =

@@ -19,6 +19,7 @@ import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
 import { isUuid } from '../shared/validate';
+import { logger } from '../lib/logger';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -486,7 +487,11 @@ accountInvitesRouter.openapi(
   // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
   // legacy accounts (guarded inside the service). Idempotent on re-accept.
   // Fire-and-forget so Stripe hiccups don't block invite acceptance.
-  void onMemberAdded(invite.accountId, userId).catch(() => {});
+  void onMemberAdded(invite.accountId, userId).catch((err) =>
+        // No seat reconciler exists: a failure here leaves the Stripe seat count
+        // (and the member's YOLO token) wrong until the next member change.
+        logger.error('[billing] seat sync FAILED after member added', { accountId: invite.accountId, userId: userId, error: err instanceof Error ? err.message : String(err) }),
+      );
 
   // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
   // self-healing. Previously grants ran only on the first accept, AFTER

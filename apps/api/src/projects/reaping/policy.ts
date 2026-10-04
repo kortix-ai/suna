@@ -23,7 +23,7 @@
  * decision for every other running box is `deadline_at <= now()`.
  */
 
-import type { SandboxStatus } from '../../platform/providers/status';
+import { isProviderNotFound, type SandboxStatus } from '../../platform/providers/status';
 
 export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed';
 
@@ -65,11 +65,10 @@ export function isLifecycleTransitionInProgress(err: unknown): boolean {
 }
 
 export function isAlreadyNotRunning(err: unknown): boolean {
+  if (isProviderNotFound(err)) return true;
+  // legacy: a stop refused because the box is already down carries no status
+  // or code on Daytona (400 "not started"); Platinum's `sandbox_not_running`
+  // 409 text matches too. Delete when the providers type this refusal.
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    msg.includes('not started') ||
-    msg.includes('not running') ||
-    msg.includes('already stopped') ||
-    msg.includes('not found')
-  );
+  return msg.includes('not started') || msg.includes('not running') || msg.includes('already stopped');
 }

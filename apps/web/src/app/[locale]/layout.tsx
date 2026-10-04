@@ -257,7 +257,7 @@ export default async function RootLayout({
               alternateName: [
                 'Kortix',
                 "Kortix AI",
-                "Kortix – The open-source AI Management System",
+                "Kortix – The open-source AI Operating System",
               ],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.svg`,

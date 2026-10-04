@@ -82,8 +82,6 @@ An explicit <id> on info/open/rm resolves on its own: tries the active host
 first, then — unless you pass --host — scans every other logged-in host for
 it. A directory link (.kortix/link.json) always wins over the default; the
 default is what commands use anywhere else on your machine.
-
-Run \`kortix projects <subcommand> --help\` for options.
 `;
 
 export async function runProjects(argv: string[]): Promise<number> {
@@ -237,7 +235,7 @@ Options:
   --host <name>         Use this logged-in host.
   --json                Machine-readable output.
 
-Requires project.customize.write. A flag the platform marks unavailable stays
+Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 `;
 
@@ -391,7 +389,7 @@ Options:
   --json                 Emit the updated project as JSON.
   -h, --help             Show this help.
 
-Requires project.customize.write. The icon fields are three-state: omit to
+Requires project.settings.write. The icon fields are three-state: omit to
 leave as-is, --no-icon / --no-glyph to remove. A project shows ONE icon, so
 writing either clears the other; --icon with --glyph is refused. Passing no
 field at all exits 2 rather than issuing a no-op write.
@@ -1373,6 +1371,20 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   return 0;
 }
 
+function isDefaultProjectResponse(value: unknown): boolean {
+  return value !== null && typeof value === 'object'
+    && 'project_id' in value && typeof value.project_id === 'string' && value.project_id.trim().length > 0
+    && 'account_id' in value && typeof value.account_id === 'string' && value.account_id.trim().length > 0
+    && 'name' in value && typeof value.name === 'string' && value.name.trim().length > 0;
+}
+
+function invalidDefaultProjectResponse(value: unknown): number {
+  const detail = value !== null && typeof value === 'object'
+    && 'error' in value && typeof value.error === 'string' ? `: ${value.error}` : '';
+  process.stderr.write(`${status.err(`Invalid project response${detail}. Expected project_id, account_id and name.`)}\n`);
+  return 1;
+}
+
 async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
   // --host names a logged-in host other than the active one: its credential
   // serves the request, and the default project binds on ITS host entry —
@@ -1406,6 +1418,9 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     } catch (err) {
       return surface(err);
     }
+    if (!Array.isArray(list) || !list.every(isDefaultProjectResponse)) {
+      return invalidDefaultProjectResponse(list);
+    }
     if (list.length === 0) {
       process.stderr.write(
         `${status.err(hostArg ? `No projects in host "${hostArg}"'s account.` : 'No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
@@ -1423,10 +1438,7 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     target = picked;
   }
 
-  if (!target) {
-    process.stderr.write(`${status.err('Could not resolve a project.')}\n`);
-    return 1;
-  }
+  if (!isDefaultProjectResponse(target)) return invalidDefaultProjectResponse(target);
 
   // A default project pins its account. If it lives in a different account
   // than the target host's active one, switch that host's active account to

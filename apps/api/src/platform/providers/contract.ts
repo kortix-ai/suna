@@ -16,6 +16,14 @@ export class SandboxTemplateNotFoundError extends Error {
   }
 }
 
+/** The provider is still building (or copying) the image a create needs. */
+export class SnapshotStillBuildingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SnapshotStillBuildingError';
+  }
+}
+
 /**
  * Which runtime contract a provider object hosts. One name per workload, used
  * verbatim as `sandbox_compute_sessions.workload_type`, so the union and that
