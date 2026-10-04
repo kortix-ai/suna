@@ -56,7 +56,7 @@ export function EnterpriseHeroVisual(): ReactNode {
         value1: t('checklistRbacTitle'),
       })}
     >
-      <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
+      <div className="relative h-[23rem] w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background sm:h-[26rem]">
         {/* ── the roster, running off the right edge ──────────────────── */}
         <div
           className="absolute inset-x-0 top-[8%] grid grid-cols-3 gap-2.5 mask-x-from-78% mask-x-to-100%"

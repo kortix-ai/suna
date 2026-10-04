@@ -6,7 +6,11 @@ import {
   decideImageLoad,
   formatMegabytes,
   parseContentLength,
-} from './image-load';
+} from './use-sandbox-image';
+
+// The pure size-gate helpers, re-homed from apps/mobile's image-load.test.ts
+// (assertions unchanged). The hook's mounted behavior is characterized end to
+// end in apps/mobile through its sandbox-context adapter.
 
 describe('IMAGE_AUTO_LOAD_LIMIT_BYTES', () => {
   test('is 8 MB', () => {
