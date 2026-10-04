@@ -664,7 +664,7 @@ function ChangeRequestsPage({
  * Same data, same route, same permission gate as the Feature flags section of
  * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
  * summary's `experimental_features`, `PATCH /projects/:id/features` through
- * `updateFeatureFlag`, and `PROJECT_CUSTOMIZE_WRITE`. Two doors onto one
+ * `updateFeatureFlag`, and `PROJECT_SETTINGS_WRITE`. Two doors onto one
  * behaviour, not a second implementation of it — the cache writes below are
  * the same set that tab performs, so the flag-gated rail, sidebar and palette
  * rows all re-resolve together either way.
@@ -694,7 +694,7 @@ function FeatureFlagsPage({
     ...contract('config'),
   });
 
-  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Fail-closed while the probe is in flight — the same rule `ExperimentalTab`
   // applies, so a slow probe never offers a toggle the server would reject.
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;

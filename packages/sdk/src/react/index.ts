@@ -226,6 +226,14 @@ export {
 
 export { useModelAccess } from './use-model-access';
 
+// The sandbox-image load state: the SDK owns the raw-file URL, the HEAD probe,
+// the auth headers, the size gate, the probe cache and the one fresh-token
+// retry; the host binds the sandbox origin and the native image events.
+// The size-gate helpers stay module-local: no host consumes them (the tests
+// import the module directly), so the public surface carries only the hook
+// and the formatter the hosts render sizes with.
+export { formatMegabytes, useSandboxImage } from './use-sandbox-image';
+
 export {
   GATEWAY_LOGS_PAGE_SIZE,
   useGatewayOverview,

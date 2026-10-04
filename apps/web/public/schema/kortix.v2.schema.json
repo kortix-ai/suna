@@ -180,7 +180,7 @@
             "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
           },
           "connectors": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -193,6 +193,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -216,7 +217,7 @@
             "description": "Deprecated input alias for connectors_required."
           },
           "secrets": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -229,13 +230,14 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
             ]
           },
           "skills": {
-            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
             "oneOf": [
               {
                 "type": "array",
@@ -248,6 +250,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -267,6 +270,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -307,8 +311,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -328,6 +334,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "*"
                   ]
                 }
@@ -336,6 +344,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }
@@ -376,8 +385,10 @@
                     "project.command.write",
                     "project.file.read",
                     "project.file.write",
-                    "project.customize.read",
-                    "project.customize.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
@@ -397,6 +408,8 @@
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
                     "*"
                   ]
                 }
@@ -405,6 +418,7 @@
                 "type": "string",
                 "enum": [
                   "all",
+                  "*",
                   "none"
                 ]
               }

@@ -5,21 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   COMPILED_PI_RUNTIME_FORMAT,
-  COMPILED_PI_RUNTIME_IDENTITY_ENV_VARS,
   compilePiRuntime,
   type CompilePiRuntimeInput,
 } from './compiled-pi-runtime';
-
-/** Child env without the compiled-identity vars the generated runtime compares
- *  against its baked manifest. A Kortix sandbox image exports the session's
- *  own KORTIX_PROJECT_ID; a laptop or CI runner exports none. The spawn must
- *  see the CI/laptop state, so the runtime's fail-closed identity check stays
- *  a property of the runtime, not of the machine running the test. */
-function childEnv(extra: Record<string, string> = {}): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env };
-  for (const name of COMPILED_PI_RUNTIME_IDENTITY_ENV_VARS) delete env[name];
-  return { ...env, ...extra };
-}
 
 const roots: string[] = [];
 const INPUT: CompilePiRuntimeInput = {
@@ -51,6 +39,16 @@ async function materialize(input = INPUT) {
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
+/** Run the compiled worker on a minimal env: the worker refuses a host env
+ *  that disagrees with its baked identity, and an earlier file in the same
+ *  test worker may have leaked a KORTIX_* variable into process.env. */
+function runWorker(runtimePath: string, args: string[] = []): string {
+  return execFileSync(process.execPath, [runtimePath, ...args], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH ?? '' },
+  });
+}
 
 describe('compilePiRuntime', () => {
   test('produces a deterministic content-addressed pi runtime', () => {
@@ -88,18 +86,13 @@ describe('compilePiRuntime', () => {
 
   test('--manifest prints the manifest without starting the worker', async () => {
     const { artifact, runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath, '--manifest'], {
-      encoding: 'utf8',
-    });
+    const stdout = runWorker(runtimePath, ['--manifest']);
     expect(JSON.parse(stdout)).toEqual(artifact.manifest);
   });
 
   test('the worker runtime receives the baked config via __KORTIX_COMPILED__', async () => {
     const { runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath], {
-      encoding: 'utf8',
-      env: childEnv(),
-    });
+    const stdout = runWorker(runtimePath);
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
     const baked = JSON.parse(lines[1]).baked;
@@ -130,10 +123,7 @@ describe('compilePiRuntime', () => {
     });
     expect(artifact.manifest.agent_config).toBeNull();
     expect(artifact.manifest.agent_config_etag).toBeNull();
-    const stdout = execFileSync(process.execPath, [runtimePath], {
-      encoding: 'utf8',
-      env: childEnv(),
-    });
+    const stdout = runWorker(runtimePath);
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
 

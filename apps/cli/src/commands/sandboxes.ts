@@ -161,7 +161,7 @@ Options:
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
-Pinning a provider needs the \`project.customize.write\` permission.
+Pinning a provider needs the \`project.settings.write\` permission.
 `;
 
 export async function runSandboxes(argv: string[]): Promise<number> {

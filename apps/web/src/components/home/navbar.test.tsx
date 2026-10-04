@@ -1,9 +1,10 @@
 /**
- * Characterization for the marketing `Navbar`, written before the inert
- * `hasScrolled` scroll state, the unused compaction constants, the unused
- * drawer-menu state and `DRAWER_SOCIALS` were removed. The rendered output must
- * not change: the bar's surface, the drawer lock and the anchor navigation are
- * the live behaviors this file keeps.
+ * Characterization for the marketing `Navbar` around the dead symbols this
+ * branch deletes: the unused compaction constants, the unused drawer-menu
+ * state and `DRAWER_SOCIALS`. The live behaviors stay: the bar's surface, the
+ * drawer lock and the anchor navigation. The scroll state itself is live — the
+ * dark-hero bar reads it — and the last test pins that, so a future cleanup
+ * cannot delete it again.
  */
 import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act } from 'react';
@@ -99,16 +100,19 @@ test('the bar renders the brand, the desktop nav and a GitHub stars chip', async
   expect(html).toContain('href="/pricing"');
 });
 
-test('the output is identical across the old scroll thresholds', async () => {
+test('over a dark hero the bar is transparent until the reader scrolls past the threshold', async () => {
+  const hero = win.document.createElement('section');
+  hero.setAttribute('data-kx-dark-hero', '');
+  win.document.body.appendChild(hero);
   await mountNavbar();
-  const before = header()!.outerHTML;
-  for (const scrollY of [0, 49, 50, 200]) {
-    win.scrollTo(0, scrollY);
-    await act(async () => {
-      win.dispatchEvent(new win.Event('scroll'));
-    });
-    expect(header()!.outerHTML).toBe(before);
-  }
+  const bar = header()!;
+  expect(bar.className).toContain('bg-transparent');
+  await act(async () => {
+    win.scrollTo(0, 200);
+    win.dispatchEvent(new win.Event('scroll'));
+  });
+  expect(bar.className).toContain('bg-background');
+  hero.remove();
 });
 
 test('the mobile drawer locks body scroll while open and unlocks on close', async () => {

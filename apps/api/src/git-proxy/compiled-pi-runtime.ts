@@ -71,21 +71,6 @@ function etag(value: string | null): string | null {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
-/** The env vars the generated runtime compares against its baked manifest
- *  before it boots (the `compiledEnv` loop in `runtimeSource`). A foreign
- *  ambient value — a Kortix sandbox image exports the session's own
- *  `KORTIX_PROJECT_ID` — fails the child closed with exit 78. A laptop or CI
- *  runner exports none. Tests that spawn the runtime delete these from the
- *  child env so the check sees the CI/laptop state, not this box's identity.
- *  Keep in sync with `compiledEnv` in `runtimeSource`. */
-export const COMPILED_PI_RUNTIME_IDENTITY_ENV_VARS = [
-  'KORTIX_COMPILED_RUNTIME_FORMAT',
-  'KORTIX_COMPILED_RUNTIME_SOURCE_SHA',
-  'KORTIX_PROJECT_ID',
-  'KORTIX_BASE_REF',
-  'KORTIX_BASE_SHA',
-] as const;
-
 function runtimeSource(manifest: CompiledPiRuntimeManifest, workerBundle: string): string {
   const encodedManifest = Buffer.from(JSON.stringify(manifest)).toString('base64url');
   return `#!/usr/bin/env node
