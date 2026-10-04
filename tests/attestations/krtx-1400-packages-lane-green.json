@@ -1,5 +1,5 @@
 {
-  "source_hash": "35afa0cac581dc57c713df0fcc7f8d111c466b4cccd78b09279425f2f5cd0a5d",
+  "source_hash": "35eda9a8bc960377d01a364faaf614c17bea6e4d7e456fe0d777a2159de76f91",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
@@ -11,18 +11,7 @@
     "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
-    "apps/mobile/lib/highlight/shiki.test.ts",
-    "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
     "apps/web/src/lib/seo/content-timestamps.json",
-    "apps/web/translations/de.json",
-    "apps/web/translations/en.json",
-    "apps/web/translations/es.json",
-    "apps/web/translations/fr.json",
-    "apps/web/translations/it.json",
-    "apps/web/translations/ja.json",
-    "apps/web/translations/pt.json",
-    "apps/web/translations/sr.json",
-    "apps/web/translations/zh.json",
     "apps/web/true",
     "apps/whitelabel-demo/tests/e2e/harness.ts",
     "packages/agent-tunnel/src/client/cli.test.ts",
@@ -30,13 +19,13 @@
     "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "f6f0a0a4b8baad33bd618bed4613af46ceda1e39973e6844df36ab0b057db6c0",
-  "head": "a764429d3fc3e4012df89c69b74804a56d8eed08",
+  "diff_hash": "1c285f246ad5f9adc17dd1744100fb0cac9ee9f06bc5a374e50b7ae791057b7c",
+  "head": "7d9d346e270ed80391f57804396d4bf9f526a9eb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T23:16:11.076Z"
+  "at": "2026-10-04T00:10:31.661Z"
 }
