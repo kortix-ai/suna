@@ -88,7 +88,7 @@ async function fixture() {
 }
 
 beforeAll(async () => {
-  if (!url) throw new Error('TEST_DATABASE_URL is required: use a disposable database');
+  if (!url) return; // the suites below are registered as skipped
   await client.connect();
   await setup.connect();
   const { rows: me } = await client.query('SELECT current_user::text AS u');
@@ -118,6 +118,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (!url) return; // nothing was connected
   await client.query('DROP TABLE IF EXISTS public.credit_purchases');
   await setup.query('DROP OWNED BY purchases_probe');
   await setup.query('DROP ROLE IF EXISTS purchases_probe');
