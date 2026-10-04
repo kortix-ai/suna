@@ -98,43 +98,45 @@ export async function cancelAccountDeletion(accountId: string) {
  * survive the deletion. See `reclaimableAccountIds`.
  */
 /**
- * Delete one account right now.
+ * `userId` widens the teardown to every account this user OWNS — only when
+ * the deleted account IS their primary one, and never under impersonation.
  *
- * `userId` (the route always passes it) decides WHAT gets deleted:
+ * This is the "delete my account" case: the route resolves the caller through
+ * `resolveAccountId` (shared/resolve-account.ts), whose earliest-joined
+ * membership used to leave every team-account sandbox alive, still running
+ * and still billing. `account.delete` is the same authority the route already
+ * requires, so widening reaches exactly the accounts the caller could have
+ * deleted one at a time. Scoped to `account_role = 'owner'` on purpose, NOT
+ * to bare membership: deleting your own account must never tear down
+ * sandboxes in someone else's team that you merely belong to.
  *
- * - The caller's own primary account (`resolveAccountId(userId)`) — the
- *   "delete my account" case every client took before the account hub grew a
- *   scoped button: owner-wide sandbox sweep, billing teardown, and the auth
- *   identity deleted with the account, which is what signs the user out.
- * - Any other account (the account hub's danger zone passes `?account_id=`)
- *   — tear down THAT account only: its sandboxes, subscription and credits.
- *   The caller survives with their identity and their other accounts, so the
- *   response says `identity_deleted: false` and clients must not sign out.
- *
- * Without `userId`, the pending request's own requester decides, exactly as
- * before (the scheduled path never deletes an identity; see
- * `processScheduledDeletions`).
+ * Every other case — a scoped deletion of an account that is not the caller's
+ * primary one, or an operator acting as a customer — tears down the ONE
+ * account and nothing else. Returns `userId` for the wide sweep, `undefined`
+ * for the single-account sweep.
  */
+async function wideSweepUserId(accountId: string, deletingUserId?: string): Promise<string | undefined> {
+  if (!deletingUserId) return undefined;
+  if (impersonatedAccountFor(deletingUserId)) return undefined;
+  const primaryId = await resolveAccountId(deletingUserId);
+  return accountId === primaryId ? deletingUserId : undefined;
+}
+
 export async function deleteAccountImmediately(accountId: string, userId?: string) {
   const request = await getActiveDeletionRequest(accountId);
   const deletingUserId = userId ?? request?.userId;
-  const impersonated = impersonatedAccountFor(deletingUserId);
-  const primaryId = deletingUserId && !impersonated ? await resolveAccountId(deletingUserId) : null;
-  // Only the caller's own account takes the identity with it. An operator
-  // impersonating a customer resolves to the SAME account id from both
-  // sides, so the impersonation check is what keeps their identity alive.
-  const deletesIdentity = !!deletingUserId && !impersonated && accountId === primaryId;
-  await performDeletion(accountId, deletesIdentity ? deletingUserId : undefined);
-  if (deletesIdentity) {
-    const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId!);
+  const wideUserId = await wideSweepUserId(accountId, deletingUserId);
+  await performDeletion(accountId, wideUserId);
+  if (wideUserId) {
+    const { error } = await getSupabase().auth.admin.deleteUser(wideUserId);
     if (error) throw error;
-    forgetUserJwtLiveness(deletingUserId!);
+    forgetUserJwtLiveness(wideUserId);
   }
   if (request) {
     await markDeletionCompleted(request.id);
   }
 
-  return { success: true, message: 'Account deleted', identity_deleted: deletesIdentity };
+  return { success: true, message: 'Account deleted', identity_deleted: !!wideUserId };
 }
 
 export async function processScheduledDeletions(): Promise<{
@@ -147,9 +149,11 @@ export async function processScheduledDeletions(): Promise<{
 
   for (const request of requests) {
     try {
-      // The request row carries the requester, so the scheduled path gets the
-      // same owner-wide sweep as the immediate one.
-      await performDeletion(request.accountId, request.userId);
+      // The request row carries the requester, so the sweep width follows the
+      // same rule as the immediate path: owner-wide only when the requested
+      // account IS that user's primary account (the "delete my account"
+      // flow), single-account for a scoped team-account request.
+      await performDeletion(request.accountId, await wideSweepUserId(request.accountId, request.userId));
       await markDeletionCompleted(request.id);
       processed++;
     } catch (err) {
@@ -196,12 +200,9 @@ export interface SandboxReclaimSummary {
 /**
  * Every account this user OWNS, including the account passed in.
  *
- * Deletion used to sweep exactly one account: the route resolves the caller
- * through `resolveAccountId` (shared/resolve-account.ts), which returns the
- * user's EARLIEST-JOINED membership and nothing else. A user who owned a team
- * account created after their personal one therefore had every team sandbox
- * survive the deletion, still running and still billing, with no account left
- * to attribute them to. That is the second half of the release-gate leak.
+ * Callers reach this through `wideSweepUserId`, which decides WHEN the wide
+ * sweep applies (the caller's own primary account, never impersonation); the
+ * scheduled processor and the immediate route share that rule.
  *
  * Scoped to `account_role = 'owner'` on purpose, NOT to bare membership:
  * deleting your own account must never tear down sandboxes in someone else's

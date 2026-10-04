@@ -459,6 +459,24 @@ test('scheduled account deletion does not delete its historical requester identi
   expect(completedRequests).toEqual(['req-1']);
 });
 
+test('a scheduled request for a non-primary account sweeps only that account', async () => {
+  // The account hub can schedule a TEAM account for deletion. When the
+  // processor runs it 14 days later it must tear down THAT account — not the
+  // requester's own account's sandboxes, not their other teams'.
+  primaryAccountId = 'acct-1';
+  scheduledRequests = [{ id: 'req-1', accountId: 'acct-9', userId: 'user-1' }];
+  ownedAccountRows = [{ accountId: 'acct-2' }];
+  sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+
+  expect(await processScheduledDeletions()).toEqual({ processed: 1, errors: [] });
+
+  const values = whereParams(sandboxWhereArg);
+  expect(values).toContain('acct-9');
+  expect(values).not.toContain('acct-1');
+  expect(values).not.toContain('acct-2');
+  expect(deletedUsers).toEqual([]);
+});
+
 test('failed auth deletion leaves the pending request incomplete', async () => {
   activeRequest = { id: 'req-1', userId: 'user-1' };
   deleteUserError = new Error('auth deletion failed');

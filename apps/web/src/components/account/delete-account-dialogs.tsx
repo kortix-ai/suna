@@ -38,7 +38,7 @@ import {
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
 
-export type DeletionType = 'grace-period' | 'immediate';
+type DeletionType = 'grace-period' | 'immediate';
 
 /** `{date}` label builder for the "scheduled for deletion on {date}" line,
  *  shared by both surfaces' row copy. */

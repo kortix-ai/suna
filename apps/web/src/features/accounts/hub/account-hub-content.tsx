@@ -1004,7 +1004,7 @@ function DangerZoneCard({ accountId }: { accountId: string }) {
           // inside the hook instead.
           if (result.identity_deleted === false) {
             queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-            router.push('/dashboard');
+            router.push('/projects');
           }
         }}
       />
