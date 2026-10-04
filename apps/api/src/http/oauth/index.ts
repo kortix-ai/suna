@@ -41,6 +41,7 @@ import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../middleware/actor';
 import { resolveAccountId } from '../../services/accounts/resolve-account';
 import { AUTH_REQUEST_TTL_MS, SELF_REGISTERED_DESCRIPTION } from '../../services/oauth/requests';
+import { bearerToken } from '../lib/bearer';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -55,11 +56,10 @@ function checkTokenRateLimit(clientId: string): boolean {
 // ─── OAuth Access Token Middleware (userinfo only) ───────────────────────────
 
 async function oauthTokenAuth(c: Context, next: Next) {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = bearerToken(c.req.header('Authorization'));
+  if (token === null) {
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
-  const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
   const tokenHash = await hashSecretKeyAsync(token);

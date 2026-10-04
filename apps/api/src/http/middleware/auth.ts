@@ -24,6 +24,7 @@ import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-bu
 import { serviceAccountPrincipal, patPrincipal, jwtPrincipal } from './auth-principal';
 import { applyOAuthAccessTokenPrincipal } from './auth-oauth';
 import { enforceTokenProjectScope } from './auth-scope';
+import { bearerToken } from '../lib/bearer';
 export { clearSsoSyncMemo } from './auth-sso';
 export { combinedAuth } from './auth-combined';
 
@@ -82,16 +83,14 @@ export async function apiKeyAuth(c: Context, next: Next) {
 }
 
 async function resolveApiKeyAuth(c: Context, next: Next) {
-  const authHeader = c.req.header('Authorization');
+  const token = bearerToken(c.req.header('Authorization'));
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (token === null) {
     auditLoginFail({ c, reason: 'missing_auth_header', authType: 'apiKey' });
     throw new HTTPException(401, {
       message: 'Missing or invalid Authorization header',
     });
   }
-
-  const token = authHeader.slice(7);
 
   if (!token) {
     auditLoginFail({ c, reason: 'empty_token', authType: 'apiKey' });
@@ -169,14 +168,13 @@ export async function supabaseAuth(c: Context, next: Next) {
 }
 
 async function resolveSupabaseAuth(c: Context, next: Next) {
-  const authHeader = c.req.header('Authorization');
+  const token = bearerToken(c.req.header('Authorization'));
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (token === null) {
     auditLoginFail({ c, reason: 'missing_auth_header' });
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
 
-  const token = authHeader.slice(7);
   if (!token) {
     auditLoginFail({ c, reason: 'empty_token' });
     throw new HTTPException(401, { message: 'Missing token' });

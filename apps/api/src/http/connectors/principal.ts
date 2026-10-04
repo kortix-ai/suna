@@ -16,6 +16,7 @@ import type { ConnectorPrincipal, ConnectorServiceDeps } from '../../services/co
 import { getRequestOnBehalfOf } from '../lib/agent-scope';
 import { loadProjectForUser } from '../lib/project-access';
 import { actorOf } from '../middleware/actor';
+import { bearerToken } from '../lib/bearer';
 
 /** The connector router's request authorizers. */
 export interface ConnectorRouterAuth {
@@ -65,8 +66,7 @@ export interface ConnectorRouterAuth {
 export interface ConnectorRouterDeps extends ConnectorServiceDeps, ConnectorRouterAuth {}
 
 export async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> {
-  const header = c.req.header('Authorization');
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = bearerToken(c.req.header('Authorization'));
   if (!token) return null;
   return resolveTokenPrincipal(token, c.req.header('X-Kortix-Session-Id') ?? null);
 }

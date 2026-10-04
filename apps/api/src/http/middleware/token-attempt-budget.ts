@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../../lib/config';
 import { requestClientKey } from '../lib/client-ip';
 import { isTokenHashCached, isTokenValidated } from '../../services/auth/token-hash';
+import { bearerToken } from '../lib/bearer';
 
 /**
  * Pre-authentication budget for UNKNOWN Kortix bearer tokens, per client IP.
@@ -108,11 +109,8 @@ export async function withTokenAttemptBudget<T>(
 
 /** The first `kortix_` credential a request presents, in resolver order. */
 export function presentedKortixToken(c: Context, cookieName?: string): string | null {
-  const authorization = c.req.header('Authorization');
-  if (authorization?.startsWith('Bearer ')) {
-    const bearer = authorization.slice(7);
-    if (bearer.startsWith('kortix_')) return bearer;
-  }
+  const bearer = bearerToken(c.req.header('Authorization'));
+  if (bearer?.startsWith('kortix_')) return bearer;
   const header = c.req.header('X-Kortix-Token');
   if (header?.startsWith('kortix_')) return header;
   if (cookieName) {

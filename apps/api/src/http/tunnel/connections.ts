@@ -33,6 +33,7 @@ import { effectiveMachineCapabilities } from '../../services/tunnel/core/rpc-cor
 import { retryOnDeadlock } from '../../lib/error-cause';
 import { readJsonObject } from '../lib/http-body';
 import { uniqueComputerLabel } from '../../services/connectors/computers';
+import { bearerToken } from '../lib/bearer';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -436,8 +437,7 @@ export function createTunnelSelfRouter() {
         return c.json({ error: 'Too many requests', retryAfterMs: limited.retryAfterMs }, 429);
       }
       const tunnelId = c.req.header('x-tunnel-id') ?? '';
-      const header = c.req.header('authorization') ?? '';
-      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      const token = bearerToken(c.req.header('authorization'))?.trim() ?? '';
       if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
       // Look the machine up before the costly verifier, as the WS handshake does.
       const [machine] = isTunnelToken(token)

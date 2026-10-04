@@ -21,6 +21,7 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from '../../services/auth/gotrue';
 import { forgetJwtLiveness } from '../../services/auth/jwt-liveness';
 import { readJsonObject } from '../lib/http-body';
+import { bearerToken } from '../lib/bearer';
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 
@@ -109,8 +110,7 @@ authRouter.openapi(
 // ./headless.ts, mounted on the same /v1/auth prefix ahead of this router.
 
 function bearerOf(c: any): string | null {
-  const header = c.req.header('Authorization') ?? '';
-  return header.startsWith('Bearer ') ? header.slice(7).trim() || null : null;
+  return bearerToken(c.req.header('Authorization'))?.trim() || null;
 }
 
 authRouter.openapi(

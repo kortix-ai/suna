@@ -41,6 +41,7 @@ import { isUuid } from '../../lib/validate';
 import { tunnelRelay } from '../../services/tunnel/core/relay';
 import { isTunnelConnectionLive } from '../../services/tunnel/core/cluster-forwarder';
 import { retireSupersededRegistrations } from './connections';
+import { bearerToken } from '../lib/bearer';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**
@@ -224,8 +225,7 @@ export function createDeviceAuthPublicRouter() {
     }),
     async (c: any) => {
       const code = c.req.param('code');
-      const authHeader = c.req.header('Authorization');
-      const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const bearerSecret = bearerToken(c.req.header('Authorization')) ?? undefined;
       const secret = bearerSecret;
 
       if (!secret) {
