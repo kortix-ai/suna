@@ -60,13 +60,31 @@ type LintResult = { filePath: string; messages: LintMessage[] };
 
 function lintNavRules(files: string[]): string[] {
   if (files.length === 0) return [];
-  const raw = execFileSync('npx', ['eslint', '--format', 'json', ...files], {
-    cwd: WEB_ROOT,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    // eslint exits non-zero when it reports anything; we read the JSON either way.
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
+  // Under the packages lane's parallel load the eslint child is occasionally
+  // killed outright — it exits with no stdout and (with stderr piped to
+  // ignore, which keeps a clean lane log) no diagnostics, which read as a
+  // test failure though the assertion itself never ran. One retry, then a
+  // failure that names the death.
+  const run = (attempt: number): string => {
+    try {
+      return execFileSync('npx', ['eslint', '--format', 'json', ...files], {
+        cwd: WEB_ROOT,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        // eslint exits non-zero when it reports anything; we read the JSON either way.
+        stdio: ['ignore', 'pipe', attempt === 0 ? 'ignore' : 'pipe'],
+      });
+    } catch (error) {
+      const stdout = (error as { stdout?: string }).stdout;
+      if (stdout) return stdout;
+      if (attempt > 0) {
+        const stderr = ((error as { stderr?: string }).stderr ?? '').slice(0, 400);
+        throw new Error(`eslint died without output twice: ${stderr || 'no stderr captured'}`);
+      }
+      return run(attempt + 1);
+    }
+  };
+  const raw = run(0);
   const results = JSON.parse(raw) as LintResult[];
   return results.flatMap((r) =>
     r.messages
