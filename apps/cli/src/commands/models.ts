@@ -13,7 +13,7 @@
  *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
  *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *
- * Both writes assert `project.customize.write`.
+ * Both writes assert `project.model.write`.
  */
 
 import { splitHelp } from '../command-argv.ts';
@@ -98,7 +98,7 @@ Options:
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Writes need the \`project.customize.write\` permission.
+Writes need the \`project.model.write\` permission.
 `;
 
 export async function runModels(argv: string[]): Promise<number> {

@@ -41,9 +41,6 @@ describe('menu registry feature-flag gating', () => {
     // a permanent sidebar row and this palette row, so it is no longer a
     // Customize capability tab. Neither entry point declares a flag. Voice and
     // Marketplace have no flag any more: both were removed from the product.
-    // Since #9042 the tab bar renders every CAPABILITY_TABS entry on the
-    // first frame (access gates the page body, not the bar), so the removed
-    // features stay absent from the ROUTE list itself.
     const keys = CAPABILITY_TABS.map((tab) => tab.key);
     expect(keys).not.toContain('review');
     expect(keys).not.toContain('voice');
