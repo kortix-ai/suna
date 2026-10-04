@@ -617,7 +617,12 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, oldCli)
     const stub = chunkAwareStub(oldCli, newCli)
 
-    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+    // The store is the box's previous CLI — not whatever real binaries this
+    // test box happens to run, which a Kortix sandbox image carries and the
+    // 8-byte fixture chunking would hash for minutes.
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, {
+      localChunkSources: [ws.cliPath],
+    })
 
     expect(result.cli).toBe('updated')
     expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)
@@ -633,7 +638,7 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
     const stub = stubFetch()
 
-    const result = await run(ws, stub)
+    const result = await run(ws, stub, { localChunkSources: [ws.cliPath] })
 
     expect(result.cli).toBe('updated')
     expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')

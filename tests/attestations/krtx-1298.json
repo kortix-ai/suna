@@ -1,0 +1,18 @@
+{
+  "source_hash": "c1ebf2ca7846042b60372e93dcd3ca042f10c0233a76c60596970c5bf52174f0",
+  "diff_files": [
+    "apps/api/src/projects/lib/session-inventory.test.ts",
+    "apps/api/src/projects/lib/session-inventory.ts",
+    "apps/api/src/projects/lib/warm-sessions.ts",
+    "tests/spec/end-to-end.md"
+  ],
+  "diff_hash": "9e7d77d333a149e189f172d7759cf878526f590d6358d444e9bc83eb3c780917",
+  "head": "49039a72975140a7171f813365d96b2b297a43a5",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T20:57:56.433Z"
+}

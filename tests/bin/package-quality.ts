@@ -238,3 +238,9 @@ await runAll([
     2,
   ),
 ]);
+// apps/kortix-worker sits outside the pnpm workspace (own bun.lock, supply-chain
+// cooldown), so the workspace fan-out above cannot reach it. Install its deps
+// the way the sandbox-agent job does in ci.yml, then run its tests here — no
+// lane ran them before this.
+await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
+await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });
