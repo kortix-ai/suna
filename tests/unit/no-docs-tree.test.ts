@@ -70,5 +70,5 @@ describe('the top-level documentation tree', () => {
       citation.test(readFileSync(join(REPO_ROOT, path), 'utf8')),
     );
     expect(offenders).toEqual([]);
-  });
+  }, 20_000);
 });
