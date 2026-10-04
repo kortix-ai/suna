@@ -1,0 +1,16 @@
+{
+  "source_hash": "dc12abd88917f168c9cf32c8cde2ae282253baf2830d762c6411ebaf9971839b",
+  "diff_files": [
+    "apps/cli/src/__tests__/models-command.test.ts",
+    "apps/cli/src/commands/models.ts"
+  ],
+  "diff_hash": "5a71a4810e44b3a8713b860592893c41a072f4776e8ace1f8de3641530760323",
+  "head": "d899749f93bf98040ff302ea65e22e4f707ad2f4",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:57:17.491Z"
+}

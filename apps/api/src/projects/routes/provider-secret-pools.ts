@@ -19,6 +19,39 @@ import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 
 const Params = z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid(), providerId: z.string().min(1).max(100) });
 const Pool = z.object({ provider_id: z.string(), configured: z.boolean(), secret_ids: z.array(z.string()) });
+const PersonalKeysReason = z.enum(['shared', 'prompted_by_another_member', 'no_person']);
+type PersonalKeysReason = z.infer<typeof PersonalKeysReason>;
+
+/**
+ * Why a session reaches no one's own keys. Visibility is one cause, not the
+ * only one: a private session also acts for nobody when another member has
+ * prompted it (`on_behalf_of_cleared_at`, see ON_BEHALF_OF_CLEARED_KEY in
+ * lib/on-behalf-of.ts), or when its token has no `on_behalf_of` at all (minted
+ * before 2026-09-22, or for an unattended run).
+ */
+export function personalKeysReason(row: {
+  visibility?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): PersonalKeysReason {
+  if (row.visibility !== 'private') return 'shared';
+  if (typeof row.metadata?.on_behalf_of_cleared_at === 'string') return 'prompted_by_another_member';
+  return 'no_person';
+}
+
+const PERSONAL_KEY_REFUSAL: Record<PersonalKeysReason, { error: string; code: string }> = {
+  shared: {
+    error: 'This session is shared, so it can use only keys shared with the whole project',
+    code: 'SHARED_SESSION_PERSONAL_KEY',
+  },
+  prompted_by_another_member: {
+    error: 'Another member has prompted this session, so it no longer acts for its owner and can use only keys shared with the whole project',
+    code: 'SESSION_PROMPTED_BY_ANOTHER_MEMBER',
+  },
+  no_person: {
+    error: 'This session does not act for a person (it started before personal keys existed, or unattended), so it can use only keys shared with the whole project. Start a new session to use your own keys',
+    code: 'SESSION_ACTS_FOR_NO_ONE',
+  },
+};
 const Input = z.object({ secret_ids: z.array(z.string().uuid()).max(MAX_KEYS_PER_PROVIDER).nullable() }).strict();
 
 /**
@@ -64,7 +97,13 @@ projectsApp.openapi(createRoute({
   method: 'get', path: '/{projectId}/sessions/{sessionId}/provider-secret-pools',
   tags: ['sessions'], summary: 'List configured session provider secret pools', ...auth,
   request: { params: Params.omit({ providerId: true }) },
-  responses: { 200: json(z.object({ pools: z.array(Pool), can_edit: z.boolean() }), 'Configured session pools'), ...errors(403, 404) },
+  responses: { 200: json(z.object({
+    pools: z.array(Pool),
+    can_edit: z.boolean(),
+    // The person whose own keys this session reaches, or null with the reason.
+    personal_user_id: z.string().nullable(),
+    personal_keys_reason: PersonalKeysReason.nullable(),
+  }), 'Configured session pools'), ...errors(403, 404) },
 }), async (c: any) => {
   const { projectId, sessionId } = c.req.param();
   if (callerKortixSessionId(c) && callerKortixSessionId(c) !== sessionId) return c.json({ error: 'Not found' }, 404);
@@ -75,11 +114,19 @@ projectsApp.openapi(createRoute({
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
   if (gate) return gate;
-  const rows = await db.select({ provider_id: sessionProviderSecretPools.providerId, secret_ids: sessionProviderSecretPools.secretIds })
-    .from(sessionProviderSecretPools).where(eq(sessionProviderSecretPools.sessionId, sessionId));
+  const ownerId = visible.ownerIsMachine ? null : visible.row.createdBy;
+  const [rows, personalUserId] = await Promise.all([
+    db.select({ provider_id: sessionProviderSecretPools.providerId, secret_ids: sessionProviderSecretPools.secretIds })
+      .from(sessionProviderSecretPools).where(eq(sessionProviderSecretPools.sessionId, sessionId)),
+    ownerId
+      ? resolveSessionPersonalOwner({ projectId, accountId: loaded.row.accountId, sessionId, legacyUserId: ownerId }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
   return c.json({
     pools: rows.map(({ provider_id, secret_ids }) => ({ provider_id, secret_ids, configured: true })),
     can_edit: mayChangeSessionModel(visible) && !visible.ownerIsMachine && projectLlmGatewayEnabled(loaded.row.metadata),
+    personal_user_id: personalUserId,
+    personal_keys_reason: personalUserId ? null : personalKeysReason(visible.row),
   });
 });
 
@@ -157,10 +204,7 @@ projectsApp.openapi(createRoute({
     }).catch(() => null);
     if (!(await mayUseProviderKeys({ accountId: loaded.row.accountId, projectId, providerId, ids, grantUserId: personalUserId }))) {
       return c.json(personalUserId === null
-        ? {
-            error: 'This session is shared, so it can use only keys shared with the whole project',
-            code: 'SHARED_SESSION_PERSONAL_KEY',
-          }
+        ? PERSONAL_KEY_REFUSAL[personalKeysReason(visible.row)]
         : { error: 'The session owner cannot use every selected secret' }, 403);
     }
   }

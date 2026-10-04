@@ -204,11 +204,10 @@ describe('env token vs .kortix/link.json host', () => {
 });
 
 describe('resolveProjectRef source tracking', () => {
-  // The default order is the documented one: --project → KORTIX_PROJECT_ID →
-  // link.json → the active host's default. `preferConfigured` (the
-  // change-request commands) puts the CLI config's principal first — unless
-  // it names the same project the ambient pair already carries, whose own
-  // credential the ambient token is.
+  // The order is the documented one: --project → link.json → KORTIX_PROJECT_ID
+  // → the active host's default. When the link names the env project itself,
+  // the env source is kept: the ambient session token is a valid credential
+  // for its own project.
   let dir: string;
   let savedCwd: string;
 
@@ -226,6 +225,10 @@ describe('resolveProjectRef source tracking', () => {
     );
     savedCwd = process.cwd();
     process.chdir(dir);
+    delete process.env.KORTIX_TOKEN;
+    delete process.env.KORTIX_API_URL;
+    delete process.env.KORTIX_PROJECT_ID;
+    delete process.env.KORTIX_CONFIG_FILE;
   });
 
   afterEach(() => {
@@ -233,38 +236,62 @@ describe('resolveProjectRef source tracking', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('reports the env source when KORTIX_PROJECT_ID wins', () => {
+  function writeConfigDefault(): void {
+    rmSync(join(dir, '.kortix', 'link.json'));
+    writeFileSync(
+      join(dir, 'config.json'),
+      JSON.stringify({
+        active: 'team',
+        hosts: {
+          team: {
+            url: 'https://config-host.example/v1',
+            token: 'kortix_pat_config_host',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'acct',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+            default_project: { project_id: 'proj-from-default', account_id: 'acct' },
+          },
+        },
+      }),
+    );
+    process.env.KORTIX_CONFIG_FILE = join(dir, 'config.json');
+  }
+
+  it('the link outranks the env project (the directory link is the most specific binding)', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+  });
+
+  it('reports the link source when no env project is set', () => {
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+  });
+
+  it('keeps the env source when the link names the env project', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-link';
+    const ref = resolveProjectRef();
+    // The ambient session token is a valid credential for its own project.
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'env' });
+  });
+
+  it('the env project outranks the active host default', () => {
+    writeConfigDefault();
     process.env.KORTIX_PROJECT_ID = 'proj-from-env';
     const ref = resolveProjectRef();
     expect(ref).toEqual({ projectId: 'proj-from-env', source: 'env' });
   });
 
-  it('reports the link source when no env project is set', () => {
-    delete process.env.KORTIX_PROJECT_ID;
+  it('falls through to the active host default when nothing else is set', () => {
+    writeConfigDefault();
     const ref = resolveProjectRef();
-    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+    expect(ref).toEqual({ projectId: 'proj-from-default', source: 'default' });
   });
 
-  it('preferConfigured puts the link ahead of the env project', () => {
-    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
-    const ref = resolveProjectRef(undefined, { preferConfigured: true });
-    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
-  });
-
-  it('preferConfigured keeps the env source when link and env name the same project', () => {
-    process.env.KORTIX_PROJECT_ID = 'proj-from-link';
-    const ref = resolveProjectRef(undefined, { preferConfigured: true });
-    // The ambient session token is a valid credential for its own project.
-    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'env' });
-  });
-
-  it('an explicit --project flag wins under both orders', () => {
+  it('an explicit --project flag wins over every other source', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-from-env';
     expect(resolveProjectRef('proj-from-flag')).toEqual({
-      projectId: 'proj-from-flag',
-      source: 'flag',
-    });
-    expect(resolveProjectRef('proj-from-flag', { preferConfigured: true })).toEqual({
       projectId: 'proj-from-flag',
       source: 'flag',
     });

@@ -1,37 +1,30 @@
-import { splitHelp } from '../command-argv.ts';
-import {
-  emitJson,
-  resolveProjectContext,
-  surfaceApiError,
-  takeFlagBool,
-  takeFlagValue,
-  fail,
-  missing,
-} from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
-  ChangeRequestDetailResponse,
   ChangeRequestDiffResponse,
   ChangeRequestMergePreview,
   ChangeRequestMergeResponse,
   ChangeRequestStatus,
   ChangeRequestsListResponse,
 } from '../api/types.ts';
-
-/** GET /projects/:id/version-diff — a summary, no patch body. */
-interface VersionDiffPreview {
-  from: string;
-  into: string;
-  from_sha: string | null;
-  into_sha: string | null;
-  merge_base: string | null;
-  files_changed: number;
-  additions: number;
-  deletions: number;
-  is_up_to_date: boolean;
-  is_same_ref: boolean;
-}
+import { splitHelp } from '../command-argv.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveProjectContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+  type CtxOpts,
+} from '../command-helpers.ts';
+import { C, help, pad, status } from '../style.ts';
+import {
+  crDiff,
+  crVersionDiff,
+  displayBranch,
+  printMergeVerdict,
+  resolveCr,
+} from './cr-diff.ts';
 
 const HELP = help`Usage: kortix cr <subcommand> [options]
 
@@ -93,14 +86,7 @@ export async function runCr(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
-  const ctxOpts: CtxOpts = {
-    projectArg: projectFlag,
-    hostArg: hostFlag,
-    // The change-request commands operate on the user's configured project:
-    // the CLI config's principal (link.json / the host default) outranks the
-    // ambient sandbox pair, and its credential travels with it.
-    configuredPrincipalFirst: true,
-  };
+  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
@@ -137,22 +123,6 @@ export async function runCr(argv: string[]): Promise<number> {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-type CtxOpts = {
-  projectArg?: string;
-  hostArg?: string;
-  configuredPrincipalFirst?: boolean;
-};
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function looksLikeUuid(s: string): boolean {
-  return UUID_RE.test(s);
-}
-
-function displayBranch(name: string): string {
-  return looksLikeUuid(name) ? `${name.slice(0, 8)}…` : name;
-}
-
 function statusBadge(s: ChangeRequestStatus): string {
   if (s === 'open') return `${C.green}● open${C.reset}`;
   if (s === 'merged') return `${C.cyan}✔ merged${C.reset}`;
@@ -171,51 +141,6 @@ function relativeTime(iso: string): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
-/**
- * Resolve a user-supplied CR reference (`3` or a uuid) to the live CR row.
- * Always lists once so we can match a numeric reference; cheap enough for
- * v1, and it gives us a single error path.
- */
-async function resolveCr(
-  ctx: { client: import('../api/client.ts').ApiClient; projectId: string },
-  ref: string | undefined,
-): Promise<ChangeRequest | null> {
-  if (!ref) {
-    process.stderr.write(`${status.err('Pass a CR number or uuid.')}\n`);
-    return null;
-  }
-  if (looksLikeUuid(ref)) {
-    try {
-      const resp = await ctx.client.get<ChangeRequestDetailResponse>(
-        `/projects/${ctx.projectId}/change-requests/${ref}`,
-      );
-      return resp.change_request;
-    } catch (err) {
-      surfaceApiError(err);
-      return null;
-    }
-  }
-  const n = Number(ref.replace(/^#/, ''));
-  if (!Number.isInteger(n) || n <= 0) {
-    process.stderr.write(`${status.err(`"${ref}" is not a valid CR number or uuid.`)}\n`);
-    return null;
-  }
-  try {
-    const list = await ctx.client.get<ChangeRequestsListResponse>(
-      `/projects/${ctx.projectId}/change-requests?status=all`,
-    );
-    const match = list.change_requests.find((c) => c.number === n);
-    if (!match) {
-      process.stderr.write(`${status.err(`No CR #${n} on this project.`)}\n`);
-      return null;
-    }
-    return match;
-  } catch (err) {
-    surfaceApiError(err);
-    return null;
-  }
-}
-
 // ── subcommands ────────────────────────────────────────────────────────────
 
 async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number> {
@@ -226,7 +151,8 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
     return fail((err as Error).message);
   }
   const filter = (statusFilter ?? 'open').toLowerCase();
-  if (!['open', 'merged', 'closed', 'all'].includes(filter)) return fail('--status must be open|merged|closed|all');
+  if (!['open', 'merged', 'closed', 'all'].includes(filter))
+    return fail('--status must be open|merged|closed|all');
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -306,12 +232,16 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
   const head = displayBranch(cr.head_ref);
   const base = displayBranch(cr.base_ref);
   const headSha = cr.head_commit_sha ? cr.head_commit_sha.slice(0, 7) : '';
-  process.stdout.write(`  ${C.dim}Head ${C.reset}${head}${headSha ? `  ${C.faded}${headSha}${C.reset}` : ''}\n`);
+  process.stdout.write(
+    `  ${C.dim}Head ${C.reset}${head}${headSha ? `  ${C.faded}${headSha}${C.reset}` : ''}\n`,
+  );
   process.stdout.write(`  ${C.dim}Base ${C.reset}${base}\n`);
   process.stdout.write(`  ${C.dim}Opened ${C.reset}${relativeTime(cr.created_at)}\n`);
   if (cr.merged_at) {
     const m = cr.merge_commit_sha?.slice(0, 7);
-    process.stdout.write(`  ${C.dim}Merged ${C.reset}${relativeTime(cr.merged_at)}${m ? `  ${C.faded}${m}${C.reset}` : ''}\n`);
+    process.stdout.write(
+      `  ${C.dim}Merged ${C.reset}${relativeTime(cr.merged_at)}${m ? `  ${C.faded}${m}${C.reset}` : ''}\n`,
+    );
   }
   if (cr.closed_at && cr.status === 'closed') {
     process.stdout.write(`  ${C.dim}Closed ${C.reset}${relativeTime(cr.closed_at)}\n`);
@@ -323,21 +253,7 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
       const preview = await ctx.client.get<ChangeRequestMergePreview>(
         `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/merge-preview`,
       );
-      if (preview.is_up_to_date) {
-        process.stdout.write(`  ${C.dim}Already at base — nothing to merge.${C.reset}\n`);
-      } else if (preview.can_merge) {
-        process.stdout.write(
-          `  ${C.green}✓${C.reset} Mergeable cleanly${preview.can_fast_forward ? ' (fast-forward)' : ''}.\n`,
-        );
-      } else {
-        process.stdout.write(
-          `  ${C.yellow}⚠${C.reset} Conflicts in ${preview.conflicts.length} file${preview.conflicts.length === 1 ? '' : 's'}:\n`,
-        );
-        for (const p of preview.conflicts) {
-          process.stdout.write(`    ${C.faded}${p}${C.reset}\n`);
-        }
-      }
-      process.stdout.write('\n');
+      printMergeVerdict(preview);
     } catch (err) {
       // Surface but don't block the rest of show.
       const message = (err as Error).message;
@@ -345,76 +261,6 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
     }
   }
 
-  return 0;
-}
-
-async function crDiff(argv: string[], opts: CtxOpts, json = false): Promise<number> {
-  const noColor = takeFlagBool(argv, ['--no-color']);
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-  const cr = await resolveCr(ctx, argv[0]);
-  if (!cr) return 1;
-
-  let diff: ChangeRequestDiffResponse;
-  try {
-    diff = await ctx.client.get<ChangeRequestDiffResponse>(
-      `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/diff`,
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  if (json) {
-    emitJson({ cr, patch: diff.patch });
-    return 0;
-  }
-
-  if (diff.files_changed === 0) {
-    process.stdout.write(`${C.dim}No changes to show.${C.reset}\n`);
-    return 0;
-  }
-
-  // Files-changed header
-  process.stdout.write('\n');
-  for (const f of diff.files) {
-    const tag =
-      f.status === 'added'
-        ? `${C.green}+${C.reset}`
-        : f.status === 'deleted'
-          ? `${C.red}-${C.reset}`
-          : `${C.cyan}~${C.reset}`;
-    process.stdout.write(
-      `  ${tag}  ${pad(f.path, 50)}  ${C.green}+${f.additions}${C.reset} ${C.red}-${f.deletions}${C.reset}\n`,
-    );
-  }
-  process.stdout.write(
-    `\n  ${C.dim}${diff.files_changed} file${diff.files_changed === 1 ? '' : 's'},${C.reset} ${C.green}+${diff.additions}${C.reset} ${C.red}-${diff.deletions}${C.reset}\n\n`,
-  );
-
-  if (noColor) {
-    process.stdout.write(diff.patch);
-    return 0;
-  }
-
-  // Lightweight terminal coloring for the unified patch
-  const useColor = process.stdout.isTTY ?? false;
-  if (!useColor) {
-    process.stdout.write(diff.patch);
-    return 0;
-  }
-  for (const line of diff.patch.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      process.stdout.write(`${C.bold}${line}${C.reset}\n`);
-    } else if (line.startsWith('@@')) {
-      process.stdout.write(`${C.cyan}${line}${C.reset}\n`);
-    } else if (line.startsWith('+')) {
-      process.stdout.write(`${C.green}${line}${C.reset}\n`);
-    } else if (line.startsWith('-')) {
-      process.stdout.write(`${C.red}${line}${C.reset}\n`);
-    } else {
-      process.stdout.write(`${line}\n`);
-    }
-  }
   return 0;
 }
 
@@ -558,26 +404,10 @@ async function crMergePreview(
   process.stdout.write(
     `  ${C.bold}#${cr.number}${C.reset}  ${displayBranch(cr.head_ref)} → ${displayBranch(cr.base_ref)}\n`,
   );
-  if (preview.is_up_to_date) {
-    process.stdout.write(`  ${C.dim}Already at base — nothing to merge.${C.reset}\n\n`);
-    return 0;
-  }
-  if (preview.can_merge) {
-    process.stdout.write(
-      `  ${C.green}✓${C.reset} Mergeable cleanly${preview.can_fast_forward ? ' (fast-forward)' : ''}.\n\n`,
-    );
-    return 0;
-  }
-  process.stdout.write(
-    `  ${C.yellow}⚠${C.reset} Conflicts in ${preview.conflicts.length} file${preview.conflicts.length === 1 ? '' : 's'}:\n`,
-  );
-  for (const path of preview.conflicts) {
-    process.stdout.write(`    ${C.faded}${path}${C.reset}\n`);
-  }
-  process.stdout.write('\n');
+  printMergeVerdict(preview);
   // A conflicted CR cannot be shipped as it stands — say so in the exit code
   // too, so a script can branch on it without reading the text.
-  return 1;
+  return preview.can_merge || preview.is_up_to_date ? 0 : 1;
 }
 
 /**
@@ -585,11 +415,7 @@ async function crMergePreview(
  * records the note on the CR (CRs have no comment table) and delivers it to
  * the agent that opened the change, which then revises it.
  */
-async function crRequestChanges(
-  argv: string[],
-  opts: CtxOpts,
-  json = false,
-): Promise<number> {
+async function crRequestChanges(argv: string[], opts: CtxOpts, json = false): Promise<number> {
   let message: string | undefined;
   try {
     message = takeFlagValue(argv, ['--message', '--feedback', '-m']);
@@ -623,59 +449,6 @@ async function crRequestChanges(
     resp.delivering
       ? `${status.ok(`Delivering to the agent — it will revise ${C.bold}CR #${cr.number}${C.reset}`)}\n`
       : `${status.ok(`Saved on ${C.bold}CR #${cr.number}${C.reset}`)} ${C.dim}(no originating session to deliver to)${C.reset}\n`,
-  );
-  return 0;
-}
-
-/**
- * Diff two versions WITHOUT a CR — the same summary the dashboard's "Open
- * change request" dialog shows live, so a caller can tell whether there is
- * anything to propose before it opens one.
- */
-async function crVersionDiff(argv: string[], opts: CtxOpts, json = false): Promise<number> {
-  let fromRef: string | undefined;
-  let intoRef: string | undefined;
-  try {
-    fromRef = takeFlagValue(argv, ['--from', '--head']);
-    intoRef = takeFlagValue(argv, ['--into', '--base']);
-  } catch (err) {
-    return fail((err as Error).message);
-  }
-  if (!fromRef) fromRef = process.env.KORTIX_BRANCH_NAME || process.env.KORTIX_HEAD_REF;
-  if (!fromRef || !intoRef) return missing('--from <version> and --into <version>');
-
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  const params = new URLSearchParams({ from: fromRef, into: intoRef });
-  let diff: VersionDiffPreview;
-  try {
-    diff = await ctx.client.get<VersionDiffPreview>(
-      `/projects/${ctx.projectId}/version-diff?${params.toString()}`,
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  if (json) {
-    emitJson(diff);
-    return 0;
-  }
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${displayBranch(diff.from)} → ${displayBranch(diff.into)}\n`,
-  );
-  if (diff.is_same_ref) {
-    process.stdout.write(`  ${C.dim}Same version — nothing to compare.${C.reset}\n\n`);
-    return 0;
-  }
-  if (diff.is_up_to_date || diff.files_changed === 0) {
-    process.stdout.write(`  ${C.dim}No changes — nothing to propose.${C.reset}\n\n`);
-    return 0;
-  }
-  process.stdout.write(
-    `  ${diff.files_changed} file${diff.files_changed === 1 ? '' : 's'},` +
-      ` ${C.green}+${diff.additions}${C.reset} ${C.red}-${diff.deletions}${C.reset}\n\n`,
   );
   return 0;
 }

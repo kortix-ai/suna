@@ -6,6 +6,7 @@ import type {
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
+import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -37,6 +38,7 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
+import { isWarmProjectSession } from './warm-sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -145,10 +147,9 @@ export function serializeSession(
   // the metadata object alone would still have leaked the OpenCode-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions =
-    canAccess && Array.isArray(row.metadata?.opencode_sessions)
-      ? row.metadata.opencode_sessions
-      : [];
+  const opencodeSessions = canAccess
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from OpenCode server-side
@@ -183,7 +184,16 @@ export function serializeSession(
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    status: row.status,
+    // A warm (pre-created, never-prompted) session whose box is up must not
+    // claim `running`: nothing has ever run in it, and every list painted those
+    // shells as phantom green "Running" rows (KRTX-1466). Report the status it
+    // held while its box booted; the first accepted turn drops the warm marker
+    // (session-activity.ts) and the row reads `running` again. The row itself
+    // still lists and still bills — see session-inventory.ts (KRTX-1068).
+    status:
+      row.status === 'running' && isWarmProjectSession(row.metadata)
+        ? 'provisioning'
+        : row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
     // other callers that serialize with canAccess=false. Metadata holds

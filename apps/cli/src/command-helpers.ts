@@ -15,15 +15,6 @@ interface ProjectContextOpts {
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
   /**
-   * Prefer the CLI config's principal over the ambient sandbox pair.
-   *
-   * For commands whose project IS the user's explicit configuration (the
-   * change-request commands): `.kortix/link.json` and the active host's
-   * default project outrank `KORTIX_PROJECT_ID`, and the project travels with
-   * its own host's credential — never the sandbox's ambient session token.
-   */
-  configuredPrincipalFirst?: boolean;
-  /**
    * Do not print "No project linked" when nothing resolves.
    *
    * Set by callers that have a fallback — `locateSessionAnywhere` goes on to
@@ -36,28 +27,63 @@ interface ProjectContextOpts {
 }
 
 /**
+ * The auth (and the host name whose credentials serve it) for project-scoped
+ * commands: `--host` → the cwd link's host (its stored credentials are what
+ * reach a non-session project from inside a sandbox) → the injected env
+ * token → the active host. resolveProjectContext and the host notice both
+ * read this so the header never names credentials the command will not use.
+ */
+export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
+  hostName?: string;
+  auth: Auth | null;
+} {
+  const link = opts.hostArg ? null : loadLink();
+  let hostName = opts.hostArg ?? link?.host ?? undefined;
+  let auth = hostName ? loadAuthForHost(hostName) : loadAuth();
+  // A link naming a host with no stored credentials must not dead-end the CLI
+  // inside a sandbox: the injected env token stays the fallback there.
+  if (!auth?.token && !opts.hostArg && hasEnvTokenHost()) {
+    auth = loadAuth();
+    hostName = undefined;
+  }
+  return { hostName, auth };
+}
+
+/**
  * Common setup for any project-scoped command: validate auth, resolve a
  * project id, build an API client. Prints a friendly error and returns
  * null if either piece is missing.
  *
  * Host resolution order:
  *   1. --host flag (per-invocation override)
- *   2. KORTIX_TOKEN (platform-injected sandbox
- *      auth — resolved through `loadAuth()`; a committed link host has no
- *      credentials inside a sandbox, so the env token must win)
- *   3. .kortix/link.json's `host` field (per-repo binding)
+ *   2. .kortix/link.json's `host` field (per-directory binding — its stored
+ *      credentials are what make a NON-session project reachable from inside
+ *      a sandbox, where the injected token is scoped to the session's project)
+ *   3. KORTIX_TOKEN (platform-injected sandbox auth — the fallback when the
+ *      link names a host with no stored credentials, so the CLI never
+ *      dead-ends on "not logged in")
  *   4. globally active host (~/.config/kortix/config.json)
  *
+ * Project id resolution order (resolveProjectRef):
+ *   1. --project flag
+ *   2. .kortix/link.json in cwd (the most specific binding — it outranks the
+ *      session env so a linked clone reaches its own project; the host notice
+ *      already displays it as "linked", so behavior must match)
+ *   3. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
+ *   4. the active host's global default project (`kortix projects use`)
+ *
  * ONE PRINCIPAL (KRTX-1486): whichever source resolves the project also
- * supplies the credential. Inside a sandbox the env token authenticates the
- * env host — but a project that came from the config side (link.json or the
- * active host's default) is paired with THAT host's stored credential, or the
+ * supplies the credential. The env token is the credential only for the env
+ * project; a project that came from the config side (link.json or the active
+ * host's default) is paired with THAT host's stored credential, or the
  * command stops with an explicit `kortix login --host` pointer; see the guard
  * below.
  *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
+export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg'>;
+
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
 ): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
@@ -66,15 +92,8 @@ export async function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  // Resolve the host: explicit flag → sandbox env token → link.json's host → active.
-  let hostFromLink: string | undefined;
-  if (!opts.hostArg && !hasEnvTokenHost()) {
-    hostFromLink = loadLink()?.host ?? undefined;
-  }
-  const hostName = opts.hostArg ?? hostFromLink;
-
-  const envTokenAuth = hasEnvTokenHost();
-  let auth: Auth | null = hostName ? loadAuthForHost(hostName) : loadAuth();
+  const { hostName, auth: resolvedAuth } = resolveProjectAuth({ hostArg: opts.hostArg });
+  let auth: Auth | null = resolvedAuth;
   if (!auth?.token) {
     if (hostName) {
       const source = opts.hostArg ? '(--host)' : '(from .kortix/link.json)';
@@ -109,20 +128,18 @@ export async function resolveProjectContext(
       return null;
     }
   } else {
-    const ref = resolveProjectRef(opts.projectArg, {
-      preferConfigured: opts.configuredPrincipalFirst,
-    });
+    const ref = resolveProjectRef(opts.projectArg);
     projectId = ref?.projectId ?? null;
-    // ONE PRINCIPAL: the ambient sandbox session token is bound to the
-    // sandbox's own project. A project the CLI config resolved (link.json or
-    // the active host's default) must never pair with it — writes 403
-    // cross-project and reads silently return the token-bound project's rows
-    // (KRTX-1486). When the config side supplies the project, its own host
-    // supplies the credential; without stored credentials for that host, stop
-    // with an explicit login pointer instead of a doomed request.
-    if (projectId && envTokenAuth && (ref?.source === 'link' || ref?.source === 'default')) {
-      const link = ref.source === 'link' ? loadLink() : null;
-      const configHostName = link?.host ?? activeHostName() ?? undefined;
+    // ONE PRINCIPAL (KRTX-1486): the ambient sandbox session token is bound
+    // to the sandbox's own project. A project the CLI config resolved
+    // (.kortix/link.json) must never pair with it — writes 403 cross-project
+    // and reads return the wrong project's rows. The link project travels
+    // with its own host's stored credential; without stored credentials for
+    // that host, stop with an explicit login pointer instead of a doomed
+    // request. (`--host <name>` cannot rescue that state: it resolves the
+    // same absent credentials, so logging in is the only working fix.)
+    if (projectId && hasEnvTokenHost() && ref?.source === 'link') {
+      const configHostName = loadLink()?.host ?? activeHostName() ?? undefined;
       const configAuth = configHostName ? loadAuthForHost(configHostName) : null;
       if (configAuth?.token) {
         auth = configAuth;
@@ -130,13 +147,9 @@ export async function resolveProjectContext(
         const hostLabel = configHostName
           ? `host "${configHostName}"`
           : 'a host with no stored credentials';
-        const from = ref.source === 'link' ? '.kortix/link.json' : 'the active host default';
-        // `--host <name>` cannot rescue this state: it resolves the same
-        // stored credentials that are absent here, so the only working fix
-        // is logging in on that host.
         process.stderr.write(
           `${status.err(
-            `Project is bound to ${hostLabel} (${from}) but only the ambient sandbox session token is available here — it cannot act on that project.`,
+            `Project is bound to ${hostLabel} (.kortix/link.json) but only the ambient sandbox session token is available here — it cannot act on that project.`,
           )} Run ${C.cyan}kortix login --host ${configHostName ?? '<host>'}${C.reset} first.\n`,
         );
         return null;
@@ -223,6 +236,16 @@ export function emitJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
+/** Render `params` as a `?a=b&c=d` query string, skipping undefined and empty values. */
+export function query(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  }
+  const rendered = search.toString();
+  return rendered ? `?${rendered}` : '';
+}
+
 // ── Cross-host/account/project resource discovery ───────────────────────────
 //
 // Every session/project route is scoped to a specific Kortix host (a project
@@ -237,7 +260,7 @@ export function emitJson(data: unknown): void {
 // browser flow) — so the failure message prints ready-to-run
 // `login && retry --host <name>` one-liners for those hosts instead.
 
-export interface LocatedSession {
+interface LocatedSession {
   client: ApiClient;
   auth: Auth;
   projectId: string;
@@ -330,7 +353,7 @@ export async function locateSessionAnywhere(
   return { located: found, switched: true };
 }
 
-export interface LocatedProject {
+interface LocatedProject {
   client: ApiClient;
   auth: Auth;
   project: ProjectSummary;
@@ -618,6 +641,39 @@ export function missing(what: string): number {
 /** The first dash-separated segment of an id — `3f2a…-…` prints as `3f2a…`. */
 export function shortId(id: string): string {
   return id.split('-')[0] ?? id;
+}
+
+/** Relative span → milliseconds: minutes, hours, days, weeks or years. */
+const SPAN_MS: Record<string, number> = {
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+  y: 31_536_000_000,
+};
+
+const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w|y)$/i;
+
+/**
+ * Resolve a timestamp argument to an ISO instant: a relative span (`24h`,
+ * `7d`, `30m`, `2w`, `1y`) resolved `sign` seconds from `now` (audit reads the
+ * past with -1, token expiry looks ahead with +1), or an absolute instant
+ * passed through normalized. Returns null for anything it cannot parse, so
+ * the caller can reject instead of coercing garbage to now.
+ */
+export function resolveSpanInstant(input: string, now: Date, sign: 1 | -1): string | null {
+  const value = input.trim();
+  if (!value) return null;
+  const relative = RELATIVE_SPAN.exec(value);
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = (relative[2] ?? '').toLowerCase();
+    const ms = SPAN_MS[unit];
+    if (!Number.isFinite(amount) || amount <= 0 || ms === undefined) return null;
+    return new Date(now.getTime() + sign * amount * ms).toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 /** Find and pull out a flag value from argv (`--project foo` or

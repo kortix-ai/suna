@@ -132,6 +132,10 @@ export const PANE_META: Partial<Record<AccountSection, { title: string; descript
     title: 'Identity',
     description: 'Bring members in from your identity provider.',
   },
+  audit: {
+    title: 'Audit log',
+    description: "Read access to the account's own audit trail.",
+  },
   roles: {
     title: 'Roles',
     description: 'Built-in and custom roles. Assign them from Members and Projects.',

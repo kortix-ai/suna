@@ -87,7 +87,12 @@ export function clearLink(cwd = process.cwd()): void {
  * Returns null if none of those are set.
  */
 export function resolveProjectId(projectArg?: string): string | null {
-  return resolveProjectRef(projectArg)?.projectId ?? null;
+  if (projectArg) return projectArg;
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  if (envProjectId) return envProjectId;
+  const link = loadLink();
+  if (link?.project_id) return link.project_id;
+  return defaultProject()?.project_id ?? null;
 }
 
 /** Where a resolved project came from. `link` and `default` are the CLI
@@ -102,33 +107,27 @@ export interface ProjectRef {
 }
 
 /**
- * resolveProjectId with the winning source attached.
+ * resolveProjectContext's project resolution, with the winning source
+ * attached: --project → link.json → KORTIX_PROJECT_ID → the active host's
+ * default. The directory link is the most specific binding, so it outranks
+ * the session env for every caller of this path.
  *
- * `preferConfigured` flips env and the configured side for callers whose
- * project IS the user's explicit configuration (the change-request commands):
- * link.json → the active host's default project → the ambient sandbox pair.
- * When the configured side names the same project the env pair already
- * carries, the env source is kept — the ambient session token is a valid
- * credential for its own project.
+ * When the link names the env project itself, the env source is kept: the
+ * ambient session token is a valid credential for its own project, so an
+ * in-sandbox `kortix ship` (which links the session's own project) keeps
+ * working without stored credentials for the link host.
  */
-export function resolveProjectRef(
-  projectArg?: string,
-  opts?: { preferConfigured?: boolean },
-): ProjectRef | null {
+export function resolveProjectRef(projectArg?: string): ProjectRef | null {
   if (projectArg) return { projectId: projectArg, source: 'flag' };
-  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
   const link = loadLink();
-  const defaultRef = defaultProject();
-  const configured: ProjectRef | null = link?.project_id
-    ? { projectId: link.project_id, source: 'link' }
-    : defaultRef?.project_id
-      ? { projectId: defaultRef.project_id, source: 'default' }
-      : null;
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
   const env: ProjectRef | null = envProjectId ? { projectId: envProjectId, source: 'env' } : null;
-  if (opts?.preferConfigured) {
-    const chosen = configured ?? env;
-    if (chosen && env && chosen.projectId === env.projectId) return env;
-    return chosen;
+  if (link?.project_id) {
+    if (env && link.project_id === env.projectId) return env;
+    return { projectId: link.project_id, source: 'link' };
   }
-  return env ?? configured;
+  const defaultRef = defaultProject();
+  return (
+    env ?? (defaultRef?.project_id ? { projectId: defaultRef.project_id, source: 'default' } : null)
+  );
 }

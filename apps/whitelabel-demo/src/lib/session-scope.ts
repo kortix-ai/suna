@@ -1,9 +1,9 @@
-import { MID_SESSION_CAPABILITIES } from './mid-session-change';
 import type {
   SessionConnectorBindings,
   SessionScope,
   SessionScopeInput as SessionScopeReplacement,
 } from '@kortix/sdk';
+import { MID_SESSION_CAPABILITIES, type MidSessionCapability } from './mid-session-change';
 
 /**
  * What THIS session is actually scoped to, and what can still move.
@@ -20,7 +20,7 @@ import type {
 
 export type ScopeRowKey = 'model' | 'agent' | 'secrets' | 'connections';
 
-export interface SessionScopeRow {
+interface SessionScopeRow {
   key: ScopeRowKey;
   label: string;
   /** The short "can I change this now?" badge. */
@@ -34,7 +34,7 @@ export interface SessionScopeRow {
   control: 'model' | null;
 }
 
-export interface SessionScopeRowsInput {
+interface SessionScopeRowsInput {
   /** `session.agent_name` — null when the project default agent runs. */
   agentName: string | null | undefined;
   /** `session.secrets_allowlist` — null/undefined = never narrowed. */
@@ -50,10 +50,7 @@ export function readScopeBindingIds(
   bindings: SessionConnectorBindings | null | undefined,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(bindings ?? {}).map(([alias, binding]) => [
-      alias,
-      binding.connection_id,
-    ]),
+    Object.entries(bindings ?? {}).map(([alias, binding]) => [alias, binding.connection_id]),
   );
 }
 
@@ -64,9 +61,7 @@ export function buildCompleteSessionScopeReplacement(
     bindings?: Record<string, string>;
   },
 ): SessionScopeReplacement {
-  const secrets = Object.hasOwn(changes, 'secrets')
-    ? changes.secrets
-    : current.secrets_allowlist;
+  const secrets = Object.hasOwn(changes, 'secrets') ? changes.secrets : current.secrets_allowlist;
   const bindings = Object.hasOwn(changes, 'bindings')
     ? (changes.bindings ?? {})
     : readScopeBindingIds(current.connector_bindings);
@@ -82,7 +77,7 @@ export function buildCompleteSessionScopeReplacement(
   };
 }
 
-export function describeSecretsAllowlist(
+function describeSecretsAllowlist(
   allowlist: string[] | null | undefined,
   agentName: string | null | undefined,
 ): string {
@@ -95,9 +90,23 @@ export function describeSecretsAllowlist(
   return allowlist.join(', ');
 }
 
-export function sessionScopeRows(
-  input: SessionScopeRowsInput,
-): SessionScopeRow[] {
+/**
+ * The short "can I change this now?" badge, derived from the capability table
+ * so a row's badge can never drift away from the contract it describes. This
+ * is the ONE place the mapping lives: the scope-bar chips and this panel's
+ * rows both read it.
+ */
+const CAPABILITY_BADGE: Record<MidSessionCapability, string> = {
+  changeable: 'Changeable',
+  per_prompt: 'Per message',
+  fixed_at_create: 'Fixed at start',
+};
+
+export function scopeBadge(key: keyof typeof MID_SESSION_CAPABILITIES): string {
+  return CAPABILITY_BADGE[MID_SESSION_CAPABILITIES[key]];
+}
+
+export function sessionScopeRows(input: SessionScopeRowsInput): SessionScopeRow[] {
   const agent = input.agentName ?? null;
   const agentLabel = agent ?? 'The project default agent';
   const bound = Object.entries(input.boundConnections);
@@ -106,7 +115,7 @@ export function sessionScopeRows(
     {
       key: 'model',
       label: 'Model',
-      badge: 'Changeable now',
+      badge: scopeBadge('model'),
       value: null,
       detail:
         'Switching restarts the runtime, which ends the in-flight turn. If it cannot be applied live the change is saved and takes effect the next time this session starts — the switcher says which happened.',
@@ -115,7 +124,7 @@ export function sessionScopeRows(
     {
       key: 'agent',
       label: 'Agent',
-      badge: 'Per message',
+      badge: scopeBadge('agent'),
       value: agentLabel,
       detail: agent
         ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
@@ -125,7 +134,7 @@ export function sessionScopeRows(
     {
       key: 'secrets',
       label: 'Secrets',
-      badge: 'Changeable now',
+      badge: scopeBadge('secrets'),
       value: describeSecretsAllowlist(input.secretsAllowlist, agent),
       detail:
         input.secretsAllowlist === null || input.secretsAllowlist === undefined
@@ -136,7 +145,7 @@ export function sessionScopeRows(
     {
       key: 'connections',
       label: 'Connections',
-      badge: 'Changeable now',
+      badge: scopeBadge('connections'),
       value:
         bound.length === 0
           ? 'The project default for every connector'
@@ -152,9 +161,7 @@ export function sessionScopeRows(
 
 /** The scope rows the mid-session capability map says are frozen. Keeps the
  *  badges from drifting away from the contract they describe. */
-export function isFixedAtStart(
-  key: keyof typeof MID_SESSION_CAPABILITIES,
-): boolean {
+export function isFixedAtStart(key: keyof typeof MID_SESSION_CAPABILITIES): boolean {
   // Derived from the capability table, with no hardcoded exception. `connections`
   // used to be forced true here even though the table had no entry for it — so
   // the badge and the behaviour could disagree, and did the moment the /scope

@@ -18,7 +18,7 @@ export function OsHero() {
   return (
     <>
       <section id="hero" data-kx-dark-hero="" className="dark relative flex min-h-svh flex-col overflow-hidden bg-background">
-        <div className="kx-hero-veil absolute inset-0" aria-hidden>
+        <div className="kx-hero-veil absolute inset-0" aria-hidden data-a11y-decorative>
           {/* The floor fade: the copy sits on a calm band, never on a beam. */}
           <BeamsBackdrop fade="floor" />
         </div>

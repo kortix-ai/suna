@@ -1,0 +1,19 @@
+{
+  "source_hash": "36ac9550de96144e84bed0b111afaa9be8424436bf9c880e6d31cff3959fd7f4",
+  "diff_files": [
+    "apps/kortix-worker/src/kortix-env.test.ts",
+    "apps/kortix-worker/src/kortix-env.ts",
+    "apps/kortix-worker/src/rpc-transport.test.ts",
+    "apps/kortix-worker/src/rpc-transport.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "4db95a3831b5f24cb60d93110c5befe493a7beecd813687e7718bb25ee02ecff",
+  "head": "33b199761e0b9fdaab33d2f07a51c2905122a732",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T05:00:08.688Z"
+}

@@ -1,10 +1,10 @@
-import type { ProjectSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import type { ProjectSecret } from '@kortix/sdk';
 import { pendingKeyCollision } from '../../src/lib/secret-collisions';
 import {
   buildSecretRotateInput,
-  buildSecretUpsertInput,
   defaultIdentifier,
+  normalizeSecretDraft,
   secretWriteIntent,
 } from '../../src/lib/secret-upsert';
 
@@ -23,12 +23,12 @@ const secret = (identifier: string, name: string) =>
     can_manage_shared: true,
   }) as ProjectSecret;
 
-describe('buildSecretUpsertInput', () => {
+describe('normalizeSecretDraft as the upsert body', () => {
   test('a distinct identifier is sent alongside the env KEY, not instead of it', () => {
     // The whole point of the pair is that they are separable — a body carrying
     // only one of them teaches the reader they are the same field.
     expect(
-      buildSecretUpsertInput({
+      normalizeSecretDraft({
         identifier: 'GMAPS-backup',
         name: 'GOOGLE_MAPS_API_KEY',
         value: 'v2',
@@ -39,7 +39,7 @@ describe('buildSecretUpsertInput', () => {
   test('the identifier is sent explicitly even when it equals the KEY', () => {
     // The server would default it, but a request that omits it is a request
     // that cannot be read as evidence of anything.
-    const input = buildSecretUpsertInput({
+    const input = normalizeSecretDraft({
       identifier: 'STRIPE_KEY',
       name: 'STRIPE_KEY',
       value: 'v',
@@ -48,14 +48,14 @@ describe('buildSecretUpsertInput', () => {
   });
 
   test('the KEY is upper-cased the way the server stores it', () => {
-    const input = buildSecretUpsertInput({ identifier: 'gmaps', name: ' stripe_key ', value: 'v' });
+    const input = normalizeSecretDraft({ identifier: 'gmaps', name: ' stripe_key ', value: 'v' });
     expect(input.name).toBe('STRIPE_KEY');
     // The identifier is NOT upper-cased — it is stored verbatim.
     expect(input.identifier).toBe('gmaps');
   });
 
   test('an untouched identifier falls back to the KEY', () => {
-    const input = buildSecretUpsertInput({
+    const input = normalizeSecretDraft({
       identifier: defaultIdentifier(''),
       name: 'STRIPE_KEY',
       value: 'v',
@@ -68,9 +68,9 @@ describe('secretWriteIntent', () => {
   const items = [secret('GMAPS-primary', 'GOOGLE_MAPS_API_KEY')];
 
   test('a new identifier is a create', () => {
-    expect(secretWriteIntent(items, { identifier: 'STRIPE', name: 'STRIPE_KEY', value: 'v' })).toEqual(
-      { kind: 'create' },
-    );
+    expect(
+      secretWriteIntent(items, { identifier: 'STRIPE', name: 'STRIPE_KEY', value: 'v' }),
+    ).toEqual({ kind: 'create' });
   });
 
   test('the same identifier and KEY is a rotate', () => {

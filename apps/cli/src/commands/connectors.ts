@@ -1,29 +1,29 @@
 import {
+  type ConnectionSharePrincipal,
+  renameConnection,
+  setConnectorSecretBinding,
+  shareConnection,
+} from '@kortix/sdk';
+import { withKortixScope } from '../api/sdk.ts';
+import {
   emitJson,
   fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  takeFlagBool,
 } from '../command-helpers.ts';
-import { promptSecret } from '../prompts.ts';
+import { UUID_RE, resolveUserId } from '../iam.ts';
 import {
   appendArrayBlock,
   arrayEntryExists,
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import {
-  type ConnectionSharePrincipal,
-  renameConnection,
-  setConnectorSecretBinding,
-  shareConnection,
-} from '@kortix/sdk';
-import { resolveUserId, UUID_RE } from '../iam.ts';
-import { withKortixScope } from '../api/sdk.ts';
-import { C, help, pad, status } from '../style.ts';
+import { promptSecret } from '../prompts.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
@@ -374,13 +374,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
   if (sub === 'show' && rest[0]?.includes('.')) {
     return runConnector(['show', ...rest]);
   }
-  if ((sub === 'ls' || sub === 'list') && rest.includes('--session')) {
+  if (
+    (sub === 'ls' || sub === 'list') &&
+    rest.some((arg) => arg === '--session' || arg.startsWith('--session='))
+  ) {
     const forwarded = rest.filter(
-      (arg, index) => arg !== '--session' && rest[index - 1] !== '--session',
+      (arg, index) =>
+        arg !== '--session' && !arg.startsWith('--session=') && rest[index - 1] !== '--session',
     );
     return runConnector(['ls', ...forwarded]);
   }
-  let f: Record<string, string | undefined> = {};
+  const f: Record<string, string | undefined> = {};
   let asStdin = false;
   let statusOnly = false;
   let json = false;
@@ -1923,7 +1927,7 @@ async function pollDeviceAuthorization(
 }
 
 /** `on`/`off` (and the obvious synonyms) → boolean, else null. */
-export function parseOnOff(value: string | undefined): boolean | null {
+function parseOnOff(value: string | undefined): boolean | null {
   switch ((value ?? '').toLowerCase()) {
     case 'on':
     case 'true':
@@ -1952,16 +1956,15 @@ export function parsePolicyConditions(
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
   for (const entry of raw) {
-    const negated = entry.includes('!=');
-    const separator = negated ? '!=' : '=';
-    const index = entry.indexOf(separator);
+    const index = entry.indexOf('=');
+    const negated = index > 0 && entry[index - 1] === '!';
     if (index <= 0) {
       return {
         error: `--condition must look like arg=value or arg!=value (got "${entry}")`,
       };
     }
-    const arg = entry.slice(0, index).trim();
-    const match = entry.slice(index + separator.length).trim();
+    const arg = entry.slice(0, negated ? index - 1 : index).trim();
+    const match = entry.slice(index + 1).trim();
     if (!arg) return { error: `--condition needs an argument path (got "${entry}")` };
     if (!match) return { error: `--condition needs a value to match (got "${entry}")` };
     conditions.push({ arg, match, ...(negated ? { negate: true } : {}) });
@@ -1970,7 +1973,7 @@ export function parsePolicyConditions(
 }
 
 /** " when to=*@corp.com, subject!=/urgent/" — or "" when unconditioned. */
-export function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
+function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
   if (!conditions || conditions.length === 0) return '';
   return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
 }
@@ -2013,7 +2016,7 @@ async function readStdin(): Promise<string> {
  * project, else the grant labels. `(not you)` marks an account the caller
  * lists only because they manage the project's connections.
  */
-export function connectionAudienceLabel(connection: Connection): string {
+function connectionAudienceLabel(connection: Connection): string {
   if (connection.owner_type !== 'project') return 'owner only';
   const shares = connection.shared_with ?? [];
   const audience =
@@ -2041,8 +2044,4 @@ function accountsCell(connector: Pick<AdminConnector, 'accounts'>): string {
   const ordered = [...accounts].sort((a, b) => Number(b.is_default) - Number(a.is_default));
   const names = ordered.map((a) => `${a.label}${a.is_default ? '*' : ''}`).join(', ');
   return `${accounts.length} · ${names}`;
-}
-
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
