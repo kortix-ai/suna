@@ -1,0 +1,25 @@
+{
+  "source_hash": "ecc70e7579f63abcb5917140ff4e3834a94fc648e8d9f677f8cb718b7e3a78c8",
+  "diff_files": [
+    "apps/api/src/projects/lib/serializers.ts",
+    "apps/api/src/projects/lib/session-list-metadata.test.ts",
+    "apps/web/src/components/projects/session-label.test.ts",
+    "apps/web/src/components/projects/session-label.ts",
+    "apps/web/src/features/session/header/session-site-header.test.tsx",
+    "apps/web/src/features/session/header/session-site-header.tsx",
+    "apps/web/src/features/workspace/project-sessions/session-row.tsx",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.test.ts",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list.tsx",
+    "tests/src/fixtures/cli.ts"
+  ],
+  "diff_hash": "79021e390114f939cf68d67fdf9d0ed92ed0b5436bbb778273d92f20725bda04",
+  "head": "82c2c8d53868760e2cc1e6597f41fb05a1b368b2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "db-suites": "pass",
+    "packages": "skipped-sandbox-image"
+  },
+  "at": "2026-10-04T05:14:49.634Z"
+}
