@@ -1,5 +1,5 @@
 {
-  "source_hash": "a736061252560d2345b49d99eec8bec991a0227e0f0b785dc9bde4490a8027d4",
+  "source_hash": "dea89d9edd27ec454a7ae7b66840f494cc712bee9579b08ae8915df188d5ee38",
   "diff_files": [
     "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
     "apps/api/src/shared/platinum.test.ts",
@@ -7,7 +7,7 @@
     "apps/web/src/lib/seo/content-timestamps.json",
     "apps/whitelabel-demo/tests/e2e/harness.ts",
     "packages/agent-tunnel/src/client/cli.test.ts",
-    "packages/db/drizzle/meta/20261003191654_snapshot.json",
+    "packages/db/drizzle/meta/20261004023350_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261003182500001_session_sandboxes_wake_fence_stats.sql",
     "packages/db/migrations/20261003182500002_session_sandboxes_wake_fence_index.concurrent.ts",
@@ -15,13 +15,13 @@
     "packages/db/src/schema/kortix.ts",
     "packages/llm-gateway/src/pipeline/simple-handler.test.ts"
   ],
-  "diff_hash": "4b448aea3d4b11b4ca14c1fbc133b7111de3ff00044bf3d25e7905aed72808e2",
-  "head": "bb60ceccc72cd7bcc5e3da8011fbc5adf99069dc",
+  "diff_hash": "92b9aca74b6a8fb948c086f78bbe9342b2890c7ae9451582595ae574409c0fbe",
+  "head": "5235eead2f3bbc11cd3d83169d15dd7ab1106689",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T02:26:54.425Z"
+  "at": "2026-10-04T02:43:49.194Z"
 }
