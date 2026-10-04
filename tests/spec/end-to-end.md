@@ -597,7 +597,7 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 
 ### CLI resource commands (project-scoped)
 
-`CLI-PROJ` `kortix projects ls|info|link|unlink|open|rm` → `GET /projects`, `GET /projects/:id`, `DELETE /projects/:id[?purge=true]` (`--purge` deletes the managed repo; BYO untouched).
+`CLI-PROJ` `kortix projects ls|info|link|unlink|open|rm` → `GET /projects`, `GET /projects/:id`, `DELETE /projects/:id[?purge=true]` (`--purge` deletes the managed repo; BYO untouched; the result line reports Purged for `--purge`, Archived otherwise).
 `CLI-SESS` `kortix sessions ls|new|info|restart|rm|open` → maps to §7.
 `CLI-SEC` `kortix secrets ls|set|unset` + `kortix env pull|push` → maps to §6 (values write-only).
 `CLI-TRG` `kortix triggers ls|fire|enable|disable|info` → maps to §12.
