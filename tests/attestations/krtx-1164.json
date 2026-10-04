@@ -1,0 +1,16 @@
+{
+  "source_hash": "bce8ec4060b1ac450c035b0325c6c6a82292a7538cab2c97bec3a046e1753517",
+  "diff_files": [
+    "packages/db/migrations/20261004002924533_public_credit_usage_policy_roles.sql",
+    "packages/db/scripts/public-credit-usage-policy-roles.integration.test.ts"
+  ],
+  "diff_hash": "5330d6aa17595244c46061d42f65286536b8b346a43b2dfb852aaa736e1d392d",
+  "head": "d6519b7d69950c08afb30a952f5d21e4c76a7d74",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T04:18:55.404Z"
+}
