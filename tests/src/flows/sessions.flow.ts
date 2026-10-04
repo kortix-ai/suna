@@ -14,6 +14,7 @@ import {
   createDatabaseSession,
   fundDatabaseAccount,
   openDb,
+  seedBoundSession,
 } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
 
@@ -1824,10 +1825,9 @@ flow(
     // `error_retryable: true`. The control plane must still attach it.
     const db = await openDb(ctx);
     const project = await ctx.fixtures.project();
-    const ownerUserId = ctx.P.OWNER.userId;
-    if (!ownerUserId) throw new Error('OWNER principal has no userId');
+    if (!ctx.P.OWNER.userId) throw new Error('OWNER principal has no userId');
     const owner = ctx.client.as(ctx.P.OWNER);
-    const sessionId = crypto.randomUUID();
+    let sessionId = '';
     let tokenId: string | null = null;
     let sandbox = ctx.client;
     const GUARD_MESSAGE =
@@ -1856,28 +1856,10 @@ flow(
       );
     try {
       await ctx.step('seed a running session, its sandbox, and a sandbox-bound token', async () => {
-        const minted = await owner.post('/v1/accounts/tokens', { name: `SESS-35 ${sessionId.slice(0, 8)}` });
-        minted.status(201);
-        const credential = minted.json<{ token_id: string; secret_key: string }>();
-        tokenId = credential.token_id;
-        sandbox = ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN');
-        await db.query(
-          `INSERT INTO kortix.project_sessions
-             (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
-           VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project')`,
-          [sessionId, project.accountId, project.id, ownerUserId],
-        );
-        await db.query(
-          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
-           VALUES ($1::uuid, $1, $2, $3, 'active')`,
-          [sessionId, project.accountId, project.id],
-        );
-        await db.query(
-          `UPDATE kortix.account_tokens
-              SET account_id = $2, user_id = $3, project_id = $4, session_id = $5
-            WHERE token_id = $1`,
-          [tokenId, project.accountId, ownerUserId, project.id, sessionId],
-        );
+        const seeded = await seedBoundSession(ctx, db, project, 'SESS-35', 'project');
+        sessionId = seeded.sessionId;
+        tokenId = seeded.tokenId;
+        sandbox = ctx.client.withBearer(seeded.token, 'SESSION_TOKEN');
       });
 
       await ctx.step('a turn the abort just closed reads as a bare abort, with no cause', async () => {
@@ -2188,7 +2170,6 @@ flow(
       userId: ctx.P.OWNER.userId!,
       visibility: 'project',
     });
-    ctx.track('session', sessionId, { projectId: project.id });
     const owner = ctx.client.as(ctx.P.OWNER);
     const url = '/v1/projects/:projectId/sessions/:sessionId/presence';
     const put = (as: typeof owner, body: unknown, id = sessionId) =>
@@ -2252,7 +2233,6 @@ flow(
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
     const sessionId = await seedSession(ctx, project.id, team.id, { userId: ctx.P.OWNER.userId! });
-    ctx.track('session', sessionId, { projectId: project.id });
 
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);

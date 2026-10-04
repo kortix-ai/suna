@@ -22,7 +22,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { flow } from "../core/flow";
-import { slackSigned, withDb } from "../fixtures/chat";
+import { slackSigned } from "../fixtures/chat";
+import { withDb } from "../fixtures/database-project";
 import { waitFor } from "../core/poll";
 import { CliSandbox } from "../fixtures/cli";
 import { createDatabaseSession } from "../fixtures/database-project";

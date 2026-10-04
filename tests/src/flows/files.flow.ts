@@ -308,7 +308,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const work = mkdtempSync(join(tmpdir(), "ke2e-file11-"));
     try {
-      const { rows } = await withDb(ctx.env, (db) =>
+      const { rows } = await withDb(ctx, (db) =>
         db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [p.id]));
       const repoUrl = String(rows[0]?.repo_url ?? "");
       const base = String(rows[0]?.default_branch || "main");

@@ -9,7 +9,8 @@
 import { randomUUID } from "node:crypto";
 import { flow } from "../core/flow";
 import type { FlowContext, Principal } from "../core/types";
-import { slackSigned, withDb } from "../fixtures/chat";
+import { slackSigned } from "../fixtures/chat";
+import { withDb } from "../fixtures/database-project";
 import { createDatabaseSession } from "../fixtures/database-project";
 
 const ROUTES = ["POST /v1/projects/:projectId/secrets", "POST /v1/webhooks/slack/:projectId/commands"];

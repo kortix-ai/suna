@@ -12,7 +12,7 @@
  * writes no install.
  */
 import { flow } from "../core/flow";
-import { withDb } from "../fixtures/chat";
+import { withDb } from "../fixtures/database-project";
 
 flow(
   "CHN-34",

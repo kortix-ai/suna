@@ -4,18 +4,6 @@
  * auth.test, Microsoft's token endpoint), and Slack's request signature.
  */
 import { createHmac } from "node:crypto";
-import { Client as PgClient } from "pg";
-import type { FlowContext } from "../core/types";
-
-export async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
-  const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
-  await db.connect();
-  try {
-    return await run(db);
-  } finally {
-    await db.end().catch(() => {});
-  }
-}
 
 /** Slack's v0 request signature over a raw body, with the given signing secret. */
 export function slackSigned(secret: string, body: string, contentType: string) {

@@ -86,7 +86,12 @@ export function isCliEdgeMaintenanceFailure(result: CliResult): boolean {
 }
 
 /** Tiny structured assert that records into the active step. */
-export function check(description: string, pass: boolean, expected: unknown, actual: unknown): void {
+export function check(
+  description: string,
+  pass: boolean,
+  expected: unknown,
+  actual: unknown,
+): void {
   assert({ kind: 'cli', description, expected, actual, pass });
 }
 
@@ -501,6 +506,10 @@ export async function loginCli(
     noProject: true,
     account: ctx.P.OWNER.accountId,
   });
+  // A process-budget kill or an edge-laundered 5xx during login is retryable
+  // infrastructure, not a contract failure — the same classification every
+  // other login assertion applies.
+  throwIfCliInfraFailure(login, 'kortix login');
   if (login.exitCode !== 0) {
     sandbox.dispose();
     throw new Error(`kortix login exited ${login.exitCode}: ${login.all}`);

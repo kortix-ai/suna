@@ -62,14 +62,14 @@ export async function openDb(ctx: FlowContext): Promise<ProjectDb> {
  * the way the API's mirror does, without the ssl option.
  */
 export async function withDb<T>(
-  env: Env,
+  ctx: FlowContext,
   fn: (db: ProjectDb) => Promise<T>,
 ): Promise<T> {
-  if (!env.databaseUrl) {
+  if (!ctx.env.databaseUrl) {
     throw new Error("KE2E_DATABASE_URL is required for database-only project fixtures");
   }
   const { Client } = await import("pg");
-  const client = new Client({ connectionString: env.databaseUrl });
+  const client = new Client({ connectionString: ctx.env.databaseUrl });
   await client.connect();
   try {
     return await fn(client);
@@ -407,7 +407,8 @@ export async function configurePreviousRepositorySession(
   }
 }
 
-/** Read one prompt attachment's retention state: remaining references, and whether the cleanup sweep may remove it now. */export async function readDatabasePromptAttachmentRetention(
+/** Read one prompt attachment's retention state: remaining references, and whether the cleanup sweep may remove it now. */
+export async function readDatabasePromptAttachmentRetention(
   env: Env,
   attachmentId: string,
   open: OpenProjectDb = openProjectDb,

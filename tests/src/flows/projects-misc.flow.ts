@@ -8,7 +8,7 @@
  */
 import { flow } from '../core/flow';
 import type { FlowContext, Principal } from '../core/types';
-import { withDb } from '../fixtures/chat';
+import { withDb } from '../fixtures/database-project';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the

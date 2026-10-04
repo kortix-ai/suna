@@ -62,7 +62,7 @@ flow(
           .body()
           .has("$.error", "Unknown feature flag 'session_transcript_history'");
         // What an older server wrote when a project turned the flag off.
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           await db.query(
             `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
             [project.id],
@@ -89,7 +89,7 @@ flow(
       "a sub-agent's saved transcript is its own window, and the conversation never includes it",
       async () => {
         const child = "ses_subagentwindow";
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           const info = {
             id: "msg_subagent_000000000000001",
             sessionID: child,
@@ -144,7 +144,7 @@ flow(
     await ctx.step(
       "a replaced root makes the old transcript unavailable without waking a sandbox",
       async () => {
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           await db.query(
             "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
             [sessionId, "ses_replacement"],
@@ -168,7 +168,7 @@ flow(
         // shape refuses a mirror it cannot attribute; the compact shape the CLI
         // reads carries no such check, so leaving `ses_replacement` in place
         // would make this step pass for a reason it is not testing.
-        await withDb(ctx.env, async (restore) => {
+        await withDb(ctx, async (restore) => {
           await restore.query(
             "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
             [sessionId, fixture.root],
@@ -272,7 +272,7 @@ flow(
           userId: ctx.P.OWNER.userId!,
         });
         ctx.track("session", unsaved, { projectId: project.id });
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           await db.query(
             "UPDATE kortix.project_sessions SET status = 'stopped' WHERE session_id = $1",
             [unsaved],
@@ -362,7 +362,7 @@ flow(
       async () => {
         // What an older server wrote when a project turned saved history off.
         // Saved history has no off switch now, so the upload still succeeds.
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           await db.query(
             `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
             [project.id],
@@ -438,7 +438,7 @@ flow(
         // The saved transcript is the index of what a session stored. Seed one
         // whose user message references the uploaded file, stop the session,
         // and read it back through `kortix sessions attachments`.
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           const root = `ses_${sessionId.replaceAll("-", "")}`;
           await db.query(
             "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2 WHERE session_id = $1",
@@ -551,7 +551,7 @@ flow(
           )
         ).status(200);
         (await owner.get(download, { params })).status(404);
-        await withDb(ctx.env, async (db) => {
+        await withDb(ctx, async (db) => {
           const result = await db.query(
             "SELECT count(*)::int AS count FROM storage.objects WHERE bucket_id='session-attachments' AND name=$1",
             [`${project.id}/${sessionId}/${attachmentId}`],
