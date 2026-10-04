@@ -577,7 +577,7 @@
       "keepMyAccount": "Mantener mi cuenta",
       "deleteDialogTitle": "¿Eliminar tu cuenta?",
       "immediateWarning": "Esto elimina su cuenta de inmediato. No hay período de gracia ni forma de deshacerlo.",
-      "gracePeriodWarning": "Su cuenta está programada para ser eliminada después de un período de gracia de 30 días, durante el cual puede cancelar.",
+      "gracePeriodWarning": "Su cuenta se programará para ser eliminada después de un período de gracia de 30 días, durante el cual puede cancelar.",
       "whenDeleted": "Cuando se elimina su cuenta:",
       "agentsDeleted": "Todos los agentes que posees se eliminan",
       "threadsDeleted": "Se eliminan todas las sesiones y mensajes",

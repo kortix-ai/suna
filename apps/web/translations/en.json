@@ -403,7 +403,7 @@
       "keepMyAccount": "Keep my account",
       "deleteDialogTitle": "Delete your account?",
       "immediateWarning": "This deletes your account right away. There is no grace period and no way to undo it.",
-      "gracePeriodWarning": "Your account is scheduled for deletion after a 30-day grace period, during which you can cancel.",
+      "gracePeriodWarning": "Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.",
       "whenDeleted": "When your account is deleted:",
       "agentsDeleted": "Every agent you own is deleted",
       "threadsDeleted": "Every session and message is deleted",

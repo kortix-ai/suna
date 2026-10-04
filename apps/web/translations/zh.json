@@ -577,7 +577,7 @@
       "keepMyAccount": "保留我的帐户",
       "deleteDialogTitle": "删除您的帐户？",
       "immediateWarning": "这会立即删除您的帐户。没有宽限期，也没有办法撤销。",
-      "gracePeriodWarning": "您的帐户计划在 30 天的宽限期后删除，在此期间您可以取消。",
+      "gracePeriodWarning": "您的帐户将在 30 天的宽限期后删除，在此期间您可以取消。",
       "whenDeleted": "当您的帐户被删除时：",
       "agentsDeleted": "您拥有的每个代理都将被删除",
       "threadsDeleted": "所有会话和消息都将被删除",

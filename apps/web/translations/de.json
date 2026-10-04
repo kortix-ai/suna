@@ -577,7 +577,7 @@
       "keepMyAccount": "Behalte mein Konto",
       "deleteDialogTitle": "Konto löschen?",
       "immediateWarning": "Dadurch wird Ihr Konto sofort gelöscht. Es gibt keine Nachfrist und keine Möglichkeit, dies rückgängig zu machen.",
-      "gracePeriodWarning": "Die Löschung Ihres Kontos ist nach einer 30-tägigen Kulanzfrist geplant, in der Sie kündigen können.",
+      "gracePeriodWarning": "Die Löschung Ihres Kontos wird nach einer 30-tägigen Kulanzfrist geplant, in der Sie kündigen können.",
       "whenDeleted": "Wenn Ihr Konto gelöscht wird:",
       "agentsDeleted": "Jeder Agent, den Sie besitzen, wird gelöscht",
       "threadsDeleted": "Jede Session und jede Nachricht wird gelöscht",
