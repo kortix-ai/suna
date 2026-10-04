@@ -1,0 +1,36 @@
+{
+  "source_hash": "526adbd3ffee5ea1844726b6fc5c27b8896361dec7ff7e9aa8b0306fa75bccd2",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-04T055323Z-regenerate-a-git-derived-manifest-only-after-the-merge-commi.md",
+    "apps/api/src/__tests__/helpers/compiled-runtime-env.ts",
+    "apps/api/src/git-proxy/compiled-runtime.test.ts",
+    "apps/cli/src/__tests__/account-project-config.test.ts",
+    "apps/cli/src/__tests__/arg-grammar.blackbox.test.ts",
+    "apps/cli/src/__tests__/connectors-provider-matrix.test.ts",
+    "apps/cli/src/__tests__/opencode-bin.test.ts",
+    "apps/cli/src/__tests__/supervised-binaries.test.ts",
+    "apps/cli/src/__tests__/update-check.test.ts",
+    "apps/cli/src/commands/tui.test.ts",
+    "apps/cli/src/tui-bin.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
+    "packages/db/drizzle/meta/20261004061832_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261004045616326_drop_unused_account_invitations_indexes.concurrent.ts",
+    "packages/db/migrations/20261004061832950_drop_unused_account_invitations_indexes_snapshot.sql",
+    "packages/db/scripts/account-invitations-unused-index-drop.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/unit/vitest.config.ts"
+  ],
+  "diff_hash": "121d556e99cf460c39cff639132c763dbb7e691e0551a0dafc1d5d0ce74d0476",
+  "head": "0c7fa7e2b1153dc0576c9dc78b170c3647372dc3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T06:54:00.243Z"
+}
