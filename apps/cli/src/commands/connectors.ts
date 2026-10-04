@@ -1951,7 +1951,7 @@ function parseOnOff(value: string | undefined): boolean | null {
  * an unparseable matcher, so a bad rule fails at write time rather than
  * compiling to a never-match that looks saved.
  */
-function parsePolicyConditions(
+export function parsePolicyConditions(
   raw: readonly string[],
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
