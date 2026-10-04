@@ -62,7 +62,15 @@ mock.module('@/hooks/account/use-mfa', () => ({
 
 mock.module('@/lib/supabase/client', () => ({
   createClient: () => ({
-    auth: { signOut: async (options: unknown) => signOutCalls.push(options) },
+    // The container also mounts the signed-in-device query (KRTX-1392) on the
+    // same client; give it a session record so it renders instead of erroring.
+    auth: {
+      signOut: async (options: unknown) => signOutCalls.push(options),
+      getUser: async () => ({
+        data: { user: { last_sign_in_at: '2026-01-01T00:00:00.000Z' } },
+        error: null,
+      }),
+    },
   }),
 }));
 
@@ -71,11 +79,13 @@ mock.module('@/lib/supabase/client', () => ({
 // the rest of the react-query surface by name.
 mock.module('@tanstack/react-query', () => ({
   ...realReactQuery,
+  // Only useMutation is stubbed (the sign-out mutation is driven by hand).
+  // useQuery and useQueryClient stay real: the container's signed-in-device
+  // query (KRTX-1392) and the invalidate call both need a live client.
   useMutation: (options: { mutationFn: (arg?: unknown) => Promise<unknown> }) => ({
     mutate: (arg?: unknown) => void options.mutationFn(arg),
     isPending: false,
   }),
-  useQueryClient: () => ({ invalidateQueries: () => {} }),
 }));
 
 mock.module('@/i18n/use-translations', () => ({
@@ -160,9 +170,18 @@ const byTestId = (id: string) => (n: TestInstance) => n.props?.['data-testid'] =
 const byText = (text: string) => (n: TestInstance) => textOf(n).includes(text);
 
 async function mountSecurityTab() {
+  const client = new realReactQuery.QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
-    root = create(createElement(SecurityTab));
+    root = create(
+      createElement(
+        realReactQuery.QueryClientProvider,
+        { client },
+        createElement(SecurityTab),
+      ),
+    );
   });
   if (!root) throw new Error('SecurityTab did not render');
   return root;

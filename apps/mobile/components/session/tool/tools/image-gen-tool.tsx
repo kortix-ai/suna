@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { ImageIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import { formatMegabytes } from '@/lib/session/image-load';
+import { formatMegabytes } from '@kortix/sdk/react';
 import { imageGenTitle, parseImageOutput } from '@/lib/session/tools/web-media';
 import { webSpace } from '@/lib/session/user-message';
 import {
