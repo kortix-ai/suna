@@ -577,7 +577,7 @@
       "keepMyAccount": "Garder mon compte",
       "deleteDialogTitle": "Supprimer votre compte ?",
       "immediateWarning": "Cela supprime immédiatement votre compte. Il n’y a pas de délai de grâce ni aucun moyen de l’annuler.",
-      "gracePeriodWarning": "La suppression de votre compte est programmée après une période de grâce de 30 jours, pendant laquelle vous pouvez l'annuler.",
+      "gracePeriodWarning": "La suppression de votre compte sera programmée après une période de grâce de 30 jours, pendant laquelle vous pouvez l'annuler.",
       "whenDeleted": "Lorsque votre compte est supprimé :",
       "agentsDeleted": "Chaque agent que vous possédez est supprimé",
       "threadsDeleted": "Toutes les sessions et tous les messages sont supprimés",
