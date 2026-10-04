@@ -13,9 +13,10 @@ describe('startErrorMessage', () => {
     expect(m).toContain('Top up');
   });
 
-  test('429 → concurrent-session limit', () => {
+  test('429 → request rate, never a session limit', () => {
     const m = startErrorMessage(429, {});
-    expect(m.toLowerCase()).toContain('concurrent-session limit');
+    expect(m.toLowerCase()).toContain('too many requests');
+    expect(m.toLowerCase()).not.toContain('session limit');
   });
 
   test('404 → project moved/deleted, points to /kortix switch', () => {
