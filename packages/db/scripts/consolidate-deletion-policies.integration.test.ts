@@ -12,6 +12,9 @@ afterAll(() => sql.end());
 test('removes SELECT overlap without changing user or service access', async () => {
   await sql.unsafe(`
     CREATE SCHEMA IF NOT EXISTS auth;
+    -- Roles are cluster-wide, not per database: a sibling suite (or a failed
+    -- earlier run on this cluster) may have left the name behind.
+    DROP ROLE IF EXISTS deletion_policy_reader;
     CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
       $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS
@@ -55,28 +58,33 @@ test('removes SELECT overlap without changing user or service access', async () 
     ['authenticated', '22222222-2222-4222-8222-222222222222'],
     ['anon', ''], ['service_role', ''],
   ];
-  const before = await Promise.all(inputs.map(([role, uid]) => access(role, uid)));
-  expect(before).toEqual([
-    { visible: [1], writable: [], deleted: [], inserted: false },
-    { visible: [2], writable: [], deleted: [], inserted: false },
-    { visible: [], writable: [], deleted: [], inserted: false },
-    { visible: [1, 2], writable: [1, 2], deleted: [2], inserted: true },
-  ]);
-  if (names.length === 1) {
-    const migration = await Bun.file(resolve(migrationDirectory, names[0])).text();
-    await sql.begin(tx => tx.unsafe(migration));
-    await sql.begin(tx => tx.unsafe(migration));
-  }
-  const selectPolicies = await sql`SELECT policyname FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'account_deletion_requests'
-      AND permissive = 'PERMISSIVE' AND cmd IN ('ALL', 'SELECT')`;
-  expect(selectPolicies).toHaveLength(1);
-  expect(await Promise.all(inputs.map(([role, uid]) => access(role, uid)))).toEqual(before);
-  await sql.unsafe(`DROP TABLE public.account_deletion_requests;
-    REVOKE USAGE ON SCHEMA auth FROM deletion_policy_reader;
-    DROP ROLE deletion_policy_reader;`);
-  if (names.length === 1) {
-    const migration = await Bun.file(resolve(migrationDirectory, names[0])).text();
-    await sql.begin(tx => tx.unsafe(migration));
+  // The role and table are dropped in a finally: an assertion failure must not
+  // leak the cluster-wide role into every later suite on this cluster.
+  try {
+    const before = await Promise.all(inputs.map(([role, uid]) => access(role, uid)));
+    expect(before).toEqual([
+      { visible: [1], writable: [], deleted: [], inserted: false },
+      { visible: [2], writable: [], deleted: [], inserted: false },
+      { visible: [], writable: [], deleted: [], inserted: false },
+      { visible: [1, 2], writable: [1, 2], deleted: [2], inserted: true },
+    ]);
+    if (names.length === 1) {
+      const migration = await Bun.file(resolve(migrationDirectory, names[0])).text();
+      await sql.begin(tx => tx.unsafe(migration));
+      await sql.begin(tx => tx.unsafe(migration));
+    }
+    const selectPolicies = await sql`SELECT policyname FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'account_deletion_requests'
+        AND permissive = 'PERMISSIVE' AND cmd IN ('ALL', 'SELECT')`;
+    expect(selectPolicies).toHaveLength(1);
+    expect(await Promise.all(inputs.map(([role, uid]) => access(role, uid)))).toEqual(before);
+  } finally {
+    await sql.unsafe(`DROP TABLE public.account_deletion_requests;
+      REVOKE USAGE ON SCHEMA auth FROM deletion_policy_reader;
+      DROP ROLE deletion_policy_reader;`);
+    if (names.length === 1) {
+      const migration = await Bun.file(resolve(migrationDirectory, names[0])).text();
+      await sql.begin(tx => tx.unsafe(migration));
+    }
   }
 });
