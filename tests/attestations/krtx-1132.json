@@ -1,25 +1,26 @@
 {
-  "source_hash": "c235ec64a1a88e8fcf3fa94856e45fe4288785b19a9d62a3bfa5fa7c0871c758",
+  "source_hash": "f356c46dade8eaf19465d97ae9fef5762fe7e2a0fd1abdc610cd19531b443dd8",
   "diff_files": [
     "apps/api/src/__tests__/integration-iam-sso-sync.test.ts",
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/helpers/open-code-harness.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/migrations/20261004010300000_agent_templates_auth_initplan.sql",
     "packages/db/scripts/agent-templates-rls-auth-initplan.integration.test.ts",
-    "packages/shared/src/sandbox/__tests__/meta-dockerfile.test.ts",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
     "tests/bin/local.ts",
     "tests/bin/package-quality.ts",
     "tests/src/core/runner-controls.ts",
     "tests/unit/test-runner-contract.test.ts",
     "tests/unit/vitest.config.ts"
   ],
-  "diff_hash": "e872eb55b3de686bb9c1ad449abe133e1c3689e6f5f06db9007200e4e9c8b239",
-  "head": "86a2158b7bf7391fcc54032cb40f7c5177bf0053",
+  "diff_hash": "eb801c168e49e83d407728ebb451485eb7869a4b9e5fb335e0adbb1145dbb0db",
+  "head": "d131f3955c18f2b0fb31fc1364223f7a9264c0fb",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "skipped-sandbox-image",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T01:27:09.381Z"
+  "at": "2026-10-04T02:09:29.256Z"
 }
