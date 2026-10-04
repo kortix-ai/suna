@@ -136,9 +136,10 @@ describe('admin entitlement-override mutation contract', () => {
     expect(typeof useAdminSetOverrides).toBe('function');
   });
 
-  // The eleven keys the server's `validateOverridePatch` accepts — an unknown key
-  // is a 400, so the console must not be able to invent one.
-  test('ADMIN_OVERRIDE_KEYS is exactly the server-side override catalog', () => {
+  // The ten keys the server's `validateOverridePatch` accepts — an unknown key
+  // is a 400, so the console must not be able to invent one — plus the retired
+  // `maxConcurrentSessions`, kept because narrowing the union is breaking.
+  test('ADMIN_OVERRIDE_KEYS is the server-side override catalog plus the retired key', () => {
     expect([...ADMIN_OVERRIDE_KEYS]).toEqual([
       'enterpriseEntitled',
       'demoEnterprise',

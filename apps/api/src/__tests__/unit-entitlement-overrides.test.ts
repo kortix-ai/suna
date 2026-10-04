@@ -8,12 +8,10 @@ import { describe, expect, test } from 'bun:test';
 //
 // No mocks: the module is pure by construction (no I/O, no clock of its own).
 
-import { MAX_ACCOUNT_SESSION_LIMIT } from '../admin/account-session-limit';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   type EntitlementOverrides,
   MAX_COMPUTE_RATE_MULTIPLIER,
-  MAX_CONCURRENT_SESSIONS_OVERRIDE,
   OVERRIDE_KEYS,
   clampComputeRateMultiplier,
   legacyMirrorPatch,
@@ -33,8 +31,8 @@ describe('readOverride', () => {
   test('returns the value of a well-formed entry', () => {
     expect(readOverride({ sso: { value: true } }, 'sso', NOW)).toBe(true);
     expect(readOverride({ sso: { value: false } }, 'sso', NOW)).toBe(false);
-    expect(readOverride({ maxConcurrentSessions: { value: 900 } }, 'maxConcurrentSessions', NOW)).toBe(
-      900,
+    expect(readOverride({ computeRateMultiplier: { value: 0.5 } }, 'computeRateMultiplier', NOW)).toBe(
+      0.5,
     );
   });
 
@@ -65,7 +63,7 @@ describe('readOverride', () => {
     expect(readOverride({ sso: { value: 1 } }, 'sso', NOW)).toBeUndefined();
     expect(readOverride({ sso: { value: 'true' } }, 'sso', NOW)).toBeUndefined();
     expect(
-      readOverride({ maxConcurrentSessions: { value: true } }, 'maxConcurrentSessions', NOW),
+      readOverride({ computeRateMultiplier: { value: true } }, 'computeRateMultiplier', NOW),
     ).toBeUndefined();
     expect(
       readOverride({ computeRateMultiplier: { value: Number.NaN } }, 'computeRateMultiplier', NOW),
@@ -90,11 +88,11 @@ describe('parseEntitlementOverrides', () => {
   test('keeps well-formed entries with their expiry, expired or not', () => {
     const parsed = parseEntitlementOverrides({
       sso: { value: true, expires_at: iso(-HOUR) },
-      maxConcurrentSessions: { value: 5 },
+      computeRateMultiplier: { value: 5 },
     });
     expect(parsed).toEqual({
       sso: { value: true, expires_at: iso(-HOUR) },
-      maxConcurrentSessions: { value: 5 },
+      computeRateMultiplier: { value: 5 },
     });
   });
 
@@ -105,6 +103,7 @@ describe('parseEntitlementOverrides', () => {
         notAKey: { value: true },
         scim: 'yes',
         rbac: { value: 3 },
+        maxConcurrentSessions: { value: 5 },
       }),
     ).toEqual({ sso: { value: true } });
   });
@@ -117,12 +116,12 @@ describe('parseEntitlementOverrides', () => {
 });
 
 describe('mergeOverridePatch', () => {
-  const current = { sso: { value: true }, maxConcurrentSessions: { value: 900 } };
+  const current = { sso: { value: true }, computeRateMultiplier: { value: 0.5 } };
 
   test('sets, replaces, and leaves absent keys alone', () => {
     expect(mergeOverridePatch(current, { scim: { value: true } })).toEqual({
       sso: { value: true },
-      maxConcurrentSessions: { value: 900 },
+      computeRateMultiplier: { value: 0.5 },
       scim: { value: true },
     });
     expect(mergeOverridePatch(current, { sso: { value: false } }).sso).toEqual({ value: false });
@@ -130,7 +129,7 @@ describe('mergeOverridePatch', () => {
 
   test('null deletes the key (RFC 7386 merge-patch)', () => {
     expect(mergeOverridePatch(current, { sso: null })).toEqual({
-      maxConcurrentSessions: { value: 900 },
+      computeRateMultiplier: { value: 0.5 },
     });
   });
 
@@ -150,9 +149,9 @@ describe('withoutOverrideKeys', () => {
     const current = {
       sso: { value: true },
       computeRateMultiplier: { value: 0.5 },
-      maxConcurrentSessions: { value: 900 },
+      scim: { value: true },
     };
-    expect(withoutOverrideKeys(current, ['sso', 'maxConcurrentSessions'])).toEqual({
+    expect(withoutOverrideKeys(current, ['sso', 'scim'])).toEqual({
       computeRateMultiplier: { value: 0.5 },
     });
   });
@@ -162,7 +161,7 @@ describe('toStoredOverrides', () => {
   test('drops absent keys and keeps the rest verbatim', () => {
     const overrides: EntitlementOverrides = {
       sso: { value: true, expires_at: iso(HOUR) },
-      maxConcurrentSessions: undefined,
+      scim: undefined,
     };
     expect(toStoredOverrides(overrides)).toEqual({ sso: { value: true, expires_at: iso(HOUR) } });
   });
@@ -195,9 +194,6 @@ describe('legacyMirrorPatch', () => {
     expect(legacyMirrorPatch({ managedModelsOverride: { value: false } })).toEqual({
       managedModelsOverride: false,
     });
-    expect(legacyMirrorPatch({ maxConcurrentSessions: { value: 900 } })).toEqual({
-      maxConcurrentSessions: 900,
-    });
   });
 
   // The trap this rule exists for: the resolver falls back to the legacy column
@@ -208,8 +204,8 @@ describe('legacyMirrorPatch', () => {
       { enterpriseEntitled: false },
     );
     expect(
-      legacyMirrorPatch({ maxConcurrentSessions: { value: 900, expires_at: iso(HOUR) } }),
-    ).toEqual({ maxConcurrentSessions: null });
+      legacyMirrorPatch({ managedModelsOverride: { value: true, expires_at: iso(HOUR) } }),
+    ).toEqual({ managedModelsOverride: null });
   });
 
   test('a deletion clears the column to its no-override value', () => {
@@ -255,17 +251,18 @@ describe('validateOverridePatch', () => {
     expect(err({ superAdmin: { value: true } })).toMatch(/unknown override key "superAdmin"/);
   });
 
+  test('rejects the removed maxConcurrentSessions key as unknown', () => {
+    expect(err({ maxConcurrentSessions: { value: 5 } })).toMatch(
+      /unknown override key "maxConcurrentSessions"/,
+    );
+  });
+
   test('rejects a wrong-typed value', () => {
     expect(err({ sso: { value: 1 } })).toMatch(/"sso.value" must be a boolean/);
-    expect(err({ maxConcurrentSessions: { value: true } })).toMatch(/must be a finite number/);
+    expect(err({ computeRateMultiplier: { value: true } })).toMatch(/must be a finite number/);
   });
 
   test('rejects out-of-range numbers at both ends', () => {
-    expect(err({ maxConcurrentSessions: { value: 0 } })).toMatch(/integer from 1 to/);
-    expect(err({ maxConcurrentSessions: { value: 1.5 } })).toMatch(/integer from 1 to/);
-    expect(err({ maxConcurrentSessions: { value: MAX_CONCURRENT_SESSIONS_OVERRIDE + 1 } })).toMatch(
-      /integer from 1 to/,
-    );
     expect(err({ computeRateMultiplier: { value: -1 } })).toMatch(/from 0 to 10/);
     expect(err({ computeRateMultiplier: { value: 10.5 } })).toMatch(/from 0 to 10/);
   });
@@ -282,12 +279,6 @@ describe('validateOverridePatch', () => {
 });
 
 describe('invariants', () => {
-  // Two spellings of ONE override must not accept different ranges: the column
-  // is bounded by the admin session-limit route, the JSONB key by this module.
-  test('the session-limit ceiling matches the legacy route ceiling', () => {
-    expect(MAX_CONCURRENT_SESSIONS_OVERRIDE).toBe(MAX_ACCOUNT_SESSION_LIMIT);
-  });
-
   test('OVERRIDE_KEYS is the complete, de-duplicated key set', () => {
     expect(new Set(OVERRIDE_KEYS).size).toBe(OVERRIDE_KEYS.length);
     expect([...OVERRIDE_KEYS].sort() as string[]).toEqual(
@@ -299,7 +290,6 @@ describe('invariants', () => {
         'enterpriseEntitled',
         'managedModels',
         'managedModelsOverride',
-        'maxConcurrentSessions',
         'rbac',
         'scim',
         'sso',
