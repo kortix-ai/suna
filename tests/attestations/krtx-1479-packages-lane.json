@@ -1,5 +1,5 @@
 {
-  "source_hash": "7697be2e98a116cebc229440e3d8da30e185c579f21ea785eacad6ae3a2fd899",
+  "source_hash": "c214c7268a4639701fbf73ae878ce0d9b9a34ea79c81f4e9ea0c907d313340f9",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
@@ -22,13 +22,13 @@
     "packages/starter/package.json",
     "tests/bin/package-quality.ts"
   ],
-  "diff_hash": "3c799d3ffbe4ab1696686e04901a1cafc4bf01b7b83d35162ddbe1c5c35febe0",
-  "head": "797f1abcb35700c580d0510e0df05d8067756420",
+  "diff_hash": "3fd1c637ea3a85e0ffc81350ee96da684c7cc0fbf404498cf98efde8cae1f8ec",
+  "head": "cac3016ab0bbacbfc32c152522db89feb90071c5",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T04:00:40.507Z"
+  "at": "2026-10-04T04:13:18.740Z"
 }
