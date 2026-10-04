@@ -31,13 +31,14 @@ import { deriveRequestContext } from '../iam/cache';
 import {
   MAX_COMMAND_SECTION_BYTES,
   encodeReportStatus,
+  isDelete,
   parseReceivePackCommands,
   wantsSideband,
   type RefUpdate,
 } from './receive-pack';
 import { evaluateRefUpdates, principalLabel } from './ref-policy';
 import { annotateGitTransfer, bindGitProxyPrincipal, gitAuditOutcome, gitPushRefSummary } from './audit';
-import { denialsAfterScopes } from './ref-scopes';
+import { denialsAfterScopes, sessionMayBypassGrantReview } from './ref-scopes';
 import {
   FORWARD_REQUEST_HEADERS,
   STRIP_RESPONSE_HEADERS,
@@ -494,12 +495,31 @@ async function gateReceivePack(
   // Pure policy first: it needs no I/O and answers every ordinary push. Only a
   // denial is worth an authorization check, so a session pushing its own branch
   // and a person pushing anything both reach the upstream without one.
-  const denials = await denialsAfterScopes(
+  const projectRef = { projectId: auth.project.projectId, accountId: auth.project.accountId };
+  const denials: { ref: string; reason: string }[] = await denialsAfterScopes(
     c,
     auth.principal,
-    { projectId: auth.project.projectId, accountId: auth.project.accountId },
+    projectRef,
     evaluateRefUpdates(auth.principal, { defaultBranch: auth.project.defaultBranch }, parsed.updates),
   );
+  // A default-branch push skips the change-request grant diff: a governed agent
+  // may land one only when nothing it writes can exceed its own grant.
+  const defaultRef = `refs/heads/${auth.project.defaultBranch}`;
+  const toDefault = parsed.updates.filter((u) => u.ref === defaultRef && !isDelete(u));
+  if (
+    denials.length === 0 &&
+    toDefault.length > 0 &&
+    !(await sessionMayBypassGrantReview(c, auth.principal, projectRef))
+  ) {
+    for (const u of toDefault) {
+      denials.push({
+        ref: u.ref,
+        reason:
+          `pushing ${auth.project.defaultBranch} could change agent grants without review, and an agent ` +
+          'grants only what it holds; push your own branch and open a change request',
+      });
+    }
+  }
   if (denials.length > 0) {
     // Refuse before a single pack byte is uploaded. The client is mid-send;
     // git handles an early response and prints our per-ref reasons, so there is

@@ -884,11 +884,6 @@
       "count": 1
     }
   },
-  "src/iam/agent-principal.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/iam/assignments.ts": {
     "no-console": {
       "count": 2

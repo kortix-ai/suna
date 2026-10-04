@@ -270,7 +270,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Keep model billing with your provider': 'textcd996e5c44e9',
   'Keys are resolved on our side of the wall. The machine the model drives never holds them.':
     'texte6229e214e88',
-  'Kortix – The AI Command Center for Your Company': 'textce34af36d804',
+  'Kortix – The open-source AI Operating System': 'textce34af36d804',
   'Kortix is building the open AGI platform. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.':
     'text445cf0a2abfa',
   'Kortix — Presentations': 'textd84b8be91e7b',
@@ -492,7 +492,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'The in-depth platform walkthrough — the full Kortix surface, from projects and sessions to connectors, channels and change requests.':
     'text7484ed6d3897',
   'The Kortix team': 'text49e7ba9f095d',
-  'The open-source AI command center for your company. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.':
+  'The open-source AI Operating System for your company. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.':
     'text2bf70270bfde',
   'The questions people ask before the first session.': 'text2b7df1bf48b2',
   'The record': 'textd9fa05c93112',
@@ -837,8 +837,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Will request browser permission when enabled': 'textc39018a68e1f',
   'Work on this locally': 'text17635feb9ad5',
   'You are… Goal: … Steps: 1. …': 'text1436469ad07f',
-  'You need the project&apos;s customize-write permission to change a feature flag.':
-    'text06346e4d9c35',
+  'You need the project&apos;s settings permission to change a feature flag.':
+    'text6d484ed8c1a0',
   'Your browser does not support notifications.': 'text51464281894d',
   'Your subscription, team seats, and billing for this account.': 'text46470f35d5d8',
   Attach: 'textd406ade2958c',
@@ -885,7 +885,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'per session': 'textf92898c93eec',
   'per message': 'text83d0be53d592',
   answers: 'text677fe21b65f4',
-  'We are building the open-source AI Management System. Every company should own all of it.':
+  'We are building the open-source AI Operating System. Every company should own all of it.':
     'text5f58426c214e',
   'One kortix.yaml.': 'text52867b778586',
   'Your AI workforce, as code.': 'textd0dfd435b2f4',
