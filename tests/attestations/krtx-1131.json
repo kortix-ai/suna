@@ -1,0 +1,18 @@
+{
+  "source_hash": "d6ec36cdc0feaeed880f47b5c2fcb709372fdea81103c5fd0efd2bbb887276fa",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
+    "packages/db/migrations/20261004001609197_agent_runs_select_policy_initplan.sql",
+    "packages/db/scripts/agent-runs-select-policy-initplan.integration.test.ts",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts"
+  ],
+  "diff_hash": "ab94b81dbe050a8987f94624ee26bff8ed74a0494ced8412cd319fa94ef211b5",
+  "head": "f252739309db8091e263f262d9f3fec67eadd6bf",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T02:56:59.555Z"
+}
