@@ -1,0 +1,16 @@
+{
+  "source_hash": "fdfc634f7582070867949f11897463cca85ada07734cb73eb0480c3803ee8770",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-resource-grants-config-bound.test.ts",
+    "apps/api/src/projects/routes/resource-grants.ts"
+  ],
+  "diff_hash": "509e1abfd27728410b5c807f2ab1803a3952365781237911e399e56d872c7105",
+  "head": "a63e4a8f77c4e2fb3c8598695800d830d5335a4b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T00:01:20.589Z"
+}
