@@ -121,6 +121,11 @@ export {
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,
+  // Drives (shared folders backed by Platinum volumes)
+  drives,
+  driveGrants,
+  platinumVolumeDeletions,
+  driveConflicts,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,

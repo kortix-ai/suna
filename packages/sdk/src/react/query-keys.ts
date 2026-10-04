@@ -161,6 +161,37 @@ export const qk = {
     list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
   },
 
+  /**
+   * Drives (`listDrives`, `listDriveFiles`, …). A drive list holds the
+   * caller's own personal drives, so it is keyed by user like
+   * `accounts.list`. Every per-drive key sits under `drive(id)`: a write or a
+   * restore invalidates that one prefix and reaches the drive's files and
+   * versions. The `'list'` / `'drive'` / `'session'` segments keep the three
+   * shapes from ever colliding.
+   */
+  drives: {
+    /** Invalidation prefix for every drive key. Never a `queryKey`. */
+    scope: () => ['kx', 'drives'] as const,
+    list: (
+      userId: string | null | undefined,
+      scope?: { projectId?: string; accountId?: string },
+    ) =>
+      [
+        ...qk.drives.scope(),
+        'list',
+        userId ?? 'anonymous',
+        scope?.projectId ? `project:${scope.projectId}` : scope?.accountId ? `account:${scope.accountId}` : 'primary',
+      ] as const,
+    /** Prefix for one drive's files and versions. */
+    drive: (driveId: string) => [...qk.drives.scope(), 'drive', driveId] as const,
+    files: (driveId: string, path: string) => [...qk.drives.drive(driveId), 'files', path] as const,
+    versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
+    grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
+    conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    session: (projectId: string, sessionId: string) =>
+      [...qk.drives.scope(), 'session', projectId, sessionId] as const,
+  },
+
   project: {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
     scope: (id: string) => ['kx', 'project', id] as const,

@@ -694,6 +694,12 @@ const envSchema = z.object({
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
+  // Local development switch. `local` points the provider at a Platinum
+  // control plane on this machine (PLATINUM_API_URL_LOCAL / _KEY_LOCAL);
+  // unset or `prod` keeps PLATINUM_API_URL / PLATINUM_API_KEY above.
+  PLATINUM_TARGET: z.enum(['local', 'prod']).optional().default('prod'),
+  PLATINUM_API_URL_LOCAL: optStr,
+  PLATINUM_API_KEY_LOCAL: optStr,
 
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
@@ -1411,8 +1417,8 @@ export const config = {
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
 
-  PLATINUM_API_KEY: env.PLATINUM_API_KEY,
-  PLATINUM_API_URL: env.PLATINUM_API_URL,
+  PLATINUM_API_KEY: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_KEY_LOCAL : env.PLATINUM_API_KEY,
+  PLATINUM_API_URL: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_URL_LOCAL : env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   E2B_API_KEY: env.E2B_API_KEY,

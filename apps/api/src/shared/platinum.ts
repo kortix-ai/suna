@@ -217,7 +217,7 @@ const DEFAULT_CALL_TIMEOUT_MS = configuredTimeoutMs(
   1_000,
 );
 
-async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
   // Track whether WE picked the timeout budget so the error message below
   // reports the real one instead of always claiming the default — a caller

@@ -50,6 +50,8 @@ const WORKERS: Record<string, string> = {
   'billing-free-tier-rotation': 'billing/rotation-schedule.ts',
   'slack-turn-gc': 'channels/slack/turn.ts',
   'teams-turn-gc': 'channels/teams/turn.ts',
+  'drive-conflict-scan': 'drives/workers.ts',
+  'volume-deletions': 'drives/workers.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -89,6 +91,7 @@ const STARTS: Record<string, string> = {
   startAuditArchiveWorker: 'audit-archive',
   startProjectSnapshotWorker: 'project-snapshots',
   startGrantExpirySweeper: 'iam-grant-expiry',
+  startDriveWorkers: 'drive-conflict-scan',
   startOAuthSweeper: 'oauth-sweep',
   startBillingRotation: 'billing-trial-expiry',
   startSlackTurnGc: 'slack-turn-gc',
