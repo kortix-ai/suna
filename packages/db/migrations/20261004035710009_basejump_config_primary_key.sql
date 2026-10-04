@@ -20,7 +20,8 @@
 -- basejump.config (the bootstrap installs only the basejump.account_user stub
 -- — packages/db/scripts/test-prereqs.sql), so on a fresh self-host install or
 -- the CI shadow database the table is absent and this is a no-op — the same
--- guard as 20261003010107485_basejump_accounts_fk_covering_indexes. The table
+-- to_regclass DO-block guard as 20261002213831930_basejump_accounts_rls_initplan.
+-- The table
 -- holds one row, so the rewrite is instant; the budgets below are the house
 -- template defaults.
 set lock_timeout = '2s';
