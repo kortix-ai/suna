@@ -1,5 +1,5 @@
 {
-  "source_hash": "0797600d847c6358cac247994024ae374c1198ff82bc92f642523caa2ee6c55c",
+  "source_hash": "e67275085b95246911f18479c35b57c2cfd9bd5216ac75ec28f7bde8a9f18675",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -9,7 +9,6 @@
     "apps/cli/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
     "apps/web/src/features/workspace/capabilities/agents/agent-page.tsx",
     "apps/web/src/lib/seo/content-timestamps.json",
@@ -30,13 +29,13 @@
     "tests/bin/package-quality.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "c446c92c7e6fe817fb0f14352fda54e659c1bc3144ee1091bc582a59d733e0d3",
-  "head": "3c7531ab6184a87bcbec97c61365ec0e6df9d2be",
+  "diff_hash": "cdc8f1f911eeb353bdeba22c58850f4c70d0a6df5e9222e2235691b3f6ba88b5",
+  "head": "5caa07f8a0c0c4625b00084118c224cbcc6ece09",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:53:08.865Z"
+  "at": "2026-10-04T00:24:59.614Z"
 }
