@@ -1,20 +1,22 @@
 {
-  "source_hash": "542a095bb4f99d9dad74e136ef7d4756794342a3a99dddfc9da1e97f6387777f",
+  "source_hash": "8418522a561ed769d7398a5f6c43f23ab2ab66e03033ec6efa2fab232f4a2363",
   "diff_files": [
-    "packages/db/drizzle/meta/20261003231026_snapshot.json",
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
+    "packages/db/drizzle/meta/20261004012956_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261003231036339_chat_pending_auth_messages_project_index.concurrent.ts",
+    "packages/db/migrations/20261004013005331_chat_pending_auth_messages_project_index.concurrent.ts",
     "packages/db/scripts/chat-pending-auth-messages-fk-index.integration.test.ts",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/src/fixtures/cli.ts"
   ],
-  "diff_hash": "e2431e7db5fcd06b2b7cd1dce70f30eab516b0054297f9e819f255baf0ca2726",
-  "head": "8a8aeb43703110b4f8af5835f0172ae721dad19f",
+  "diff_hash": "16584227fdee4d380bea05593c1ea972a57d0445acdfffc9f19c220100a651c1",
+  "head": "ca87b7ea6749afc9d8ce716ae617955aeb01d1fe",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T01:15:46.223Z"
+  "at": "2026-10-04T02:32:56.125Z"
 }
