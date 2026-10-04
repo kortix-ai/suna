@@ -87,10 +87,48 @@ export function clearLink(cwd = process.cwd()): void {
  * Returns null if none of those are set.
  */
 export function resolveProjectId(projectArg?: string): string | null {
-  if (projectArg) return projectArg;
+  return resolveProjectRef(projectArg)?.projectId ?? null;
+}
+
+/** Where a resolved project came from. `link` and `default` are the CLI
+ *  config's own principal (a logged-in host and its project); `env` is the
+ *  platform-injected sandbox pair. The two must never be mixed — see the
+ *  one-principal guard in resolveProjectContext. */
+export type ProjectSource = 'flag' | 'env' | 'link' | 'default';
+
+export interface ProjectRef {
+  projectId: string;
+  source: ProjectSource;
+}
+
+/**
+ * resolveProjectId with the winning source attached.
+ *
+ * `preferConfigured` flips env and the configured side for callers whose
+ * project IS the user's explicit configuration (the change-request commands):
+ * link.json → the active host's default project → the ambient sandbox pair.
+ * When the configured side names the same project the env pair already
+ * carries, the env source is kept — the ambient session token is a valid
+ * credential for its own project.
+ */
+export function resolveProjectRef(
+  projectArg?: string,
+  opts?: { preferConfigured?: boolean },
+): ProjectRef | null {
+  if (projectArg) return { projectId: projectArg, source: 'flag' };
   const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
-  if (envProjectId) return envProjectId;
   const link = loadLink();
-  if (link?.project_id) return link.project_id;
-  return defaultProject()?.project_id ?? null;
+  const defaultRef = defaultProject();
+  const configured: ProjectRef | null = link?.project_id
+    ? { projectId: link.project_id, source: 'link' }
+    : defaultRef?.project_id
+      ? { projectId: defaultRef.project_id, source: 'default' }
+      : null;
+  const env: ProjectRef | null = envProjectId ? { projectId: envProjectId, source: 'env' } : null;
+  if (opts?.preferConfigured) {
+    const chosen = configured ?? env;
+    if (chosen && env && chosen.projectId === env.projectId) return env;
+    return chosen;
+  }
+  return env ?? configured;
 }

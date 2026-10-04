@@ -3,7 +3,7 @@ import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectId } from './project-link.ts';
+import { loadLink, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
 import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
 import { C, status } from './style.ts';
@@ -14,6 +14,15 @@ interface ProjectContextOpts {
   projectArg?: string;
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
+  /**
+   * Prefer the CLI config's principal over the ambient sandbox pair.
+   *
+   * For commands whose project IS the user's explicit configuration (the
+   * change-request commands): `.kortix/link.json` and the active host's
+   * default project outrank `KORTIX_PROJECT_ID`, and the project travels with
+   * its own host's credential — never the sandbox's ambient session token.
+   */
+  configuredPrincipalFirst?: boolean;
   /**
    * Do not print "No project linked" when nothing resolves.
    *
@@ -39,6 +48,12 @@ interface ProjectContextOpts {
  *   3. .kortix/link.json's `host` field (per-repo binding)
  *   4. globally active host (~/.config/kortix/config.json)
  *
+ * ONE PRINCIPAL (KRTX-1486): whichever source resolves the project also
+ * supplies the credential. Inside a sandbox the env token authenticates the
+ * env host — but a project that came from the config side (link.json or the
+ * active host's default) is paired with THAT host's stored credential, or the
+ * command stops with an explicit --host/login pointer; see the guard below.
+ *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
@@ -57,7 +72,8 @@ export async function resolveProjectContext(
   }
   const hostName = opts.hostArg ?? hostFromLink;
 
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
+  const envTokenAuth = hasEnvTokenHost();
+  let auth: Auth | null = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
     if (hostName) {
       const source = opts.hostArg ? '(--host)' : '(from .kortix/link.json)';
@@ -92,7 +108,34 @@ export async function resolveProjectContext(
       return null;
     }
   } else {
-    projectId = resolveProjectId(opts.projectArg);
+    const ref = resolveProjectRef(opts.projectArg, {
+      preferConfigured: opts.configuredPrincipalFirst,
+    });
+    projectId = ref?.projectId ?? null;
+    // ONE PRINCIPAL: the ambient sandbox session token is bound to the
+    // sandbox's own project. A project the CLI config resolved (link.json or
+    // the active host's default) must never pair with it — writes 403
+    // cross-project and reads silently return the token-bound project's rows
+    // (KRTX-1486). When the config side supplies the project, its own host
+    // supplies the credential; without stored credentials for that host, stop
+    // with an explicit pointer to --host instead of a doomed request.
+    if (projectId && envTokenAuth && (ref?.source === 'link' || ref?.source === 'default')) {
+      const link = ref.source === 'link' ? loadLink() : null;
+      const configHostName = link?.host ?? activeHostName() ?? undefined;
+      const configAuth = configHostName ? loadAuthForHost(configHostName) : null;
+      if (configAuth?.token) {
+        auth = configAuth;
+      } else {
+        const hostLabel = configHostName ? `host "${configHostName}"` : 'a host with no stored credentials';
+        const from = ref.source === 'link' ? '.kortix/link.json' : 'the active host default';
+        process.stderr.write(
+          `${status.err(
+            `Project is bound to ${hostLabel} (${from}) but only the ambient sandbox session token is available here — it cannot act on that project.`,
+          )} Run ${C.cyan}kortix login --host ${configHostName ?? '<host>'}${C.reset} first, or pass ${C.cyan}--host ${configHostName ?? '<host>'}${C.reset} explicitly.\n`,
+        );
+        return null;
+      }
+    }
     if (!projectId) {
       // The always-bound invariant: recover by binding a default project right
       // here instead of dead-ending. (Inside a sandbox the env-token host

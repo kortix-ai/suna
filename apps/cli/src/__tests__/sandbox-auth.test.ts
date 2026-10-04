@@ -7,7 +7,7 @@ import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
 import { resolveProjectContext } from '../command-helpers.ts';
 import { connectorProjectContext } from '../connector-gateway/gateway.ts';
-import { resolveProjectId } from '../project-link.ts';
+import { resolveProjectId, resolveProjectRef } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
 // into a session sandbox: KORTIX_TOKEN carries the session connector PAT,
@@ -107,9 +107,10 @@ describe('in-sandbox auth resolution', () => {
 
 describe('env token vs .kortix/link.json host', () => {
   // A repo may carry a committed link.json naming a host (per-repo binding).
-  // Inside a session sandbox that named host has no stored credentials, so
-  // the platform-injected env token must outrank it — otherwise every
-  // project-scoped command dies with "host not logged in".
+  // The env token and the link must never mix (KRTX-1486): the token is bound
+  // to the sandbox's own project, so a link project may only be paired with
+  // the LINK host's stored credential — or the command stops with an explicit
+  // pointer to --host.
   let dir: string;
   let savedCwd: string;
 
@@ -134,15 +135,56 @@ describe('env token vs .kortix/link.json host', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolveProjectContext uses the env token even when link.json names a host', async () => {
+  it('uses the link host credential when the named host is logged in', async () => {
     process.env.KORTIX_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    const configPath = join(dir, 'config.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        active: 'other',
+        hosts: {
+          'kortix-internal-dev': {
+            url: 'https://internal.example/v1',
+            token: 'kortix_pat_link_host',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'account_1',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    process.env.KORTIX_CONFIG_FILE = configPath;
+
     const ctx = await resolveProjectContext();
     expect(ctx).not.toBeNull();
-    expect(ctx?.auth.token).toBe('kortix_pat_cli');
-    expect(ctx?.auth.api_base).toBe('https://tunnel.example/v1');
-    // Project still comes from the link — only the HOST binding is overridden.
+    // One principal: the link's project with the link host's credential.
     expect(ctx?.projectId).toBe('proj-from-link');
+    expect(ctx?.auth.token).toBe('kortix_pat_link_host');
+    expect(ctx?.auth.api_base).toBe('https://internal.example/v1');
+  });
+
+  it('stops with an explicit --host pointer when the link host is not logged in', async () => {
+    process.env.KORTIX_TOKEN = 'kortix_pat_cli';
+    process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    // KORTIX_CONFIG_FILE still points at a nonexistent path → the named host
+    // has no stored credentials. The mixed call the old contract allowed
+    // (ambient token + link project) is exactly the 403/404 KRTX-1486 filed.
+    const writes: string[] = [];
+    const realWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const ctx = await resolveProjectContext();
+      expect(ctx).toBeNull();
+      expect(writes.join('')).toContain('kortix-internal-dev');
+      expect(writes.join('')).toContain('--host kortix-internal-dev');
+    } finally {
+      process.stderr.write = realWrite;
+    }
   });
 
   it('without an env token the link host is still honored (and fails logged-out)', async () => {
@@ -158,6 +200,74 @@ describe('env token vs .kortix/link.json host', () => {
     // rather than silently falling back to the env token the caller did not ask for.
     const ctx = await resolveProjectContext({ hostArg: 'nonexistent-host' });
     expect(ctx).toBeNull();
+  });
+});
+
+describe('resolveProjectRef source tracking', () => {
+  // The default order is the documented one: --project → KORTIX_PROJECT_ID →
+  // link.json → the active host's default. `preferConfigured` (the
+  // change-request commands) puts the CLI config's principal first — unless
+  // it names the same project the ambient pair already carries, whose own
+  // credential the ambient token is.
+  let dir: string;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-cli-ref-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj-from-link',
+        account_id: 'acct',
+        host: 'team',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    savedCwd = process.cwd();
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports the env source when KORTIX_PROJECT_ID wins', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-env', source: 'env' });
+  });
+
+  it('reports the link source when no env project is set', () => {
+    delete process.env.KORTIX_PROJECT_ID;
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+  });
+
+  it('preferConfigured puts the link ahead of the env project', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ref = resolveProjectRef(undefined, { preferConfigured: true });
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+  });
+
+  it('preferConfigured keeps the env source when link and env name the same project', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-link';
+    const ref = resolveProjectRef(undefined, { preferConfigured: true });
+    // The ambient session token is a valid credential for its own project.
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'env' });
+  });
+
+  it('an explicit --project flag wins under both orders', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    expect(resolveProjectRef('proj-from-flag')).toEqual({
+      projectId: 'proj-from-flag',
+      source: 'flag',
+    });
+    expect(resolveProjectRef('proj-from-flag', { preferConfigured: true })).toEqual({
+      projectId: 'proj-from-flag',
+      source: 'flag',
+    });
   });
 });
 
