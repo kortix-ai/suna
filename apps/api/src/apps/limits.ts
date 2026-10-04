@@ -15,7 +15,7 @@
  *      receives less than it asked for is still billed for what it asked for);
  *   2. account entitlement — checkBillingAdmission, exactly as session create;
  *   3. App count      — a per-account cap, like maxProjectsForAccount;
- *   4. concurrency    — running App runtimes, like the concurrent-session cap.
+ *   4. concurrency    — running App runtimes, the tier's `appLimit`.
  *
  * Every cap lifts entirely when billing is off, so a local or self-hosted
  * deployment is never gated by a plan it does not have.
@@ -143,14 +143,10 @@ export async function assertAppAccountFunded(accountId: string): Promise<void> {
 /* ─── 3. App count ───────────────────────────────────────────────────────── */
 
 /**
- * Apps an account may own. Deliberately NOT a new plan dimension: no plan in
- * PLAN_CATALOG prices Apps, so inventing a number here would be a pricing
- * decision wearing an engineering hat. The bound is the plan's existing
- * concurrent-workload allowance, which is a real, per-tier value — an account
- * may own as many Apps as it may run sessions. Uncapped when billing is off
- * (local / self-hosted) and for Enterprise; an operator can override it.
- *
- * If Apps ever get their own plan entitlement, this is the one place to read it.
+ * Apps an account may own: the tier's `appLimit` (the number the retired
+ * concurrent-session cap used to be, kept so Apps did not change when sessions
+ * became unlimited). Uncapped when billing is off (local / self-hosted) and for
+ * Enterprise; an operator can override it.
  */
 export async function maxAppsForAccount(accountId: string): Promise<number> {
   if (!billingEnabled()) return Number.MAX_SAFE_INTEGER;
@@ -158,7 +154,7 @@ export async function maxAppsForAccount(accountId: string): Promise<number> {
   if (override !== null) return override;
   const tier = (await resolveAccountTier(accountId)) ?? 'free';
   if (tier === 'enterprise') return Number.MAX_SAFE_INTEGER;
-  return getTier(tier).concurrentSessionLimit;
+  return getTier(tier).appLimit;
 }
 
 export async function countAccountApps(accountId: string): Promise<number> {
@@ -203,17 +199,15 @@ export async function assertAppComputeAllowed(
 /* ─── 4. Concurrency ─────────────────────────────────────────────────────── */
 
 /**
- * Running App runtimes an account may hold at once. An App runtime occupies a
- * provider slot exactly as a session does, so the account's concurrent-session
- * allowance is the natural budget — Apps get their own counter so they can
- * never starve interactive sessions, and an operator can override it.
+ * Running App runtimes an account may hold at once: the tier's `appLimit`.
+ * An operator can override it.
  */
 export async function maxConcurrentAppRuntimes(accountId: string): Promise<number> {
   if (!billingEnabled()) return Number.MAX_SAFE_INTEGER;
   const override = positiveIntEnv('KORTIX_APPS_MAX_CONCURRENT_RUNTIMES');
   if (override !== null) return override;
   const tier = (await resolveAccountTier(accountId)) ?? 'free';
-  return getTier(tier).concurrentSessionLimit;
+  return getTier(tier).appLimit;
 }
 
 export async function countLiveAppRuntimes(

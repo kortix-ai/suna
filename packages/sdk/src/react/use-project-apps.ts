@@ -101,8 +101,8 @@ export interface UseAppAccessOptions {
   /**
    * Fetch the access POLICY as well as the session. Defaults to true.
    *
-   * `GET .../apps/{id}/access` is an administrative read — a caller without
-   * `project.customize.write` gets a 403. A list of Apps only needs the SESSION
+   * `GET .../apps/{id}/access` reads the full policy (`project.app.read`). A
+   * list of Apps only needs the SESSION
    * (the short-lived URL its preview tile loads), so a grid of N Apps was firing
    * N policy reads it never displayed, every one of them a 403 for an ordinary
    * member. Pass `false` there and let the surface that actually edits access
