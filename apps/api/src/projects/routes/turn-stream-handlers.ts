@@ -6,6 +6,7 @@
  * bodies are moved verbatim, so the traffic contract — statuses, response
  * fields, and side-effect order — is unchanged.
  */
+import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -36,31 +37,7 @@ import {
 } from '../session-turn-ledger';
 
 /** The relay request body, shape only — the route parses JSON into this. */
-export type TurnStreamBody = {
-  session_id?: string;
-  kind?: string;
-  text?: string;
-  detail?: string;
-  output?: string;
-  sources?: Array<{ url?: string; text?: string }>;
-  blocks?: unknown[];
-  card?: Record<string, unknown>;
-  form?: Record<string, unknown>;
-  status?: string;
-  /** The runtime session (`normalizeRuntimeRelayBody` maps the pre-W3 `opencode_session_id`). */
-  runtime_session_id?: string;
-  turn_message_id?: string;
-  turn_token?: string;
-  // Turn-end error detail (opencode AssistantMessage.error / session.error),
-  // so Slack can render "out of credits" / rate-limit / the real error.
-  error_name?: string;
-  error_message?: string;
-  error_status?: number;
-  error_retryable?: boolean;
-  error_provider?: string;
-  /** The daemon's `TurnErrorCode`. Absent from a daemon built before W5. */
-  error_code?: string;
-};
+export type TurnStreamBody = Partial<TurnStreamRelayBody>;
 
 /** The only surface these handlers use from the Hono context. */
 export interface RelayResponder {

@@ -27,7 +27,6 @@ export let lastConnectorSweepAt = 0;
 
 export async function runProjectTriggerSweep(now = new Date()): Promise<{
   projects: number;
-  projectFailures: number;
   scanned: number;
   fired: number;
   queued: number;
@@ -37,7 +36,6 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
   if (triggerSweepRunning) {
     return {
       projects: 0,
-      projectFailures: 0,
       scanned: 0,
       fired: 0,
       queued: 0,
@@ -50,7 +48,6 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
   schedulerHealth.lastSweepStartedAt = now.toISOString();
   const result = {
     projects: 0,
-    projectFailures: 0,
     scanned: 0,
     fired: 0,
     queued: 0,
@@ -94,7 +91,6 @@ export async function runGitTriggerSweep(
   now: Date,
   accumulator: {
     projects: number;
-    projectFailures: number;
     scanned: number;
     fired: number;
     queued: number;

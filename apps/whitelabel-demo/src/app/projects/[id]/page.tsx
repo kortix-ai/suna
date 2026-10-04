@@ -10,7 +10,6 @@ import {
 } from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -18,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
-import { invalidateSessions } from '@/lib/query-keys';
-import { generateSessionId, type SandboxTemplate } from '@kortix/sdk';
+import { NO_OVERRIDES } from '@/lib/session-overrides';
+import { useCreateSession } from '@/lib/use-create-session';
+import type { SandboxTemplate } from '@kortix/sdk';
 import {
   type ModelKey,
   useProjectConfig,
@@ -28,13 +29,10 @@ import {
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
-import { sessionCreateFailure } from '@/lib/session-create-failure';
-import { NO_OVERRIDES, buildSessionCreateInput } from '@/lib/session-overrides';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowUp, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { toast } from 'sonner';
 
 const STARTERS = [
   {
@@ -67,7 +65,6 @@ export default function ProjectPage() {
 function ProjectHome() {
   const projectId = String(useParams().id);
   const router = useRouter();
-  const qc = useQueryClient();
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const [prompt, setPrompt] = useState('');
@@ -99,22 +96,16 @@ function ProjectHome() {
   // multi-template picker below never actually rendered any options.
   const templateList: SandboxTemplate[] = templates.data?.items ?? [];
 
-  const start = useMutation({
-    mutationFn: async (text: string) => {
-      const sessionId = generateSessionId();
-      // Template + agent + bindings are create-time; the prompt + model + agent
-      // flow into the first message (stashed) so the chosen model applies at
-      // start. Unset overrides are omitted by the builder rather than guessed.
-      await kortix.project(projectId).sessions.create(
-        buildSessionCreateInput(
-          { ...NO_OVERRIDES, agent, bindings },
-          {
-            sessionId,
-            name: text.slice(0, 60),
-            sandboxSlug: template,
-          },
-        ),
-      );
+  const start = useCreateSession(projectId, {
+    // Template + agent + bindings are create-time; the prompt + model + agent
+    // flow into the first message (stashed) so the chosen model applies at
+    // start. Unset overrides are omitted by the builder rather than guessed.
+    input: (text: string) => ({
+      overrides: { ...NO_OVERRIDES, agent, bindings },
+      name: text.slice(0, 60),
+      sandboxSlug: template,
+    }),
+    onCreated: (sessionId, text) => {
       // DELIBERATELY the full stash, prompt included. This app is the golden
       // reference for an SDK consumer with no inbox client of its own: the
       // SDK's `useSession` replay delivers `stash.prompt` once the runtime is
@@ -126,19 +117,7 @@ function ProjectHome() {
         .project(projectId)
         .onboardingComplete(true)
         .catch(() => {});
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
-    },
-    onError: (err: unknown) => {
-      // A session can no longer be refused for an unconnected connector — the
-      // gate moved to the connector CALL, which the agent's own turn handles
-      // and reports on with a connect link. Every create failure now goes
-      // through the shared classifier, which names the person who can fix it.
-      const failure = sessionCreateFailure(err);
-      toast.error(failure.title, { description: failure.detail });
     },
   });
 
@@ -152,9 +131,7 @@ function ProjectHome() {
           <div className="mx-auto mb-4 grid size-11 place-items-center rounded-2xl bg-brand/10">
             <Sparkles className="size-5 text-brand" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            What would you like to build?
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight">What would you like to build?</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pick your template, agent, and model, then describe the task.
           </p>
@@ -222,11 +199,7 @@ function ProjectHome() {
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? (
-                <Loading className="size-4" />
-              ) : (
-                <ArrowUp className="size-4" />
-              )}
+              {launching ? <Loading className="size-4" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
         </div>

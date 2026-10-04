@@ -80,7 +80,17 @@ export async function getSessionProviderSecretPool(projectId: string, sessionId:
 }
 export async function listSessionProviderSecretPools(projectId: string, sessionId: string) {
   const path = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools`;
-  return unwrap(await backendApi.get<{ pools: SessionProviderSecretPool[]; can_edit: boolean }>(path));
+  return unwrap(await backendApi.get<{
+    pools: SessionProviderSecretPool[];
+    can_edit: boolean;
+    /**
+     * The person whose own keys this session reaches, or `null` when it reaches
+     * only keys shared with the whole project. Absent from older APIs.
+     */
+    personal_user_id?: string | null;
+    /** Why `personal_user_id` is null. Absent from older APIs. */
+    personal_keys_reason?: 'shared' | 'prompted_by_another_member' | 'no_person' | null;
+  }>(path));
 }
 export async function setSessionProviderSecretPool(projectId: string, sessionId: string, providerId: string, secretIds: string[] | null) {
   return unwrap(await backendApi.put<SessionProviderSecretPool>(poolPath(projectId, sessionId, providerId), { secret_ids: secretIds }));

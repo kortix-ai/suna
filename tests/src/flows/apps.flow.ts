@@ -1006,12 +1006,14 @@ flow(
         const deleted = await cli.run(["apps", "delete", slug, "--yes", "--json", "--project", project.id]);
         if (deleted.exitCode !== 0) throw new Error(`kortix apps delete: ${deleted.exitCode} ${deleted.stderr}`);
         const body = JSON.parse(deleted.stdout);
-        // The deployment is still in progress, so its image can only be
-        // pending — never released: the build may register it after the delete.
-        // Whether the worker had recorded the build provider yet (and so owns an
-        // image at all) depends on the worker's queue, so pending is 0 or 1.
+        // The App owns at most one image here. On the local stack the build is
+        // still running, so it is pending (0 or 1, depending on whether the
+        // worker recorded the build provider yet). On a deployed target the
+        // build can finish first, and then the image is released instead.
+        const released = body.images?.released;
+        const pending = body.images?.pending;
         if (body.ok !== true || body.app_id !== appId || body.slug !== slug
-          || body.images?.released !== 0 || ![0, 1].includes(body.images?.pending)) {
+          || ![0, 1].includes(released) || ![0, 1].includes(pending) || released + pending > 1) {
           throw new Error(`unexpected delete output: ${deleted.stdout}`);
         }
         (await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(404);

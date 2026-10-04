@@ -53,7 +53,7 @@ jobs:
       TARGET_ORIGIN: ${{ inputs.target_origin }}
       OPEN_ACCESS: ${{ inputs.open_access && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # PI_JS_ACCESS_TOKEN is optional: open_access=true deploys without it.
       - name: Check out the aws-env action
         uses: actions/checkout@v7

@@ -130,6 +130,8 @@
     "chooseSharedKeys": "Choose the shared keys this session can use.",
     "sessionKeyPool": "Session key pool",
     "sharedSessionKeys": "This session is shared with the project, so only keys shared with the whole project work here. Keys granted to you work in your private sessions.",
+    "promptedSessionKeys": "Another member has prompted this session, so it no longer acts for its owner. Only keys shared with the whole project work here.",
+    "noPersonSessionKeys": "This session does not act for a person: it started before personal keys existed, or unattended. Only keys shared with the whole project work here. Start a new session to use your own keys.",
     "projectDefaultShort": "Project default",
     "rateLimitDescription": "The gateway rotates through selected keys when a provider reports a rate limit.",
     "enableGateway": "Enable LLM gateway in project settings to use pooled keys.",
@@ -403,7 +405,7 @@
       "keepMyAccount": "Keep my account",
       "deleteDialogTitle": "Delete your account?",
       "immediateWarning": "This deletes your account right away. There is no grace period and no way to undo it.",
-      "gracePeriodWarning": "Your account is scheduled for deletion after a 30-day grace period, during which you can cancel.",
+      "gracePeriodWarning": "Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.",
       "whenDeleted": "When your account is deleted:",
       "agentsDeleted": "Every agent you own is deleted",
       "threadsDeleted": "Every session and message is deleted",
@@ -464,7 +466,13 @@
       "verified": "verified",
       "unverified": "unverified",
       "signedOutOtherDevices": "Signed out of your other devices",
-      "signOutOtherDevicesFailed": "Could not sign out other devices"
+      "signOutOtherDevicesFailed": "Could not sign out other devices",
+      "currentDevice": "This browser",
+      "deviceSignedInAt": "Signed in {date}",
+      "deviceActive": "Active",
+      "noDevices": "No signed-in devices",
+      "noDevicesDescription": "You are not signed in on any device right now.",
+      "devicesLoadFailed": "Couldn’t load your signed-in devices"
     },
     "appearance": {
       "theme": "Theme",
@@ -934,7 +942,7 @@
       "noMatches": "No matches for {query}.",
       "emptyTitle": "No experimental features",
       "emptyDescription": "This deployment exposes no per-project feature flags.",
-      "permission": "You need the project's customize-write permission to change a feature flag.",
+      "permission": "You need the project's settings permission to change a feature flag.",
       "updateFailed": "Failed to update {key}",
       "flags": {
         "marketplace": {
@@ -1972,7 +1980,11 @@
       "topupWalletHint": "Top up your wallet to keep your agents running.",
       "addCredits": "Add credits",
       "billingPortal": "Billing portal",
-      "portalDescription": "Manage your subscription, payment methods, and invoices."
+      "portalDescription": "Manage your subscription, payment methods, and invoices.",
+      "cancelSubscription": "Cancel subscription",
+      "cancelSubscriptionDescription": "Your plan stays active until the end of the current billing period, then it ends. You can reactivate until then.",
+      "reactivateSubscription": "Reactivate subscription",
+      "commitmentCancelHint": "Your commitment runs through {date}. You can cancel after it ends."
     },
     "topup": {
       "minimum": "Minimum top-up is {amount}.",
@@ -9616,7 +9628,7 @@
       "text062b7c4143e2": "Its own branch, cut per session",
       "text062bccfdad1c": "No sandboxes match this search",
       "text062dddbbb151": "A frontier without an ecosystem is not stable",
-      "text06346e4d9c35": "You need the project's customize-write permission to change a feature flag.",
+      "text6d484ed8c1a0": "You need the project's settings permission to change a feature flag.",
       "text06475633ed3e": "Last activity",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Change what {value0} {value1} can do in {value2}.",
@@ -19202,8 +19214,11 @@
       "text4af0b7d8bfb1": "Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.",
       "text39207bf34111": "Related skills",
       "text73112526c03a": "Agent turn failed. No reason was reported.",
+      "text0e5f7f6732e0": "Fork conversation",
+      "text32ad3abe4479": "Failed to fork conversation",
       "text85b7a59cdbd5": "Platform agent",
-      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here."
+      "textd9c0c74b514b": "Meta is a platform agent that orchestrates your work. Its setup is fixed: start a session with it, but it can't be configured here.",
+      "text6c4af31cd4ab": "Signed out on this device, but the server could not confirm the sign-out."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

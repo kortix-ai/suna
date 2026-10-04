@@ -66,14 +66,20 @@ export const PROJECT_PAGE_ACTIONS = [
   PROJECT_ACTIONS.PROJECT_SKILL_READ,
   PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
   PROJECT_ACTIONS.PROJECT_SECRET_READ,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+  PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
+  PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE,
+  PROJECT_ACTIONS.PROJECT_MODEL_READ,
+  PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
+  PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
   PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_FILE_READ,
   // Read by the Customize prefetch (`use-customize-prefetch.ts`) to warm the
   // Review inbox and the Agents people counts without a second probe.
   PROJECT_ACTIONS.PROJECT_REVIEW_READ,
   PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+  // The Customize bar's Members launcher (`capability-tabs.tsx`). In this
+  // batch so the bar never waits on a probe of its own.
+  PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
 ] as const;
 
 export function useProjectPageCans(projectId: string | undefined): Record<string, CanResult> {

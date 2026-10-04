@@ -43,7 +43,7 @@ export const MID_SESSION_CAPABILITIES = {
   runtime_context: 'fixed_at_create',
 } as const satisfies Record<string, MidSessionCapability>;
 
-export type ModelChangeOutcome =
+type ModelChangeOutcome =
   | { kind: 'applied'; message: string; detail?: string }
   | { kind: 'stored'; message: string; detail?: string }
   | { kind: 'half_applied'; message: string; detail?: string };
@@ -80,36 +80,6 @@ export function classifyModelChange(result: {
   }
   if (result.appliedLive) return { kind: 'applied', message: `Now running ${model}` };
   return { kind: 'stored', message: `${model} saved — applies when this session next starts` };
-}
-
-export type AgentSwitchOutcome =
-  | { kind: 'ok' }
-  | { kind: 'grant_unresolved'; message: string }
-  | { kind: 'unknown'; message: string };
-
-interface UpstreamError {
-  code?: unknown;
-  error?: unknown;
-}
-
-/**
- * Classify a prompt rejected because of the agent it asked to run.
- *
- * `AGENT_SECRET_GRANT_UNRESOLVED` means the sandbox is fine and only our ability
- * to VERIFY entitlement failed, so retrying IS correct (503).
- */
-export function classifyAgentSwitch(body: UpstreamError | null): AgentSwitchOutcome {
-  const code = typeof body?.code === 'string' ? body.code : '';
-  const message =
-    typeof body?.error === 'string' && body.error.trim().length > 0
-      ? body.error
-      : 'The agent could not be switched.';
-
-  if (code === 'AGENT_SECRET_GRANT_UNRESOLVED') {
-    return { kind: 'grant_unresolved', message };
-  }
-  if (code) return { kind: 'unknown', message };
-  return { kind: 'ok' };
 }
 
 function stringOrNull(value: unknown): string | null {

@@ -17,6 +17,7 @@ import {
   isPendingApproval,
   loadApprovalRow,
 } from '../../projects/lib/connector-approval-decision';
+import { markApprovalCardDecided } from '../approval-card-relay';
 import { db } from '../../shared/db';
 import { type ChatUser, resolveChatActor } from './identity';
 
@@ -86,6 +87,14 @@ export async function decideChatApproval(input: {
     actorUserId: actor.userId,
     auditSource: 'human',
     resume: 'caller',
+    updateStaleCard: () =>
+      markApprovalCardDecided({
+        projectId: input.projectId,
+        row,
+        decision: input.decision,
+        note: input.note,
+        actorUserId: actor.userId,
+      }),
   });
   if (outcome === 'preview_unavailable') {
     return { refusal: 'This call recorded no parameters to review, so it can only be denied.' };
