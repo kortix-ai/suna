@@ -1,5 +1,5 @@
 {
-  "source_hash": "ecc70e7579f63abcb5917140ff4e3834a94fc648e8d9f677f8cb718b7e3a78c8",
+  "source_hash": "953b1f800489396a7cbfe31b8f167c962fe79accd98a4ba3fc51c32a1a2fb38b",
   "diff_files": [
     "apps/api/src/projects/lib/serializers.ts",
     "apps/api/src/projects/lib/session-list-metadata.test.ts",
@@ -13,13 +13,13 @@
     "apps/web/src/features/workspace/project-sidebar/project-session-list.tsx",
     "tests/src/fixtures/cli.ts"
   ],
-  "diff_hash": "79021e390114f939cf68d67fdf9d0ed92ed0b5436bbb778273d92f20725bda04",
-  "head": "82c2c8d53868760e2cc1e6597f41fb05a1b368b2",
+  "diff_hash": "285745cf659e7da6c96f3bf1cf5c35bff081f6124a75541538f61f3cef338452",
+  "head": "f218398200662fa5c497f2027d3a158f6bc72aad",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "db-suites": "pass",
-    "packages": "skipped-sandbox-image"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T05:14:49.634Z"
+  "at": "2026-10-04T05:50:37.775Z"
 }
