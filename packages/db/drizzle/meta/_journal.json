@@ -824,6 +824,13 @@
     {
       "idx": 117,
       "version": "7",
+      "when": 1791051577945,
+      "tag": "20261003181937_krtx1307_parked_verify_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
       "when": 1791052193844,
       "tag": "20261003182953_gateway_logs_session_rollup_index",
       "breakpoints": true

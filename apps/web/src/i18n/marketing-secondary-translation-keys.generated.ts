@@ -28,7 +28,7 @@ export const MARKETING_SECONDARY_TRANSLATION_KEYS: Readonly<Record<string, strin
   'Built 0 to 1 and 1 to n at a startup.': 'text693974c65ab6',
   'Can recruit.': 'textbe433708b2dd',
   Careers: 'text7e658675b5ca',
-  'Claude Cowork, ChatGPT Work and the rest are heading for full agent management systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.':
+  'Claude Cowork, ChatGPT Work and the rest are heading for full AI operating systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.':
     'text9bba728a8ca7',
   'Comfortable working a long way ahead of what ships.': 'textf22956f6143f',
   'Connector credentials are brokered server-side and never enter the machine': 'textb4c085e57f14',
