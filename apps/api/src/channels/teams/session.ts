@@ -646,7 +646,6 @@ export async function createOrJoinTeamsConversationSession(input: {
       // markup Teams wraps around the bot's name in channels.
       title_source: activity.text ? stripTeamsMentions(activity.text) || null : null,
     },
-    enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
     // One key per inbound message, never per conversation. The lifecycle
     // keeps a key forever (a unique index, no retention) and a chat is one
@@ -729,7 +728,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 
   if (result.status === 'queued' || result.status === 'pending') {
-    if (handle) await finalizeTurn(handle, { answer: queuedMessage(result.reason) });
+    if (handle) await finalizeTurn(handle, { answer: queuedMessage() });
     return;
   }
 
@@ -756,10 +755,7 @@ function startError(status: number | undefined, body: unknown): string {
   return startErrorMessage(status, body, TEAMS_START_ERROR_COMMANDS);
 }
 
-function queuedMessage(reason?: string): string {
-  if (reason === 'account session cap') {
-    return "This workspace is at its concurrent-session limit, so I've queued your task. I'll start it and reply right here as soon as a slot frees up.";
-  }
+function queuedMessage(): string {
   return "I've queued your task behind the sessions already starting in this project, and I'll reply right here the moment it begins.";
 }
 

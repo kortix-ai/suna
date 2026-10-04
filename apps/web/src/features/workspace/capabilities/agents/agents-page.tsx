@@ -29,6 +29,7 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -39,7 +40,7 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { capitalizeWords } from '@kortix/shared';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   CaretRightIcon,
   MagnifyingGlassIcon,
@@ -196,7 +197,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       filters={
-        config ? (
+        // The row holds its height while the manifest loads, so the grid
+        // below does not drop when the count and the selector land.
+        detailQuery.isLoading ? (
+          <>
+            <Skeleton className="h-4 w-40 rounded-sm py-0" />
+            <Skeleton className="h-8 w-44 rounded-md py-0" />
+          </>
+        ) : config ? (
           <>
             <p className="text-muted-foreground text-xs">
               {agents.length} {agents.length === 1 ? 'agent' : 'agents'}{' '}
@@ -244,7 +252,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             key={agent.path}
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-            title={capitalizeWords(agent.name)}
+            title={isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
@@ -408,7 +416,7 @@ function DefaultAgentSelector({
         <SelectContent align="end">
           {availableAgents.map((agent) => (
             <SelectItem key={agent.name} value={agent.name}>
-              {capitalizeWords(agent.name)}
+              {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
             </SelectItem>
           ))}
         </SelectContent>
