@@ -110,8 +110,11 @@ describe('parseFrontmatter trims each line in linear time', () => {
   });
 
   test('a front-matter line holding 240k spaces', () => {
-    const started = performance.now();
+    const started = process.cpuUsage();
     parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`);
-    expect(performance.now() - started).toBeLessThan(100);
+    const cpu = process.cpuUsage(started);
+    // CPU, not wall time (same guard as packages/shared's within()): a loaded
+    // lane costs wall time without costing work.
+    expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
   });
 });

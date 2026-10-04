@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { within } from '@kortix/shared/tool-output/testing';
+
 import {
   QUOTE_MARKER_RE,
   parseReplyContexts,
@@ -111,13 +113,6 @@ describe('each reply_context parser returns exactly what its regex returned', ()
 });
 
 describe('no message can freeze the tab that parses its quotes', () => {
-  const within = (label: string, run: () => unknown) =>
-    test(label, () => {
-      const started = performance.now();
-      run();
-      expect(performance.now() - started).toBeLessThan(100);
-    });
-
   // 240k characters. Each took ~1 s with the regexes, and each doubling of
   // the text quadrupled the time.
   within('16k <reply_context> openers that never close (parse)', () =>

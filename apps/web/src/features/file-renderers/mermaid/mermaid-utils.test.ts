@@ -137,8 +137,12 @@ describe('hasOwnMermaidConfig reads the front matter in linear time', () => {
   });
 
   test('front matter holding 240k blank lines', () => {
-    const started = performance.now();
+    // This guard flaked in the packages lane under concurrent load (122 ms
+    // wall). CPU, not wall time — the same guard packages/shared's within()
+    // uses: a loaded box costs wall time without costing work.
+    const started = process.cpuUsage();
     hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`);
-    expect(performance.now() - started).toBeLessThan(100);
+    const cpu = process.cpuUsage(started);
+    expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
   });
 });

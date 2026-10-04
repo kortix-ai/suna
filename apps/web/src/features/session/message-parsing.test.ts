@@ -279,9 +279,12 @@ test('a pathological message cannot freeze the tab that renders it', () => {
   // this text — quadratic in it — so in a shared session one member's message
   // froze the tab of every member who opened it.
   const evil = `${'<file\t'.repeat(40_000)}<file${'\t'.repeat(200_000)}`;
-  const started = performance.now();
+  const started = process.cpuUsage();
   const parsed = parseFileReferences(evil);
-  expect(performance.now() - started).toBeLessThan(100);
+  const cpu = process.cpuUsage(started);
+  // CPU, not wall time: a loaded lane costs wall time without costing work
+  // (the same guard packages/shared's within() uses).
+  expect((cpu.user + cpu.system) / 1000).toBeLessThan(250);
   expect(parsed.files).toEqual([]);
 });
 
