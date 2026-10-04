@@ -10,7 +10,7 @@ const setup = new pg.Client({
 });
 const migrationPath = resolve(
   import.meta.dir,
-  '../migrations/20261004003004704_credit_purchases_single_permissive_policy.sql',
+  '../migrations/20261004173003004_credit_purchases_single_permissive_policy.sql',
 );
 const own = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
