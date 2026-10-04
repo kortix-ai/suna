@@ -21,6 +21,7 @@ import type {
 } from './harness/assets'
 import { logger } from './logger'
 import { fetchArtifactByChunks } from './runtime-asset-chunks'
+import { bootArtifactBytes, bootArtifactSkills } from './boot-artifacts'
 import { withReleaseStoreLock } from './boot-config'
 
 /**
@@ -956,6 +957,9 @@ async function fetchArtifact(
   url: string,
   localSources: string[],
 ): Promise<ArtifactFetch> {
+  // The release's own file on the boot artifacts volume, when it is this one.
+  const local = await bootArtifactBytes(component, expectedSha)
+  if (local) return { bytes: local }
   const chunked = await fetchArtifactByChunks({
     fetchImpl,
     base,
@@ -1204,12 +1208,14 @@ export async function reconcileRuntimeAssets(
       if (overlayPresent && state.managed_skills_hash === skillsHash) {
         skills = 'current'
       } else {
-        const payload = await fetchJson<{ hash: string; files: OverlayFile[] }>(
-          fetchImpl,
-          `${base}/managed-skills`,
-          token,
-          DOWNLOAD_TIMEOUT_MS,
-        )
+        const payload =
+          (await bootArtifactSkills<{ hash: string; files: OverlayFile[] }>(skillsHash)) ??
+          (await fetchJson<{ hash: string; files: OverlayFile[] }>(
+            fetchImpl,
+            `${base}/managed-skills`,
+            token,
+            DOWNLOAD_TIMEOUT_MS,
+          ))
         if (!payload || !Array.isArray(payload.files)) {
           skills = 'failed'
         } else if (overlayHash(payload.files) !== skillsHash) {

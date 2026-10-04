@@ -342,6 +342,50 @@ done
 cd /
 
 # ---------------------------------------------------------------------------
+# Boot artifacts.
+#
+# A Platinum box may carry one release's prebuilt runtime on a read-only
+# volume (the API mounts the configured tag; scripts/boot-artifacts/publish.ts
+# builds it): the daemon, the `kortix` CLI, the OpenCode binary and the managed
+# skills, with their digests in manifest.json. When it is there the box runs
+# that release from the first second instead of booting the image's older
+# copies and downloading the new ones afterwards:
+#   - the daemon starts from the volume (below, select_agent),
+#   - OpenCode resolves from the volume first on PATH,
+#   - the image's managed-skill overlay is replaced by the release's,
+#   - the daemon's convergence reads the CLI from the volume, not the network.
+# Absent or unreadable, nothing changes: the box boots from its image.
+# ---------------------------------------------------------------------------
+BOOT_ARTIFACTS="${KORTIX_BOOT_ARTIFACTS_DIR:-/opt/kortix-artifacts}"
+AGENT_ARTIFACT=""
+use_boot_artifacts() {
+  local root="${BOOT_ARTIFACTS}" i
+  # The mount is attached before the box starts; allow a moment, never more.
+  for i in $(seq 1 20); do
+    [ -f "${root}/manifest.json" ] && break
+    [ -d "${root}" ] || return 1
+    sleep 0.1
+  done
+  [ -f "${root}/manifest.json" ] || return 1
+  if [ -x "${root}/opencode/bin/opencode" ]; then
+    PATH="${root}/opencode/bin:${PATH}"
+    export PATH
+  fi
+  if [ -d "${root}/managed-skills" ]; then
+    local dst=/opt/kortix/managed-skills
+    rm -rf "${dst}.boot" \
+      && cp -a "${root}/managed-skills" "${dst}.boot" \
+      && rm -rf "${dst}" \
+      && mv "${dst}.boot" "${dst}" \
+      || echo "[entrypoint] boot artifacts: managed skills not applied" >&2
+  fi
+  [ -x "${root}/kortix/kortix-agent" ] && AGENT_ARTIFACT="${root}/kortix/kortix-agent"
+  export KORTIX_BOOT_ARTIFACTS_DIR="${root}"
+  echo "[entrypoint] boot artifacts $(sed -n 's/.*"release": *"\([^"]*\)".*/\1/p' "${root}/manifest.json" | head -n1) in use" >&2
+}
+use_boot_artifacts || true
+
+# ---------------------------------------------------------------------------
 # Supervisor — the daemon's own updater.
 #
 # The image is a cache, not the truth: a box provisioned months ago otherwise
@@ -439,6 +483,10 @@ promote_staged_agent() {
 select_agent() {
   if [ -x "${AGENT_CURRENT}" ]; then
     echo "${AGENT_CURRENT}"
+  elif [ -n "${AGENT_ARTIFACT}" ]; then
+    # The release's daemon from the boot artifacts volume. An update the box
+    # staged itself (agent.current) still wins; the image's binary stays the floor.
+    echo "${AGENT_ARTIFACT}"
   else
     echo "${AGENT_BAKED}"
   fi
@@ -548,6 +596,15 @@ while :; do
   # updated binary". The FIRST update has no predecessor to keep, so keying off
   # AGENT_PREV would leave exactly the first bad rollout unable to roll back,
   # which is the rollout most likely to be bad.
+  # The boot artifacts' daemon failing fast falls back to the image's, once.
+  if [ "${status}" -ne 0 ] && [ "${status}" -ne 137 ] \
+     && [ "${ran}" -lt "${HEALTHY_AFTER_S}" ] \
+     && [ -n "${AGENT_ARTIFACT}" ] && [ "${agent_bin}" = "${AGENT_ARTIFACT}" ]; then
+    echo "[entrypoint] boot artifacts agent exited ${status} after ${ran}s; using the image's agent" >&2
+    AGENT_ARTIFACT=""
+    continue
+  fi
+
   if [ "${status}" -ne 0 ] \
      && [ "${ran}" -lt "${HEALTHY_AFTER_S}" ] \
      && [ -f "${AGENT_CURRENT}" ] \

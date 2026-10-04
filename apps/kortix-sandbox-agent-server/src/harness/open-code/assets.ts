@@ -29,6 +29,7 @@ import {
 } from './opencode-binary'
 import { OPENCODE_CONFIG_DEPS_DIR } from './opencode-config-deps'
 import { opencodeTurnInFlight } from './opencode-turn-state'
+import { bootArtifactOpencode, dropBootArtifactsFromPath } from '../../boot-artifacts'
 
 const execFileAsync = promisify(execFile)
 /** opencode is ~167 MB from npm and installs on a 1-2 vCPU box. */
@@ -137,6 +138,21 @@ export async function installOpencodeVersion(
   version: string,
   options: InstallOpencodeVersionOptions = {},
 ): Promise<void> {
+  if (!options.installPackage) {
+    // The boot artifacts volume carries this exact version: no install at all.
+    const artifact = await bootArtifactOpencode(version)
+    if (artifact) {
+      const capture = options.capture ?? captureProcessOutput
+      const reported = (await capture(artifact, ['--version']).catch(() => '')).trim()
+      if (reported === version) {
+        const binDir = artifact.replace(/\/[^/]+$/, '')
+        if (!(process.env.PATH ?? '').split(':').includes(binDir)) process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
+        await publishOpencodeNativeLink(artifact, options.currentLinkPath ?? OPENCODE_CURRENT_LINK)
+        logger.info('[runtime-assets] OpenCode taken from the boot artifacts volume', { version })
+        return
+      }
+    }
+  }
   const installPackage = options.installPackage ?? (async (targetVersion: string) => {
     // pnpm >= 10 refuses a global install without a global bin dir. Images set
     // PNPM_HOME at build time; a box converged from an older image may not
@@ -160,6 +176,9 @@ export async function installOpencodeVersion(
       logger.warn('[runtime-assets] pnpm rejects --allow-build (pnpm < 10); retrying without it')
       await run(pnpmAddOpencodeArgs(targetVersion, { allowBuild: false }))
     }
+    // A version the boot artifacts volume does not carry: its older OpenCode
+    // must stop shadowing this install on PATH.
+    dropBootArtifactsFromPath()
   })
   const capture = options.capture ?? captureProcessOutput
 
