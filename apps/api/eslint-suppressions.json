@@ -2353,20 +2353,12 @@
     }
   },
   "src/projects/session-lifecycle/runtime-client.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 6
     }
   },
   "src/projects/session-lifecycle/runtime-fetch.ts": {
     "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
-  "src/projects/session-lifecycle/runtime-prompt-file.ts": {
-    "kortix-api/layers": {
       "count": 1
     }
   },
@@ -2605,6 +2597,39 @@
       "count": 7
     }
   },
+  "src/sandbox-proxy/forward/access.ts": {
+    "no-console": {
+      "count": 3
+    }
+  },
+  "src/sandbox-proxy/forward/forward-to-sandbox.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/sandbox-proxy/forward/retry.ts": {
+    "no-console": {
+      "count": 7
+    }
+  },
+  "src/sandbox-proxy/forward/turn-start.ts": {
+    "no-console": {
+      "count": 6
+    }
+  },
+  "src/sandbox-proxy/forward/upstream.ts": {
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/sandbox-proxy/forward/wake.ts": {
+    "kortix-api/layers": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
   "src/sandbox-proxy/index.ts": {
     "no-console": {
       "count": 1
@@ -2621,19 +2646,11 @@
     }
   },
   "src/sandbox-proxy/preview-origin.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 1
     },
     "no-restricted-properties": {
       "count": 2
-    }
-  },
-  "src/sandbox-proxy/routes/preview.ts": {
-    "no-console": {
-      "count": 21
     }
   },
   "src/sandbox-proxy/routes/public-share.ts": {
@@ -2655,9 +2672,6 @@
     }
   },
   "src/sandbox-proxy/ws-proxy.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "no-console": {
       "count": 2
     }

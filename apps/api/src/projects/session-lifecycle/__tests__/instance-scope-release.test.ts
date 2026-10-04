@@ -82,7 +82,7 @@ mock.module('../../routes/shared', () => ({
     opencode_session_id: OC_SESSION_ID,
   }),
 }));
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

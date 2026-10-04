@@ -207,7 +207,7 @@ mock.module('../../routes/shared', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

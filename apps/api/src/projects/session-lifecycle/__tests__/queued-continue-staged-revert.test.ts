@@ -89,7 +89,7 @@ mock.module('../../routes/shared', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     events.push('prompt');
     return new Response(null, { status: 204 });

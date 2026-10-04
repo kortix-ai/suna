@@ -75,7 +75,7 @@ mock.module('../../routes/shared', () => ({
 
 // The one call site F2 fixes: capture the header `postPrompt` sends instead
 // of actually reaching a sandbox.
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
