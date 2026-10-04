@@ -1,0 +1,16 @@
+{
+  "source_hash": "5ccb4cc95fe7b7cd682f8818a530257fbf97a55459b8aed5219f57984216d6a3",
+  "diff_files": [
+    "packages/db/migrations/20261004033649758_audit_log_rls_initplan.sql",
+    "packages/db/scripts/audit-log-rls-initplan.integration.test.ts"
+  ],
+  "diff_hash": "2a8ca7ceaaa08d9e81578fd63b86764b5172561e0ab7a23f32da7bb9c3af40f6",
+  "head": "0eca8b724ce7b5f85dedec8e07461cd4a21560d1",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:51:49.408Z"
+}
