@@ -62,6 +62,7 @@ import {
   readManifestFromRepo,
   readRepoFile,
   type GitBackedProject,
+  type MirrorRefresh,
 } from '../git';
 
 /**
@@ -650,6 +651,14 @@ export async function resolveManifestPiPackageLists(project: GitBackedProject, b
  */
 interface CompileReadOptions {
   onManifest?: (raw: Record<string, unknown>) => void;
+  /**
+   * Force the manifest read's mirror refresh with the ref-scoped freshness
+   * proof: `readManifestFromRepo` proves THIS ref against the remote with one
+   * `git ls-remote` and only fetches the whole mirror when the branch moved.
+   * A caller that must answer "latest" proves the ref instead of trusting the
+   * 60s TTL. Omitted keeps the plain TTL behavior.
+   */
+  forceRefresh?: MirrorRefresh;
 }
 
 export async function resolveCompiledAgentConfigForSession(
@@ -673,7 +682,9 @@ export async function resolveCompiledAgentConfigForSession(
   let manifestVersion: number | undefined;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
+    const found = await readManifestFromRepo(project, candidates, ref, {
+      forceRefresh: options.forceRefresh,
+    });
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
@@ -742,7 +753,9 @@ export async function resolveSelectedAgentConfigForSession(
   const candidates = manifestCandidatePaths(project.manifestPath).map(
     (candidate) => candidate.path,
   );
-  const found = await readManifestFromRepo(project, candidates, ref);
+  const found = await readManifestFromRepo(project, candidates, ref, {
+    forceRefresh: options.forceRefresh,
+  });
   if (!found) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} has no manifest for selected-agent compilation.`,

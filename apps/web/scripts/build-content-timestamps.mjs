@@ -46,6 +46,7 @@ const MARKETING_SOURCES = {
   marketplace: 'apps/web/src/app/[locale]/(public)/(marketing)/marketplace/page.tsx',
   support: 'apps/web/src/app/[locale]/(public)/(marketing)/support/page.tsx',
   legal: 'apps/web/src/app/[locale]/(public)/(seo)/legal/page.tsx',
+  'ai-os': 'apps/web/src/features/marketing/os/ai-os-page.tsx',
   'agent-computer': 'apps/web/src/app/[locale]/(public)/(marketing)/agent-computer/page.tsx',
   'agents-and-skills': 'apps/web/src/app/[locale]/(public)/(marketing)/agents-and-skills/page.tsx',
   automations: 'apps/web/src/app/[locale]/(public)/(marketing)/automations/page.tsx',

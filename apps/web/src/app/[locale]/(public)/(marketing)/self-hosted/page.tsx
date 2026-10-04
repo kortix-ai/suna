@@ -118,7 +118,7 @@ export default async function SelfHostedPage(): Promise<ReactNode> {
         />
 
         <Reveal delay={0.06}>
-          <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-3">
+          <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
             {firstRun.asks.items.map((item, i) => (
               <li
                 key={item.n}
@@ -137,7 +137,7 @@ export default async function SelfHostedPage(): Promise<ReactNode> {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <div className="border-border bg-card mt-4 rounded-sm border p-6 sm:p-8">
+          <div className="border-border bg-card mt-4 rounded-xl border p-6 sm:p-8">
             <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
               {firstRun.generates.label}
             </p>
@@ -182,7 +182,7 @@ export default async function SelfHostedPage(): Promise<ReactNode> {
             {[stack.data, stack.updates].map((card) => (
               <div
                 key={card.title}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
                 <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
@@ -221,7 +221,7 @@ export default async function SelfHostedPage(): Promise<ReactNode> {
               {models.points.map((point) => (
                 <div
                   key={point.id}
-                  className="border-border bg-card flex h-full flex-col justify-center rounded-sm border p-6"
+                  className="border-border bg-card flex h-full flex-col justify-center rounded-xl border p-6"
                 >
                   <h3 className="text-foreground text-base leading-tight font-medium">
                     {point.title}
@@ -247,7 +247,7 @@ export default async function SelfHostedPage(): Promise<ReactNode> {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <dl className="border-border bg-card mt-4 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="border-border bg-card mt-4 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
             {targets.sizing.items.map((item, i) => (
               <div key={item.k} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
                 <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">

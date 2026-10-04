@@ -43,7 +43,7 @@ function StateCard({ state }: { state: (typeof policySource.states)[number] }) {
         {state.verb}
       </h3>
       <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{state.body}</p>
-      <p className="border-border text-muted-foreground mt-6 rounded-sm border px-3 py-2 font-mono text-[11px]">
+      <p className="border-border text-muted-foreground mt-6 rounded-xl border px-3 py-2 font-mono text-[11px]">
         {state.example}
       </p>
     </article>
@@ -55,7 +55,7 @@ function PauseTimeline() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { policy } = getLocalizedConnectorsContent(tI18nComplete);
   return (
-    <div className="border-border bg-card overflow-hidden rounded-sm border">
+    <div className="border-border bg-card overflow-hidden rounded-xl border">
       <div className="border-border border-b px-6 py-4 sm:px-8">
         <Eyebrow>{policy.pause.eyebrow}</Eyebrow>
         <h3 className="text-foreground mt-3 text-xl leading-tight font-medium tracking-tight text-balance">
@@ -106,7 +106,7 @@ function ConditionTable() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { policy } = getLocalizedConnectorsContent(tI18nComplete);
   return (
-    <div className="border-border overflow-hidden rounded-sm border">
+    <div className="border-border overflow-hidden rounded-xl border">
       <div className="border-border bg-foreground/[0.02] grid grid-cols-12 gap-4 border-b px-5 py-2.5">
         <span className="text-muted-foreground col-span-4 font-mono text-[10px] tracking-widest uppercase">
           {tI18nComplete.raw('text64cff1319d2f')}
@@ -151,7 +151,7 @@ export function PolicySection() {
       <SectionHeader eyebrow={policy.eyebrow} title={policy.title} description={policy.sub} />
 
       <Reveal delay={0.06}>
-        <div className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-3">
+        <div className="border-border bg-card mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-3">
           {policy.states.map((state, i) => (
             <div
               key={state.id}

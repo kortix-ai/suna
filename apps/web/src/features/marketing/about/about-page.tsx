@@ -1,82 +1,48 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
-import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { PillLink } from '@/features/marketing/os/primitives';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { getLocalizedAboutContent } from './content';
+import { PageHero } from '@/features/marketing/component/page-hero';
 
 /* Prose sits on a ~65–70 character measure. The grid is 6xl; body copy never
    runs its full width. */
 const MEASURE = 'max-w-[34rem]';
 
-/**
- * The team, then the thesis. The photograph opens the page edge to edge — it is
- * the six people making the argument, so it gets the full viewport rather than
- * the 6xl measure everything else hangs on.
- *
- * The crop is the whole point. `/images/team.webp` is 1920×1080 with roughly a
- * quarter of its height empty above the heads, so the band is wider than the
- * source at every width and `object-bottom` takes the whole crop off the top —
- * dead space out, the six figures whole, shoes to hair. `object-cover` scales to
- * the container WIDTH, so cropping the top costs nothing in how large the people
- * render; it only removes emptiness. 21:9 is the tightest the band can go, and
- * full-bleed spends the remaining margin: at 1440px it crops 193px of a 211px
- * void. Widen the ratio further and the crop line reaches the tallest head.
- */
+/** The dark AI OS pane opens the page; the team photograph overlaps its floor. */
 function Hero(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { hero } = getLocalizedAboutContent(tI18nComplete);
   return (
-    <section className="mx-auto max-w-7xl px-6 pt-28 pb-14 sm:pt-36 sm:pb-28">
-      <Reveal>
-        <div className="relative aspect-[2/1] w-full overflow-hidden rounded-sm border lg:aspect-[21/9]">
-          <Image
-            src="/images/team.webp"
-            alt={hero.imageAlt}
-            fill
-            priority
-            className="object-cover object-bottom"
-            sizes="100vw"
-          />
-        </div>
-
-        <div className="mt-14 flex w-full flex-col items-start gap-6 sm:mt-16">
-          <span
-            className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
-            data-text="true"
-          >
-            {hero.eyebrow}
-          </span>
-          <h1 className="text-foreground max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-            {hero.title}
-          </h1>
-          <p className="text-muted-foreground max-w-2xl text-lg leading-relaxed">{hero.lead}</p>
-
-          <div className="kx-hero-text flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
-            <Button size="lg" className="flex-1 active:scale-[0.97] sm:flex-none" asChild>
-              <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              className="group/arrow-right flex-1 gap-1.5 active:scale-[0.97] sm:flex-none"
-              asChild
-            >
-              <Link href={hero.ctaSecondaryHref} target="_blank" rel="noreferrer">
-                {hero.ctaSecondary}
-                <ArrowRightIcon aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </Reveal>
-    </section>
+    <PageHero
+      eyebrow={hero.eyebrow}
+      title={hero.title}
+      sub={hero.lead}
+      actions={
+        <>
+          <PillLink href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</PillLink>
+          <PillLink tone="outline" href={hero.ctaSecondaryHref} target="_blank" rel="noreferrer">
+            {hero.ctaSecondary}
+          </PillLink>
+        </>
+      }
+    >
+      <div className="relative aspect-[2/1] w-full max-w-5xl overflow-hidden rounded-xl border lg:aspect-[21/9]">
+        <Image
+          src="/images/team.webp"
+          alt={hero.imageAlt}
+          fill
+          priority
+          className="object-cover object-bottom"
+          sizes="(min-width: 1024px) 1024px, 100vw"
+        />
+      </div>
+    </PageHero>
   );
 }
 
@@ -93,12 +59,12 @@ function Statements(): ReactNode {
               <div className="grid gap-6 py-12 sm:py-16 lg:grid-cols-12 lg:gap-16">
                 <div className="lg:col-span-6">
                   <span
-                    className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
+                    className="text-muted-foreground font-mono text-xs leading-none font-normal uppercase select-none"
                     data-text="true"
                   >
                     {statement.n}
                   </span>
-                  <h2 className="text-foreground mt-4 max-w-xl text-2xl leading-tight font-medium tracking-tight text-balance sm:text-3xl">
+                  <h2 className="text-foreground mt-4 max-w-xl text-2xl leading-tight font-normal tracking-tight text-balance sm:text-3xl">
                     {statement.title}
                   </h2>
                 </div>
@@ -138,7 +104,7 @@ function PlatformSection(): ReactNode {
             >
               {/* 6/6, the same split the statements above use, so both sections
                   hang their body copy off one vertical axis. */}
-              <h3 className="text-foreground text-xl font-medium tracking-tight lg:col-span-6">
+              <h3 className="text-foreground text-xl font-normal tracking-tight lg:col-span-6">
                 {item.verb}
               </h3>
 
