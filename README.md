@@ -30,7 +30,7 @@ Agents that deliver finished work — reports, decks, code, replies, deployed ch
 product category. Every version of it runs inside a model lab, on that lab's model, with your
 company's brain on their side of the wall.
 
-**Kortix is the one you own.** It's an open-source **AI Operating System**: your agents, the
+**Kortix is the one you own.** It's an open-source **[AI Operating System](https://kortix.com/docs/ai-operating-system)**: your agents, the
 skills they share, your company memory, and every connector live in one git repo — versioned,
 diffable, and shared by the whole company. The agents work on real **cloud computers** — an
 isolated sandbox per session, on its own branch — and land what they produce through a **change
@@ -205,7 +205,7 @@ SOC 2 Type II is in progress.
 One repo is the company: agents, skills, memory, connectors and triggers are files, versioned and
 reviewed like code. Thousands of agents run in parallel on one config, each on its own cloud
 computer. An agent can edit its own configuration on its session branch and propose the change. A
-person approves it.
+person approves it. [What an AI Operating System is, part by part →](https://kortix.com/docs/ai-operating-system)
 
 ---
 
