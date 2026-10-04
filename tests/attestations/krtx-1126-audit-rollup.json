@@ -1,5 +1,5 @@
 {
-  "source_hash": "94da774139058b26063d0a031f4316890c3a367074716afe28a4eef39e821617",
+  "source_hash": "ce7c18e7a3b0d156fbfb56995820fb79036e2c2771248417ccfe67067816d03f",
   "diff_files": [
     "apps/api/src/__tests__/e2e-ops-overview.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
@@ -14,13 +14,13 @@
     "packages/db/migrations/20261004030158703_audit_event_counts.sql",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "852adf41e24e34545bb81a4af34a3aa67b855e7e66b6b4e3024bf0ee90e43065",
-  "head": "57019e57b0e2e5d480682777470bf6f1a68842c8",
+  "diff_hash": "4fa3f787b047a1153c418f4534a7695ebaf439feedde9cb4822c921938f2a22c",
+  "head": "39043ee5412f1c028118be13ed4426d3fd83eb04",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T03:23:05.255Z"
+  "at": "2026-10-04T04:04:44.792Z"
 }
