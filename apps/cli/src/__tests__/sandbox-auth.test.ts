@@ -135,6 +135,20 @@ describe('env token vs .kortix/link.json host', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('without onePrincipal the env token still backs the linked project (main fallback)', async () => {
+    // The documented non-cr contract: a link naming a host with no stored
+    // credentials never dead-ends the command — the injected env token stays
+    // the credential. (The cr commands opt into the stricter one-principal
+    // guard; see cr-principal.test.ts.)
+    process.env.KORTIX_TOKEN = 'kortix_pat_cli';
+    process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    const ctx = await resolveProjectContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx?.auth.token).toBe('kortix_pat_cli');
+    expect(ctx?.auth.api_base).toBe('https://tunnel.example/v1');
+    expect(ctx?.projectId).toBe('proj-from-link');
+  });
+
   it('uses the link host credential when the named host is logged in', async () => {
     process.env.KORTIX_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
@@ -165,11 +179,11 @@ describe('env token vs .kortix/link.json host', () => {
     expect(ctx?.auth.api_base).toBe('https://internal.example/v1');
   });
 
-  it('stops with an explicit --host pointer when the link host is not logged in', async () => {
+  it('onePrincipal stops with an explicit login pointer when the link host is not logged in', async () => {
     process.env.KORTIX_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
     // KORTIX_CONFIG_FILE still points at a nonexistent path → the named host
-    // has no stored credentials. The mixed call the old contract allowed
+    // has no stored credentials. The mixed call the fallback allows
     // (ambient token + link project) is exactly the 403/404 KRTX-1486 filed.
     const writes: string[] = [];
     const realWrite = process.stderr.write.bind(process.stderr);
@@ -178,7 +192,7 @@ describe('env token vs .kortix/link.json host', () => {
       return true;
     }) as typeof process.stderr.write;
     try {
-      const ctx = await resolveProjectContext();
+      const ctx = await resolveProjectContext({ onePrincipal: true });
       expect(ctx).toBeNull();
       expect(writes.join('')).toContain('kortix-internal-dev');
       expect(writes.join('')).toContain('kortix login --host kortix-internal-dev');

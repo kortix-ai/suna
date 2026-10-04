@@ -86,7 +86,10 @@ export async function runCr(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
-  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  // One principal (KRTX-1486): the CR commands operate on the configured
+  // project, so its credential travels with it — never the ambient sandbox
+  // session token.
+  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag, onePrincipal: true };
 
   switch (sub) {
     case 'ls':

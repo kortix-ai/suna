@@ -15,6 +15,16 @@ interface ProjectContextOpts {
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
   /**
+   * Enforce ONE principal (KRTX-1486, the change-request commands): a
+   * project resolved from .kortix/link.json travels with its own host's
+   * stored credential — never the sandbox's ambient session token, which is
+   * bound to the sandbox's own project. Without stored credentials for that
+   * host the command stops with an explicit login pointer instead of a
+   * doomed cross-project request. Other commands keep the documented
+   * env-token fallback.
+   */
+  onePrincipal?: boolean;
+  /**
    * Do not print "No project linked" when nothing resolves.
    *
    * Set by callers that have a fallback — `locateSessionAnywhere` goes on to
@@ -82,7 +92,7 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
-export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg'>;
+export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg' | 'onePrincipal'>;
 
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
@@ -138,7 +148,7 @@ export async function resolveProjectContext(
     // that host, stop with an explicit login pointer instead of a doomed
     // request. (`--host <name>` cannot rescue that state: it resolves the
     // same absent credentials, so logging in is the only working fix.)
-    if (projectId && hasEnvTokenHost() && ref?.source === 'link') {
+    if (projectId && opts.onePrincipal && hasEnvTokenHost() && ref?.source === 'link') {
       const configHostName = loadLink()?.host ?? activeHostName() ?? undefined;
       const configAuth = configHostName ? loadAuthForHost(configHostName) : null;
       if (configAuth?.token) {
