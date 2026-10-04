@@ -4,8 +4,8 @@ import { Gmail } from '@/features/icon/icons/gmail';
 import { Kortix } from '@/features/icon/icons/kortix';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { getLocalizedChannelsContent } from './content';
 
@@ -26,7 +26,7 @@ export function SurfaceTable(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { surfaces } = getLocalizedChannelsContent(tI18nComplete);
   return (
-    <div className="border-border bg-card overflow-hidden rounded-sm border">
+    <div className="border-border bg-card overflow-hidden rounded-xl border">
       {/* Column headers earn their keep on wide screens only — stacked rows on
           a phone are self-describing. */}
       <div className="border-border hidden border-b sm:grid sm:grid-cols-12 sm:gap-8 sm:px-8 sm:py-4">

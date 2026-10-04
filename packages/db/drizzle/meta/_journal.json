@@ -824,6 +824,13 @@
     {
       "idx": 117,
       "version": "7",
+      "when": 1791051577945,
+      "tag": "20261003181937_krtx1307_parked_verify_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
       "when": 1791074397301,
       "tag": "20261004003957_sandbox_members_primary_key",
       "breakpoints": true

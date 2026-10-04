@@ -1,0 +1,34 @@
+{
+  "source_hash": "46d53ab18a9e4f45ea2b7005785ad4bacd33cb4b3eafa568cc1c7c7c97f3951b",
+  "diff_files": [
+    "apps/api/bunfig.toml",
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/api/src/__tests__/preload-clean-sandbox-env.ts",
+    "apps/api/src/git-proxy/compiled-pi-runtime.test.ts",
+    "apps/api/src/sandbox-proxy/routes/forward-preflight-concurrency.test.ts",
+    "apps/cli/bunfig.toml",
+    "apps/cli/src/__tests__/preload-clean-sandbox-env.ts",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts",
+    "apps/mobile/lib/highlight/reference-child.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/mobile/lib/session/session-list.test.ts",
+    "apps/mobile/lib/session/session-list.ts",
+    "apps/web/src/components/projects/session-label.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/shared/package.json",
+    "packages/shared/src/chat-mention.ts",
+    "packages/shared/src/host-config/test-sandbox-env.ts",
+    "packages/shared/src/index.ts"
+  ],
+  "diff_hash": "10bae212d047d6232f0c4a230698a111f09d0d2c01ff8cb27c292884fa2c507c",
+  "head": "c31813d4c4c3c4cd2a5d34178cf65d5e2de988de",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T01:30:42.139Z"
+}
