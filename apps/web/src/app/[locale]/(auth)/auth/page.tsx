@@ -34,6 +34,12 @@ import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitiv
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
+import {
+  armPkceResumeGuard,
+  consumePkceResumeGuard,
+  seedPkceVerifierForResume,
+  stashBrowserPkceVerifier,
+} from '@/lib/auth/pkce-resume';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { takeSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
@@ -275,6 +281,12 @@ function AuthCardForm({
         setSentEmail((result as any).email || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
+        // Snapshot the PKCE verifier the server action just handed this browser
+        // as a cookie. If the cookie does not survive the mailbox detour, the
+        // callback bounces the code back here and the resume effect completes
+        // the exchange from this snapshot instead of leaving the visitor on a
+        // false "expired" screen.
+        stashBrowserPkceVerifier();
       } else if (result && 'message' in result) {
         failWith((result as any).message as string);
       }
@@ -844,6 +856,41 @@ function AuthContent() {
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const hasStartedMobileHandoff = useRef(false);
+  const hasResumedPkceCode = useRef(false);
+
+  // A bounced-back PKCE code: the server-side exchange in /auth/callback failed
+  // because this browser's verifier cookie did not survive the mailbox detour,
+  // and the code is still fresh and unconsumed. Re-seed the verifier this tab
+  // snapshotted when the send ran and re-enter the callback, whose normal
+  // exchange and success path (return-URL demotion, terms stamp, billing-aware
+  // landing) then run unchanged. One shot: a re-seeded exchange that still
+  // bounces goes to the resend screen, never a loop. The params are stripped
+  // first so a refresh cannot re-arm a spent resume.
+  const pkceResumeCode = searchParams.get('pkce_code');
+  useEffect(() => {
+    if (!pkceResumeCode || hasResumedPkceCode.current || isLoading) return;
+    hasResumedPkceCode.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('pkce_code');
+    window.history.replaceState(null, '', url.toString());
+    const resendUrl = new URL('/auth', window.location.origin);
+    resendUrl.searchParams.set('expired', 'true');
+    if (returnUrl) resendUrl.searchParams.set('returnUrl', returnUrl);
+    if (consumePkceResumeGuard(pkceResumeCode) || !seedPkceVerifierForResume()) {
+      // The re-seeded exchange already bounced once, or this tab holds no
+      // snapshot (the link was opened elsewhere) and no cookie. The exchange
+      // cannot complete here either way — the resend screen is the honest
+      // landing, with the return URL preserved for the next attempt.
+      window.location.assign(resendUrl.toString());
+      return;
+    }
+    armPkceResumeGuard(pkceResumeCode);
+    const target = new URL('/auth/callback', window.location.origin);
+    target.searchParams.set('code', pkceResumeCode);
+    if (returnUrl) target.searchParams.set('returnUrl', returnUrl);
+    window.location.assign(target.toString());
+  }, [pkceResumeCode, isLoading, returnUrl]);
+
 
   // `useAuth()`'s `user` can be stale: it's seeded from whatever session the
   // client already had cached, and only gets corrected once something
