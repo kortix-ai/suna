@@ -18,8 +18,6 @@ import {
   nextMonitorSuppression,
 } from './monitor-events';
 
-/** Box states that may ingest — the live statuses `monitor-box-core.ts` owns. */
-
 export interface MonitorBoxRow {
   boxId: string;
   projectId: string;
