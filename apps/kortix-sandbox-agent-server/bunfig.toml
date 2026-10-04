@@ -3,9 +3,3 @@
 # (e.g. the runtime-assets CLI fallback `$HOME/.local/bin/kortix`) can write
 # into a developer's real home. See src/__tests__/preload-isolated-home.ts.
 preload = ["./src/__tests__/preload-isolated-home.ts"]
-# The package's tests spawn real processes (opencode/pi runtimes, git, DNS,
-# the runtime-assets reconciler) and the attested packages lane runs this
-# suite beside every other workspace, so several fixtures legitimately
-# exceed bun's 5 s default when the box is busy. apps/api's batches and the
-# other package scripts run the same 15 s budget via --timeout / env.
-timeout = 15000
