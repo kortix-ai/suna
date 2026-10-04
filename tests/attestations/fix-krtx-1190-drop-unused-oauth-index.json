@@ -1,0 +1,23 @@
+{
+  "source_hash": "4d557a9247a779290b057a928eee05bd0dac0768d03fb998935e9c53254215c7",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261004012914_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261004012854528_drop_unused_oauth_clients_account_index.concurrent.ts",
+    "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "packages/sdk/src/react/use-session-render.test.ts",
+    "tests/src/fixtures/cli.ts"
+  ],
+  "diff_hash": "cdd61947c854485ea35d4d457a95622cd6fe9d10212beb4e374ae7ea4309da2d",
+  "head": "492dac0d287d17266cc07ae10fc5569b0d0e0918",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:13:08.687Z"
+}
