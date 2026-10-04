@@ -150,3 +150,103 @@ describe('resolveProjectContext with an explicit --host', () => {
     expect(ctx?.auth.token).toBe(HOME_TOKEN);
   });
 });
+
+// Inside a session sandbox the platform injects KORTIX_TOKEN +
+// KORTIX_PROJECT_ID (the session's own project). A directory linked to a
+// DIFFERENT project (.kortix/link.json) must win over that ambient session
+// context — the host notice already displays the linked project, and the
+// session token is scoped to the session's project, so it cannot read the
+// linked one (files ls answered for the session's project, or 404/403 on the
+// linked id). The link's stored host credentials are what make the linked
+// project reachable from inside the sandbox.
+describe('resolveProjectContext: the directory link outranks the session env', () => {
+  const ENV_TOKEN = 'kortix_pat_env';
+  const LINKED_PROJECT = 'proj-linked';
+  const SESSION_PROJECT = 'proj-session';
+
+  let dir: string;
+  let savedCwd: string;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) saved[k] = process.env[k];
+    for (const k of ENV_KEYS) delete process.env[k];
+    process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+    process.env.KORTIX_TOKEN = ENV_TOKEN;
+    process.env.KORTIX_API_URL = 'https://env.example.test';
+    process.env.KORTIX_PROJECT_ID = SESSION_PROJECT;
+    dir = mkdtempSync(join(tmpdir(), 'kortix-link-ctx-'));
+    process.env.KORTIX_CONFIG_FILE = join(dir, 'config.json');
+    savedCwd = process.cwd();
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(dir, { recursive: true, force: true });
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  const configPath = () => join(dir, 'config.json');
+
+  function writeLink(host?: string): void {
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: LINKED_PROJECT,
+        account_id: 'acct-1',
+        ...(host ? { host } : {}),
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+  }
+
+  it('uses the linked project and its stored host credentials over the session env', async () => {
+    writeLink('other');
+    writeFileSync(
+      configPath(),
+      JSON.stringify({ active: 'home', hosts: { other: hostEntry(OTHER_TOKEN) } }),
+    );
+    const ctx = await resolveProjectContext();
+    expect(ctx?.projectId).toBe(LINKED_PROJECT);
+    expect(ctx?.auth.token).toBe(OTHER_TOKEN);
+  });
+
+  it('keeps the env token when the linked host has no stored credentials', async () => {
+    writeLink('unconfigured');
+    const ctx = await resolveProjectContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx?.projectId).toBe(LINKED_PROJECT);
+    expect(ctx?.auth.token).toBe(ENV_TOKEN);
+  });
+
+  it('still prefers an explicit --project over the link', async () => {
+    writeLink('other');
+    writeFileSync(
+      configPath(),
+      JSON.stringify({ active: 'home', hosts: { other: hostEntry(OTHER_TOKEN) } }),
+    );
+    const ctx = await resolveProjectContext({ projectArg: 'proj-explicit' });
+    expect(ctx?.projectId).toBe('proj-explicit');
+  });
+
+  it('an empty --project= flag value falls through to the link', async () => {
+    writeLink('other');
+    writeFileSync(
+      configPath(),
+      JSON.stringify({ active: 'home', hosts: { other: hostEntry(OTHER_TOKEN) } }),
+    );
+    const ctx = await resolveProjectContext({ projectArg: '' });
+    expect(ctx?.projectId).toBe(LINKED_PROJECT);
+  });
+
+  it('without a link the session env project still resolves (unchanged)', async () => {
+    const ctx = await resolveProjectContext();
+    expect(ctx?.projectId).toBe(SESSION_PROJECT);
+    expect(ctx?.auth.token).toBe(ENV_TOKEN);
+  });
+});
