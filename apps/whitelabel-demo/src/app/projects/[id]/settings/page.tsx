@@ -18,19 +18,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
+import { cn, fmtDate } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ExperimentalFeatureView, KortixProject } from '@kortix/sdk';
 import { ExternalLink, GitBranch } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
-
-function fmtDate(value: unknown): string {
-  if (!value) return '—';
-  const d = new Date(value as string);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
-}
 
 /**
  * One registry drives BOTH the tab list and the tab panels: adding a tab is
@@ -178,8 +172,8 @@ function GeneralTab() {
           <InfoRow label="Project ID" value={projectId} mono />
           {p?.account_id && <InfoRow label="Account" value={p.account_id} mono />}
           {p?.status && <InfoRow label="Status" value={p.status} />}
-          <InfoRow label="Created" value={fmtDate(p?.created_at)} />
-          <InfoRow label="Last updated" value={fmtDate(p?.updated_at)} />
+          <InfoRow label="Created" value={fmtDate(p?.created_at, '—')} />
+          <InfoRow label="Last updated" value={fmtDate(p?.updated_at, '—')} />
         </dl>
       </Card>
 
