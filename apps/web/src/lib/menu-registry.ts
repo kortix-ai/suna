@@ -43,6 +43,7 @@ import {
   FlaskIcon as Flask,
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
+  HardDriveIcon as HardDrive,
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
   KeyIcon as KeyRound,
@@ -674,6 +675,18 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
+  },
+  {
+    id: 'proj-drives',
+    label: 'Drives',
+    icon: HardDrive,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Which company drives this project's agents may use (Kortix Drive).
+    href: '/projects/{projectId}/customize/drives',
+    requiresProject: true,
+    requiresFlag: 'drives',
   },
   {
     id: 'proj-triggers',

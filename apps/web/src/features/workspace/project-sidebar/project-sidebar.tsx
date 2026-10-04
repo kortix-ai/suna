@@ -18,6 +18,7 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
+import { ProjectDriveNavItem } from '@/features/workspace/project-sidebar/footer/project-drive-nav';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
@@ -250,6 +251,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
+              <ProjectDriveNavItem />
               <ProjectRemindersNavItem />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
