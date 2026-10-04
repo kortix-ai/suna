@@ -1,0 +1,18 @@
+{
+  "source_hash": "33c6cf02ca433bb6eb5aaf782d8915188484819be8f37344e9e87a40d8c12a11",
+  "diff_files": [
+    "apps/cli/src/__tests__/cli-blackbox.test.ts",
+    "apps/cli/src/commands/projects.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/cli-resources.flow.ts"
+  ],
+  "diff_hash": "d33bb6d2a16a145f1e58f172ab097379628f99f7aea985470962ce42ce6ab7e5",
+  "head": "f147b04dc948719d27c85c4cf21c9ec5882f7004",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:31:34.993Z"
+}

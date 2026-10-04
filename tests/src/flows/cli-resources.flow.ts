@@ -98,6 +98,19 @@ flow(
         requireExit(result, 0, 'kortix projects rm');
         if (!/Archived/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
       });
+
+      await ctx.step('kortix projects rm --purge reports Purged, not Archived, and the project is gone', async () => {
+        const purged = await ctx.fixtures.project();
+        const result = await sandbox.run(['projects', 'rm', purged.id, '--purge', '--yes']);
+        requireExit(result, 0, 'kortix projects rm --purge');
+        if (!/Purged/.test(result.stdout) || /Archived/.test(result.stdout)) {
+          throw new Error(`projects rm --purge output: ${result.stdout}`);
+        }
+        // Purge is the irreversible path: the detail route answers 404 after it.
+        (await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId', { params: { projectId: purged.id } })).status(404);
+      });
     } finally {
       sandbox.dispose();
     }

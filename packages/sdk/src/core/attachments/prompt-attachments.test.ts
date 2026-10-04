@@ -379,14 +379,22 @@ test('an expired upload reports attachment_expired, from Retry and from the read
   });
   stale.dispose();
 
-  const expiresAt = new Date(Date.now() + 30).toISOString();
   configureKortix({
     backendUrl: 'https://api.test',
     getToken: async () => 'token',
     fetch: async (url, init) => {
       if (init?.method === 'PUT') return Response.json({ received_bytes: 3, size: 3 });
       if (String(url).endsWith('/complete'))
-        return Response.json({ ...metadata, expires_at: expiresAt });
+        // The 30 ms expiry window starts when the server stamps the upload, not
+        // when the test starts: computing it at test start raced the scheduler —
+        // under load the upload completed after the window had already passed
+        // and the controller flipped to attachment_expired before the 'ready'
+        // assertion below ran. 30 ms after completion is the same contract with
+        // no race between the two statements.
+        return Response.json({
+          ...metadata,
+          expires_at: new Date(Date.now() + 30).toISOString(),
+        });
       return Response.json({ ...metadata, upload: { kind: 'chunked', chunk_size: 65536 } });
     },
   });
