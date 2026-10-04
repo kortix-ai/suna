@@ -1,12 +1,12 @@
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
+import { toOpencodeModelRef } from '../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../sessions/lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../../lib/db';
 import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveAgentRunAttribution, resolveProjectAutomationActor } from '../sessions/lifecycle';
 import type { GitTriggerSpec } from './index';
-import type { ProjectRow, RequestAuditContext } from '../../projects/lib/serializers';
+import type { ProjectRow, RequestAuditContext } from '../projects/lib/serializers';
 import { renderSessionKey } from './trigger-payload';
 import { keepRunFailure } from './trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
-import { normalizeString } from '../../projects/lib/serializers';
+import { normalizeString } from '../projects/lib/serializers';
 
 /**
  * Who asked for this fire. `monitor` is the third trigger type's source:

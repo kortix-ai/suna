@@ -8,7 +8,7 @@
  * Docs: https://pipedream.com/docs/connect/api-proxy
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { runPipedreamProxy } from '../connectors/pipedream';
+import { runPipedreamProxy } from '../services/connectors/pipedream';
 
 const PD_PROJECT = process.env.PIPEDREAM_PROJECT_ID!;
 

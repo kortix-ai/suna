@@ -34,8 +34,8 @@
 import { inArray, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../lib/db';
-import { pauseComputeSession } from '../billing/services/compute-metering';
-import { wallet } from '../billing/wallet';
+import { pauseComputeSession } from '../services/billing/services/compute-metering';
+import { wallet } from '../services/billing/wallet';
 
 interface Args {
   apply: boolean;

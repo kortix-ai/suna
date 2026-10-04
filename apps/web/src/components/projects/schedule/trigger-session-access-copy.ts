@@ -2,7 +2,7 @@
  * The three choices for who may open sessions a trigger creates, worded by
  * the permission the API actually checks — not by a role nickname.
  *
- * `private` is enforced in `apps/api/src/projects/lib/access.ts`
+ * `private` is enforced in `apps/api/src/services/projects/lib/access.ts`
  * (`loadProjectSessionForUser`): a caller who is not a session-bound agent
  * credential reads a trigger-created private session when
  * `authorize(actor, 'project.trigger.update', project)` allows it. Account

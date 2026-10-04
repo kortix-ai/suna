@@ -1,10 +1,10 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
-import { endComputeSession, reopenComputeForSandbox } from '../../billing/services/compute-metering';
+import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
 import { logger } from '../../lib/logger';
 import { captureException } from '../../lib/sentry';
-import { getProvider, type ProviderName } from '../../platform/providers';
+import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../../lib/db';
 import { settleOpenSandboxTurns } from '../sessions/session-turn-ledger';
 import type { StopReason } from './stop-reason';

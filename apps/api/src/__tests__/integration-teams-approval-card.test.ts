@@ -14,10 +14,10 @@ import {
   projectSessions,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import * as realTeamsApi from '../channels/teams-api';
-import * as realInstallStore from '../channels/install-store';
-import * as realBinding from '../channels/teams/binding';
-import * as realTeamsSession from '../channels/teams/session';
+import * as realTeamsApi from '../services/channels/teams-api';
+import * as realInstallStore from '../services/channels/install-store';
+import * as realBinding from '../services/channels/teams/binding';
+import * as realTeamsSession from '../services/channels/teams/session';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -29,7 +29,7 @@ const cardUpdates: Array<{ activityId: string; card: unknown }> = [];
 const resumed: string[] = [];
 let project: SeededProject;
 
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   ...realTeamsApi,
   sendCard: async (_ref: unknown, card: unknown) => {
     sent.push(card);
@@ -40,24 +40,24 @@ mock.module('../channels/teams-api', () => ({
     return true;
   },
 }));
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   loadTeamsServiceUrlForProject: async () => 'https://smba.example.test/teams/',
 }));
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   ...realBinding,
   resolveConversationProject: async () => project.project_id,
 }));
-mock.module('../channels/teams/session', () => ({
+mock.module('../services/channels/teams/session', () => ({
   ...realTeamsSession,
   createOrJoinTeamsConversationSession: async (input: { activity: { text: string } }) => {
     resumed.push(input.activity.text);
   },
 }));
 
-const { postApprovalCard, markApprovalCardDecided } = await import('../channels/approval-card-relay');
-const { handleAdaptiveCardAction } = await import('../channels/teams/interactivity');
-const { decideConnectorApproval, loadApprovalRow } = await import('../projects/lib/connector-approval-decision');
+const { postApprovalCard, markApprovalCardDecided } = await import('../services/channels/approval-card-relay');
+const { handleAdaptiveCardAction } = await import('../services/channels/teams/interactivity');
+const { decideConnectorApproval, loadApprovalRow } = await import('../services/projects/lib/connector-approval-decision');
 
 const MANAGER = crypto.randomUUID();
 const BYSTANDER = crypto.randomUUID();

@@ -2,7 +2,7 @@
  * Admin activity analytics — "how active are our users?".
  *
  * Two read hooks over the platform-admin routes in
- * `apps/api/src/admin/analytics.ts`, which own the response contract:
+ * `apps/api/src/http/admin/analytics.ts`, which own the response contract:
  *   GET /admin/analytics/activity?days=  -> sessions, active accounts/users, DAU/WAU/MAU
  *   GET /admin/analytics/usage?days=     -> daily credit burn + paying accounts
  *

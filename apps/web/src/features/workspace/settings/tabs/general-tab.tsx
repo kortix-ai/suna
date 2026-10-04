@@ -36,10 +36,10 @@
  *   (2026-08-12):
  *   - `archiveProject()` is `DELETE /v1/projects/:id`
  *     (`packages/sdk/src/core/rest/projects-client/projects.ts`), which sets
- *     `status: 'archived'` (`apps/api/src/projects/routes/project-settings.ts`).
+ *     `status: 'archived'` (`apps/api/src/http/projects/project-settings.ts`).
  *   - `loadProjectForUser` — the gate in front of EVERY project-scoped route —
  *     returns `null` for an archived row
- *     (`apps/api/src/projects/lib/access.ts:575`). So every session, secret,
+ *     (`apps/api/src/services/projects/lib/access.ts:575`). So every session, secret,
  *     integration and key under it 404s. This is not "hidden from a list".
  *   - Triggers and scheduled runs only fire for `status = 'active'`
  *     (`apps/api/src/services/triggers/trigger-runtime.ts`,

@@ -1,5 +1,5 @@
 /** How a project's provider pin shapes its sandbox template and snapshot reads. */
-import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
+import { resolveConfiguredProjectProviderPin } from '../snapshots/provider-coverage';
 
 export function templateProviderObservation(metadata: unknown) {
   const selectedProvider = resolveConfiguredProjectProviderPin(

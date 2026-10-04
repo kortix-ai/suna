@@ -30,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db } from '../src/lib/db';
 import { generateAccountTokenPair, hashSecretKey } from '../src/lib/crypto';
-import { createApiKey } from '../src/repositories/api-keys';
+import { createApiKey } from '../src/services/repositories/api-keys';
 import { encryptProjectSecret } from '../src/services/secrets/secrets';
 
 const KORTIX_URL = (process.env.KORTIX_URL || 'http://localhost:8009').replace(/\/$/, '');

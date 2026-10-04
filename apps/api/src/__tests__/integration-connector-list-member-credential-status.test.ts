@@ -19,7 +19,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, connectionCredentials, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { dbConnectorRouterDeps } from '../connectors/db-deps';
+import { dbConnectorRouterDeps } from '../services/connectors/db-deps';
 import { encryptProjectSecret } from '../services/secrets/secrets';
 import { db } from '../lib/db';
 

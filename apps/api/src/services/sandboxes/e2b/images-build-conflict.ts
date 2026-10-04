@@ -1,4 +1,4 @@
-import type { ProviderState } from '../../../snapshots/providers/index';
+import type { ProviderState } from '../../snapshots/providers/index';
 
 const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
 const DEFAULT_POLL_MS = 3_000;

@@ -1,6 +1,6 @@
 /**
  * JAY-596 / T20 — real-DB proof that `findWarmProjectSession` (see
- * `../projects/routes/warm-sessions.ts`) actually skips an excluded session
+ * `../http/projects/warm-sessions.ts`) actually skips an excluded session
  * id, even though its `metadata.warm` marker is still set.
  *
  * Root cause this covers: the marker only drops when the FIRST PROMPT reaches
@@ -21,7 +21,7 @@ import { accounts, projectSessions, projects, sessionSandboxes } from '@kortix/d
 import { eq } from 'drizzle-orm';
 
 import { config } from '../lib/config';
-import { findWarmProjectSession, warmSessionPlacement } from '../projects/routes/warm-sessions';
+import { findWarmProjectSession, warmSessionPlacement } from '../http/projects/warm-sessions';
 import { db } from '../lib/db';
 import { WARM_SESSION_LOCATION_KEY } from '../services/sessions/warm-sessions';
 

@@ -18,7 +18,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 let fakeRow:
   | { tier?: string; enterpriseEntitled?: boolean; demoEnterprise?: boolean }
   | null = null;
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => fakeRow,
 }));
 
@@ -35,7 +35,7 @@ mock.module('../lib/config', () => ({
 }));
 
 const { accountHasEntitlement, getAccountEntitlements } = await import(
-  '../billing/services/entitlements'
+  '../services/billing/services/entitlements'
 );
 
 // The contracted-Enterprise flag must unlock the ENTIRE enterprise surface

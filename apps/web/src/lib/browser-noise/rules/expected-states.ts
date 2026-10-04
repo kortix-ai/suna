@@ -24,7 +24,7 @@ const RUNTIME_NOT_READY_NOISE_PATTERNS = [
 ] as const;
 
 // Expected billing-gate HTTP 402 messages. The API billing gate
-// (`apps/api/src/billing/services/billing-gate.ts:assertBillingActive`) throws
+// (`apps/api/src/services/billing/services/billing-gate.ts:assertBillingActive`) throws
 // a 402 carrying one of these exact strings in the response body
 // (`{ error: <message>, code, balance, account_id }`); the SDK surfaces them as
 // an `ApiError` (message === the body's `error` field). They are EXPECTED,
@@ -44,7 +44,7 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   // `no_account` — no credit account found.
   'No credit account found. Complete account setup first.',
   // `subscription_required` — per-seat account with no active subscription.
-  // Must match apps/api/src/billing/services/billing-gate.ts VERBATIM. The seat
+  // Must match apps/api/src/services/billing/services/billing-gate.ts VERBATIM. The seat
   // price moved to $40 there and this copy was left at $20, so the filter
   // stopped matching and an expected billing state has been paging as an error.
   'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
@@ -79,7 +79,7 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 
 // Expected "model not available for this account" UI validation state. The API
 // returns a TYPED 409 with `code: 'model_not_servable'`
-// (`apps/api/src/projects/routes/models.ts` and `channel-bindings.ts:288`, both
+// (`apps/api/src/http/projects/models.ts` and `channel-bindings.ts:288`, both
 // via `isModelServableForAccount`) when a user picks a model their account
 // can't use — a free-tier managed model, or a BYOK model whose provider isn't
 // connected. The SAME wording is also returned as a 400 with
@@ -169,7 +169,7 @@ const MODEL_NOT_SERVABLE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
 // `ApiError("Request timed out after <N>s: <endpoint>", { code: 'TIMEOUT' })`.
 //
 // This is the frontend mirror of the API's request-deadline 503
-// (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
+// (`apps/api/src/http/middleware/request-deadline.ts`, de-noised from Sentry by
 // https://github.com/kortix-ai/suna/pull/4524). The API bounds every
 // non-streaming request to a 25s server deadline that returns a clean 503 +
 // `Retry-After: 10`, and react-query retries background polls (the session-audit
@@ -196,14 +196,14 @@ const CLIENT_REQUEST_TIMEOUT_WRAPPERS: ReadonlyArray<RegExp> = [
 ];
 
 // The API's server-side request-deadline 503.
-// `apps/api/src/middleware/request-deadline.ts` bounds every non-streaming
+// `apps/api/src/http/middleware/request-deadline.ts` bounds every non-streaming
 // request to a 25s wall-clock deadline (default `REQUEST_DEADLINE_MS`); when a
 // handler exceeds it, the `RequestDeadlineHTTPException` returns a clean 503 +
 // `Retry-After: 10` with the message
 // `Request exceeded the <N>s server processing deadline`. It is an EXPECTED,
 // retryable degradation — the deadline net bounding a slow downstream / a
 // pool-saturated request — and is already de-noised at the API SOURCE
-// (`apps/api/src/index.ts` `onError` skips `captureException` for
+// (`apps/api/src/app/index.ts` `onError` skips `captureException` for
 // `isRequestDeadlineHTTPException(err)` — PR #4524, API Sentry app 2346961).
 //
 // BUT the 503 RESPONSE crosses the boundary into the frontend: the SDK's
@@ -308,7 +308,7 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
 /**
  * Whether a message is the EXPECTED "model not available for this account"
  * UI validation state — the typed 409 `code: 'model_not_servable'` the API
- * returns (`apps/api/src/projects/routes/models.ts` + `channel-bindings.ts` via
+ * returns (`apps/api/src/http/projects/models.ts` + `channel-bindings.ts` via
  * `isModelServableForAccount`, plus the 400 `INVALID_SESSION_MODEL` sibling in
  * `r7.ts` + `sessions.ts`) when a user picks a model their account can't use.
  * The SDK's `useModelDefaults` `setMutation` `onError` already surfaces a

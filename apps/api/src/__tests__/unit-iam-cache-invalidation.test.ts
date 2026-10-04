@@ -19,7 +19,7 @@ const {
   invalidateIamCacheForUser,
   invalidateIamCacheForUsers,
   invalidateIamCacheForAccount,
-} = await import('../iam/cache-invalidation');
+} = await import('../services/iam/cache-invalidation');
 
 describe('iam cache-invalidation registry', () => {
   it('busts every registered memo with the `${userId}|` prefix', () => {

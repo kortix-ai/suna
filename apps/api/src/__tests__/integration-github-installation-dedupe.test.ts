@@ -20,7 +20,7 @@ import { and, eq } from 'drizzle-orm';
 
 import type { GitHubAppInstallation } from '../services/github/github';
 import { dropAccountGitHubInstallation, listAccountGitHubInstallations } from '../services/git/project-git';
-import { upsertAccountGitHubInstallation } from '../projects/routes/github-installations';
+import { upsertAccountGitHubInstallation } from '../http/projects/github-installations';
 import { db } from '../lib/db';
 import { seedAccount } from './helpers/integration-fixtures';
 

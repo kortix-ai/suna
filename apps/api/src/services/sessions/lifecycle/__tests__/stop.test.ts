@@ -1,8 +1,8 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import * as realComputeMetering from '../../../../billing/services/compute-metering';
-import * as realProviders from '../../../../platform/providers';
-import * as realSandboxProxyBackend from '../../../../sandbox-proxy/backend';
+import * as realComputeMetering from '../../../billing/services/compute-metering';
+import * as realProviders from '../../../platform/providers';
+import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
@@ -75,7 +75,7 @@ mock.module('../../../../lib/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../../../platform/providers', () => ({
+mock.module('../../../platform/providers', () => ({
   ...realProviders,
   getProvider: (_name: string) => ({
     stop: async (externalId: string) => {
@@ -94,8 +94,11 @@ mock.module('../../../../platform/providers', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 // Only `resolveServiceKey` / `resolveSandboxIngress` are overridden — those are
 // the two calls `abortLiveTurnBeforeStop` makes before its own `fetch`.
-mock.module('../../../../sandbox-proxy/backend', () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
+  invalidateProviderCache: (externalId: string) => {
+    cacheInvalidations.push(externalId);
+  },
   resolveServiceKey: async (_externalId: string) => abortServiceKey,
   resolveSandboxIngress: async (_ref: string, _req: unknown) => ({
     url: 'https://daemon.example.test',
@@ -108,7 +111,7 @@ mock.module('../../../../sandbox-proxy/backend', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../../../billing/services/compute-metering', () => ({
+mock.module('../../../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
   pauseComputeSession: async (sandboxId: string) => {
@@ -117,11 +120,6 @@ mock.module('../../../../billing/services/compute-metering', () => ({
   endComputeSession: async () => {},
 }));
 
-mock.module('../../../../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
-    cacheInvalidations.push(externalId);
-  },
-}));
 
 mock.module('../../session-transcript-capture', () => ({
   captureSessionTranscriptMirror: async (

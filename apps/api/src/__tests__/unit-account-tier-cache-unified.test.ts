@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 /**
  * BILLING-CORRECTNESS: account tier used to be cached in TWO independent 30s
  * TTL maps (entitlements.ts's own `getCachedAccountTier`, and a byte-for-byte
- * duplicate in llm-gateway/resolution/resolve-candidates.ts) gating two
+ * duplicate in services/llm-gateway/resolution/resolve-candidates.ts) gating two
  * different billing decisions — the BYOK platform-fee/waiver branch and the
  * managed-model free-tier gate could disagree for up to 30s after a tier
  * change, independently, because each read a different cache with its own
@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let fakeTier = 'free';
 let getAccountTierCalls = 0;
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => {
     getAccountTierCalls += 1;
     return { tier: fakeTier };
@@ -29,7 +29,7 @@ mock.module('../lib/config', () => ({
 }));
 
 const { getCachedAccountTier, invalidateCachedAccountTier } = await import(
-  '../billing/services/entitlements'
+  '../services/billing/services/entitlements'
 );
 
 describe('getCachedAccountTier — the single unified tier cache', () => {

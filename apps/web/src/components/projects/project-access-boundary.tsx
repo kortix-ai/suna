@@ -425,7 +425,7 @@ function AccessGateScreen({
   // Platform-admin escape hatch: flips the client-wide admin-bypass header on,
   // then re-fetches the same user-scoped query so the boundary
   // above renders the actual project. Read-only server-side (see
-  // apps/api/src/projects/lib/access.ts) and audit-logged against the project's
+  // apps/api/src/services/projects/lib/access.ts) and audit-logged against the project's
   // own account on every use.
   const bypassMutation = useMutation({
     mutationFn: async () => {

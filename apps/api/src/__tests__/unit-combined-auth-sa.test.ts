@@ -5,7 +5,7 @@ import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
 import * as realAuthAudit from '../services/audit/auth-audit';
 import * as realSentry from '../lib/sentry';
-import * as realSsoSync from '../iam/sso-sync';
+import * as realSsoSync from '../services/iam/sso-sync';
 
 let secretKeyValidations: string[] = [];
 
@@ -18,7 +18,7 @@ mock.module('../lib/crypto', () => ({
   isKortixToken: (t: string) => t.startsWith('kortix_'),
 }));
 
-mock.module('../repositories/service-accounts', () => ({
+mock.module('../services/repositories/service-accounts', () => ({
   validateServiceAccountToken: async (t: string) => {
     if (t === 'kortix_sa_live') {
       return { isValid: true, serviceAccountId: 'sa-1', accountId: 'acct-1' };
@@ -27,18 +27,18 @@ mock.module('../repositories/service-accounts', () => ({
   },
 }));
 
-mock.module('../repositories/api-keys', () => ({
+mock.module('../services/repositories/api-keys', () => ({
   validateSecretKey: async (t: string) => {
     secretKeyValidations.push(t);
     return { isValid: false, error: 'Invalid Kortix token' };
   },
 }));
 
-mock.module('../repositories/account-tokens', () => ({
+mock.module('../services/repositories/account-tokens', () => ({
   validateAccountToken: async () => ({ isValid: false, error: 'invalid' }),
 }));
 
-mock.module('../auth/jwt-verify', () => ({
+mock.module('../services/auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => ({ ok: false }),
 }));
@@ -74,9 +74,9 @@ mock.module('../services/audit/auth-audit', () => ({
 
 mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
+mock.module('../services/iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
-const { combinedAuth, supabaseAuth } = await import('../middleware/auth');
+const { combinedAuth, supabaseAuth } = await import('../http/middleware/auth');
 
 function appWith(middleware: typeof combinedAuth) {
   const app = new Hono();

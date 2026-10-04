@@ -167,7 +167,7 @@ flow('KAAB-7', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     // so the retry does NOT create a second session: the engine finds the key
     // already claimed with the command still in flight and answers 202 naming
     // the same session instead of 201 with the created row
-    // (apps/api/src/projects/routes/project-sessions.ts:171-188). Both bodies
+    // (apps/api/src/http/projects/project-sessions.ts:171-188). Both bodies
     // carry `session_id`, which is what this step needs. KAAB-6 (line 133)
     // already accepts the same pair for the same reason.
     response.status([201, 202]);

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test';
-mock.module('../../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
+mock.module('../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 mock.module('../../../lib/config', () => ({
   config: {
@@ -47,8 +47,8 @@ mock.module('../disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 
-mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => null }));
-mock.module('../../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
+mock.module('../../platform/service-key', () => ({ serviceKeyForExternalId: async () => null }));
+mock.module('../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 const { DaytonaProvider } = await import('./runtime');
 

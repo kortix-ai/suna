@@ -6,7 +6,7 @@ import { provenMirrorTip } from './mirror';
 import type { FastBootGitHint } from './commits';
 import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from './commits';
 import type { GitBackedProject } from './types';
-import { metadataMergeSubtree } from '../../projects/lib/metadata-merge';
+import { metadataMergeSubtree } from '../projects/lib/metadata-merge';
 
 // v3: a delta may be REMOTE (parent known, bundle downloaded by the daemon) and
 // the entry carries the OpenCode config dir at the tip. v2 entries are

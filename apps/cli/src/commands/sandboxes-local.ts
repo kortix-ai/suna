@@ -112,7 +112,7 @@ export function resolveLocalTemplate(
 
 /**
  * The user-Dockerfile bytes a template contributes, exactly as the cloud
- * builder derives them (apps/api/src/snapshots/templates.ts): a `dockerfile:`
+ * builder derives them (apps/api/src/services/snapshots/templates.ts): a `dockerfile:`
  * template supplies its file's bytes, an `image:` template a one-line `FROM`
  * shim, and the platform default its own canned base.
  */

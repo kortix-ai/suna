@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { buildTeamsManifest } from '../channels/teams-manifest';
+import { buildTeamsManifest } from '../services/channels/teams-manifest';
 
 describe('buildTeamsManifest', () => {
   test('declares the bot with the app id and derives validDomains from the base url', () => {
@@ -47,7 +47,7 @@ describe('buildTeamsManifest', () => {
   });
 
   test('a message\'s ⋯ menu offers "Open in Kortix", answered by the message-action handler', async () => {
-    const { OPEN_IN_KORTIX_COMMAND } = await import('../channels/teams/message-action');
+    const { OPEN_IN_KORTIX_COMMAND } = await import('../services/channels/teams/message-action');
     const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
     expect(m.composeExtensions).toEqual([{
       botId: 'app-123',
@@ -79,7 +79,7 @@ describe('buildTeamsManifest', () => {
 });
 
 mock.module('../lib/config', () => ({ config: { MICROSOFT_APP_ID: 'app-123', MICROSOFT_APP_PASSWORD: 'secret' } }));
-const { teamsMode } = await import('../channels/teams-mode');
+const { teamsMode } = await import('../services/channels/teams-mode');
 
 describe('teamsMode', () => {
   test('configured → exposes the messaging endpoint and admin-consent url', () => {

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The pi-based session worker: the harness and only the harness. Compiled per (project, sha) into a single .mjs by the API's compiled-boot pipeline (apps/api/src/git-proxy/compiled-pi-runtime.ts) and booted in a minimal worker sandbox.",
+  "description": "The pi-based session worker: the harness and only the harness. Compiled per (project, sha) into a single .mjs by the API's compiled-boot pipeline (apps/api/src/services/git-proxy/compiled-pi-runtime.ts) and booted in a minimal worker sandbox.",
   "scripts": {
     "build": "bash scripts/build.sh"
   },

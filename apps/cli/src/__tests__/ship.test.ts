@@ -299,7 +299,7 @@ describe('stale-CLI warning on a 404 from the connector routes', () => {
 
 // `kortix ship` scaffolds the folder with `kortix init` and then pushes that
 // history with a PLAIN (non-force) push. Server-side seeding is the default now
-// (apps/api/src/projects/managed-repo-seed.ts — "a project always has a
+// (apps/api/src/services/projects/managed-repo-seed.ts — "a project always has a
 // manifest"), so a seeded repo would turn ship's push into a non-fast-forward
 // rejection. Ship therefore has to say `seed_starter: false` OUT LOUD; an
 // absent flag no longer means "leave it empty", it means "seed it".

@@ -33,7 +33,7 @@ mock.module('../lib/db', () => ({
 }));
 
 const { resolveConversationProject, ensureTeamsConversationBinding, resetTeamsBindingCacheForTest, teamsThreadTitles } =
-  await import('../channels/teams/binding');
+  await import('../services/channels/teams/binding');
 
 beforeEach(() => {
   dbResults = [];

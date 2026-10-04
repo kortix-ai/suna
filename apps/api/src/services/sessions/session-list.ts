@@ -36,16 +36,16 @@ import {
   resolveShareSubject,
   type SecretGrant,
   type ShareSubject,
-} from '../../connectors/share';
+} from '../connectors/share';
 import { db } from '../../lib/db';
-import { hasAccountSessionOversight } from '../../iam/session-oversight';
+import { hasAccountSessionOversight } from '../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
-import { resolveSessionOwnerIdentities, viewerManagerStanding } from '../../projects/lib/access';
-import type { ProjectRole } from '../../projects/access';
+import { resolveSessionOwnerIdentities, viewerManagerStanding } from '../projects/lib/access';
+import type { ProjectRole } from '../projects/access';
 import {
   SESSION_PAGE_DEFAULT_LIMIT,
   SESSION_PAGE_MAX_LIMIT,

@@ -30,12 +30,12 @@ fell through to the legacy project connection. Reproduced locally on the
 pre-fix code: `400 provider_not_connected` for a member who did not create the
 account. Fixed in branch `gateway-shared-codex-fallback`.
 
-**Enforcement:** `apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts`
+**Enforcement:** `apps/api/src/services/llm-gateway/resolution/resolve-candidates.test.ts`
 ("codex, unconfigured session, project-shared ChatGPT accounts", 14 cases, 8
 red on the old code) and the real-PostgreSQL cases in
 `apps/api/src/__tests__/integration-usable-gateway-secrets.test.ts`
 (`resolveProjectSharedProviderSecrets`: agent principal, non-creator member,
-restricted account not granted, outsider, cooldown). Enforced since 2026-09-29 by `apps/api/src/llm-gateway/servable-catalog-parity.test.ts`
+restricted account not granted, outsider, cooldown). Enforced since 2026-09-29 by `apps/api/src/services/llm-gateway/servable-catalog-parity.test.ts`
 (KRTX-431): for each principal class, every model `servableProjectCatalog`
 lists runs in `resolveCandidates` — directly (the shared-account fallback) or
 through the session-admission key selection (`usableProviderKeys`). The BYOK

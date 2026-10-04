@@ -15,15 +15,15 @@ import {
   type ConnectorRouterDeps,
   type ProjectPoliciesViewResponse,
   type ProjectPolicyView,
-} from '../connectors/router';
+} from '../http/connectors/router';
 import type {
   GatewayAction,
   GatewayConnector,
   GatewayDeps,
   ExecutionRecord,
-} from '../connectors/gateway';
-import { resolveEffectiveAction, type Policy } from '../connectors/policy';
-import type { ConnectorAuthDiscovery } from '../connectors/auth-discovery';
+} from '../services/connectors/gateway';
+import { resolveEffectiveAction, type Policy } from '../services/connectors/policy';
+import type { ConnectorAuthDiscovery } from '../services/connectors/auth-discovery';
 
 const ACCOUNT = 'acct-1';
 const PROJECT = 'proj-1';

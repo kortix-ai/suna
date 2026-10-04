@@ -1,6 +1,6 @@
 /**
  * Write-time validation for the two setup routes that do not use the manifest
- * flow (platform/routes/github-app.ts):
+ * flow (http/platform/github-app.ts):
  *
  *   - `verifyPastedGithubAppInstallation` — proves a pasted App (app id +
  *     private key + installation id) owns that installation, and resolves the
@@ -9,7 +9,7 @@
  *     repository under the owner, the write managed git actually needs.
  *
  * Source resolution itself is covered by
- * platform/services/instance-git-config.test.ts.
+ * services/platform/services/instance-git-config.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
@@ -17,7 +17,7 @@ import {
   resolveInstallationOwnerType,
   verifyPastedGithubAppInstallation,
   verifyRepoAdminToken,
-} from '../platform/routes/github-app';
+} from '../http/platform/github-app';
 
 describe('resolveInstallationOwnerType', () => {
   test('"User" -> User (personal-account installs, e.g. a throwaway bot account)', () => {

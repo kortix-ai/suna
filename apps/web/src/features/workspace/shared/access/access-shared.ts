@@ -7,7 +7,7 @@ import type { UiTranslator } from '@/i18n/translator';
 
 /**
  * The exact wording the backend's `requireEntitlement('rbac')` 402 uses —
- * keep it in sync with apps/api/src/accounts/iam/helpers.ts
+ * keep it in sync with apps/api/src/services/accounts/iam/helpers.ts
  * `ENTITLEMENT_LABEL.rbac`.
  *
  * Replaces the four verbatim copies that lived in `roles-tab.tsx`,

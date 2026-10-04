@@ -1,5 +1,5 @@
 /**
- * `connectorAccountLandedSince` (connectors/credentials.ts): the read behind a
+ * `connectorAccountLandedSince` (services/connectors/credentials.ts): the read behind a
  * connect link's `connected` flag (`GET /v1/setup-links/connectors/:token`).
  * A chat card that is reloaded stays "Connected" only if an account landed on
  * the link's connector after the link was minted.
@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, connectionCredentials, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { connectorAccountLandedSince } from '../connectors/credentials';
+import { connectorAccountLandedSince } from '../services/connectors/credentials';
 import { encryptProjectSecret } from '../services/secrets/secrets';
 import { db } from '../lib/db';
 

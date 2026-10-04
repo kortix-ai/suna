@@ -63,7 +63,7 @@ if (SENTRY_DSN) {
       ...RUNTIME_NOT_READY_MARKERS,
       // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
       // account / subscription required — the exact strings emitted by
-      // `apps/api/src/billing/services/billing-gate.ts:assertBillingActive`).
+      // `apps/api/src/services/billing/services/billing-gate.ts:assertBillingActive`).
       // They are user-facing business states handled by a top-up toast / upgrade
       // dialog (`error-handler.tsx`), but the SDK's `ApiError` can leak to
       // Sentry through capture paths that bypass `handleApiError`'s 402 guard

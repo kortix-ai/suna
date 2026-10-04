@@ -41,29 +41,29 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { ensureDefaultConnection } from '../connectors/credentials';
-import { dbConnectorRouterDeps } from '../connectors/db-deps';
-import { ensureProjectComputer, syncProjectConnectors } from '../connectors/sync';
+import { ensureDefaultConnection } from '../services/connectors/credentials';
+import { dbConnectorRouterDeps } from '../services/connectors/db-deps';
+import { ensureProjectComputer, syncProjectConnectors } from '../services/connectors/sync';
 import { runWithContext } from '../lib/request-context';
-import { setImpersonationContext } from '../iam/impersonation';
-import { handleCall } from '../connectors/gateway';
-import type { ConnectorPrincipal } from '../connectors/router';
-import { app } from '../index';
+import { setImpersonationContext } from '../services/iam/impersonation';
+import { handleCall } from '../services/connectors/gateway';
+import type { ConnectorPrincipal } from '../http/connectors/router';
+import { app } from '../app/index';
 import { listEntitledConnectorConnections } from '../services/sessions/session-connector-bindings';
-import { createAccountToken } from '../repositories/account-tokens';
-import { createServiceAccount } from '../repositories/service-accounts';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { createServiceAccount } from '../services/repositories/service-accounts';
 import { db } from '../lib/db';
-import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
+import { relayOwnerPatch } from '../services/tunnel/core/cluster-forwarder';
 import {
   createConnectionsRouter,
   retireStaleUnidentifiedRegistrations,
   retireSupersededRegistrations,
-} from '../tunnel/routes/connections';
-import { createRpcRouter } from '../tunnel/routes/rpc';
+} from '../http/tunnel/connections';
+import { createRpcRouter } from '../http/tunnel/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { generateTunnelToken, hashSecretKey } from '../lib/crypto';
-import { parseAccessState } from '../tunnel';
-import { computerAccessErrorKind, machineAccess } from '../tunnel/core/rpc-core';
+import { parseAccessState } from '../http/tunnel';
+import { computerAccessErrorKind, machineAccess } from '../services/tunnel/core/rpc-core';
 
 const ACCOUNT = crypto.randomUUID();
 const OTHER_ACCOUNT = crypto.randomUUID();

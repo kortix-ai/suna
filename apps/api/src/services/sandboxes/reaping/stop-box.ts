@@ -12,8 +12,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../../lib/logger';
-import { getProvider } from '../../../platform/providers';
-import { resolveSandboxIngress, resolveServiceKey } from '../../../sandbox-proxy/backend';
+import { getProvider } from '../../platform/providers';
+import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../sessions/kortix-user-context';
 import type { StopReason } from '../stop-reason';
 import {
@@ -51,10 +51,10 @@ const ABORT_TIMEOUT_MS = 4_000;
  *
  * Reuses the exact primitives the rest of apps/api uses to reach a sandbox
  * daemon directly server-to-server — `resolveServiceKey` +
- * `resolveSandboxIngress` (sandbox-proxy/backend.ts) and
+ * `resolveSandboxIngress` (services/sandbox-proxy/backend.ts) and
  * `encodeKortixUserContext` (services/sessions/kortix-user-context.ts), the same trio
  * `opencode-mapping.ts`'s `sandboxOpencodeEndpoint` and
- * `sandbox-proxy/backend.ts`'s `buildSandboxUpstreamHeaders` compose — not a
+ * `services/sandbox-proxy/backend.ts`'s `buildSandboxUpstreamHeaders` compose — not a
  * new client.
  *
  * `userId` is omitted for system-triggered stops (the idle reaper). The

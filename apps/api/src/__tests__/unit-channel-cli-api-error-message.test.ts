@@ -1,7 +1,7 @@
 /**
  * `apiErrorMessage` is the one place the sandbox channel CLIs (slack, teams)
  * turn a failed apps/api response into readable text. The API's structured
- * denial is `{ error: true, message, code, action }` (iam/denial-message.ts):
+ * denial is `{ error: true, message, code, action }` (services/iam/denial-message.ts):
  * `error` is a boolean flag and the text is in `message`.
  */
 import { describe, expect, test } from 'bun:test';

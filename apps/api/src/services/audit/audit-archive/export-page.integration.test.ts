@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { auditEventsAll } from '@kortix/db';
 import { and, asc } from 'drizzle-orm';
 import pg from 'pg';
-import { type AuditFilterInput, buildFilters } from '../../../accounts/audit-filters';
+import { type AuditFilterInput, buildFilters } from '../../accounts/audit-filters';
 import { parseAuditCursor } from '../audit-query';
 import { db } from '../../../lib/db';
 import { type ArchiveStore, runArchivePass } from './archive';

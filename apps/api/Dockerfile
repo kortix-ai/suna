@@ -98,11 +98,11 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 
 # ---- Pi Worker Runtime Stage ----
 # The generic pi worker runtime bundle for the harness/worker split experiment.
-# The API's compiled-boot pipeline (src/git-proxy/compiled-pi-runtime.ts)
+# The API's compiled-boot pipeline (src/services/git-proxy/compiled-pi-runtime.ts)
 # prepends per-(project, sha) agent config to this file and serves the result
 # at GET /v1/git/{project}.git/compiled-pi-runtime. Dev builds it lazily with
 # Bun.build; this stage is the production source
-# (src/git-proxy/pi-worker-bundle.ts reads dist/worker-runtime.mjs).
+# (src/services/git-proxy/pi-worker-bundle.ts reads dist/worker-runtime.mjs).
 # Standalone bun package with its own bun.lock — deliberately outside the pnpm
 # workspace (see pnpm-workspace.yaml).
 # Bun 1.3 (not the base's 1.2): apps/kortix-worker/bun.lock is 1.3-format
@@ -302,7 +302,7 @@ COPY --from=deps /app/packages/sdk ./packages/sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
 # SOURCE (not the compiled binaries above, which `bun build --compile` produces
-# non-deterministically — see apps/api/src/snapshots/templates.ts), so these
+# non-deterministically — see apps/api/src/services/snapshots/templates.ts), so these
 # trees + package.json must be present in the image. Without them the Sandbox
 # panel throws "Failed to list sandbox templates: ENOENT … package.json".
 COPY apps/kortix-sandbox-agent-server/package.json ./apps/kortix-sandbox-agent-server/package.json
@@ -352,4 +352,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 # Non-root user (bun image ships with 'bun' user)
 USER bun
 
-CMD ["bun", "run", "src/index.ts"]
+CMD ["bun", "run", "src/app/index.ts"]

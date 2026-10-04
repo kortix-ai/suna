@@ -2,8 +2,8 @@
  * Judgment logic for the turn-latency spec (PR #7840) §2's warm-turn budget.
  *
  * The API records one `TimelineMark` per stage of the send path
- * (`apps/api/src/platform/services/provision-timeline.ts`,
- * `ptl.mark(...)` in `apps/api/src/sandbox-proxy/routes/preview.ts`) and,
+ * (`apps/api/src/services/platform/services/provision-timeline.ts`,
+ * `ptl.mark(...)` in `apps/api/src/http/sandbox-proxy/preview.ts`) and,
  * when the caller opts in with `X-Kortix-Debug-Timeline: 1`, serializes the
  * summary onto the response as `X-Kortix-Provision-Timeline` (JSON). This
  * module is pure: it takes that summary and returns a verdict, with the
@@ -34,7 +34,7 @@ export interface TimelineSummary {
 /**
  * The turn-path breakdown rides the API's existing `Server-Timing` header
  * (`apps/api/src/lib/server-timing.ts`'s `recordTurnStageMarks`, rendered by
- * `apps/api/src/middleware/upstream-timing.ts`) — the same mechanism
+ * `apps/api/src/http/middleware/upstream-timing.ts`) — the same mechanism
  * `total`/`auth`/`db`/`git`/`http`/`up`/`api` already use — not a second,
  * custom header. Each turn stage is namespaced with this prefix so a mark is
  * recognized by PREFIX alone, robust to a concurrent branch renaming or

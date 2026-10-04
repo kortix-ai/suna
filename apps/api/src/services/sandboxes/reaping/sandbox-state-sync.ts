@@ -10,9 +10,9 @@
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { pauseComputeSession } from '../../../billing/services/compute-metering';
-import { revokeSessionConnectorTokens } from '../../../repositories/account-tokens';
-import { invalidateProviderCache } from '../../../sandbox-proxy';
+import { pauseComputeSession } from '../../billing/services/compute-metering';
+import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { invalidateProviderCache } from '../../sandbox-proxy/backend';
 import { db } from '../../../lib/db';
 import { retryOnDeadlock } from '../../../lib/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
@@ -178,7 +178,7 @@ export async function markPendingStopObservation(sandboxId: string): Promise<boo
  * EVERY OBSERVER THAT POLLS MUST CALL THIS, and both do: the reaper's status
  * poll (reaping/box-reaper.ts, the 20s active-turn lane, which visits every row
  * holding turn authority) and the session access path
- * (projects/routes/shared.ts, polled ~1/s by the web client). Only those two can
+ * (services/sessions/open/shared.ts, polled ~1/s by the web client). Only those two can
  * ARM a marker repeatedly. The webhook ingress can arm one on a transitional
  * `stopping` delivery, and either poller drops it on its next running read.
  */
@@ -440,9 +440,9 @@ export interface StoppedReconcileOptions {
    *
    * Only an observation can be a misread, and only an observation may be made
    * to wait for a second one while a turn is open. Three callers pass it: the
-   * provider webhook ingress (platform/webhooks/sandbox-webhooks.ts, whose
+   * provider webhook ingress (services/platform/webhooks/sandbox-webhooks.ts, whose
    * `classifyLifecycle` maps the transitional `stopping` / `archiving` straight
-   * to `stopped`), the session access path in projects/routes/shared.ts — which
+   * to `stopped`), the session access path in services/sessions/open/shared.ts — which
    * polls `provider.getStatus` every second and stops nothing itself, and which
    * therefore authored the 2026-08-17 mid-turn park — and, through its own copy
    * of the same gate, the reaper's status poll. All three read the row back and
@@ -450,7 +450,7 @@ export interface StoppedReconcileOptions {
    *
    * Every other caller has ALREADY stopped the box and must park the row
    * unconditionally, or it keeps billing against a box that is off: account
-   * deletion (billing/services/account-deletion.ts) and the orphan-box sweep
+   * deletion (services/billing/services/account-deletion.ts) and the orphan-box sweep
    * (reaping/orphan-boxes.ts), both of which call `provider.stop()` first.
    * Default false for exactly that reason: a caller that forgets this flag gets
    * today's behaviour, never a row left active against a dead box.

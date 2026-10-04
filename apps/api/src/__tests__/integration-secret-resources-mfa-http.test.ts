@@ -19,8 +19,8 @@ import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
-const { accountsRouter } = await import('../accounts/core/app');
-const { registerSecretResourceRoutes } = await import('../accounts/secret-resources');
+const { accountsRouter } = await import('../http/accounts/core/app');
+const { registerSecretResourceRoutes } = await import('../http/accounts/secret-resources');
 registerSecretResourceRoutes();
 
 const MEMBER = crypto.randomUUID();

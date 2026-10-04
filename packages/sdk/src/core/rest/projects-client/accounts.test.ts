@@ -50,7 +50,7 @@ test('validateToken never throws — returns { valid: false, error } on a 401', 
 // `accounts.iam_v2_enabled` was the per-account rollout flag that routed a
 // caller between the V1 and V2 IAM engines. The canonical-RBAC cutover made
 // `kortix.role_assignments` the only authorization store and
-// `apps/api/src/iam/authorize.ts` the only engine, so the API no longer emits
+// `apps/api/src/services/iam/authorize.ts` the only engine, so the API no longer emits
 // the field and nothing can ever set it again. A declared-but-never-populated
 // optional field is worse than no field: it reads as a live switch and invites
 // a host to branch on `undefined`. Asserted against the SOURCE, not the type,

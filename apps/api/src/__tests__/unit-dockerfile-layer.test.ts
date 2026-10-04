@@ -24,7 +24,7 @@ import {
   buildLayeredDockerfile,
   extractSandboxDefault,
   extractSandboxTemplates,
-} from '../snapshots/dockerfile-layer';
+} from '../services/snapshots/dockerfile-layer';
 
 const COMMON = {
   opencodeVersion: OPENCODE_VERSION,

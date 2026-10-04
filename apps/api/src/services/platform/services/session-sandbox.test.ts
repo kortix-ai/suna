@@ -1,0 +1,1129 @@
+// Unit test for the session-resurrection race fix in provisionSessionSandbox.
+//
+// Background: provisioning runs in a detached (fire-and-forget) IIFE. Before
+// this fix, the finish-of-provisioning writes were unconditional: if a user
+// deleted the session while the box was still being created, deleteSession()
+// would flip session_sandboxes to 'archived' and project_sessions to
+// 'stopped' — but the still-running provisioning IIFE would later land its
+// "success" writes anyway, flipping project_sessions BACK to 'running' and
+// opening a compute-metering row for a session the user just deleted.
+//
+// The fix makes both finish-of-provisioning writes conditional:
+//   1. session_sandboxes finish update: WHERE status != 'archived' RETURNING.
+//      No row back → the session was deleted mid-provision: remove the
+//      just-created provider box and stop (no flip, no metering).
+//   2. project_sessions status flip: WHERE status IN (queued, branching,
+//      provisioning) — never clobbers a 'stopped' (deleted, or explicitly
+//      stopped) or already-'running' (won by the separate stopped→running
+//      resume path in routes/shared.ts) session.
+//
+// This test drives the REAL provisionSessionSandbox with every external
+// dependency mocked (provider, snapshot builder, token minting, billing,
+// LLM-gateway flag) so it can run fully offline, deterministic, and
+// fast. The DB is a lightweight fake that records every update() call and
+// compiles its WHERE condition to real SQL text via drizzle's PgDialect (no
+// live Postgres needed) so the test asserts on the actual guard clauses, not
+// just on the mock's own bookkeeping.
+//
+// Run this file in its own `bun test <file>` invocation (as CI does per
+// file). `provisionSessionSandbox` and its dependencies (providers, billing,
+// snapshot builder) are heavily mocked here; other suites mock the SAME
+// resolved modules with different shapes (or exercise the real ones), and
+// `bun:test`'s `mock.module` + ES module cache are process-global rather than
+// file-scoped — batching many files into one `bun test a b c...` invocation
+// can leak mocks/cached module instances across files. See the same caveat
+// documented in ../../projects/sandbox-reaper.test.ts.
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realAgents from '../../projects/agents';
+import { PROVISIONING_SESSION_STATUSES } from '../../sessions/session-status';
+import * as realProviderTransitionStore from '../../sandboxes/provider-transition/provider-transition-store';
+import * as realProviders from '../providers';
+
+const dialect = new PgDialect();
+
+const SANDBOX_ID = '00000000-0000-4000-a000-00000000a001';
+const ACCOUNT_ID = '00000000-0000-4000-a000-00000000a002';
+const PROJECT_ID = '00000000-0000-4000-a000-00000000a003';
+const USER_ID = '00000000-0000-4000-a000-00000000a004';
+const EXTERNAL_ID = 'ext-daytona-1';
+
+// ── mutable test state, reset in beforeEach ─────────────────────────────────
+let insertedSandboxRows: Array<Record<string, unknown>> = [];
+let updateCalls: Array<{
+  table: unknown;
+  updates: Record<string, unknown>;
+  sql: string;
+  params: unknown[];
+}> = [];
+let scenario: {
+  archiveBeforeFinish: boolean;
+  projectSessionStatusAtCheck: string;
+  projectSessionMetadataAtCheck: Record<string, unknown>;
+} = {
+  archiveBeforeFinish: false,
+  projectSessionStatusAtCheck: 'provisioning',
+  projectSessionMetadataAtCheck: {},
+};
+let removedIds: string[] = [];
+let stoppedIds: string[] = [];
+let onRemoved: (() => void) | null = null;
+let computeSessionsOpened: Array<{ sandboxId: string; accountId: string; spec?: unknown }> = [];
+let onComputeOpened: (() => void) | null = null;
+let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }> = [];
+let identityConflict = false;
+let recoveryPlaceholder = false;
+let providerCreateCalls = 0;
+let providerCreateOpts: Array<Record<string, unknown>> = [];
+let providerIdCreateCalls: string[] = [];
+let providerFallbackEnabled = false;
+let providerNamesRequested: string[] = [];
+let providerCreateErrors: Record<string, string | undefined> = {};
+let providerCreateErrorLimits: Record<string, number | undefined> = {};
+let imageRequests: Array<Record<string, unknown>> = [];
+let imageResolutionQueue: Array<{
+  snapshotName: string;
+  slug: string;
+  contentHash: string;
+  isDefault: boolean;
+  built: boolean;
+}> = [];
+let standardImageDeleteCalls: Array<{ slug?: string; provider?: string }> = [];
+let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
+let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
+let networkBoundaryBindings: Array<Record<string, unknown>> = [];
+let providerSyncCalls: Array<{ externalId: string; bindings: Array<Record<string, unknown>> }> = [];
+let activeRouting: {
+  activeProvider: string | null;
+  activeExternalTemplateId: string | null;
+  activeSnapshotName: string | null;
+} | null = null;
+let agentGrantError: Error | null = null;
+let gatewayFlag = false;
+const testConfig = {
+  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+  KORTIX_URL: 'http://localhost:8008',
+  LLM_GATEWAY_PROXY_PORT: undefined,
+  LLM_GATEWAY_PROXY_TARGET: undefined,
+  LLM_GATEWAY_BASE_URL: undefined,
+};
+function compile(condition: unknown): { sql: string; params: unknown[] } {
+  try {
+    return dialect.sqlToQuery(condition as Parameters<typeof dialect.sqlToQuery>[0]);
+  } catch {
+    return { sql: '', params: [] };
+  }
+}
+
+/**
+ * The keys a sandbox write merges into its metadata. Every writer here strips
+ * and merges in SQL (`(metadata - …) || $patch::jsonb`), so the patch is the
+ * one JSON-object parameter of the rendered fragment.
+ */
+function mergedMetadata(updates: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!updates?.metadata) return {};
+  for (const param of compile(updates.metadata).params) {
+    if (typeof param !== 'string' || !param.startsWith('{')) continue;
+    return JSON.parse(param) as Record<string, unknown>;
+  }
+  return {};
+}
+
+// A resolved Promise with `.returning()` bolted on so it satisfies both the
+// plain-await + `.catch()` call sites and the `.returning()` call sites drizzle
+// query builders support.
+function updateResult(rows: unknown[]) {
+  const p = Promise.resolve(undefined) as Promise<undefined> & {
+    returning: () => Promise<unknown[]>;
+  };
+  p.returning = async () => rows;
+  return p;
+}
+
+mock.module('../../../lib/config', () => ({
+  config: testConfig,
+}));
+
+mock.module('../../../lib/db', () => ({
+  db: {
+    insert: (table: unknown) => ({
+      values: (v: Record<string, unknown>) => {
+        if (table === sessionSandboxes) insertedSandboxRows.push(v);
+        const result = {
+          returning: async () => (identityConflict && table === sessionSandboxes ? [] : [{ ...v }]),
+          onConflictDoNothing: () => result,
+        };
+        return result;
+      },
+    }),
+    select: (_proj: unknown) => ({
+      from: (table: unknown) => ({
+        where: (_cond: unknown) => ({
+          limit: async (_n: number) => {
+            if (table === projectSessions) {
+              return [
+                {
+                  status: scenario.projectSessionStatusAtCheck,
+                  metadata: scenario.projectSessionMetadataAtCheck,
+                },
+              ];
+            }
+            return [];
+          },
+        }),
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (updates: Record<string, unknown>) => ({
+        where: (condition: unknown) => {
+          const { sql, params } = compile(condition);
+          updateCalls.push({ table, updates, sql, params });
+          const isSessionSandboxesFinish =
+            table === sessionSandboxes && 'externalId' in updates && 'config' in updates;
+          if (isSessionSandboxesFinish) {
+            return updateResult(scenario.archiveBeforeFinish ? [] : [{ sandboxId: SANDBOX_ID }]);
+          }
+          const isRecoveryClaim =
+            table === sessionSandboxes &&
+            updates.provider === 'daytona' &&
+            updates.status === 'provisioning' &&
+            'config' in updates;
+          if (isRecoveryClaim) {
+            const claimed = recoveryPlaceholder;
+            recoveryPlaceholder = false;
+            return updateResult(
+              claimed
+                ? [
+                    {
+                      sandboxId: SANDBOX_ID,
+                      sessionId: SANDBOX_ID,
+                      accountId: ACCOUNT_ID,
+                      projectId: PROJECT_ID,
+                      provider: 'daytona',
+                      externalId: null,
+                      status: 'provisioning',
+                      baseUrl: null,
+                      config: {},
+                      metadata: { identityRecoveryAuthorizedAt: new Date().toISOString() },
+                    },
+                  ]
+                : [],
+            );
+          }
+          return updateResult([{ ok: true }]);
+        },
+      }),
+    }),
+  },
+}));
+
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+mock.module('../providers', () => ({
+  ...realProviders,
+  getProvider: (name: string) => {
+    providerNamesRequested.push(name);
+    const provision = async (opts: Record<string, unknown>) => {
+      providerCreateCalls += 1;
+      providerCreateOpts.push(opts);
+      const createError = providerCreateErrors[name];
+      const createErrorLimit = providerCreateErrorLimits[name];
+      if (createError && (createErrorLimit === undefined || createErrorLimit > 0)) {
+        if (createErrorLimit !== undefined) {
+          providerCreateErrorLimits[name] = createErrorLimit - 1;
+        }
+        throw new Error(createError);
+      }
+      return {
+        externalId: name === 'daytona' ? EXTERNAL_ID : `ext-${name}-1`,
+        baseUrl: 'https://sandbox.test',
+        metadata: {},
+      };
+    };
+    return {
+      name,
+      networkBoundaryAtCreate: name === 'platinum',
+      provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
+      create: provision,
+      createFromExternalId:
+        name === 'platinum'
+          ? async (templateId: string, opts: Record<string, unknown>) => {
+              providerIdCreateCalls.push(templateId);
+              return provision(opts);
+            }
+          : undefined,
+      syncNetworkBoundary: async (externalId: string, bindings: Array<Record<string, unknown>>) => {
+        providerSyncCalls.push({ externalId, bindings });
+      },
+      remove: async (externalId: string) => {
+        removedIds.push(externalId);
+        onRemoved?.();
+      },
+      start: async () => {},
+      stop: async (externalId: string) => {
+        stoppedIds.push(externalId);
+      },
+      getStatus: async () => 'running',
+      resolveEndpoint: async () => ({ url: '', headers: {} }),
+      resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
+    };
+  },
+  WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {},
+  SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
+}));
+
+mock.module('../../sandboxes/provider-transition/provider-transition-store', () => ({
+  ...realProviderTransitionStore,
+  readActiveRouting: async () => activeRouting,
+}));
+
+mock.module('./runtime-settings', () => ({
+  providerFallbackSetting: () => ({ enabled: providerFallbackEnabled }),
+}));
+
+mock.module('./provider-balancer', () => ({
+  selectProvider: async () => 'e2b',
+}));
+
+mock.module('../../snapshots/builder', () => ({
+  DEFAULT_SANDBOX_SLUG: 'default',
+  ensurePiWorkerImage: async () => undefined,
+  ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
+    imageRequests.push(opts);
+    const queued = imageResolutionQueue.shift();
+    if (queued) return queued;
+    return {
+      snapshotName: 'snap-test-1',
+      slug: 'default',
+      contentHash: 'hash-1',
+      isDefault: true,
+      built: false,
+    };
+  },
+  ensureMetaSandboxImage: async (opts: Record<string, unknown>) => {
+    imageRequests.push(opts);
+    return {
+      snapshotName: 'snap-meta-1',
+      slug: 'meta',
+      contentHash: 'meta-hash-1',
+      isDefault: false,
+      built: false,
+      runtimeProfile: 'meta',
+      spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
+    };
+  },
+  deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
+    standardImageDeleteCalls.push(opts);
+  },
+  // The real resolver throws TemplateNotFoundError for `meta` / `pi-worker`:
+  // neither is a project template.
+  resolveTemplate: async (_project: unknown, slug: unknown) => {
+    if (slug === 'meta' || slug === 'pi-worker') throw new Error(`template ${String(slug)} not found`);
+    return {};
+  },
+}));
+
+let onProviderEvent: (() => void) | null = null;
+mock.module('./provider-events', () => ({
+  recordProviderEvent: (e: { outcome: string }) => {
+    recordedEvents.push(e);
+    onProviderEvent?.();
+  },
+}));
+
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+mock.module('../../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
+  startComputeSession: async (input: {
+    sandboxId: string;
+    accountId: string;
+    provider: string;
+  }) => {
+    computeSessionsOpened.push(input);
+    onComputeOpened?.();
+  },
+}));
+
+mock.module('../../repositories/api-keys', () => ({
+  createApiKey: async (_opts: unknown) => ({ secretKey: 'sbx-key-1' }),
+}));
+
+mock.module('../../repositories/account-tokens', () => ({
+  createAccountToken: async (opts: Record<string, unknown>) => {
+    accountTokenCreateCalls.push(opts);
+    return { secretKey: 'exec-tok-1' };
+  },
+}));
+
+mock.module('../../repositories/service-accounts', () => ({
+  ensureAgentServiceAccount: async (opts: Record<string, unknown>) => {
+    serviceAccountCreateCalls.push(opts);
+    return null;
+  },
+}));
+
+mock.module('../../triggers', () => ({
+  readManifest: async () => null,
+}));
+
+mock.module('../../secrets/network-secret-boundary', () => ({
+  resolveSessionNetworkBoundary: async () => networkBoundaryBindings,
+}));
+
+mock.module('../../projects/agents', () => ({
+  ...realAgents,
+  resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => {
+    if (agentGrantError) throw agentGrantError;
+    return null;
+  },
+}));
+
+mock.module('../../llm-gateway/enablement', () => ({
+  projectLlmGatewayEnabled: (_metadata: unknown) => gatewayFlag,
+}));
+
+mock.module('../../sessions/session-failure-notifier', () => ({
+  notifySessionProvisioningFailed: async () => {},
+}));
+
+const { provisionSessionSandbox } = await import('./session-sandbox');
+
+function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('waitFor timed out')), timeoutMs);
+    setResolver(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+beforeEach(() => {
+  updateCalls = [];
+  insertedSandboxRows = [];
+  scenario = {
+    archiveBeforeFinish: false,
+    projectSessionStatusAtCheck: 'provisioning',
+    projectSessionMetadataAtCheck: {},
+  };
+  removedIds = [];
+  stoppedIds = [];
+  onRemoved = null;
+  computeSessionsOpened = [];
+  onComputeOpened = null;
+  recordedEvents = [];
+  onProviderEvent = null;
+  identityConflict = false;
+  recoveryPlaceholder = false;
+  providerCreateCalls = 0;
+  providerCreateOpts = [];
+  providerIdCreateCalls = [];
+  providerFallbackEnabled = false;
+  providerNamesRequested = [];
+  providerCreateErrors = {};
+  providerCreateErrorLimits = {};
+  imageRequests = [];
+  imageResolutionQueue = [];
+  standardImageDeleteCalls = [];
+  accountTokenCreateCalls = [];
+  serviceAccountCreateCalls = [];
+  networkBoundaryBindings = [];
+  providerSyncCalls = [];
+  activeRouting = null;
+  agentGrantError = null;
+  gatewayFlag = false;
+});
+
+function baseOpts() {
+  return {
+    sandboxId: SANDBOX_ID,
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    userId: USER_ID,
+    provider: 'daytona' as const,
+    gitProject: { defaultBranch: 'main' } as unknown as Parameters<
+      typeof provisionSessionSandbox
+    >[0]['gitProject'],
+    metadata: {},
+  };
+}
+
+describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('refuses to mint a session token when the agent grant cannot be resolved', async () => {
+    agentGrantError = new Error('manifest unavailable');
+
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toThrow('manifest unavailable');
+    expect(accountTokenCreateCalls).toHaveLength(0);
+    expect(providerCreateCalls).toBe(0);
+  });
+
+  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+    });
+
+    expect(accountTokenCreateCalls).toHaveLength(1);
+    expect(accountTokenCreateCalls[0]).toMatchObject({
+      accountId: ACCOUNT_ID,
+      userId: USER_ID,
+      projectId: PROJECT_ID,
+      sessionId: SANDBOX_ID,
+      agentGrant: {
+        agent: 'meta',
+        permissions: 'all',
+        connectors: [],
+        env: [],
+      },
+      serviceAccountId: null,
+    });
+    expect(serviceAccountCreateCalls).toHaveLength(0);
+  });
+
+  test('meta sessions are metered at the size of the image they boot from', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+    });
+    await opened;
+
+    expect(computeSessionsOpened).toHaveLength(1);
+    expect(computeSessionsOpened[0]).toMatchObject({
+      sandboxId: SANDBOX_ID,
+      spec: { cpuCores: 1, memoryGb: 2, diskGb: 8, gpuCount: 0 },
+    });
+  });
+
+  test('session starts request the OpenCode runtime image', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(imageRequests[0]).toMatchObject({ source: 'session-start' });
+    expect(imageRequests[0]).not.toHaveProperty('requireCurrentRuntime');
+  });
+
+  test('never injects KORTIX_LLM_AI_SDK_NATIVE (native transport removed — OpenAI-compat only)', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_AI_SDK_NATIVE');
+  });
+
+  test('injects one session credential under one canonical environment name', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+    expect(Object.keys(envVars).filter((name) => name.endsWith('_TOKEN'))).toEqual(['KORTIX_TOKEN']);
+    expect(envVars.KORTIX_OPENCODE_DENY_ENV).toBeUndefined();
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
+  });
+
+  // Session create passes the env build as a promise. The image check, the
+  // row insert and the token mint do not read it, so they run while it builds.
+  test('an env build still in flight does not hold the token mint; its values reach the provider', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    let finishEnvBuild!: (env: Record<string, string>) => void;
+    const envBuild = new Promise<Record<string, string>>((resolve) => {
+      finishEnvBuild = resolve;
+    });
+
+    const provisioning = provisionSessionSandbox({ ...baseOpts(), extraEnvVars: envBuild });
+    await waitFor((resolve) => {
+      const poll = () => (accountTokenCreateCalls.length > 0 ? resolve() : setTimeout(poll, 5));
+      poll();
+    });
+    // The token is minted and no provider call has been made: the env is pending.
+    expect(providerCreateOpts).toHaveLength(0);
+
+    finishEnvBuild({ KORTIX_PROJECT_BRANCH: 'main' });
+    await provisioning;
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_PROJECT_BRANCH).toBe('main');
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+  });
+
+  test('an env build that fails closes the sandbox row and fails the provision', async () => {
+    await expect(
+      provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(new Error('env build failed')) }),
+    ).rejects.toThrow('env build failed');
+
+    expect(providerCreateOpts).toHaveLength(0);
+    expect(
+      updateCalls.some((call) => call.table === sessionSandboxes && call.updates.status === 'error'),
+    ).toBe(true);
+  });
+
+  test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
+    // The pi harness has no native-provider path: a box booted without
+    // KORTIX_LLM_BASE_URL never starts pi, so its first prompt is never
+    // delivered. A free account still gets the gateway; the gateway limits it
+    // to free/BYOK models per request (principal.freeModelsOnly).
+    gatewayFlag = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_LLM_BASE_URL).toBe('http://localhost:8008/v1/llm');
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(true);
+  });
+
+  test('a native project boots without the gateway env', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_BASE_URL');
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(false);
+  });
+
+  test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {
+    // Instance scoping for background work on a shared DB (services/sessions/instance-scope.ts).
+    // The stamp is what lets another local API instance recognise this box as
+    // not its own and hand its queued work back.
+    (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID = 'wt-instance-a';
+    try {
+      const opened = waitFor((resolve) => {
+        onComputeOpened = resolve;
+      });
+      await provisionSessionSandbox(baseOpts());
+      await opened;
+
+      const finishCall = updateCalls.find(
+        (call) =>
+          call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+      );
+      const inserted = insertedSandboxRows[0]?.metadata as Record<string, unknown> | undefined;
+      expect(inserted?.instanceId).toBe('wt-instance-a');
+      // The finish write merges into the row, so the stamp survives unless the
+      // write strips or replaces it. It does neither.
+      expect(compile(finishCall?.updates.metadata).sql).not.toContain(`'instanceId'`);
+      expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('instanceId');
+    } finally {
+      delete (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('no KORTIX_INSTANCE_ID → no instanceId stamp (deployed environments are untouched)', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect(mergedMetadata(finishCall?.updates).instanceId).toBeUndefined();
+  });
+
+  test('forwards the restricted-workspace project-image denial into image resolution', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), allowProjectImage: false });
+    await opened;
+
+    expect(imageRequests).toHaveLength(1);
+    expect(imageRequests[0]?.allowProjectImage).toBe(false);
+    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
+  });
+
+  test('a restricted workspace cannot boot an activated template id', async () => {
+    activeRouting = {
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_activated_project_image',
+      activeSnapshotName: 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa',
+    };
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      provider: 'platinum',
+      allowProjectImage: false,
+    });
+    await opened;
+
+    expect(providerIdCreateCalls).toEqual([]);
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
+  });
+
+  test('a resolved image cannot boot an activated template id recorded under another name', async () => {
+    activeRouting = {
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_activated_project_image',
+      activeSnapshotName: 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa',
+    };
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
+    await opened;
+
+    expect(providerIdCreateCalls).toEqual([]);
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
+  });
+
+  test('a missing image named like a retired project image heals through the SAME slug rebuild path', async () => {
+    // The per-project image system is gone: there is no longer a second delete
+    // path keyed on the image name. Every snapshot-missing heal now deletes by
+    // (slug, provider) and re-resolves, whatever the stale image was called.
+    const legacyProjectImageName = 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa';
+    imageResolutionQueue = [
+      {
+        snapshotName: legacyProjectImageName,
+        slug: 'default',
+        contentHash: 'hash-1',
+        isDefault: true,
+        built: false,
+      },
+      {
+        snapshotName: 'kortix-default-base-intact',
+        slug: 'default',
+        contentHash: 'hash-1',
+        isDefault: true,
+        built: false,
+      },
+    ];
+    providerCreateErrors.daytona = `snapshot ${legacyProjectImageName} not found`;
+    providerCreateErrorLimits.daytona = 3;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
+    expect(imageRequests).toHaveLength(2);
+    expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-base-intact');
+  });
+
+  test('a missing standard image keeps the existing slug-based rebuild path', async () => {
+    imageResolutionQueue = [
+      {
+        snapshotName: 'kortix-default-stale',
+        slug: 'default',
+        contentHash: 'hash-1',
+        isDefault: true,
+        built: false,
+      },
+      {
+        snapshotName: 'kortix-default-rebuilt',
+        slug: 'default',
+        contentHash: 'hash-2',
+        isDefault: true,
+        built: true,
+      },
+    ];
+    providerCreateErrors.daytona = 'snapshot kortix-default-stale not found';
+    providerCreateErrorLimits.daytona = 3;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
+    expect(imageRequests).toHaveLength(2);
+    expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-rebuilt');
+  });
+
+  test('the resolved image boots by the activated id when its image name matches', async () => {
+    activeRouting = {
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_current_project_image',
+      activeSnapshotName: 'snap-test-1',
+    };
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
+    await opened;
+
+    expect(providerIdCreateCalls).toEqual(['tpl_current_project_image']);
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
+  });
+
+  test('the resolved image name-boots when its name differs from the activated image', async () => {
+    activeRouting = {
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_older_project_image',
+      activeSnapshotName: 'snap-project-older',
+    };
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
+    await opened;
+
+    expect(providerIdCreateCalls).toEqual([]);
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
+  });
+
+  test('the resolved image name-boots when the activation records no image name', async () => {
+    activeRouting = {
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_without_image_name',
+      activeSnapshotName: null,
+    };
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
+    await opened;
+
+    expect(providerIdCreateCalls).toEqual([]);
+    expect(providerCreateCalls).toBe(1);
+    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
+  });
+
+  test('a legacy activation without a recoverable image name fails closed to name boot', async () => {
+    activeRouting = {
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_activated_standard',
+      activeSnapshotName: null,
+    };
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
+    await opened;
+
+    expect(providerIdCreateCalls).toEqual([]);
+    expect(providerCreateCalls).toBe(1);
+  });
+
+  test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect(mergedMetadata(finishCall?.updates)).toMatchObject({
+      providerExternalId: 'ext-e2b-1',
+      runtimeArtifact: { provider: 'e2b', artifactType: 'e2b_template' },
+    });
+    expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('daytonaSandboxId');
+    expect(computeSessionsOpened[0]).toMatchObject({ provider: 'e2b' });
+  });
+
+  test('an explicitly selected E2B provider never fails over to another provider', async () => {
+    providerFallbackEnabled = true;
+    providerCreateErrors.e2b = 'E2B unavailable';
+    const failed = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await failed;
+
+    expect(providerNamesRequested).toEqual(['e2b']);
+    expect(providerCreateCalls).toBe(3);
+    expect(
+      updateCalls.some(
+        (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
+      ),
+    ).toBe(false);
+  });
+
+  test('capacity failure records one attempt and provider-neutral failure metadata', async () => {
+    providerCreateErrors.e2b = '500: Failed to place sandbox';
+    const failed = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await failed;
+
+    expect(providerCreateCalls).toBe(1);
+    const terminal = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes &&
+        call.updates.status === 'error' &&
+        mergedMetadata(call.updates).failureCategory === 'provider-capacity',
+    );
+    expect(mergedMetadata(terminal?.updates)).toMatchObject({
+      initAttempts: 1,
+      initMaxAttempts: 1,
+      failureCategory: 'provider-capacity',
+      errorMessage: 'The sandbox provider is at capacity right now. Try again in a minute.',
+    });
+  });
+
+  test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
+    providerFallbackEnabled = true;
+    providerCreateErrors.e2b = 'E2B unavailable';
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    const { provider: _provider, ...automaticOpts } = baseOpts();
+
+    await provisionSessionSandbox(automaticOpts);
+    await opened;
+
+    expect(providerNamesRequested).toEqual(['e2b', 'daytona']);
+    expect(providerCreateCalls).toBe(4);
+    expect(
+      updateCalls.some(
+        (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
+      ),
+    ).toBe(true);
+  });
+
+  test('authoritative row conflict fails closed before a second provider sandbox can be created', async () => {
+    identityConflict = true;
+
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toMatchObject({
+      name: 'RuntimeIdentityConflictError',
+    });
+
+    expect(providerCreateCalls).toBe(0);
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toEqual([]);
+    expect(recordedEvents).toEqual([]);
+  });
+
+  test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateCalls).toBe(1);
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toHaveLength(1);
+  });
+
+  test('legacy recovery placeholder authorization is single-use under concurrent allocation', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    const results = await Promise.allSettled([
+      provisionSessionSandbox(baseOpts()),
+      provisionSessionSandbox(baseOpts()),
+    ]);
+    await opened;
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+      reason: { name: 'RuntimeIdentityConflictError' },
+    });
+    expect(providerCreateCalls).toBe(1);
+    expect(computeSessionsOpened).toHaveLength(1);
+  });
+
+  test('nothing raced it: flips to running, guarded WHERE clauses are the expected shape, opens compute metering', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toHaveLength(1);
+    expect(computeSessionsOpened[0].sandboxId).toBe(SANDBOX_ID);
+    expect(computeSessionsOpened[0].accountId).toBe(ACCOUNT_ID);
+
+    // The session_sandboxes finish update never leaves `archived`: its
+    // status guard names every other state.
+    const finishCall = updateCalls.find(
+      (c) => c.table === sessionSandboxes && 'externalId' in c.updates && 'config' in c.updates,
+    );
+    expect(finishCall).toBeTruthy();
+    expect(finishCall?.updates.status).toBe('active');
+    expect(finishCall?.sql).toContain('in (');
+    expect(finishCall?.params).toContain('provisioning');
+    expect(finishCall?.params).not.toContain('archived');
+
+    // The project_sessions running-flip is guarded by `status IN (queued, branching, provisioning)`.
+    const flipCall = updateCalls.find(
+      (c) => c.table === projectSessions && c.updates.status === 'running',
+    );
+    expect(flipCall).toBeTruthy();
+    expect(flipCall?.sql).toContain('in (');
+    expect(flipCall?.params).toEqual([SANDBOX_ID, ...PROVISIONING_SESSION_STATUSES]);
+  });
+
+  test('deleted mid-provision: session_sandboxes row is already archived when the finish write lands — removes the box, never flips to running, never opens metering', async () => {
+    scenario.archiveBeforeFinish = true;
+    // Still 'provisioning' at the early stopped-check (line ~463): the delete
+    // happens in the gap AFTER that check and BEFORE the finish write — the
+    // exact race window this fix closes.
+    scenario.projectSessionStatusAtCheck = 'provisioning';
+
+    const eventRecorded = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await eventRecorded;
+
+    expect(removedIds).toEqual([EXTERNAL_ID]);
+    expect(computeSessionsOpened).toEqual([]);
+
+    // The guarded finish update was attempted (and, per the mock, returned no
+    // rows because the row was already 'archived') — but no project_sessions
+    // running-flip was ever attempted off the back of it.
+    const finishCall = updateCalls.find(
+      (c) => c.table === sessionSandboxes && 'externalId' in c.updates && 'config' in c.updates,
+    );
+    expect(finishCall).toBeTruthy();
+    const flipCall = updateCalls.find(
+      (c) => c.table === projectSessions && c.updates.status === 'running',
+    );
+    expect(flipCall).toBeUndefined();
+
+    expect(recordedEvents.some((e) => e.outcome === 'stopped')).toBe(true);
+  });
+
+  test('manual stop racing provider create stops and preserves the sandbox instead of removing it', async () => {
+    scenario.projectSessionStatusAtCheck = 'stopped';
+    const eventRecorded = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await eventRecorded;
+
+    expect(removedIds).toEqual([]);
+    expect(stoppedIds).toEqual([EXTERNAL_ID]);
+    expect(computeSessionsOpened).toEqual([]);
+    const preserved = updateCalls.find(
+      (c) => c.table === sessionSandboxes && c.updates.status === 'stopped',
+    );
+    expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
+    expect(mergedMetadata(preserved?.updates)).toMatchObject({ stoppedDuringProvisioning: true });
+  });
+});
+
+describe('pi worker pool claim (P1.8)', () => {
+  test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
+    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
+    const claim = source.indexOf('const pooledClaim =');
+    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
+    const refill = source.indexOf('void maintainPiWorkerPool()', claim);
+    const externalId = source.indexOf('bgExternalId = result.externalId', claim);
+    expect(claim).toBeGreaterThan(-1);
+    // Claim sits BEFORE the provider create and only for pi worker boots on
+    // daytona; the refill kick fires after either path, before activation.
+    const gate = source.slice(claim, create);
+    expect(gate).toContain("opts.metadata?.pi_worker_boot === true && providerName === 'daytona'");
+    expect(gate).toContain('claimParkedPiWorkerBox(providerCreateInput.envVars ?? {})');
+    expect(create).toBeGreaterThan(claim);
+    expect(refill).toBeGreaterThan(create);
+    expect(externalId).toBeGreaterThan(refill);
+    // A claim failure must NEVER fail the session — it degrades to cold create.
+    expect(gate).toContain('return null');
+  });
+
+  test('a claimed box records the pool path in its provision timeline', async () => {
+    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
+    const claim = source.indexOf('if (pooledClaim) {');
+    const mark = source.indexOf("tl.mark('pool-claim')", claim);
+    const elseBranch = source.indexOf('} else {', claim);
+    expect(claim).toBeGreaterThan(-1);
+    expect(mark).toBeGreaterThan(claim);
+    expect(mark).toBeLessThan(elseBranch);
+  });
+});
+
+describe('pi worker pool — stale-label hazard', () => {
+  test('reap and claim both re-verify the park label on the direct object', async () => {
+    const source = await Bun.file(new URL('../../sandboxes/daytona/pi-worker-pool.ts', import.meta.url)).text();
+    // Maintain: every listed box passes verifyStillParked BEFORE the
+    // dead/stale/over-age triage that feeds the reap list.
+    const verify = source.indexOf('async function verifyStillParked');
+    const maintain = source.indexOf('export function maintainPiWorkerPool');
+    const verifyCall = source.indexOf('await verifyStillParked(box.externalId)', maintain);
+    const triage = source.indexOf("state === 'stopped'", maintain);
+    expect(verify).toBeGreaterThan(-1);
+    expect(verifyCall).toBeGreaterThan(maintain);
+    expect(verifyCall).toBeLessThan(triage);
+    // An unknowable box is never reapable.
+    const verifyBody = source.slice(verify, source.indexOf('}', source.indexOf('catch', verify)));
+    expect(verifyBody).toContain('return false');
+    // Claim: the direct object's labels gate the dial.
+    const claim = source.indexOf('export async function claimParkedPiWorkerBox');
+    const gate = source.indexOf("liveLabels[PARK_LABEL] !== '1'", claim);
+    const dial = source.indexOf('/kortix/claim', claim);
+    expect(gate).toBeGreaterThan(claim);
+    expect(gate).toBeLessThan(dial);
+  });
+});

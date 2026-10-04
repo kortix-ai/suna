@@ -2,7 +2,7 @@
  * Channels — Slack + AgentMail email integration + public, signature-gated webhooks. Maps to
  * spec §CHN.
  *
- * Behavior confirmed against apps/api/src/channels + apps/api/src/projects/index.ts:
+ * Behavior confirmed against apps/api/src/channels + apps/api/src/http/projects/index.ts:
  * - slack/connect|installation|mode are user-authed project routes (read/manage
  *   ACL) and return 404 to non-members (loadProjectForUser fails → "Not found").
  * - connect needs a real `xoxb-` token validated via Slack auth.test → in local

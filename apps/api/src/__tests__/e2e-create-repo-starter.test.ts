@@ -171,8 +171,8 @@ mockIamAssignments({
   },
 });
 
-const realPlatformRoles = await import('../iam/platform-roles');
-mock.module('../iam/platform-roles', () => ({
+const realPlatformRoles = await import('../services/iam/platform-roles');
+mock.module('../services/iam/platform-roles', () => ({
   ...realPlatformRoles,
   isPlatformAdmin: async () => platformAdmin,
   // The managed-git PAT paths ask the NARROWER question — a cloud platform
@@ -182,8 +182,8 @@ mock.module('../iam/platform-roles', () => ({
   isSelfHostOperator: async () => selfHostOperator,
 }));
 
-const realAuthMiddleware = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realAuthMiddleware = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -211,7 +211,7 @@ mock.module('../services/git', () => ({
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
-  // Used by snapshots/builder + the snapshots HTTP surface in projects/index.
+  // Used by services/snapshots/builder + the snapshots HTTP surface in projects/index.
   resolveCommitSha: async () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   resolveFastBootGitHint: async () => ({
     baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -235,10 +235,10 @@ mock.module('../services/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
 }));
 
-// snapshots/builder imports from services/git/index — once mocked, builder.ts
-// resolves cleanly. We stub the helpers projects/index calls so the
+// services/snapshots/builder imports from services/git/index — once mocked, builder.ts
+// resolves cleanly. We stub the helpers http/projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
-mock.module('../snapshots/builder', () => ({
+mock.module('../services/snapshots/builder', () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
@@ -425,11 +425,11 @@ mock.module('../services/github/github', () => ({
   isGithubAppConfigured: () => true,
 }));
 
-mock.module('../platform/services/session-sandbox', () => ({
+mock.module('../services/platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -445,7 +445,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'pro' }),
   // Billing-active account so any session spawned during the flow clears the gate.
   getCreditAccount: async () => ({
@@ -668,10 +668,10 @@ mock.module('../lib/db', () => ({
   db: starterDbMock,
 }));
 
-const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../http/projects/index');
 registerAllProjectRoutes();
-const { ACCOUNT_ACTIONS } = await import('../iam');
-const { buildStarterFiles } = await import('../projects/starter');
+const { ACCOUNT_ACTIONS } = await import('../services/iam');
+const { buildStarterFiles } = await import('../services/projects/starter');
 
 function createApp() {
   const app = new Hono();

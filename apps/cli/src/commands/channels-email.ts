@@ -3,8 +3,8 @@ import { emitJson, fail, resolveProjectContext, surfaceApiError } from '../comma
 import { C, status } from '../style.ts';
 import type { ExtraFlags } from './channels.ts';
 
-// apps/api/src/channels/install-store.ts AgentMailSenderPolicy /
-// AgentMailInstallSummary; routes at apps/api/src/projects/routes/channel-email.ts.
+// apps/api/src/services/channels/install-store.ts AgentMailSenderPolicy /
+// AgentMailInstallSummary; routes at apps/api/src/http/projects/channel-email.ts.
 
 interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
@@ -44,7 +44,7 @@ const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
  * allowedRegex), so a value is routed by shape: `@acme.com` or a bare
  * `acme.com` is a DOMAIN, anything containing a local part is an EMAIL. The
  * server re-derives `mode` — any non-empty list forces `restricted`
- * (normalizeSenderPolicy, apps/api/src/channels/install-store.ts:137) — but we
+ * (normalizeSenderPolicy, apps/api/src/services/channels/install-store.ts:137) — but we
  * send it explicitly so the intent is visible on the wire.
  */
 function buildSenderPolicy(extra: ExtraFlags): EmailSenderPolicy {

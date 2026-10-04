@@ -61,7 +61,7 @@ const disposableInboxes = new Set<DisposableInbox>();
 const IAM_PROPAGATION_MS = 30_000;
 
 /**
- * `IAM_CACHE_TTL_MS` in `apps/api/src/iam/authorize.ts:425`, which is also the
+ * `IAM_CACHE_TTL_MS` in `apps/api/src/services/iam/authorize.ts:425`, which is also the
  * hardcoded TTL of `loadProjectMemberRole` (`projects/lib/access.ts:373`).
  */
 const IAM_CACHE_TTL_MS = 15_000;

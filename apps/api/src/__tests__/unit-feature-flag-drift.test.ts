@@ -6,7 +6,7 @@
  *   2. `@kortix/sdk` — `FEATURE_FLAG_KEYS` (hand-written; the SDK is
  *      framework-free and dependency-light, so it must not pull zod into every
  *      consumer's bundle to re-derive the contract's list).
- *   3. `apps/api/src/feature-flags/registry.ts` — the registry that owns each
+ *   3. `apps/api/src/services/feature-flags/registry.ts` — the registry that owns each
  *      flag's name, description, stability, availability, and enforcement.
  *
  * Nothing at the type level can force those three to agree: (2) is a hand-typed
@@ -26,7 +26,7 @@ import {
 } from '@kortix/api-contract';
 import { FEATURE_FLAG_KEYS as SDK_FEATURE_FLAG_KEYS } from '@kortix/sdk';
 
-import { REGISTERED_FEATURE_FLAGS, buildFeatureFlagCatalog } from '../feature-flags/registry';
+import { REGISTERED_FEATURE_FLAGS, buildFeatureFlagCatalog } from '../services/feature-flags/registry';
 
 // Compared as plain strings: the SDK's `FeatureFlagKey` union still carries
 // deprecated graduated keys (`FEATURE_FLAG_KEYS` does not), so the two

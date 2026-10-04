@@ -55,7 +55,7 @@
 --        restart-in-place failure handler's non-missing-runtime branch —
 --        updates session_sandboxes.status to 'stopped' without touching
 --        metadata at all.
---      - apps/api/src/platform/services/session-sandbox.ts (~695-726): the
+--      - apps/api/src/services/platform/services/session-sandbox.ts (~695-726): the
 --        "session was stopped while provider.create was still in flight"
 --        reconciliation branch — writes a metadata patch (stoppedAt,
 --        stoppedDuringProvisioning) but no stopReason key.

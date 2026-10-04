@@ -7,7 +7,7 @@ set statement_timeout = '30s';
 -- The private `kortix-config-releases` bucket that holds config archives in
 -- every Supabase-backed environment (local dev, preview, self-host). The API
 -- reaches it through Supabase Storage's S3 PROTOCOL endpoint with the one
--- object store (apps/api/src/object-store/s3.ts); on AWS the same code points
+-- object store (apps/api/src/lib/object-store/s3.ts); on AWS the same code points
 -- at a Terraform-owned S3 bucket instead.
 --
 -- The bucket is created HERE, declaratively, because the API no longer creates
@@ -35,7 +35,7 @@ begin
     return;
   end if;
 
-  -- 4 MiB is MAX_CONFIG_ARCHIVE_BYTES in apps/api/src/config-releases/builder.ts.
+  -- 4 MiB is MAX_CONFIG_ARCHIVE_BYTES in apps/api/src/services/config-releases/builder.ts.
   insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
   values ('kortix-config-releases', 'kortix-config-releases', false, 4194304, array['application/gzip'])
   on conflict (id) do update set

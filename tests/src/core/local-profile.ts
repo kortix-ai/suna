@@ -27,7 +27,7 @@ export interface LocalSupabaseEnvironment {
   SERVICE_ROLE_KEY?: string;
   JWT_SECRET?: string;
   /** Supabase Storage's S3 protocol pair — the API's object store signs config
-   *  archive requests with it (apps/api/src/object-store/s3.ts). */
+   *  archive requests with it (apps/api/src/lib/object-store/s3.ts). */
   S3_PROTOCOL_ACCESS_KEY_ID?: string;
   S3_PROTOCOL_ACCESS_KEY_SECRET?: string;
 }

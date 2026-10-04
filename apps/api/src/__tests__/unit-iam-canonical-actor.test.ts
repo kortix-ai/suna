@@ -15,9 +15,9 @@ import {
   credentialProjectId,
   pendingPrincipalId,
   type Actor,
-} from '../iam/actor';
-import { isImplicitManager, tokenScopeAllows, type Obj } from '../iam/authorize';
-import { scopeForUncatalogedAction } from '../iam/catalog';
+} from '../services/iam/actor';
+import { isImplicitManager, tokenScopeAllows, type Obj } from '../services/iam/authorize';
+import { scopeForUncatalogedAction } from '../services/iam/catalog';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const SA = '22222222-2222-4222-8222-222222222222';

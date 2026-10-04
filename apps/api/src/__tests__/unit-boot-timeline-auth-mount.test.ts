@@ -2,7 +2,7 @@
  * The boot-timeline route must be REACHABLE, not merely correct.
  *
  * This is the test that was missing. The handler's own logic was fine; nothing
- * ever asked whether a request could get to it. `auth` from openapi/index.ts is
+ * ever asked whether a request could get to it. `auth` from http/openapi/index.ts is
  * `{ security: [{ bearerAuth: [] }] }` — OpenAPI metadata, NOT middleware — and
  * `/v1/platform` was mounted with no auth middleware, so `authType` was never
  * set and the handler's `authType !== 'apiKey'` guard returned 403 for every
@@ -21,9 +21,9 @@ import { readFileSync } from 'node:fs';
 
 // The mount wiring moved verbatim into app.ts (KRTX-347 split); the source
 // contract follows its owner.
-const appSource = readFileSync(new URL('../app.ts', import.meta.url), 'utf8');
-const openapi = readFileSync(new URL('../openapi/index.ts', import.meta.url), 'utf8');
-const authMiddleware = readFileSync(new URL('../middleware/auth-scope.ts', import.meta.url), 'utf8');
+const appSource = readFileSync(new URL('../app/app.ts', import.meta.url), 'utf8');
+const openapi = readFileSync(new URL('../http/openapi/index.ts', import.meta.url), 'utf8');
+const authMiddleware = readFileSync(new URL('../http/middleware/auth-scope.ts', import.meta.url), 'utf8');
 
 describe('boot-timeline is actually reachable', () => {
   test('auth middleware is mounted on the route', () => {

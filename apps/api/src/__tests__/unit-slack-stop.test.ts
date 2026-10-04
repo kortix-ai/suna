@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import { SLACK_STOP_ACTION } from '../channels/slack/stop-action';
+import { SLACK_STOP_ACTION } from '../services/channels/slack/stop-action';
 import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Slack had no Stop at all. A turn that wedges holds its OpenCode assistant
@@ -35,7 +35,7 @@ mock.module('../lib/db', () => ({
 // with project.session.stop), and what was asked.
 let stopActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
       actorChecks.push({ user: user.platformUserId, projectId, action });
@@ -49,7 +49,7 @@ let claim = true;
 const claims: string[] = [];
 const finalized: Array<Record<string, unknown>> = [];
 const deleted: string[] = [];
-mock.module('../channels/slack/turn', () => ({
+mock.module('../services/channels/slack/turn', () => ({
   loadTurn: async () => turn,
   claimFinalize: async (id: string) => {
     claims.push(id);
@@ -86,7 +86,7 @@ const liveTurn = (user: string) => ({
   originatingEvent: { user, ts: THREAD, channel: 'C1' },
 });
 
-const load = async () => await import('../channels/slack/stop');
+const load = async () => await import('../services/channels/slack/stop');
 
 beforeEach(() => {
   participantRow = undefined;

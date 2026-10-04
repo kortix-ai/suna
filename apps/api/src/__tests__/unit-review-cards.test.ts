@@ -8,7 +8,7 @@ import {
   parseReviewActionId,
   reviewActionId,
   reviewVerbToVerdict,
-} from '../channels/slack/review-cards';
+} from '../services/channels/slack/review-cards';
 
 const item: ReviewCardItem = {
   review_item_id: 'rv-1',

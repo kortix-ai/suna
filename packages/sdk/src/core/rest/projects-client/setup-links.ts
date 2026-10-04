@@ -1,7 +1,7 @@
 // Agent-minted SETUP LINKS — short-lived links the in-sandbox agent mints so
 // a human can (a) enter a project secret VALUE, or (b) 1-click connect a
 // Pipedream app, without the agent ever seeing the value/credential itself.
-// See apps/api/src/projects/routes/setup-links.ts for the server-side handlers.
+// See apps/api/src/http/projects/setup-links.ts for the server-side handlers.
 
 import { backendApi } from '../../http/api-client';
 import type { ConnectorConnectOwner } from './connectors';

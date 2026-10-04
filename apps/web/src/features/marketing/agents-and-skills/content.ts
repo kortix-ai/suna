@@ -30,7 +30,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    `sandbox` (which machine it boots), `connectors` + `connectors_required`,
  *    `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. Channels fall
  *    under `connectors` because a connected channel IS a connector with
- *    `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
+ *    `provider: 'channel'` (`apps/api/src/services/projects/connectors.ts:61`).
  *  - Depth is not a harness menu. OpenCode is the default harness. pi is an
  *    experimental, opt-in harness (`pi_harness` flag or `runtime: pi`) and is
  *    not named here: brand decision D9 is open.
@@ -40,7 +40,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    Values are exactly `allow` | `ask` | `deny`.
  *  - Governance is deny-by-default. `packages/starter/templates/base/kortix.yaml`:
  *    "Omitted grants resolve to `none` in this schema version. Grant explicitly."
- *  - The ceiling is real and quotable — `apps/api/src/projects/agents.ts:19-21`:
+ *  - The ceiling is real and quotable — `apps/api/src/services/projects/agents.ts:19-21`:
  *    the effective grant is `declared ∩ launching-user role`. An agent can never
  *    exceed the human who launched it.
  *  - A skill is a DIRECTORY with a `SKILL.md` at its root. Frontmatter is
@@ -49,7 +49,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
  *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
- *    installer WAS REMOVED (`apps/api/src/projects/routes/marketplace-install-session.ts`): "The
+ *    installer WAS REMOVED (`apps/api/src/http/projects/marketplace-install-session.ts`): "The
  *    deterministic install/lock/update/remove engine … has been removed …
  *    Adding a marketplace item to an existing project is now always an agent
  *    import." So: one click to ADD, and what happens next is an agent session

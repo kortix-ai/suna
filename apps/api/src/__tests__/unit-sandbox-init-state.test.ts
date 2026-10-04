@@ -7,7 +7,7 @@ import {
   deriveSandboxHealthStatus,
   deriveSandboxInitStatus,
   retrySandboxProvisionCreate,
-} from '../platform/services/sandbox-init-state';
+} from '../services/platform/services/sandbox-init-state';
 
 describe('sandbox init state helpers', () => {
   test('derives init and health states separately', () => {

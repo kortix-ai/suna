@@ -58,7 +58,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../../../projects/routes/shared', () => ({
+mock.module('../../open/shared', () => ({
   openSession: async () => {
     events.push('open');
     return {
@@ -69,7 +69,7 @@ mock.module('../../../../projects/routes/shared', () => ({
   },
 }));
 
-mock.module('../../../../sandbox-proxy/backend', () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
   invalidateSandbox: () => {},
   // Complete-module stand-ins: every export the (growing) import graph
@@ -78,7 +78,7 @@ mock.module('../../../../sandbox-proxy/backend', () => ({
   resolveServiceKey: async () => 'service-key-1',
 }));
 
-mock.module('../../../../platform/service-key', () => ({
+mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'service-key-1',
 }));
 
@@ -90,7 +90,7 @@ mock.module('../../../sandboxes/sandbox-env-sync', () => ({
   },
 }));
 
-mock.module('../../../../sandbox-proxy/forward', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     events.push('prompt');
     return new Response(null, { status: 204 });

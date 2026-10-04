@@ -11,7 +11,7 @@ import {
 const SECRET = 'a'.repeat(64);
 const OTHER_SECRET = 'b'.repeat(64);
 
-/** Byte-for-byte what the Kortix gate emits (apps/api/src/apps/viewer.ts). */
+/** Byte-for-byte what the Kortix gate emits (apps/api/src/services/apps/viewer.ts). */
 function sign(payload: Record<string, unknown>, secret = SECRET): string {
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const sig = createHmac('sha256', secret)

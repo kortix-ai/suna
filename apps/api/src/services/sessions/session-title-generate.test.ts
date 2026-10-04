@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import type { ProjectSessionRow } from '../../projects/lib/serializers';
+import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
   extractPromptInfo,

@@ -40,7 +40,7 @@ interface SunaEligibilityPayload {
 }
 
 // Kept in sync with
-// apps/api/src/projects/suna-migration/suna-migration-routes.ts.
+// apps/api/src/http/projects/suna-migration/suna-migration-routes.ts.
 const SUNA_ELIGIBILITY_BUDGET_MS = 12_000;
 const SUNA_ELIGIBILITY_DEGRADED: SunaEligibilityPayload = {
   eligible: false,

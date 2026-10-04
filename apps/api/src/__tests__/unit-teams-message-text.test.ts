@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { stripTeamsMentions, teamsMessageText } from '../channels/teams/util';
+import { stripTeamsMentions, teamsMessageText } from '../services/channels/teams/util';
 
 // What the agent reads of a Teams message. The prompt used the command
 // parser's flattener, which turned every run of whitespace into one space and

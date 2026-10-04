@@ -19,7 +19,7 @@ const jwtActor = async (c: CtxLike, accountId: string) => ({
 });
 
 /**
- * Bypass the ONE write path (`iam/assignments`).
+ * Bypass the ONE write path (`services/iam/assignments`).
  *
  * Every grant goes through `assignRole` now, and it is no longer best-effort:
  * before the cutover a legacy INSERT made the grant and the canonical call only
@@ -50,7 +50,7 @@ export interface AssignmentMockHooks {
 export function mockIamAssignments(hooks: AssignmentMockHooks = {}): void {
   const SYSTEM_ACTOR = Symbol.for('kortix.iam.system-actor');
   let seq = 0;
-  mock.module('../../iam/assignments', () => ({
+  mock.module('../../services/iam/assignments', () => ({
     SYSTEM_ACTOR,
     assignRole: async (_writer: unknown, accountId: string, input: any) => {
       hooks.onGrant?.({ accountId, ...input });
@@ -112,7 +112,7 @@ export function mockIamAssignments(hooks: AssignmentMockHooks = {}): void {
  *
  *  `authorize` / `assertAuthorized` / `listAccessible` are re-exported from
  *  `../iam` but LIVE in `./authorize`, so the mock MUST target that module —
- *  mocking the barrel alone leaves the direct importers (projects/lib/access.ts,
+ *  mocking the barrel alone leaves the direct importers (services/projects/lib/access.ts,
  *  billing, git) on the real engine, which then hits unmocked tables. */
 export function mockIamEngineAllowAll(
   onAssertAuthorized?: (action: string) => void | Promise<void>,
@@ -122,11 +122,11 @@ export function mockIamEngineAllowAll(
   // the suites whose db mock does not model that table, so bypassing the engine
   // has to mean bypassing the whole IAM read path — otherwise the actor build
   // throws and the route 500s before the allow-all engine is ever consulted.
-  // Every export of `iam/actor` is redeclared, not spread: `mock.module`
+  // Every export of `services/iam/actor` is redeclared, not spread: `mock.module`
   // replaces the module WHOLESALE, so a missing name is a SyntaxError in every
   // other importer — and a top-level `await import` of the real module races the
   // suites that call this at module scope (TDZ on the awaited binding).
-  mock.module('../../iam/actor', () => ({
+  mock.module('../../services/iam/actor', () => ({
     KORTIX_PENDING_PRINCIPAL_NAMESPACE: 'b8d1f9c6-0a7e-4a2f-9d3b-5e6c7a8b9c01',
     pendingPrincipalId: (email: string) => email,
     actingPrincipal: (a: { userId: string }) => ({ type: 'user', id: a.userId }),
@@ -160,7 +160,7 @@ export function mockIamEngineAllowAll(
       ctx: {},
     }),
   }));
-  mock.module('../../iam/authorize', () => ({
+  mock.module('../../services/iam/authorize', () => ({
     authorize: async () => ({ allowed: true, reason: 'role' }),
     assertAuthorized: async (_actor: unknown, action: string) => {
       await onAssertAuthorized?.(action);
@@ -174,7 +174,7 @@ export function mockIamEngineAllowAll(
       _type: string,
       ids: readonly string[],
     ) => [...ids],
-    // The object-grant memo. `projects/lib/agent-access` reads it to build the
+    // The object-grant memo. `services/projects/lib/agent-access` reads it to build the
     // AGENT CANDIDATE list, so it has to be declared here — `mock.module`
     // replaces the module wholesale, and a missing name is a SyntaxError in
     // every other importer. Empty map = this project scopes no agent, which is
@@ -199,7 +199,7 @@ export function mockIamEngineAllowAll(
  *
  * The hermetic contract suites model the legacy shapes (`account_members`,
  * `project_members`, …) in a hand-rolled db shim keyed on drizzle table objects.
- * `iam/read-models` reads `role_assignments` with a join those shims answer with
+ * `services/iam/read-models` reads `role_assignments` with a join those shims answer with
  * `[]`, so a route asking "what role does this person hold" would get `member`
  * for an owner. Rather than teach seven shims a sixth table, the module is
  * mocked to project from the rows the suite already maintains.
@@ -237,7 +237,7 @@ export function mockIamReadModels(rows: ReadModelRows = {}): void {
   const strongest = (values: string[]): string | null =>
     values.reduce<string | null>((best, v) => (!best || (rank[v] ?? 0) > (rank[best] ?? 0) ? v : best), null);
 
-  mock.module('../../iam/read-models', () => ({
+  mock.module('../../services/iam/read-models', () => ({
     isAccountManagerRole: (role: string | null | undefined) => role === 'owner' || role === 'admin',
     legacyToCanonicalPrincipal: (t: string) =>
       t === 'member' ? 'user' : t === 'token' ? 'service_account' : t === 'group' ? 'group' : null,

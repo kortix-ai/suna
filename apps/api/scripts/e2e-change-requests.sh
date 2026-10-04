@@ -92,7 +92,7 @@ mkdir -p "$REPO_ROOT"
 Used by apps/api/scripts/e2e-change-requests.sh.
 EOF
   mkdir -p src
-  cat > src/index.ts <<'EOF'
+  cat > src/app/index.ts <<'EOF'
 export function greet(name: string): string {
   return 'Hello, ' + name + '!';
 }

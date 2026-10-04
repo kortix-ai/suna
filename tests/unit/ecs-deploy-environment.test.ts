@@ -97,7 +97,7 @@ describe('ECS task environment overrides', () => {
     const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
     const deployScript = readFileSync(resolve(root, 'infra/scripts/ecs-deploy.sh'), 'utf8');
     const snapshotBuilder = readFileSync(
-      resolve(root, 'apps/api/src/snapshots/builder.ts'),
+      resolve(root, 'apps/api/src/services/snapshots/builder.ts'),
       'utf8',
     );
     const apiDeploy = workflow.slice(

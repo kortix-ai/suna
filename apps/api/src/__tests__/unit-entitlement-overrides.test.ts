@@ -21,7 +21,7 @@ import {
   toStoredOverrides,
   validateOverridePatch,
   withoutOverrideKeys,
-} from '../billing/services/entitlement-overrides';
+} from '../services/billing/services/entitlement-overrides';
 
 const NOW = Date.UTC(2026, 0, 15, 12, 0, 0);
 const HOUR = 3_600_000;

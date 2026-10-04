@@ -92,7 +92,7 @@ export async function memberMayReadProject(
   request?: { mfaAal: string | undefined },
 ): Promise<boolean> {
   const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
-    import('../../iam/actor'), import('../../iam/authorize'), import('../../iam/actions'),
+    import('../iam/actor'), import('../iam/authorize'), import('../iam/actions'),
   ]);
   const mfaAal = request ? request.mfaAal : 'aal2';
   return (await authorize(actorForUser(userId, accountId, { mfaAal }), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;

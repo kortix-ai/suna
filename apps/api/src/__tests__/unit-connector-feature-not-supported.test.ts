@@ -28,7 +28,7 @@ import {
   FEATURE_NOT_SUPPORTED_CODE,
   type ConnectorPrincipal,
   type ConnectorRouterDeps,
-} from '../connectors/router';
+} from '../http/connectors/router';
 
 const PROJECT = 'proj-1';
 const ALICE = 'user-alice';

@@ -4,7 +4,7 @@ export const TEAM_CREDITS_PER_SEAT = 2500;
 
 /**
  * Dollar value of one seat's monthly grant — the API's
- * `INCLUDED_CREDITS_PER_SEAT_USD` (apps/api/src/billing/services/tiers.ts),
+ * `INCLUDED_CREDITS_PER_SEAT_USD` (apps/api/src/services/billing/services/tiers.ts),
  * expressed here in the web app's credit terms.
  *
  * DERIVED, not typed in a second time. A hardcoded copy of this number in the

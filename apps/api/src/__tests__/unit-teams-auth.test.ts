@@ -17,7 +17,7 @@ const {
   mintTeamsToken,
   prewarmTeamsBotToken,
   teamsConfigured,
-} = await import('../channels/teams-auth');
+} = await import('../services/channels/teams-auth');
 
 interface FetchCall {
   url: string;

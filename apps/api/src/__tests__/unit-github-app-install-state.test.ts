@@ -22,7 +22,7 @@ import {
 import {
   buildAccountGitHubSetupRedirect,
   resolveGitHubInstallCallbackAction,
-} from '../platform/routes/github-app';
+} from '../http/platform/github-app';
 // buildGitHubAppInstallState is exported from github.ts for testability (it's
 // a pure HMAC-base64url function with no side effects; the only caller is
 // buildGitHubAppInstallUrl, which feeds the token into a GitHub URL).

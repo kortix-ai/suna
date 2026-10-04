@@ -2,7 +2,7 @@
  * Enterprise-demo unlock helper.
  *
  * `PUT /v1/accounts/:accountId/iam/enterprise-demo` is PLATFORM-ADMIN-ONLY
- * (apps/api/src/accounts/iam/enterprise-demo.ts): enabling the demo is an
+ * (apps/api/src/http/accounts/iam/enterprise-demo.ts): enabling the demo is an
  * operator decision made from the admin console, so the account OWNER — even
  * with `account.write` — now gets 403 `{code:'admin_required'}`. Flows that
  * need a fresh fixture account entitled for the rbac/sso/scim surface must go

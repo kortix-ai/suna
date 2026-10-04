@@ -4,7 +4,7 @@
  * `app/api/kortix/[...path]/route.ts`.
  *
  * Deny-by-default. This is deliberately NARROWER than what a project-scoped
- * Kortix PAT can do (`apps/api/src/middleware/auth.ts`'s
+ * Kortix PAT can do (`apps/api/src/http/middleware/auth.ts`'s
  * `enforceTokenProjectScope`) — that gate protects ONE project's token from
  * reaching other projects; this one protects an entire Kortix ACCOUNT (the
  * operator's, behind `KORTIX_API_KEY`) from an unbounded number of wrapper end

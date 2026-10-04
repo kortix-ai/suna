@@ -1,5 +1,5 @@
 /**
- * GET /connectors/projects/:id/connectors (`listConnectors`, `../connectors/db-deps.ts`)
+ * GET /connectors/projects/:id/connectors (`listConnectors`, `../services/connectors/db-deps.ts`)
  * ran one `listEntitledConnectorConnections` call PER connector — twice for
  * every Composio connector (once for its "authorized" check, once for its
  * accounts list) — each of which re-checked the service-account flag,
@@ -25,8 +25,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, connectionCredentials, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { dbConnectorRouterDeps } from '../connectors/db-deps';
-import { ensureProjectComputer } from '../connectors/sync';
+import { dbConnectorRouterDeps } from '../services/connectors/db-deps';
+import { ensureProjectComputer } from '../services/connectors/sync';
 import { runWithContext } from '../lib/request-context';
 import { stageSnapshot } from '../lib/server-timing';
 import { encryptProjectSecret } from '../services/secrets/secrets';

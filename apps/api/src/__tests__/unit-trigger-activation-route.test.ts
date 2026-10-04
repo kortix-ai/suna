@@ -78,7 +78,7 @@ describe('trigger activation route ordering', () => {
 
   test('triggers.ts registers the static activation route BEFORE the :slug routes', () => {
     const source = readFileSync(
-      join(import.meta.dir, '..', 'projects', 'routes', 'triggers.ts'),
+      join(import.meta.dir, '..', 'http', 'projects', 'triggers.ts'),
       'utf8',
     );
     // Quote-agnostic (triggers.ts may use single or double quotes after formatting).

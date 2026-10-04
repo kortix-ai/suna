@@ -40,7 +40,7 @@ export const BASE_MOVE_CHANNEL = 'kortix_config_base_moved';
 
 /**
  * A second channel on the SAME connection: "a tunnel RPC forward row changed"
- * (`tunnel/core/cluster-forwarder.ts`). The payload is one id and nothing else:
+ * (`services/tunnel/core/cluster-forwarder.ts`). The payload is one id and nothing else:
  * the target replica's instance id for a new row, the request id for a result.
  * The writer sends it with `pg_notify` inside the statement that writes the
  * row, on the request pool, so this module opens no connection for it.

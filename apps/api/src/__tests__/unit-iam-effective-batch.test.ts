@@ -21,8 +21,8 @@ import {
   resolveBatchProbes,
   type AuthorizeFn,
   type BatchProbe,
-} from '../accounts/iam/batch-probes';
-import type { Actor } from '../iam/actor';
+} from '../services/accounts/iam/batch-probes';
+import type { Actor } from '../services/iam/actor';
 
 const ACCOUNT = 'acct-1';
 // `resolveBatchProbes` now takes the SAME Actor the real gate takes (the probe

@@ -63,7 +63,7 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   });
 
   test('the dev process does not reload .env after dotenvx injects launch overrides', () => {
-    expect(packageJson.scripts.dev).toContain('bun --no-env-file run --hot src/index.ts');
+    expect(packageJson.scripts.dev).toContain('bun --no-env-file run --hot src/app/index.ts');
   });
 
   test('a suite that discovers no files refuses to report success', () => {

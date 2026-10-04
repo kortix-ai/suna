@@ -1,7 +1,6 @@
-import { auth } from '../../openapi';
 import { config } from '../../lib/config';
-import { validateAccountToken } from '../../repositories/account-tokens';
-import { validateSecretKey } from '../../repositories/api-keys';
+import { validateAccountToken } from '../repositories/account-tokens';
+import { validateSecretKey } from '../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../lib/crypto';
 import { db } from '../../lib/db';
 import { mintInstallationTokenHealing } from '../github/installation-healing';
@@ -18,22 +17,22 @@ import { accountGithubInstallationStates, accountGithubInstallations, accountTok
 import type { AgentGrant } from '@kortix/db';
 import { and, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-// Imported from the leaf modules, not the `../../iam` barrel: this file is
+// Imported from the leaf modules, not the `../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
 // SyntaxErrors far from anything they're testing.
 import { invalidateRequestMemo, requestMemo } from '../../lib/request-context';
-import { PROJECT_ACTIONS } from '../../iam/actions';
-import { authorize } from '../../iam/authorize';
-import { actorForToken } from '../../iam/actor';
-import type { RequestContext } from '../../iam/actor';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from '../../projects/lib/serializers';
+import { PROJECT_ACTIONS } from '../iam/actions';
+import { authorize } from '../iam/authorize';
+import { actorForToken } from '../iam/actor';
+import type { RequestContext } from '../iam/actor';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from '../projects/lib/serializers';
 import { normalizeJsonObject } from '../../lib/json';
-import type { GitPrincipal } from '../../git-proxy/ref-policy';
+import type { GitPrincipal } from '../git-proxy/ref-policy';
 import {
   workspaceMetadataAllowsRepositoryAccess,
 } from '../sessions/session-workspace-access';
-import { repositoryGeneration } from '../../projects/lib/repository-generation';
+import { repositoryGeneration } from '../projects/lib/repository-generation';
 
 /**
  * Every account connection, NEWEST first. The order is explicit because
@@ -1140,7 +1139,7 @@ async function authorizeGitProxyUncached(
     // run only for a foreign-account token, so any member of the owning account
     // could mint a personal PAT and clone or push `main` of a project they hold
     // no role on. A session PAT keeps its own-branch ref policy
-    // (git-proxy/ref-policy.ts); a cross-account session still needs the role.
+    // (services/git-proxy/ref-policy.ts); a cross-account session still needs the role.
     if (!sessionPrincipal || result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
@@ -1218,7 +1217,7 @@ async function authorizeGitProxyUncached(
         // Not a session box — a MONITOR box authenticates with the same token
         // class but lives in `project_monitor_boxes` (it has no session row by
         // design). It clones the repo at default-branch HEAD through this proxy.
-        const { loadMonitorBoxForToken } = await import('../../projects/lib/monitor-ingest');
+        const { loadMonitorBoxForToken } = await import('../projects/lib/monitor-ingest');
         const monitorBox = await loadMonitorBoxForToken({
           projectId,
           accountId: result.accountId,
@@ -1233,7 +1232,7 @@ async function authorizeGitProxyUncached(
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
       // A session's git authority is its own branch and nothing else — see
-      // git-proxy/ref-policy.ts. Refuse rather than widen if the row somehow
+      // services/git-proxy/ref-policy.ts. Refuse rather than widen if the row somehow
       // carries no branch: an unnamed branch would make the allowlist empty in
       // one direction and unbounded in the other, depending on how it is read.
       if (!sandbox.branchName) {

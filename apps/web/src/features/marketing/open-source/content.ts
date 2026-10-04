@@ -58,10 +58,10 @@
  *  8. Do NOT claim you can fork someone else's company / project, or publish
  *     your own. The `registry:project` machinery ships, but the catalog holds
  *     exactly one project item — Kortix's own starter
- *     (`apps/api/src/marketplace/catalog.ts:487` `buildStarterKitProjectItem`;
+ *     (`apps/api/src/services/marketplace/catalog.ts:487` `buildStarterKitProjectItem`;
  *     `packages/starter/src/index.test.ts:459` pins the template list to `[]`),
  *     and there is no publish route at all
- *     (`apps/api/src/marketplace/index.ts` is read-only + admin source
+ *     (`apps/api/src/http/marketplace/index.ts` is read-only + admin source
  *     registration). This section makes neither claim.
  *  9. Do NOT write that secrets are invisible to the model. A granted runtime
  *     secret is a real env value any command in the session can read.

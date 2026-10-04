@@ -7,12 +7,12 @@ import {
   INTERNAL_SESSION_TITLE_KEY_NAME,
   createGatewayKey,
   deleteGatewayKey,
-} from '../../llm-gateway/gateway-keys';
-import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
+} from '../llm-gateway/gateway-keys';
+import { toWireModel } from '../llm-gateway/resolution/effective';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { db } from '../../lib/db';
 import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './opencode-title';
-import type { ProjectSessionRow } from '../../projects/lib/serializers';
+import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 
 // Kortix-owned session titles — the single source of `metadata.name`.
@@ -315,8 +315,8 @@ async function resolveFallbackModel(
   excludedModel?: string,
 ): Promise<string | null> {
   const [{ accountMayUseManagedModels }, resolution] = await Promise.all([
-    import('../../billing/services/entitlements'),
-    import('../../llm-gateway/resolution/default-model'),
+    import('../billing/services/entitlements'),
+    import('../llm-gateway/resolution/default-model'),
   ]);
   const scope = {
     userId: input.userId,

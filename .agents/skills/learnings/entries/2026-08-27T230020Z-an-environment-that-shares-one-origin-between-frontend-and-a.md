@@ -6,7 +6,7 @@ commit: 5ad74b8838
 # An environment that shares ONE origin between frontend and API must enumerate every path the API serves outside the common prefix
 
 **When:** editing the preview edge (`buildPreviewCaddyfile`), or mounting a
-route in `apps/api/src/index.ts` anywhere other than under `/v1`.
+route in `apps/api/src/app/index.ts` anywhere other than under `/v1`.
 Deployed environments give the API a host of its own, so every path it serves
 reaches it and prefix questions never arise. A preview shares one origin with
 the frontend and splits by prefix, and the `@api` matcher listed only `/v1*`.

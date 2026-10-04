@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 
 let authCalls = 0;
 
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: () => Promise<void>) => {
     authCalls += 1;
     c.set('user', {
@@ -21,7 +21,7 @@ describe('marketplace HTTP contract', () => {
   beforeAll(async () => {
     process.env.KORTIX_DEFAULT_MARKETPLACES = '';
     process.env.KORTIX_MARKETPLACE_REGISTRIES = '';
-    const { marketplaceApp } = await import('../marketplace');
+    const { marketplaceApp } = await import('../http/marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
     server = Bun.serve({ port: 0, fetch: app.fetch });

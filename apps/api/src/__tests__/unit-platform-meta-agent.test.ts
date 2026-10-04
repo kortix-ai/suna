@@ -5,9 +5,9 @@ import {
   buildPlatformMetaOpenCodeConfig,
   platformMetaAgentGrant,
   resolvePlatformMetaSandbox,
-} from '../projects/lib/platform-meta-agent';
-import { resolveFeatureFlag } from '../feature-flags/registry';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
+} from '../services/projects/lib/platform-meta-agent';
+import { resolveFeatureFlag } from '../services/feature-flags/registry';
+import { resolveManifestVerdict } from '../services/projects/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {

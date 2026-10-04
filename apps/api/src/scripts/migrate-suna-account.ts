@@ -21,10 +21,10 @@ import { Database } from 'bun:sqlite';
 import { sql } from 'drizzle-orm';
 import { db } from '../lib/db';
 import { getDaytona } from '../services/sandboxes/daytona/client';
-import { normalizeAgentpressThread, type AgentpressMessageRow, type NormalizedMessage } from '../projects/suna-migration/agentpress-mapper';
-import { writeConversations, type SessionToWrite } from '../projects/suna-migration/opencode-db-writer';
-import { extractWorkspace, slugify } from '../projects/suna-migration/suna-extract';
-import { pushBundleAsRepo } from '../projects/suna-migration/suna-push';
+import { normalizeAgentpressThread, type AgentpressMessageRow, type NormalizedMessage } from '../services/projects/suna-migration/agentpress-mapper';
+import { writeConversations, type SessionToWrite } from '../services/projects/suna-migration/opencode-db-writer';
+import { extractWorkspace, slugify } from '../services/projects/suna-migration/suna-extract';
+import { pushBundleAsRepo } from '../services/projects/suna-migration/suna-push';
 
 function arg(flag: string): string | undefined {
   const i = Bun.argv.indexOf(flag);
@@ -165,7 +165,7 @@ async function main() {
   //    → db). Needs the full infra (GitHub App, Daytona, reachable KORTIX_URL).
   //    Run against STAGING first, bounded with --limit. ──
   if (mode === 'apply') {
-    const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../projects/suna-migration/suna-migration-runner');
+    const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../services/projects/suna-migration/suna-migration-runner');
     console.log(`Starting migration (limit ${limit ?? 25}, offset ${offset ?? 0}) for ${accountId} …`);
     const { migration } = await startSunaMigration({
       database: db, accountId: accountId!, autoDrive: false,

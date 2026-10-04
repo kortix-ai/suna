@@ -1,4 +1,4 @@
-import { PPWARM_PREFIX, SCOPED_PPWARM_PREFIX } from '../src/snapshots/quota-gc-select';
+import { PPWARM_PREFIX, SCOPED_PPWARM_PREFIX } from '../src/services/snapshots/quota-gc-select';
 
 /**
  * Complete names of the two RETIRED per-project warm image formats. The baker is

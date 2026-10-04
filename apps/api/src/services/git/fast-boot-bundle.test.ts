@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { buildProjectSeedFiles } from '../../projects/seed-files';
+import { buildProjectSeedFiles } from '../projects/seed-files';
 import {
   buildScaffoldDeltaBundle,
   buildSingleParentDeltaBundle,

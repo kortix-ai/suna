@@ -29,7 +29,7 @@ outside is how this stayed unexplained.
 prod ("not connecting anymore, basically EVERY time"), rendered as
 `Reconnecting in Ns (code 1006)`. Root cause reproduced on the LOCAL stack with
 no Cloudflare and no ALB in the path, which is what ruled out the edge.
-*Enforcer:* `apps/api/src/sandbox-proxy/ws-proxy-keepalive.test.ts` pins that both
+*Enforcer:* `apps/api/src/services/sandbox-proxy/ws-proxy-keepalive.test.ts` pins that both
 legs are pinged, that one leg throwing does not skip the other, and that the
 interval clears the measured 60 s cut twice over. There is still NO end-to-end
 coverage of the PTY WebSocket in `tests/` — `grep -rn "kortix/pty" tests/` was

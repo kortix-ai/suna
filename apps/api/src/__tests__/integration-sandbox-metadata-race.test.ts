@@ -107,7 +107,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
 
   describe('egress pin vs restart claim', () => {
     test('a restart claim committed while the pin is in flight survives the pin', async () => {
-      const { pinSandboxEgressIp } = await import('../platform/services/sandbox-egress-pin');
+      const { pinSandboxEgressIp } = await import('../services/platform/services/sandbox-egress-pin');
       await interleave(
         (tx) =>
           tx.query(
@@ -127,7 +127,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('first pin wins: a second pin never moves the address', async () => {
-      const { pinSandboxEgressIp } = await import('../platform/services/sandbox-egress-pin');
+      const { pinSandboxEgressIp } = await import('../services/platform/services/sandbox-egress-pin');
       await pinSandboxEgressIp(SANDBOX_ID, '203.0.113.7');
       await pinSandboxEgressIp(SANDBOX_ID, '198.51.100.9');
       expect((await readMetadata()).egress_ip).toBe('203.0.113.7');
@@ -135,7 +135,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
 
     test('an empty-string pin counts as unpinned and is replaced', async () => {
       await seed({ egress_ip: '' });
-      const { pinSandboxEgressIp } = await import('../platform/services/sandbox-egress-pin');
+      const { pinSandboxEgressIp } = await import('../services/platform/services/sandbox-egress-pin');
       await pinSandboxEgressIp(SANDBOX_ID, '203.0.113.7');
       expect((await readMetadata()).egress_ip).toBe('203.0.113.7');
     });
@@ -145,7 +145,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
         `UPDATE kortix.session_sandboxes SET metadata = NULL WHERE sandbox_id = $1`,
         [SANDBOX_ID],
       );
-      const { pinSandboxEgressIp } = await import('../platform/services/sandbox-egress-pin');
+      const { pinSandboxEgressIp } = await import('../services/platform/services/sandbox-egress-pin');
       await pinSandboxEgressIp(SANDBOX_ID, '203.0.113.7');
       expect(await readMetadata()).toEqual({ egress_ip: '203.0.113.7' });
     });
@@ -206,7 +206,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write from a row read before the claim does not erase it', async () => {
-      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../services/sessions/open/shared');
       const { claimInPlaceRestart } = await import('../services/sessions/lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
@@ -220,7 +220,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write merges its clocks and keeps keys written after its read', async () => {
-      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../services/sessions/open/shared');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb
@@ -240,7 +240,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start wake mark from a row read before the claim does not erase it', async () => {
-      const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
+      const { markRuntimeWakeStarted } = await import('../services/sessions/open/shared');
       const { claimInPlaceRestart } = await import('../services/sessions/lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
@@ -256,7 +256,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start wake mark merges and keeps keys written after its read', async () => {
-      const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
+      const { markRuntimeWakeStarted } = await import('../services/sessions/open/shared');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb

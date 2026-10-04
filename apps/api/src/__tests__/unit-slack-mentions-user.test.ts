@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mentionsUser } from '../channels/slack/util';
+import { mentionsUser } from '../services/channels/slack/util';
 
 // The predicate both mention gates route on. It decides "was I the one
 // addressed", so it has two ways to be wrong and they cost opposite things:

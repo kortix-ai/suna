@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
-import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
+import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../services/projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 /**

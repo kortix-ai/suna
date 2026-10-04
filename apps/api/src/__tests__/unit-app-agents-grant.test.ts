@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { agentsGrantingApp } from '../apps/routes';
+import { agentsGrantingApp } from '../http/apps/routes';
 
 describe('agentsGrantingApp — kortix.yaml agents.<name>.apps', () => {
   const agents = {

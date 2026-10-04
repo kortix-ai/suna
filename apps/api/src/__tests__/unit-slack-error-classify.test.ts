@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyTurnError, parseBalance, TEAMS_TURN_ERROR_COMMANDS } from '../channels/slack/errors';
+import { classifyTurnError, parseBalance, TEAMS_TURN_ERROR_COMMANDS } from '../services/channels/slack/errors';
 
 describe('classifyTurnError', () => {
   test('out of credits — 402 status', () => {

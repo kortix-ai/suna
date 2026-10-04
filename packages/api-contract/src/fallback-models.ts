@@ -102,7 +102,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     // client-sent `temperature`, so advertising support here would make
     // OpenCode send one and 400 the turn whenever this fallback catalog is
     // in effect. Must match capabilitiesOf() in the served catalog
-    // (apps/api/src/llm-gateway/models/catalog-models.ts).
+    // (apps/api/src/services/llm-gateway/models/catalog-models.ts).
     temperature: false,
     limit: { context: 1_050_000, output: 64_000 },
   },
@@ -191,7 +191,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
  *  Used when the live managed fetch is unavailable, so a managed model is
  *  present in OpenCode's provider map even with a stale baked catalog AND a
  *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
- *  apps/api/src/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
+ *  apps/api/src/services/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
  *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
 export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
   Object.entries(MINIMAL_FALLBACK_MODELS).filter(

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canSeeSensitiveMemberColumns } from '../accounts/core/member-visibility';
+import { canSeeSensitiveMemberColumns } from '../services/accounts/core/member-visibility';
 
 // The member DIRECTORY is visible to everyone in the account (all rows are
 // returned). This gate is ONLY about the sensitive per-member columns — PAT

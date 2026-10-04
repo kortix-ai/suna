@@ -17,7 +17,7 @@ import { C, help, pad, status } from '../style.ts';
 // while this configures ongoing gateway behavior. The split mirrors the API's
 // own taxonomy — `/oauth` + `/secrets` (credentials) vs `/gateway/*` (this).
 // Every handler wraps one `/projects/:id/gateway/*` route 1:1, so the CLI
-// stays a thin, faithful client (see apps/api/src/projects/routes/gateway.ts).
+// stays a thin, faithful client (see apps/api/src/http/projects/gateway.ts).
 
 const HELP = help`Usage: kortix gateway <subcommand> [options]
 

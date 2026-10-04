@@ -196,7 +196,7 @@ describe('checkDeployment', () => {
   });
 });
 
-/** The shape the API serves at GET /v1/auth/client-config (apps/api/src/auth/headless.ts). */
+/** The shape the API serves at GET /v1/auth/client-config (apps/api/src/http/auth/headless.ts). */
 const CLIENT_CONFIG = {
   supabase_url: 'https://auth.kortix.example.com',
   supabase_anon_key: 'anon-key-synthetic',

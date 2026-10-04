@@ -1,11 +1,11 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from 'zod';
-import { SLACK_BOT_SCOPES } from '../channels/slack-manifest';
+import { SLACK_BOT_SCOPES } from '../services/channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
   parseFallbackPolicies,
-} from '../llm-gateway/routing/policy-config';
+} from '../services/llm-gateway/routing/policy-config';
 
 hydrateEnvironmentSecret();
 
@@ -172,7 +172,7 @@ const envSchema = z.object({
   KORTIX_PUBLIC_AUTH_PROVIDERS: z.string().optional(),
   // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
   // API checks an HS256 access token's signature and expiry locally instead of
-  // asking GoTrue on every request (auth/jwt-verify.ts). Optional: without it
+  // asking GoTrue on every request (services/auth/jwt-verify.ts). Optional: without it
   // HS256 tokens keep the per-request GoTrue round trip.
   SUPABASE_JWT_SECRET: optStr,
   // How long a GoTrue confirmation that an HS256 token's session is still live
@@ -212,7 +212,7 @@ const envSchema = z.object({
   // (`{env}-p{port}-{sandbox}.{domain}`). Unset on managed cloud, where it is
   // derived as `p.<registrable domain of KORTIX_URL>`; set it on a self-host
   // whose DNS does not fit that shape. A deployment with neither keeps previews
-  // on the path proxy. See sandbox-proxy/preview-hosts.ts.
+  // on the path proxy. See services/sandbox-proxy/preview-hosts.ts.
   KORTIX_PREVIEW_BASE_DOMAIN: optStr,
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
@@ -288,7 +288,7 @@ const envSchema = z.object({
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
-  // (see openapi/index.ts filterSpecPaths); this flag lets a hardened self-host
+  // (see http/openapi/index.ts filterSpecPaths); this flag lets a hardened self-host
   // deployment turn the whole docs/spec surface OFF so no route shapes publish.
   OPENAPI_PUBLIC_DOCS: optBoolTrue,
   // Self-host enterprise license: when the operator has purchased/holds a
@@ -296,14 +296,14 @@ const envSchema = z.object({
   // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
   // audit access) regardless of the account's billing tier — see
   // getAccountEntitlements()/accountHasEntitlement() in
-  // billing/services/entitlements.ts. Off by default; billing is irrelevant
+  // services/billing/services/entitlements.ts. Off by default; billing is irrelevant
   // for a self-host license check, unlike the `demoEnterprise` per-account
   // preview toggle this mirrors.
   ENTERPRISE_LICENSE_AVAILABLE: optBoolFalse,
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
   // except a platform admin (KORTIX_PLATFORM_ADMIN_EMAILS — see
-  // iam/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
+  // services/iam/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
   // the removed KORTIX_SINGLE_ACCOUNT_MODE: signups still work, teams/orgs
   // still fully function, SSO/JIT still lands users in their org — only the
   // CREATION of new accounts by ordinary users is gated. The personal-account
@@ -397,7 +397,7 @@ const envSchema = z.object({
   SLACK_CLIENT_SECRET: optStr,
   SLACK_REDIRECT_URI: optStr,
   // Derived from the SINGLE scope source of truth (SLACK_BOT_SCOPES in
-  // channels/slack-manifest.ts) so OAuth always grants exactly what the manifest
+  // services/channels/slack-manifest.ts) so OAuth always grants exactly what the manifest
   // declares — no hand-synced drift. 100% bot-token scopes; the integration
   // never requests a user token (no user_scope= param).
   SLACK_OAUTH_SCOPES: optStrDefault(SLACK_BOT_SCOPES.join(',')),
@@ -419,7 +419,7 @@ const envSchema = z.object({
   // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
   // serve every tenant; the per-conversation tenant id arrives on each inbound
   // activity. Outbound auth is a short-lived AAD token minted per scope at call
-  // time (channels/teams-auth.ts) — there is no static bot token to store.
+  // time (services/channels/teams-auth.ts) — there is no static bot token to store.
   MICROSOFT_APP_ID: optStr,
   MICROSOFT_APP_PASSWORD: optStr,
   // The bot's home tenant. Multi-tenant bots authenticate against the shared
@@ -432,7 +432,7 @@ const envSchema = z.object({
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
   // Whether the Teams channel is offered is NOT an operator env var — it is the
-  // per-project `teams` feature flag (feature-flags/registry.ts).
+  // per-project `teams` feature flag (services/feature-flags/registry.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -529,7 +529,7 @@ const envSchema = z.object({
   OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
   // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
-  // router/config/proxy-services.ts), so only base URLs are read there.
+  // services/router/config/proxy-services.ts), so only base URLs are read there.
   XAI_API_URL: optUrl('https://api.x.ai/v1'),
   GEMINI_API_URL: optUrl('https://generativelanguage.googleapis.com/v1beta'),
   GROQ_API_URL: optUrl('https://api.groq.com/openai/v1'),
@@ -552,7 +552,7 @@ const envSchema = z.object({
   // ── Daytona — Sandbox provisioning (conditional: required if daytona provider enabled) ──
   // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
   // boots from a per-project snapshot built by the snapshot builder
-  // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
+  // (apps/api/src/services/snapshots/builder.ts). A shared/global fallback image
   // would silently bypass per-project Dockerfiles and is explicitly
   // disallowed.
   DAYTONA_API_KEY: optStr,
@@ -654,7 +654,7 @@ const envSchema = z.object({
 
   // ── Config releases (optional) ──────────────────────────────────────────
   // Config archives go through the API's ONE object store
-  // (src/object-store/s3.ts), same as project snapshots above, with their own
+  // (src/lib/object-store/s3.ts), same as project snapshots above, with their own
   // bucket/prefix so that naming a config bucket never starts the snapshot
   // producer (which the snapshot bucket setting gates).
   //   dev/staging/prod: the environment's S3 bucket, credentials from the AWS
@@ -745,7 +745,7 @@ const envSchema = z.object({
   // longer reach, NOT the primary stop. It used to be derived from
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES above, which welded an idle-policy knob to
   // a provider-safety knob; see providerAutoStopBackstopMinutes() in
-  // platform/providers/index.ts for why the two must move independently.
+  // services/platform/providers/index.ts for why the two must move independently.
   // Unrelated to AUTOARCHIVE_MINUTES despite the shared 720: that one is
   // measured from the moment a box STOPS, this one from its last inbound
   // request while running.
@@ -859,7 +859,7 @@ const envSchema = z.object({
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
   // Mobile push notifications through the Expo Push API
-  // (notifications/expo-push.ts). The access token is optional: Expo accepts
+  // (services/notifications/expo-push.ts). The access token is optional: Expo accepts
   // unauthenticated sends unless the project enables enhanced push security.
   EXPO_ACCESS_TOKEN: optStr,
   // Kill switch for session push notifications. On by default; `0` or `false`
@@ -911,7 +911,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
-// here plus a case in `getProvider()` in platform/providers/index.ts.
+// here plus a case in `getProvider()` in services/platform/providers/index.ts.
 export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
   'daytona',
   'platinum',
@@ -1042,7 +1042,7 @@ function validateEnv(): z.infer<typeof envSchema> {
 
   // ── Config archives → the ONE object store ──────────────────────────────
   // A project that turns on `config_releases` publishes config archives
-  // through the API's one object store (src/object-store/s3.ts); there is no
+  // through the API's one object store (src/lib/object-store/s3.ts); there is no
   // second store and no fallback path that quietly writes somewhere else.
   // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
   // for every box. A warning, not an error: the store is a cache, and a
@@ -1364,7 +1364,7 @@ export const config = {
   // ─── Daytona (Sandbox provisioning + preview proxy) ───────────────────────
   // No DAYTONA_SNAPSHOT here — see comment in the env schema above. Every
   // sandbox boots from its project-specific snapshot resolved at session
-  // start time by apps/api/src/snapshots/builder.ts.
+  // start time by apps/api/src/services/snapshots/builder.ts.
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,

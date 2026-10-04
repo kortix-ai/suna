@@ -56,8 +56,8 @@ describe('toolConnectSteps', () => {
   // act, so the account it authorizes must be the project's shared one.
   //
   // The connector-scoped connect route defaults an ABSENT owner to `me`
-  // (`apps/api/src/projects/lib/connection-access.ts:94`, then
-  // `apps/api/src/connectors/db-deps.ts:2325`), which routes to
+  // (`apps/api/src/services/projects/lib/connection-access.ts:94`, then
+  // `apps/api/src/services/connectors/db-deps.ts:2325`), which routes to
   // `ensureMemberConnection` and lands a `member`-owned row owned by whoever
   // clicked. Verified live: a connect with no owner produced
   // `owner_type=member owner_id=<caller>` labelled "Private connection", while
@@ -81,7 +81,7 @@ describe('toolConnectSteps', () => {
   });
 
   // The owner MUST match the connect. The finalize route defaults an absent
-  // owner to `me` the same way (`apps/api/src/connectors/db-deps.ts:2439`) and
+  // owner to `me` the same way (`apps/api/src/services/connectors/db-deps.ts:2439`) and
   // then selects the row by `ownerType = 'member' AND ownerId = caller`, so a
   // `project` authorization finalized without the owner polls the caller's own
   // member connection and never reports the shared account active. Same rule

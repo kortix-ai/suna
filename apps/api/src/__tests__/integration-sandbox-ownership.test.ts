@@ -3,7 +3,7 @@ import { createDb, platformSettings, sessionEnvironments, sessionSandboxes, type
 import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { config } from '../lib/config';
-import { sandboxDatabaseOwner, sandboxOwnershipMarker } from '../platform/sandbox-ownership';
+import { sandboxDatabaseOwner, sandboxOwnershipMarker } from '../services/platform/sandbox-ownership';
 import { PlatinumProvider } from '../services/sandboxes/platinum/runtime';
 import { reapOrphanProviderBoxes } from '../services/sandboxes/reaping/orphan-boxes';
 import { hasProviderBoxReference } from '../services/sandboxes/reaping/orphan-box-references';

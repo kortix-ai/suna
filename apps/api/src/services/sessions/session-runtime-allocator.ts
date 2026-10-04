@@ -3,14 +3,14 @@ import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import type { SandboxProviderName } from '../../lib/config';
 import { logger } from '../../lib/logger';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { ProvisionTimeline } from '../platform/services/provision-timeline';
+import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { db } from '../../lib/db';
 import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../sandboxes/runtime-identity-error';
 import { transitionSession } from './lifecycle/status-transitions';
 import type { PreparedInitialSandboxTurn } from './session-turn-ledger';
-import type { ProjectRow } from '../../projects/lib/serializers';
+import type { ProjectRow } from '../projects/lib/serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
 

@@ -34,10 +34,10 @@ mock.module('../../lib/logger', () => ({
 
 const { deadCredentialLogDecision, isDeadCredential, markDeadCredential, resetDeadCredentialLogForTests } =
   await import('./dead-credential-log');
-const { installHttpErrors } = await import('../../middleware/http-errors');
+const { installHttpErrors } = await import('../../http/middleware/http-errors');
 
 // What resolvePat throws for a dead credential: the typed deadCredential401
-// body, marked. middleware/auth.test.ts pins that deadCredential401 itself
+// body, marked. http/middleware/auth.test.ts pins that deadCredential401 itself
 // marks; this file pins what the mark does at the error handler.
 function deadCredential401Like(): HTTPException {
   const err = new HTTPException(401, {

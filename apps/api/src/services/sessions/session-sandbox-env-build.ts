@@ -18,9 +18,9 @@ import { config } from '../../lib/config';
 
 
 
-import { repointRetiredSessionModel } from '../../llm-gateway/resolution/session-model-repoint';
-import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
+import { repointRetiredSessionModel } from '../llm-gateway/resolution/session-model-repoint';
+import { accountMayUseManagedModels } from '../billing/services/entitlements';
+import { sandboxFrontendBaseUrl } from '../platform/sandbox-frontend-url';
 
 
 
@@ -36,14 +36,14 @@ import { resolveSessionSecretGrant } from '../secrets/secret-grant';
 
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets/secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secrets/secret-capabilities';
-import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from '../../projects/lib/compile-agent-config';
+import { piPackageBundleForSession } from '../pi-packages/bundle';
+import { manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession, selectSessionHarness } from '../projects/lib/compile-agent-config';
 
 
 
 
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from '../sandboxes/sandbox-env-names';
-import { deriveKortixApiRoot, proxyGitUrl } from '../../projects/lib/serializers';
+import { deriveKortixApiRoot, proxyGitUrl } from '../projects/lib/serializers';
 
 export { proxyGitUrl };
 
@@ -58,12 +58,12 @@ import { sessionChannelEnvFromMetadata } from './session-channel-env';
 
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveFeatureFlag } from '../feature-flags/registry';
+import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
-import { buildPlatformMetaOpenCodeConfig } from '../../projects/lib/platform-meta-agent';
+import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
 
-import { resolveSessionPersonalOwner } from '../../projects/lib/personal-resources';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 
 
 export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
@@ -376,7 +376,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // open/ensure) already shares, before the box boots on a dead id. No-op for
   // native mode (no gateway, no managed catalog) and for the overwhelming
   // common case (a still-servable or non-managed pin) — see
-  // llm-gateway/resolution/session-model-repoint.ts.
+  // services/llm-gateway/resolution/session-model-repoint.ts.
   let opencodeModel = input.opencodeModel ?? null;
   if (input.llmGatewayEnabled && opencodeModel) {
     opencodeModel = await repointRetiredSessionModel(opencodeModel, {

@@ -10,7 +10,7 @@ import {
  * The 409 the connection-scoped connect route answers for a connector's
  * EFFECTIVE project default.
  *
- * `apps/api/src/projects/routes/connection-actions.ts` (INVARIANT, 2026-09-16 `account_required`
+ * `apps/api/src/http/projects/connection-actions.ts` (INVARIANT, 2026-09-16 `account_required`
  * rule) blocks that route for the sole active project-owned row even when
  * nothing is pinned, and names the route the client must use instead. It is the
  * only 409 that handler returns.

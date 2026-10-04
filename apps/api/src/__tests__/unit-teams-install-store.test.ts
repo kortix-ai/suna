@@ -38,7 +38,7 @@ mock.module('../services/secrets/secrets', () => ({
       : {},
 }));
 
-const { loadTeamsInstall } = await import('../channels/install-store');
+const { loadTeamsInstall } = await import('../services/channels/install-store');
 
 afterAll(() => {
   mock.restore();

@@ -15,8 +15,8 @@ const record = (fn: string) => (...args: unknown[]) => {
 
 let postBlocksResult: string | null = '99.99';
 let postMessageResult: string | null = '88.88';
-const actualSlackApi = await import('../channels/slack-api');
-mock.module('../channels/slack-api', () => ({
+const actualSlackApi = await import('../services/channels/slack-api');
+mock.module('../services/channels/slack-api', () => ({
   ...actualSlackApi,
   openDmChannel: async () => null,
   postEphemeral: async (...a: unknown[]) => record('postEphemeral')(...a),
@@ -33,8 +33,8 @@ mock.module('../channels/slack-api', () => ({
 
 // ─── turn.ts (consumed by questions.ts) ───────────────────────────────────────
 let activeTurn: Record<string, unknown> | null = null;
-const actualTurn = await import('../channels/slack/turn');
-mock.module('../channels/slack/turn', () => ({
+const actualTurn = await import('../services/channels/slack/turn');
+mock.module('../services/channels/slack/turn', () => ({
   ...actualTurn,
   loadTurn: async () => activeTurn,
   finalizeTurn: async (...a: unknown[]) => record('finalizeTurn')(...a),
@@ -43,8 +43,8 @@ mock.module('../channels/slack/turn', () => ({
 
 // ─── dispatch.ts (consumed by interactivity.ts) ───────────────────────────────
 let spawnArgs: unknown[] | null = null;
-const actualDispatch = await import('../channels/slack/dispatch');
-mock.module('../channels/slack/dispatch', () => ({
+const actualDispatch = await import('../services/channels/slack/dispatch');
+mock.module('../services/channels/slack/dispatch', () => ({
   ...actualDispatch,
   spawnAgentTurn: async (...a: unknown[]) => {
     spawnArgs = a;
@@ -52,7 +52,7 @@ mock.module('../channels/slack/dispatch', () => ({
   dispatchSlackEvent: async () => {},
 }));
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
   saveSlackOauthInstall: async () => {},
 }));
@@ -75,8 +75,8 @@ mock.module('../lib/db', () => ({
 // No real network for respondViaUrl's fetch.
 globalThis.fetch = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
 
-const { postQuestion } = await import('../channels/slack/questions');
-const { handleBlockAction } = await import('../channels/slack/interactivity');
+const { postQuestion } = await import('../services/channels/slack/questions');
+const { handleBlockAction } = await import('../services/channels/slack/interactivity');
 
 beforeEach(() => {
   slackCalls = [];

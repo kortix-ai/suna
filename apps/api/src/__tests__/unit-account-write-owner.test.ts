@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 const writes: Array<{ fn: 'upsert' | 'update'; accountId: string; patch: Record<string, unknown> }> =
   [];
 let storedRow: Record<string, unknown> | null = null;
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => storedRow,
   upsertCreditAccount: async (accountId: string, patch: Record<string, unknown>) => {
     writes.push({ fn: 'upsert', accountId, patch });
@@ -16,7 +16,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   },
 }));
 const invalidated: string[] = [];
-mock.module('../billing/services/billing-cache', () => ({
+mock.module('../services/billing/services/billing-cache', () => ({
   invalidateAccountBilling: (accountId?: string) => {
     invalidated.push(accountId ?? '*');
   },
@@ -27,7 +27,7 @@ const {
   accountIsAdminPinned,
   applyAdminOverride,
   applyStripeSync,
-} = await import('../billing/services/account-write-owner');
+} = await import('../services/billing/services/account-write-owner');
 
 const ACCT = 'acct_1';
 const actor = { userId: 'admin_1', action: 'test.write' };

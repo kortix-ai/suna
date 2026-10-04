@@ -9,7 +9,7 @@ import {
   extractProjectPolicies,
   projectPoliciesToTomlEntries,
   projectPolicySettingsToToml,
-} from '../projects/policies';
+} from '../services/projects/policies';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function parseFrom(body: string) {

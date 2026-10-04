@@ -10,7 +10,7 @@
  * These flows replace the former mock security suites with real over-the-wire
  * requests.
  *
- * Boundary source of truth: apps/api/src/middleware/auth.ts
+ * Boundary source of truth: apps/api/src/http/middleware/auth.ts
  *   - apiKeyAuth / supabaseAuth / combinedAuth: missing/garbage/expired bearer
  *     → 401; revoked PAT/api-key → 401.
  *   - enforceTokenProjectScope(): a project-scoped PAT may only touch its bound

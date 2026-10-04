@@ -26,9 +26,9 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { upsertConnectionCredential } from '../connectors/credentials';
-import { assignRole, revokeAssignment, SYSTEM_ACTOR } from '../iam/assignments';
-import { clearAuthorizeCaches } from '../iam/authorize';
+import { upsertConnectionCredential } from '../services/connectors/credentials';
+import { assignRole, revokeAssignment, SYSTEM_ACTOR } from '../services/iam/assignments';
+import { clearAuthorizeCaches } from '../services/iam/authorize';
 import {
   listEntitledConnectorConnections,
   sessionConnectorBindingsRequirePrivateVisibility,

@@ -12,7 +12,7 @@
 // The launcher contributes "may run this agent" and their own personal
 // resources, never their role. This module is the web's read of that model:
 // the pure intersection (unit-tested beside it) and the one hook that loads
-// the IAM half. Enforcement is server-side (`apps/api/src/iam/authorize.ts`);
+// the IAM half. Enforcement is server-side (`apps/api/src/services/iam/authorize.ts`);
 // nothing here decides access.
 
 import {
@@ -241,7 +241,7 @@ export interface AgentAuthorityState {
 /** The whole agent-authority read for one agent: ceiling and intersection.
  *
  *  There is no project switch for this model. Enforcement stays server-side
- *  (`apps/api/src/iam/agent-principal.ts`). */
+ *  (`apps/api/src/services/iam/agent-principal.ts`). */
 export function useAgentAuthority({
   projectId,
   accountId,

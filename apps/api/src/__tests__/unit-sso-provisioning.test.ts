@@ -9,7 +9,7 @@ import {
   buildSamlAttributeMapping,
   deleteSupabaseSamlProvider,
   registerSupabaseSamlProvider,
-} from '../accounts/iam/sso-provisioning';
+} from '../services/accounts/iam/sso-provisioning';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 afterEach(() => {

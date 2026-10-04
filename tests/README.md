@@ -606,7 +606,7 @@ defect:
   environment. Journeys asserting "this page issued no failing request" use it
   instead of a blanket `status >= 500`.
 - `pollApiStatus` polls an assertion that follows a REVOKE for up to 20s.
-  `apps/api/src/iam/cache-invalidation.ts` busts its authz memo
+  `apps/api/src/services/iam/cache-invalidation.ts` busts its authz memo
   process-locally, so on multi-replica staging a revoke can take up to one ~15s
   TTL window to become visible on a sibling replica.
 - `helpers/database.ts:pollDatabaseRows` polls a read-back that follows a UI

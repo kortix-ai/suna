@@ -9,8 +9,8 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db } from '../lib/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
 
 const minted: string[] = [];
 let ctx: { projectId: string; accountId: string; userId: string } | null = null;

@@ -32,7 +32,7 @@
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
-} from '../../connectors/connector-alias';
+} from '../connectors/connector-alias';
 
 export type RescopeSecretsResult =
   | {

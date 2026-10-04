@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { startErrorMessage } from '../channels/slack/start-error';
+import { startErrorMessage } from '../services/channels/slack/start-error';
 
 // Honest, actionable copy for EVERY create-path failure a Slack turn can hit.
 // Before this, only 402/429/404 were mapped; every other status (and the

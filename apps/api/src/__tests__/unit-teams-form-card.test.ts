@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { TEAMS_FORM_VERB, buildFormCard } from '../channels/teams/cards';
+import { TEAMS_FORM_VERB, buildFormCard } from '../services/channels/teams/cards';
 
 /**
  * Teams' only rich surface is the Adaptive Card, and a card can carry real
@@ -8,7 +8,7 @@ import { TEAMS_FORM_VERB, buildFormCard } from '../channels/teams/cards';
  * nowhere because no verb handled it.
  *
  * The card is built server-side so the submit verb, the field ids and the
- * branding cannot drift — `channels/teams/interactivity.ts` reads the answers
+ * branding cannot drift — `services/channels/teams/interactivity.ts` reads the answers
  * back under exactly this verb.
  */
 describe('buildFormCard', () => {

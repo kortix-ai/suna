@@ -11,7 +11,7 @@ set statement_timeout = '30s';
 --
 -- `role_assignments.scope_id` references `projects.project_id`, but nothing
 -- tied the row's `account_id` to that project's account. The API now refuses
--- such a write (`assertProjectInAccount` in apps/api/src/iam/assignments.ts),
+-- such a write (`assertProjectInAccount` in apps/api/src/services/iam/assignments.ts),
 -- and the engine's project readers filter by the project's account. This
 -- trigger is the same rule at the storage layer, for every writer: the API,
 -- the legacy mirror triggers, and support scripts.

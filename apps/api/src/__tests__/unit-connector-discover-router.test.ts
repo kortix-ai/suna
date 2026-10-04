@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createConnectorRouter, type ConnectorRouterDeps } from '../connectors/router';
+import { createConnectorRouter, type ConnectorRouterDeps } from '../http/connectors/router';
 
 const PROJECT = 'proj-discover';
 const ADMIN = { 'x-test-admin': 'user-1' };

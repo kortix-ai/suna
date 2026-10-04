@@ -6,7 +6,7 @@ commit: 1941510b5e
 # Renaming or replacing the default agent is TWO writes — the manifest AND `project.metadata.default_agent`, which wins
 
 **When:** a CR renames, removes, or replaces the agent named by `default_agent`
-in `kortix.yaml`. `resolveGovernedAgentGrant` (`apps/api/src/projects/agents.ts`)
+in `kortix.yaml`. `resolveGovernedAgentGrant` (`apps/api/src/services/projects/agents.ts`)
 resolves the `default` sentinel from `opts.projectDefaultAgent` (the DB mirror)
 BEFORE `loaded.defaultAgent` (the manifest). A CR merge does not refresh the DB
 mirror, so the old name keeps winning and every default-agent launch (web

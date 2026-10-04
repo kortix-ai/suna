@@ -8,16 +8,16 @@ import {
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   stageRuntimeBuildContext,
-} from '../../../snapshots/build-context';
-import { shortLivedObservation } from '../../../snapshots/observation-cache';
+} from '../../snapshots/build-context';
+import { shortLivedObservation } from '../../snapshots/observation-cache';
 import { isE2BConcurrentBuildConflict, waitForConcurrentE2BBuild } from './images-build-conflict';
 import type {
   BuildLogTap,
   BuildableTemplate,
   ProviderState,
   SandboxProviderAdapter,
-} from '../../../snapshots/providers/index';
-import { normalizeExistingProviderState } from '../../../snapshots/providers/state';
+} from '../../snapshots/providers/index';
+import { normalizeExistingProviderState } from '../../snapshots/providers/state';
 
 interface E2BTemplateView {
   templateID: string;

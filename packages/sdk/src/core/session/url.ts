@@ -500,7 +500,7 @@ export function rewriteLocalhostUrl(
   // The proxied app sees itself at root `/`, so absolute paths, redirects
   // (Location: /foo), service workers, WebSockets, and any framework that
   // assumes root-mounting all work natively. The API has a top-level Bun
-  // fetch handler (apps/api/src/sandbox-proxy/preview-origin.ts) that matches
+  // fetch handler (apps/api/src/services/sandbox-proxy/preview-origin.ts) that matches
   // this hostname pattern, validates first-request auth, and forwards.
   // Label-encoded exactly like the deployed form: a hostname cannot carry an
   // uppercase ULID or the `_` in `sbx_…`, and the API resolves either form of

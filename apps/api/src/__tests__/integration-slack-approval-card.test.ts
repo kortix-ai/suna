@@ -17,9 +17,9 @@ import {
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import * as realSlackApi from '../channels/slack-api';
-import * as realDispatch from '../channels/slack/dispatch';
-import * as realInstallStore from '../channels/install-store';
+import * as realSlackApi from '../services/channels/slack-api';
+import * as realDispatch from '../services/channels/slack/dispatch';
+import * as realInstallStore from '../services/channels/install-store';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -30,7 +30,7 @@ const modals: unknown[] = [];
 const spawned: Array<{ text: string; user: string }> = [];
 const ephemeral: string[] = [];
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   ...realSlackApi,
   postBlocks: async (_t: string, channel: string, _x: string, blocks: unknown[], threadTs?: string) => {
     posted.push({ channel, threadTs, blocks });
@@ -45,13 +45,13 @@ mock.module('../channels/slack-api', () => ({
     return true;
   },
 }));
-mock.module('../channels/slack/dispatch', () => ({
+mock.module('../services/channels/slack/dispatch', () => ({
   ...realDispatch,
   spawnAgentTurn: async (_p: string, _e: unknown, event: { text: string; user: string }) => {
     spawned.push({ text: event.text, user: event.user });
   },
 }));
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
@@ -61,10 +61,10 @@ globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
   return new Response('ok');
 }) as unknown as typeof fetch;
 
-const { postApprovalCard, markApprovalCardDecided } = await import('../channels/approval-card-relay');
-const { handleBlockAction, handleViewSubmission } = await import('../channels/slack/interactivity');
-const { approvalActionId } = await import('../channels/slack/approval-card');
-const { decideConnectorApproval, loadApprovalRow } = await import('../projects/lib/connector-approval-decision');
+const { postApprovalCard, markApprovalCardDecided } = await import('../services/channels/approval-card-relay');
+const { handleBlockAction, handleViewSubmission } = await import('../services/channels/slack/interactivity');
+const { approvalActionId } = await import('../services/channels/slack/approval-card');
+const { decideConnectorApproval, loadApprovalRow } = await import('../services/projects/lib/connector-approval-decision');
 
 const TEAM = 'T0APPROVAL';
 const CHANNEL = 'C0APPROVAL';

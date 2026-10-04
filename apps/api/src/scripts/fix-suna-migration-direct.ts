@@ -18,8 +18,8 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
 import { db } from '../lib/db';
-import { extractStep, repoStep, pushStep, dbStep } from '../projects/suna-migration/suna-migration-phases';
-import { latestSunaMigration, type SunaMigrationContext } from '../projects/suna-migration/suna-migration-runner';
+import { extractStep, repoStep, pushStep, dbStep } from '../services/projects/suna-migration/suna-migration-phases';
+import { latestSunaMigration, type SunaMigrationContext } from '../services/projects/suna-migration/suna-migration-runner';
 
 function arg(flag: string): string | undefined {
   const i = Bun.argv.indexOf(flag);

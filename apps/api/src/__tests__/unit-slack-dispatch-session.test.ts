@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import type { ProjectSessionRow } from '../projects/lib/serializers';
+import type { ProjectSessionRow } from '../services/projects/lib/serializers';
 import type { SessionDeliveryOutcome } from '../services/sessions/lifecycle';
 
 // Persist the headline invariant of the Slack channel refactor: a known thread
@@ -57,8 +57,8 @@ mock.module('../lib/db', () => ({
   db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
   hasDatabase: () => true,
 }));
-const realIam = await import('../iam');
-mock.module('../iam', () => ({
+const realIam = await import('../services/iam');
+mock.module('../services/iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
@@ -79,7 +79,7 @@ const followUpPlans: Array<Record<string, unknown>> = [];
 let unavailableModel: string | undefined;
 let accessibleAgents = true;
 let startResult: { status: 'created' | 'queued'; sessionId?: string; reason?: string; error?: { status: 409 | 503; body: { code: string } } } | null = null;
-mock.module('../channels/model-access', () => ({
+mock.module('../services/channels/model-access', () => ({
   agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
   planChannelSessionStart: async () => ({ model: null, unavailableModel }),
@@ -88,7 +88,7 @@ mock.module('../channels/model-access', () => ({
     return null;
   },
 }));
-mock.module('../channels/slack/model-choice', () => ({
+mock.module('../services/channels/slack/model-choice', () => ({
   applySlackModelChoice: async () => '',
   buildSlackModelsResponse: async () => ({ response_type: 'ephemeral' }),
   slackChannelIsDm: (id: string) => id.startsWith('D'),
@@ -119,7 +119,7 @@ mock.module('../services/sessions/lifecycle', () => ({
 let finalizeCalls: Array<{ error?: string; answer?: string }> = [];
 let ephemerals: Array<{ channel: string; user: string; text: string; threadTs?: string }> = [];
 let messages: Array<{ channel: string; text: string; threadTs?: string }> = [];
-mock.module('../channels/slack/turn', () => ({
+mock.module('../services/channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
@@ -141,8 +141,8 @@ mock.module('../channels/slack/turn', () => ({
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
 
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
@@ -166,14 +166,14 @@ mock.module('../channels/install-store', () => ({
 // Labels have their own tests (unit-slack-message-labels); here they would
 // consume entries from the ordered `dbResults` queue these lifecycle tests use.
 // Slack names the bot `Kortix`; every other mention stays unlabelled.
-mock.module('../channels/slack/labels', () => ({
+mock.module('../services/channels/slack/labels', () => ({
   slackMessageLabels: async ({ event }: { event: { text?: string } }) => ({
     channel: null,
     user: null,
     text: (event.text ?? '').replaceAll('<@B1>', '<@B1|Kortix>'),
   }),
 }));
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
@@ -200,10 +200,10 @@ mock.module('../channels/slack-api', () => ({
   updateMessage: async () => {},
 }));
 
-const { spawnAgentTurn, dispatchSlackEvent } = await import('../channels/slack/dispatch');
+const { spawnAgentTurn, dispatchSlackEvent } = await import('../services/channels/slack/dispatch');
 const { config } = await import('../lib/config');
-const { inboundMessageKey } = await import('../channels/slack/dedup');
-const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
+const { inboundMessageKey } = await import('../services/channels/slack/dedup');
+const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../services/channels/slack/session');
 const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
 
 const envelope = { team_id: 'T1', event: undefined } as any;

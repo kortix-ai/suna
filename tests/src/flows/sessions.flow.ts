@@ -780,7 +780,7 @@ flow(
 
 /**
  * SESS-16 — anonymous session-share VIEWING: `GET /v1/public/session-shares/:shareId`
- * and `.../messages`, mounted at `apps/api/src/public-session-shares/index.ts`
+ * and `.../messages`, mounted at `apps/api/src/http/public-session-shares/index.ts`
  * (public/session-shares/index.ts, no auth middleware). Closes the backend
  * gap `(public)/share/[shareId]` (apps/web `ShareViewer.tsx`) had flagged
  * in-code since #4124: that page has no public-share token in its route and

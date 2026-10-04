@@ -55,7 +55,7 @@ mock.module('../lib/db', () => ({
 }));
 
 const { checkBudget, releaseBudgetReservation, __resetBudgetReservationsForTests } = await import(
-  '../llm-gateway/budgets'
+  '../services/llm-gateway/budgets'
 );
 
 function principal(overrides: Partial<AuthedPrincipal> = {}): AuthedPrincipal {

@@ -20,7 +20,7 @@ import { config } from '../../lib/config';
 
 import * as realSecrets from '../secrets/secrets';
 import * as realSecretGrant from '../secrets/secret-grant';
-import type { ProviderName } from '../../platform/providers';
+import type { ProviderName } from '../platform/providers';
 import type { NetworkBoundarySecretBinding } from '../secrets/network-boundary';
 
 /** Which provider the single active sandbox row reports for the case in flight. */
@@ -85,7 +85,7 @@ mock.module('../secrets/network-secret-boundary', () => ({
   ],
 }));
 
-mock.module('../../sandbox-proxy/backend', () => ({
+mock.module('../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 

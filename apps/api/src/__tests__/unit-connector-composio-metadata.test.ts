@@ -3,7 +3,7 @@ import {
   composioConnectedAccountId,
   composioConnectionIsNoAuth,
   composioConnectionMetadata,
-} from '../connectors/db-deps';
+} from '../services/connectors/db-deps';
 
 describe('Composio connector connection metadata', () => {
   test('persists only non-secret connection-scoped authorization metadata', () => {

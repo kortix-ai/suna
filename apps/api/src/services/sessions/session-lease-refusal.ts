@@ -3,7 +3,7 @@
  * `provisioning`/`active`, and the caller-facing reason it maps to.
  *
  * WHY ITS OWN MODULE. Two unrelated modules need the same value:
- * `repositories/account-tokens.ts` produces it, and `llm-gateway/hooks.ts`
+ * `services/repositories/account-tokens.ts` produces it, and `services/llm-gateway/hooks.ts`
  * maps it to a message. Importing it from `account-tokens` would make every
  * test that mocks that module with a partial object fail to load the gateway
  * (`SyntaxError: Export named … not found`), and re-typing the string in both

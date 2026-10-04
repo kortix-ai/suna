@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { SandboxExecResult } from '../../platform/providers';
+import type { SandboxExecResult } from '../platform/providers';
 import {
   FIRST_CONVERGENCE_GRACE_S,
   LEGACY_BOOTSTRAP_COOLDOWN_MS,

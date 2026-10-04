@@ -47,8 +47,8 @@ mock.module('./client', () => ({
   },
 }));
 
-mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
-mock.module('../../../platform/sandbox-frontend-url', () => ({
+mock.module('../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
+mock.module('../../platform/sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.com',
 }));
 

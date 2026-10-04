@@ -73,7 +73,7 @@ describe('session-title origins — create-time title source', () => {
     ).toBe('the CI graph');
 
     const source = createBody(
-      'channels/telegram-webhook.ts',
+      'http/channels/telegram-webhook.ts',
       'const result = await createSession({',
     );
     expect(source).toContain('title_source: message.text ?? message.caption ?? null');
@@ -88,10 +88,10 @@ describe('session-title origins — create-time title source', () => {
     expect(body).not.toHaveProperty('initial_prompt');
     expect(titleSourceForCreate(body)).toBe('Invoice discrepancy for March');
 
-    const source = createBody('channels/email/session.ts', 'emailSessionLifecycle.createSession(');
+    const source = createBody('services/channels/email/session.ts', 'emailSessionLifecycle.createSession(');
     expect(source).not.toContain('initial_prompt');
     expect(source).toContain('title_source: messageSubject(event) ?? messageSummary(event)');
     // The full rendered envelope still reaches the agent via postCreate.
-    expect(read('channels/email/session.ts')).toContain("type: 'deliver_prompt'");
+    expect(read('services/channels/email/session.ts')).toContain("type: 'deliver_prompt'");
   });
 });

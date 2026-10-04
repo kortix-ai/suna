@@ -18,7 +18,7 @@ it; `timeout: false` (or `0`) does. The provider was still thinking.
 1. Every fetch on the model path passes `timeout: false`: gateway → provider
    (`upstreamFetch`, `packages/llm-gateway/src/upstream-fetch.ts`, used by
    both `callUpstream` and the AI-SDK transport), API relay → gateway
-   (`apps/api/src/llm-gateway/wire.ts`), box llm-proxy → API
+   (`apps/api/src/http/llm-gateway/wire.ts`), box llm-proxy → API
    (`kortix-sandbox-agent-server/src/llm-proxy.ts`). The gateway's explicit
    timeouts are the only ones on that path.
 2. A timeout you did not write is still yours to know about. When an error

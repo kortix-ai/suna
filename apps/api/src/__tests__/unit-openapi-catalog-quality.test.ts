@@ -6,7 +6,7 @@
  * the body fields their handler reads.
  */
 import { describe, expect, test } from 'bun:test';
-import { app } from '../index';
+import { app } from '../app/index';
 
 type Op = { summary?: string; requestBody?: { content?: Record<string, { schema?: any }> } };
 const doc: { paths: Record<string, Record<string, Op>> } = await (

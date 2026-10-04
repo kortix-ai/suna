@@ -2,7 +2,7 @@ import {
   buildSandboxUpstreamHeaders,
   resolveSandboxIngress,
   resolveServiceKey,
-} from '../../sandbox-proxy/backend';
+} from '../sandbox-proxy/backend';
 
 const DAEMON_PORT = 8000;
 

@@ -9,7 +9,7 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-const { billingApp } = await import('../billing');
+const { billingApp } = await import('../http/billing');
 
 describe('billing cron route auth', () => {
   test('rejects ordinary authenticated users before rotation code can run', async () => {

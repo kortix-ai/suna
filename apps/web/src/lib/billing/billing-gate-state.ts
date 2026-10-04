@@ -17,7 +17,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * told it had no plan by one surface and told its plan was fine by the next.
  * `can_run: false` means BLOCKED. It has never meant "no plan".
  *
- * The API now sends `billing_state` (apps/api/src/billing/services/billing-state.ts).
+ * The API now sends `billing_state` (apps/api/src/services/billing/services/billing-state.ts).
  * We prefer it, and derive the same answer client-side when talking to an older
  * API so a rolling deploy can't resurrect the wrong copy.
  */
@@ -72,7 +72,7 @@ export function resolveBillingState(
 
   // Fallback derivation for an API that predates `billing_state`.
   //
-  // It must mirror apps/api/src/billing/services/billing-state.ts exactly. Two
+  // It must mirror apps/api/src/services/billing/services/billing-state.ts exactly. Two
   // copies of this decision disagreeing is the defect class this module exists
   // to prevent, so every line below has a counterpart there.
   //

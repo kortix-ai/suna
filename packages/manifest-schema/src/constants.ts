@@ -144,7 +144,7 @@ export function formatDurationSeconds(seconds: number): string {
 // platform itself writes a `connectors:` entry with `provider: channel` into the
 // manifest when a Slack/email channel is connected (see connector/channel-manifest.ts), so
 // the gate must accept what the backend produces. MUST stay in sync with the
-// runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
+// runtime parser's PROVIDERS in apps/api/src/services/projects/connectors.ts — enforced
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
 // deliberately absent: it is synth-only and never written to a manifest.
 export const CONNECTOR_PROVIDERS = [
@@ -193,7 +193,7 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 /**
  * The permissions an agent's `kortix_permissions` grant may list — the
  * project-scoped surface (`kortix_cli` is the deprecated manifest alias).
- * MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
+ * MUST stay in sync with apps/api/src/services/iam/actions.ts PROJECT_ACTIONS —
  * every project-scoped action, including the manager-tier leaves
  * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`):
  * these are still reachable via a project's `manager` role, so an agent can be

@@ -5,7 +5,7 @@ import { deliveryCountsAsActivity } from './delivery-activity';
 /**
  * `metadata.last_activity_at` is what the sidebar sorts sessions by, and it was
  * written from exactly ONE place: the preview proxy, after its prompt dedupe
- * claim (`sandbox-proxy/forward/turn-start.ts`). That covers a prompt a BROWSER
+ * claim (`services/sandbox-proxy/forward/turn-start.ts`). That covers a prompt a BROWSER
  * sends.
  *
  * It does not cover a prompt the platform delivers itself — a coordinator

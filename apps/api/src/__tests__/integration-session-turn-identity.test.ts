@@ -16,7 +16,7 @@ import {
   channelPrompterForOnBehalfOf,
   clearSessionOnBehalfOfForPrompt,
   ON_BEHALF_OF_CLEARED_KEY,
-} from '../projects/lib/on-behalf-of';
+} from '../services/projects/lib/on-behalf-of';
 
 const ACCOUNT = crypto.randomUUID();
 const OTHER_ACCOUNT = crypto.randomUUID();

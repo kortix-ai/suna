@@ -1,5 +1,5 @@
 /**
- * Platform admin console API (apps/api/src/admin/index.ts, mounted at
+ * Platform admin console API (apps/api/src/http/admin/index.ts, mounted at
  * /v1/admin) + the admin-only maintenance write. Every route is guarded by
  * supabaseAuth + a platform-role check (admin/super_admin):
  *   ANON → 401, authed non-admin (the e2e OWNER) → 403.
@@ -497,7 +497,7 @@ flow(
         // guard) or a workflow re-run that reuses `github.run_id` leaves two
         // identically-named accounts and `$.total` becomes 2. That is what
         // failed the release gate. `accountId` is an exact-match predicate
-        // (apps/api/src/admin/index.ts:110), so `$.total` is 1 by construction.
+        // (apps/api/src/http/admin/index.ts:110), so `$.total` is 1 by construction.
         const r = await admin.get("/v1/admin/api/accounts", {
           query: { accountId: team.id, limit: "5" },
         });
@@ -880,7 +880,7 @@ flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/api/projects"] }, asyn
     // (core/client.ts retries POSTs with no idempotency guard) or a workflow
     // re-run that reuses `github.run_id` leaves two identically-named projects.
     // Unlike the accounts list this route has NO `projectId` filter
-    // (apps/api/src/admin/index.ts:551-562 — only search/accountId/status), so
+    // (apps/api/src/http/admin/index.ts:551-562 — only search/accountId/status), so
     // assert on THIS flow's own row instead of on how many rows came back.
     const ownRow = (r: { json: <T>() => T }): Record<string, unknown> => {
       const projects = (r.json<{ projects?: Record<string, unknown>[] }>().projects ?? []) as Record<
@@ -1011,7 +1011,7 @@ flow(
   },
 );
 
-// ADM-21 / ADM-22 — activity analytics (apps/api/src/admin/analytics.ts).
+// ADM-21 / ADM-22 — activity analytics (apps/api/src/http/admin/analytics.ts).
 //
 // These two routes carry NO middleware of their own: `analyticsApp` is mounted
 // inside `adminApp` BELOW its global `supabaseAuth` + `requireAdmin` gate and

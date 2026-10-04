@@ -1056,7 +1056,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
    * `SandboxProviderRow` writes `project.default_sandbox_provider`;
    * `listProjectSnapshots` derives its own `provider_mode`/`selected_provider`
    * from the SAME `projects.metadata.default_sandbox_provider` server-side
-   * (`apps/api/src/projects/routes/sandbox-templates.ts` -> `templateProviderObservation` ->
+   * (`apps/api/src/http/projects/sandbox-templates.ts` -> `templateProviderObservation` ->
    * `resolveConfiguredProjectProviderPin`). They agree at the source, but they
    * are two independent query caches and the switch only invalidates the
    * project one — so reading the pin off the snapshots payload would leave

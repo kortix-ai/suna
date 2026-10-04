@@ -27,7 +27,7 @@ describe('provider failover wiring', () => {
   });
 
   test('the provisioner honors providerLocked instead of "any provider is explicit"', async () => {
-    const source = await read('../../platform/services/session-sandbox.ts');
+    const source = await read('../platform/services/session-sandbox.ts');
     expect(source).toContain(
       'const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;',
     );
@@ -38,7 +38,7 @@ describe('provider failover wiring', () => {
   });
 
   test('the failover branch resolves its target through the pure, tested rule', async () => {
-    const source = await read('../../platform/services/session-sandbox.ts');
+    const source = await read('../platform/services/session-sandbox.ts');
     const helper = source.indexOf('nextFailoverProvider({');
     const failover = source.indexOf('failoverAttempted', helper);
     expect(helper).toBeGreaterThan(-1);
@@ -48,7 +48,7 @@ describe('provider failover wiring', () => {
   });
 
   test('failover writes the row\'s new provider first, and fails over only when that write lands', async () => {
-    const source = await read('../../platform/services/session-sandbox.ts');
+    const source = await read('../platform/services/session-sandbox.ts');
     const switchWrite = source.indexOf("switched = await transitionSandbox('reprovision'");
     const reassign = source.indexOf('providerName = next;');
     expect(switchWrite).toBeGreaterThan(-1);

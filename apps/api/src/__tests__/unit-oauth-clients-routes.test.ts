@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as realRepo from '../repositories/oauth-clients';
+import * as realRepo from '../services/repositories/oauth-clients';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -15,15 +15,15 @@ let denyAll = false;
 let store: Array<Record<string, unknown>> = [];
 let audits: Array<Record<string, unknown>> = [];
 
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   ACCOUNT_ACTIONS: { TOKEN_READ: 'token.read', TOKEN_CREATE: 'token.create', TOKEN_REVOKE: 'token.revoke', ACCOUNT_WRITE: 'account.write' },
   assertAuthorized: async (_actor: unknown, action: string) => {
     asserted.push(action);
     if (denyAll) throw new HTTPException(403, { message: `denied:${action}` });
   },
 }));
-mock.module('../iam/actor', () => ({ actorOf: async () => ({ userId: USER_ID, accountId: ACCOUNT_ID }) }));
-mock.module('../accounts/iam/helpers', () => ({
+mock.module('../services/iam/actor', () => ({ actorOf: async () => ({ userId: USER_ID, accountId: ACCOUNT_ID }) }));
+mock.module('../services/accounts/iam/helpers', () => ({
   auditIam: async (_c: unknown, args: Record<string, unknown>) => {
     audits.push(args);
   },
@@ -33,7 +33,7 @@ mock.module('../accounts/iam/helpers', () => ({
 }));
 
 let nextSecret = 0;
-mock.module('../repositories/oauth-clients', () => {
+mock.module('../services/repositories/oauth-clients', () => {
   const real = realRepo;
   const mk = (input: Record<string, unknown>) => ({
     clientId: `00000000-0000-4000-c000-${String(store.length + 1).padStart(12, '0')}`,
@@ -76,8 +76,8 @@ mock.module('../repositories/oauth-clients', () => {
   };
 });
 
-const { iamRouter } = await import('../accounts/iam/app');
-(await import('../accounts/iam/oauth-clients')).registerIamOauthClientsRoutes();
+const { iamRouter } = await import('../http/accounts/iam/app');
+(await import('../http/accounts/iam/oauth-clients')).registerIamOauthClientsRoutes();
 
 function createApp() {
   const app = new Hono();

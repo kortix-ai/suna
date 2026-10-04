@@ -1,7 +1,7 @@
 /**
  * Regression guard for the phantom-5xx signal on `POST /v1/projects/:id/sessions`.
  *
- * The request-completion middleware (`src/index.ts`) owns the top-level `status`
+ * The request-completion middleware (`src/app/index.ts`) owns the top-level `status`
  * field on a log line: it is THIS API's response status. The Better Stack
  * log-anomaly sweep counts every line with `status >= 500` as a 5xx response on
  * the route the line carries. `generateViaGateway` used to log the UPSTREAM

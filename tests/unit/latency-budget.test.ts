@@ -177,7 +177,7 @@ describe('parseServerTimingTurnMarks', () => {
   /**
    * The API rides its turn-path breakdown on the SAME `Server-Timing` header
    * every request already carries (`apps/api/src/lib/server-timing.ts`,
-   * `apps/api/src/middleware/upstream-timing.ts`), not a second custom
+   * `apps/api/src/http/middleware/upstream-timing.ts`), not a second custom
    * header — see that module's doc. Each turn stage is namespaced
    * `turnstage-<label>` so this parser recognizes every mark BY PREFIX,
    * robust to a concurrent branch renaming or adding a `ptl.mark(...)` call

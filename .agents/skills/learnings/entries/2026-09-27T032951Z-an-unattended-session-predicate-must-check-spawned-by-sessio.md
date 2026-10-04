@@ -24,7 +24,7 @@ back to release this".
 **Incident:** none yet — found while implementing bounded, idempotent
 auto-recovery for sessions whose sandbox died mid-turn
 (`runtime_gone`/class-B census, 2026-09-27). The existing `UNATTENDED_ORIGINS`
-set in `apps/api/src/projects/lib/on-behalf-of.ts` already encodes this
+set in `apps/api/src/services/projects/lib/on-behalf-of.ts` already encodes this
 distinction for a DIFFERENT purpose (whose personal resources an agent may
 reach) and does not cover spawned workers either, because `on_behalf_of` is
 inherited from `parentOnBehalfOf` for a spawned child, not derived from origin

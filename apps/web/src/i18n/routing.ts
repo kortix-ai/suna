@@ -57,7 +57,7 @@ const NON_PAGE_PREFIXES = [
 
 /**
  * A chat sign-in link: `/slack/login/<token>` or `/teams/login/<token>`, whose
- * token is `<payload>.<signature>` (apps/api/src/channels/core/signed-state.ts).
+ * token is `<payload>.<signature>` (apps/api/src/services/channels/core/signed-state.ts).
  */
 const CHAT_LOGIN_PAGE = /^\/(?:slack|teams)\/login\/[^/]+$/;
 

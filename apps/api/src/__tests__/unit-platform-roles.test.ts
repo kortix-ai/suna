@@ -15,7 +15,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { getPlatformRole, isPlatformAdmin } = await import('../iam/platform-roles');
+const { getPlatformRole, isPlatformAdmin } = await import('../services/iam/platform-roles');
 
 describe('platform roles', () => {
   beforeEach(() => {

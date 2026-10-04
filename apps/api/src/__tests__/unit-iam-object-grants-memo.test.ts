@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ttlMemo } from '../lib/ttl-memo';
 
-const source = readFileSync(join(import.meta.dir, '../iam/authorize.ts'), 'utf8');
+const source = readFileSync(join(import.meta.dir, '../services/iam/authorize.ts'), 'utf8');
 const flat = source.replace(/\s+/g, ' ');
 
 describe('loadObjectGrants memo — empty map caching', () => {

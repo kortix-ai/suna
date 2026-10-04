@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { creditGateExemptEnv } from '../router/services/credit-gate-env';
+import { creditGateExemptEnv } from '../services/router/services/credit-gate-env';
 
 // dev/preview QA exemption from the router credit gate — mirrors
 // accountIsFreeTierForModels' env carve-out (see unit-tier-model-entitlement).

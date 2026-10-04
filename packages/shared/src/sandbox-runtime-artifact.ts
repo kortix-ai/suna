@@ -35,7 +35,7 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
   // every in-sandbox `kortix connectors` call resolves its transport through this
   // file — a change to it changes the connector's behavior and MUST move the
   // snapshot's runtime identity. Left out, an edit here shipped a stale binary
-  // under an unchanged snapshot name (apps/api/src/snapshots/__tests__/cli-connector-closure.test.ts
+  // under an unchanged snapshot name (apps/api/src/services/snapshots/__tests__/cli-connector-closure.test.ts
   // is the guard that catches it).
   'src/api/sdk.ts',
   'src/api/sandbox-env.ts',

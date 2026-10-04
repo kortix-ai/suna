@@ -1,4 +1,4 @@
-import type { SandboxProvider } from '../../platform/providers';
+import type { SandboxProvider } from '../platform/providers';
 import type { SandboxTurnObservation, SessionTurnEndReason } from '../sessions/session-turn-ledger';
 
 /**

@@ -329,6 +329,6 @@ Validation rules on `POST /`:
 - `../../SKILL.md` — `<change-requests>` section, agent mandate.
 - `packages/db/src/schema/kortix.ts` — schema source (`changeRequests`
   table + `changeRequestStatusEnum`).
-- `apps/api/src/projects/index.ts` — REST handlers
+- `apps/api/src/http/projects/index.ts` — REST handlers
   (`/change-requests/...`).
 - `apps/cli/src/commands/cr.ts` — CLI implementation.

@@ -8,7 +8,7 @@ import {
   parseApprovalActionId,
   readApprovalReply,
   slackUserIdsIn,
-} from '../channels/slack/approval-card';
+} from '../services/channels/slack/approval-card';
 
 const EXEC = '0b0e7a52-6d1f-4a55-9f0e-3a3c3a1b2c4d';
 const card = {

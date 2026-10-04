@@ -19,7 +19,7 @@
  *     (a GC'd image ⇒ rebuild, not a stale activation).
  */
 import type { GitBackedProject } from '../../git';
-import type { SandboxProviderAdapter } from '../../../snapshots/providers';
+import type { SandboxProviderAdapter } from '../../snapshots/providers';
 import type { Database } from '@kortix/db';
 import {
   DEFAULT_MAX_BUILDING_MS,

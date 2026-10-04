@@ -11,9 +11,9 @@ import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-g
 // row below also opts in explicitly.
 process.env.LLM_GATEWAY_ENABLED = 'true';
 const { db } = await import('../lib/db');
-const { app } = await import('../index');
-const { createAccountToken } = await import('../repositories/account-tokens');
-const { PROJECT_ACTIONS } = await import('../iam');
+const { app } = await import('../app/index');
+const { createAccountToken } = await import('../services/repositories/account-tokens');
+const { PROJECT_ACTIONS } = await import('../services/iam');
 
 // Every capability checkbox must be authoritative: unchecking a leaf must DENY
 // its endpoint. These endpoints previously gated on a coarse floor only (or an

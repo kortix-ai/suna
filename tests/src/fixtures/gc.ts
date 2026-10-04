@@ -178,7 +178,7 @@ export async function ownedAccountIdsViaDb(db: GcDb, userId: string): Promise<st
  * `status` alone, so 186 "Connector Session" tokens kept authenticating after a
  * "successful" revoke and their agents kept hitting the staging gateway until it
  * reported `degraded`. The API side is fixed
- * (apps/api/src/repositories/account-tokens.ts), and this write no longer
+ * (apps/api/src/services/repositories/account-tokens.ts), and this write no longer
  * depends on that fix being present.
  *
  * The `OR status = 'active'` arm also heals any row already left in the

@@ -2,7 +2,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../../lib/logger';
 import { db } from '../../../lib/db';
-import { ProvisionTimeline } from '../../../platform/services/provision-timeline';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { markTriggerRuntimeDelivered } from '../../triggers/trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';

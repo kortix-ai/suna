@@ -40,7 +40,7 @@ mock.module('../services/sessions/kortix-user-context', () => ({
   encodeKortixUserContext: (payload: any, key: string) => `signed:${key}:${payload.userId}`,
 }));
 
-const { buildSandboxUpstreamHeaders } = await import('../sandbox-proxy/backend');
+const { buildSandboxUpstreamHeaders } = await import('../services/sandbox-proxy/backend');
 
 beforeEach(() => {
   mockPayload = { userId: 'u1', sandboxId: 'sbx' };

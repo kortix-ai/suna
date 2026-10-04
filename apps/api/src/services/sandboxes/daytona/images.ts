@@ -4,7 +4,7 @@
  * Wraps the Daytona SDK calls used by the rest of the snapshot system: build
  * a snapshot from a composed Dockerfile, query its live state, and delete it.
  * The "layered Dockerfile" composition (user Dockerfile + Kortix runtime
- * layer) is the responsibility of the caller (snapshots/builder.ts) — this
+ * layer) is the responsibility of the caller (services/snapshots/builder.ts) — this
  * adapter only knows about Daytona-specific request shapes and retries.
  */
 
@@ -20,15 +20,15 @@ import {
   KORTIX_ENTRYPOINT,
   type StagedContext,
   stageRuntimeBuildContext,
-} from '../../../snapshots/build-context';
-import { type InvalidatableObservation, shortLivedObservation } from '../../../snapshots/observation-cache';
+} from '../../snapshots/build-context';
+import { type InvalidatableObservation, shortLivedObservation } from '../../snapshots/observation-cache';
 import type {
   BuildLogTap,
   BuildableTemplate,
   ProviderState,
   SandboxProviderAdapter,
-} from '../../../snapshots/providers/index';
-import { normalizeExistingProviderState } from '../../../snapshots/providers/state';
+} from '../../snapshots/providers/index';
+import { normalizeExistingProviderState } from '../../snapshots/providers/state';
 
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_ATTEMPTS = 3;

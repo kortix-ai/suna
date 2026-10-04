@@ -10,7 +10,7 @@ mock.module('../lib/config', () => ({
 }));
 
 const { signTeamsLoginState, verifyTeamsLoginState, buildTeamsLoginUrl } = await import(
-  '../channels/teams/login'
+  '../services/channels/teams/login'
 );
 
 describe('teams login token', () => {

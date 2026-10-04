@@ -5,7 +5,7 @@ async function sessionsSource(): Promise<string> {
 }
 
 async function monitorBoxProvisionSource(): Promise<string> {
-  return Bun.file(new URL('../../projects/lib/monitor-box-provision.ts', import.meta.url)).text();
+  return Bun.file(new URL('../projects/lib/monitor-box-provision.ts', import.meta.url)).text();
 }
 
 describe('session fast boot Git hint cache', () => {
@@ -38,8 +38,8 @@ describe('session fast boot Git hint cache', () => {
       sessionsSource(),
       Bun.file(new URL('./session-runtime-allocator.ts', import.meta.url)).text(),
       Bun.file(new URL('./lifecycle/actions.ts', import.meta.url)).text(),
-      Bun.file(new URL('../../projects/routes/session-open-provision.ts', import.meta.url)).text(),
-      Bun.file(new URL('../../platform/services/session-sandbox.ts', import.meta.url)).text(),
+      Bun.file(new URL('./open/session-open-provision.ts', import.meta.url)).text(),
+      Bun.file(new URL('../platform/services/session-sandbox.ts', import.meta.url)).text(),
     ]);
 
     // The pi worker boot (harness/worker split) wraps the gate in a ternary:

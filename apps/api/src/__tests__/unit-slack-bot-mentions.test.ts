@@ -38,7 +38,7 @@ mock.module('../lib/db', () => ({
   db: { select: () => makeChain() },
   hasDatabase: () => true,
 }));
-mock.module('../channels/slack/turn', () => ({
+mock.module('../services/channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
@@ -57,8 +57,8 @@ mock.module('../channels/slack/turn', () => ({
   relayTurnStep: async () => {},
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackTokenForProject: async () => 'xoxb-test',
@@ -67,7 +67,7 @@ mock.module('../channels/install-store', () => ({
   listProjectsForWorkspace: async () => ['proj-1'],
   loadSlackInstall: async () => null,
 }));
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
@@ -88,7 +88,7 @@ mock.module('../channels/slack-api', () => ({
   updateMessage: async () => {},
 }));
 
-const { classifyEvent, isOwnBotEvent } = await import('../channels/slack/dispatch');
+const { classifyEvent, isOwnBotEvent } = await import('../services/channels/slack/dispatch');
 
 // Extract a whole top-level function body. Fixed-length slices (…, i + 2600)
 // silently stop reaching their assertions the moment the function grows, which
@@ -173,7 +173,7 @@ describe('source contracts', () => {
     // icon_url instead yields bot_message with NO user, and the self-loop guard
     // would stop matching. If this test ever reds, the fix is to key the guard on
     // a stored bot_id (auth.test returns one) — not to delete this test.
-    const dir = join(import.meta.dir, '..', 'channels', 'slack');
+    const dir = join(import.meta.dir, '..', 'services', 'channels', 'slack');
     const glob = new Bun.Glob('**/*.ts');
     const offenders: string[] = [];
     for (const rel of glob.scanSync({ cwd: dir })) {
@@ -203,7 +203,7 @@ describe('source contracts', () => {
 
 describe('a bot sender is never sent an identity prompt', () => {
   test('link-bot is routed and identity-flag gated', () => {
-    const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
+    const cmds = readFileSync(join(import.meta.dir, '..', 'services', 'channels', 'slack', 'commands.ts'), 'utf8');
     expect(cmds, 'the only way to make a bot resolvable is gone').toContain("case 'link-bot':");
     expect(cmds, 'link-bot must write the same chat_user_identities row /login does')
       .toContain("await linkChatIdentity(chatUser('slack', ctx.teamId, botUserId), me.userId, {");
@@ -231,7 +231,7 @@ describe('a bot sender is never sent an identity prompt', () => {
 // person) exactly as it matches a bot — so only Slack can tell them apart.
 
 describe('link-bot refuses anything that is not a verified bot', () => {
-  const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
+  const cmds = readFileSync(join(import.meta.dir, '..', 'services', 'channels', 'slack', 'commands.ts'), 'utf8');
   const handler = fnBody(cmds, 'slashLinkBot');
 
   test('Slack is asked whether the target is a bot, BEFORE the link is written', () => {
@@ -252,7 +252,7 @@ describe('link-bot refuses anything that is not a verified bot', () => {
   test('the link is always to the CALLER — never to a third party', () => {
     // This is what makes the relaxed gate safe: you can only ever delegate your
     // own authority, so there is no privilege to escalate.
-    const h = fnBody(readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8'), 'slashLinkBot');
+    const h = fnBody(readFileSync(join(import.meta.dir, '..', 'services', 'channels', 'slack', 'commands.ts'), 'utf8'), 'slashLinkBot');
     expect(h).toContain('userId: me.userId');
   });
 
@@ -262,7 +262,7 @@ describe('link-bot refuses anything that is not a verified bot', () => {
   });
 
   test('isBotUser itself fails closed', () => {
-    const api = readFileSync(join(import.meta.dir, '..', 'channels', 'slack-api.ts'), 'utf8');
+    const api = readFileSync(join(import.meta.dir, '..', 'services', 'channels', 'slack-api.ts'), 'utf8');
     const fn = api.slice(api.indexOf('export async function isBotUser'));
     // Scope the assertion to the !r.ok BLOCK. A greedy match across the whole
     // function passes even when this branch returns false, because two later
@@ -284,7 +284,7 @@ describe('link-bot refuses anything that is not a verified bot', () => {
 // work, and that is exactly what came back in the channel.
 
 describe('link-bot accepts what an operator will actually type', () => {
-  const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
+  const cmds = readFileSync(join(import.meta.dir, '..', 'services', 'channels', 'slack', 'commands.ts'), 'utf8');
   const h = fnBody(cmds, 'slashLinkBot');
 
   test('a plain name is resolved, not rejected', () => {
@@ -320,7 +320,7 @@ describe('link-bot accepts what an operator will actually type', () => {
 // review and a live test.
 
 describe('slack-api sends users.* as form-encoded, not JSON', () => {
-  const api = readFileSync(join(import.meta.dir, '..', 'channels', 'slack-api.ts'), 'utf8');
+  const api = readFileSync(join(import.meta.dir, '..', 'services', 'channels', 'slack-api.ts'), 'utf8');
 
   test('users.info passes form:true', () => {
     expect(api, 'users.info with a JSON body silently drops `user` and answers user_not_found')

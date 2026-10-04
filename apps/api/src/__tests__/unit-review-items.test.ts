@@ -11,7 +11,7 @@ import {
   isSubmittableKind,
   serializeReviewItem,
   statusesForSegment,
-} from '../projects/review-items';
+} from '../services/projects/review-items';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
 type ConnectorCallRow = typeof connectorCalls.$inferSelect;

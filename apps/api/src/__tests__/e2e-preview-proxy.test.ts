@@ -23,8 +23,8 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { runWithContext } from '../lib/request-context';
-import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
-import * as realProviders from '../platform/providers';
+import { classifyPtyWebSocketPath } from '../services/platform/providers/pty-ingress';
+import * as realProviders from '../services/platform/providers';
 import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import { __resetPromptModelSignatureCacheForTests } from '../services/sandboxes/sandbox-env-sync';
 
@@ -81,7 +81,7 @@ function mockSandboxRows(): any[] {
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
 // Auth mock — bypass combinedAuth
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   combinedAuth: async (c: any, next: any) => {
     const authHeader = c.req.header('Authorization');
     const cookieHeader = c.req.header('Cookie') || '';
@@ -132,7 +132,7 @@ mock.module('../lib/db', () => {
         // session_sandboxes. It must be classified BEFORE the loose sandbox
         // check and served a LIVE deadline, otherwise every wake in this file is
         // refused as expired and the auto-wake/retry assertions all fail. The
-        // refusal path itself is covered in sandbox-proxy/wake-deadline-guard.test.ts.
+        // refusal path itself is covered in services/sandbox-proxy/wake-deadline-guard.test.ts.
         const isDeadlineProbe = fieldKeys.length === 1 && fieldKeys[0] === 'deadlineAt';
         const isSandboxQuery =
           !isDeadlineProbe &&
@@ -207,14 +207,14 @@ mock.module('../services/sandboxes/sandbox-turn-lifecycle', () => ({
 // The turn-identity bind is one conditional UPDATE through `db.execute`, which
 // this file's `db` stub does not build. Its SQL is pinned by
 // integration-session-turn-identity.test.ts; here it only has to succeed.
-const realOnBehalfOf = await import('../projects/lib/on-behalf-of');
-mock.module('../projects/lib/on-behalf-of', () => ({
+const realOnBehalfOf = await import('../services/projects/lib/on-behalf-of');
+mock.module('../services/projects/lib/on-behalf-of', () => ({
   ...realOnBehalfOf,
   bindSessionTurnIdentity: async () => true,
 }));
 
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
-// `project.agent.read` on that agent before the re-mint (sandbox-proxy/forward/access.ts).
+// `project.agent.read` on that agent before the re-mint (services/sandbox-proxy/forward/access.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
 // leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
 // agent-switch assertion answer 502 instead of the 204 it is about.
@@ -222,11 +222,11 @@ mock.module('../projects/lib/on-behalf-of', () => ({
 // This file's subject is proxy FORWARDING, so the gate is held open here and the
 // gate itself — 403-before-re-mint, the requested agent as the resource, the
 // non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
-// in sandbox-proxy/routes/preview-agent-authz.test.ts.
+// in http/sandbox-proxy/preview-agent-authz.test.ts.
 // preview.ts imports `authorize` from the barrel and `actorForUser` from
-// `iam/actor` (both pure here — `actorForUser` builds an Actor with no DB read),
+// `services/iam/actor` (both pure here — `actorForUser` builds an Actor with no DB read),
 // so only the engine needs stubbing.
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
   authorize: async () => ({ allowed: true, reason: 'role' }),
 }));
@@ -265,8 +265,8 @@ mock.module('../services/sessions/preview-ownership', () => ({
 
 // The path-form WebSocket upgrade authenticates its `?token=`. One token is
 // valid here; the validators themselves are covered by the preview-auth suites.
-const realPreviewAuth = await import('../sandbox-proxy/preview-auth');
-mock.module('../sandbox-proxy/preview-auth', () => ({
+const realPreviewAuth = await import('../services/sandbox-proxy/preview-auth');
+mock.module('../services/sandbox-proxy/preview-auth', () => ({
   ...realPreviewAuth,
   authenticatePreviewPrincipalDetailed: async (token: string | null | undefined) =>
     token === 'ws-token' ? { userId: TEST_USER_ID, sessionId: null } : null,
@@ -297,7 +297,7 @@ mock.module('../services/sandboxes/daytona/client', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../platform/providers', () => ({
+mock.module('../services/platform/providers', () => ({
   ...realProviders,
   // Whole-module replacement: every export the graph touches must be present or
   // the file loads to 0 tests (see the secrets mock above).
@@ -483,14 +483,14 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
 
-const { sandboxProxyApp } = await import('../sandbox-proxy/index');
+const { sandboxProxyApp } = await import('../http/sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import(
   '../services/sessions/kortix-user-context'
 );
-const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
-const { invalidateSandbox } = await import('../sandbox-proxy/backend');
-const { preparePreviewWsUpgrade } = await import('../sandbox-proxy/ws-proxy');
-const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');
+const { resolvePreviewWsUpstream } = await import('../http/sandbox-proxy/preview');
+const { invalidateSandbox } = await import('../services/sandbox-proxy/backend');
+const { preparePreviewWsUpgrade } = await import('../services/sandbox-proxy/ws-proxy');
+const { __resetPromptDedupe } = await import('../services/sandbox-proxy/prompt-dedupe');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 

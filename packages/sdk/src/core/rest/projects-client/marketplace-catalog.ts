@@ -2,7 +2,7 @@
 // project-scoped install surface in `./marketplace.ts` (`/projects/:id/marketplace/*`,
 // `/projects/:id/registry/*`). Read-only catalog routes are public; the
 // "sources" ("Add a marketplace") routes require auth. See
-// apps/api/src/marketplace/index.ts for the server-side handlers.
+// apps/api/src/http/marketplace/index.ts for the server-side handlers.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';

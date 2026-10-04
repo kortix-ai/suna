@@ -27,7 +27,7 @@ const PROJECT_ROW = {
  *  real feature-flag resolution, which additionally gates on operator config
  *  (`config.LLM_GATEWAY_ENABLED`) this suite has no reason to wire up. */
 let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
+mock.module('../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => llmGatewayEnabled,
 }));
 

@@ -25,10 +25,10 @@ import {
   projects,
 } from '@kortix/db';
 import { db } from '../lib/db';
-import { authorize } from '../iam/authorize';
-import { actorForUser } from '../iam/actor';
-import { PROJECT_ACTIONS } from '../iam';
-import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
+import { authorize } from '../services/iam/authorize';
+import { actorForUser } from '../services/iam/actor';
+import { PROJECT_ACTIONS } from '../services/iam';
+import { invalidateIamCacheForUser } from '../services/iam/cache-invalidation';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

@@ -15,13 +15,13 @@ import type { UiTranslator } from '@/i18n/translator';
  * inflate these without re-reading the source:
  *  - The sandbox carries one project-scoped token (`KORTIX_TOKEN`) and
  *    zero third-party secrets. Credentials resolve server-side in the connector
- *    gateway (`apps/api/src/connectors/gateway.ts`), which is the chokepoint every
+ *    gateway (`apps/api/src/services/connectors/gateway.ts`), which is the chokepoint every
  *    tool call goes through.
  *  - Connector credentials are stored with `scope='connector'` and are
  *    structurally excluded from sandbox env injection
  *    (`apps/api/src/services/secrets/secrets.ts` filters `scope='runtime'`).
  *  - Policy actions are `always_run | require_approval | block`, surfaced as
- *    Allow / Ask / Block (`apps/api/src/connectors/policy.ts`).
+ *    Allow / Ask / Block (`apps/api/src/services/connectors/policy.ts`).
  *  - Approval HOLDS the call so the agent's turn pauses and resumes on approve.
  *  - Audit rows land in `kortix.connector_calls` with hashed inputs and
  *    redacted results. The per-session audit view is an Enterprise entitlement —
@@ -243,10 +243,10 @@ export const policy = {
    * The fourth state in the screenshot, and the honest default.
    *
    * ACCURACY: `policy.default_mode` falls back to `allow_all` when a project
-   * declares no `policy:` block (`apps/api/src/projects/policies.ts:73`), so an
+   * declares no `policy:` block (`apps/api/src/services/projects/policies.ts:73`), so an
    * untouched project runs everything. `risk` is the other mode: read
    * → `always_run`, write and destructive → `require_approval`
-   * (`riskDefaultAction`, `apps/api/src/connectors/policy.ts`). Never write that
+   * (`riskDefaultAction`, `apps/api/src/services/connectors/policy.ts`). Never write that
    * writes ask by default — they do not until somebody sets `risk`.
    */
   defaultState:
@@ -282,7 +282,7 @@ export const policy = {
   /**
    * Argument-level conditions. This is the beat competitors do not have.
    *
-   * ACCURACY — read out of `apps/api/src/connectors/policy.ts` on 2026-07-31:
+   * ACCURACY — read out of `apps/api/src/services/connectors/policy.ts` on 2026-07-31:
    *  - A condition is a dot path into the call args (`to`, `message.channel`),
    *    a `match`, and an optional `negate` (`PolicyArgCondition`). ALL must hold.
    *  - `match` uses the SAME grammar as a tool-path matcher: a glob by default,

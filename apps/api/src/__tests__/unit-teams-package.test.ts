@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildTeamsAppPackage } from '../channels/teams/app-package';
-import { TEAMS_COLOR_ICON, TEAMS_OUTLINE_ICON } from '../channels/teams/app-icons';
+import { buildTeamsAppPackage } from '../services/channels/teams/app-package';
+import { TEAMS_COLOR_ICON, TEAMS_OUTLINE_ICON } from '../services/channels/teams/app-icons';
 
 const PNG_SIGNATURE = '89504e470d0a1a0a';
 

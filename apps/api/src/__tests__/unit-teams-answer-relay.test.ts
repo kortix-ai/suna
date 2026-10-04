@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { chatIdentityStub } from './helpers/chat-identity-stub';
 
-import { TEAMS_FORM_VERB } from '../channels/teams/cards';
+import { TEAMS_FORM_VERB } from '../services/channels/teams/cards';
 
 // What the agent reads when a user answers its question on a card. The tap
 // becomes a synthetic message that starts the next turn, so its wording is
@@ -16,11 +16,11 @@ const TENANT = 'tenant-1';
 const CONVO = '19:abc@thread.tacv2';
 const PROJECT = 'proj-1';
 
-mock.module('../channels/teams/identity', () => ({
+mock.module('../services/channels/teams/identity', () => ({
   teamsUserId: () => '29:presser',
   notifyAdminsOfTeamsAccessRequest: async () => {},
 }));
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
   
   resolveChatActor: async () => ({ userId: 'user-1' }),
@@ -30,17 +30,17 @@ mock.module('../channels/core/identity', () =>
 }),
 );
 
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   conversationSession: async () => null,
   resolveConversationProject: async () => PROJECT,
   setConversationProject: async () => {},
   teamsChannelCtx: () => ({ platform: 'teams', teamId: TENANT, channelId: CONVO }),
 }));
 
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 
 const relayed: Array<{ text?: string; id?: string }> = [];
-mock.module('../channels/teams/session', () => ({
+mock.module('../services/channels/teams/session', () => ({
   createOrJoinTeamsConversationSession: async (input: { activity: { text?: string; id?: string } }) => {
     relayed.push(input.activity);
   },
@@ -54,7 +54,7 @@ const invoke = (data: Record<string, unknown>) => ({
   value: { action: { verb: data.verb, data } },
 });
 
-const load = async () => await import('../channels/teams/interactivity');
+const load = async () => await import('../services/channels/teams/interactivity');
 
 beforeEach(() => {
   relayed.length = 0;

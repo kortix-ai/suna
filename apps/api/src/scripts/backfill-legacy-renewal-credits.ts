@@ -45,9 +45,9 @@ import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { creditAccounts, creditLedger } from '@kortix/db';
 import Stripe from 'stripe';
 import { db } from '../lib/db';
-import { getStripe } from '../billing/stripe';
-import { wallet } from '../billing/wallet';
-import { INCLUDED_CREDITS_RATIO, getMonthlyCredits } from '../billing/services/tiers';
+import { getStripe } from '../services/billing/stripe';
+import { wallet } from '../services/billing/wallet';
+import { INCLUDED_CREDITS_RATIO, getMonthlyCredits } from '../services/billing/services/tiers';
 
 const KEY_PREFIX = 'legacy_renewal_backfill:v1:';
 

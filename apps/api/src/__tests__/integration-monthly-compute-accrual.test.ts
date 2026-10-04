@@ -1,8 +1,8 @@
 /**
  * CHARACTERIZATION: the monthly unbilled-compute accrual, for BOTH readers.
  *
- * `monitorMonthlyComputeCost` (projects/lib/monitor-box.ts) and
- * `appMonthlyComputeCost` (apps/budget.ts) hand-encode the same select list
+ * `monitorMonthlyComputeCost` (services/projects/lib/monitor-box.ts) and
+ * `appMonthlyComputeCost` (services/apps/budget.ts) hand-encode the same select list
  * and the same accrual loop — monitor-box's doc comment admits the mirror.
  * The dedupe keeps one copy. These pins hold the observable contract of both
  * functions against a real database: recorded cost sums, an open window
@@ -26,13 +26,13 @@ import {
   sandboxComputeSessions,
 } from '@kortix/db';
 import { eq, inArray } from 'drizzle-orm';
-import * as realMetering from '../billing/services/compute-metering';
+import * as realMetering from '../services/billing/services/compute-metering';
 import { seedAccount } from './helpers/integration-fixtures';
 
 import { db } from '../lib/db';
 
 const unbilledSeconds: number[] = [];
-mock.module('../billing/services/compute-metering', () => ({
+mock.module('../services/billing/services/compute-metering', () => ({
   ...realMetering,
   calculateComputeCost: (_spec: unknown, seconds: number) => {
     unbilledSeconds.push(seconds);
@@ -40,8 +40,8 @@ mock.module('../billing/services/compute-metering', () => ({
   },
 }));
 
-const { monitorMonthlyComputeCost } = await import('../projects/lib/monitor-box');
-const { appMonthlyComputeCost } = await import('../apps/budget');
+const { monitorMonthlyComputeCost } = await import('../services/projects/lib/monitor-box');
+const { appMonthlyComputeCost } = await import('../services/apps/budget');
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 /** One of this month's sessions, in the per-spec shape the meter bills. */
 const SPEC = { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };

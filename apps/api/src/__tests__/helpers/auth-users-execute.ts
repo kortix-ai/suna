@@ -1,6 +1,6 @@
 /**
  * Member and session-owner identities are read from `auth.users` in one query
- * (`resolveUserIdentities`, projects/lib/access.ts). A test that mocks
+ * (`resolveUserIdentities`, services/projects/lib/access.ts). A test that mocks
  * `db.execute` must answer that query the way its auth-admin mock answers
  * `getUserById`, or every identity resolves as "no such user".
  *

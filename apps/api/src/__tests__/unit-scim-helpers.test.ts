@@ -1,6 +1,7 @@
 // Pure SCIM serializer/filter helpers — no DB, safe to run standalone.
 import { describe, expect, test } from 'bun:test';
-import { buildInviteUser, buildUser, isUnsupportedFilter, parseFilter, listResponse } from '../scim/app';
+import { buildUser, isUnsupportedFilter, parseFilter, listResponse } from '../http/scim/app';
+import { buildInviteUser } from '../services/scim/user-shape';
 
 describe('parseFilter', () => {
   test('parses the supported `attr eq "value"` form (with whitespace)', () => {
@@ -92,7 +93,7 @@ describe('buildInviteUser', () => {
  * Removing the member row is not the whole offboarding: on a per-seat account
  * the Stripe subscription QUANTITY is what gets invoiced, and only
  * `onMemberRemoved` lowers it. The UI removal path has always called it
- * (accounts/core/members.ts:549, :704). SCIM never did — so an enterprise
+ * (http/accounts/core/members.ts:549, :704). SCIM never did — so an enterprise
  * offboarding through its IdP, the automated channel we tell enterprises to
  * use, kept paying for every departed employee indefinitely. Nothing reconciles
  * seats periodically, so it never self-healed.
@@ -135,7 +136,7 @@ describe('SCIM deprovision releases the seat', () => {
   });
 
   test('the module actually imports it', () => {
-    expect(SCIM_USERS_SRC).toContain("from '../billing/services/seat-management'");
+    expect(SCIM_USERS_SRC).toContain("from '../services/billing/services/seat-management'");
   });
 });
 

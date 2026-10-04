@@ -18,7 +18,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, connectorActions, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { dbConnectorRouterDeps } from '../connectors/db-deps';
+import { dbConnectorRouterDeps } from '../services/connectors/db-deps';
 import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();

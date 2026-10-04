@@ -4,11 +4,11 @@ import { readFileSync } from 'node:fs';
 const accessSource = readFileSync(
   // The account/project stamps moved into project-access.ts with the access.ts
   // split (KRTX-301); this pin reads the module that owns them now.
-  new URL('../projects/lib/project-access.ts', import.meta.url),
+  new URL('../services/projects/lib/project-access.ts', import.meta.url),
   'utf8',
 );
 const routesSource = readFileSync(
-  new URL('../projects/routes/projects.ts', import.meta.url),
+  new URL('../http/projects/projects.ts', import.meta.url),
   'utf8',
 );
 // The managed-git POST /provision create path used to stamp this inline in
@@ -16,7 +16,7 @@ const routesSource = readFileSync(
 // `runProvision`, shared with the streaming variant of the route, so its
 // `setContextField('projectId', row.projectId);` call now lives here instead.
 const provisionCoreSource = readFileSync(
-  new URL('../projects/provision-core.ts', import.meta.url),
+  new URL('../services/projects/provision-core.ts', import.meta.url),
   'utf8',
 );
 const sessionsSource = readFileSync(

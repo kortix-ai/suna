@@ -3,7 +3,7 @@
  * to render one flat array; it now concatenates `kortixToolchainLayer` and
  * `kortixArtifactLayer`. The rendered Dockerfile text is NOT part of the
  * snapshot fingerprint — it enters snapshot identity only via
- * RUNTIME_LAYER_VERSION (apps/api/src/snapshots/templates.ts). So a split that
+ * RUNTIME_LAYER_VERSION (apps/api/src/services/snapshots/templates.ts). So a split that
  * silently dropped, duplicated, or re-ordered a byte would NOT invalidate a
  * cached image: every existing snapshot would keep serving while new builds
  * rendered something else.

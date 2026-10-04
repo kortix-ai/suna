@@ -11,7 +11,7 @@ const SERVICE_URL = 'https://smba.trafficmanager.net/emea/tenant-1/';
 let teams: Record<string, { id: string; name: string } | null> = {};
 let channels: Record<string, Array<{ id: string; name: string | null }> | null> = {};
 const reads: string[] = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   getTeamsTeam: async (_serviceUrl: string, teamId: string) => {
     reads.push(`team ${teamId}`);
     return teams[teamId] ?? null;
@@ -23,7 +23,7 @@ mock.module('../channels/teams-api', () => ({
 }));
 
 const ensured: Array<Record<string, unknown>> = [];
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   ensureTeamsConversationBinding: async (input: Record<string, unknown>) => {
     ensured.push(input);
     return true;
@@ -50,7 +50,7 @@ const {
   needsTeamsNameBackfill,
   resetTeamsChannelLabelsForTest,
   resolveTeamsChannelName,
-} = await import('../channels/teams/channel-label');
+} = await import('../services/channels/teams/channel-label');
 
 beforeEach(() => {
   resetTeamsChannelLabelsForTest();

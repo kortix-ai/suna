@@ -7,7 +7,7 @@ import type { Context } from 'hono';
  * interchangeable:
  *
  *   - `authType: 'pat'`      → a Kortix PROJECT SESSION id (a sandbox connector
- *                              token; `middleware/auth.ts` sets it from the
+ *                              token; `http/middleware/auth.ts` sets it from the
  *                              validated token row).
  *   - `authType: 'supabase'` → the SUPABASE AUTH SESSION id, i.e. "which browser
  *                              login is this", set purely so the per-account

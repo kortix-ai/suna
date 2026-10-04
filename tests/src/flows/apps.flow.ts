@@ -691,7 +691,7 @@ flow(
       // domain that is a 404 — App-shaped but no App row, so no certificate.
       // A local `*.apps.localhost` box never issues certificates and short-
       // circuits the DB round-trip, so there it answers 200 by design; the
-      // 404 branch itself is pinned in apps/api/src/apps/edge.test.ts.
+      // 404 branch itself is pinned in apps/api/src/services/apps/edge.test.ts.
       const local = appHost.endsWith(".apps.localhost");
       const unknownHost = appHost.replace(/[0-9a-f]{16}/, "0123456789abcdef");
       if (unknownHost === appHost) {

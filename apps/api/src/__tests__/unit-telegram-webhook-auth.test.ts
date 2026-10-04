@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   isKnownTelegramSenderForTest,
   telegramRequireUserIdentityForTest,
-} from '../channels/telegram-webhook';
+} from '../http/channels/telegram-webhook';
 
 const originalRequireIdentity = process.env.TELEGRAM_REQUIRE_USER_IDENTITY;
 

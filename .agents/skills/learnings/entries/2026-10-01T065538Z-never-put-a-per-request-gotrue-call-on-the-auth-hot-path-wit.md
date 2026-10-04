@@ -4,7 +4,7 @@ incident_date: 2026-10-01
 ---
 # Never put a per-request GoTrue call on the auth hot path without a full local core run: local GoTrue runs out of ports
 
-**Rule:** Before adding a GoTrue `/user` call to every authenticated request (for example liveness for ES256/JWKS tokens in `apps/api/src/auth/jwt-verify.ts`), run the full local core suite (`pnpm test`) on an isolated-DB worktree and read `docker logs supabase_auth_<project>`. Ship a cached or pooled check, not a per-request call.
+**Rule:** Before adding a GoTrue `/user` call to every authenticated request (for example liveness for ES256/JWKS tokens in `apps/api/src/services/auth/jwt-verify.ts`), run the full local core suite (`pnpm test`) on an isolated-DB worktree and read `docker logs supabase_auth_<project>`. Ship a cached or pooled check, not a per-request call.
 
 **Trigger surface:** Changing `verifySupabaseJwt`, `confirmJwtLive`, `SUPABASE_JWT_LIVENESS_TTL_MS`, or any auth middleware that calls GoTrue.
 

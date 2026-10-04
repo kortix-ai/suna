@@ -18,11 +18,11 @@ mock.module('../../../lib/config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 
-mock.module('../../../platform/service-key', () => ({
+mock.module('../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => null,
 }));
 
-mock.module('../../../platform/sandbox-frontend-url', () => ({
+mock.module('../../platform/sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.test',
 }));
 

@@ -46,8 +46,8 @@ mock.module('./client', () => ({
   },
 }));
 
-mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
-mock.module('../../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
+mock.module('../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
+mock.module('../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 async function makeProvider() {
   const { PlatinumProvider } = await import('./runtime');

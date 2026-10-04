@@ -15,8 +15,8 @@
  * Project roles are manager|member (`user` is the legacy spelling of `member`;
  * `editor` was removed on 2026-08-18 and now 400s on write). Member-management
  * routes gate on PROJECT_MEMBERS_MANAGE (manager-only) — a project member
- * is denied. Source of truth: apps/api/src/projects/index.ts (access +
- * group-grants handlers) and apps/api/src/accounts/invites.ts.
+ * is denied. Source of truth: apps/api/src/http/projects/index.ts (access +
+ * group-grants handlers) and apps/api/src/http/accounts/invites.ts.
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
@@ -631,7 +631,7 @@ flow(
 // INV-6 — invite accept lifecycle: first accept → 200 {already_accepted:false};
 // RE-accept by the same addressee → 200 {already_accepted:true} (the idempotent
 // self-healing path — acceptance is re-runnable so a bootstrap grant that was
-// never written gets repaired on re-click, per apps/api/src/accounts/invites.ts
+// never written gets repaired on re-click, per apps/api/src/http/accounts/invites.ts
 // lines 307-354). The describe endpoint then reflects accepted_at. This is the
 // state-machine edge case INV-3/4 could NOT cover (no addressee principal).
 flow(

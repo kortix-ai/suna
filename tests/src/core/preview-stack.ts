@@ -160,7 +160,7 @@ export function buildPreviewCaddyfile(publicHost: string): string {
   # serves reaches it. A preview shares ONE origin with the frontend and splits
   # by prefix, so each API route mounted outside \`/v1\` has to be listed here or
   # it falls through to the frontend, which answers 307 -> /auth. Keep in sync
-  # with the non-\`/v1\` mounts in \`apps/api/src/index.ts\`.
+  # with the non-\`/v1\` mounts in \`apps/api/src/app/index.ts\`.
   @api path /v1* /health /health/* /metrics /scim/v2/* /internal/* /.well-known/oauth-authorization-server
   handle @api {
     reverse_proxy kortix-api:8008 {

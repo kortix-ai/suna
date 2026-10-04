@@ -531,7 +531,7 @@ async function probeConcurrently<Item, Result>(
  * error is not that gate.
  *
  * The gate is one shape on the wire — 403 `{ error, code: 'feature_disabled',
- * feature }` (apps/api/src/feature-flags/gate.ts) — but reaches the CLI as two
+ * feature }` (apps/api/src/services/feature-flags/gate.ts) — but reaches the CLI as two
  * error classes: the CLI's own `ApiError` keeps the parsed body in `.body`,
  * while an SDK `ApiError` thrown by a `kortix.*` handle keeps it in
  * `.details`/`.data` and lifts `code` onto the error. Both are read

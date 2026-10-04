@@ -14,7 +14,7 @@ import {
   GRANTABLE_KORTIX_PERMISSIONS,
   sandboxFromLoadedAgents,
   type AgentSpec,
-} from '../projects/agents';
+} from '../services/projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 import { GRANTABLE_KORTIX_PERMISSIONS as SCHEMA_GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 
@@ -49,7 +49,7 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // The git ref leaves are grantable on purpose: a project that WANTS an agent
   // pushing beyond its own branch says so in `kortix_permissions`. The session -> own
   // branch binding itself is not here, and must never be — it is the
-  // credential's identity, not a permission (see git-proxy/ref-policy.ts).
+  // credential's identity, not a permission (see services/git-proxy/ref-policy.ts).
   test('the git ref-authority leaves are grantable', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.gitops.ref.any')).toBe(true);
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.gitops.ref.delete')).toBe(true);

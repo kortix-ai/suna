@@ -9,7 +9,7 @@ import type { ProjectSession } from '@kortix/sdk';
  * row lists as soon as its box is live, but the marker still hides a box-less
  * warm row). The
  * server now drops that marker at adoption time — the first `POST .../start`
- * call, `apps/api/src/projects/routes/session-runtime.ts` — instead of waiting for the
+ * call, `apps/api/src/http/projects/session-runtime.ts` — instead of waiting for the
  * first accepted TURN, seconds later, behind the whole sandbox boot window.
  * That closes the gap for everyone ELSE reading the list, but the adopting
  * tab itself still has to wait for its own `invalidateQueries` refetch to
@@ -31,7 +31,7 @@ import type { ProjectSession } from '@kortix/sdk';
  * The seeded copy is the row AS THE SERVER WILL REPORT IT once adoption
  * lands: `metadata.warm` removed and `last_activity_at` stamped — the same
  * two writes `/start`'s `dropWarmSessionMarkerOnAdopt` makes in one statement
- * (`apps/api/src/projects/routes/warm-sessions.ts`). Seeding the raw
+ * (`apps/api/src/http/projects/warm-sessions.ts`). Seeding the raw
  * create-time row instead carried `warm: true` and no activity stamp, so the
  * sidebar's activity sort (`project-session-list-helpers.ts`) placed the
  * just-started session at its CREATE time — the start of the user's dwell on

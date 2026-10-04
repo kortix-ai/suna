@@ -5,7 +5,7 @@ import { useRetiredQuery } from './retired-endpoint';
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
  * the trial tier; every other value is history the row keeps for audit.
- * Mirrors `TRIAL_STATUS` in `apps/api/src/billing/services/effective-tier.ts`.
+ * Mirrors `TRIAL_STATUS` in `apps/api/src/services/billing/services/effective-tier.ts`.
  */
 export type AdminTrialStatus = 'none' | 'active' | 'expired' | 'revoked' | 'converted';
 
@@ -66,7 +66,7 @@ export type AdminEntitlementOverrides = Record<string, AdminEntitlementOverrideE
  * list rather than from free-form strings.
  *
  * Mirrors `OVERRIDE_KEYS` in
- * `apps/api/src/billing/services/entitlement-overrides.ts`, except
+ * `apps/api/src/services/billing/services/entitlement-overrides.ts`, except
  * `maxConcurrentSessions`: sessions are uncapped and the server now rejects that
  * key with a 400. It stays in the union because removing a member is a breaking
  * change; drop it on the next major.

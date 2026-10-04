@@ -12,7 +12,7 @@
  * `CATALOG_INITIAL_REVEAL` (a reveal window layered over the flat grid). All
  * three existed for one reason: the client had to accumulate enough pages to
  * fake a category filter the API could not perform. They are gone because the
- * server performs it now — see `apps/api/src/connectors/pipedream-index.ts`.
+ * server performs it now — see `apps/api/src/services/connectors/pipedream-index.ts`.
  *
  * They were also the reported jank. Eager paging plus in-place section growth
  * meant the browse page reflowed under the reader on every landed page, and the

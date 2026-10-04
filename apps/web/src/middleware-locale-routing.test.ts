@@ -83,7 +83,7 @@ describe('locale rewrite onto app/[locale]', () => {
 });
 
 // A chat sign-in link is `/slack/login/<payload>.<signature>` or
-// `/teams/login/…` (apps/api/src/channels/core/signed-state.ts). A dot marks a
+// `/teams/login/…` (apps/api/src/services/channels/core/signed-state.ts). A dot marks a
 // file, so from #7566 (2026-09-24, every page moved under app/[locale]) until
 // 2026-10-01 these links skipped the locale rewrite and answered 404, on every
 // environment.

@@ -2,7 +2,7 @@ import { emitJson, fail, resolveProjectContext, surfaceApiError } from '../comma
 import { C, pad, status } from '../style.ts';
 import type { ExtraFlags } from './channels.ts';
 
-// apps/api/src/projects/routes/channel-bindings.ts.
+// apps/api/src/http/projects/channel-bindings.ts.
 
 const CONVERSATION_POLICIES = ['owner_approval', 'owner_only', 'project_open'] as const;
 type ConversationPolicy = (typeof CONVERSATION_POLICIES)[number];

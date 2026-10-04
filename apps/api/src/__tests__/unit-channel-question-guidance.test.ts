@@ -17,10 +17,10 @@ import { join } from 'node:path';
 // told, not what a function returns.
 
 const root = join(import.meta.dir, '../..');
-const teams = readFileSync(join(root, 'src/channels/teams/session.ts'), 'utf8');
-const slack = readFileSync(join(root, 'src/channels/slack/session.ts'), 'utf8');
-const teamsQuestions = readFileSync(join(root, 'src/channels/teams/questions.ts'), 'utf8');
-const slackQuestions = readFileSync(join(root, 'src/channels/slack/questions.ts'), 'utf8');
+const teams = readFileSync(join(root, 'src/services/channels/teams/session.ts'), 'utf8');
+const slack = readFileSync(join(root, 'src/services/channels/slack/session.ts'), 'utf8');
+const teamsQuestions = readFileSync(join(root, 'src/services/channels/teams/questions.ts'), 'utf8');
+const slackQuestions = readFileSync(join(root, 'src/services/channels/slack/questions.ts'), 'utf8');
 
 const instructionsOf = (source: string) => {
   const start = source.indexOf('TURN_INSTRUCTIONS = [');

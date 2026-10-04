@@ -9,7 +9,7 @@
  * invariant is breached so it can be wired to an alert.
  */
 
-import { auditEntitlement } from '../billing/services/entitlement-audit';
+import { auditEntitlement } from '../services/billing/services/entitlement-audit';
 
 async function main() {
   const detail = process.argv.includes('--detail');

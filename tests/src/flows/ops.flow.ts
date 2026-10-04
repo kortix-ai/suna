@@ -1,5 +1,5 @@
 /**
- * Platform ops surface (apps/api/src/ops/index.ts, mounted at /v1/ops).
+ * Platform ops surface (apps/api/src/http/ops/index.ts, mounted at /v1/ops).
  * Guarded by supabaseAuth + requireAdmin (platform admin/super_admin).
  * The e2e OWNER is a normal user (not a platform admin), so we assert the
  * auth boundary: ANON → 401, non-admin OWNER → 403. Maps to spec OPS-*.

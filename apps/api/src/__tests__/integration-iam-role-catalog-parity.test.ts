@@ -24,8 +24,8 @@ import { describe, expect, test } from 'bun:test';
 import { eq, isNull, sql } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, objectPolicies, permissions } from '@kortix/db';
 import { db, hasDatabase } from '../lib/db';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
-import { pendingPrincipalId } from '../iam/actor';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../services/iam/actions';
+import { pendingPrincipalId } from '../services/iam/actor';
 
 const COLLAPSED = ['project.cr.open', 'project.cr.merge'];
 
@@ -80,7 +80,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const rows = await db.select({ action: permissions.action, scopeType: permissions.scopeType }).from(permissions);
     const seeded = rows.map((r) => r.action).sort();
 
-    // `iam/actions.ts` is still the STRING constant module the routes import, so
+    // `services/iam/actions.ts` is still the STRING constant module the routes import, so
     // every action a route can assert must exist in the catalog. The reverse is
     // not required — the catalog may lead the code.
     const fromCode = [
@@ -282,7 +282,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       .from(objectPolicies);
     const byType = new Map(rows.map((r) => [r.objectType, r.unscoped]));
     // Agents are deny-by-default for the member tier; everything else stays
-    // project-wide when unscoped. `objectUsable` in iam/authorize.ts reads these
+    // project-wide when unscoped. `objectUsable` in services/iam/authorize.ts reads these
     // rows — it is the only copy of the rule left.
     expect(byType.get('agent')).toBe('closed');
     expect(byType.get('skill')).toBe('open');

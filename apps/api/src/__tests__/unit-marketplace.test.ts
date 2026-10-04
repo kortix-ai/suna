@@ -15,7 +15,7 @@ import {
   listMarketplaces,
   marketplaceIdOf,
   registerMarketplaceSourceProvider,
-} from '../marketplace/catalog';
+} from '../services/marketplace/catalog';
 
 describe('marketplace catalog', () => {
   test('no external marketplaces are enabled by default — Anthropic and Hermes both stay opt-in', () => {

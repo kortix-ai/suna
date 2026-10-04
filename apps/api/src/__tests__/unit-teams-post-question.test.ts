@@ -8,7 +8,7 @@ const deleted: string[] = [];
 const replied: string[] = [];
 /** The conversation the session still owns, for a prompt with no card of its own. */
 let ownedRef: Record<string, unknown> | null = null;
-mock.module('../channels/teams/turn', () => ({
+mock.module('../services/channels/teams/turn', () => ({
   loadTurn: async () => turn,
   conversationRefForSession: async () => ownedRef,
   finalizeTurn: async (_h: unknown, opts: Record<string, unknown>) => {
@@ -25,7 +25,7 @@ mock.module('../channels/teams/turn', () => ({
 let cardPosted: Record<string, unknown> | null = null;
 let cardOk = true;
 const texts: string[] = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: Record<string, unknown>) => {
     cardPosted = card;
     return cardOk ? 'activity-1' : null;
@@ -36,7 +36,7 @@ mock.module('../channels/teams-api', () => ({
   },
 }));
 
-const load = async () => await import('../channels/teams/questions');
+const load = async () => await import('../services/channels/teams/questions');
 
 beforeEach(() => {
   turn = {

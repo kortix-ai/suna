@@ -93,7 +93,7 @@ describe('resolveDefaultCreatableAccountId', () => {
     account_id: 'a-personal',
     // REAL post-`filterCreatableAccounts` shape as of Task 1: the API always
     // stores a personal account as `"<email>'s Account"`
-    // (`defaultAccountName`, apps/api/src/accounts/core/app.ts). Personal
+    // (`defaultAccountName`, apps/api/src/http/accounts/core/app.ts). Personal
     // accounts use `accountId === userId` by construction
     // (`bootstrap-personal-account.ts`), so `'a-personal'` doubles as both
     // this account's id and the signed-in user's id in the tests below.
@@ -140,7 +140,7 @@ describe('resolveDefaultCreatableAccountId', () => {
 describe('resolveDefaultCreatableAccountId: order-independent default when a user owns both a personal and a team account', () => {
   // Converts Task 1's `test.todo` (ruling R5 / Task 2 controller addendum
   // A2.1). `is_primary_owner` is `accountRole === 'owner'`
-  // (apps/api/src/accounts/core/accounts.ts:126) — true for BOTH the user's
+  // (apps/api/src/http/accounts/core/accounts.ts:126) — true for BOTH the user's
   // bootstrapped personal account and any team account they own outright, so
   // it cannot break the tie between the two. Only `account_id === userId`
   // can: it is true for the personal account by construction

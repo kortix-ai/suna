@@ -17,7 +17,7 @@
 import { projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../lib/db';
-import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
+import { DEFAULT_AGENT_SENTINEL } from '../projects/agents';
 import { resolveSessionSecretGrant } from '../secrets/secret-grant';
 
 export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';

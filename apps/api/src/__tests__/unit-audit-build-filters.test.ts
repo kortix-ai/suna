@@ -6,7 +6,7 @@
  * earns a direct test that doesn't need a DB.
  */
 import { describe, expect, test } from 'bun:test';
-import { buildFilters } from '../accounts/audit-filters';
+import { buildFilters } from '../services/accounts/audit-filters';
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
 const ACTOR = '00000000-0000-4000-a000-000000000001';

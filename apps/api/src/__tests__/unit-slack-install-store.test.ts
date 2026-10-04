@@ -37,7 +37,7 @@ mock.module('../services/secrets/secrets', () => ({
   listProjectSecrets: async () => ({}),
 }));
 
-const { saveSlackInstall } = await import('../channels/install-store');
+const { saveSlackInstall } = await import('../services/channels/install-store');
 
 afterAll(() => {
   mock.restore();

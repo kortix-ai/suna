@@ -10,7 +10,7 @@ import {
   changeRequestToReviewItem,
   connectorCallToReviewItem,
   isAdaptedId,
-} from '../projects/review-adapters';
+} from '../services/projects/review-adapters';
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 type ConnectorCallRow = typeof connectorCalls.$inferSelect;

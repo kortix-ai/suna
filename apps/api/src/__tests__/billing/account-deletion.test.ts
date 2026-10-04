@@ -80,7 +80,7 @@ const {
   cancelAccountDeletion,
   deleteAccountImmediately,
   processScheduledDeletions,
-} = await import('../../billing/services/account-deletion');
+} = await import('../../services/billing/services/account-deletion');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
  * Agent-session credentials for the AGP-* flows.
  *
  * WHY A FIXTURE. Production mints a session's one Kortix credential in
- * `mintSessionToken` (apps/api/src/platform/services/session-sandbox.ts). That
+ * `mintSessionToken` (apps/api/src/services/platform/services/session-sandbox.ts). That
  * function runs only inside sandbox provisioning. The local profile has no
  * sandbox provider: `POST /v1/projects/:id/sessions` answers
  * `503 KORTIX_URL_UNREACHABLE` before provisioning starts (measured

@@ -33,9 +33,9 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
-import { markComputeSessionAlive } from '../../../billing/services/compute-metering';
-import { type SandboxProvider, type SandboxStatus, getProvider } from '../../../platform/providers';
-import { invalidateProviderCache } from '../../../sandbox-proxy';
+import { markComputeSessionAlive } from '../../billing/services/compute-metering';
+import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
+import { invalidateProviderCache } from '../../sandbox-proxy/backend';
 import { isDaytonaRateLimitError } from '../daytona/rate-limit';
 import { isDaytonaTransientProviderError } from '../daytona/transient';
 import { sandboxBelongsToThisInstance } from '../../sessions/instance-scope';
@@ -357,7 +357,7 @@ async function reapRunningSandbox(
   const { now, dependencies, result } = pass;
   // A CONTROL-PLANE observation that this box is alive — the only thing
   // that lets its compute window keep billing. Absence of this stamp is
-  // what stops the meter automatically (billing/services/compute-liveness.ts),
+  // what stops the meter automatically (services/billing/services/compute-liveness.ts),
   // so it must be recorded here and nowhere the sandbox itself can reach.
   await markComputeSessionAlive(row.sandboxId, now).catch((err) =>
     console.warn(

@@ -143,7 +143,7 @@ describe('session-token-health', () => {
     expect(sessionTokenPresumedDead()).toBe(false);
   });
 
-  // Keep this list aligned with apps/api/src/repositories/account-tokens.ts.
+  // Keep this list aligned with apps/api/src/services/repositories/account-tokens.ts.
   test('trips on every terminal credential reason the API emits', () => {
     for (const reason of [
       'PAT not found or revoked',

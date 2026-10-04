@@ -3,7 +3,7 @@
  *
  * Zod schemas + inferred TS types describing EXACTLY what apps/api serializes
  * onto the wire today. The API serializers
- * (apps/api/src/projects/lib/serializers.ts et al) are the behavioral source
+ * (apps/api/src/services/projects/lib/serializers.ts et al) are the behavioral source
  * of truth. Response schemas are descriptive. Request schemas validate public
  * input and can normalize deprecated input aliases to canonical fields.
  *
@@ -40,7 +40,7 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
 
 /**
  * Effective on/off map for every feature flag. Keys mirror the registry in
- * apps/api/src/feature-flags/registry.ts, which imports `FeatureFlagKey` from
+ * apps/api/src/services/feature-flags/registry.ts, which imports `FeatureFlagKey` from
  * here — adding a flag there without updating this map fails typecheck.
  *
  * Wire note: the serialized project fields keep their historical names

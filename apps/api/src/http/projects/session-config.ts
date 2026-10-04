@@ -1,0 +1,452 @@
+/**
+ * Agent-config freshness for a running session: is the box spawned from the
+ * latest compiled manifest, and the reload that brings it up to date (JSON for
+ * the CLI, streamed phases for the web).
+ */
+
+import { PROJECT_ACTIONS } from '../../services/iam';
+import { resolveSessionBinding } from './lib/route-bindings';
+import { auth, errors, json } from '../openapi';
+import { createRoute, z } from '@hono/zod-openapi';
+import { and, or } from 'drizzle-orm';
+import { config } from '../../lib/config';
+import { loadVisibleSession, assertProjectCapability } from '../../services/projects/lib/access';
+import { AnyObject, projectsApp } from './app';
+import { readJsonObject } from '../../lib/http-body';
+import { callerKortixSessionId } from '../../services/sessions/caller-session';
+import { assertAgentScope } from '../../services/iam/agent-scope';
+import { mayChangeSessionModel } from '../../services/sessions/session-model-change';
+import { resolveDesiredRelease } from '../../services/config-releases/desired';
+import { ownerMayUseAgent } from '../../services/config-releases/repoint';
+import { configReleasesEnabled } from '../../services/config-releases/enabled';
+import { recordDaemonConfigReport } from '../../services/config-releases/quarantine';
+import { isReleaseStale, toSessionConfigRelease } from '../../services/sessions/session-config-release';
+import { LATEST_ETAG_BUDGET_MS } from '../../services/sessions/session-reload';
+import { repositoryAccessFromSessionMetadata } from '../../services/sessions/session-sandbox-metadata';
+import {
+  combineConfigStaleness,
+  isConfigStale,
+  isSessionConfigDirStale,
+  latestAgentConfigEtag,
+  readSandboxConfigState,
+  reloadDetail,
+  reloadSessionConfig,
+} from '../../services/sessions/session-reload';
+import { TimeoutError, withTimeout } from '../../lib/with-timeout';
+import { logger } from '../../lib/logger';
+import { timeConfigStage } from '../../services/projects/lib/config-stage-timing';
+import { computeDesiredRuntime } from '../../services/runtime-convergence/desired';
+import { diffRuntime } from '../../services/runtime-convergence/diff';
+import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../services/runtime-convergence/wire';
+import type { SandboxConfigState } from '../../services/sessions/session-reload';
+
+/**
+ * The `runtime` block (spec §3, the runtime-convergence contract (PR #7785)): desired vs
+ * actual for every Rule-1 component, independent of whether this project runs
+ * config releases at all — a project with the flag off still runs a daemon
+ * build, a CLI, a managed-skill overlay and a model catalog, and a box stuck on
+ * a stale one is exactly the failure this closes. `releaseId` is null when
+ * config releases are off for this project (the existing chokepoint above
+ * never builds one in that case) or when resolution failed; every OTHER
+ * component is still compared.
+ */
+async function runtimeBlockFor(releaseId: string | null, running: SandboxConfigState): Promise<RuntimeBlockWire> {
+  const desired = await computeDesiredRuntime({ releaseId });
+  return toRuntimeBlockWire(diffRuntime(desired, running.runtimeTruth));
+}
+
+/**
+ * One mirror-work budget, spent across the stages of ONE GET /config request
+ * that can block on the project mirror's network ops (`latest_etag`,
+ * `desired_release`, `config_dir`). A mirror fetch has a 30s per-op timeout and
+ * retries 3 times, so an unbounded stage outran the 25s request deadline and
+ * turned every poll against a slow mirror into a 5xx (KRTX-818: `git;dur`
+ * pinned at 24.4–25.0s on every deadline 503). Each stage races what is left
+ * of the budget; on timeout it answers its own "could not tell" value instead
+ * of a 503, and the fetch the caller abandoned keeps running so the next poll
+ * finds the mirror warm.
+ */
+function budgetLeft(spendFrom: number): number {
+  return Math.max(1_000, LATEST_ETAG_BUDGET_MS - (Date.now() - spendFrom));
+}
+
+/** Degrade one bounded stage to `null` on its budget timeout, loudly once. */
+async function boundedStage<T>(promise: Promise<T>, label: string, budgetMs: number): Promise<T | null> {
+  try {
+    return await withTimeout(promise, budgetMs, label);
+  } catch (error) {
+    if (error instanceof TimeoutError) {
+      logger.warn(`[session-config] ${label} stage unresolved within its budget; answering unknown`, {
+        budget_ms: budgetMs,
+      });
+      return null;
+    }
+    throw error;
+  }
+}
+export function registerSessionConfigRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/config',
+      tags: ['sessions'],
+      summary: "Whether a session's agent config is the latest",
+      ...auth,
+      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      responses: { 200: json(z.any(), 'Config freshness'), ...errors(400, 403, 404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      // The mirror-work budget is spent across this whole request: the later
+      // stages get only what the earlier ones left (see `budgetLeft`).
+      const configReadStart = Date.now();
+      const binding = await timeConfigStage('project_access', () =>
+        resolveSessionBinding(c, projectId, sessionId, 'session'),
+      );
+      if (binding.kind === 'error') return binding.response as never;
+      const { loaded } = binding;
+      // `loadProjectForUser(..., 'session')` is the coarse access level, not a
+      // read grant. Without this an agent-scoped or read-restricted token could
+      // read a session's commit sha and config hash — small, but it is session
+      // state, and every other session READ on this router asserts the same leaf.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SESSION_READ,
+      );
+      const visible = await timeConfigStage('session_access', () =>
+        loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c)),
+      );
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+
+      const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
+      const project = {
+        projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      };
+      // CHOKEPOINT — the `config_releases` flag for this read. Off ⇒ no `release`
+      // block, no desired release is built (so no archive is stored and no
+      // ledger row is written), and `stale` is the pre-release etag compare
+      // alone. The CLI formatter and the web header both render their
+      // pre-release text when `release` is absent.
+      const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
+      const [running, latest] = await Promise.all([
+        timeConfigStage('sandbox_state', () => readSandboxConfigState({ sessionId })),
+        timeConfigStage('latest_etag', () =>
+          latestAgentConfigEtag(
+            {
+              projectId,
+              accountId: loaded.row.accountId,
+              sessionId,
+              baseRef,
+            },
+            { budgetMs: budgetLeft(configReadStart) },
+          ),
+        ),
+      ]);
+      // The managed-model catalog's freshness, in the SAME place a config
+      // fallback is already visible — not gated on `releasesEnabled`, for the
+      // identical reason `runtime.pinned` is not: a box that could not confirm
+      // its managed lineup needs this fact regardless of which config path the
+      // project is on. `ids: null` means UNCONFIRMED (no live fetch has ever
+      // succeeded on this box — it is running the baked/bundled managed set),
+      // never "no managed models exist". See `managed-assets/manifest.ts`'s
+      // `runningAssetsVerdict` doc for why that box reads `behind`, not `current`.
+      const managedCatalog = {
+        ids: running.runtime?.running?.managed_model_ids ?? null,
+        fallback_reason: running.runtime?.running?.managed_catalog_fallback_reason ?? null,
+      };
+
+      // ── A daemon with config releases (spec, "`GET /config`, extended") ──
+      if (releasesEnabled && running.configReleases && running.release) {
+        // Health carries `failed_release_id` and `proven`: the project
+        // quarantine learns from every read, not only from reloads.
+        await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
+        // The SAME resolution the daemon's descriptor request makes, minus the
+        // write: a read must never disagree with the assignment about `stale`.
+        const repointSubject = {
+          projectId,
+          accountId: loaded.row.accountId,
+          sessionId,
+          ownerUserId: visible.row.createdBy ?? null,
+        };
+        const desired = await timeConfigStage('desired_release', () =>
+          boundedStage(
+            resolveDesiredRelease({
+              project,
+              baseRef,
+              sessionAgent: visible.row.agentName ?? null,
+              repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+              ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+              // The etag stage above already refreshed this mirror in THIS
+              // request (ref-scoped tip proof or fetch); a second invalidate
+              // paid a second `git fetch` per read (KRTX-629).
+              refreshProjectMirror: false,
+            }),
+            'desired_release',
+            budgetLeft(configReadStart),
+          ),
+        ).catch(() => null);
+        const release = toSessionConfigRelease(
+          running.release,
+          desired ? desired.descriptor.release_id : undefined,
+        );
+        return c.json({
+          base_ref: baseRef,
+          running_etag: running.etag,
+          latest_etag: latest,
+          commit_sha: running.commitSha,
+          // `running_release_id !== desired_release_id`. `null` when the API
+          // could not build the desired release or neither side has one.
+          stale: isReleaseStale(release, desired !== null),
+          sandbox_reachable: running.reachable,
+          release,
+          managed_catalog: managedCatalog,
+          // Surfaced so the web header and `kortix sessions reload --status` can
+          // say why a session lost its agent, instead of showing a healthy box
+          // that answers nothing.
+          ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
+          runtime: await timeConfigStage('runtime_block', () =>
+            runtimeBlockFor(desired?.descriptor.release_id ?? null, running)),
+        });
+      }
+
+      // ── A daemon without config releases: etag and config-dir logic ──
+      // The etag cannot see a skill body, a tool or a plugin. A merge that touched
+      // only those used to leave `stale: false` and the header never offered the
+      // reload, so the config dir is compared as well.
+      // `releasesEnabled` guards this too: the config-dir compare shipped with
+      // config releases. With the flag off the daemon never syncs config files,
+      // so offering "update available" for them would promise a reload that
+      // cannot deliver. `stale` is then exactly the pre-release expression.
+      const filesStale = releasesEnabled && running.reachable
+        ? await timeConfigStage('config_dir', () =>
+            boundedStage(
+              isSessionConfigDirStale({
+                project,
+                baseRef,
+                configDirSha: running.configDirSha,
+                commitSha: running.commitSha,
+              }),
+              'config_dir',
+              budgetLeft(configReadStart),
+            ),
+          )
+        : null;
+      return c.json({
+        base_ref: baseRef,
+        running_etag: running.etag,
+        latest_etag: latest,
+        commit_sha: running.commitSha,
+        // `null` when it cannot be told — an unreachable box or a project with no
+        // compiled config. Never `false`, which would read as "up to date" when
+        // the truth is "did not ask".
+        stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
+        sandbox_reachable: running.reachable,
+        runtime: await timeConfigStage('runtime_block', () => runtimeBlockFor(null, running)),
+        managed_catalog: managedCatalog,
+      });
+    },
+  );
+
+  // POST /v1/projects/:projectId/sessions/:sessionId/reload
+  // Pull the workspace and recompile the agent config into a RUNNING session.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/reload',
+      tags: ['sessions'],
+      summary: "Reload a running session's agent config from git",
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+      },
+      responses: { 200: json(z.any(), 'Reload result'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+      if (binding.kind === 'error') return binding.response as never;
+      const { loaded } = binding;
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+      );
+      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+      const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+      // Same gate as re-scoping and changing the model: seeing a session is not
+      // permission to restart the runtime underneath someone else's work.
+      if (!mayChangeSessionModel(visible)) {
+        return c.json(
+          { error: 'Only the session owner or a project manager can reload this session' },
+          403,
+        );
+      }
+
+      const body = await readJsonObject(c);
+
+      const result = await reloadSessionConfig({
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+        baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+        refreshRepo: body.refresh_repo !== false,
+        force: body.force === true,
+      });
+      // A reload restarts opencode, which ENDS the turn in flight. Refused by
+      // default rather than discarding someone's work without saying so.
+      if (
+        result.reason === 'session is mid-turn' ||
+        result.reason === 'could not confirm the session is idle'
+      ) {
+        return c.json(
+          {
+            ...result,
+            error:
+              result.reason === 'session is mid-turn'
+                ? 'This session is mid-turn. A reload restarts the runtime and ends it — retry when idle, or pass force: true.'
+                : 'Could not confirm this session is idle, and a reload restarts the runtime. Retry, or pass force: true.',
+            code: 'SESSION_BUSY',
+          },
+          409,
+        );
+      }
+      return c.json({
+        ...result,
+        detail: reloadDetail(result),
+      });
+    },
+  );
+
+  // POST /v1/projects/:projectId/sessions/:sessionId/reload-stream
+  // Same reload as POST /reload. This sibling route preserves the JSON contract
+  // used by the CLI while letting web clients render real operation phases.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/reload-stream',
+      tags: ['sessions'],
+      summary: "Reload a running session's agent config with live progress",
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+      },
+      responses: {
+        200: {
+          description: 'A text/event-stream ending in one done or error frame',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+      if (binding.kind === 'error') return binding.response as never;
+      const { loaded } = binding;
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+      );
+      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+      const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!mayChangeSessionModel(visible)) {
+        return c.json(
+          { error: 'Only the session owner or a project manager can reload this session' },
+          403,
+        );
+      }
+
+      const body = await readJsonObject(c);
+
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            const encoder = new TextEncoder();
+            let readable = true;
+            const write = (data: unknown) => {
+              if (!readable) return;
+              try {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+              } catch {
+                readable = false;
+              }
+            };
+
+            try {
+              const result = await reloadSessionConfig({
+                projectId,
+                accountId: loaded.row.accountId,
+                sessionId,
+                repoUrl: loaded.row.repoUrl,
+                defaultBranch: loaded.row.defaultBranch,
+                manifestPath: loaded.row.manifestPath,
+                baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+                refreshRepo: body.refresh_repo !== false,
+                force: body.force === true,
+                onPhase: (phase) => write({ type: 'phase', phase }),
+              });
+
+              if (
+                result.reason === 'session is mid-turn' ||
+                result.reason === 'could not confirm the session is idle'
+              ) {
+                write({
+                  type: 'error',
+                  error:
+                    result.reason === 'session is mid-turn'
+                      ? 'This session is mid-turn. A reload restarts the runtime and ends it — retry when idle, or pass force: true.'
+                      : 'Could not confirm this session is idle, and a reload restarts the runtime. Retry, or pass force: true.',
+                  code: 'SESSION_BUSY',
+                  status: 409,
+                  reason: result.reason,
+                });
+              } else {
+                write({ type: 'done', result: { ...result, detail: reloadDetail(result) } });
+              }
+            } catch (error) {
+              write({
+                type: 'error',
+                error: error instanceof Error && error.message ? error.message : 'Reload failed',
+              });
+            } finally {
+              if (readable) {
+                try {
+                  controller.close();
+                } catch {}
+              }
+            }
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        },
+      ) as any;
+    },
+  );
+}

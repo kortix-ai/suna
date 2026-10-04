@@ -3,7 +3,7 @@
  *
  * It lives apart from `sandbox-deadline-policy.ts` (which re-exports it, so no
  * existing import path changes) for one reason: that module imports
- * `../../lib/config`, and `sandbox-proxy/pre-prompt-env-sync.ts` must import NOTHING a
+ * `../../lib/config`, and `services/sandbox-proxy/pre-prompt-env-sync.ts` must import NOTHING a
  * proxy suite replaces with `mock.module`. Bun's module registry is
  * PROCESS-wide, so a test file that pulled `config` in through this predicate
  * would cache the real module before a sibling suite could stub it — the exact
@@ -17,7 +17,7 @@
  */
 
 import { isOpencodePort } from '../sessions/opencode-ports';
-import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../../sandbox-proxy/runtime-request';
+import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../sandbox-proxy/runtime-request';
 
 export { stripInBoxProxyPrefix };
 

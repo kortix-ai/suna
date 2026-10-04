@@ -9,7 +9,7 @@ set statement_timeout = '30s';
 -- `opencode_archive` held a legacy sandbox's OpenCode chat archive for 3 days
 -- (2026-05-30 to 2026-06-02). Commit 089128c8d6 moved the archive to object
 -- storage, and #4592 (2026-07-13) removed the last code that read or wrote the
--- column. Nothing has referenced it since: `apps/api/src/ops/index.ts` selects
+-- column. Nothing has referenced it since: `apps/api/src/http/ops/index.ts` selects
 -- only `status`, and `packages/db/src/schema/kortix.ts` does not declare the
 -- table.
 --

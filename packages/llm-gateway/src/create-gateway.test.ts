@@ -269,7 +269,7 @@ describe('gateway.responses (OpenAI Responses API ingress)', () => {
   });
 
   // `resolveUpstream` (whatever credential it returns — pooled, personal, or
-  // project-shared; see apps/api/src/llm-gateway/resolution/resolve-candidates.ts
+  // project-shared; see apps/api/src/services/llm-gateway/resolution/resolve-candidates.ts
   // and its exhaustive priority-order unit tests, unmodified by this ingress)
   // is invoked with the same principal/model regardless of which ingress
   // handled the request. This proves `gateway.responses` never substitutes

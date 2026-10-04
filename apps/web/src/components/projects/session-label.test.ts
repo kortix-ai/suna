@@ -211,7 +211,7 @@ describe('matchesSourceFilters', () => {
     expect(matchesSourceFilters(telegram, ['slack'], testUiTranslator)).toBe(false);
   });
 
-  // A Teams session (apps/api/src/channels/teams/session.ts stamps
+  // A Teams session (apps/api/src/services/channels/teams/session.ts stamps
   // `metadata.source = 'teams'`) used to fall through to the plain `chat` kind:
   // no glyph in the sidebar, no "Teams" facet.
   test('teams is its own kind with its own label, like slack and telegram', () => {

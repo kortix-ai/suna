@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { loadProjectAgents, requiredConnectorsForAgent } from '../../projects/agents';
+import { loadProjectAgents, requiredConnectorsForAgent } from '../projects/agents';
 import { invalidateProjectMirror, provenMirrorTip, refreshMirror, repoCachePath } from './mirror';
 import type { GitBackedProject } from './types';
 

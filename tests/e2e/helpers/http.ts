@@ -220,7 +220,7 @@ export function isProductServerError(status: number): boolean {
 /**
  * Poll one request until it answers the status the caller demands.
  *
- * For assertions that follow a REVOKE. `apps/api/src/iam/cache-invalidation.ts`
+ * For assertions that follow a REVOKE. `apps/api/src/services/iam/cache-invalidation.ts`
  * memoizes authz lookups for ~15s and busts them **process-locally** — its own
  * header says "each API replica busts its own cache". Staging runs several
  * replicas behind one load balancer, so the replica that served the revoke is

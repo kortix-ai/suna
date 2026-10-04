@@ -38,8 +38,8 @@ import {
   resolveProjectSnapshotPinForSession,
   retryProjectSnapshot,
   verifyReadyProjectSnapshotObjects,
-} from '../git-proxy/project-snapshot';
-import { runProjectSnapshotWorkerOnce } from '../git-proxy/project-snapshot-worker';
+} from '../services/git-proxy/project-snapshot';
+import { runProjectSnapshotWorkerOnce } from '../services/git-proxy/project-snapshot-worker';
 import {
   __resetProjectSnapshotS3ClientForTests,
   getObjectText,
@@ -51,7 +51,7 @@ import {
   projectSnapshotManifestKey,
   projectSnapshotS3Client,
   projectSnapshotStorageConfigured,
-} from '../git-proxy/project-snapshot-store';
+} from '../services/git-proxy/project-snapshot-store';
 
 const WORKER = `integration-${process.pid}`;
 let root = '';

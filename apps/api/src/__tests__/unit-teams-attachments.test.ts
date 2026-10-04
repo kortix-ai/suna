@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractTeamsAttachments, teamsMessageHasImage } from '../channels/teams/types';
+import { extractTeamsAttachments, teamsMessageHasImage } from '../services/channels/teams/types';
 
 /**
  * An image pasted into a Teams chat (dev, 2026-09-18: "what do you see on

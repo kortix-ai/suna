@@ -4,7 +4,7 @@
  * faults: a 5xx invites clients to retry, and each retry re-prompts the owner.
  */
 import { describe, expect, test } from 'bun:test';
-import { connectorErrorHttpStatus } from '../connectors/router';
+import { connectorErrorHttpStatus } from '../http/connectors/router';
 
 describe('connectorErrorHttpStatus()', () => {
   test('access refusals are 403', () => {

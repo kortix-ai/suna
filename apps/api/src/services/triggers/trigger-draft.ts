@@ -9,7 +9,7 @@ import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule
 import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, extractTriggers, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from './index';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from './trigger-session-access';
 import { withProjectGitAuth } from '../git/project-git';
-import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from '../../projects/lib/serializers';
+import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from '../projects/lib/serializers';
 import { isPlainObject } from '../../lib/json';
 import { triggersPausedForProject } from './trigger-scheduler-state';
 

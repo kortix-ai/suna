@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { chatIdentityStub } from './helpers/chat-identity-stub';
-import * as realConnectorSync from '../connectors/sync';
+import * as realConnectorSync from '../services/connectors/sync';
 
 /**
  * The Slack OAuth install is bound to the Kortix user who started it. The
@@ -51,8 +51,8 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   saveSlackOauthInstall: async (input: Record<string, unknown>) => {
     saveCalls.push(input);
@@ -61,7 +61,7 @@ mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => null,
 }));
 
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     lookupChatIdentity: async () => identityRow,
     // The real write refuses in SQL to replace a live link to someone else
@@ -77,7 +77,7 @@ mock.module('../channels/core/identity', () =>
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../connectors/sync', () => ({
+mock.module('../services/connectors/sync', () => ({
   ...realConnectorSync,
   reconcileChannelConnectors: async () => undefined,
 }));
@@ -113,7 +113,7 @@ afterEach(() => {
 });
 
 const { config } = (await import('../lib/config')) as { config: Record<string, unknown> };
-const oauth = (await import('../channels/slack-oauth')) as any;
+const oauth = (await import('../http/channels/slack-oauth')) as any;
 const { slackOauthApp, buildSlackInstallUrl } = oauth;
 
 function stateFromInstallUrl(projectId = PROJECT_ID, userId = USER_ID): string {

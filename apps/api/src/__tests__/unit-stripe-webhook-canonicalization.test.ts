@@ -22,7 +22,7 @@ const mockStripeClient = {
   },
 };
 
-mock.module('../billing/stripe', () => ({
+mock.module('../services/billing/stripe', () => ({
   getStripe: () => mockStripeClient,
 }));
 
@@ -39,7 +39,7 @@ mock.module('@kortix/shared', () => ({
   AUTO_TOPUP_DEFAULT_THRESHOLD: 5,
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => state.getCreditAccountResult,
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.upsertCreditAccountCalls.push({ accountId, data });
@@ -50,17 +50,17 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => state.getCreditAccountResult,
 }));
 
-mock.module('../billing/repositories/customers', () => ({
+mock.module('../services/billing/repositories/customers', () => ({
   getCustomerByStripeId: async () => state.getCustomerByStripeIdResult,
   upsertCustomer: async () => null,
 }));
 
-mock.module('../billing/repositories/transactions', () => ({
+mock.module('../services/billing/repositories/transactions', () => ({
   updatePurchaseStatus: async () => null,
   getPurchaseByPaymentIntent: async () => null,
 }));
 
-mock.module('../billing/wallet', () => ({
+mock.module('../services/billing/wallet', () => ({
   wallet: {
     grant: async () => ({ replayed: false, ledgerId: null }),
     reset: async (input: Record<string, unknown>) => {
@@ -69,16 +69,16 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-mock.module('../billing/services/machine-bonus', () => ({
+mock.module('../services/billing/services/machine-bonus', () => ({
   grantMachineBonusOnce: async () => null,
   getStripeMachineBonusKey: (subscriptionId: string) => `machine_bonus:${subscriptionId}`,
 }));
 
-mock.module('../billing/services/subscriptions', () => ({
+mock.module('../services/billing/services/subscriptions', () => ({
   cancelFreeSubscriptionForUpgrade: async () => null,
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async (id: string) => id,
 }));
 
@@ -106,7 +106,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { processStripeWebhook } = await import('../billing/services/webhooks');
+const { processStripeWebhook } = await import('../services/billing/services/webhooks');
 
 beforeEach(() => {
   state.getCreditAccountResult = null;

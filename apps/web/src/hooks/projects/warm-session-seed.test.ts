@@ -28,7 +28,7 @@ describe('seedAdoptedWarmSession', () => {
 
   // The seeded copy is the row AS THE SERVER WILL REPORT IT after adoption:
   // `/start` drops `metadata.warm` and stamps `last_activity_at` in the same
-  // statement (apps/api/src/projects/routes/warm-sessions.ts). Seeding the raw
+  // statement (apps/api/src/http/projects/warm-sessions.ts). Seeding the raw
   // create-time row instead left it carrying `warm: true` and no activity, so
   // the sidebar sorted it at its create time — the start of the user's home
   // dwell — burying the session the user just started.

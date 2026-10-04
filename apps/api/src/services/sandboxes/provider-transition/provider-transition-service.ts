@@ -6,13 +6,13 @@
 import { and, eq, ne } from 'drizzle-orm';
 import { projects, sandboxTemplates, type Database } from '@kortix/db';
 import { db as appDb } from '../../../lib/db';
-import { getSandboxProvider } from '../../../snapshots/providers';
+import { getSandboxProvider } from '../../snapshots/providers';
 import {
   DEFAULT_SANDBOX_SLUG,
   ensureSandboxImage,
   resolveCommitSha,
-} from '../../../snapshots/builder';
-import { resolveTemplateBySlug, computeTemplateIdentity } from '../../../snapshots/templates';
+} from '../../snapshots/builder';
+import { resolveTemplateBySlug, computeTemplateIdentity } from '../../snapshots/templates';
 import { config } from '../../../lib/config';
 import type { GitBackedProject } from '../../git/types';
 import {

@@ -8,9 +8,9 @@
  * model — the CLI, the SDK, a chat channel — gets every key it may use for
  * that model's provider, so they rotate.
  */
-import { CODEX_AUTH_SECRET_NAME } from '../../llm-gateway/models/codex-models';
-import { resolveCatalogUpstream } from '../../llm-gateway/models/provider-registry';
-import { toWireModel } from '../../llm-gateway/resolution/effective';
+import { CODEX_AUTH_SECRET_NAME } from '../llm-gateway/models/codex-models';
+import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
+import { toWireModel } from '../llm-gateway/resolution/effective';
 import { listUsableGatewaySecrets, queryUsableGatewaySecrets } from './account-resource';
 
 /** Most keys one session may select per provider. */

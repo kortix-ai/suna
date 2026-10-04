@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DEDUPE_TTL_MS } from '../../../sandbox-proxy/prompt-dedupe';
+import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
 import {
   type ConsumptionDeps,
   type ForwardedPromptRow,

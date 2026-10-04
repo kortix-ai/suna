@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { chatIdentityStub } from './helpers/chat-identity-stub';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 
 let dbResults: unknown[][] = [];
 const inserts: unknown[] = [];
@@ -29,11 +29,11 @@ mock.module('../lib/db', () => ({
   hasDatabase: () => true,
 }));
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb',
 }));
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   postEphemeral: async (_token: string, channel: string, user: string, text: string, blocks?: unknown[], threadTs?: string) => {
     ephemerals.push({ channel, user, text, blocks, threadTs });
     return true;
@@ -43,14 +43,14 @@ mock.module('../channels/slack-api', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   lookupEmailsByUserIds: async (ids: string[]) =>
     new Map(requesterHasEmail ? ids.map((id) => [id, `${id}@example.com`]) : []),
 }));
 
 let deciderMayWork = true;
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
   
   lookupChatIdentity: async (user: { platformUserId: string }) =>
@@ -65,7 +65,7 @@ const {
   decideSlackThreadJoin,
   ensureSlackThreadParticipant,
   normalizeConversationPolicy,
-} = await import('../channels/slack/participants');
+} = await import('../services/channels/slack/participants');
 
 beforeEach(() => {
   dbResults = [];

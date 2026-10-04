@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { extractTeamsAttachments, inlineImageUrls, teamsMessageHasImage } from '../channels/teams/types';
+import { extractTeamsAttachments, inlineImageUrls, teamsMessageHasImage } from '../services/channels/teams/types';
 
 // In a personal chat a pasted image arrives as an `image/*` attachment. In a
 // CHANNEL or GROUP CHAT it arrives inside a `text/html` attachment as an <img>

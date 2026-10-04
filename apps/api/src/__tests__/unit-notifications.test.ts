@@ -11,7 +11,7 @@ mock.module('../lib/config', () => ({
   config: mockConfig,
 }));
 
-const { sendAccountInviteEmail, sendProjectAccessRequestEmail } = await import('../accounts/email');
+const { sendAccountInviteEmail, sendProjectAccessRequestEmail } = await import('../services/accounts/email');
 
 const originalFetch = globalThis.fetch;
 let calls: Array<{ url: string; init: RequestInit }> = [];

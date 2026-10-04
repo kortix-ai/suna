@@ -1,7 +1,7 @@
 import {
   type GitBackend,
   resolveGitBackend,
-} from '../../../platform/services/managed-git-backend';
+} from '../../platform/services/managed-git-backend';
 import {
   type GitHubAuthContext,
   addCollaborator,
@@ -26,7 +26,7 @@ import {
 
 // The instance git backend is resolved WHOLE from one source — env or the
 // `managed_git_backend` platform setting — by
-// platform/services/managed-git-backend.ts. Owner, kind, and credential always
+// services/platform/services/managed-git-backend.ts. Owner, kind, and credential always
 // come from the same source; a stored owner never pairs with an env token.
 //
 // These four accessors exist for callers that need one field. Anything that
@@ -192,7 +192,7 @@ export const githubBackend: GitHostBackend = {
       commitMessage: opts.message,
       // Deterministic base commit (constant-var render) — committed FIRST so
       // every project of this starter shares an identical root SHA with the
-      // image-baked scaffold (snapshots/build-context.ts). Without forwarding
+      // image-baked scaffold (services/snapshots/build-context.ts). Without forwarding
       // this, the project root was the project-named files commit → unrelated
       // to the baked scaffold → every fresh session full-cloned through the
       // tunnel instead of delta-fetching one tiny commit (2026-06-13).

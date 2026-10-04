@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
+import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -24,7 +24,7 @@ const originalFetch = globalThis.fetch;
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../../sandbox-proxy/backend', () => ({
+mock.module('../../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
   resolveServiceKey: async (_externalId: string) => serviceKey,
   resolveSandboxIngress: async (_ref: string, _req: unknown) => ({

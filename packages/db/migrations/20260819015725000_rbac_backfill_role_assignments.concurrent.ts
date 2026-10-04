@@ -47,7 +47,7 @@ const BATCH_SIZE = 1000;
  * An invitee has no auth uid yet, so their ride-along project grants need a
  * stable synthetic principal that the accept path can recompute without a
  * lookup. MUST match KORTIX_PENDING_PRINCIPAL_NAMESPACE in
- * apps/api/src/iam/actor.ts.
+ * apps/api/src/services/iam/actor.ts.
  */
 const PENDING_NS = 'b8d1f9c6-0a7e-4a2f-9d3b-5e6c7a8b9c01';
 

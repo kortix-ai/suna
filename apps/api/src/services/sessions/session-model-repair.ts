@@ -32,10 +32,10 @@
  * most once per session — once re-pointed, the pin is live and
  * `isRetiredManagedModelId` is false forever after.
  */
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import { isRetiredManagedModelId } from '../../llm-gateway/models/managed-models';
-import { repointRetiredSessionModel } from '../../llm-gateway/resolution/session-model-repoint';
-import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import { isRetiredManagedModelId } from '../llm-gateway/models/managed-models';
+import { repointRetiredSessionModel } from '../llm-gateway/resolution/session-model-repoint';
+import { accountMayUseManagedModels } from '../billing/services/entitlements';
 import { logger } from '../../lib/logger';
 import { pushSessionModelToSandbox } from '../sandboxes/sandbox-env-sync';
 

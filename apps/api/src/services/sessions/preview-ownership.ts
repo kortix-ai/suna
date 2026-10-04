@@ -12,17 +12,17 @@
  */
 
 import { db } from '../../lib/db';
-import { isPlatformAdmin } from '../../iam/platform-roles';
-import { resolveAccountId } from '../../accounts/resolve-account';
+import { isPlatformAdmin } from '../iam/platform-roles';
+import { resolveAccountId } from '../accounts/resolve-account';
 import {
   isProjectSessionVisibleTo,
   isTriggerRunSession,
   loadSessionGrants,
   resolveShareSubject,
-} from '../../connectors/share';
-import { authorize } from '../../iam';
-import { actorForUser } from '../../iam/actor';
-import { hasAccountSessionOversight } from '../../iam/session-oversight';
+} from '../connectors/share';
+import { authorize } from '../iam';
+import { actorForUser } from '../iam/actor';
+import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -293,7 +293,7 @@ async function resolveSandboxRef(
 /**
  * Resolve the project a sandbox belongs to, given the same `previewSandboxId`
  * form the proxy path carries (uuid or Daytona externalId). Used by the
- * project-scoped-PAT gate in middleware/auth.ts to decide whether a project
+ * project-scoped-PAT gate in http/middleware/auth.ts to decide whether a project
  * PAT may reach `/v1/p/{sandboxId}/...` — it may, only for a sandbox whose
  * `session_sandboxes.project_id` matches the token's own project. One indexed
  * lookup (sandbox_id is the PK; external_id and project_id are both indexed),

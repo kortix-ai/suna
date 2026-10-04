@@ -15,8 +15,8 @@ import {
   parseManifestText,
   skillDirs,
 } from '@kortix/manifest-schema';
-import { type LoadedAgents, extractAgents } from '../../projects/agents';
-import { resolveManifestVerdict } from '../../projects/lib/manifest-verdict';
+import { type LoadedAgents, extractAgents } from '../projects/agents';
+import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 

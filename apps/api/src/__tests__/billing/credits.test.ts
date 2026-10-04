@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { getManagedModel } from '@kortix/llm-catalog';
-import { calculateTokenCost } from '../../billing/services/credits';
+import { calculateTokenCost } from '../../services/billing/services/credits';
 
 // Token pricing for `POST /v1/billing/deduct`. Credit movements are the
 // wallet's (billing/wallet), pinned against real PostgreSQL in

@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { parseTeamsCommand as realParse } from '../channels/teams/util';
+import { parseTeamsCommand as realParse } from '../services/channels/teams/util';
 
 /**
  * With the `ChannelMessage.Read.Group` RSC permission, Teams delivers EVERY
@@ -32,39 +32,39 @@ mock.module('../lib/db', () => ({
   },
 }));
 mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 const cards: string[] = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: unknown) => {
     cards.push(JSON.stringify(card));
     return 'card-1';
   },
 }));
 let conversationProject: string | null = PROJECT_ID;
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   listTenantProjects: async () => [{ projectId: PROJECT_ID, name: 'Demo', repoUrl: null }],
   resolveConversationProject: async () => conversationProject,
   resolveConversationProjectDetailed: async () => ({ kind: 'project', projectId: PROJECT_ID }),
 }));
-mock.module('../channels/teams/auth-resume', () => ({ createPendingTeamsPickerMessage: async () => null }));
-mock.module('../channels/teams/home', () => ({
+mock.module('../services/channels/teams/auth-resume', () => ({ createPendingTeamsPickerMessage: async () => null }));
+mock.module('../services/channels/teams/home', () => ({
   buildTeamsHomeCard: async (tenantId: string) => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: `HOME ${tenantId}` }] }),
 }));
-mock.module('../channels/teams/commands', () => ({
+mock.module('../services/channels/teams/commands', () => ({
   parseTeamsCommand: realParse,
   handleTeamsCommand: async (input: { command: { verb: string } }) => {
     commands.push(input.command.verb);
     return true;
   },
 }));
-mock.module('../channels/teams/session', () => ({
+mock.module('../services/channels/teams/session', () => ({
   hasConversationSession: async () => threadHasSession,
   createOrJoinTeamsConversationSession: async (input: { conversationId: string }) => {
     started.push(input.conversationId);
   },
 }));
 
-const { handleTeamsActivity } = await import('../channels/teams/dispatch');
+const { handleTeamsActivity } = await import('../services/channels/teams/dispatch');
 
 let n = 0;
 function activity(over: Record<string, unknown>) {

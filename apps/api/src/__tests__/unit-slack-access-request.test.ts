@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 
 // Stage A of the Slack access-flow redesign: connecting your Kortix account is
 // decoupled from having access, and a connected-but-no-access user requests
@@ -30,28 +30,28 @@ mock.module('../lib/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   lookupEmailsByUserIds: async () => new Map<string, string | null>(),
   grantProjectRole: async () => {},
   ensureOrgMembership: async () => 'member',
   loadProjectForUser: async () => null,
 }));
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   authorize: async () => ({ allowed: authorizeAllowed }),
 }));
 // Reviewers (account managers + project managers) now come from
-// `role_assignments` via iam/read-models, so they are mocked at that seam
+// `role_assignments` via services/iam/read-models, so they are mocked at that seam
 // instead of as two more FIFO db results.
-mock.module('../iam/read-models', () => ({
+mock.module('../services/iam/read-models', () => ({
   accountRoleMap: async () => new Map([['admin-1', 'admin']]),
   projectRoleGrants: async () => [],
   isAccountManagerRole: (role: string | null | undefined) => role === 'owner' || role === 'admin',
 }));
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   openDmChannel: async () => {
     openDmCalls++;
     return 'D1';
@@ -72,9 +72,9 @@ const {
   notifyAdminsOfAccessRequest,
   postIdentityPrompt,
 } = await import(
-  '../channels/slack/identity'
+  '../services/channels/slack/identity'
 );
-const { chatUser, createChatAccessRequest } = await import('../channels/core/identity');
+const { chatUser, createChatAccessRequest } = await import('../services/channels/core/identity');
 const createSlackAccessRequest = (input: { teamId: string; slackUserId: string; projectId: string }) =>
   createChatAccessRequest(chatUser('slack', input.teamId, input.slackUserId), input.projectId);
 

@@ -1,7 +1,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { resolveSandboxIngress } from '../sandbox-proxy/backend';
 import { db } from '../../lib/db';
 
 /**

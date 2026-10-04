@@ -24,7 +24,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../access-control/access-control-cache', () => ({
+mock.module('../services/access-control/access-control-cache', () => ({
   areSignupsEnabled: () => signupsOpen,
   canSignUp: (email: string) => signupsOpen || allowlisted.has(email.toLowerCase()),
   startAccessControlCache: () => {},
@@ -33,14 +33,14 @@ mock.module('../access-control/access-control-cache', () => ({
 
 // The same rule as the real `ssoEnforcedForEmail`: enforcement needs a
 // verified domain. The DB-backed rule is exercised end to end by flow SSO-1.
-mock.module('../repositories/sso', () => ({
+mock.module('../services/repositories/sso', () => ({
   ssoEnforcedForEmail: async (email: string) => {
     const provider = ssoProvidersByDomain.get(email.trim().toLowerCase().split('@')[1] ?? '');
     return provider?.enforceSso && provider.domainVerifiedAt ? provider : null;
   },
 }));
 
-const { accessControlApp } = await import('../access-control/index');
+const { accessControlApp } = await import('../http/access-control/index');
 
 async function checkEmail(email: string) {
   const res = await accessControlApp.request('/check-email', {

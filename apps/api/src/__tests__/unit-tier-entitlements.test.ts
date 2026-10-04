@@ -4,7 +4,7 @@ import {
   getTierEntitlements,
   getVisibleTiers,
   tierHasEntitlement,
-} from '../billing/services/tiers';
+} from '../services/billing/services/tiers';
 
 // Locks in the plan-gating contract for the enterprise surfaces: SAML SSO,
 // SCIM, groups + custom roles (`rbac`), and audit access. Only the

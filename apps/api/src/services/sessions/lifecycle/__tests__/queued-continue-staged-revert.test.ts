@@ -78,7 +78,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../../../projects/routes/shared', () => ({
+mock.module('../../open/shared', () => ({
   openSession: async () => {
     events.push('open');
     return {
@@ -89,7 +89,7 @@ mock.module('../../../../projects/routes/shared', () => ({
   },
 }));
 
-mock.module('../../../../sandbox-proxy/forward', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     events.push('prompt');
     return new Response(null, { status: 204 });
@@ -180,10 +180,10 @@ mock.module('../../opencode-mapping', () => ({
 // `continueSession`): it reads the service key and ingress and calls
 // `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
 // the wire, not about the sync (see continue-session-runtime-env.test.ts).
-mock.module('../../../../platform/service-key', () => ({
+mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
-mock.module('../../../../sandbox-proxy/backend', () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
   invalidateSandbox: () => {},
 }));

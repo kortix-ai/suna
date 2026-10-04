@@ -16,7 +16,7 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import * as childProcess from 'node:child_process';
 
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     c.set('userId', '00000000-0000-0000-0000-000000000000');
     c.set('userEmail', 'test@example.com');
@@ -29,7 +29,7 @@ mock.module('child_process', () => ({
   spawnSync: () => ({ status: 0 }),
 }));
 
-const { setupApp } = await import('../setup');
+const { setupApp } = await import('../http/setup');
 
 const ORIGINAL_CWD = process.cwd();
 const TEST_DIR = mkdtempSync(join(tmpdir(), 'kortix-setup-test-'));
@@ -131,7 +131,7 @@ describe('/v1/setup', () => {
 
 describe('Billing no-DB guard', () => {
   it('buildLocalAccountState returns valid structure', async () => {
-    const { buildLocalAccountState } = await import('../billing/services/account-state');
+    const { buildLocalAccountState } = await import('../services/billing/services/account-state');
     const state = buildLocalAccountState();
 
     expect(state.credits).toBeDefined();
@@ -156,7 +156,7 @@ describe('Billing no-DB guard', () => {
       expect(process.env.DATABASE_URL).toBeTruthy();
       return;
     }
-    const { accountStateRouter } = await import('../billing/routes/account-state');
+    const { accountStateRouter } = await import('../http/billing/account-state');
     const app = new Hono();
     app.use('*', async (c, next) => {
       (c as any).set('userId', '00000000-0000-0000-0000-000000000000');
@@ -178,7 +178,7 @@ describe('Billing no-DB guard', () => {
       expect(process.env.DATABASE_URL).toBeTruthy();
       return;
     }
-    const { accountStateRouter } = await import('../billing/routes/account-state');
+    const { accountStateRouter } = await import('../http/billing/account-state');
     const app = new Hono();
     app.use('*', async (c, next) => {
       (c as any).set('userId', '00000000-0000-0000-0000-000000000000');
@@ -202,7 +202,7 @@ describe('Database guard checks', () => {
 
   it('account-state route source checks hasDatabase', async () => {
     const content = readFileSync(
-      resolve(__dirname, '../billing/routes/account-state.ts'),
+      resolve(__dirname, '../http/billing/account-state.ts'),
       'utf-8'
     );
     expect(content).toContain('hasDatabase');

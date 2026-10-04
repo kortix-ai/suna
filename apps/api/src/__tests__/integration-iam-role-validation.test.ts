@@ -11,8 +11,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-import { validateActions } from '../accounts/iam/role-presets';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
+import { validateActions } from '../services/accounts/iam/role-presets';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../services/iam/actions';
 
 describe('validateActions', () => {
   test('accepts known actions and dedupes', async () => {

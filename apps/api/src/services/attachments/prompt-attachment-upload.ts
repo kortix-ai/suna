@@ -82,7 +82,7 @@ export async function beginPromptAttachment(
   const mime = isModelNativeAttachmentMime(declaredMime) ? declaredMime : 'application/octet-stream';
   // The prompt path's billing decision, without its admission hold: an upload
   // spends no compute, and the hold is reconciled only by an LLM request.
-  const { checkBillingAdmission } = await import('../../billing/services/billing-gate');
+  const { checkBillingAdmission } = await import('../billing/services/billing-gate');
   const billing = await checkBillingAdmission(scope.accountId);
   if (!billing.ok) {
     const body = {

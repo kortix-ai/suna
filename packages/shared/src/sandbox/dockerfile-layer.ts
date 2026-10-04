@@ -600,7 +600,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // non-deterministic layer BUSTS the cache for everything chained BELOW it.
     //
     // The kortix-agent SOURCE feeds the snapshot fingerprint (see
-    // AGENT_RUNTIME_ARTIFACTS in apps/api/src/snapshots/templates.ts), so any
+    // AGENT_RUNTIME_ARTIFACTS in apps/api/src/services/snapshots/templates.ts), so any
     // agent-server code change mints a BRAND-NEW snapshot name → a full rebuild on
     // Daytona (no agent-swap). If Chromium sat below the migration-bake (as it did
     // through v0.10.11), every such rebuild MISSED cache and re-downloaded ~150MB

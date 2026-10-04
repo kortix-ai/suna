@@ -101,7 +101,7 @@ interface Fixture {
    * The project's own switch for `config_releases` (or `pi_harness`), through
    * the published write path. `true` opts in, `false` opts out, `null` clears
    * the override and returns the project to the platform default — which is
-   * OFF for both (`apps/api/src/feature-flags/registry.ts`).
+   * OFF for both (`apps/api/src/services/feature-flags/registry.ts`).
    */
   setFeature(enabled: boolean | null, feature?: 'config_releases' | 'pi_harness' | 'meta_agent'): Promise<void>;
   /** The project's effective `config_releases` value, read back from the API. */
@@ -1156,7 +1156,7 @@ flow(
 // ── CFG-8 — the `config_releases` feature flag: the whole three-state contract
 //
 // `config_releases` is OPT-IN. Its platform default is OFF
-// (`apps/api/src/feature-flags/registry.ts`, `platformDefault: () => false`),
+// (`apps/api/src/services/feature-flags/registry.ts`, `platformDefault: () => false`),
 // so a project that made no choice gets the pre-release behaviour, and only a
 // project that turns the flag on gets a release. This flow drives all three
 // states through the published write path, in order:

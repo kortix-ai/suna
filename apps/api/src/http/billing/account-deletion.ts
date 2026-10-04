@@ -1,0 +1,114 @@
+import { createRoute, z } from '@hono/zod-openapi';
+import type { AppEnv } from '../../types/app-env';
+import {
+  requestAccountDeletion,
+  getAccountDeletionStatus,
+  cancelAccountDeletion,
+  deleteAccountImmediately,
+} from '../../services/billing/services/account-deletion';
+import { resolveAccountId } from '../../services/accounts/resolve-account';
+import { makeOpenApiApp, json, auth } from '../openapi';
+import { ACCOUNT_ACTIONS, assertAuthorized } from '../../services/iam';
+
+import { actorOf } from '../../services/iam/actor';
+import { readJsonObject } from '../../lib/http-body';
+export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
+
+async function resolveDeletionContext(c: any) {
+  const userId = c.get('userId') as string;
+  const accountId = await resolveAccountId(userId);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_DELETE);
+  return { userId, accountId };
+}
+
+// Opaque service results (status / success payloads) — permissive on purpose.
+const ResultSchema = z.record(z.string(), z.any());
+
+accountDeletionRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/deletion-status',
+    tags: ['billing'],
+    summary: 'Get the current account-deletion status',
+    ...auth,
+    responses: {
+      200: json(ResultSchema, 'Account deletion status'),
+    },
+  }),
+  async (c: any) => {
+    const { accountId } = await resolveDeletionContext(c);
+    const result = await getAccountDeletionStatus(accountId);
+    return c.json(result);
+  },
+);
+
+accountDeletionRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/request-deletion',
+    tags: ['billing'],
+    summary: 'Request scheduled account deletion',
+    ...auth,
+    request: {
+      body: {
+        required: false,
+        content: { 'application/json': { schema: z.object({ reason: z.string().optional() }) } },
+      },
+    },
+    responses: {
+      200: json(ResultSchema, 'Deletion request result'),
+    },
+  }),
+  async (c: any) => {
+    const { accountId, userId } = await resolveDeletionContext(c);
+    // Manual parse: the body is optional and tolerant of missing/invalid JSON
+    // (defaults to {}); only `reason` is read. valid('json') would reject a
+    // bodyless request, changing the contract.
+    const body = await readJsonObject(c);
+    const result = await requestAccountDeletion(
+      accountId,
+      userId,
+      typeof body.reason === 'string' ? body.reason : undefined,
+    );
+    return c.json(result);
+  },
+);
+
+accountDeletionRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/cancel-deletion',
+    tags: ['billing'],
+    summary: 'Cancel a pending account deletion',
+    ...auth,
+    responses: {
+      200: json(ResultSchema, 'Cancellation result'),
+    },
+  }),
+  async (c: any) => {
+    const { accountId } = await resolveDeletionContext(c);
+    const result = await cancelAccountDeletion(accountId);
+    return c.json(result);
+  },
+);
+
+accountDeletionRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/delete-immediately',
+    tags: ['billing'],
+    summary: 'Delete the account immediately',
+    ...auth,
+    responses: {
+      200: json(ResultSchema, 'Immediate deletion result'),
+    },
+  }),
+  async (c: any) => {
+    const { accountId, userId } = await resolveDeletionContext(c);
+    // Pass `userId`: `resolveAccountId` above returns only the earliest-joined
+    // account, so without it every sandbox in a team account this user owns
+    // survives the deletion, still running and still billing.
+    const result = await deleteAccountImmediately(accountId, userId);
+    return c.json(result);
+  },
+);

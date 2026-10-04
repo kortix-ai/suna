@@ -5,42 +5,42 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
-import { checkBillingAdmission } from '../../billing/services/billing-gate';
-import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { checkBillingAdmission } from '../billing/services/billing-gate';
+import { accountMayUseManagedModels } from '../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../lib/config';
 
 
-import { agentMayUseConnector, agentMayUseEnv } from '../../iam/agent-scope';
+import { agentMayUseConnector, agentMayUseEnv } from '../iam/agent-scope';
 import { usableProviderKeys } from '../secrets/provider-key-selection';
-import { decideSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
+import { decideSessionOnBehalfOf } from '../projects/lib/on-behalf-of';
 import {
   loadSessionGrants,
   resolveInheritedSessionSharing,
   type SecretGrant,
   type SessionVisibility,
-} from '../../connectors/share';
+} from '../connectors/share';
 import { setContextField } from '../../lib/request-context';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
-} from '../../llm-gateway/resolution/default-model';
+} from '../llm-gateway/resolution/default-model';
 import {
   type ModelSource,
   toOpencodeModelRef,
-} from '../../llm-gateway/resolution/effective';
+} from '../llm-gateway/resolution/effective';
 
-import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
-import { selectProvider } from '../../platform/services/provider-balancer';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
-import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { sandboxFrontendBaseUrl } from '../platform/sandbox-frontend-url';
+import { selectProvider } from '../platform/services/provider-balancer';
+import { ProvisionTimeline } from '../platform/services/provision-timeline';
+import { provisionSessionSandbox } from '../platform/services/session-sandbox';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
 import { db } from '../../lib/db';
 import { notifySessionProvisioningFailed } from './session-failure-notifier';
-import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
+import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../snapshots/builder';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
@@ -49,7 +49,7 @@ import {
   sandboxFromLoadedAgents,
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
-} from '../../projects/agents';
+} from '../projects/agents';
 import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from './lifecycle/pending-prompt';
 
@@ -57,13 +57,13 @@ import { validateNativeOpencodeModelRef } from './session-model-change';
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets/secrets';
 
 
-import { resolveManifestRuntime } from '../../projects/lib/compile-agent-config';
+import { resolveManifestRuntime } from '../projects/lib/compile-agent-config';
 import { withProjectGitAuth } from '../git/project-git';
-import { repositoryGeneration } from '../../projects/lib/repository-generation';
+import { repositoryGeneration } from '../projects/lib/repository-generation';
 import { resolveFastBootGitHintWithCache } from '../git/fast-boot-git-hint';
-import { resolveSessionProvider, sessionProviderIsLocked } from '../../projects/lib/provider-precedence';
+import { resolveSessionProvider, sessionProviderIsLocked } from '../projects/lib/provider-precedence';
 
-import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from '../../projects/lib/serializers';
+import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from '../projects/lib/serializers';
 import { normalizeJsonObject } from '../../lib/json';
 import { isUuid } from '../../lib/validate';
 import {
@@ -89,15 +89,15 @@ import {
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from './lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { buildPiWorkerSessionEnvVars } from './session-runtime-env';
-import { resolvePlatformMetaSandbox } from '../../projects/lib/platform-meta-agent';
-import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import { resolvePlatformMetaSandbox } from '../projects/lib/platform-meta-agent';
+import { prebuildCompiledBootArtifacts } from '../git-proxy/compiled-prebuild';
 
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
-} from '../../git-proxy/project-snapshot';
+} from '../git-proxy/project-snapshot';
 
 import { buildSessionSandboxEnvVars, deriveKortixApiBase, proxyGitUrl } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';

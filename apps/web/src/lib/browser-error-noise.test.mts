@@ -398,7 +398,7 @@ test('does NOT suppress a same-worded server exception without a browser frame',
 // 50c1919a...0bf1cd (2 occurrences), Kortix Frontend (prod), application_id
 // 2346967: an `ApiError` with message "Out of credits. Top up to continue."
 // (the exact body the API billing gate emits for an `insufficient_credits`
-// HTTP 402 — apps/api/src/billing/services/billing-gate.ts:assertBillingActive).
+// HTTP 402 — apps/api/src/services/billing/services/billing-gate.ts:assertBillingActive).
 //
 // `apps/web/src/lib/error-handler.tsx:handleApiError` already routes a
 // structured 402 `insufficient_credits` to a top-up toast and intentionally
@@ -2284,7 +2284,7 @@ test('does NOT suppress a same-shaped message reading a different property', () 
 // once its 30s budget elapses (`packages/sdk/src/core/http/api-client.ts`,
 // `didTimeout` branch) and surfaces `ApiError(..., { code: 'TIMEOUT' })`. This
 // is the frontend mirror of the API's request-deadline 503
-// (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
+// (`apps/api/src/http/middleware/request-deadline.ts`, de-noised from Sentry by
 // kortix-ai/suna#4524): the API bounds every non-streaming request to a 25s
 // server deadline (clean 503 + Retry-After), and react-query retries background
 // polls — the session-audit route is polled every 5–15s from several session

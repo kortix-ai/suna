@@ -19,7 +19,7 @@
  */
 
 import { logger } from '../../../lib/logger';
-import { DEDUPE_TTL_MS } from '../../../sandbox-proxy/prompt-dedupe';
+import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
 import { drainSessionLifecycleQueue } from './drain';
 
 // F3: derived from `prompt-dedupe.ts`'s `DEDUPE_TTL_MS`, not independently

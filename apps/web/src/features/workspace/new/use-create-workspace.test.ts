@@ -91,7 +91,7 @@ describe('fingerprintOf', () => {
 describe('buildCreatePayload: account_id is always sent explicitly', () => {
   test('MANDATORY: falls back to the first creatable account when the picker is hidden (state.accountId is null)', () => {
     // This is the exact scenario `resolveAccountId`
-    // (apps/api/src/accounts/resolve-account.ts:117-129) gets wrong if account_id
+    // (apps/api/src/services/accounts/resolve-account.ts:117-129) gets wrong if account_id
     // is omitted: it picks the EARLIEST-JOINED membership with NO role check,
     // which can be a DIFFERENT account than the single creatable one the
     // picker hid. Omitting account_id here would 403.
@@ -1159,7 +1159,7 @@ describe('runProvisionAttempt', () => {
   // ── Final-review FIX 1, consequence 3 ────────────────────────────────────
   //
   // `emit('validating')` is the FIRST statement of `runProvision`
-  // (`apps/api/src/projects/provision-core.ts`), so by the time a 409
+  // (`apps/api/src/services/projects/provision-core.ts`), so by the time a 409
   // `provision_in_flight` frame can possibly arrive, the stream has ALWAYS
   // already delivered at least one phase event. Under the plain
   // "any event blocks fallback" rule, that made the backoff retry
@@ -1288,7 +1288,7 @@ describe('create-repo under a personal GitHub account', () => {
 
 /**
  * The API's edge middleware sends every 502 as a 503 with the body kept
- * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Prod: create-repo
+ * (`apps/api/src/app/index.ts`, EDGE_REWRITTEN_STATUSES). Prod: create-repo
  * answered `503 {"error":"GitHub /user/repos failed (403): Resource not
  * accessible by integration"}` and `/new` said managed git is not set up.
  */

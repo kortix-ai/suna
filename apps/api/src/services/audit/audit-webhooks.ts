@@ -6,8 +6,8 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, eq, getViewSelectedFields, sql } from 'drizzle-orm';
-import { accountHasEntitlement } from '../../billing/services/entitlements';
-import { assertAllowedSourceAddress } from '../../marketplace/catalog';
+import { accountHasEntitlement } from '../billing/services/entitlements';
+import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { serializeAuditEvent } from './audit-query';
 import { auditWebhookFailureSummary } from './audit-webhook-privacy';
 import { db } from '../../lib/db';

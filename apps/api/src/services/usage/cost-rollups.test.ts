@@ -75,7 +75,7 @@ mock.module('../../lib/db', () => ({
     }),
   },
   // getCostSummary imports billedComputeSecondsExpression from
-  // session-costs.ts, which transitively imports projects/lib/access.ts ->
+  // session-costs.ts, which transitively imports services/projects/lib/access.ts ->
   // platform-roles.ts, which reads hasDatabase from this same module at
   // import time. Only the query-builder mock above matters to this file's
   // tests, but the module has to satisfy every export the import graph

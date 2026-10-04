@@ -110,7 +110,7 @@ const CLIENT_TYPE_LABEL: Record<OAuthClientType, string> = {
   public: 'Public',
 };
 
-/** Mirrors `normalizeRedirectUris` in `apps/api/src/repositories/oauth-clients.ts`. */
+/** Mirrors `normalizeRedirectUris` in `apps/api/src/services/repositories/oauth-clients.ts`. */
 const MAX_REDIRECT_URIS = 20;
 
 function isLoopbackHost(hostname: string): boolean {

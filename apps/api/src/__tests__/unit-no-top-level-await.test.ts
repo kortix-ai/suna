@@ -4,9 +4,9 @@ import { join, relative } from 'node:path';
 
 // A top-level `await` makes a module async. In this import graph that reorders
 // module evaluation: a seed-regeneration block (`if (import.meta.main) { await
-// fetch(...) }`) in llm-gateway/models/codex-models.ts turned an anonymous
+// fetch(...) }`) in services/llm-gateway/models/codex-models.ts turned an anonymous
 // POST /turn-permission from 401 into 403 (flow PROJ-38). Entry points that
-// nothing imports — src/index.ts and src/scripts/** — may await at top level.
+// nothing imports — src/app/index.ts and src/scripts/** — may await at top level.
 const SRC = join(import.meta.dir, '..');
 const ENTRY_POINTS = [/^index\.ts$/, /^scripts\//];
 

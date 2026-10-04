@@ -1,7 +1,7 @@
 // Public sandbox share links — `/v1/p/share`. Sandbox-scoped, NOT project-
 // scoped: the route takes a `sandbox_id` (the sandbox's external id), never a
 // Kortix project id, and proxies through to the sandbox daemon's own
-// `/kortix/share` endpoints (see apps/api/src/sandbox-proxy/routes/share.ts).
+// `/kortix/share` endpoints (see apps/api/src/http/sandbox-proxy/share.ts).
 // Lives in `projects-client` for barrel/discoverability reasons even though
 // its URLs sit outside `/projects`.
 

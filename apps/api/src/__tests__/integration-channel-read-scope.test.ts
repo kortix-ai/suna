@@ -14,8 +14,8 @@ import {
   CONVERSATION_NOT_IN_PROJECT,
   type ChannelReadGate,
   gateChannelRead,
-} from '../connectors/channel-read-scope';
-import { type GatewayDeps, handleCall } from '../connectors/gateway';
+} from '../services/connectors/channel-read-scope';
+import { type GatewayDeps, handleCall } from '../services/connectors/gateway';
 import { db } from '../lib/db';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 

@@ -15,10 +15,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { auditEvents, roleAssignments } from '@kortix/db';
 import { db, hasDatabase } from '../lib/db';
-import { authorize, clearAuthorizeCaches } from '../iam/authorize';
-import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from '../iam/assignments';
-import { loadSystemRoles } from '../iam/catalog';
-import type { Actor } from '../iam/actor';
+import { authorize, clearAuthorizeCaches } from '../services/iam/authorize';
+import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from '../services/iam/assignments';
+import { loadSystemRoles } from '../services/iam/catalog';
+import type { Actor } from '../services/iam/actor';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -388,7 +388,7 @@ describe.if(hasDatabase)('assignRole — granted_by provenance', () => {
 // ('member','group')` in so many words; `principalTypes` says it again.
 describe.if(hasDatabase)('customRoleBindings — principalTypes', () => {
   test('a service-account binding is excluded when the caller asks for member/group only', async () => {
-    const { customRoleBindings } = await import('../iam/read-models');
+    const { customRoleBindings } = await import('../services/iam/read-models');
     const sa = uid();
     await raw(
       `insert into kortix.service_accounts (service_account_id, account_id, name, public_prefix, secret_hash)
@@ -533,7 +533,7 @@ describe.if(hasDatabase)('the project principal and connection grants', () => {
     // The agent/skill grant route (gated on project.members.manage) must not be
     // a side door to a connection grant: removing the last one would widen the
     // account to everyone without the connections-manage capability.
-    const { deleteResourceGrant } = await import('../iam/resource-grants');
+    const { deleteResourceGrant } = await import('../services/iam/resource-grants');
     expect(await deleteResourceGrant(row.assignmentId, PROJECT, ACCOUNT)).toBe(false);
     expect(
       (await listAssignments({ accountId: ACCOUNT, objectType: 'connection', objectId: shared })).length,

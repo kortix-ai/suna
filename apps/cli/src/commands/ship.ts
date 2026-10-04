@@ -224,7 +224,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
   // kortix.yaml, so the project came out with no declared agents, no skills,
   // and manifest detection falling back to v1 `kortix.toml`.
   //
-  // A project always has a manifest (apps/api/src/projects/managed-repo-seed.ts).
+  // A project always has a manifest (apps/api/src/services/projects/managed-repo-seed.ts).
   // Ship declares `seed_starter: false` — it takes responsibility for the first
   // commit — so it must actually HAVE one to push. `--no-verify` deliberately
   // does not bypass this: it waives *validation* of a manifest, not its
@@ -430,7 +430,7 @@ async function shipFirstTime(
       // and we push its history below with a plain (non-force) push, which a
       // server-seeded repo would reject as non-fast-forward. Seeding is the
       // server's DEFAULT now, so this has to be said out loud — an absent flag
-      // means "seed it" (apps/api/src/projects/managed-repo-seed.ts). The
+      // means "seed it" (apps/api/src/services/projects/managed-repo-seed.ts). The
       // project still ends up with a kortix.yaml either way; this only picks
       // who writes it.
       seed_starter: false,

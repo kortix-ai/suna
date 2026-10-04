@@ -7,7 +7,7 @@
  * collision bug).
  */
 import { describe, expect, test } from 'bun:test';
-import { buildResourceDenier } from '../projects/lib/project-resources';
+import { buildResourceDenier } from '../services/projects/lib/project-resources';
 import type { ProjectConfigSummary } from '../services/git/types';
 
 const CONFIG = {

@@ -22,7 +22,7 @@ mock.module('../lib/db', () => ({
 }));
 
 let listed: typeof DECLARED | Error = DECLARED;
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   listProjectAgents: async () => {
     if (listed instanceof Error) throw listed;
     return listed;
@@ -32,7 +32,7 @@ mock.module('../channels/slack/selection', () => ({
 const scopedCalls: Array<Record<string, unknown>> = [];
 let scopedAllows: string[] | Error = ['reviewer'];
 let unscopedAllows: string[] | Error = [];
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   filterAccessibleObjects: async (actor: unknown, projectId: string, kind: string, names: string[]) => {
     scopedCalls.push({ actor, projectId, kind, names });
     if (scopedAllows instanceof Error) throw scopedAllows;
@@ -44,11 +44,11 @@ mock.module('../iam', () => ({
   },
 }));
 
-mock.module('../iam/actor', () => ({
+mock.module('../services/iam/actor', () => ({
   actorForUser: (userId: string, accountId: string) => ({ userId, accountId }),
 }));
 
-const load = async () => await import('../channels/scoped-agents');
+const load = async () => await import('../services/channels/scoped-agents');
 
 beforeEach(() => {
   projectRow = { accountId: 'acct-1' };

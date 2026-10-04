@@ -26,7 +26,7 @@ import {
   buildSandboxUpstreamHeaders,
   resolveSandboxIngress,
   resolveServiceKey,
-} from '../../sandbox-proxy/backend';
+} from '../sandbox-proxy/backend';
 
 /** The daemon's port inside every sandbox. */
 export const DAEMON_PORT = 8000;

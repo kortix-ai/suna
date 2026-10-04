@@ -23,15 +23,15 @@ mock.module('../../../lib/config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 
-mock.module('../../../platform/service-key', () => ({
+mock.module('../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => null,
 }));
 
-mock.module('../../../platform/sandbox-frontend-url', () => ({
+mock.module('../../platform/sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.test',
 }));
 
-mock.module('../../../platform/sandbox-ownership', () => ({
+mock.module('../../platform/sandbox-ownership', () => ({
   sandboxOwnershipMarker: async () => 'v2-owner-a',
 }));
 const MANAGED = { 'kortix.managed': 'v2-owner-a', 'kortix.env': 'dev' };

@@ -5,8 +5,8 @@ let loadSigningSecretCalls = 0;
 let projectSigningSecret: string | null = null;
 const handledBlockActions: unknown[] = [];
 
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
@@ -34,8 +34,8 @@ mock.module('../channels/install-store', () => ({
 // app's signing secret is chosen by the project admin, so the body's team id
 // is accepted only when it is one of these.
 let provenTeams: string[] = ['T1'];
-const realInbound = await import('../channels/slack/inbound');
-mock.module('../channels/slack/inbound', () => ({
+const realInbound = await import('../services/channels/slack/inbound');
+mock.module('../services/channels/slack/inbound', () => ({
   ...realInbound,
   scopeProjectSlackRequest: async (projectId: string, teamId: string | null | undefined) =>
     teamId && provenTeams.includes(teamId) ? { kind: 'project', projectId, teamId } : null,
@@ -43,8 +43,8 @@ mock.module('../channels/slack/inbound', () => ({
 const handledInbound: unknown[] = [];
 const dispatchedEvents: unknown[] = [];
 const slashCalls: unknown[] = [];
-const realDispatch = await import('../channels/slack/dispatch');
-mock.module('../channels/slack/dispatch', () => ({
+const realDispatch = await import('../services/channels/slack/dispatch');
+mock.module('../services/channels/slack/dispatch', () => ({
   ...realDispatch,
   maybeHandleDmCommand: async () => false,
   dispatchSlackEvent: async (projectId: string, envelope: unknown, opts: unknown) => {
@@ -52,17 +52,17 @@ mock.module('../channels/slack/dispatch', () => ({
   },
   ensureProjectChannelBinding: async () => {},
 }));
-const realCommands = await import('../channels/slack/commands');
-mock.module('../channels/slack/commands', () => ({
+const realCommands = await import('../services/channels/slack/commands');
+mock.module('../services/channels/slack/commands', () => ({
   ...realCommands,
   handleSlashCommand: async (sub: string, _arg: string, ctx: unknown) => {
     slashCalls.push({ sub, ctx });
     return { response_type: 'ephemeral', text: 'ok' };
   },
 }));
-mock.module('../channels/slack/dedup', () => ({ alreadyHandled: async () => false }));
+mock.module('../services/channels/slack/dedup', () => ({ alreadyHandled: async () => false }));
 
-mock.module('../channels/slack/interactivity', () => ({
+mock.module('../services/channels/slack/interactivity', () => ({
   handleBlockAction: async (payload: unknown, inbound: unknown) => {
     handledBlockActions.push(payload);
     handledInbound.push(inbound);
@@ -74,8 +74,8 @@ mock.module('../channels/slack/interactivity', () => ({
   handleViewSubmission: async () => {},
 }));
 
-await import('../channels/slack/routes');
-const { slackWebhookApp } = await import('../channels/slack/app');
+await import('../http/channels/slack/routes');
+const { slackWebhookApp } = await import('../http/channels/slack/app');
 
 afterAll(() => {
   mock.restore();

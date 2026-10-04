@@ -214,7 +214,7 @@ describe('adopted warm sessions and the title window', () => {
   // An adopted warm session was CREATED when the user landed on the project
   // home — possibly long before the send. Its title generation starts at the
   // first prompt, i.e. at adoption, which stamps metadata.last_activity_at
-  // (apps/api/src/projects/routes/warm-sessions.ts). Windowing on created_at
+  // (apps/api/src/http/projects/warm-sessions.ts). Windowing on created_at
   // alone skipped the fast title poll for exactly the sessions the home send
   // produces, leaving "New session" in the sidebar for up to the 60s poll.
   test('a titleless session adopted just now is awaiting its title even when created long ago', () => {

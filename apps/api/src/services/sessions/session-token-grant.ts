@@ -43,7 +43,7 @@
 import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../lib/db';
-import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
+import { DEFAULT_AGENT_SENTINEL } from '../projects/agents';
 import { type MirrorRefresh, existingProjectMirrorPath, runGitCapture } from '../git/mirror';
 import {
   agentGrantDiffers,

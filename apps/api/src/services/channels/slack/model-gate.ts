@@ -1,0 +1,70 @@
+import { and, eq } from 'drizzle-orm';
+import { accountMembers, projects } from '@kortix/db';
+import { db } from '../../../lib/db';
+import { accountRoleMap } from '../../iam/read-models';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { type ChannelCtx, currentChannelSelection } from './selection';
+
+// The account/tier context a channel's model setting resolves against. Kept out
+// of selection.ts (which is intentionally lightweight: just db + git) because it
+// pulls in config + billing — so the per-channel binding helpers stay cheap to
+// unit-test in isolation.
+
+export interface ChannelModelContext {
+  projectId: string;
+  accountId: string;
+  /** A representative project-owner user (for codex credential lookups). */
+  ownerUserId: string;
+  /** The account may not use platform-managed Kortix models. */
+  freeManagedOnly: boolean;
+  /** The project's `llm_gateway` flag. Off ⇒ native OpenCode mode: the gateway
+   *  picker/servability machinery does not apply — a channel model is a native
+   *  `provider/model` ref stored verbatim. */
+  llmGatewayEnabled: boolean;
+}
+
+/**
+ * Resolve the project + owner account + tier a channel's model decisions key off.
+ * Used to validate a model (isModelServableForAccount) and to list the real
+ * picker catalog (listPickerModels). Null when the channel is unbound.
+ */
+export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModelContext | null> {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection?.projectId) return null;
+  const [project] = await db
+    .select({ accountId: projects.accountId, metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, selection.projectId))
+    .limit(1);
+  if (!project) return null;
+  return projectModelContext({ projectId: selection.projectId, ...project });
+}
+
+/** `channelModelContext` for a project row the caller already holds. */
+export async function projectModelContext(project: {
+  projectId: string;
+  accountId: string;
+  metadata: unknown;
+}): Promise<ChannelModelContext> {
+  const [owner] = [...(await accountRoleMap(project.accountId)).entries()]
+    .filter(([, role]) => role === 'owner')
+    .map(([userId]) => ({ userId }));
+  // THE single managed-models predicate (services/billing/services/entitlements.ts).
+  // This channel used to derive the answer itself, as
+  // `accountIsFreeTierForModels(getAccountTier(...))` — a tier-string check
+  // that silently ignored the operator `managed_models_override` column, so an
+  // account granted managed models by an operator still saw a Zen-only picker
+  // in Slack while every other surface showed it the full lineup (and an
+  // account force-restricted to BYOK still saw managed models here).
+  // `accountMayUseManagedModels` already returns true when internal billing is
+  // off, so the self-host short-circuit no longer needs restating here.
+  const freeManagedOnly = !(await accountMayUseManagedModels(project.accountId));
+  return {
+    projectId: project.projectId,
+    accountId: project.accountId,
+    ownerUserId: owner?.userId ?? project.accountId,
+    freeManagedOnly,
+    llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
+  };
+}

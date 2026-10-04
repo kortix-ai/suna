@@ -10,7 +10,7 @@
  *     (`updateKortixPty`). The panel owns that call; this file never resizes.
  *
  * Keepalive: the API proxy pings BOTH legs every 25 s
- * (`PREVIEW_WS_KEEPALIVE_MS`, `apps/api/src/sandbox-proxy/ws-proxy.ts:99`).
+ * (`PREVIEW_WS_KEEPALIVE_MS`, `apps/api/src/services/sandbox-proxy/ws-proxy.ts:99`).
  * That server-side ping is what fixed the 60 s idle cut (PR #7062). A client
  * keepalive can only be a PING control frame — it terminates at the API and
  * never reaches the sandbox leg — so it is a belt on the client↔API hop only,

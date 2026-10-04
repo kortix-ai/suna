@@ -1,6 +1,6 @@
 /**
  * Platform managed-GitHub-App setup surface
- * (apps/api/src/platform/routes/github-app.ts, mounted at
+ * (apps/api/src/http/platform/github-app.ts, mounted at
  * /v1/platform/github-app). Three-step in-app manifest flow + paste-an-App
  * + paste-a-PAT + status + disconnect, all admin-gated except the two
  * browser-redirect callbacks which are PUBLIC by necessity (GitHub → browser).

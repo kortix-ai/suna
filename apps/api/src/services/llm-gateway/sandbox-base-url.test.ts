@@ -1,0 +1,53 @@
+// resolveLlmGatewayBaseUrl is the formula shared by sandbox boot and hot
+// environment pushes. These tests prevent the two call sites from drifting.
+import { beforeEach, describe, expect, test } from 'bun:test';
+
+process.env.KORTIX_URL = 'https://api.example.com';
+process.env.FRONTEND_URL = 'https://app.example.com';
+delete process.env.LLM_GATEWAY_BASE_URL;
+delete process.env.LLM_GATEWAY_PROXY_PORT;
+delete process.env.LLM_GATEWAY_PROXY_TARGET;
+
+const { config } = await import('../../lib/config');
+const { resolveLlmGatewayBaseUrl } = await import('./sandbox-base-url');
+
+describe('resolveLlmGatewayBaseUrl', () => {
+  beforeEach(() => {
+    config.LLM_GATEWAY_BASE_URL = '';
+    config.LLM_GATEWAY_PROXY_PORT = 0;
+    config.LLM_GATEWAY_PROXY_TARGET = '';
+  });
+
+  test('default (no proxy mode): {origin}/v1/llm', () => {
+    expect(resolveLlmGatewayBaseUrl('https://api.example.com')).toBe(
+      'https://api.example.com/v1/llm',
+    );
+  });
+
+  test('strips a trailing slash off the origin before appending the suffix', () => {
+    expect(resolveLlmGatewayBaseUrl('https://api.example.com/')).toBe(
+      'https://api.example.com/v1/llm',
+    );
+  });
+
+  test('proxy mode includes the standalone gateway OpenAI v1 prefix', () => {
+    config.LLM_GATEWAY_PROXY_PORT = 8090;
+    expect(resolveLlmGatewayBaseUrl('http://kortix-api:8008')).toBe(
+      'http://kortix-api:8008/v1/llm-gateway/v1',
+    );
+  });
+
+  test('proxy mode via LLM_GATEWAY_PROXY_TARGET (K8s-style) takes the same branch', () => {
+    config.LLM_GATEWAY_PROXY_TARGET = 'llm-gateway:8090';
+    expect(resolveLlmGatewayBaseUrl('https://api.example.com')).toBe(
+      'https://api.example.com/v1/llm-gateway/v1',
+    );
+  });
+
+  test('an explicit LLM_GATEWAY_BASE_URL override always wins, regardless of origin', () => {
+    config.LLM_GATEWAY_BASE_URL = 'https://gateway.internal.example.com/v1/llm';
+    expect(resolveLlmGatewayBaseUrl('http://kortix-api:8008')).toBe(
+      'https://gateway.internal.example.com/v1/llm',
+    );
+  });
+});

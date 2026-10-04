@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import { TEAMS_STOP_VERB, buildPlanCard } from '../channels/teams/cards';
+import { TEAMS_STOP_VERB, buildPlanCard } from '../services/channels/teams/cards';
 import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Every other Kortix surface can end a run the moment it goes wrong. In Teams
@@ -34,7 +34,7 @@ mock.module('../lib/db', () => ({
 // with project.session.stop), and what was asked.
 let stopActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
       actorChecks.push({ user: user.platformUserId, projectId, action });
@@ -48,7 +48,7 @@ const finalized: Array<Record<string, unknown>> = [];
 const deleted: string[] = [];
 let finalizeClaim = true;
 const claims: string[] = [];
-mock.module('../channels/teams/turn', () => ({
+mock.module('../services/channels/teams/turn', () => ({
   loadTurn: async () => turn,
   claimFinalize: async (id: string) => {
     claims.push(id);
@@ -83,7 +83,7 @@ const liveTurn = (fromId: string) => ({
   originatingActivity: { from: { id: fromId, name: 'Ivan' } },
 });
 
-const load = async () => await import('../channels/teams/stop');
+const load = async () => await import('../services/channels/teams/stop');
 
 beforeEach(() => {
   participantRow = undefined;

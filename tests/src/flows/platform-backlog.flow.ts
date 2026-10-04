@@ -11,10 +11,10 @@
 import { flow } from '../core/flow';
 
 // ─── PLT-1 — platform mount-point + sandbox version/changelog reads ───────
-// apps/api/src/platform/index.ts mounts `platformApp` at /v1/platform with NO
+// apps/api/src/http/platform/index.ts mounts `platformApp` at /v1/platform with NO
 // auth middleware of its own (app.route('/v1/platform', platformApp) in
-// apps/api/src/index.ts:695) — the mount-point info handler and every
-// versionRouter read (apps/api/src/platform/routes/version.ts) are public.
+// apps/api/src/app/index.ts:695) — the mount-point info handler and every
+// versionRouter read (apps/api/src/http/platform/version.ts) are public.
 // version.ts falls back to `{version:'unknown'|'dev-unknown', ...}` when the
 // upstream GitHub Releases / Docker Hub calls fail or SANDBOX_VERSION isn't
 // set, so these always return 200 with a stable shape rather than erroring.

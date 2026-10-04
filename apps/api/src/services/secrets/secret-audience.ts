@@ -31,7 +31,7 @@
 // `services/secrets/secrets.ts` imports this module, and so does nearly every suite.
 // Suites stub `iam/*`, `@kortix/db` and `personal-resources` with explicit
 // export lists, so every IAM collaborator here loads lazily: a static edge to
-// `iam/authorize` alone pulls `iam/actor` into graphs that stub it.
+// `services/iam/authorize` alone pulls `services/iam/actor` into graphs that stub it.
 import { sql } from 'drizzle-orm';
 import { db } from '../../lib/db';
 
@@ -89,7 +89,7 @@ export async function secretAudienceSubject(input: {
     const actor = input.actorUserId ?? null;
     return { personId: actor, agentId: actor };
   }
-  const { resolveSessionPersonalOwner } = await import('../../projects/lib/personal-resources');
+  const { resolveSessionPersonalOwner } = await import('../projects/lib/personal-resources');
   const [personId, agentId] = await Promise.all([
     resolveSessionPersonalOwner({
       projectId: input.projectId,
@@ -116,7 +116,7 @@ export async function filterSecretRowsByAudience<T extends { secretId: string }>
   rows: readonly T[];
 }): Promise<Array<T & { audience: SecretReach }>> {
   if (input.rows.length === 0) return [];
-  const { loadObjectGrants } = await import('../../iam/authorize');
+  const { loadObjectGrants } = await import('../iam/authorize');
   const grants = await loadObjectGrants(input.projectId, 'secret');
   if (grants.size === 0) return input.rows.map((row) => ({ ...row, audience: 'open' as const }));
   const reachOf = await loadSecretReach({
@@ -138,7 +138,7 @@ export async function loadSecretReach(input: {
   accountId: string | null;
   subject: SecretAudienceSubject;
 }): Promise<(secretId: string) => SecretReach | 'out'> {
-  const iamAuthorize = await import('../../iam/authorize');
+  const iamAuthorize = await import('../iam/authorize');
   const grants = await iamAuthorize.loadObjectGrants(input.projectId, 'secret');
   if (grants.size === 0) return () => 'open';
   const accountId = input.accountId ?? (await projectAccountId(input.projectId));
@@ -163,7 +163,7 @@ export async function sessionPersonOnlyPlaintextSecrets(input: {
   projectId: string;
   sessionId: string;
 }): Promise<string[]> {
-  const { loadObjectGrants } = await import('../../iam/authorize');
+  const { loadObjectGrants } = await import('../iam/authorize');
   if ((await loadObjectGrants(input.projectId, 'secret')).size === 0) return [];
   const subject = await secretAudienceSubject(input);
   if (!subject.personId) return [];
@@ -200,7 +200,7 @@ export async function setSecretAudience(input: {
   grantedBy: string;
   pending?: boolean;
 }): Promise<void> {
-  const assignments = await import('../../iam/assignments');
+  const assignments = await import('../iam/assignments');
   const wanted = new Map(
     input.principals.map((p) => [`${ROLE_PRINCIPAL[p.principal_type]}:${p.principal_id}`, p]),
   );
@@ -232,16 +232,16 @@ export async function clearSecretAudience(input: {
   projectId: string;
   secretId: string;
 }): Promise<void> {
-  const { loadObjectGrants } = await import('../../iam/authorize');
+  const { loadObjectGrants } = await import('../iam/authorize');
   if (!(await loadObjectGrants(input.projectId, 'secret')).has(input.secretId)) return;
-  const assignments = await import('../../iam/assignments');
+  const assignments = await import('../iam/assignments');
   for (const grant of await currentSecretGrants(input)) {
     await assignments.revokeAssignment(assignments.SYSTEM_ACTOR, input.accountId, grant.grantId);
   }
 }
 
 async function currentSecretGrants(input: { accountId: string; projectId: string; secretId: string }) {
-  const { objectGrantRows } = await import('../../iam/read-models');
+  const { objectGrantRows } = await import('../iam/read-models');
   return (
     await objectGrantRows({ accountId: input.accountId, projectId: input.projectId, includeServiceAccounts: true })
   ).filter((grant) => grant.resourceType === 'secret' && grant.resourceId === input.secretId);

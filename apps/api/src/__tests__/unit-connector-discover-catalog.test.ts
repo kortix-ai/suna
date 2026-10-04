@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createConnectorCatalog } from '../connectors/connector-catalog';
-import { isCatalogApp } from '../connectors/pipedream-catalog';
+import { createConnectorCatalog } from '../services/connectors/connector-catalog';
+import { isCatalogApp } from '../services/connectors/pipedream-catalog';
 
 const INDEX = {
   version: 1,

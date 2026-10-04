@@ -28,7 +28,7 @@ import {
   executeCall,
   type ConnectorAuth,
   type FetchImpl,
-} from '../connectors/call';
+} from '../services/connectors/call';
 
 const BEARER: ConnectorAuth = { type: 'bearer', in: 'header', name: null, prefix: null };
 const API_KEY: ConnectorAuth = { type: 'custom', in: 'header', name: 'X-API-Key', prefix: null };

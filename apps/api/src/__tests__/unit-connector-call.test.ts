@@ -13,7 +13,7 @@ import {
   parseResponseBody,
   type ConnectorAuth,
   type FetchImpl,
-} from '../connectors/call';
+} from '../services/connectors/call';
 
 const BEARER: ConnectorAuth = { type: 'bearer', in: 'header', name: null, prefix: null };
 

@@ -365,7 +365,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
   // `main`'s `feature-flags-view.tsx` (#6279), and verified against the route
   // rather than taken on trust: `PATCH /projects/:id/features` and its
   // deprecated `/experimental` alias run the SAME handler
-  // (`apps/api/src/projects/routes/project-settings.ts`), which asserts
+  // (`apps/api/src/http/projects/project-settings.ts`), which asserts
   // `PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE`. The old gate was wrong in both
   // directions — a manager without settings.write saw a switch the server
   // rejects, and a custom role holding settings.write but not project.write

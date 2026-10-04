@@ -10,11 +10,11 @@ let storedServiceUrl: string | null = SERVICE_URL;
 let byoCreds: { appId: string; appPassword: string } | null = null;
 
 mock.module('../lib/config', () => ({ config: { MICROSOFT_APP_ID: 'managed-app' } }));
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadTeamsServiceUrlForProject: async () => storedServiceUrl,
   loadTeamsBotCredentials: async () => byoCreds,
 }));
-mock.module('../channels/teams-auth', () => ({ botConnectorToken: async () => 'bot-token' }));
+mock.module('../services/channels/teams-auth', () => ({ botConnectorToken: async () => 'bot-token' }));
 
 const calls: Array<{ method: string; url: string; body: unknown }> = [];
 let reply: () => Response = () => Response.json({ id: 'a:1-direct' });
@@ -25,7 +25,7 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
 }) as typeof fetch;
 
 const { conversationMemberId, deleteActivity, getTeamsTeam, listTeamsTeamChannels, openDirectConversation, sendTargetedCard } =
-  await import('../channels/teams-api');
+  await import('../services/channels/teams-api');
 
 beforeEach(() => {
   calls.length = 0;

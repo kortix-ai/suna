@@ -25,11 +25,11 @@
 import { randomUUID } from 'node:crypto';
 import { config } from '../../../lib/config';
 import { runWorkerTick } from '../../audit/audit-scope';
-import { ensurePiWorkerImage } from '../../../snapshots/builder';
+import { ensurePiWorkerImage } from '../../snapshots/builder';
 import { getDaytona } from './client';
 import { withTimeout } from '../../../lib/with-timeout';
 import { managedSandboxLabels } from './runtime';
-import { providerAutoStopBackstopMinutes } from '../../../platform/providers';
+import { providerAutoStopBackstopMinutes } from '../../platform/providers';
 
 const PARK_LABEL = 'kortix.piworker-park';
 const HASH_LABEL = 'kortix.piworker-hash';

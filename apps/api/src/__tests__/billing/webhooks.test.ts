@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
-import type { GrantInput } from '../../billing/wallet';
+import type { GrantInput } from '../../services/billing/wallet';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
@@ -86,8 +86,8 @@ beforeEach(() => {
 // per-seat credit-grant block, so a guard added to the grant silently disabled
 // it. Track it so that can never happen again unnoticed.
 let mintYoloTokensCalls: string[] = [];
-const actualSeatManagement = await import('../../billing/services/seat-management');
-mock.module('../../billing/services/seat-management', () => ({
+const actualSeatManagement = await import('../../services/billing/services/seat-management');
+mock.module('../../services/billing/services/seat-management', () => ({
   ...actualSeatManagement,
   mintYoloTokensForAllMembers: async (accountId: string) => {
     mintYoloTokensCalls.push(accountId);
@@ -96,8 +96,8 @@ mock.module('../../billing/services/seat-management', () => ({
 }));
 
 // Import AFTER mocking
-const { processStripeWebhook, processRevenueCatWebhook } = await import('../../billing/services/webhooks');
-const { resolvePerSeatPriceId } = await import('../../billing/services/tiers');
+const { processStripeWebhook, processRevenueCatWebhook } = await import('../../services/billing/services/webhooks');
+const { resolvePerSeatPriceId } = await import('../../services/billing/services/tiers');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

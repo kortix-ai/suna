@@ -401,7 +401,7 @@ flow(
 // arrange. The swap decision table, the pre-exec probe and the OpenCode rollback
 // are proved in apps/kortix-sandbox-agent-server/src/__tests__/runtime-convergence.test.ts,
 // and the comparison and the memo in
-// apps/api/src/runtime-assets/__tests__/running-assets.test.ts.
+// apps/api/src/services/runtime-assets/__tests__/running-assets.test.ts.
 //
 // TEST DEFECT, fixed here: on a deployed target, `env.target !== 'local'` takes
 // `ctx.fixtures.project()` with no `seed`/`managedGit` down the SAME
@@ -670,7 +670,7 @@ flow(
     // is that the widened predicate carries a real turn on the OpenCode port
     // rather than refusing or wedging it. Which collaborators run for which
     // (port, path) is proved exactly, with both providers' routing shapes, in
-    // apps/api/src/sandbox-proxy/routes/preview-env-sync-ports.test.ts.
+    // apps/api/src/http/sandbox-proxy/preview-env-sync-ports.test.ts.
     await ctx.step('a prompt addressed straight at the OpenCode port runs a real turn', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

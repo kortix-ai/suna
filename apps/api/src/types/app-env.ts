@@ -2,7 +2,7 @@ import type { AgentGrant } from '@kortix/db';
 
 // Context variables set by auth middleware (platform).
 // Single source of truth for everything apiKeyAuth / supabaseAuth / combinedAuth
-// write onto the Hono context — keep this in sync with middleware/auth.ts.
+// write onto the Hono context — keep this in sync with http/middleware/auth.ts.
 export interface AuthVariables {
   userId: string;
   userEmail: string;
@@ -29,7 +29,7 @@ export interface AuthVariables {
    *  unattended run, a cleared session, or any non-session credential. */
   onBehalfOfUserId?: string | null;
   /** Live impersonation grant id — set only while a platform admin acts as an
-   *  account (middleware/impersonation.ts). Its presence means `accountId` is
+   *  account (http/middleware/impersonation.ts). Its presence means `accountId` is
    *  the TARGET account, not the caller's own. */
   impersonationGrantId?: string;
   /** The REAL platform admin behind an impersonated request. `userId` stays the

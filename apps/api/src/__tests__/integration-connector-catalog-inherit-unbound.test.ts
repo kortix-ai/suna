@@ -21,8 +21,8 @@ import {
   projects,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { dbConnectorRouterDeps } from '../connectors/db-deps';
-import { createConnectorRouter } from '../connectors/router';
+import { dbConnectorRouterDeps } from '../services/connectors/db-deps';
+import { createConnectorRouter } from '../http/connectors/router';
 import {
   resolveProjectDefaultConnectorConnection,
   resolveSessionConnectorConnection,

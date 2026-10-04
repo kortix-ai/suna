@@ -11,7 +11,7 @@ import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
 
 /**
  * The unambiguous billing situation for an account — the SAME state the API's
- * billing gate admits on (apps/api/src/billing/services/billing-state.ts).
+ * billing gate admits on (apps/api/src/services/billing/services/billing-state.ts).
  *
  * Branch on this, never on `tier_key` (which stays `free` for per-seat Team
  * accounts) and never on `can_run` alone (`false` means BLOCKED, not "no plan").

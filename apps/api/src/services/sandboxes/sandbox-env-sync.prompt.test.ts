@@ -81,7 +81,7 @@ mock.module('../secrets/network-secret-boundary', () => ({
   },
 }));
 
-mock.module('../../sandbox-proxy/backend', () => ({
+mock.module('../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 

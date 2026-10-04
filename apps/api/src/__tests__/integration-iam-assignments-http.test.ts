@@ -14,10 +14,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../lib/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { loadSystemRoles } from '../iam/catalog';
-import { clearAuthorizeCaches } from '../iam/authorize';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { loadSystemRoles } from '../services/iam/catalog';
+import { clearAuthorizeCaches } from '../services/iam/authorize';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

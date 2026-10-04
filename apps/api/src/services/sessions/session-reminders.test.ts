@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { nextTriggerScheduleSlot, triggerScheduleRevision } from '../triggers/trigger-schedule';
-import { channelPrompterForOnBehalfOf } from '../../projects/lib/on-behalf-of';
+import { channelPrompterForOnBehalfOf } from '../projects/lib/on-behalf-of';
 import { type ReminderDraft, reminderPromptText, reminderSpec, newReminderId, parseReminderDraft } from './session-reminders';
 
 const NOW = new Date('2026-09-28T12:00:00.000Z');

@@ -54,7 +54,7 @@ await git('add', '.');
 await git('commit', '-m', 'manifest v1');
 
 const { latestAgentConfigEtag, LATEST_ETAG_BUDGET_MS } = await import('./session-reload');
-const { resolveCompiledAgentConfigForSession } = await import('../../projects/lib/compile-agent-config');
+const { resolveCompiledAgentConfigForSession } = await import('../projects/lib/compile-agent-config');
 
 const project = {
   projectId: 'krtx818-freshness-probe',
@@ -115,7 +115,7 @@ describe('the config etag read stays fresh without a whole-mirror fetch', () => 
 
   test('both compile entry points thread the forced refresh', async () => {
     const src = await Bun.file(
-      new URL('../../projects/lib/compile-agent-config.ts', import.meta.url).pathname,
+      new URL('../projects/lib/compile-agent-config.ts', import.meta.url).pathname,
     ).text();
     for (const name of ['resolveCompiledAgentConfigForSession', 'resolveSelectedAgentConfigForSession']) {
       const body = src.split(`export async function ${name}(`)[1]?.split('\n}\n')[0];

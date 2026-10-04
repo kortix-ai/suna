@@ -8,20 +8,20 @@ import {
   type SecretGrant,
   type SessionNarrowingContext,
   type ShareSubject,
-} from '../../connectors/share';
+} from '../connectors/share';
 // Straight from the engine, not the barrel (see project-access.ts): the barrel
 // is replaced wholesale by `mock.module` in several route tests.
-import { authorize } from '../../iam/authorize';
-import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
-import { agentSessionStanding } from '../../projects/lib/agent-session-standing';
-import { hasAccountSessionOversight } from '../../iam/session-oversight';
+import { authorize } from '../iam/authorize';
+import { isAgentPrincipalActor, type Actor } from '../iam/actor';
+import { agentSessionStanding } from '../projects/lib/agent-session-standing';
+import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { recordAuditEvent } from '../audit/audit';
 import { db } from '../../lib/db';
 import { projectSessions, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { ttlMemo } from '../../lib/ttl-memo';
-import { roleAllows, type ProjectRole } from '../../projects/access';
-import type { ProjectRow, ProjectSessionRow } from '../../projects/lib/serializers';
+import { roleAllows, type ProjectRole } from '../projects/access';
+import type { ProjectRow, ProjectSessionRow } from '../projects/lib/serializers';
 
 async function loadProjectSessionRow(
   loaded: { row: ProjectRow },
@@ -107,7 +107,7 @@ export async function sessionOwnerIsMachine(
  * trigger-session override that would expose sibling sessions.
  *
  * Keyed on the AGENT binding, never on `callerSessionId`. That field holds the
- * SUPABASE LOGIN session id for every signed-in human (middleware/auth.ts:285,
+ * SUPABASE LOGIN session id for every signed-in human (http/middleware/auth.ts:285,
  * :341), so keying on it would strip managers of `canManageProject` — and with
  * it `canManageLifecycle` — producing a 403 on stop, restart, delete and
  * change-model for every manager who is not the owner.
@@ -367,7 +367,7 @@ export async function loadVisibleSession(
    *
    * Separate from `callerSessionId` on purpose. 14 of this function's call sites
    * pass the RAW `c.get('sessionId')` for that one, and `resolveSupabaseAuth`
-   * (middleware/auth.ts:285, :341) sets it to the SUPABASE LOGIN session id for
+   * (http/middleware/auth.ts:285, :341) sets it to the SUPABASE LOGIN session id for
    * every signed-in human — so it cannot be read as "an agent token".
    * ONLY the trigger-session manager override reads this field.
    */

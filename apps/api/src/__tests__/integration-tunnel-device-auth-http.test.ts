@@ -10,11 +10,11 @@ import {
 } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
 import { hashSecretKey } from '../lib/crypto';
 import { db } from '../lib/db';
-import { createDeviceAuthPublicRouter } from '../tunnel/routes/device-auth';
+import { createDeviceAuthPublicRouter } from '../http/tunnel/device-auth';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

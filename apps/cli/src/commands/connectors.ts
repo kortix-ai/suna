@@ -590,7 +590,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (!slug) return missing('a connector slug');
         // The server INCLUDES each action's `inputSchema` unless the caller
         // passes `include_schemas=false` (it is the bulk of this route's
-        // payload — see apps/api/src/connectors/db-deps.ts `listConnectors`).
+        // payload — see apps/api/src/services/connectors/db-deps.ts `listConnectors`).
         // `--json` is a scripting contract that historically included it, so
         // ask for it explicitly; the human-readable view below never renders
         // it, so the human path opts out.

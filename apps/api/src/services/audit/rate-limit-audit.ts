@@ -4,7 +4,7 @@
  * and the request's own audit row already names its route. `metadata.limiter`
  * says which limiter refused the request.
  *
- * A leaf module on purpose: tests replace `middleware/rate-limit` with partial
+ * A leaf module on purpose: tests replace `http/middleware/rate-limit` with partial
  * `mock.module` stubs, and a constant exported from there would be missing
  * under those stubs.
  */

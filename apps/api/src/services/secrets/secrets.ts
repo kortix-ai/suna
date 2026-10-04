@@ -1,7 +1,7 @@
 import { connectors, projectSecrets } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
 import {
   type SecretConsumer,
   type SecretEgressPolicy,

@@ -11,7 +11,7 @@ import { db } from '../lib/db';
 import {
   revokeAllAccountTokensForUser,
   revokeSessionConnectorTokens,
-} from '../repositories/account-tokens';
+} from '../services/repositories/account-tokens';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

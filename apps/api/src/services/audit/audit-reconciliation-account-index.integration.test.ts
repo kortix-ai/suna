@@ -30,7 +30,7 @@
  *
  * A near-empty test table costs a seq scan as the CORRECT choice on its own,
  * so the plan tests force the planner away from one (`enable_seqscan = off`,
- * same technique as `admin/accounts-list-index.integration.test.ts`) and
+ * same technique as `services/admin/accounts-list-index.integration.test.ts`) and
  * assert the index is STRUCTURALLY usable for the shipped predicate, not
  * that the planner picks it unprompted on this table's size.
  */

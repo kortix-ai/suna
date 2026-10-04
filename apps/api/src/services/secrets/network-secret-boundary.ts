@@ -1,7 +1,7 @@
 import { isMetaAgentName } from '@kortix/shared';
 
 import { resolveNetworkBoundaryBindings } from './network-boundary';
-import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
+import { DEFAULT_AGENT_SENTINEL } from '../projects/agents';
 import { intersectSecretGrants, listResolvedProjectSecrets } from './secrets';
 import { secretAudienceSubject, type SecretAudienceSubject } from './secret-audience';
 import { loadSessionSecretContext, type SessionSecretContext } from '../sessions/session-secret-context';

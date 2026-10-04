@@ -19,7 +19,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import * as realDbModule from '../lib/db';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 
 const PROJECT_ID = crypto.randomUUID();
 const ACCOUNT_ID = crypto.randomUUID();
@@ -28,7 +28,7 @@ const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
 const t = (name: string) => `${name}-${SANDBOX_ID}`;
 
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
@@ -38,8 +38,8 @@ mock.module('../projects/lib/access', () => ({
   loadVisibleSession: async () => ({ row: { sessionId: SESSION_ID } }),
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/session-runtime')).registerSessionRuntimeRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/session-runtime')).registerSessionRuntimeRoutes();
 
 const app = new Hono<{ Variables: { userId: string; authType: string } }>();
 app.use('*', async (c, next) => {

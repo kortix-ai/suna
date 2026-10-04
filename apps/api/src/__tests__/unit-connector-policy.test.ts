@@ -9,7 +9,7 @@ import {
   resolveEffectiveAction,
   selectPoliciesForRead,
   type Policy,
-} from '../connectors/policy';
+} from '../services/connectors/policy';
 
 function resolveWithConnector(path: string, policies: Policy[]) {
   return resolveEffectiveAction({

@@ -5,7 +5,7 @@ import {
   grantAllowsCodex,
   promptModelOverride,
   resetVisionProbeCacheForTest,
-} from '../channels/vision-model';
+} from '../services/channels/vision-model';
 
 /**
  * Why this exists: on dev 2026-09-19 a Teams message with a pasted screenshot
@@ -285,23 +285,23 @@ mock.module('../lib/config', () => ({
   config: { LLM_GATEWAY_VISION_MODEL: 'gpt-5.6-luna' },
 }));
 
-mock.module('../llm-gateway/models/served-managed-models', () => ({
+mock.module('../services/llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'deepseek-v4-flash',
 }));
 
-mock.module('../llm-gateway/enablement', () => ({
+mock.module('../services/llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => true,
   projectLlmGatewayEnabledById: async () => true,
 }));
 
-mock.module('../billing/services/entitlements', () => ({
+mock.module('../services/billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => true,
 }));
 
 // Mirrors dev: the configured vision target is refused, the rest are not.
 const probeCalls: string[] = [];
 const probeInputs: Array<Record<string, unknown>> = [];
-mock.module('../llm-gateway/resolution/default-model', () => ({
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: { model: string }) => {
     const { model } = input;
     probeCalls.push(model);
@@ -335,11 +335,11 @@ const CATALOG = {
   },
 };
 
-mock.module('../llm-gateway/models/catalog-models', () => ({
+mock.module('../services/llm-gateway/models/catalog-models', () => ({
   gatewayModelCatalog: () => CATALOG,
 }));
 
-mock.module('../llm-gateway/models/servable-catalog', () => ({
+mock.module('../services/llm-gateway/models/servable-catalog', () => ({
   servableProjectCatalog: async () => ({
     models: Object.fromEntries(Object.entries(CATALOG).map(([k, v]) => [k, { ...v, enabled: true }])),
     modelOverrides: {},

@@ -40,7 +40,7 @@ beforeEach(() => {
 });
 
 // Import AFTER mocking
-const { processYearlyCreditRotation } = await import('../../billing/services/yearly-rotation');
+const { processYearlyCreditRotation } = await import('../../services/billing/services/yearly-rotation');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

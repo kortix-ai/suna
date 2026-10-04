@@ -7,9 +7,9 @@ import {
   type AccountRole,
   type ProjectAccessAction,
   type ProjectRole,
-} from '../projects/access';
-import { normalizeProjectRole as parseProjectRole } from '../iam/roles';
-import { iamActionForProjectAccess } from '../projects/lib/access';
+} from '../services/projects/access';
+import { normalizeProjectRole as parseProjectRole } from '../services/iam/roles';
+import { iamActionForProjectAccess } from '../services/projects/lib/access';
 import { isUuid } from '../lib/validate';
 
 describe('isUuid project-id guard', () => {

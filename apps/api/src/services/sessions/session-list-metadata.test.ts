@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   LIST_OMITTED_SESSION_METADATA_KEYS,
   serializeSession,
-} from '../../projects/lib/serializers';
+} from '../projects/lib/serializers';
 
 /**
  * The inventory LIST drops the write-only heavy metadata keys; the

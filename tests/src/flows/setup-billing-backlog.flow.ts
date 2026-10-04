@@ -5,7 +5,7 @@
  * The target this suite runs against is the CLOUD / managed config
  * (`KORTIX_BILLING_INTERNAL_ENABLED=true`), so two things hold by design:
  *   - `/v1/setup/*` is mounted ONLY when billing is DISABLED (self-hosted) — see
- *     apps/api/src/index.ts:463 `if (!config.KORTIX_BILLING_INTERNAL_ENABLED)`.
+ *     apps/api/src/app/index.ts:463 `if (!config.KORTIX_BILLING_INTERNAL_ENABLED)`.
  *     On this target those routes are unmounted → 404. ACC-4 proves that gating.
  *   - Billing routes ARE mounted; BILL-2 covers the checkout membership boundary
  *     (`resolveScopedAccountId` → 403 for a non-member, 401 for ANON).
@@ -157,7 +157,7 @@ flow(
  * SPEC DRIFT: the spec claims write ops require a `billing.write` capability and that
  * `MEMBER`/`AUDITOR` → 403. The code has NO such role/capability gate: billing write
  * routes resolve the account purely by MEMBERSHIP via `resolveScopedAccountId`
- * (apps/api/src/accounts/resolve-account.ts) — any member of the account passes, only a
+ * (apps/api/src/services/accounts/resolve-account.ts) — any member of the account passes, only a
  * NON-member (403) or ANON (401) is rejected. There is no `requirePermission('billing.write')`
  * anywhere under apps/api/src/billing/routes.
  *

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ProviderName } from '../../platform/providers';
+import type { ProviderName } from '../platform/providers';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,

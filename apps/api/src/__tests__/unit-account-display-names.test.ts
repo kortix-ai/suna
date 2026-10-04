@@ -30,16 +30,12 @@ mock.module('../lib/supabase', () => ({
   getSupabase: () => ({ auth: { admin: {} } }),
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => 'acc-x',
 }));
 
-const {
-  accountDisplayName,
-  clearOwnerEmailCache,
-  properAccountName,
-  resolveAccountDisplayNames,
-} = await import('../accounts/core/app');
+const { clearOwnerEmailCache, resolveAccountDisplayNames } = await import('../http/accounts/core/app');
+const { accountDisplayName, properAccountName } = await import('../services/accounts/core/account-name');
 
 const CALLER = { userId: 'u-caller', email: 'caller@gmail.com' };
 

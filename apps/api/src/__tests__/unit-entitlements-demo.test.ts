@@ -4,7 +4,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 // demo-override branch without a database. `fakeRow` stands in for the row that
 // getCreditAccount() would return.
 let fakeRow: { tier?: string; demoEnterprise?: boolean } | null = null;
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => fakeRow,
 }));
 
@@ -21,7 +21,7 @@ mock.module('../lib/config', () => ({
 }));
 
 const { accountHasEntitlement, getAccountEntitlements } = await import(
-  '../billing/services/entitlements'
+  '../services/billing/services/entitlements'
 );
 
 // The self-serve enterprise-demo flag must unlock the ENTIRE enterprise surface

@@ -1,18 +1,18 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // Existing fixtures have no project inference restrictions.
-mock.module('../repositories/project-model-access', () => ({
+mock.module('../services/repositories/project-model-access', () => ({
   getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }),
   getProjectGatewayResolution: async () => ({ access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false }),
 }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => false }));
-import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => false }));
+import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../services/billing/services/tiers';
 
 let billingEnabled = true;
 let accountTier = 'free';
 let accountTierCalls = 0;
 // Defaults true here (cloud-shaped fixture): the real gate is covered by the
-// managed-provider-disabled test suite (llm-gateway/models/managed-provider-disabled.test.ts),
+// managed-provider-disabled test suite (services/llm-gateway/models/managed-provider-disabled.test.ts),
 // which imports the REAL (unmocked) descriptors.ts against the flag OFF. This
 // file mocks descriptors.ts entirely (below), so this toggle only exercises
 // resolveCandidates' OWN inline gate.
@@ -52,7 +52,7 @@ mock.module('../lib/config', () => ({
   getToolCost: () => 0,
 }));
 
-mock.module('../billing/services/entitlements', () => ({
+mock.module('../services/billing/services/entitlements', () => ({
   getAccountTier: async () => {
     accountTierCalls += 1;
     return accountTier;
@@ -99,7 +99,7 @@ mock.module('../services/secrets/secrets', () => ({
   projectSecretsRevision: () => 'empty',
 }));
 
-mock.module('../llm-gateway/credentials/codex', () => ({
+mock.module('../services/llm-gateway/credentials/codex', () => ({
   CodexRefreshError: class CodexRefreshError extends Error {},
   resolveCodexCredential: async () => ({
     access: 'codex-token',
@@ -124,7 +124,7 @@ const mockManagedCandidates = (managed: { id: string; upstreamModelId?: string }
   },
 ];
 
-mock.module('../llm-gateway/resolution/descriptors', () => ({
+mock.module('../services/llm-gateway/resolution/descriptors', () => ({
   codexDescriptor: (_credential: unknown, model: string) => ({
     provider: 'openai-codex',
     kind: 'openai-responses',
@@ -152,7 +152,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   stripBedrockInferenceProfilePrefix: (model: string) => model,
 }));
 
-const { resolveCandidates } = await import('../llm-gateway/resolution/resolve-candidates');
+const { resolveCandidates } = await import('../services/llm-gateway/resolution/resolve-candidates');
 
 function principal(accountId: string) {
   return {

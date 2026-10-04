@@ -10,7 +10,7 @@ const record = (fn: string) => (...args: unknown[]) => {
   apiCalls.push({ fn, args });
 };
 
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async (...a: unknown[]) => {
     record('sendCard')(...a);
     return nextActivityId;
@@ -33,9 +33,9 @@ mock.module('../channels/teams-api', () => ({
 }));
 
 mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app', MICROSOFT_APP_ID: 'x' } }));
-mock.module('../channels/slack/util', () => ({ sessionWebUrl: () => 'https://app/session' }));
+mock.module('../services/channels/slack/util', () => ({ sessionWebUrl: () => 'https://app/session' }));
 let knownServiceUrl: string | null = 'https://smba/';
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   saveTeamsServiceUrl: async () => {},
   loadTeamsTenantForProject: async () => 'tenant-1',
   loadTeamsServiceUrlForProject: async () => knownServiceUrl,
@@ -86,7 +86,7 @@ mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   },
 }));
 
-const { relayTeamsProvisioningFailure, relayTurnAnswer, relayTurnEnd, relayTurnStep, sweepStaleTeamsTurns } = await import('../channels/teams/turn');
+const { relayTeamsProvisioningFailure, relayTurnAnswer, relayTurnEnd, relayTurnStep, sweepStaleTeamsTurns } = await import('../services/channels/teams/turn');
 
 function streamRow(over: Record<string, unknown> = {}) {
   return {
@@ -270,7 +270,7 @@ describe('work that arrives with no card', () => {
   });
 });
 
-const { TEAMS_CARD_BUDGET_BYTES, TRUNCATION_NOTE, cardBytes } = await import('../channels/teams/cards');
+const { TEAMS_CARD_BUDGET_BYTES, TRUNCATION_NOTE, cardBytes } = await import('../services/channels/teams/cards');
 const cardOf = (call: Call | undefined) => call?.args[2] as Record<string, unknown>;
 const answerRows = (over: Record<string, unknown> = {}) => [
   [streamRow({ messageTs: 'act-1', steps: [{ type: 'task_update', id: 'step-0', title: 'A', status: 'in_progress' }], ...over })],

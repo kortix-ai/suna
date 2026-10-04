@@ -5,7 +5,7 @@
  * factory returning `{ config: {...} }` deletes every other named export for
  * every suite in the same process. `src/lib/config.ts` also exports `SANDBOX_VERSION`,
  * `KNOWN_PROVIDERS`, `parseAllowedProviders`, `KORTIX_MARKUP`,
- * `PLATFORM_FEE_MARKUP`, and `getToolCost` — and `src/snapshots/hash.ts` imports
+ * `PLATFORM_FEE_MARKUP`, and `getToolCost` — and `src/services/snapshots/hash.ts` imports
  * `SANDBOX_VERSION`, which is the exact break that made
  * `bun test src/projects/reaping/` unrunnable.
  *

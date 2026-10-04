@@ -23,8 +23,8 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { connectorCalls, connectors } from '@kortix/db';
 import { db } from '../../lib/db';
-import { approvalPageUrl } from '../../setup-links/token';
-import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { approvalPageUrl } from '../setup-links/token';
+import { lookupEmailsByUserIds } from '../projects/lib/access';
 
 /** One governed action, in the exact wire shape `GET .../audit` returns. */
 /** One row of the pending-approvals projection: `@kortix/api-contract`. */

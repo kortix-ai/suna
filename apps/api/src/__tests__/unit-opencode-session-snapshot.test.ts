@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 
-import type { ProjectSessionRow } from '../projects/lib/serializers';
+import type { ProjectSessionRow } from '../services/projects/lib/serializers';
 
 // Every write the sync makes. The rows below that write nothing assert it here.
 // The merge the real write performs is proven on PostgreSQL in

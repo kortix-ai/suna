@@ -1,11 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../lib/db';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { resolveSandboxIngress } from '../sandbox-proxy/backend';
 import { config } from '../../lib/config';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
-import type { ProviderName } from '../../platform/providers';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import { resolveLlmGatewayBaseUrl } from '../llm-gateway/sandbox-base-url';
+import type { ProviderName } from '../platform/providers';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secrets/secret-capabilities';
 import { resolveSessionNetworkBoundary } from '../secrets/network-secret-boundary';
@@ -479,7 +479,7 @@ export async function syncSandboxEnvForPrompt(args: {
     // SCOPE: this fail-soft covers the binding record and nothing else. It does
     // not extend to the grant resolution above (failing open there would widen
     // what the agent may read), and it must not be copied into the provision
-    // path in platform/services/session-sandbox.ts — a session whose boundary
+    // path in services/platform/services/session-sandbox.ts — a session whose boundary
     // policy is unusable should still fail to provision, loudly.
     const armState = await syncProviderNetworkBoundary(
       args.providerName,

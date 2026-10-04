@@ -14,17 +14,17 @@ import { mapLimit } from '@kortix/registry';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
-} from '../../connectors/connector-alias';
+} from '../connectors/connector-alias';
 import {
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsInstall,
-} from '../../channels/install-store';
+} from '../channels/install-store';
 import {
   credentialExists,
   connectionCredentialExists,
   connectionIsEffectiveProjectDefault,
-} from '../../connectors/credentials';
+} from '../connectors/credentials';
 import { db } from '../../lib/db';
 import { isUniqueViolation } from '../../lib/postgres-errors';
 import {
@@ -32,8 +32,8 @@ import {
   type ConnectionReachabilityActor,
   connectionNeedsPrivateSession,
   connectionRowIsReachable,
-} from '../../projects/lib/connection-access';
-import { audiencePersonId, loadConnectionAudience } from '../../projects/lib/connection-audience';
+} from '../projects/lib/connection-access';
+import { audiencePersonId, loadConnectionAudience } from '../projects/lib/connection-audience';
 import { sessionAgentId } from '../secrets/secret-audience';
 import { projectSecretIsConfiguredForConsumer } from '../secrets/secrets';
 import { invalidateRequestMemo, requestMemo } from '../../lib/request-context';

@@ -42,7 +42,7 @@ mock.module('../../../lib/config', () => ({
     E2B_DOMAIN: 'e2b.sampleco.kortix.com',
   },
 }));
-mock.module('../../../snapshots/build-context', () => ({
+mock.module('../../snapshots/build-context', () => ({
   DEFAULT_CPU: 2,
   DEFAULT_MEMORY_GB: 4,
   KORTIX_ENTRYPOINT: '/usr/local/bin/kortix-entrypoint',

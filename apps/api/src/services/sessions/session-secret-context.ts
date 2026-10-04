@@ -2,8 +2,8 @@ import { eq } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
 
 import { db } from '../../lib/db';
-import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
-import { resolveSessionPersonalOwner } from '../../projects/lib/personal-resources';
+import { DEFAULT_AGENT_SENTINEL } from '../projects/agents';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { resolveSessionSecretGrant } from '../secrets/secret-grant';
 
 /**

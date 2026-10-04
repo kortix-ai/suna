@@ -1560,7 +1560,7 @@ test('getSessionOpenBundle throws when the response is unsuccessful', async () =
 // A session spawned by an agent from inside another session carries its parent
 // in `metadata.spawned_by_session` (apps/api/src/services/sessions/sessions.ts:1566,
 // deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
-// in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
+// in apps/api/src/services/projects/lib/serializers.ts:84). `metadata` was
 // `Record<string, unknown>`, so every host re-derived the same `typeof … ===
 // 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
 // apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,

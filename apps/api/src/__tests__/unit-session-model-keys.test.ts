@@ -18,7 +18,7 @@ const OWNER_KEY = 'owner-key';
 let gatewayPersonal: string | null = null;
 /** False = the agent-principal flag is off: every session keeps its legacy owner. */
 let agentPrincipal = true;
-mock.module('../projects/lib/personal-resources', () => ({
+mock.module('../services/projects/lib/personal-resources', () => ({
   // The spec 2026-09-22 §2.3 rule: only a private session reaches a person's keys.
   resolveSessionPersonalOwner: async (input: { legacyUserId: string | null; visibility?: string }) => {
     if (!agentPrincipal) return input.legacyUserId;
@@ -37,7 +37,7 @@ let storedKeys: string[] | null = null;
 let managedServable = false;
 /** The gateway wire id: a stored session model carries OpenCode's `kortix/` prefix. */
 const wire = (model: string) => model.replace(/^kortix\//, '');
-mock.module('../llm-gateway/resolution/default-model', () => ({
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: {
     model: string;
     personalUserId?: string | null;

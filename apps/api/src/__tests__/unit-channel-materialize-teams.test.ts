@@ -21,13 +21,13 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackInstall: async () => null,
   loadTeamsInstall: async () => (hasTeamsInstall ? { tenantId: 'tenant-1' } : null),
   listAgentMailInstalls: async () => [],
 }));
 
-const { synthesizeChannelConnectors } = await import('../connectors/channel-materialize');
+const { synthesizeChannelConnectors } = await import('../services/connectors/channel-materialize');
 
 const teamsSpecs = async (declared: Parameters<typeof synthesizeChannelConnectors>[1] = []) =>
   (await synthesizeChannelConnectors('p-1', declared)).filter((s) => s.platform === 'teams');

@@ -1,9 +1,9 @@
 import { describe, expect, mock, test } from 'bun:test';
-import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSandboxReaper from './sandbox-reaper';
 import * as realArchivedBoxRemoval from './reaping/archived-box-removal';
 import * as realStuckProvisioning from './reaping/stuck-provisioning';
-import * as realAttachments from '../../connectors/attachments';
+import * as realAttachments from '../connectors/attachments';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // maintenance.ts pulls in the real config module (which validates the real,
@@ -30,7 +30,7 @@ function tracked<T>(result: T): () => Promise<T> {
   };
 }
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
-mock.module('../../connectors/attachments', () => ({
+mock.module('../connectors/attachments', () => ({
   ...realAttachments,
   cleanupExpiredConnectorAttachments: tracked({ deleted: 0, errors: 0 }),
 }));
@@ -65,16 +65,16 @@ mock.module('../git', () => ({ deleteRemoteSessionBranch: async () => false }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../billing/services/compute-metering', () => ({
+mock.module('../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
   tickRunningComputeCharges: tracked({ settled: 0, reconciled: 0 }),
 }));
-mock.module('../../snapshots/builder', () => ({
+mock.module('../snapshots/builder', () => ({
   ensurePiWorkerImage: async () => undefined,
   reconcileStaleBuilds: tracked({ checked: 0, closedReady: 0, closedFailed: 0 }),
 }));
-mock.module('../../snapshots/quota-gc', () => ({
+mock.module('../snapshots/quota-gc', () => ({
   reconcileSnapshotQuota: async () => ({
     orgTotal: 0,
     managedCount: 0,

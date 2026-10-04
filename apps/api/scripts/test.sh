@@ -16,7 +16,7 @@ case "$mode" in
     exec bun --no-env-file ../../tests/bin/db-suites.ts "$@"
     ;;
   live)
-    exec env RUN_LIVE_LLM_TESTS=1 dotenvx run -- bun test --isolate src/llm-gateway/__tests__/gateway.live.test.ts
+    exec env RUN_LIVE_LLM_TESTS=1 dotenvx run -- bun test --isolate src/services/llm-gateway/__tests__/gateway.live.test.ts
     ;;
   default)
     # Real-PostgreSQL suites run in `integration` mode (the root `db-suites`

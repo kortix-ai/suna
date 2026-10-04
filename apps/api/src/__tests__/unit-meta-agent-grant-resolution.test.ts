@@ -18,8 +18,8 @@
 // re-mint is now a no-op for meta, and pin that nothing else moved.
 import { describe, expect, test } from 'bun:test';
 
-import { grantFromLoadedAgents, type LoadedAgents } from '../projects/agents';
-import { platformMetaAgentGrant } from '../projects/lib/platform-meta-agent';
+import { grantFromLoadedAgents, type LoadedAgents } from '../services/projects/agents';
+import { platformMetaAgentGrant } from '../services/projects/lib/platform-meta-agent';
 import { remintDecisionFor } from '../services/sessions/session-token-grant';
 import { agentGrantDiffers } from '../services/secrets/secret-grant';
 

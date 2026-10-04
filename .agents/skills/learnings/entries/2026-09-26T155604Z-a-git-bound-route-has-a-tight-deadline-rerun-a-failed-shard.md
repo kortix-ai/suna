@@ -8,7 +8,7 @@ incident_date: 2026-09-08
 route that rewrites the project manifest or syncs channel connectors (install,
 update, or delete a Slack/Teams/email channel installation), do not treat it as
 a product regression on first read. Those routes clone, commit and push the
-managed repo (`reconcileChannelConnectors` in `apps/api/src/connectors/sync.ts`
+managed repo (`reconcileChannelConnectors` in `apps/api/src/services/connectors/sync.ts`
 and its channel route callers); the call normally takes ~10-13s, but under many
 parallel gate shards the same call can cross a fixed request deadline. Rerun
 the failed shard alone before concluding anything broke.

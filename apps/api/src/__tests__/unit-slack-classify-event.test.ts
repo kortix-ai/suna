@@ -32,7 +32,7 @@ mock.module('../lib/db', () => ({
 }));
 
 // ─── Mocks so importing dispatch.ts (and its module graph) loads cleanly ──────
-mock.module('../channels/slack/turn', () => ({
+mock.module('../services/channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
@@ -51,8 +51,8 @@ mock.module('../channels/slack/turn', () => ({
   relayTurnStep: async () => {},
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackTokenForProject: async () => 'xoxb-test',
@@ -61,7 +61,7 @@ mock.module('../channels/install-store', () => ({
   listProjectsForWorkspace: async () => ['proj-1'],
   loadSlackInstall: async () => null,
 }));
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
@@ -82,7 +82,7 @@ mock.module('../channels/slack-api', () => ({
   updateMessage: async () => {},
 }));
 
-const { classifyEvent } = await import('../channels/slack/dispatch');
+const { classifyEvent } = await import('../services/channels/slack/dispatch');
 const { PgDialect } = await import('drizzle-orm/pg-core');
 type SQL = import('drizzle-orm').SQL;
 

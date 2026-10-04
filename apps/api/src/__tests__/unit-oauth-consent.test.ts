@@ -61,7 +61,7 @@ const fake = createFakeDb({
 });
 log = fake.log;
 
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     c.set('userId', USER_ID);
     c.set('userEmail', 'oauth@example.test');
@@ -79,7 +79,7 @@ mock.module('../lib/config', () => ({
 const realDb = await import('../lib/db');
 mock.module('../lib/db', () => ({ ...realDb, db: fake.db }));
 
-const { oauthApp } = await import('../oauth');
+const { oauthApp } = await import('../http/oauth');
 
 function createApp() {
   const app = new Hono();

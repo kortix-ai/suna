@@ -42,8 +42,8 @@ mock.module('../services/secrets/secrets', () => ({
       : {},
 }));
 
-const { loadTeamsInstall, setTeamsAppVersion, setTeamsPublishState } = await import('../channels/install-store');
-const { TEAMS_MANIFEST_VERSION } = await import('../channels/teams-manifest');
+const { loadTeamsInstall, setTeamsAppVersion, setTeamsPublishState } = await import('../services/channels/install-store');
+const { TEAMS_MANIFEST_VERSION } = await import('../services/channels/teams-manifest');
 
 beforeEach(() => {
   encrypted.length = 0;

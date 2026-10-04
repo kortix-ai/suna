@@ -10,7 +10,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
-import { candidateSecretKeyHashesAsync } from '../../auth/token-hash';
+import { candidateSecretKeyHashesAsync } from '../auth/token-hash';
 
 /**
  * A `KORTIX_TOKEN` we are willing to believe. Deliberately strict: this value

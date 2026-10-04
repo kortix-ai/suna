@@ -4,7 +4,7 @@ import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../../lib/db';
 import { healSupersededSessionToken } from '../heal-session-token';
-import { openSession } from '../../../projects/routes/shared';
+import { openSession } from '../open/shared';
 import { awaitTerminalStage } from './await-stage';
 import type { SessionLifecycleResult, StartSessionCommand } from './types';
 

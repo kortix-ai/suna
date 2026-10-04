@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { FEATURE_FLAG_KEYS } from '@kortix/api-contract';
 
 import { config } from '../lib/config';
-import { FEATURE_DISABLED_CODE, featureDisabledBody } from '../feature-flags/gate';
+import { FEATURE_DISABLED_CODE, featureDisabledBody } from '../services/feature-flags/gate';
 import {
   REGISTERED_FEATURE_FLAGS,
   buildFeatureFlagCatalog,
   isFeatureFlagKey,
   resolveFeatureFlag,
   resolveFeatureFlags,
-} from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
+} from '../services/feature-flags/registry';
+import { projectLlmGatewayEnabled } from '../services/llm-gateway/enablement';
 
 const STABILITIES = ['experimental', 'beta', 'stable'];
 const ENFORCEMENTS = ['routes', 'behavioral', 'ui-only'];

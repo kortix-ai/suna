@@ -17,7 +17,7 @@ import {
 import { parseChannelConversation, simplifyTeamsMessages } from '../lib/teams-messages';
 
 // The Teams channel materializes under the reserved slug `kortix_teams`
-// (apps/api/src/connectors/channels.ts TEAMS_CHANNEL_CONNECTOR_SLUG). The bare
+// (apps/api/src/services/connectors/channels.ts TEAMS_CHANNEL_CONNECTOR_SLUG). The bare
 // `teams` name is kept as a fallback for a user-declared connector of that
 // name and for older API deployments — same shape as the Slack CLI.
 const TEAMS_CONNECTORS = ['kortix_teams', 'teams'] as const;

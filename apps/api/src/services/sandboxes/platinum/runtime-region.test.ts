@@ -21,7 +21,7 @@
 // in session-sandbox.ts for the persistence/restore side of that counter).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { platinumHttpError } from '../../../__tests__/helpers/platinum-http-error';
-mock.module('../../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
+mock.module('../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -90,11 +90,11 @@ mock.module('./client', () => ({
     return {};
   },
 }));
-mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
-mock.module('../../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
+mock.module('../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
+mock.module('../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 const { PlatinumProvider } = await import('./runtime');
-const { restorePlatinumCreateAttempt } = await import('../../../platform/services/session-sandbox');
+const { restorePlatinumCreateAttempt } = await import('../../platform/services/session-sandbox');
 
 const SANDBOX_ID = '11111111-2222-4333-8444-555555555555';
 

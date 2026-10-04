@@ -53,7 +53,7 @@ corrections, as three migrations in `packages/db/migrations/`:
    local dataset). Rendering both would double-count every member list built on
    those names, so the views take the strongest role.
 3. **`kortix.sandbox_members` is NOT dropped.** It has 0 rows in every
-   environment, but `apps/api/src/router/services/member-spend.ts` still reads and
+   environment, but `apps/api/src/services/router/services/member-spend.ts` still reads and
    writes it for the per-member LLM spend cap. Dropping it would 42P01 the proxy.
    That is a billing surface, not an RBAC one; retiring it belongs with that
    feature, not here.
@@ -106,7 +106,7 @@ Progress (2026-09-25, `refactor/wallet-storage-and-schema-contract`):
 `kortix.ts` now declares `iamRoles` / `iamRoleActions` / `accountGroupMembers`
 on the physical tables (`roles`, `role_permissions`, `group_members`), so
 Drizzle reads and writes no longer pass through those three views; raw SQL in
-`apps/api/src/iam/account-identity.ts`, `apps/api/src/repositories/iam.ts` and
+`apps/api/src/services/iam/account-identity.ts`, `apps/api/src/services/repositories/iam.ts` and
 `apps/api/scripts/rbac-cutover-audit.ts` still names them. The five
 INSTEAD OF views are declared as views (read-only in Drizzle); only test
 fixtures write through them, via `apps/api/src/__tests__/helpers/compat-views.ts`.
@@ -124,8 +124,8 @@ DO change behaviour. Expand, then contract.
   user / group / service_account / pending, so Postgres cannot cascade for it.
   The two principals that can be deleted now clean up their own assignments in
   the same transaction: `deleteServiceAccount`
-  (`apps/api/src/repositories/service-accounts.ts`) and `deleteGroup`
-  (`apps/api/src/repositories/iam.ts`, also used by the SCIM group-delete route).
+  (`apps/api/src/services/repositories/service-accounts.ts`) and `deleteGroup`
+  (`apps/api/src/services/repositories/iam.ts`, also used by the SCIM group-delete route).
   A `pending` principal is an invite email and has no row to delete. If a third
   principal kind is ever added, it needs the same treatment — there is no
   database-level backstop.

@@ -14,9 +14,9 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSentry from '../../lib/sentry';
-import * as realProviders from '../../platform/providers';
+import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
 let statements: Array<{ sql: string; inTransaction: boolean }> = [];
@@ -96,7 +96,7 @@ mock.module('../../lib/db', () => ({
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits.
-mock.module('../../billing/services/compute-metering', () => ({
+mock.module('../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   endComputeSession: async () => {
     computeEnds += 1;
@@ -111,7 +111,7 @@ mock.module('../../lib/sentry', () => ({
   },
 }));
 
-mock.module('../../platform/providers', () => ({
+mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     stop: async () => {

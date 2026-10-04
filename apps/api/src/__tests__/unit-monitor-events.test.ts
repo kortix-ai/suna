@@ -19,7 +19,7 @@ import {
   parseMonitorIngestBody,
   renderMonitorLifecyclePrompt,
   truncateMonitorLine,
-} from '../projects/lib/monitor-events';
+} from '../services/projects/lib/monitor-events';
 
 const EMITTED = '2026-08-12T10:00:00.000Z';
 

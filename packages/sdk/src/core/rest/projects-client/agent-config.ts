@@ -10,7 +10,7 @@ import { unwrap } from './shared';
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
 // the agent's own `.md` (`block.file`, e.g. `agents/<name>.md`) frontmatter +
 // body). The backend route is what merges the two files into this one
-// response/request shape — see apps/api/src/projects/routes/agent-config.ts.
+// response/request shape — see apps/api/src/http/projects/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
 // secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
 // server-side (project.agent.write). v2-only: `editable:false` on the GET

@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { logger as appLogger } from '../../lib/logger';
 import { db } from '../../lib/db';
-import type { ProjectSessionRow } from '../../projects/lib/serializers';
+import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { readRuntimeLeg } from './session-runtime-projection';
 import { refreshRuntimeProjection } from './session-runtime-projection-refresh';

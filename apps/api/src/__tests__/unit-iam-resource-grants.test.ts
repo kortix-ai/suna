@@ -1,5 +1,5 @@
 /**
- * The object rule — `objectUsable` in `iam/authorize.ts`, the ONE place that
+ * The object rule — `objectUsable` in `services/iam/authorize.ts`, the ONE place that
  * decides what "nobody scoped this" means — plus the two type guards that decide
  * which object kinds a grant may name at all.
  *
@@ -19,13 +19,13 @@
  * `member` spelling survives only in the compatibility view's column.
  */
 import { describe, expect, test } from 'bun:test';
-import { objectUsable } from '../iam/authorize';
+import { objectUsable } from '../services/iam/authorize';
 import {
   CREATABLE_RESOURCE_GRANT_TYPES,
   isCreatableResourceType,
   isResourceType,
   RESOURCE_GRANT_TYPES,
-} from '../iam/resource-grants';
+} from '../services/iam/resource-grants';
 
 const USER = crypto.randomUUID();
 const OTHER = crypto.randomUUID();

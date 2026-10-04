@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseTeamsCommand, stripTeamsMentions } from '../channels/teams/util';
+import { parseTeamsCommand, stripTeamsMentions } from '../services/channels/teams/util';
 
 describe('stripTeamsMentions', () => {
   test('removes <at> mentions and collapses whitespace', () => {

@@ -2,7 +2,7 @@
 // Pure leaf module: no runtime imports, only type declarations (the
 // manifest-verdict import below is `import type`, so it erases at build).
 
-import type { ProjectManifestVerdict } from '../../projects/lib/manifest-verdict';
+import type { ProjectManifestVerdict } from '../projects/lib/manifest-verdict';
 
 export interface GitBackedProject {
   projectId: string;
@@ -26,7 +26,7 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   manifest: Record<string, unknown>;
   /** Server-decided manifest version verdict — the only thing a client may read
-   *  to decide whether to offer an upgrade. See `../../projects/lib/manifest-verdict`. */
+   *  to decide whether to offer an upgrade. See `../projects/lib/manifest-verdict`. */
   manifest_version: ProjectManifestVerdict;
   env: { required: string[]; optional: string[] };
   /** The text of the project's `opencode.jsonc`: OpenCode's own config file. */

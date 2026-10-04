@@ -16,7 +16,7 @@ import {
 
 /**
  * Stable ids for the platform's per-project feature flags (mirrors
- * `apps/api/src/feature-flags/registry.ts` and `FeatureFlagMapSchema` in
+ * `apps/api/src/services/feature-flags/registry.ts` and `FeatureFlagMapSchema` in
  * `@kortix/api-contract`).
  *
  * The union is hand-written on purpose: this package is framework-free AND
@@ -241,7 +241,7 @@ export interface ProjectDetail {
 
 /**
  * A single model as served by the project LLM catalog endpoint. Mirrors the
- * API's `GatewayModel` (apps/api/src/llm-gateway/models/catalog-models.ts) —
+ * API's `GatewayModel` (apps/api/src/services/llm-gateway/models/catalog-models.ts) —
  * keep the two in sync. Declaring the full shape here is what lets the web's
  * `flattenModels` read `provider` (and the models.dev passthrough fields)
  * without an `as any` cast: this interface is the only place between the API
@@ -384,7 +384,7 @@ export interface ProvisionProjectInput {
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   /** Default branch for the newly-created managed repo. Omit to accept the
-   *  server's own default (`apps/api/src/projects/routes/projects.ts`). */
+   *  server's own default (`apps/api/src/http/projects/projects.ts`). */
   default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
@@ -590,7 +590,7 @@ export interface ProjectLlmCatalogProvidersResponse {
  * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
  * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
  * native (non-gateway) projects too — see the route's doc comment
- * (apps/api/src/projects/routes/models.ts, `/llm-catalog/providers`).
+ * (apps/api/src/http/projects/models.ts, `/llm-catalog/providers`).
  */
 export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(
@@ -644,7 +644,7 @@ export async function provisionProject(
 /**
  * The phases `POST /projects/provision-stream` reports, in the order it
  * reports them. Mirrors `PROVISION_PHASES` in
- * `apps/api/src/projects/provision-core.ts` — a separate package, so a
+ * `apps/api/src/services/projects/provision-core.ts` — a separate package, so a
  * separate declaration, but the two must stay byte-identical. A drift here
  * (a renamed or reordered phase on one side only) means the UI silently
  * stops advancing on whichever phase name no longer matches, with no error —
@@ -658,7 +658,7 @@ export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering
  *
  * The `error` frame's `status` mirrors the HTTP status the equivalent
  * `/provision` response would have carried for the same failure — the route
- * (`apps/api/src/projects/routes/projects.ts`) writes `result.status` from the
+ * (`apps/api/src/http/projects/projects.ts`) writes `result.status` from the
  * shared `runProvision` core alongside `error`/`code`, exactly the fields
  * `provisionProjectStream` (below) copies onto the error it throws. Without
  * this, a host reading only `.status`/`.code` (as `apps/web`'s
@@ -720,14 +720,14 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
  * it happens.
  *
  * Same create as {@link provisionProject} — the server runs ONE shared
- * implementation (`runProvision` in `apps/api/src/projects/provision-core.ts`)
+ * implementation (`runProvision` in `apps/api/src/services/projects/provision-core.ts`)
  * behind both `/projects/provision` and `/projects/provision-stream`. Use
  * this when a UI needs to show progress; use `provisionProject` for a plain
  * request/response.
  *
  * The stream always ends in a terminal `done` or `error` frame — the server
  * guarantees it (see the route's `finally`/catch in
- * `apps/api/src/projects/routes/projects.ts`). A stream that closes with NEITHER is
+ * `apps/api/src/http/projects/projects.ts`). A stream that closes with NEITHER is
  * treated as a failure here too, never as an implicit success: resolving
  * with no project would hand the caller an undefined project id and route a
  * user to `/projects/undefined`.

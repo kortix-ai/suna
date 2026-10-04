@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
  * Regression for Better Stack API prod pattern `3e5bd849…` —
  * `Error: failed to fetch spec at <spec url>: HTTP 401 Unauthorized`
  * (mechanism `generic`, `handled: true`), call site `loadSourceText` in
- * `apps/api/src/connectors/sync.ts`, on
+ * `apps/api/src/services/connectors/sync.ts`, on
  * `POST /v1/connectors/projects/:id/connectors` (24 occurrences / 2 users,
  * first seen 2026-08-21; statuses seen in the wild: 401, 403, 404).
  *
@@ -40,8 +40,8 @@ mock.module('node:dns/promises', () => ({
   lookup: async (host: string) => dnsResults[host] ?? [],
 }));
 
-const { discoverConnectorAuthFromSource } = await import('../connectors/sync');
-const { AllowedSourceValidationError } = await import('../marketplace/catalog');
+const { discoverConnectorAuthFromSource } = await import('../services/connectors/sync');
+const { AllowedSourceValidationError } = await import('../services/marketplace/catalog');
 const { UnsafeEgressError } = await import('../lib/ssrf-guard');
 import type { GitBackedProject } from '../services/git';
 

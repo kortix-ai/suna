@@ -238,7 +238,7 @@ const CLOUDWATCH_SAFE_FIELDS = [
   // Milliseconds this request spent inside upstream calls (the sandbox daemon,
   // a provider API). Aggregate-only, no identity — it is what makes a slow
   // proxied route attributable in Logs Insights instead of a single opaque
-  // duration. See middleware/upstream-timing.ts.
+  // duration. See http/middleware/upstream-timing.ts.
   'upstream_ms',
   'config_pending_stages',
   'config_project_access_ms',

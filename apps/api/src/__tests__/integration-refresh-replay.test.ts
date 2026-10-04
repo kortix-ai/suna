@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
-import { headlessAuthRouter } from '../auth/headless';
-import { __setGoTrueFetch } from '../auth/gotrue';
+import { headlessAuthRouter } from '../http/auth/headless';
+import { __setGoTrueFetch } from '../services/auth/gotrue';
 
 // The db-suites runner supplies a migrated, isolated PostgreSQL database.
 const token = randomUUID();

@@ -96,7 +96,7 @@ export function runtimeSupports(
 
 /**
  * Which hop of the sandbox proxy produced a failure, as the proxy itself
- * reports it. Mirrors `apps/api/src/sandbox-proxy/proxy-hop.ts` — the two lists
+ * reports it. Mirrors `apps/api/src/services/sandbox-proxy/proxy-hop.ts` — the two lists
  * are one wire contract and must not drift.
  *
  *   - `control_plane`    — the platform answered from the session row; the box

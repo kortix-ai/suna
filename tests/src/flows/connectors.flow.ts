@@ -282,7 +282,7 @@ flow(
       // 502/503/504 (core/client.ts) with no test-side idempotency guard. When
       // the first delivery lands but its response is lost, the retry finds the
       // slug already in the manifest and `create_only: true` refuses to replace
-      // it with 409 (apps/api/src/connectors/manifest-crud.ts:250-257). That is
+      // it with 409 (apps/api/src/services/connectors/manifest-crud.ts:250-257). That is
       // the create-only contract working, not a failure. The 200 path still
       // proves `$.ok`, and the config read below proves the entry landed
       // exactly once either way.
@@ -3531,7 +3531,7 @@ flow(
 
     // Both steps below WIDEN access (grant, then revoke every narrowing
     // grant). Either write updates the object-grant cache on the replica
-    // that wrote it, but `apps/api/src/iam/authorize.ts` `loadObjectGrants`
+    // that wrote it, but `apps/api/src/services/iam/authorize.ts` `loadObjectGrants`
     // (~15 s TTL, per-process, invalidated only on the writing replica) can
     // still serve another replica's PRE-widen map for up to that TTL. The lag
     // only DENIES access, never grants it (#7665), so poll the post-widen
@@ -3972,7 +3972,7 @@ flow(
         if (!r.stdout.includes('to everyone in project')) throw new Error(`grant output: ${r.all.slice(0, 600)}`);
         // The widen just added a project-principal grant beside the group
         // one. The outsider's own CLI process can land on a replica whose
-        // object-grant cache (`apps/api/src/iam/authorize.ts`
+        // object-grant cache (`apps/api/src/services/iam/authorize.ts`
         // `loadObjectGrants`, ~15 s TTL, invalidated only on the writing
         // replica) still holds the pre-widen (group-only) map. That lag only
         // DENIES the outsider, never grants early, so poll instead of

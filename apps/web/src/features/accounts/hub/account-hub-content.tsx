@@ -218,7 +218,7 @@ export function AccountHubContent() {
   // list until the account is entitled, so the EnterpriseUpsell card stands
   // in for the whole feature. Groups and Roles are different: `GET
   // .../groups` and `GET .../roles` carry NO entitlement check
-  // (`apps/api/src/accounts/iam/groups.ts` / `custom-roles.ts` — only the
+  // (`apps/api/src/http/accounts/iam/groups.ts` / `custom-roles.ts` — only the
   // mutating routes call `requireEntitlement(..., 'rbac')`), because the six
   // built-in roles and an account's real (if empty) group list are product,
   // not upsell. `GroupsTab`/`RolesTab` already render that list unconditionally
@@ -1050,7 +1050,7 @@ function MembersCard({
   //     and no policies to resolve, so every row's role is the built-in one.
   //  2. PERMISSION (`canReadRoles` / `canReadPolicies`) — `GET .../iam/roles`
   //     asserts `role.read` and `GET .../iam/policies` asserts `policy.read`
-  //     (`apps/api/src/accounts/iam/custom-roles.ts`). Both leaves sit in
+  //     (`apps/api/src/http/accounts/iam/custom-roles.ts`). Both leaves sit in
   //     `ADMIN_EXTRAS`; `MEMBER_BASELINE` holds neither
   //     (`apps/api/src/iam/role-perms.ts`).
   //

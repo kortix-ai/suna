@@ -10,7 +10,7 @@ import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
  * caught it. Every registered key needs both strings in every locale.
  *
  * This covers REGISTERED keys, not catalogued ones, on purpose. A flag the
- * registry marks `catalogHidden` (apps/api/src/feature-flags/registry.ts) is
+ * registry marks `catalogHidden` (apps/api/src/services/feature-flags/registry.ts) is
  * absent from the page today but keeps its strings, so un-hiding it — a
  * revert, or support putting the surface back — cannot reintroduce the
  * MISSING_MESSAGE bug. The alternative, scoping this test to catalogued keys,

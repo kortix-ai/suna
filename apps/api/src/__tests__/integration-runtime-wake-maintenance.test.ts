@@ -9,8 +9,8 @@ import { accounts, createDb, projects, projectSessions, sessionSandboxes, type D
 
 const providerStatus = new Map<string, string>();
 const stopped: string[] = [];
-const realProviders = await import('../platform/providers');
-mock.module('../platform/providers', () => ({
+const realProviders = await import('../services/platform/providers');
+mock.module('../services/platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     getStatus: async (externalId: string) => providerStatus.get(externalId) ?? 'unknown',

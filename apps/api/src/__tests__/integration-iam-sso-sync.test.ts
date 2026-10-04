@@ -28,12 +28,12 @@ import {
   projectSessions,
 } from '@kortix/db';
 import { db } from '../lib/db';
-import { syncSsoMembership } from '../iam/sso-sync';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
-import { resolveAccountIdentityByEmail } from '../iam/account-identity';
-import { authorize } from '../iam/authorize';
-import { actorForUser } from '../iam/actor';
-import { PROJECT_ACTIONS } from '../iam';
+import { syncSsoMembership } from '../services/iam/sso-sync';
+import { assignRole, SYSTEM_ACTOR } from '../services/iam/assignments';
+import { resolveAccountIdentityByEmail } from '../services/iam/account-identity';
+import { authorize } from '../services/iam/authorize';
+import { actorForUser } from '../services/iam/actor';
+import { PROJECT_ACTIONS } from '../services/iam';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

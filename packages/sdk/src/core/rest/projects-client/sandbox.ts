@@ -9,7 +9,7 @@ import { unwrap } from './shared';
 export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
 
 /** Classified reason a snapshot build failed. */
-/** Mirrors apps/api/src/snapshots/error-classify.ts — keep in sync. */
+/** Mirrors apps/api/src/services/snapshots/error-classify.ts — keep in sync. */
 export type SnapshotErrorCategory =
   /** Daytona org snapshot quota exhausted — infra, not repo-fixable. */
   | 'quota'

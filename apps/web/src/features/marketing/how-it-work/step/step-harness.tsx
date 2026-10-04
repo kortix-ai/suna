@@ -39,7 +39,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
  * ACCURACY GATE — every claim below is checkable in the product:
  *   - `permission.bash` as a glob map, with `git push: deny`, is the shape the
  *     v2 validator accepts, and `permission` is in `BEHAVIOR_FRONTMATTER_KEYS`
- *     (`apps/api/src/projects/lib/compile-agent-config.ts`). `tools:` and
+ *     (`apps/api/src/services/projects/lib/compile-agent-config.ts`). `tools:` and
  *     `skills:` are NOT frontmatter keys — an earlier version of this panel
  *     showed both and neither would have parsed. Do not add them.
  *   - Opening a change request is real: `project.cr.open` is a `kortix_permissions`

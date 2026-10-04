@@ -76,7 +76,7 @@ flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/r
   });
 });
 
-// SYS-8 — the kubelet liveness probe (apps/api/src/index.ts, livenessHandler):
+// SYS-8 — the kubelet liveness probe (apps/api/src/app/index.ts, livenessHandler):
 // samples ACTUAL event-loop lag rather than always answering instantly like
 // /health does, so a degraded-but-not-dead pod gets restarted. Unversioned +
 // /v1 forms both wired so either can be the chart's livenessPath. Under normal

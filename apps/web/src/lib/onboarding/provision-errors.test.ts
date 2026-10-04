@@ -20,7 +20,7 @@ describe('isManagedGitUnavailableError', () => {
     expect(isManagedGitUnavailableError(err)).toBe(true);
   });
 
-  // The API's edge middleware (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES)
+  // The API's edge middleware (`apps/api/src/app/index.ts`, EDGE_REWRITTEN_STATUSES)
   // sends every 502 as a 503 with the body kept, so a bare 503 is not proof of
   // a configuration state. Prod: create-repo under a personal account answered
   // this exact 503 and `/new` said "Managed git isn't set up on this server".

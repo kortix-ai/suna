@@ -6,7 +6,7 @@
  * agent ≤ user is preserved (the route's role check provides the ∩ user).
  */
 import { describe, expect, test } from 'bun:test';
-import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
+import { extractAgents, grantFromLoadedAgents } from '../services/projects/agents';
 import {
   agentMayPerform,
   canonicalizeGrantActions,
@@ -14,7 +14,7 @@ import {
   agentMayUseEnv,
   assertAgentScope,
   isProjectSessionPrincipal,
-} from '../iam/agent-scope';
+} from '../services/iam/agent-scope';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function loadAgents(body: string) {

@@ -70,7 +70,7 @@ export async function clearMaintenanceBypassCookie(): Promise<void> {
  *
  *  - marks every `account_session_activity` row for the session revoked. Be
  *    exact about the reach: `accountSessionGate()` is mounted on the ACCOUNTS
- *    router only (`apps/api/src/accounts/index.ts`), so the `revokedAt` 401
+ *    router only (`apps/api/src/http/accounts/index.ts`), so the `revokedAt` 401
  *    covers `/v1/accounts/*` for the rest of the current access-token window.
  *    It is not a whole-API kill switch. Without it that window is only closed
  *    when Supabase refuses the next refresh;

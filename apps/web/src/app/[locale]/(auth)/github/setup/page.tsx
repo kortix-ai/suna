@@ -21,7 +21,7 @@ import {
  * `?github=error&reason=<slug>` — what the backend says when an account link
  * fails, turned into a sentence.
  *
- * The slugs are the ones `apps/api/src/platform/routes/github-app.ts` emits on
+ * The slugs are the ones `apps/api/src/http/platform/github-app.ts` emits on
  * the install callback, plus whatever GitHub itself returns as `error` (e.g.
  * `access_denied`). Anything unrecognized falls through to the generic line:
  * a raw slug on screen is not a message, it is a leak.

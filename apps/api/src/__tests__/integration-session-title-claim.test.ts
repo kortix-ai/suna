@@ -17,7 +17,7 @@ import {
   PLACEHOLDER_TITLE_SQL_PATTERN,
   isPlaceholderOpencodeTitle,
 } from '../services/sessions/opencode-title';
-import type { ProjectSessionRow } from '../projects/lib/serializers';
+import type { ProjectSessionRow } from '../services/projects/lib/serializers';
 import { transitionSession } from '../services/sessions/lifecycle/status-transitions';
 import { persistTitle } from '../services/sessions/session-title-generate';
 import { db } from '../lib/db';

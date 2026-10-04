@@ -7,9 +7,9 @@ import {
   connectorConfig,
   toPolicyRows,
   toProjectPolicyRows,
-} from '../connectors/materialize';
-import { extractConnectors } from '../projects/connectors';
-import { extractProjectPolicies } from '../projects/policies';
+} from '../services/connectors/materialize';
+import { extractConnectors } from '../services/projects/connectors';
+import { extractProjectPolicies } from '../services/projects/policies';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function specFrom(body: string) {

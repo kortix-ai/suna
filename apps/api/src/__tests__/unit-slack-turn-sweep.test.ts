@@ -13,7 +13,7 @@ const rec = (fn: string) => (...args: unknown[]) => {
   return Promise.resolve();
 };
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: rec('addReaction'),
   removeReaction: rec('removeReaction'),
   joinChannel: rec('joinChannel'),
@@ -29,7 +29,7 @@ mock.module('../channels/slack-api', () => ({
   getSlackUserDisplayName: async () => null,
 }));
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
 
@@ -81,7 +81,7 @@ mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   },
 }));
 
-const { sweepStaleSlackTurns } = await import('../channels/slack/turn');
+const { sweepStaleSlackTurns } = await import('../services/channels/slack/turn');
 
 function staleRow(over: Record<string, unknown> = {}) {
   return {

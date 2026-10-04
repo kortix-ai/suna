@@ -37,8 +37,8 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { accountsRouter } = await import('../accounts/core/app');
-const { registerTokenRoutes } = await import('../accounts/core/tokens');
+const { accountsRouter } = await import('../http/accounts/core/app');
+const { registerTokenRoutes } = await import('../http/accounts/core/tokens');
 registerTokenRoutes();
 
 // The real server resolves the caller from the bearer token; the bare router

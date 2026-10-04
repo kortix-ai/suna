@@ -15,7 +15,7 @@ export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context'
  *
  * The bearer token cannot carry this distinction. The proxy authenticates every
  * request it forwards — including an ordinary user's — with the sandbox's own
- * service key (`buildSandboxUpstreamHeaders`, apps/api/src/sandbox-proxy/backend.ts),
+ * service key (`buildSandboxUpstreamHeaders`, apps/api/src/services/sandbox-proxy/backend.ts),
  * so `Authorization` looks identical whether the API called us or a user did.
  *
  * What a user CANNOT do is set this header: the proxy lists it in

@@ -16,15 +16,15 @@
  * an installation token on `/user/repos`. A PAT-backed instance backend still
  * creates for its own user.
  *
- * Seeds the two instance resolvers (platform/services/github-app-identity.ts
- * and platform/services/managed-git-backend.ts) — everything downstream runs
+ * Seeds the two instance resolvers (services/platform/services/github-app-identity.ts
+ * and services/platform/services/managed-git-backend.ts) — everything downstream runs
  * for real. The seeds are per-process, so this file owns its process
  * (`bun test --isolate`).
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import { __setStoredAppIdentityForTests } from '../platform/services/github-app-identity';
-import { __setStoredGitBackendForTests } from '../platform/services/managed-git-backend';
+import { __setStoredAppIdentityForTests } from '../services/platform/services/github-app-identity';
+import { __setStoredGitBackendForTests } from '../services/platform/services/managed-git-backend';
 
 // A throwaway RSA key — only used to produce a JWT `createInstallationToken`
 // can sign; the fetch mock below never verifies the signature.

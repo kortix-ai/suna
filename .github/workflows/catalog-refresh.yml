@@ -2,7 +2,7 @@ name: Catalog refresh
 
 # Regenerates the two OFFLINE SEEDS the API boots with before its first live
 # fetch — packages/llm-catalog/src/catalog.generated.json (models.dev) and
-# apps/api/src/llm-gateway/models/codex-models.seed.json (the Codex CLI's
+# apps/api/src/services/llm-gateway/models/codex-models.seed.json (the Codex CLI's
 # models.json) — and merges them. Neither seed is the source of truth: the API
 # refetches both every hour (runtime-catalog.ts). A seed only matters when a
 # deployment cannot reach the internet, and it still sat 37 days stale
@@ -54,7 +54,7 @@ jobs:
       - name: Diff summary
         id: diff
         run: |
-          FILES=(packages/llm-catalog/src/catalog.generated.json packages/llm-catalog/src/provider-env.generated.json apps/api/src/llm-gateway/models/codex-models.seed.json)
+          FILES=(packages/llm-catalog/src/catalog.generated.json packages/llm-catalog/src/provider-env.generated.json apps/api/src/services/llm-gateway/models/codex-models.seed.json)
           echo "files=${FILES[*]}" >> "$GITHUB_OUTPUT"
           if git diff --quiet -- "${FILES[@]}"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -65,7 +65,7 @@ jobs:
           {
             echo "models.dev fetched_at: $(python3 -c 'import json;print(json.load(open("packages/llm-catalog/src/catalog.generated.json"))["fetched_at"])')"
             echo "models.dev models: $(git show HEAD:packages/llm-catalog/src/catalog.generated.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["model_count"])') → $(python3 -c 'import json;print(json.load(open("packages/llm-catalog/src/catalog.generated.json"))["model_count"])')"
-            echo "codex lineup: $(python3 -c 'import json;print(", ".join(json.load(open("apps/api/src/llm-gateway/models/codex-models.seed.json"))))')"
+            echo "codex lineup: $(python3 -c 'import json;print(", ".join(json.load(open("apps/api/src/services/llm-gateway/models/codex-models.seed.json"))))')"
           } | tee catalog-summary.txt
 
       - name: Run the seed-dependent unit tests

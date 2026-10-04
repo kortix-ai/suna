@@ -12,7 +12,7 @@ import {
 } from '@kortix/db';
 import { ApiError, createKortix } from '@kortix/sdk';
 import { and, eq } from 'drizzle-orm';
-import { createAccountToken } from '../../src/repositories/account-tokens';
+import { createAccountToken } from '../../src/services/repositories/account-tokens';
 import { db } from '../../src/lib/db';
 
 const ROOT = resolve(import.meta.dir, '../../..');

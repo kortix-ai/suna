@@ -17,7 +17,7 @@ registerWalletMock();
 
 // Per-seat checkout reads the active member count for the Stripe quantity.
 // Stub it so the unit test doesn't reach for the DB.
-mock.module('../../billing/services/seat-management', () => ({
+mock.module('../../services/billing/services/seat-management', () => ({
   countActiveMembers: async () => 1,
 }));
 
@@ -90,7 +90,7 @@ const {
   scheduleDowngrade,
   cancelScheduledChange,
   cancelFreeSubscriptionForUpgrade,
-} = await import('../../billing/services/subscriptions');
+} = await import('../../services/billing/services/subscriptions');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -754,7 +754,7 @@ describe('confirmCheckoutSession: payment gate (client-callable fraud path)', ()
       return { replayed: false, ledgerId: null };
     };
 
-    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const { confirmCheckoutSession } = await import('../../services/billing/services/subscriptions');
     const result = await confirmCheckoutSession({
       accountId: 'acc_test_123',
       sessionId: 'cs_test_123',
@@ -769,7 +769,7 @@ describe('confirmCheckoutSession: payment gate (client-callable fraud path)', ()
     mockRegistry.stripeClient.checkout.sessions.retrieve = async () =>
       createMockStripeCheckoutSession({ status: 'complete', payment_status: 'no_payment_required' });
 
-    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const { confirmCheckoutSession } = await import('../../services/billing/services/subscriptions');
     const result = await confirmCheckoutSession({
       accountId: 'acc_test_123',
       sessionId: 'cs_test_123',
@@ -784,7 +784,7 @@ describe('confirmCheckoutSession: payment gate (client-callable fraud path)', ()
 describe('confirmCheckoutSession: activation grant idempotency key', () => {
   // One subscription activation must produce ONE grant key, whichever path
   // observes it first. The Stripe webhook path (handleSubscriptionCheckout /
-  // syncSubscriptionState in billing/services/webhooks.ts) grants with
+  // syncSubscriptionState in services/billing/services/webhooks.ts) grants with
   // `subscription_activation:<subId>`. This client-callable confirm endpoint
   // used to pass the CHECKOUT SESSION id instead, so a confirm racing
   // `checkout.session.completed` deduped against nothing and granted the tier
@@ -803,7 +803,7 @@ describe('confirmCheckoutSession: activation grant idempotency key', () => {
         },
       });
 
-    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const { confirmCheckoutSession } = await import('../../services/billing/services/subscriptions');
     const result = await confirmCheckoutSession({
       accountId: 'acc_test_123',
       sessionId: 'cs_confirm_race',

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 // The real module namespace, so the mock below only overrides the calls this
 // suite stubs and still carries every export the shared forwarder imports.
-import * as realBackend from '../sandbox-proxy/backend';
+import * as realBackend from '../services/sandbox-proxy/backend';
 
 const SHARE_TOKEN = 'kps_11111111111141118111111111111111';
 const SHARE_ID = '11111111-1111-4111-8111-111111111111';
@@ -48,7 +48,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../sandbox-proxy/backend', () => ({
+mock.module('../services/sandbox-proxy/backend', () => ({
   ...realBackend,
   buildSandboxUpstreamHeaders: async ({ serviceKey, providerHeaders }: any) => ({
     ...providerHeaders,
@@ -114,7 +114,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-const { publicShareApp } = await import('../sandbox-proxy/routes/public-share');
+const { publicShareApp } = await import('../http/sandbox-proxy/public-share');
 
 function app() {
   const hono = new Hono();

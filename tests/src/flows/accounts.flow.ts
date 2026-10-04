@@ -325,7 +325,7 @@ flow(
 
 // MEM-6 — role-transition matrix on PATCH /members/:userId. MEM-3 only covered
 // member→admin (promotion) + invalid role → 400. The PATCH handler
-// (apps/api/src/accounts/core/members.ts:579-648) encodes several invariants
+// (apps/api/src/http/accounts/core/members.ts:579-648) encodes several invariants
 // that were unproven:
 //   - same-role PATCH → 200 {unchanged:true} (idempotent no-op)
 //   - admin demotes member→member (admin CAN demote a non-owner) → 200
@@ -423,7 +423,7 @@ flow(
 // MEM-7 — `project_grants` on POST /members: the centralized-IAM redesign's
 // "one invite, pick account role + project(s)" dialog needs the invite to
 // carry project access, not just an account role. Proves the four cases the
-// handler (apps/api/src/accounts/core/members.ts:227-291) encodes:
+// handler (apps/api/src/http/accounts/core/members.ts:227-291) encodes:
 //   - existing-user invite + a grant for a project THIS account owns →
 //     applied immediately (grantProjectRole), visible on GET .../access.
 //   - a grant naming a project from a DIFFERENT account is silently
@@ -610,8 +610,8 @@ flow(
 );
 
 // DEL-3 — the "backwards-compatible" `/v1/account/*` deletion mount
-// (apps/api/src/billing/routes/account-deletion.ts, mounted at /v1/account/*
-// in apps/api/src/index.ts:694, distinct from the `/v1/billing/account/*`
+// (apps/api/src/http/billing/account-deletion.ts, mounted at /v1/account/*
+// in apps/api/src/app/index.ts:694, distinct from the `/v1/billing/account/*`
 // mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
@@ -945,7 +945,7 @@ flow(
 // TOK-5 — project-scoped PAT cross-project WRITE boundary. TOK-4 proves a
 // project PAT can't READ a foreign project; this proves it can't MUTATE one
 // either (POST secrets, POST triggers, DELETE secrets on a different project →
-// 403). enforceTokenProjectScope (apps/api/src/middleware/auth.ts:702-711)
+// 403). enforceTokenProjectScope (apps/api/src/http/middleware/auth.ts:702-711)
 // rejects any /v1/projects/:projectId/* where the URL id ≠ the token's project
 // at the auth layer, BEFORE the route handler's loadProjectForUser — so a
 // scope regression that only checked reads (or skipped writes) would let a

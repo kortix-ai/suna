@@ -5,7 +5,7 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 // Changing one from Teams needs what the web binding editor needs: a linked
 // Kortix account with `project.connector.write` on the conversation's project
 // (project managers, account owners and admins). The commands and the card
-// buttons both go through channels/core/settings.ts.
+// buttons both go through services/channels/core/settings.ts.
 
 const PROJECT = 'proj-1';
 const OTHER = 'proj-2';
@@ -47,7 +47,7 @@ mock.module('../lib/db', () => ({
 
 let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 const actorChecks: Array<{ projectId: string; action: string }> = [];
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     resolveProjectChatActor: async (_user: unknown, projectId: string, action: string) => {
       actorChecks.push({ projectId, action });
@@ -57,7 +57,7 @@ mock.module('../channels/core/identity', () =>
 );
 
 const writes: Array<{ kind: string; value: unknown }> = [];
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   currentChannelSelection: async () => ({ projectId: PROJECT, agentName: null, opencodeModel: null, conversationPolicy: null }),
   setChannelAgent: async (_c: unknown, a: string | null) => {
     writes.push({ kind: 'agent', value: a });
@@ -73,7 +73,7 @@ mock.module('../channels/slack/selection', () => ({
   },
   listProjectAgents: async () => [],
 }));
-mock.module('../channels/slack/model-gate', () => ({
+mock.module('../services/channels/slack/model-gate', () => ({
   projectModelContext: async () => null,
   channelModelContext: async () => ({
     projectId: PROJECT,
@@ -83,22 +83,22 @@ mock.module('../channels/slack/model-gate', () => ({
     llmGatewayEnabled: true,
   }),
 }));
-mock.module('../llm-gateway/models/picker', () => ({
+mock.module('../services/llm-gateway/models/picker', () => ({
   listPickerModels: async () => ({ models: [], projectDefault: { label: null } }),
   labelForModelRef: (r: string) => r,
 }));
-const realDefaultModel = await import('../llm-gateway/resolution/default-model');
-mock.module('../llm-gateway/resolution/default-model', () => ({ ...realDefaultModel, isModelServableForAccount: async () => true }));
-mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map() }));
-mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: 'AGENTS-PICKER' }] }) }));
-mock.module('../channels/teams/stop', () => ({ stopTeamsTurn: async () => ({ stopped: false, notice: '' }) }));
-mock.module('../channels/teams/login', () => ({ buildTeamsLoginUrl: () => 'https://login' }));
-mock.module('../channels/teams/fresh-start', () => ({
+const realDefaultModel = await import('../services/llm-gateway/resolution/default-model');
+mock.module('../services/llm-gateway/resolution/default-model', () => ({ ...realDefaultModel, isModelServableForAccount: async () => true }));
+mock.module('../services/projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map() }));
+mock.module('../services/channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: 'AGENTS-PICKER' }] }) }));
+mock.module('../services/channels/teams/stop', () => ({ stopTeamsTurn: async () => ({ stopped: false, notice: '' }) }));
+mock.module('../services/channels/teams/login', () => ({ buildTeamsLoginUrl: () => 'https://login' }));
+mock.module('../services/channels/teams/fresh-start', () => ({
   startFreshTeamsConversation: async () => ({ reset: false, notice: '' }),
   messageAfterFreshStart: () => '',
 }));
-mock.module('../channels/teams/session', () => ({ createOrJoinTeamsConversationSession: async () => {} }));
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/session', () => ({ createOrJoinTeamsConversationSession: async () => {} }));
+mock.module('../services/channels/teams/binding', () => ({
   conversationSession: async () => null,
   ensureTeamsConversationBinding: async () => true,
   listTenantProjects: async () => [
@@ -114,18 +114,18 @@ mock.module('../channels/teams/binding', () => ({
   },
   teamsChannelCtx: (tenantId: string, conversationId: string) => ({ platform: 'teams', teamId: tenantId, channelId: conversationId }),
 }));
-mock.module('../projects/review-items', () => ({ getReviewItemById: async () => null, applyVerdict: async () => {} }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+mock.module('../services/projects/review-items', () => ({ getReviewItemById: async () => null, applyVerdict: async () => {} }));
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 
-const realModelChoice = await import('../channels/teams/model-choice');
-mock.module('../channels/teams/model-choice', () => ({
+const realModelChoice = await import('../services/channels/teams/model-choice');
+mock.module('../services/channels/teams/model-choice', () => ({
   ...realModelChoice,
   buildTeamsModelsCard: async () => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: 'MODELS-PICKER' }] }),
 }));
 
 let recentSessions: unknown[] | null = [];
 const sessionQueries: unknown[] = [];
-mock.module('../channels/core/sessions', () => ({
+mock.module('../services/channels/core/sessions', () => ({
   listVisibleChatSessions: async (user: unknown, opts: unknown) => {
     sessionQueries.push({ user, opts });
     return recentSessions;
@@ -133,7 +133,7 @@ mock.module('../channels/core/sessions', () => ({
 }));
 
 const posted: string[] = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: Record<string, unknown>) => {
     posted.push(JSON.stringify(card));
     return 'card-1';
@@ -141,8 +141,8 @@ mock.module('../channels/teams-api', () => ({
   updateCard: async () => true,
 }));
 
-const { handleTeamsCommand, parseTeamsCommand } = await import('../channels/teams/commands');
-const { handleAdaptiveCardAction } = await import('../channels/teams/interactivity');
+const { handleTeamsCommand, parseTeamsCommand } = await import('../services/channels/teams/commands');
+const { handleAdaptiveCardAction } = await import('../services/channels/teams/interactivity');
 
 const message = (text: string) => ({
   type: 'message',

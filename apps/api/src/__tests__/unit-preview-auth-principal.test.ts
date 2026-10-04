@@ -1,6 +1,6 @@
 /**
  * Unit tests for the unified preview-token authenticator
- * (sandbox-proxy/preview-auth.ts) used by the subdomain + WebSocket proxy edges.
+ * (services/sandbox-proxy/preview-auth.ts) used by the subdomain + WebSocket proxy edges.
  *
  * The point of this module is that EVERY non-Hono edge accepts the same set of
  * credentials as combinedAuth. These tests lock that matrix in — in particular
@@ -34,7 +34,7 @@ mock.module('../lib/crypto', () => ({
 const unmocked = (name: string) => () => {
   throw new Error(`${name} is not stubbed in this suite`);
 };
-mock.module('../repositories/api-keys', () => ({
+mock.module('../services/repositories/api-keys', () => ({
   validateSecretKey: async (t: string) => {
     if (t === 'kortix_owner') return { isValid: true, accountId: 'acct-owner' };
     if (t === 'kortix_other') return { isValid: true, accountId: 'acct-other' };
@@ -46,7 +46,7 @@ mock.module('../repositories/api-keys', () => ({
   deleteApiKey: unmocked('api-keys.deleteApiKey'),
 }));
 
-mock.module('../repositories/account-tokens', () => ({
+mock.module('../services/repositories/account-tokens', () => ({
   validateAccountToken: async (t: string) => {
     if (t === 'kortix_pat_owner') return { isValid: true, userId: 'pat-user-owner' };
     if (t === 'kortix_pat_project_a') {
@@ -61,7 +61,7 @@ mock.module('../repositories/account-tokens', () => ({
   revokeAllAccountTokensForUser: unmocked('account-tokens.revokeAllAccountTokensForUser'),
 }));
 
-mock.module('../repositories/service-accounts', () => ({
+mock.module('../services/repositories/service-accounts', () => ({
   validateServiceAccountToken: async (t: string) => {
     if (t === 'kortix_sa_owner') {
       return { isValid: true, serviceAccountId: 'sa-owner', accountId: 'acct-owner' };
@@ -80,8 +80,8 @@ mock.module('../repositories/service-accounts', () => ({
 // App viewer tokens (`kortix_oat_`): the credential an App's server sends when
 // it acts as its viewer. combinedAuth accepts one on `/v1/p/...`; these edges
 // must too, and only with the `kortix` scope.
-const actualOAuth = await import('../oauth/access-token');
-mock.module('../oauth/access-token', () => ({
+const actualOAuth = await import('../services/oauth/access-token');
+mock.module('../services/oauth/access-token', () => ({
   ...actualOAuth,
   validateOAuthAccessToken: async (t: string) => {
     if (t === 'kortix_oat_owner') return { isValid: true, userId: 'user-owner', scopes: ['profile', 'email', 'kortix'] };
@@ -91,7 +91,7 @@ mock.module('../oauth/access-token', () => ({
   },
 }));
 
-mock.module('../auth/jwt-verify', () => ({
+mock.module('../services/auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async (t: string) => {
     if (t === 'jwt-owner') return { ok: true, userId: 'user-owner' };
@@ -139,7 +139,7 @@ mock.module('../services/sessions/preview-ownership', () => ({
 }));
 
 const { authenticatePreviewPrincipalDetailed, extractPreviewToken } = await import(
-  '../sandbox-proxy/preview-auth'
+  '../services/sandbox-proxy/preview-auth'
 );
 
 /** The id of the principal the credential proves on this sandbox, or null. */

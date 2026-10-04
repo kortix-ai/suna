@@ -186,7 +186,7 @@ function listOrNull(value: unknown): string | null {
 
 /**
  * The host is no web app: read the API's public client config
- * (`GET /v1/auth/client-config`, apps/api/src/auth/headless.ts). An API that
+ * (`GET /v1/auth/client-config`, apps/api/src/http/auth/headless.ts). An API that
  * has no anon key configured names its web app; that web app's runtime config
  * is the fallback.
  */

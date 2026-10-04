@@ -5,10 +5,10 @@ import { createFakeWallet } from './helpers/fake-wallet';
 // grant semantics are exercised without a database.
 const fake = createFakeWallet();
 const grantCalls = fake.calls.grant;
-mock.module('../billing/wallet', () => ({ wallet: fake.wallet }));
+mock.module('../services/billing/wallet', () => ({ wallet: fake.wallet }));
 
 let storedRow: Record<string, unknown> | null = null;
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => storedRow,
   upsertCreditAccount: async (_id: string, patch: Record<string, unknown>) => {
     storedRow = { ...(storedRow ?? {}), ...patch };
@@ -18,10 +18,10 @@ mock.module('../billing/repositories/credit-accounts', () => ({
     storedRow = { ...(storedRow ?? {}), ...patch };
   },
 }));
-mock.module('../billing/services/entitlements', () => ({
+mock.module('../services/billing/services/entitlements', () => ({
   invalidateCachedAccountTier: () => {},
 }));
-mock.module('../billing/account-limits', () => ({
+mock.module('../services/billing/account-limits', () => ({
   clearAccountLimitCache: () => {},
 }));
 mock.module('../lib/db', () => ({ db: {} }));
@@ -38,9 +38,9 @@ const {
   trialMonthlyRegrant,
   TEMPORARY_ACCESS_OVERRIDE_KEYS,
   TRIAL_GRANT_LEDGER_TYPE,
-} = await import('../billing/services/trial-admin');
-const { PLAN_CATALOG } = await import('../billing/services/plan-catalog');
-const { readOverride } = await import('../billing/services/entitlement-overrides');
+} = await import('../services/billing/services/trial-admin');
+const { PLAN_CATALOG } = await import('../services/billing/services/plan-catalog');
+const { readOverride } = await import('../services/billing/services/entitlement-overrides');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const START = new Date('2026-08-10T00:00:00Z');
@@ -263,7 +263,7 @@ describe('ending a grant early takes its overrides with it', () => {
       computeRateMultiplier: { value: 0.5 },
     };
 
-    const { revokeTrial } = await import('../billing/services/trial-admin');
+    const { revokeTrial } = await import('../services/billing/services/trial-admin');
     const result = await revokeTrial('acct_1');
     expect(result.current.status).toBe('revoked');
     // Without this, "revoked" would not take effect until the date the revoke
@@ -276,7 +276,7 @@ describe('ending a grant early takes its overrides with it', () => {
     storedRow = null;
     await grantTrial({ accountId: 'acct_1', tierKey: 'enterprise', seats: 1, durationDays: 90 });
 
-    const { markTrialConverted } = await import('../billing/services/trial-admin');
+    const { markTrialConverted } = await import('../services/billing/services/trial-admin');
     expect(await markTrialConverted('acct_1')).toBe(true);
     expect(storedRow!.trialStatus).toBe('converted');
     expect(storedRow!.entitlementOverrides).toEqual({});

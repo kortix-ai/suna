@@ -24,6 +24,6 @@ early does not reuse that connection.
 **Enforcement.** `tests/unit/local-git-fixture.test.ts` holds back a push
 body's terminator on a raw socket. It asserts that no answer arrives first,
 then sends a second request on the same socket. The receive-pack upstream
-`fetch` in `apps/api/src/git-proxy/index.ts` sets `keepalive: false`.
+`fetch` in `apps/api/src/http/git-proxy/index.ts` sets `keepalive: false`.
 `receive-pack-gate.test.ts` asserts that no later upstream request reuses the
 push's connection.

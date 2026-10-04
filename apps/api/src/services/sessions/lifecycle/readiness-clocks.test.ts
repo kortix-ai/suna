@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../../../projects/routes/shared';
+import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../open/shared';
 import {
   IN_PLACE_RESTART_CLEARED_KEYS,
   RUNTIME_READINESS_CLOCK_KEYS,

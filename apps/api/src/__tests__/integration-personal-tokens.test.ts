@@ -16,8 +16,8 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accountTokens, accounts, projects, serviceAccounts } from '@kortix/db';
 import { db } from '../lib/db';
-import { listAccountTokens, listPersonalAccountTokens } from '../repositories/account-tokens';
-import { isTruthyFlag } from '../accounts/core/tokens';
+import { listAccountTokens, listPersonalAccountTokens } from '../services/repositories/account-tokens';
+import { isTruthyFlag } from '../http/accounts/core/tokens';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

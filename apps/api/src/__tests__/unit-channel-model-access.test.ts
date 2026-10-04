@@ -7,20 +7,20 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // was missing from /models and rejected by /model.
 
 let pooledFlag = true;
-mock.module('../feature-flags/for-project', () => ({
+mock.module('../services/feature-flags/for-project', () => ({
   projectFeatureFlagEnabled: async () => pooledFlag,
 }));
 
 const catalogCalls: Array<Record<string, unknown>> = [];
 let catalogModels: Record<string, Record<string, unknown>> = {};
-mock.module('../llm-gateway/models/servable-catalog', () => ({
+mock.module('../services/llm-gateway/models/servable-catalog', () => ({
   servableProjectCatalog: async (input: Record<string, unknown>) => {
     catalogCalls.push(input);
     return { models: catalogModels, modelOverrides: {}, defaultModel: 'codex/gpt-6-astra', usingDefaults: true };
   },
 }));
 
-mock.module('../llm-gateway/models/provider-registry', () => ({
+mock.module('../services/llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (id: string) => (id === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));
 
@@ -30,7 +30,7 @@ const defaultCalls: Array<Record<string, unknown>> = [];
 /** The default as the creator resolves it (their own keys count), and as a shared session does. */
 let creatorDefault: { model: string | null; source: string } = { model: null, source: 'platform' };
 let sharedDefault: { model: string | null; source: string } = { model: null, source: 'platform' };
-mock.module('../llm-gateway/resolution/default-model', () => ({
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: Record<string, unknown>) => {
     probes.push(input);
     return servable;
@@ -41,12 +41,12 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   },
 }));
 
-mock.module('../llm-gateway/models/served-managed-models', () => ({ platformDefaultModelId: () => 'glm-5.3-flash' }));
+mock.module('../services/llm-gateway/models/served-managed-models', () => ({ platformDefaultModelId: () => 'glm-5.3-flash' }));
 
 // The gateway's own personal-key rule for a live session.
 const ownerQueries: Array<Record<string, unknown>> = [];
 let gatewayPersonal: string | null = 'ivan';
-mock.module('../projects/lib/personal-resources', () => ({
+mock.module('../services/projects/lib/personal-resources', () => ({
   resolveSessionPersonalOwner: async (input: Record<string, unknown>) => {
     ownerQueries.push(input);
     return gatewayPersonal;
@@ -56,7 +56,7 @@ mock.module('../projects/lib/personal-resources', () => ({
 // The image / unservable-pin replacement, pinned in unit-channel-vision-model.
 const turnCalls: Array<Record<string, unknown>> = [];
 let turnResult: string | null = null;
-mock.module('../channels/vision-model', () => ({
+mock.module('../services/channels/vision-model', () => ({
   channelTurnModel: async (input: Record<string, unknown>) => {
     turnCalls.push(input);
     return turnResult;
@@ -78,7 +78,7 @@ mock.module('../services/secrets/account-resource', () => ({
   },
 }));
 
-mock.module('../channels/slack/model-gate', () => ({
+mock.module('../services/channels/slack/model-gate', () => ({
   channelModelContext: async () => ({
     projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true,
   }),
@@ -108,7 +108,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const access = await import('../channels/model-access');
+const access = await import('../services/channels/model-access');
 
 const scope = (over: Partial<ReturnType<typeof access.channelModelScope>> = {}) => ({
   projectId: 'proj', accountId: 'acct', memberUserId: 'ivan', linkedUserId: 'ivan', personalUserId: 'ivan',

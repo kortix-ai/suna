@@ -14,7 +14,7 @@
  */
 
 import { config } from '../../lib/config';
-import { SESSION_DATA_PORTS } from '../../sandbox-proxy/session-data-ports';
+import { SESSION_DATA_PORTS } from '../sandbox-proxy/session-data-ports';
 import { isOpencodePort } from '../sessions/opencode-ports';
 import { positiveEnvInt } from './reaper-constants';
 
@@ -196,7 +196,7 @@ export function sandboxStopClaimLeaseMs(): number {
 /**
  * Granted on a gateway LLM call — the MID-TURN extension.
  *
- * `usage_events` is written by the gateway (apps/api/src/llm-gateway/hooks.ts)
+ * `usage_events` is written by the gateway (apps/api/src/services/llm-gateway/hooks.ts)
  * after a real upstream completion, never by the sandbox, so it satisfies the
  * invariant: the box cannot mint one without spending real money through our
  * own control plane, and the resulting row IS the billing record.
@@ -302,12 +302,12 @@ export function isSandboxAuthored(
 
 /**
  * `isTurnStartRequest` moved to ./turn-start-request.ts, a LEAF that imports no
- * `config`, so `sandbox-proxy/pre-prompt-env-sync.ts` can build its own turn
+ * `config`, so `services/sandbox-proxy/pre-prompt-env-sync.ts` can build its own turn
  * predicate on it without dragging a module the proxy suites replace with
  * `mock.module` into their graph. It is re-exported here because every existing
  * call site imports it from this module, and the two must never drift back into
  * two definitions. Do NOT reuse `isLongTurnCompletionRequest` from
- * sandbox-proxy/preview-retry-budget.ts in its place: that one matches only
+ * services/sandbox-proxy/preview-retry-budget.ts in its place: that one matches only
  * `/message` (every real client uses prompt_async), and widening it would change
  * that module's proxy attempt-timeout behaviour.
  */

@@ -19,17 +19,17 @@ import {
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { getCreditAccount } from '../billing/repositories/credit-accounts';
-import { applyAdminOverride } from '../billing/services/account-write-owner';
+import { getCreditAccount } from '../services/billing/repositories/credit-accounts';
+import { applyAdminOverride } from '../services/billing/services/account-write-owner';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 /** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
 const setDemoEnterprise = (accountId: string, enabled: boolean) =>
   applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
 import { config } from '../lib/config';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { mintSetupLink } from '../setup-links/token';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { mintSetupLink } from '../services/setup-links/token';
 import { db } from '../lib/db';
 
 const minted: string[] = [];

@@ -6,7 +6,7 @@
  * they are registered, and `/v1/openapi.json` filters them on purpose.
  */
 import { describe, expect, test } from 'bun:test';
-import { app } from '../index';
+import { app } from '../app/index';
 
 const EXCLUDED: Array<{ route: RegExp; reason: string }> = [
   { route: /^ALL \/v1\/(llm|llm-gateway)\/\*$/, reason: 'LLM gateway bridge; its ingress routes are documented with registerPath' },

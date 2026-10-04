@@ -6,7 +6,7 @@ import {
   getTier,
   isPaidTier,
   tierGrantsAllModels,
-} from '../billing/services/tiers';
+} from '../services/billing/services/tiers';
 
 const PAID_TIER_NAMES = [
   'pro',

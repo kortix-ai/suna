@@ -1,7 +1,7 @@
-import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../../../projects/lib/serializers';
+import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../../projects/lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../sessions';
-import type { SessionStartResult } from '../../../projects/routes/shared';
+import type { SessionStartResult } from '../open/shared';
 
 export type SessionInvocationSource =
   | 'ui'

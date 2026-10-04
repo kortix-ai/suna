@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 // Kortix-hosted project. The repository page decides: 200 public, 404 not.
 
 mock.module('../lib/config', () => ({ config: { MANAGED_GIT_GITHUB_OWNER: 'managed-kortix' } }));
-const { isKortixHostedRepo, repoDisplayLabel, repoPreviewImages, resetRepoPreviewCache } = await import('../channels/repo-preview');
+const { isKortixHostedRepo, repoDisplayLabel, repoPreviewImages, resetRepoPreviewCache } = await import('../services/channels/repo-preview');
 
 const PUBLIC = 'https://github.com/octocat/Hello-World';
 const PRIVATE = 'https://github.com/acme/secret-app';

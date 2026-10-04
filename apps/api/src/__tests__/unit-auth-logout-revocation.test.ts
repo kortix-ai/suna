@@ -13,20 +13,20 @@ mock.module('../lib/db', () => ({ db: {}, hasDatabase: () => false }));
 mock.module('../services/audit/auth-audit', () => ({
   auditLoginFail: () => {}, auditLoginSuccess: () => {}, auditLogout: () => {}, auditSessionFirstSight: () => {},
 }));
-mock.module('../middleware/auth-principal', () => ({
+mock.module('../http/middleware/auth-principal', () => ({
   serviceAccountPrincipal: () => {}, patPrincipal: () => {},
   jwtPrincipal: async (c: { set: (key: string, value: string) => void }, userId: string) => {
     c.set('userId', userId);
     c.set('authType', 'supabase');
   },
 }));
-mock.module('../middleware/auth-actor', () => ({ withActor: async (_c: unknown, next: () => Promise<void>) => next() }));
-mock.module('../middleware/impersonation', () => ({ applyImpersonation: async (_c: unknown, next: () => Promise<void>) => next() }));
+mock.module('../http/middleware/auth-actor', () => ({ withActor: async (_c: unknown, next: () => Promise<void>) => next() }));
+mock.module('../http/middleware/impersonation', () => ({ applyImpersonation: async (_c: unknown, next: () => Promise<void>) => next() }));
 
-const { __setGoTrueFetch } = await import('../auth/gotrue');
-const { __setJwtLivenessLoaderForTests } = await import('../auth/jwt-liveness');
-const { authRouter } = await import('../auth');
-const { supabaseAuth } = await import('../middleware/auth');
+const { __setGoTrueFetch } = await import('../services/auth/gotrue');
+const { __setJwtLivenessLoaderForTests } = await import('../services/auth/jwt-liveness');
+const { authRouter } = await import('../http/auth');
+const { supabaseAuth } = await import('../http/middleware/auth');
 
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: USER, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })}`;

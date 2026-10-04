@@ -13,8 +13,8 @@ import {
   type GatewayConnector,
   type GatewayDeps,
   handleCall,
-} from '../connectors/gateway';
-import type { DefaultMode, Policy } from '../connectors/policy';
+} from '../services/connectors/gateway';
+import type { DefaultMode, Policy } from '../services/connectors/policy';
 
 const ALICE = 'user-alice';
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import type { AgentSpec, LoadedAgents } from '../../projects/agents';
+import type { AgentSpec, LoadedAgents } from '../projects/agents';
 
-const actualAgents = await import('../../projects/agents');
+const actualAgents = await import('../projects/agents');
 
 let loadProjectAgentsImpl: () => Promise<LoadedAgents> = async () => ({
   specs: [],
@@ -10,7 +10,7 @@ let loadProjectAgentsImpl: () => Promise<LoadedAgents> = async () => ({
   defaultAgent: null,
 });
 
-mock.module('../../projects/agents', () => ({
+mock.module('../projects/agents', () => ({
   ...actualAgents,
   loadProjectAgents: () => loadProjectAgentsImpl(),
 }));

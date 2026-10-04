@@ -30,17 +30,17 @@ mock.module('../lib/config', () => ({
   },
 }));
 mock.module('../lib/db', () => ({ db: {} }));
-mock.module('../platform/providers/compute-rates', () => ({
+mock.module('../services/platform/providers/compute-rates', () => ({
   getProviderComputeRateCard: () => RATE,
 }));
 
 let multiplier = 1;
-mock.module('../billing/services/billing-cache', () => ({
+mock.module('../services/billing/services/billing-cache', () => ({
   resolveAccountBilling: async () => ({ compute: { rateMultiplier: multiplier } }),
   invalidateAccountBilling: () => {},
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({ billingModel: 'per_seat' }),
   upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
@@ -50,7 +50,7 @@ const debits: Array<{ amount: number; description: string }> = [];
 // Compute SETTLES: the seconds are already consumed, so the debit must record
 // even against a drained wallet. Admission (`wallet.debit`) is a different
 // question.
-mock.module('../billing/wallet', () => ({
+mock.module('../services/billing/wallet', () => ({
   wallet: {
     settle: async (input: { amount: number; description: string }) => {
       debits.push({ amount: input.amount, description: input.description });
@@ -66,7 +66,7 @@ const ENDED = new Date(STARTED.getTime() + WINDOW_SECONDS * 1000);
 
 let openRow: Record<string, unknown> | null = null;
 const claims: Array<{ addCostUsd: number }> = [];
-mock.module('../billing/repositories/compute-sessions', () => ({
+mock.module('../services/billing/repositories/compute-sessions', () => ({
   getOpenComputeSession: async () => openRow,
   claimComputeWindow: async (input: { addCostUsd: number }) => {
     claims.push({ addCostUsd: input.addCostUsd });
@@ -80,7 +80,7 @@ mock.module('../billing/repositories/compute-sessions', () => ({
 }));
 
 const { calculateComputeCost, pauseComputeSession } = await import(
-  '../billing/services/compute-metering'
+  '../services/billing/services/compute-metering'
 );
 
 /** The list-price cost of the window every case below settles. */
@@ -183,7 +183,7 @@ describe('settling a window applies the account multiplier', () => {
   });
 
   test('a resolver failure bills at list price instead of dropping the window', async () => {
-    mock.module('../billing/services/billing-cache', () => ({
+    mock.module('../services/billing/services/billing-cache', () => ({
       resolveAccountBilling: async () => {
         throw new Error('billing cache exploded');
       },

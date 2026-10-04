@@ -2,8 +2,8 @@
  * Integration test (real local DB): JAY-599 / T21 — adopting a warm session
  * must clear `metadata.warm` so the `visible` session list stops hiding it.
  *
- * `dropWarmSessionMarkerOnAdopt` (projects/routes/warm-sessions.ts) is called
- * from POST /start (projects/routes/session-runtime.ts) — the earliest server signal a
+ * `dropWarmSessionMarkerOnAdopt` (http/projects/warm-sessions.ts) is called
+ * from POST /start (http/projects/session-runtime.ts) — the earliest server signal a
  * user actually entered a session. Adoption also stamps `last_activity_at` in
  * the SAME statement (a deliberate reversal of the earlier "adoption is not a
  * turn" pin — see the helper's doc comment): the warm take only ever fires
@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { dropWarmSessionMarkerOnAdopt } from '../projects/routes/warm-sessions';
+import { dropWarmSessionMarkerOnAdopt } from '../http/projects/warm-sessions';
 import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
-import { chooseDefaultModel } from '../llm-gateway/resolution/choose-default-model';
+import { chooseDefaultModel } from '../services/llm-gateway/resolution/choose-default-model';
 
 const MANAGED = DEFAULT_MANAGED_MODEL_IDS[0]!; // a real bare managed id
 const BYOK = 'anthropic/claude-sonnet-4-6'; // a non-managed wire model

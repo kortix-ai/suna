@@ -102,11 +102,11 @@ const suite = dockerOk ? describe : describe.skip;
 suite('credit wallet ledger writes (throwaway Postgres)', () => {
   // The API modules are imported only after the database exists, because
   // `apps/api/src/lib/config` validates the environment at import time.
-  let wallet: typeof import('../../apps/api/src/billing/wallet').wallet;
+  let wallet: typeof import('../../apps/api/src/services/billing/wallet').wallet;
   let database: ReturnType<typeof createDb> | undefined;
-  let router: typeof import('../../apps/api/src/router/services/billing');
-  let errors: typeof import('../../apps/api/src/billing/errors');
-  let honesty: typeof import('../../apps/api/src/billing/ledger-type-honesty');
+  let router: typeof import('../../apps/api/src/services/router/services/billing');
+  let errors: typeof import('../../apps/api/src/services/billing/errors');
+  let honesty: typeof import('../../apps/api/src/services/billing/ledger-type-honesty');
 
   beforeAll(async () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
@@ -154,10 +154,10 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       withDbTransaction: scoped.transaction,
       afterDbCommit: scoped.afterCommit,
     }));
-    ({ wallet } = await import('../../apps/api/src/billing/wallet'));
-    router = await import('../../apps/api/src/router/services/billing');
-    errors = await import('../../apps/api/src/billing/errors');
-    honesty = await import('../../apps/api/src/billing/ledger-type-honesty');
+    ({ wallet } = await import('../../apps/api/src/services/billing/wallet'));
+    router = await import('../../apps/api/src/services/router/services/billing');
+    errors = await import('../../apps/api/src/services/billing/errors');
+    honesty = await import('../../apps/api/src/services/billing/ledger-type-honesty');
   }, 300_000);
 
   afterAll(async () => {

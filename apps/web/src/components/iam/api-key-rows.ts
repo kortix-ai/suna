@@ -20,7 +20,7 @@ import type { AccountToken, KortixProject } from '@kortix/sdk';
 
 /**
  * Kortix mints one of these per session and injects it into the sandbox as
- * `KORTIX_TOKEN` (`apps/api/src/platform/services/session-sandbox.ts`,
+ * `KORTIX_TOKEN` (`apps/api/src/services/platform/services/session-sandbox.ts`,
  * `mintConnectorToken` — `name: \`Connector Session ${sandboxId.slice(0, 8)}\``).
  * They land in the SAME table as human-created keys, so `/accounts/tokens`
  * returns them: a workspace that has run 200 sessions has 200 of these, and

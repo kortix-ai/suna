@@ -26,7 +26,7 @@ describe('sanitizeParts', () => {
     // mirror is read on every cold open, so one embedded screenshot would make
     // the wake slower than the wake it exists to hide. The mention source is
     // what places an `@file` highlight in the prompt, so it stays.
-    const source = { type: 'file', path: 'src/app.ts', text: { value: '@src/app.ts', start: 6, end: 17 } };
+    const source = { type: 'file', path: 'src/app/app.ts', text: { value: '@src/app/app.ts', start: 6, end: 17 } };
     const [part] = sanitizeParts([
       {
         id: 'prt_1',
@@ -584,7 +584,7 @@ describe('a row the old mirror stripped is served with what it kept', () => {
   test('a file call gets the absolute path its metadata kept, else the relative path in its title', () => {
     expect(
       served('read', {
-        title: 'src/app.ts',
+        title: 'src/app/app.ts',
         metadata: { preview: 'export {}', display: { type: 'file', path: '/workspace/src/app.ts', text: 'export {}' } },
       }).input,
     ).toEqual({ filePath: '/workspace/src/app.ts' });
@@ -593,7 +593,7 @@ describe('a row the old mirror stripped is served with what it kept', () => {
     });
     expect(
       served('edit', {
-        title: 'src/app.ts',
+        title: 'src/app/app.ts',
         metadata: { diff: '@@', filediff: { file: '/workspace/src/app.ts', patch: '@@', additions: 1, deletions: 1 } },
       }).input,
     ).toEqual({ filePath: '/workspace/src/app.ts' });

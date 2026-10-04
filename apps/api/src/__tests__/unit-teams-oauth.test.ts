@@ -38,8 +38,8 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   saveTeamsInstall: async (input: Record<string, unknown>) => {
     saved.push(input);
@@ -59,7 +59,7 @@ mock.module('../channels/install-store', () => ({
   },
 }));
 
-mock.module('../channels/teams/catalog', () => ({
+mock.module('../services/channels/teams/catalog', () => ({
   publishTeamsAppToCatalog: () => publishImpl(),
 }));
 
@@ -67,7 +67,7 @@ mock.module('../channels/teams/catalog', () => ({
 // runs under --isolate, so a hand-listed stub cannot leak into a sibling suite,
 // and NOT loading the real module keeps the Composio client (an optional dep
 // that a fresh worktree may not have installed) out of this test's graph.
-mock.module('../connectors/sync', () => ({
+mock.module('../services/connectors/sync', () => ({
   reconcileChannelConnectors: async () => undefined,
 }));
 
@@ -108,7 +108,7 @@ afterAll(() => {
   mock.restore();
 });
 
-const oauth = (await import('../channels/teams-oauth')) as any;
+const oauth = (await import('../http/channels/teams-oauth')) as any;
 const { teamsOauthApp, teamsOrgConsentUrl, setTeamsPublishRedirectWaitForTest } = oauth;
 
 const USER_ID = '8c7d5e1a-3b2f-4e6d-9a1c-0f2e4d6b8a3c';

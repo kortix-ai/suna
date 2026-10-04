@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { conversationScope, isBotMentioned } from '../channels/teams/util';
+import { conversationScope, isBotMentioned } from '../services/channels/teams/util';
 
 const BOT = '28:62b4470a-e8e6-4e13-a73f-363de2209dfc';
 

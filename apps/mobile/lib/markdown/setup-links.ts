@@ -10,7 +10,7 @@
  * `TextPartBlock` renders one after the other.
  *
  * The app has no origin of its own, so a link counts only when its token has
- * the `ksl_` wire prefix (`apps/api/src/setup-links/token.ts`) — web's rule for
+ * the `ksl_` wire prefix (`apps/api/src/services/setup-links/token.ts`) — web's rule for
  * a cross-origin link.
  */
 import { autoLinkUrls, openMarkdownLinkAtEnd } from '@kortix/shared';

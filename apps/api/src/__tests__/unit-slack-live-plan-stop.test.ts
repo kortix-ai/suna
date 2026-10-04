@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 
-import { SLACK_STOP_ACTION } from '../channels/slack/stop-action';
+import { SLACK_STOP_ACTION } from '../services/channels/slack/stop-action';
 
 // `repaintLivePlan` is the single render path for the live plan message, so it
 // is where the Stop button either appears or does not. Kept apart from
@@ -25,15 +25,15 @@ let captured: Array<Record<string, any>> = [];
 const repaint = async (sessionId: string) => {
   // Spread the real module: `mock.module` REPLACES it, and slack-api has many
   // other exports the import graph needs.
-  const actual = await import('../channels/slack-api');
-  mock.module('../channels/slack-api', () => ({
+  const actual = await import('../services/channels/slack-api');
+  mock.module('../services/channels/slack-api', () => ({
     ...actual,
     updateBlocks: async (_t: string, _c: string, _ts: string, _x: string, blocks: unknown[]) => {
       captured = blocks as Array<Record<string, any>>;
       return true;
     },
   }));
-  const { repaintLivePlan } = await import('../channels/slack/turn');
+  const { repaintLivePlan } = await import('../services/channels/slack/turn');
   captured = [];
   await repaintLivePlan({ ...base, sessionId } as never);
   return captured;

@@ -14,7 +14,7 @@ import {
   sessionIntentToVisibility,
   visibilityToIntent,
   type SecretGrant,
-} from '../connectors/share';
+} from '../services/connectors/share';
 
 const ALICE = 'user-alice';
 const BOB = 'user-bob';

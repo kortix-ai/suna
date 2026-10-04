@@ -121,8 +121,8 @@ mock.module('../services/sessions/lifecycle/actor', () => ({
   resolveAgentRunAttribution: async () => SERVICE_ACCOUNT_ID,
 }));
 
-const realAuthMiddleware = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realAuthMiddleware = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -205,7 +205,7 @@ mock.module('../services/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
-mock.module("../snapshots/builder", () => ({
+mock.module("../services/snapshots/builder", () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
@@ -306,28 +306,28 @@ mock.module('../services/git/project-git', () => ({
   }),
 }));
 
-mock.module('../platform/services/session-sandbox', () => ({
+mock.module('../services/platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
     lastProvisionEnv = await input.extraEnvVars;
     sandboxProvisionCalls += 1;
   },
 }));
 
-mock.module('../platform/services/provider-balancer', () => ({
+mock.module('../services/platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
 }));
 
 const mockedProjectLlmGatewayEnabled = (metadata: unknown) =>
   (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
     ?.llm_gateway === true;
-mock.module('../llm-gateway/enablement', () => ({
+mock.module('../services/llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: mockedProjectLlmGatewayEnabled,
   // The by-id variant (secrets delivery, title generation) resolves against
   // the same fixture row this suite mutates per test.
   projectLlmGatewayEnabledById: async () => mockedProjectLlmGatewayEnabled(projectRow.metadata),
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -341,7 +341,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'pro' }),
   // Trigger fire spawns a real session, which runs the billing gate. Return a
@@ -774,28 +774,26 @@ mock.module('../services/triggers/trigger-execution-store', () => ({
     runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
 }));
 
-const realModelPreferences = await import('../repositories/model-preferences');
-mock.module('../repositories/model-preferences', () => ({
+const realModelPreferences = await import('../services/repositories/model-preferences');
+mock.module('../services/repositories/model-preferences', () => ({
   ...realModelPreferences,
   getAccountModelDefaults: async () => modelDefaults,
 }));
 
-const realDefaultModel = await import('../llm-gateway/resolution/default-model');
-mock.module('../llm-gateway/resolution/default-model', () => ({
+const realDefaultModel = await import('../services/llm-gateway/resolution/default-model');
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   ...realDefaultModel,
   isModelServableForAccount: async () => true,
 }));
 
+const { projectsApp, projectWebhooksApp, registerAllProjectRoutes } = await import('../http/projects/index');
 const {
   drainSessionLifecycleQueue,
   drainTriggerExecutionQueue,
-  projectsApp,
-  projectWebhooksApp,
-  registerAllProjectRoutes,
   runProjectTriggerSweep,
-} = await import('../projects/index');
+} = await import('../services/projects');
 registerAllProjectRoutes();
-const { resetRateLimiters } = await import('../middleware/rate-limit');
+const { resetRateLimiters } = await import('../http/middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();

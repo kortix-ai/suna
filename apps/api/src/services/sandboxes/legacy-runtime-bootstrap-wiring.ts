@@ -5,15 +5,15 @@
  */
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { getProvider, type ProviderName } from '../../platform/providers';
+import { getProvider, type ProviderName } from '../platform/providers';
 import { readFileSync } from 'node:fs';
 import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
-import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
+import { runtimeAssetsManifest, runtimeEntrypointPath } from '../runtime-assets/manifest';
 import { projectSessions, projects } from '@kortix/db';
 import { sql } from 'drizzle-orm';
-import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
-import { mintSessionToken } from '../../platform/services/session-sandbox';
-import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { createAccountToken, revokeAccountToken } from '../repositories/account-tokens';
+import { mintSessionToken } from '../platform/services/session-sandbox';
+import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../sandbox-proxy/backend';
 import { recordAuditEvent } from '../audit/audit';
 import { db } from '../../lib/db';
 import { OPENCODE_PRIMARY_PORT } from '../sessions/opencode-ports';
@@ -201,7 +201,7 @@ const REPAIR_TOKEN_TTL_MS = 30 * 60_000;
  *
  * NOT a session credential. `validateAccountToken` refuses any token carrying
  * a `session_id` whose sandbox row is not `provisioning`/`active`
- * (repositories/account-tokens.ts) — which is exactly the state a repair has
+ * (services/repositories/account-tokens.ts) — which is exactly the state a repair has
  * to work in. A project-scoped PAT with a short expiry is vouched for by the
  * control plane at repair time and is not hostage to the row being repaired.
  * It only ever fetches `/v1/runtime-assets/*`, and it is revoked when the exec

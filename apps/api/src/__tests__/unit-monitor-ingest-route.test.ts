@@ -6,7 +6,7 @@
 // sandbox-token-only auth against the project's OWN monitor box, the feature
 // flag, ingest dedup, and the platform-enforced rate bound.
 //
-// Mocks `../lib/db` and `../feature-flags/registry` via `mock.module`
+// Mocks `../lib/db` and `../services/feature-flags/registry` via `mock.module`
 // (process-global in bun:test — the suite runs with `--isolate`).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
@@ -16,11 +16,11 @@ import {
   projects,
 } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realRegistry from '../feature-flags/registry';
+import * as realRegistry from '../services/feature-flags/registry';
 import {
   MONITOR_LINE_MAX_BYTES,
   MONITOR_RATE_SUSTAINED_PER_HOUR,
-} from '../projects/lib/monitor-events';
+} from '../services/projects/lib/monitor-events';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -93,14 +93,14 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../feature-flags/registry', () => ({
+mock.module('../services/feature-flags/registry', () => ({
   ...realRegistry,
   resolveFeatureFlag: (_metadata: unknown, key: string) =>
     key === 'monitors' ? flagEnabled : false,
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/monitors')).registerMonitorsRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/monitors')).registerMonitorsRoutes();
 
 function buildApp() {
   const app = new Hono();

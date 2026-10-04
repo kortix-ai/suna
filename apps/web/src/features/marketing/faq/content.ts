@@ -48,7 +48,7 @@
  *    stable, the line numbers were not.) Quote no other figure, and never invent
  *    a discount, a trial length or a usage rate.
  *  - MODELS. The ChatGPT subscription path is REAL — Codex device-grant OAuth,
- *    `apps/api/src/projects/codex-device-auth.ts`. There is NO Cursor auth path
+ *    `apps/api/src/services/projects/codex-device-auth.ts`. There is NO Cursor auth path
  *    and no Claude-subscription auth path anywhere in the codebase, however
  *    often other copy says so (`how-it-works-content.ts:39-41` records the same
  *    correction). Name ChatGPT only.
@@ -58,10 +58,10 @@
  *    and the honesty gate in `marketing/self-hosted/content.ts`). Say it.
  *  - APPROVAL GATES ARE OFF BY DEFAULT. `policy.default_mode` falls back to
  *    `allow_all` when a project declares no `policy:` block
- *    (`apps/api/src/projects/policies.ts:73`). Write "you set allow, ask or
+ *    (`apps/api/src/services/projects/policies.ts:73`). Write "you set allow, ask or
  *    block", never "it asks first".
  *  - MERGE is default-deny for AGENTS, not human-only. `project.cr.merge` is a
- *    grantable capability (`apps/api/src/projects/routes/change-request-actions.ts:63`). Do not
+ *    grantable capability (`apps/api/src/http/projects/change-request-actions.ts:63`). Do not
  *    write "only a human can merge".
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value in the session, readable by any

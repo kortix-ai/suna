@@ -13,7 +13,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError } from '../billing/errors';
+import { BillingError } from '../services/billing/errors';
 import { runWithContext } from '../lib/request-context';
 
 // ─── Mock tracking ───────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ function createMockStreamResponse(): Response {
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
 // Mock apiKeyAuth to always set accountId (bypasses real auth validation)
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   apiKeyAuth: async (c: any, next: any) => {
     const authHeader = c.req.header('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -129,27 +129,27 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mock.module('../router/services/tavily', () => ({
+mock.module('../services/router/services/tavily', () => ({
   webSearchTavily: async (query: string, maxResults: number, searchDepth: string) => {
     if (mockTavilyError) throw mockTavilyError;
     return mockTavilyResults;
   },
 }));
 
-mock.module('../router/services/serper', () => ({
+mock.module('../services/router/services/serper', () => ({
   imageSearchSerper: async (query: string, maxResults: number, safeSearch: boolean) => {
     if (mockSerperError) throw mockSerperError;
     return mockSerperResults;
   },
 }));
 
-mock.module('../router/services/billing', () => ({
+mock.module('../services/router/services/billing', () => ({
   checkCredits: async (accountId: string, min?: number, opts?: any) => mockCheckCreditsResult,
   deductToolCredits: async (...args: any[]) => mockDeductResult,
   deductLLMCredits: async (...args: any[]) => mockDeductResult,
 }));
 
-mock.module('../router/services/llm-reservation', () => ({
+mock.module('../services/router/services/llm-reservation', () => ({
   reserveEstimatedLlmCredits: async () => {
     if (!mockCheckCreditsResult.hasCredits) {
       throw new BillingError(mockCheckCreditsResult.message, 402);
@@ -166,7 +166,7 @@ mock.module('../router/services/llm-reservation', () => ({
   refundLlmReservation: async () => undefined,
 }));
 
-mock.module('../router/services/llm', () => ({
+mock.module('../services/router/services/llm', () => ({
   proxyToOpenRouter: async (
     body: Record<string, unknown>,
     isStreaming: boolean,
@@ -221,7 +221,7 @@ mock.module('../router/services/llm', () => ({
         : next,
     };
   },
-  // Stream billing (#8057) is covered by router/services/llm-sse-settlement.test.ts.
+  // Stream billing (#8057) is covered by services/router/services/llm-sse-settlement.test.ts.
   // Here it only drains its tee'd copy, as the real settlement does.
   settleStreamUsage: async ({ stream }: { stream: ReadableStream<Uint8Array> }) => {
     await stream.pipeTo(new WritableStream());
@@ -300,7 +300,7 @@ mock.module('../router/services/llm', () => ({
 
 // ─── Import router AFTER mocks ───────────────────────────────────────────────
 
-const { router } = await import('../router/index');
+const { router } = await import('../http/router/index');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 

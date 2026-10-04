@@ -10,4 +10,4 @@ incident_date: 2026-10-01
 
 **Incident:** 2026-10-01, release gate RUN-10 on a staging candidate: the `no-edit` agent (`edit`, `bash`, `task` denied) created a file. A dev session showed `pty_spawn` and `memory` callable by that agent; `pty_spawn` ran with status `completed`. Exposed: any project whose agent denies `bash` or `edit` and ships the starter tools, on every release including v0.13.45. Fixed in the compiler (apps/api `denyToolsBehindDeniedPermission`).
 
-**Enforcement:** `apps/api/src/projects/lib/compile-agent-config.test.ts` (denied bash/edit denies pty_* and memory) and flow `RUN-10`, which now fails on any non-error `memory` or `pty_*` call.
+**Enforcement:** `apps/api/src/services/projects/lib/compile-agent-config.test.ts` (denied bash/edit denies pty_* and memory) and flow `RUN-10`, which now fails on any non-error `memory` or `pty_*` call.

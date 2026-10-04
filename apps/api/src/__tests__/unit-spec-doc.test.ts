@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseSpecDocument } from '../connectors/spec-doc';
+import { parseSpecDocument } from '../services/connectors/spec-doc';
 
 const SRC = 'https://example.com/openapi';
 

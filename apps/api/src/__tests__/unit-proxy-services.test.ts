@@ -6,7 +6,7 @@
  * test data drifting from production config.
  */
 import { describe, test, expect } from 'bun:test';
-import { matchAllowedRoute, getProxyServices, type AllowedRoute } from '../router/config/proxy-services';
+import { matchAllowedRoute, getProxyServices, type AllowedRoute } from '../services/router/config/proxy-services';
 
 // ─── Test data (from real registry — not duplicated) ─────────────────────────
 

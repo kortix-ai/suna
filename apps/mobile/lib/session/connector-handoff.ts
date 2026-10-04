@@ -5,8 +5,8 @@
  *
  * Web's mechanism: a `kortix-connectors_call` denial for an unconnected
  * connector carries `connect_url` — an agent-minted `/connect/<token>` setup
- * link (`apps/api/src/connectors/principal-access.ts` `connectorDenialBody`,
- * `apps/api/src/connectors/db-deps.ts` `mintConnectorConnectLink`). Web's
+ * link (`apps/api/src/services/connectors/principal-access.ts` `connectorDenialBody`,
+ * `apps/api/src/services/connectors/db-deps.ts` `mintConnectorConnectLink`). Web's
  * markdown link interceptor turns that link into `SetupLinkButton` /
  * `ConnectorIntake` wherever the agent happens to paste it in prose. Mobile
  * reads the SAME field straight off the `kortix-connectors_call` tool part

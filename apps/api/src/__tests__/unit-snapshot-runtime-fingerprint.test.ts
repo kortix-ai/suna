@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { buildRuntimeArtifactFingerprint } from '../snapshots/runtime-fingerprint';
+import { buildRuntimeArtifactFingerprint } from '../services/snapshots/runtime-fingerprint';
 
 describe('buildRuntimeArtifactFingerprint', () => {
   test('is deterministic for the same runtime artifacts', async () => {

@@ -4,7 +4,7 @@ incident_date: 2026-10-01
 ---
 # Send the session's model with every channel prompt; a prompt without one runs on the runtime's last model, not the pin
 
-**Rule:** Every prompt a channel (Teams, Slack) sends to a session carries a model: the conversation's `/model` choice, else the session's pin, else a servable replacement. `channelTurnModel` (`apps/api/src/channels/vision-model.ts`) returns `null` only when there is nothing servable to send.
+**Rule:** Every prompt a channel (Teams, Slack) sends to a session carries a model: the conversation's `/model` choice, else the session's pin, else a servable replacement. `channelTurnModel` (`apps/api/src/services/channels/vision-model.ts`) returns `null` only when there is nothing servable to send.
 
 Never skip the model because it "has not changed". With no model on the prompt, OpenCode answers on the model of the session's last prompt. That model is neither the pin in `metadata.opencode_model` nor the model the web composer shows.
 

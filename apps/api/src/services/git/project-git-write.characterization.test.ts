@@ -130,13 +130,13 @@ mock.module('../secrets/secrets', () => ({
   encryptProjectSecret: (projectId: string, value: string) => `enc(${projectId}:${value})`,
   decryptProjectSecret: (projectId: string, valueEnc: string) => valueEnc,
 }));
-mock.module('../../projects/lib/access', () => ({ grantProjectRole: async () => {} }));
-mock.module('../../iam/cache-invalidation', () => ({ invalidateIamCacheForUser: () => {} }));
-mock.module('../../git-proxy/project-snapshot', () => ({
+mock.module('../projects/lib/access', () => ({ grantProjectRole: async () => {} }));
+mock.module('../iam/cache-invalidation', () => ({ invalidateIamCacheForUser: () => {} }));
+mock.module('../git-proxy/project-snapshot', () => ({
   queueProjectSnapshotForRef: async () => {},
 }));
 mock.module('./index', () => ({ invalidateProjectMirror: () => {} }));
-mock.module('../../projects/lib/config-convergence-triggers', () => ({ notifyBaseBranchMoved: async () => {} }));
+mock.module('../projects/lib/config-convergence-triggers', () => ({ notifyBaseBranchMoved: async () => {} }));
 mock.module('../github/github', () => ({
   createInstallationToken: async () => {
     throw new Error('not used by the write half under test');
@@ -156,8 +156,8 @@ mock.module('./project-git', () => ({
   },
 }));
 
-import { registerGitHubLinkedProject, registerPatLinkedProject } from '../../projects/lib/project-registration';
-import { persistProjectRepositoryReplacement } from '../../projects/lib/repository-replacement';
+import { registerGitHubLinkedProject, registerPatLinkedProject } from '../projects/lib/project-registration';
+import { persistProjectRepositoryReplacement } from '../projects/lib/repository-replacement';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 

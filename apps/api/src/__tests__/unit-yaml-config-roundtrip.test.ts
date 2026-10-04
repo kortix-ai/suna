@@ -6,8 +6,8 @@ import {
   triggerSpecToTomlEntry,
 } from '../services/triggers';
 import { draftToSpec, parseTriggerDraft } from '../services/triggers/trigger-runtime';
-import { extractAgents } from '../projects/agents';
-import { extractConnectors } from '../projects/connectors';
+import { extractAgents } from '../services/projects/agents';
+import { extractConnectors } from '../services/projects/connectors';
 
 // Empirical ground truth for the dual-format (TOML v1 + YAML v2) manifest core:
 // parse → extract each resource → serialize → re-parse, for BOTH formats, and

@@ -38,7 +38,7 @@
  * Three claims that read fine but do not survive the code, so they are not here:
  *   - "the Cursor subscription you already pay for" — there is no Cursor auth,
  *     credential or provider anywhere in the codebase. ChatGPT is real
- *     (`apps/api/src/projects/codex-device-auth.ts`).
+ *     (`apps/api/src/services/projects/codex-device-auth.ts`).
  *   - "air-gapped" — nothing implements it, and the enterprise VPC spec says in
  *     as many words that it is "not full air-gap".
  *   - "work reaches main only through a change request a human approves" — the

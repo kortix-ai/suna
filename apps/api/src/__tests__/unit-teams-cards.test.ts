@@ -22,8 +22,8 @@ import {
   buildRequestAccessCard,
   buildReviewCard,
   buildSelectCard,
-} from '../channels/teams/cards';
-import type { StreamTaskChunk } from '../channels/slack-api';
+} from '../services/channels/teams/cards';
+import type { StreamTaskChunk } from '../services/channels/slack-api';
 
 function step(over: Partial<StreamTaskChunk>): StreamTaskChunk {
   return { type: 'task_update', id: 'step-0', title: 'Reading logs', status: 'in_progress', ...over };

@@ -34,7 +34,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * `gateway_budget_scope` is `('project','member')` in the database
  * (`packages/db/src/schema/kortix.ts:2808`) and in the route body schema
- * (`apps/api/src/projects/routes/gateway.ts:565`), and `gateway_budgets` has
+ * (`apps/api/src/http/projects/gateway.ts:565`), and `gateway_budgets` has
  * no `subject_group_id` column. Account groups exist elsewhere
  * (`kortix.account_groups` + `project_group_grants`) but nothing in the budget
  * path references them. A group cap is backend work, not a control this file

@@ -1,18 +1,18 @@
 import { sessionAttachmentStore } from '../session-attachments';
-import { pauseComputeSession } from '../../../billing/services/compute-metering';
+import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../../lib/config';
 import { logger } from '../../../lib/logger';
-import { getProvider } from '../../../platform/providers';
+import { getProvider } from '../../platform/providers';
 import { db } from '../../../lib/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
-import { revokeSessionConnectorTokens } from '../../../repositories/account-tokens';
+import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { revokeAllPublicSharesForSession } from '../session-public-shares';
 import {
   legacyRehydrateSpec,
   rehydrateSessionChat,
-} from '../../../projects/legacy-migration-rehydrate';
+} from '../../projects/legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../../git/project-git';
 import { scheduleSessionConfigConvergence } from '../session-config-convergence';
 import { refreshSandboxRuntimeAssets } from '../../sandboxes/sandbox-runtime-refresh';
@@ -27,9 +27,9 @@ import {
   sandboxCallbackDeadTunnelReason,
   sandboxCallbackUnreachableReason,
 } from '../sessions';
-import { projectLlmGatewayEnabled } from '../../../llm-gateway/enablement';
-import { isMissingRuntimeError } from '../../../projects/routes/shared';
-import { invalidateProviderCache } from '../../../sandbox-proxy';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isMissingRuntimeError } from '../open/shared';
+import { invalidateProviderCache } from '../../sandbox-proxy/backend';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,

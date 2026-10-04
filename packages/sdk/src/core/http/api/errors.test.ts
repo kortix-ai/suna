@@ -292,7 +292,7 @@ test('formatBillingErrorForUI generic branch falls back to a default subtitle wh
 // ── Feature-flag gate (403 feature_disabled) ────────────────────────────────
 //
 // Every flag-gated route rejects identically: 403 with the machine-readable
-// `feature_disabled` code and the flag key (apps/api/src/feature-flags/gate.ts,
+// `feature_disabled` code and the flag key (apps/api/src/services/feature-flags/gate.ts,
 // wire shape `FeatureDisabledErrorSchema`). Clients branch on `code`, never on
 // prose, so the narrowing helper is the one supported way to detect it.
 

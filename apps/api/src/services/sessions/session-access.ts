@@ -15,8 +15,8 @@
  * project's row, so a session of another project or account is `404`.
  */
 import type { Context } from 'hono';
-import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../../connectors/share';
-import { loadSessionForSharing, loadVisibleSession, sessionIsTombstoned } from '../../projects/lib/access';
+import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../connectors/share';
+import { loadSessionForSharing, loadVisibleSession, sessionIsTombstoned } from '../projects/lib/access';
 import { callerKortixSessionId } from './caller-session';
 
 type LoadedProject = Parameters<typeof loadVisibleSession>[0];

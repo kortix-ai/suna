@@ -10,7 +10,7 @@ let forwardBody: unknown = { message_id: 'msg_1' };
 /** Answers per forwarded path, before the defaults above. */
 let forwardAnswers: Record<string, () => Response> = {};
 
-mock.module('../../../sandbox-proxy/forward', () => ({
+mock.module('../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

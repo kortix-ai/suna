@@ -30,12 +30,12 @@ import {
   discoverConnectionOAuth2Resource,
   loadOAuth2Application,
   registerConnectionOAuth2Client,
-} from '../connectors/oauth2-store';
-import { PROJECT_ACTIONS } from '../iam';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { createServiceAccount } from '../repositories/service-accounts';
-import { mintSetupLink } from '../setup-links/token';
+} from '../services/connectors/oauth2-store';
+import { PROJECT_ACTIONS } from '../services/iam';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { createServiceAccount } from '../services/repositories/service-accounts';
+import { mintSetupLink } from '../services/setup-links/token';
 import { db } from '../lib/db';
 import {
   publicShareToken,

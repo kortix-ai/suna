@@ -52,15 +52,15 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from '../../../platform/providers/contract';
-import { isProviderNotFound } from '../../../platform/providers/status';
+import type { SandboxExecOptions, SandboxExecResult } from '../../platform/providers/contract';
+import { isProviderNotFound } from '../../platform/providers/status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../../lib/config';
 import { currentInstanceId } from '../../sessions/instance-scope';
 import { isOpencodePort } from '../../sessions/opencode-ports';
 import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from './client';
-import { sandboxFrontendBaseUrl } from '../../../platform/sandbox-frontend-url';
-import { serviceKeyForExternalId } from '../../../platform/service-key';
+import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
+import { serviceKeyForExternalId } from '../../platform/service-key';
 import type {
   CreateSandboxOpts,
   InPlaceRecoveryStatus,
@@ -74,16 +74,16 @@ import type {
   SandboxProvider,
   SandboxStartOptions,
   SandboxStatus,
-} from '../../../platform/providers/contract';
+} from '../../platform/providers/contract';
 import {
   SandboxTemplateNotFoundError,
   SnapshotStillBuildingError,
   assertWorkloadCredential,
   sandboxWorkloadType,
-} from '../../../platform/providers/contract';
-import { providerAutoStopBackstopMinutes } from '../../../platform/providers/contract';
-import { classifyPtyWebSocketPath } from '../../../platform/providers/pty-ingress';
-import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
+} from '../../platform/providers/contract';
+import { providerAutoStopBackstopMinutes } from '../../platform/providers/contract';
+import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { sandboxOwnershipMarker } from '../../platform/sandbox-ownership';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -173,7 +173,7 @@ export const PLATINUM_PREVIEW_TOKEN_HEADER = 'x-pt-preview-token';
 
 /**
  * Lifetime of a minted preview token. The proxy caches a resolved ingress for
- * five minutes (sandbox-proxy/backend.ts), so every cached token has a day of
+ * five minutes (services/sandbox-proxy/backend.ts), so every cached token has a day of
  * validity left. Equal to Platinum's own default.
  */
 const PREVIEW_TOKEN_TTL_SECONDS = 24 * 60 * 60;
@@ -461,7 +461,7 @@ export class PlatinumProvider implements SandboxProvider {
       // default: a visitor's request is supposed to wake them. Platinum builds
       // before #1335 drop the unknown field (non-strict schema).
       auto_resume: workloadType === 'app',
-      // The project's `us_region` flag (platform/services/sandbox-region.ts).
+      // The project's `us_region` flag (services/platform/services/sandbox-region.ts).
       // Absent ⇒ Platinum places the box in its home region, exactly as
       // before. A create for a region this process has already seen a box in
       // goes straight to that region's control plane; otherwise
@@ -846,7 +846,7 @@ export class PlatinumProvider implements SandboxProvider {
    * reopen race. Returning right after the ACK let the control plane mark the
    * session/sandbox row stopped (which kills the token — see
    * `account-tokens.ts`'s `isValid` check) while the VM was still up and
-   * still calling `turn-stream`/`audit/events`/`runtime-assets/manifest` with
+   * still calling `turn-stream`/`audit/events`/`services/runtime-assets/manifest` with
    * that now-dead token. PROD 76h window: 404,982 `401 Session token is not
    * active` rejections across 95 projects, one box for a full 12h
    * (`autoStopMinutes: 720`) — exactly its own idle timeout, because nothing

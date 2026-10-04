@@ -44,13 +44,13 @@ mock.module('@kortix/db', () => ({
   connectorCalls: CONNECTOR_CALLS_MARKER,
   connectors: { connectorId: 'connectors.connector_id', slug: 'connectors.slug' },
 }));
-mock.module('../../projects/lib/access', () => ({
+mock.module('../projects/lib/access', () => ({
   lookupEmailsByUserIds: async (ids: string[]) => {
     emailLookupCalls.push(ids);
     return new Map(ids.map((id) => [id, `${id}@example.test`]));
   },
 }));
-mock.module('../../setup-links/token', () => ({
+mock.module('../setup-links/token', () => ({
   approvalPageUrl: (projectId: string, executionId: string, sessionId: string) =>
     `https://dev.kortix.com/approve/${projectId}/${sessionId}/${executionId}`,
 }));

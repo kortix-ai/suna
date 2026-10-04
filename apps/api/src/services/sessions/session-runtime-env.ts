@@ -1,4 +1,4 @@
-import { agentConfigEtag } from '../../projects/lib/compile-agent-config';
+import { agentConfigEtag } from '../projects/lib/compile-agent-config';
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -62,7 +62,7 @@ export interface SessionRuntimeEnvInput {
   harness?: 'opencode' | 'pi';
   /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
-  /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
+  /** The prebuilt bundle of those packages (apps/api/src/services/pi-packages/bundle.ts); null when not built. */
   piPackagesBundle?: { digest: string; url: string; fallbackUrl: string } | null;
 }
 

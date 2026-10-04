@@ -9,7 +9,7 @@ import {
   extractConnectors,
   manifestHashForConnector,
   type ConnectorSpec,
-} from '../projects/connectors';
+} from '../services/projects/connectors';
 import {
   KNOWN_SCHEMA_VERSION,
   parseManifestString,

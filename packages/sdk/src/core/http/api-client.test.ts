@@ -824,7 +824,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
 // account`, HTTP 409, `onunhandledrejection` `handled:false`) on the
 // co-worker session page: `PUT /v1/projects/:projectId/model-defaults`
 // returns a TYPED 409 with `code: 'model_not_servable'` (from
-// `isModelServableForAccount` in `apps/api/src/projects/routes/models.ts` and
+// `isModelServableForAccount` in `apps/api/src/http/projects/models.ts` and
 // `channel-bindings.ts`) when a user picks a model their account can't use
 // (free-tier managed model, disconnected BYOK provider). The
 // `useModelDefaults` `setMutation` had no `onError`, and every call site
@@ -915,7 +915,7 @@ describe('makeRequest classifies a typed model_not_servable 409 as silent to Sen
 
 // `POST /projects/provision` answers 409 `provision_in_flight` when another
 // call carrying the same `idempotency_key` is still creating (see
-// `apps/api/src/projects/lib/provision-idempotency.ts`). `provisionProject`
+// `apps/api/src/services/projects/lib/provision-idempotency.ts`). `provisionProject`
 // passes no `showErrors`, so it defaults to `true` — without a carve-out the
 // web host's global `onError` shows a 5s red toast reading "Another provision
 // with this idempotency_key is in flight" during FIRST-RUN onboarding, for a

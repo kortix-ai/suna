@@ -283,9 +283,9 @@ mockIamAssignments({
   },
 });
 
-// The engine module itself is the seam now — `../iam` re-exports it, and the
+// The engine module itself is the seam now — `../services/iam` re-exports it, and the
 // route layer calls it with the structured `Actor` the auth middleware built.
-mock.module('../iam/authorize', () => {
+mock.module('../services/iam/authorize', () => {
   // Mirror the legacy account-role gate against the test's mocked member rows so
   // owner/admin pass writes, plain members get reads only, non-members are denied.
   const decide = (userId: string, action: string): boolean => {
@@ -320,7 +320,7 @@ mock.module('../iam/authorize', () => {
   };
 });
 
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     if (!currentUserId) return c.json({ error: 'Unauthorized' }, 401);
     c.set('userId', currentUserId);
@@ -334,7 +334,7 @@ mock.module('../middleware/auth', () => ({
 // email-trust rule; this contract suite has no auth schema, so every caller
 // here is a non-SSO identity whose email is its own. The SSO rule itself is
 // covered by integration-iam-sso-sync.test.ts and flow SSO-2.
-mock.module('../iam/email-trust', () => ({
+mock.module('../services/iam/email-trust', () => ({
   trustedEmailForUser: async (userId: string | null | undefined) =>
     userId && userId === currentUserId ? currentUserEmail.trim().toLowerCase() : '',
   emailTrustedSql: () => sql`true`,
@@ -354,7 +354,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../accounts/email', () => ({
+mock.module('../services/accounts/email', () => ({
   buildInviteUrl: (inviteId: string) => `http://localhost:3000/invites/${inviteId}`,
   sendAccountInviteEmail: async (opts: Record<string, unknown>) => {
     sentInvites.push(opts);
@@ -362,12 +362,12 @@ mock.module('../accounts/email', () => ({
   },
 }));
 
-mock.module('../middleware/rate-limit', () => ({
+mock.module('../http/middleware/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async (userId: string) => {
     const existing = memberRows.find((row) => row.userId === userId);
     if (existing) return existing.accountId;
@@ -542,8 +542,8 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { accountsRouter } = await import('../accounts/index');
-const { accountInvitesRouter } = await import('../accounts/invites');
+const { accountsRouter } = await import('../http/accounts/index');
+const { accountInvitesRouter } = await import('../http/accounts/invites');
 
 function createApp() {
   const app = new Hono();

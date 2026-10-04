@@ -25,23 +25,23 @@ mock.module('../lib/db', () => ({
   hasDatabase: () => true,
 }));
 
-const actualDispatch = await import('../channels/slack/dispatch');
+const actualDispatch = await import('../services/channels/slack/dispatch');
 const spawned: Array<{ projectId: string; event: Record<string, unknown> }> = [];
-mock.module('../channels/slack/dispatch', () => ({
+mock.module('../services/channels/slack/dispatch', () => ({
   ...actualDispatch,
   dispatchSlackEvent: async () => {},
   spawnAgentTurn: async (projectId: string, _envelope: unknown, event: Record<string, unknown>) => {
     spawned.push({ projectId, event });
   },
 }));
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb',
   saveSlackOauthInstall: async () => {},
 }));
-const realSlackApi = await import('../channels/slack-api');
-mock.module('../channels/slack-api', () => ({
+const realSlackApi = await import('../services/channels/slack-api');
+mock.module('../services/channels/slack-api', () => ({
   ...realSlackApi,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',
@@ -53,7 +53,7 @@ const setAgentCalls: Array<string | null> = [];
 const setModelCalls: Array<string | null> = [];
 let setResult = true;
 let setAgentReason: 'no_binding' | 'unknown_agent' = 'no_binding';
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   // `./commands` (transitively imported by interactivity.ts for handleSlashCommand)
   // also pulls this in — the mock module shape must cover its full surface or
   // the import fails, not just the bits this file's own code paths exercise.
@@ -73,7 +73,7 @@ mock.module('../channels/slack/selection', () => ({
 // Model picks go through slack/model-choice.ts (pinned in
 // unit-slack-model-choice); this file pins what the click hands it.
 const modelChoices: Array<{ ctx: Record<string, unknown>; choice: string }> = [];
-mock.module('../channels/slack/model-choice', () => ({
+mock.module('../services/channels/slack/model-choice', () => ({
   applySlackModelChoice: async (c: Record<string, unknown>, choice: string) => {
     modelChoices.push({ ctx: c, choice });
     return choice ? `Model for this channel set to ${choice}.` : 'Model reset to the project default.';
@@ -85,11 +85,11 @@ mock.module('../channels/slack/model-choice', () => ({
 
 // Channel settings need a linked project manager (core/settings.ts).
 let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({ resolveProjectChatActor: async () => settingsActor }),
 );
-const realModelGate = await import('../channels/slack/model-gate');
-mock.module('../channels/slack/model-gate', () => ({
+const realModelGate = await import('../services/channels/slack/model-gate');
+mock.module('../services/channels/slack/model-gate', () => ({
   ...realModelGate,
   channelModelContext: async () => ({
     projectId: 'proj-1',
@@ -99,8 +99,8 @@ mock.module('../channels/slack/model-gate', () => ({
     llmGatewayEnabled: true,
   }),
 }));
-const realDefaultModel = await import('../llm-gateway/resolution/default-model');
-mock.module('../llm-gateway/resolution/default-model', () => ({
+const realDefaultModel = await import('../services/llm-gateway/resolution/default-model');
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   ...realDefaultModel,
   isModelServableForAccount: async () => true,
   resolveEffectiveModel: async () => ({ model: null, source: 'platform' }),
@@ -128,7 +128,7 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.fetch = realFetch; });
 
-const { handleBlockAction, handleMessageShortcut } = await import('../channels/slack/interactivity');
+const { handleBlockAction, handleMessageShortcut } = await import('../services/channels/slack/interactivity');
 
 const basePayload = {
   type: 'block_actions',

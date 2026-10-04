@@ -25,7 +25,7 @@ sessions in one enterprise project were affected. Found from a user report on
 2026-09-29 and repaired in place (pin file plus relay, no deletes). Fixed in
 #8322.
 
-**Enforcement:** `apps/api/src/projects/routes/turn-stream.test.ts` (the claim
+**Enforcement:** `apps/api/src/http/projects/turn-stream.test.ts` (the claim
 returns the durable pin), `initial-turn-lifecycle.test.ts` (the daemon records
 it), `boot-replay-prevention.test.ts` (a pinned older root wins over a newer
 empty root; timeout with a pin defers).

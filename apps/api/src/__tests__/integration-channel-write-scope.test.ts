@@ -8,20 +8,20 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, chatChannelBindings, chatInstalls, chatThreads, projectSecrets, projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { CONVERSATION_NOT_IN_PROJECT } from '../connectors/channel-read-scope';
-import { gateChannelWrite, slackWriteRefusal } from '../connectors/channel-write-scope';
-import { type GatewayDeps, handleCall } from '../connectors/gateway';
-import { findChatThread } from '../channels/core/threads';
-import { SLACK_TEAM_ID, deleteSlackInstall, loadSlackTeamIdForProject, saveSlackInstall } from '../channels/install-store';
-import { bindSlackThreadToSession } from '../channels/slack/binding';
+import { CONVERSATION_NOT_IN_PROJECT } from '../services/connectors/channel-read-scope';
+import { gateChannelWrite, slackWriteRefusal } from '../services/connectors/channel-write-scope';
+import { type GatewayDeps, handleCall } from '../services/connectors/gateway';
+import { findChatThread } from '../services/channels/core/threads';
+import { SLACK_TEAM_ID, deleteSlackInstall, loadSlackTeamIdForProject, saveSlackInstall } from '../services/channels/install-store';
+import { bindSlackThreadToSession } from '../services/channels/slack/binding';
 import { encryptProjectSecret } from '../services/secrets/envelope';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 
 // The routes run through the real app; the account token is the caller.
-const { app } = await import('../index');
-const { createAccountToken } = await import('../repositories/account-tokens');
+const { app } = await import('../app/index');
+const { createAccountToken } = await import('../services/repositories/account-tokens');
 
 const RUN = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
 const WS = `T0SHARED${RUN}`;

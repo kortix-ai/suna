@@ -15,7 +15,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { loadSandbox } from '../sandbox-proxy/backend';
+import { loadSandbox } from '../services/sandbox-proxy/backend';
 import { db } from '../lib/db';
 import { removeSeeded, seedProject } from './helpers/integration-fixtures';
 

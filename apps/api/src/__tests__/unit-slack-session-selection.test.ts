@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
-import type { ProjectSessionRow } from '../projects/lib/serializers';
+import type { ProjectSessionRow } from '../services/projects/lib/serializers';
 
 // Guarantee: a Slack-started session inherits the bound channel's agent + model
 // overrides (set via `/kortix agents` / `/kortix models`). Before this, every
@@ -82,7 +82,7 @@ let lastBody: Record<string, unknown> | null = null;
 
 // The channel's selection — what we assert flows into the session body.
 let selection: unknown = null;
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   // session.ts only uses currentChannelSelection; the rest are here so the
   // module shape stays complete for any other importer in the graph.
@@ -99,7 +99,7 @@ mock.module('../channels/slack/selection', () => ({
 
 // Session selection is the subject here; model availability is pinned in
 // unit-channel-model-access and must not depend on provider credentials.
-mock.module('../channels/model-access', () => ({
+mock.module('../services/channels/model-access', () => ({
   agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
   planChannelSessionStart: async ({ chosenModel }: { chosenModel?: string | null }) => ({ model: chosenModel ?? null }),
@@ -111,8 +111,8 @@ mock.module('../channels/model-access', () => ({
   channelModelScope: () => null,
 }));
 
-const realIam = await import('../iam');
-mock.module('../iam', () => ({
+const realIam = await import('../services/iam');
+mock.module('../services/iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: true }),
   assertAuthorized: async () => {},
@@ -125,7 +125,7 @@ mock.module('../iam', () => ({
   unscopedResourceIds: async (_projectId: string, _resourceType: string, resourceIds: readonly string[]) => [...resourceIds],
 }));
 
-mock.module('../channels/slack/turn', () => ({
+mock.module('../services/channels/slack/turn', () => ({
   claimFinalize: async () => true,
   openPlanMessage: async () => true,
   repaintLivePlan: async () => {},
@@ -146,8 +146,8 @@ mock.module('../channels/slack/turn', () => ({
   relayTurnStep: async () => {},
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
-const realInstallStore = await import('../channels/install-store');
-mock.module('../channels/install-store', () => ({
+const realInstallStore = await import('../services/channels/install-store');
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
@@ -168,7 +168,7 @@ mock.module('../channels/install-store', () => ({
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
 }));
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
@@ -192,15 +192,15 @@ mock.module('../channels/slack-api', () => ({
 // Keep the REAL buildAgentUnavailablePickerBlocks (so we assert the actual
 // picker blocks), but fake loadScopedChannelAgents so the recovery path never
 // reads a git mirror. Imported before the mock so the real exports survive.
-const realAgentPicker = await import('../channels/slack/agent-picker');
-mock.module('../channels/slack/agent-picker', () => ({
+const realAgentPicker = await import('../services/channels/slack/agent-picker');
+mock.module('../services/channels/slack/agent-picker', () => ({
   ...realAgentPicker,
   loadScopedChannelAgents: async () => scopedAgents,
 }));
 
-const { spawnAgentTurn } = await import('../channels/slack/dispatch');
+const { spawnAgentTurn } = await import('../services/channels/slack/dispatch');
 const { config } = await import('../lib/config');
-const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
+const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../services/channels/slack/session');
 const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
 
 const project = { projectId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.yaml' };
@@ -343,7 +343,7 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
 });
 
 test('follow-ups to one session identify the originating thread for each reply', async () => {
-  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const { renderFollowUpPrompt } = await import('../services/channels/slack/session');
   const first = renderFollowUpPrompt(envelope, { ...event, channel: 'CONE', thread_ts: '100.1' });
   const second = renderFollowUpPrompt(envelope, { ...event, channel: 'CTWO', thread_ts: '200.2' });
   expect(first).toContain('slack send --channel CONE --thread 100.1');
@@ -355,7 +355,7 @@ test('follow-ups to one session identify the originating thread for each reply',
 // prompt shows a person's name. Labels sit beside the ids; the reply command
 // keeps the ids.
 test('a labelled follow-up names the sender and the channel and keeps the ids for the reply', async () => {
-  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const { renderFollowUpPrompt } = await import('../services/channels/slack/session');
   const prompt = renderFollowUpPrompt(
     envelope,
     { ...event, user: 'U0TEST1', channel: 'C0TEST1', thread_ts: '300.3', text: '<@U0BOT> status?' },
@@ -367,7 +367,7 @@ test('a labelled follow-up names the sender and the channel and keeps the ids fo
 });
 
 test('an unlabelled follow-up keeps the bare ids', async () => {
-  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const { renderFollowUpPrompt } = await import('../services/channels/slack/session');
   const prompt = renderFollowUpPrompt(envelope, { ...event, user: 'U0TEST1', channel: 'C0TEST1', thread_ts: '300.3' });
   expect(prompt).toContain('New message from U0TEST1 in Slack channel C0TEST1, thread 300.3:');
 });

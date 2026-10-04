@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   __resetForcedRefreshCooldown,
   mayForceMirrorRefresh,
-} from '../projects/routes/resource-grants';
+} from '../http/projects/resource-grants';
 
 /**
  * A grant for an agent committed seconds ago misses the timer-refreshed mirror,

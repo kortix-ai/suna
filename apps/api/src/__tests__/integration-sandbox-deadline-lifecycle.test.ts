@@ -17,8 +17,8 @@ const stops: string[] = [];
 const renewals: string[] = [];
 // Spread the real module: only `getProvider` is stubbed, so every other export
 // (error classes the transitive importers need) stays exactly as shipped.
-const realProviders = await import('../platform/providers');
-mock.module('../platform/providers', () => ({
+const realProviders = await import('../services/platform/providers');
+mock.module('../services/platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     getStatus: async () => 'running',
@@ -170,7 +170,7 @@ describe('a sandbox lifetime, start to death', () => {
                       || jsonb_build_object('spawned_by_session', 'coordinator-session')
        WHERE session_id = ${SESSION_ID}`);
 
-    const { markSandboxUsed } = await import('../sandbox-proxy/backend');
+    const { markSandboxUsed } = await import('../services/sandbox-proxy/backend');
     await markSandboxUsed(EXTERNAL_ID);
 
     // The heal is gated on `deadline_at > now()`, and a reaper-stopped box has

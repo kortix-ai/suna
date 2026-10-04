@@ -6,7 +6,7 @@
  * reintroduce the "lands in the DB before it's in config" race.
  *
  * Allowed writers:
- *   - connectors/sync.ts       — THE connector materializer (manifest → DB)
+ *   - services/connectors/sync.ts       — THE connector materializer (manifest → DB)
  *   - __tests__/*             — fixtures / seeds
  */
 import { describe, expect, test } from 'bun:test';
@@ -47,13 +47,13 @@ function offenders(table: string, allow: (rel: string) => boolean): string[] {
 
 describe('config-first invariant (no DB-first creation)', () => {
   test('connectors is inserted ONLY by the toml→DB materializer', () => {
-    // connectors/sync.ts is the single sanctioned writer.
-    expect(offenders('connectors', (rel) => rel === 'connectors/sync.ts')).toEqual([]);
+    // services/connectors/sync.ts is the single sanctioned writer.
+    expect(offenders('connectors', (rel) => rel === 'services/connectors/sync.ts')).toEqual([]);
   });
 
   test('connector actions/policies are inserted ONLY by the materializer', () => {
-    expect(offenders('connectorActions', (rel) => rel === 'connectors/sync.ts')).toEqual([]);
-    expect(offenders('connectorPolicies', (rel) => rel === 'connectors/sync.ts')).toEqual([]);
+    expect(offenders('connectorActions', (rel) => rel === 'services/connectors/sync.ts')).toEqual([]);
+    expect(offenders('connectorPolicies', (rel) => rel === 'services/connectors/sync.ts')).toEqual([]);
   });
 
   test('projectTriggers (legacy definition table) is never inserted — triggers are file-defined', () => {

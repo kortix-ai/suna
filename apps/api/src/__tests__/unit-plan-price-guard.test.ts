@@ -8,8 +8,8 @@ mock.module('../lib/config', () => ({
   config: { INTERNAL_KORTIX_ENV: 'prod', KORTIX_LLM_MARKUP: undefined },
 }));
 
-const { PLAN_CATALOG, listPlanRecords } = await import('../billing/services/plan-catalog');
-const { resolvePriceId, resolvePerSeatPriceId } = await import('../billing/services/tiers');
+const { PLAN_CATALOG, listPlanRecords } = await import('../services/billing/services/plan-catalog');
+const { resolvePriceId, resolvePerSeatPriceId } = await import('../services/billing/services/tiers');
 
 // Grandfathered/retired records that are KNOWN to have no Stripe price. Adding
 // a key here is a reviewed decision; a key missing from here AND from Stripe is

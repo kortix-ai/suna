@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../../lib/db';
-import type { ProviderName } from '../../../platform/providers';
+import type { ProviderName } from '../../platform/providers';
 
 /** Any reference excludes orphan cleanup, even when its status is stale. */
 export async function hasProviderBoxReference(provider: ProviderName, externalId: string): Promise<boolean> {

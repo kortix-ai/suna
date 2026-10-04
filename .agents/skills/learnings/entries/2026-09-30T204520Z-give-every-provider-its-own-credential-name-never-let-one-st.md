@@ -10,4 +10,4 @@ incident_date: 2026-09-30
 
 **Incident:** 2026-09-30. OpenCode Zen and OpenCode Go both list `OPENCODE_API_KEY` on models.dev. Kortix stored one secret under that name, so a Zen key listed Go models and a Go key listed Zen models. The same happened for 11 env vars across 30 providers (Z.ai vs Zhipu, regional MiniMax/Moonshot/Alibaba endpoints). In prod, 44 projects held `OPENCODE_API_KEY`; 17 had succeeded only on Go, 0 on Zen. Fixed by the per-provider name rule plus migration 20260930220000000_provider_own_key_names, which copied the shared key to the provider's own name only where the project had a successful request to that provider in 120 days.
 
-**Enforcement:** `packages/llm-catalog/src/auth-requirements.test.ts` ("no two catalog providers read the same single key"), `apps/api/src/llm-gateway/models/provider-registry.test.ts` (OpenCode Go reads `OPENCODE_GO_API_KEY`).
+**Enforcement:** `packages/llm-catalog/src/auth-requirements.test.ts` ("no two catalog providers read the same single key"), `apps/api/src/services/llm-gateway/models/provider-registry.test.ts` (OpenCode Go reads `OPENCODE_GO_API_KEY`).

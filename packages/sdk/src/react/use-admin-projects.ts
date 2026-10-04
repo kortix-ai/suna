@@ -4,7 +4,7 @@ import { backendApi } from '../core/http/api-client';
 /**
  * The admin fleet view of projects: every project on the platform, across every
  * account, most-active first. Sibling of `useAdminAccounts` and backed by
- * `GET /v1/admin/api/projects` (apps/api/src/admin/index.ts).
+ * `GET /v1/admin/api/projects` (apps/api/src/http/admin/index.ts).
  *
  * "Active" is session activity, not row mtime: `lastSessionAt` is the newest
  * session's `created_at`, and the default sort puts projects with no session at

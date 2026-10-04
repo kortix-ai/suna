@@ -40,7 +40,7 @@ const {
   isValidModelId,
   setChannelAgent,
   setChannelModel,
-} = await import('../channels/slack/selection');
+} = await import('../services/channels/slack/selection');
 
 beforeEach(() => {
   dbResults = [];

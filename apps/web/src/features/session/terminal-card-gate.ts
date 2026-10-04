@@ -34,7 +34,7 @@ export function shouldPaintTerminalCard(input: {
  *
  * - `retriable` is deliberately NOT an input. A stale-wake PARK
  *   (`preserveEstablishedRuntimeOnOpen`'s park branch,
- *   apps/api/src/projects/routes/shared.ts:941-952) answers `stage:'failed'`
+ *   apps/api/src/services/sessions/open/shared.ts:941-952) answers `stage:'failed'`
  *   with `retriable:true` for a box nothing is driving any more, so reading
  *   it here would suppress the one card that can still recover the user.
  * - `activelyStarting` is deliberately NOT an input either. `stage:'failed'`

@@ -24,8 +24,8 @@ import {
 } from './audit-scope';
 import { db } from '../../lib/db';
 import { auditDb } from './audit-db';
-import { resolveProjectAccountId } from '../../accounts/project-account-lookup';
-import type { Actor } from '../../iam/actor';
+import { resolveProjectAccountId } from '../accounts/project-account-lookup';
+import type { Actor } from '../iam/actor';
 import { type AgentAuditAttribution, resolveAgentAuditAttribution } from './agent-audit-attribution';
 import { isUuid } from '../../lib/validate';
 

@@ -45,7 +45,7 @@
 export const shorthands = undefined;
 
 // GET /v1/projects/:projectId/gateway/errors
-// (apps/api/src/projects/routes/gateway.ts) runs:
+// (apps/api/src/http/projects/gateway.ts) runs:
 //   SELECT coalesce(error_code, 'unknown'), count(*)
 //     FROM gateway_request_logs
 //    WHERE project_id = $1 AND NOT ok

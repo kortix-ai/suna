@@ -13,8 +13,8 @@ import {
   type GatewayConnector,
   type GatewayDeps,
   handleCall,
-} from '../connectors/gateway';
-import { executeCall } from '../connectors/call';
+} from '../services/connectors/gateway';
+import { executeCall } from '../services/connectors/call';
 
 const APP_BASE = 'https://dev-dashboards-cccccccccccccccc.apps.kortix.com';
 

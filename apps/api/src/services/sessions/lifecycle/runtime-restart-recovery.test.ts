@@ -98,7 +98,7 @@ describe('recoverTurnsAfterRuntimeRestart (2026-08-25: wake under an open turn)'
 // is waiting for exactly one event: the runtime becoming reachable again. Both
 // callers of this function observe that event — a confirmed wake
 // (routes/shared.ts resumeStoppedSandbox → finalize) and the proxy finding a
-// restarted box (sandbox-proxy/backend.ts) — so this is where the wait ends.
+// restarted box (services/sandbox-proxy/backend.ts) — so this is where the wait ends.
 describe('recoverTurnsAfterRuntimeRestart — the runtime is back, so parked prompts go out', () => {
   test('re-arms this session and kicks the drain rather than waiting for the tick', async () => {
     const reArmed: string[] = [];

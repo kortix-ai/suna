@@ -4,7 +4,7 @@
  * ─── PUSH IS THE DESIGN; PULL-THROUGH IS WHAT SHIPS FIRST ──────────────────
  * DESIGN-V §6.4 has the daemon PUSH its projection to
  * `POST /v1/platform/runtime-projection` on boot and on change. That endpoint
- * exists (`platform/routes/runtime-projection.ts`) and is the eventual write
+ * exists (`http/platform/runtime-projection.ts`) and is the eventual write
  * path. What does not exist yet is the daemon-side caller — WS-Z1 shipped the
  * projection and the route that serves it, deliberately leaving the push as
  * "a latency optimisation on top, not a prerequisite" (DONE-Z1 §7).

@@ -32,7 +32,7 @@ const app = (over: Partial<App>): App =>
 describe('appGrantRows', () => {
   test('keys a row on the SLUG, not on app_id', () => {
     // `agents.<name>.apps` stores slugs, and `agentAppAccessDecision`
-    // (apps/api/src/apps/access.ts) matches the grant against the App's slug.
+    // (apps/api/src/services/apps/access.ts) matches the grant against the App's slug.
     // A row keyed on `app_id` writes a grant the gate never matches, and the
     // App stays closed with nothing saying why.
     const [row] = appGrantRows([app({ app_id: 'app_9f3', slug: 'reports-dashboard' })]);

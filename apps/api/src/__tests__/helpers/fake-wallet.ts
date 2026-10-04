@@ -18,7 +18,7 @@ import type {
   SettleResult,
   Wallet,
   WalletBalance,
-} from '../../billing/wallet';
+} from '../../services/billing/wallet';
 
 export interface FakeWalletCalls {
   grant: GrantInput[];

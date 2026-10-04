@@ -33,7 +33,7 @@ import {
   encodeKortixUserContext,
 } from './kortix-user-context';
 import { resolvePreviewUserContext } from './preview-ownership';
-import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
+import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
   pickCanonicalRoot,
   resolveRootSessionId,

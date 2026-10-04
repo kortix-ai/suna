@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, accountSecretResources } from '@kortix/db';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 
 // Bring your own ChatGPT subscription (pooled provider secrets): a project
 // member without project.secret.write connects and reconnects their OWN
@@ -23,7 +23,7 @@ const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+mock.module('../services/iam', () => ({ PROJECT_ACTIONS }));
 
 const capabilityChecks: Array<{ userId: string; action: string }> = [];
 const auditEvents: Array<Record<string, unknown>> = [];
@@ -60,7 +60,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async (c: any) => {
     const userId = c.get('userId') as string;
@@ -79,12 +79,12 @@ mock.module('../projects/lib/access', () => ({
   },
 }));
 
-mock.module('../feature-flags/registry', () => ({
+mock.module('../services/feature-flags/registry', () => ({
   resolveFeatureFlag: (_metadata: unknown, key: string) => key === 'pooled_provider_secrets' ? pooledEnabled : false,
 }));
-mock.module('../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
+mock.module('../services/llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 
-mock.module('../projects/codex-device-auth', () => ({
+mock.module('../services/projects/codex-device-auth', () => ({
   startCodexDeviceAuth: async () => {
     deviceStarts += 1;
     return { verificationUrl: 'https://auth.example.test/codex/device', userCode: 'TEST-CODE', deviceAuthId: 'device-1', intervalMs: 5000 };
@@ -93,8 +93,8 @@ mock.module('../projects/codex-device-auth', () => ({
 }));
 
 let opencodePending = false;
-const actualOpencode = await import('../llm-gateway/credentials/opencode-console');
-mock.module('../llm-gateway/credentials/opencode-console', () => ({
+const actualOpencode = await import('../services/llm-gateway/credentials/opencode-console');
+mock.module('../services/llm-gateway/credentials/opencode-console', () => ({
   ...actualOpencode,
   pollOpencodeDeviceAuth: async () => opencodePending
     ? { status: 'pending' }
@@ -120,8 +120,8 @@ mock.module('../services/audit/audit', () => ({
   runAuditedTransaction: async <T>(operation: () => Promise<T>) => operation(),
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/provider-oauth')).registerProviderOauthRoutes();
 
 function app(userId: string) {
   const hono = new Hono();

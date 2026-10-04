@@ -11,10 +11,10 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../lib/db';
-import { authorize, filterAccessibleObjects } from '../iam/authorize';
-import { actorForUser } from '../iam/actor';
-import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { authorize, filterAccessibleObjects } from '../services/iam/authorize';
+import { actorForUser } from '../services/iam/actor';
+import { PROJECT_ACTIONS, upsertResourceGrant } from '../services/iam';
+import { assignRole, SYSTEM_ACTOR } from '../services/iam/assignments';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

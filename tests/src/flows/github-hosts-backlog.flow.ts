@@ -1,7 +1,7 @@
 /**
  * GitHub / git-transport backlog flows: PROJ-4, GH-4, GH-5, GH-8.
  *
- * Behaviour DERIVED from apps/api/src/projects/index.ts (spec text is treated as
+ * Behaviour DERIVED from apps/api/src/http/projects/index.ts (spec text is treated as
  * a hint, not the contract):
  *
  *  - PROJ-4  POST /v1/projects/create-repo — PROJECT_CREATE-gated repo creation.

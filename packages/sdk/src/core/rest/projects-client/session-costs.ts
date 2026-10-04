@@ -127,7 +127,7 @@ export interface CostWindowOptions {
 
 /**
  * The three sorts `GET /usage/session-costs` accepts (`SESSION_COST_SORTS` in
- * `apps/api/src/router/routes/usage.ts`). A session page has no project name
+ * `apps/api/src/http/router/usage.ts`). A session page has no project name
  * to sort on, so `name_asc` is deliberately excluded here.
  */
 export type SessionCostSort = 'total_desc' | 'total_asc' | 'recent';
@@ -317,7 +317,7 @@ export async function getCostSummary(
 // ── CSV export ────────────────────────────────────────────────────────────
 // `GET /usage/cost-by-project` and `GET /usage/session-costs` (format=csv)
 // both require a Bearer token — combinedAuth has no query-token fallback for
-// these routes (see `apps/api/src/middleware/auth.ts`: the ?token= fallback
+// these routes (see `apps/api/src/http/middleware/auth.ts`: the ?token= fallback
 // is reserved for the legacy /provision-stream EventSource path only, with an
 // explicit warning against extending it — it "leaks bearer material into
 // URLs, logs, history, and Referer headers"). So a bare `<a href>` or

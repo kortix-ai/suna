@@ -15,7 +15,7 @@
 import { qualifiedColumn } from '../../../lib/sql-qualified-column';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
-import type { ProviderName } from '../../../platform/providers';
+import type { ProviderName } from '../../platform/providers';
 import { db } from '../../../lib/db';
 import { holdsStopClaim, noLiveStopClaim } from '../../sessions/lifecycle/stop-claim';
 import { reapBatchSize } from '../reaper-constants';

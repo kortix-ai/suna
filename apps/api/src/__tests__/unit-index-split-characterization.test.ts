@@ -21,7 +21,7 @@ import { GitOperationError } from '../services/git/mirror';
 // The dynamic import settles the whole module before the tests run.
 process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED = '0';
 process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED = '0';
-const { default: server, app } = await import('../index');
+const { default: server, app } = await import('../app/index');
 
 const url = (path: string) => `http://localhost:${server.port}${path}`;
 const edge = {

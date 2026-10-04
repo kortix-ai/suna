@@ -3,7 +3,7 @@
  * drawer avatar.
  *
  * The API's `plan.label` is the family name (`PLAN_FAMILY_LABELS`,
- * apps/api/src/billing/services/plan-catalog.ts): "Free", "Team", or
+ * apps/api/src/services/billing/services/plan-catalog.ts): "Free", "Team", or
  * "Enterprise". Every tier key, current or grandfathered, displays under one
  * of the three. Legacy tier names (Plus, Pro, Ultra, …) are not read
  * (Jay, 2026-09-23).

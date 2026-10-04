@@ -64,7 +64,7 @@ const DEFAULT_FILTERS: SessionsLevelFilters = { ownerId: null, sort: 'total_desc
  * The columns `GET /usage/session-costs` can actually order by.
  *
  * The route accepts three sorts — `total_desc`, `total_asc`, `recent`
- * (`SESSION_COST_SORTS`, `apps/api/src/router/routes/usage.ts:38`) — and
+ * (`SESSION_COST_SORTS`, `apps/api/src/http/router/usage.ts:38`) — and
  * `recent` orders by last activity, which is the second line of the Session
  * cell. Owner, Requests, LLM and Compute have no server sort, so they stay
  * plain headers rather than controls that look live and do nothing.

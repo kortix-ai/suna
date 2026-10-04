@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { computeSnapshotHash } from '../snapshots/hash';
+import { computeSnapshotHash } from '../services/snapshots/hash';
 
 const SAMPLE_DOCKERFILE = 'FROM ubuntu:24.04\nRUN apt-get install -y curl\n';
 const SAMPLE_TREE_OID = '1234567890abcdef1234567890abcdef12345678';

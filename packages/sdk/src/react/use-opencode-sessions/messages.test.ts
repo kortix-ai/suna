@@ -262,7 +262,7 @@ describe('promptRuntimeMessage', () => {
 // The Kortix sandbox proxy dedupes a prompt delivery by its Idempotency-Key
 // or — when the caller sends none, which the browser never does — by a sha256
 // of the REQUEST BODY, with a 60s TTL
-// (`apps/api/src/sandbox-proxy/prompt-dedupe.ts`, `promptDeliveryKey`). A
+// (`apps/api/src/services/sandbox-proxy/prompt-dedupe.ts`, `promptDeliveryKey`). A
 // repeat is answered `200 {"status":"duplicate","deduplicated":true}` and is
 // never forwarded to opencode.
 //

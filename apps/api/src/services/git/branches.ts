@@ -8,7 +8,7 @@ import { mapLimit } from '@kortix/registry';
 import { validateRef } from './git-ref';
 import { isUuid } from '../../lib/validate';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github/github';
-import { isMissingRemoteBranchError } from '../../projects/managed-repo-seed';
+import { isMissingRemoteBranchError } from '../projects/managed-repo-seed';
 import { FIELD_SEP } from './commits';
 import { authGitPush } from './commit-writer';
 import {
@@ -337,7 +337,7 @@ export async function createRemoteSessionBranch(
       // the happy path pays nothing, and a repair only runs for the exact
       // failure it can fix (see isMissingRemoteBranchError).
       if (!isMissingRemoteBranchError(error)) throw error;
-      const { ensureManagedRepoSeeded } = await import('../../projects/managed-repo-seed');
+      const { ensureManagedRepoSeeded } = await import('../projects/managed-repo-seed');
       const outcome = await ensureManagedRepoSeeded(project.projectId, 'session-branch');
       if (!outcome.repaired) throw error;
       await fetchBase();

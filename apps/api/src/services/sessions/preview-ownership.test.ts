@@ -86,14 +86,14 @@ mock.module('../../lib/db', () => ({
   },
 }));
 
-mock.module('../../accounts/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async (userId: string) => {
     resolveAccountCalls += 1;
     return userId;
   },
 }));
 
-mock.module('../../iam/platform-roles', () => ({
+mock.module('../iam/platform-roles', () => ({
   isPlatformAdmin: async (accountId: string) => {
     await platformAdminGate;
     return platformAdmins.has(accountId);

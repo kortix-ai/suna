@@ -1,4 +1,4 @@
-// Organization branding — the pure halves of accounts/branding.ts.
+// Organization branding — the pure halves of http/accounts/branding.ts.
 //
 // The route handlers are exercised black-box by the ACCT-BRAND-* REST flows
 // (tests/src/flows/accounts.flow.ts). What is pinned here is everything a
@@ -17,7 +17,7 @@ import {
   sniffBrandingImage,
   svgCarriesActiveContent,
   svgRootFollowsPrologue,
-} from '../accounts/branding';
+} from '../http/accounts/branding';
 
 // The entitlement read is injected (no `mock.module` — bun shares module mocks
 // across every file in one run, and a mocked entitlements module would poison

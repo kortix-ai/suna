@@ -3,14 +3,14 @@
  *   - GET  /v1/user-roles  → {isAdmin, role} platform role (spec SYS-3)
  *   - POST /v1/auth/logout → server-side logout (audit + session revoke) (AUTH-1)
  *
- * See apps/api/src/auth/index.ts (authRouter.use('/*', supabaseAuth)) and
- * apps/api/src/index.ts (app.get('/v1/user-roles', supabaseAuth, …)).
+ * See apps/api/src/http/auth/index.ts (authRouter.use('/*', supabaseAuth)) and
+ * apps/api/src/app/index.ts (app.get('/v1/user-roles', supabaseAuth, …)).
  *
  * Use a flow-scoped user: logging out the shared OWNER revokes the identity
  * that PRX-1 and other flows need for the rest of the run.
  * Logout revokes the GoTrue session. `supabaseAuth` confirms every access
  * token (ES256 and HS256) with GoTrue through the liveness cache in
- * apps/api/src/auth/jwt-liveness.ts, so the revoked bearer gets 401 on
+ * apps/api/src/services/auth/jwt-liveness.ts, so the revoked bearer gets 401 on
  * `GET /v1/accounts/me`, a route without the account session gate.
  * The logout endpoint is documented to *always* return 200 once authed — even
  * when there's nothing to revoke — so clients never have to handle "not signed

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 // commands.ts, and importing that module drags in the gateway model picker.
 
 const repoRoot = join(import.meta.dir, '../../../..');
-const commands = readFileSync(join(repoRoot, 'apps/api/src/channels/teams/commands.ts'), 'utf8');
+const commands = readFileSync(join(repoRoot, 'apps/api/src/services/channels/teams/commands.ts'), 'utf8');
 const schema = readFileSync(join(repoRoot, 'packages/db/src/schema/kortix.ts'), 'utf8');
 
 const ENUM_VALUES = (() => {

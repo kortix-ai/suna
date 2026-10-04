@@ -57,7 +57,7 @@ export interface SendOptions {
 // Platform-admin read-only bypass toggle (web only). In-memory, per-tab, never
 // persisted, so it resets on reload and cannot linger. While on, every request
 // carries `x-kortix-admin-bypass: 1`; the API honors it only for a platform
-// admin on a `read` action (apps/api/src/projects/lib/access.ts).
+// admin on a `read` action (apps/api/src/services/projects/lib/access.ts).
 let adminBypassEnabled = false;
 
 export function setAdminBypass(enabled: boolean): void {

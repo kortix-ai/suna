@@ -4,7 +4,7 @@
  * lib/notifications/registration.ts).
  *
  * The server sends `data = { type, projectId, sessionId }`, an iOS `sound`,
- * and an Android `channelId` (apps/api/src/notifications/session-push.ts).
+ * and an Android `channelId` (apps/api/src/services/notifications/session-push.ts).
  * This file holds the matching client side: the Android channels, the
  * kind → channel/sound map, the payload parser, the tap route, the
  * foreground rule, and the preference wire format.

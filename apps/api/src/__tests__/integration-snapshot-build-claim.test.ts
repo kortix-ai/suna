@@ -8,7 +8,7 @@ import { expect, test } from 'bun:test';
 import { workerLeaderLease } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../lib/db';
-import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from '../snapshots/build-claim';
+import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from '../services/snapshots/build-claim';
 
 const otherReplicaHolds = (key: string, expiresInSeconds: number) =>
   db.insert(workerLeaderLease).values({

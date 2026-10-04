@@ -1,7 +1,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../../lib/config';
-import { getProvider } from '../../../platform/providers';
+import { getProvider } from '../../platform/providers';
 import { db } from '../../../lib/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../../sandboxes/reaping/policy';
 import { applyStoppedState } from '../../sandboxes/reaping/sandbox-state-sync';
@@ -10,7 +10,7 @@ import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runti
 
 /**
  * How long the request may hold the user's Stop button before it answers
- * `stopping`. The API kills a request at 25 s (`middleware/request-deadline.ts`)
+ * `stopping`. The API kills a request at 25 s (`http/middleware/request-deadline.ts`)
  * with a 503 that says nothing about the box. The work before the provider call
  * (daemon abort 4 s, transcript tail 3 s) and the provider stop (Platinum: GET,
  * PATCH, POST, 10 s confirm poll, one retry after 1 s) add up past that, so
@@ -177,7 +177,7 @@ export async function stopSession(input: {
     // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
     // whole-object write built from the SELECT above, so anything a concurrent
     // writer put in that column in between was silently dropped. Two live writers
-    // do exactly that (projects/routes/shared.ts clears and sets the
+    // do exactly that (services/sessions/open/shared.ts clears and sets the
     // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
     // lives one table over for the same reason. Merged, never assigned.
     if (!cancellingWake) {

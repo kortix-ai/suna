@@ -1,5 +1,5 @@
 // Response shapes for the API endpoints the CLI talks to. Keep in sync with
-// apps/api/src/accounts/index.ts and apps/api/src/projects/index.ts.
+// apps/api/src/http/accounts/index.ts and apps/api/src/http/projects/index.ts.
 
 export interface AccountMembership {
   account_id: string;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { verifySupabaseJwt } from '../auth/jwt-verify';
-import { isInconclusiveVerifyFailure } from '../auth/jwt-verify-outcome';
+import { verifySupabaseJwt } from '../services/auth/jwt-verify';
+import { isInconclusiveVerifyFailure } from '../services/auth/jwt-verify-outcome';
 
 /**
  * Regression cover for the 2026-08-21 prod near-miss.
@@ -93,7 +93,7 @@ describe('verifySupabaseJwt — legacy symmetric tokens', () => {
  * Tripwire for the 2026-09-15 prod preview outage.
  *
  * The 2026-08-21 fix routed both auth middlewares on
- * `isInconclusiveVerifyFailure`, but `sandbox-proxy/preview-auth.ts` kept its own
+ * `isInconclusiveVerifyFailure`, but `services/sandbox-proxy/preview-auth.ts` kept its own
  * hand-listed reason set (`no-keys`, `no-key-for-kid`). Prod JWKS then held an
  * ES256 key while GoTrue still signed with HS256, so every preview ORIGIN (and
  * the WebSocket proxy) answered "Sign in to open this preview" to a valid
@@ -106,7 +106,7 @@ describe('every verifySupabaseJwt caller routes on the shared predicate', () => 
   function productionSources(): string[] {
     const glob = new Bun.Glob('**/*.ts');
     return [...glob.scanSync({ cwd: srcRoot })].filter(
-      (f) => !f.endsWith('.test.ts') && !f.includes('__tests__/') && f !== 'auth/jwt-verify.ts',
+      (f) => !f.endsWith('.test.ts') && !f.includes('__tests__/') && f !== 'services/auth/jwt-verify.ts',
     );
   }
 
@@ -125,8 +125,8 @@ describe('every verifySupabaseJwt caller routes on the shared predicate', () => 
       }
     }
     // A broken scan must not pass by finding nothing.
-    expect(callers).toContain('middleware/auth.ts');
-    expect(callers).toContain('sandbox-proxy/preview-auth.ts');
+    expect(callers).toContain('http/middleware/auth.ts');
+    expect(callers).toContain('services/sandbox-proxy/preview-auth.ts');
     expect(offenders).toEqual([]);
   });
 });

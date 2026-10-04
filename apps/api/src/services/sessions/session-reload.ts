@@ -34,7 +34,7 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { TimeoutError, withTimeout } from '../../lib/with-timeout';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { resolveSandboxIngress } from '../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
 import { resolveCommitSha } from '../git/commits';
 import { refreshMirror } from '../git/mirror';
@@ -43,9 +43,9 @@ import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
-} from '../../projects/lib/compile-agent-config';
-import { projectConfigReleasesEnabled } from '../../config-releases/enabled';
-import { recordDaemonConfigReport } from '../../config-releases/quarantine';
+} from '../projects/lib/compile-agent-config';
+import { projectConfigReleasesEnabled } from '../config-releases/enabled';
+import { recordDaemonConfigReport } from '../config-releases/quarantine';
 import { pushSessionAgentConfigToSandbox } from '../sandboxes/sandbox-env-sync';
 import {
   hasConfigReleaseCapability,
@@ -60,11 +60,11 @@ import {
 import {
   parseDaemonRuntimeReport,
   type DaemonRuntimeReport,
-} from '../../runtime-assets/daemon-runtime-report';
+} from '../runtime-assets/daemon-runtime-report';
 import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
-import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
+import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../runtime-convergence/actual';
 
 const SANDBOX_SERVICE_PORT = 8000;
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */

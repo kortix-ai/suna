@@ -16,7 +16,7 @@
 --   ERROR: function public.atomic_use_credits(uuid, numeric, text, text)
 --          is not unique   (SQLSTATE 42725)
 -- in the money path. Production only escaped it because the busiest caller
--- (apps/api/src/billing/services/credits.ts) uses PostgREST NAMED parameters,
+-- (apps/api/src/services/billing/services/credits.ts) uses PostgREST NAMED parameters,
 -- which resolve by argument-name set rather than by arity. That was luck.
 --
 -- B was also the WEAKER function: SECURITY INVOKER (A is SECURITY DEFINER) and

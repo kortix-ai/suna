@@ -12,7 +12,7 @@ import {
   filterSpecPaths,
   makeOpenApiApp,
   mountOpenApiDocs,
-} from '../openapi';
+} from '../http/openapi';
 
 describe('filterSpecPaths', () => {
   test('drops internal prefixes and everything beneath them', () => {

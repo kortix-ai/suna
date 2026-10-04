@@ -67,7 +67,7 @@ export interface UpstreamDescriptor {
   omitAuthorization?: boolean;
   pricing?: UpstreamPricing;
   // Model capability flags mirrored from the catalog (models.dev enrichment,
-  // see apps/api/src/llm-gateway/models/catalog-models.ts capabilitiesOf).
+  // see apps/api/src/services/llm-gateway/models/catalog-models.ts capabilitiesOf).
   // Transports use these to decide whether to translate/strip params the
   // target model actually rejects, instead of hardcoding a model-id list.
   // `reasoning` = the model is a reasoning/o-series-style model.

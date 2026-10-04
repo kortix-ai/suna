@@ -425,7 +425,7 @@ function looksLikeSigningCredential(value: string): boolean {
  * a provider's alias keys (`GEMINI_API_KEY`, `GOOGLE_API_KEY`). Recognition
  * has to accept every env var any method declares, which is the same set the
  * API's own `isGatewayManagedEnv` reads
- * (`apps/api/src/llm-gateway/sandbox-credentials.ts`) — and the same
+ * (`apps/api/src/services/llm-gateway/sandbox-credentials.ts`) — and the same
  * revision-keyed cache, for the same reason: the live catalog fetch replaces
  * `LLM_PROVIDERS` in place.
  */
@@ -736,7 +736,7 @@ export type AgentGrantConfirmation = { title: string; body: string; confirmLabel
 /**
  * The one destructive edge of this action. A project with no `agents:` block
  * hands every project secret to every agent. The first block flips that to
- * deny-by-default (apps/api/src/projects/agents.ts), so agents that are not
+ * deny-by-default (apps/api/src/services/projects/agents.ts), so agents that are not
  * listed lose the runtime secrets they use today.
  */
 export function agentGrantConfirmation(

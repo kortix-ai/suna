@@ -61,11 +61,11 @@ function staleAllowlist(pattern: RegExp, allow: Record<string, string>): string[
 const XFF_READ = /[([]\s*['"`]x-forwarded-for['"`]/i;
 const XFF_ALLOW: Record<string, string> = {
   'lib/client-ip.ts': 'the one implementation',
-  'platform/services/sandbox-egress-pin.ts':
+  'services/platform/services/sandbox-egress-pin.ts':
     'reads cf-connecting-ip first and pins the sandbox egress address; a deliberate special case',
-  'auth/gotrue.ts': 'sets the header on an outbound request to GoTrue',
+  'services/auth/gotrue.ts': 'sets the header on an outbound request to GoTrue',
   // TODO(follow-up): convert once the SCIM identity work lands on main.
-  'scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
+  'http/scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
   // TODO(follow-up): convert once PR #7403 lands. The raw header is stored on
   // purpose as webhook delivery metadata, so the follow-up keeps the raw value.
   'services/triggers/trigger-webhook-auth.ts': 'webhook payload stores the raw forwarded header as metadata',
@@ -76,8 +76,8 @@ const UUID_LITERAL = /\[0-9a-f\]\{8\}-/i;
 const UUID_ALLOW: Record<string, string> = {
   'lib/validate.ts': 'the one implementation',
   // TODO(follow-up): convert once each open change lands.
-  'connectors/db-deps-rows.ts': 'open PR #7236 edits this file',
-  'iam/sso-sync.ts': 'open SSO identity work edits this file',
+  'services/connectors/db-deps-rows.ts': 'open PR #7236 edits this file',
+  'services/iam/sso-sync.ts': 'open SSO identity work edits this file',
 };
 
 // An inline JSON body read that falls back to `{}`, in either form:

@@ -114,7 +114,7 @@ export interface ConnectProviderStatus {
  *
  * `listPipedreamApps` / `listPipedreamSections` are wired into the API router
  * only when `pipedreamConfigured()` is true — three env vars, checked in
- * `apps/api/src/connectors/pipedream.ts`. Without them every call answers
+ * `apps/api/src/services/connectors/pipedream.ts`. Without them every call answers
  * `501 FEATURE_NOT_SUPPORTED`, and a self-host that never set them is the
  * entire population of that branch. The page used to spend a request per load
  * discovering that, then paint the generic "Server error … (501)" card over a
@@ -243,7 +243,7 @@ export async function listConnectCatalogPage(input: {
  * **Filtering happens server-side, over the whole catalogue.** Both `q` and
  * `category` are query keys, so changing either starts a new list rather than
  * re-slicing an accumulated one. Pipedream's own API cannot filter by category
- * at all — see `apps/api/src/connectors/pipedream-index.ts`.
+ * at all — see `apps/api/src/services/connectors/pipedream-index.ts`.
  *
  * **Easy Connect waits for the deployment probe.** No Pipedream request is sent
  * until `usePipedreamStatus` has ruled out `absent`, because on a deployment

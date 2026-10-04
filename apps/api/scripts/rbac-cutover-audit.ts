@@ -34,7 +34,7 @@ import { db } from '../src/lib/db';
 
 /**
  * uuid5 namespace for a `pending` (invitee) principal. MUST match
- * KORTIX_PENDING_PRINCIPAL_NAMESPACE in src/iam/actor.ts and PENDING_NS in
+ * KORTIX_PENDING_PRINCIPAL_NAMESPACE in src/services/iam/actor.ts and PENDING_NS in
  * 20260819015725000_rbac_backfill_role_assignments.concurrent.ts.
  */
 const PENDING_NS = 'b8d1f9c6-0a7e-4a2f-9d3b-5e6c7a8b9c01';

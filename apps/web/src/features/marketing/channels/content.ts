@@ -30,7 +30,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    "one click" — write what actually happens.
  *
  *  - MICROSOFT TEAMS is on for every project. The `teams` feature flag
- *    graduated on 2026-10-01: `apps/api/src/feature-flags/registry.ts` no
+ *    graduated on 2026-10-01: `apps/api/src/services/feature-flags/registry.ts` no
  *    longer has it, and no route checks it. The managed one-click install
  *    needs MICROSOFT_APP_ID/PASSWORD on the server (`teams-mode.ts`); a
  *    project can always bring its own bot app instead. A tenant admin

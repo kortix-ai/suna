@@ -8,7 +8,7 @@ import {
   CANONICAL_DEV,
   CANONICAL_PROD,
   SLACK_BOT_SCOPES,
-} from '../channels/slack-manifest';
+} from '../services/channels/slack-manifest';
 
 // ONE manifest implementation. These tests lock in that:
 //   1. the committed canonical JSON files are exactly what the builder emits
@@ -16,7 +16,7 @@ import {
 //   2. canonical and BYO manifests are identical except URLs/names/command;
 //   3. the BYO (per-project) manifest is at full feature parity.
 
-const channelsDir = join(import.meta.dir, '..', 'channels');
+const channelsDir = join(import.meta.dir, '..', 'services', 'channels');
 function committed(file: string) {
   return JSON.parse(readFileSync(join(channelsDir, file), 'utf8'));
 }

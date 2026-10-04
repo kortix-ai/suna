@@ -3,7 +3,7 @@ import {
   WARM_BUILD_SLUG_SUFFIX,
   isWarmBuildSlug,
   templateSlugFromBuildSlug,
-} from '../snapshots/build-slug';
+} from '../services/snapshots/build-slug';
 
 // The per-project warm baker is gone, but the `<templateSlug>-warm` rows it wrote
 // to project_snapshot_builds are permanent history. These helpers still have to

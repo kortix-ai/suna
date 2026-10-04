@@ -20,11 +20,11 @@ Enforcers without an append. Moved enforcers:
   no-op": real PostgreSQL raises `kortix_unique_stripe_event` through a Drizzle
   wrapper, because `reset_expiring_credits` has no event pre-check. It goes red
   when `isDuplicateCreditGrantError` stops walking `cause`.
-  `apps/api/src/billing/wallet/duplicate-error.test.ts` keeps the constraint
+  `apps/api/src/services/billing/wallet/duplicate-error.test.ts` keeps the constraint
   and non-duplicate rows.
 - "Guest must fetch the managed set on every boot" (2026-08-19):
   `managed-scope.test.ts` is gone. The Enforcers are
-  `apps/api/src/llm-gateway/internal-routes.test.ts` "POST /models managedOnly"
+  `apps/api/src/http/llm-gateway/internal-routes.test.ts` "POST /models managedOnly"
   (exact managed lineup, payload `< 20_000` bytes, free tier empty) and
   `packages/llm-gateway/src/create-gateway.test.ts` "gateway.listModels — scope
   plumbing". They go red when the route ignores `managedOnly`.

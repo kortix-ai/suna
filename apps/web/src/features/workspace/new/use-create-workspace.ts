@@ -83,7 +83,7 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  *
  * `account_id` is ALWAYS resolved here — never left for the server to
  * default from an omitted key. `resolveAccountId`
- * (`apps/api/src/accounts/resolve-account.ts:117-129`) picks the caller's
+ * (`apps/api/src/services/accounts/resolve-account.ts:117-129`) picks the caller's
  * EARLIEST-JOINED account membership with NO role check when `account_id` is
  * absent:
  *
@@ -232,7 +232,7 @@ export function buildManagedImportRequest(
  * its message. `isManagedGitUnavailableError`
  * (`lib/onboarding/provision-errors.ts`) names it by its message: on the wire
  * it is a 503, but so is every 502, which the API's edge middleware rewrites to
- * 503 (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
+ * 503 (`apps/api/src/app/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
  * unconfigured is a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. Any other 502 or 503 (an upstream/gateway
@@ -243,8 +243,8 @@ export function buildManagedImportRequest(
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
- * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
- * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/billing/account-limits.ts`)
+ * (`apps/api/src/services/projects/lib/access.ts`) returns 403 too, and
+ * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/services/billing/account-limits.ts`)
  * means every free-tier user who already has one project and clicks
  * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
@@ -282,7 +282,7 @@ export function messageFor(error: unknown): string {
     // `provision_in_flight` carries a typed `code`
     // (`PROVISION_IN_FLIGHT_CODE`); the GitHub sources' 409s do not — they are
     // "install the Kortix GitHub App first" (`create-repo` and
-    // `link-repository`, `apps/api/src/projects/routes/project-from-repository.ts`) and "no
+    // `link-repository`, `apps/api/src/http/projects/project-from-repository.ts`) and "no
     // available repository name near X". Both of those already say exactly
     // what to do, so the server's own message is reused verbatim rather than
     // being overwritten with a wait-and-retry line that is simply false for
@@ -293,7 +293,7 @@ export function messageFor(error: unknown): string {
     }
     return message || 'Could not create the workspace. Try again.';
   }
-  // A 503 that is not managed git is an edge-rewritten 502 (`apps/api/src/index.ts`,
+  // A 503 that is not managed git is an edge-rewritten 502 (`apps/api/src/app/index.ts`,
   // EDGE_REWRITTEN_STATUSES): an upstream failure, with the upstream's raw text.
   if (status === 502 || status === 503) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
@@ -441,7 +441,7 @@ export function isTransportFailure(error: unknown): boolean {
  *
  * POSTs once. On a `409` `provision_in_flight` — another call carrying this
  * SAME `idempotency_key` is still mid-provision, per
- * `apps/api/src/projects/routes/projects.ts` — retries up to `RETRY_DELAY_MS.length`
+ * `apps/api/src/http/projects/projects.ts` — retries up to `RETRY_DELAY_MS.length`
  * more times with the IDENTICAL payload. Never a re-minted key: the key
  * identifies the ATTEMPT, and the whole point of retrying is to land on that
  * same attempt's result. Any other error, or exhausting the retry budget,
@@ -498,7 +498,7 @@ export async function runCreateAttempt(
  * **DECISION (final-review FIX 1, consequence 3): a 409 `provision_in_flight`
  * error ALSO reaches the fallback, regardless of `eventsReceived`.**
  * `emit('validating')` is the first statement of `runProvision`
- * (`apps/api/src/projects/provision-core.ts`), so by the time this failure
+ * (`apps/api/src/services/projects/provision-core.ts`), so by the time this failure
  * can arrive at all, `eventsReceived > 0` is already guaranteed — under the
  * plain "any event blocks fallback" rule, that made `runCreateAttempt`'s own
  * 409 backoff loop unreachable from the streaming path, the exact "409
@@ -751,7 +751,7 @@ export function useCreateWorkspace(): {
   canRetry: boolean;
   /**
    * The account is at its plan's project cap (403 `project_limit_reached`,
-   * `enforceProjectQuota` in `apps/api/src/projects/lib/access.ts`). Retrying
+   * `enforceProjectQuota` in `apps/api/src/services/projects/lib/access.ts`). Retrying
    * cannot fix it; the page offers the upgrade dialog instead.
    */
   limitReached: boolean;

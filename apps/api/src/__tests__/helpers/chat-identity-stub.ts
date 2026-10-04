@@ -1,5 +1,5 @@
 /**
- * A complete stand-in for `channels/core/identity` for `mock.module`.
+ * A complete stand-in for `services/channels/core/identity` for `mock.module`.
  *
  * `mock.module` replaces a module wholesale, so a stub that lists only the
  * names one test needs deletes every other export, and the next importer

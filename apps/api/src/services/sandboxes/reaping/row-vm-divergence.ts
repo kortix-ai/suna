@@ -18,7 +18,7 @@
  *
  * So a row that says `stopped` over a VM that is running was nobody's problem.
  * It is not cosmetic. A session credential is refused whenever its sandbox row
- * is not `provisioning`/`active` (`repositories/account-tokens.ts`), so a wrong
+ * is not `provisioning`/`active` (`services/repositories/account-tokens.ts`), so a wrong
  * `stopped` row kills the live box's own credential. Measured on dev
  * 2026-09-27: a box 31.8 days old, `daemon: "ok"`, whose runtime assets had not
  * converged once in a month because every manifest fetch it made answered 401.
@@ -47,7 +47,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { type ProviderName, getProvider } from '../../../platform/providers';
+import { type ProviderName, getProvider } from '../../platform/providers';
 import { db } from '../../../lib/db';
 import { sandboxBelongsToThisInstance } from '../../sessions/instance-scope';
 import { REAP_CONCURRENCY } from '../reaper-constants';

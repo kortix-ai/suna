@@ -33,7 +33,7 @@
  * config validation before the app imports. They do not change the route table.
  */
 import { resolve } from "node:path";
-import { app } from "../src/index";
+import { app } from "../src/app/index";
 
 interface RouteEntry {
   method: string;

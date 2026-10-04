@@ -59,7 +59,7 @@ export function getSandboxUrlForExternalId(externalId: string, port = 8000): str
 /**
  * Derive the base URL for the backend's UNAUTHENTICATED public-share proxy
  * (`/v1/p/public-share/{token}/{port}` — see
- * `apps/api/src/sandbox-proxy/routes/public-share.ts`), mirroring how
+ * `apps/api/src/http/sandbox-proxy/public-share.ts`), mirroring how
  * {@link getSandboxUrlForExternalId} derives the authenticated
  * `/v1/p/{externalId}/{port}` route. Pure function of the token — no
  * dependency on the active server.

@@ -5,7 +5,7 @@
  * the same mock.module() registrations without conflicts.
  */
 import { mock } from 'bun:test';
-import * as realProviders from '../../platform/providers';
+import * as realProviders from '../../services/platform/providers';
 import * as realSandboxReaper from '../../services/sandboxes/sandbox-reaper';
 import { createFakeWallet } from '../helpers/fake-wallet';
 
@@ -61,7 +61,7 @@ export function registerGlobalMocks() {
   if (_registered) return;
   _registered = true;
 
-  mock.module('../../billing/stripe', () => ({
+  mock.module('../../services/billing/stripe', () => ({
     getStripe: () => mockRegistry.stripeClient ?? createMockStripeClient(),
   }));
 
@@ -73,12 +73,12 @@ export function registerGlobalMocks() {
     },
   }));
 
-  mock.module('../../accounts/resolve-account', () => ({
+  mock.module('../../services/accounts/resolve-account', () => ({
     resolveAccountId: async (userId: string) =>
       mockRegistry.resolveAccountId ? mockRegistry.resolveAccountId(userId) : userId,
   }));
 
-  mock.module('../../billing/repositories/credit-accounts', () => ({
+  mock.module('../../services/billing/repositories/credit-accounts', () => ({
     getCreditAccount: async (id: string) =>
       mockRegistry.getCreditAccount ? mockRegistry.getCreditAccount(id) : createMockCreditAccount(),
     getCreditBalance: async (id: string) => {
@@ -98,7 +98,7 @@ export function registerGlobalMocks() {
       mockRegistry.getFreeAccountsDueForRotation ? mockRegistry.getFreeAccountsDueForRotation() : [],
   }));
 
-  mock.module('../../billing/repositories/transactions', () => ({
+  mock.module('../../services/billing/repositories/transactions', () => ({
     getTransactions: async () => ({ rows: [], total: 0 }),
     getTransactionsSummary: async () => ({ totalCredits: 0, totalDebits: 0, count: 0 }),
     getPurchaseByPaymentIntent: async (id: string) =>
@@ -107,7 +107,7 @@ export function registerGlobalMocks() {
       mockRegistry.updatePurchaseStatus ? mockRegistry.updatePurchaseStatus(...args) : undefined,
   }));
 
-  mock.module('../../billing/repositories/customers', () => ({
+  mock.module('../../services/billing/repositories/customers', () => ({
     getCustomerByAccountId: async (id: string) => {
       if (mockRegistry.getCustomerByAccountId) return mockRegistry.getCustomerByAccountId(id);
       return { id: 'cus_test_123', accountId: 'acc_test_123', email: 'test@example.com', provider: 'stripe', active: true };
@@ -126,7 +126,7 @@ export function registerGlobalMocks() {
 
   // Webhook dedup + per-account advisory lock use the raw db (no DATABASE_URL in
   // tests). Default: every event is new; the lock is a pass-through.
-  mock.module('../../billing/services/webhook-concurrency', () => ({
+  mock.module('../../services/billing/services/webhook-concurrency', () => ({
     // Forward the real arguments: the dedupe key is what the RevenueCat/Stripe
     // paths actually vary, so a stub that swallows it makes duplicate-event
     // tests pass on a constant `undefined` key instead of the real one.
@@ -178,7 +178,7 @@ export function registerGlobalMocks() {
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
   // lists exports by hand deletes every export it omits — the failure surfaces in
   // whatever unrelated file imports the missing name next, attributed to no test.
-  mock.module('../../platform/providers', () => ({
+  mock.module('../../services/platform/providers', () => ({
     ...realProviders,
     getProvider: (_name: string) => ({
       stop: async (_externalId: string) => undefined,
@@ -194,7 +194,7 @@ export function registerGlobalMocks() {
     reconcileSandboxStoppedByExternalId: async (_externalId: string) => true,
   }));
 
-  mock.module('../../billing/repositories/account-deletion', () => ({
+  mock.module('../../services/billing/repositories/account-deletion', () => ({
     getActiveDeletionRequest: async (id: string) =>
       mockRegistry.getActiveDeletionRequest ? mockRegistry.getActiveDeletionRequest(id) : null,
     createDeletionRequest: async (...args: any[]) =>
@@ -217,8 +217,8 @@ export function registerWalletMock() {
   if (_walletMockRegistered) return;
   _walletMockRegistered = true;
 
-  mock.module('../../billing/wallet', () => ({ wallet: fakeWallet.wallet }));
-  mock.module('../../billing/services/credits', () => ({
+  mock.module('../../services/billing/wallet', () => ({ wallet: fakeWallet.wallet }));
+  mock.module('../../services/billing/services/credits', () => ({
     calculateTokenCost: () => 0,
     getCreditSummary: () => ({ total: 0, daily: 0, monthly: 0, extra: 0 }),
   }));

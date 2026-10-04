@@ -42,8 +42,8 @@ export interface ToolConnectDeps {
  *
  * `owner: 'project'` is NOT optional decoration. Both connector-scoped routes
  * default an ABSENT owner to `me`
- * (`apps/api/src/projects/lib/connection-access.ts:94`, applied at
- * `apps/api/src/connectors/db-deps.ts:2325` and `:2439`), which routes to
+ * (`apps/api/src/services/projects/lib/connection-access.ts:94`, applied at
+ * `apps/api/src/services/connectors/db-deps.ts:2325` and `:2439`), which routes to
  * `ensureMemberConnection` and lands `owner_type = 'member'`, `owner_id =`
  * whoever clicked. That account is reachable by that one user and NEVER by a
  * service account (`connectionIsReachable`, `connection-access.ts:42`), so the

@@ -17,16 +17,16 @@ import {
   channelAuth,
   channelCatalog,
   channelDefaultSlug,
-} from '../connectors/channels';
+} from '../services/connectors/channels';
 import {
   type CallInput,
   type GatewayAction,
   type GatewayConnector,
   type GatewayDeps,
   handleCall,
-} from '../connectors/gateway';
-import type { NormalizedAction } from '../connectors/types';
-import { connectorSpecToTomlEntry, extractConnectors } from '../projects/connectors';
+} from '../services/connectors/gateway';
+import type { NormalizedAction } from '../services/connectors/types';
+import { connectorSpecToTomlEntry, extractConnectors } from '../services/projects/connectors';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 
 function expectDefined<T>(value: T | null | undefined): T {

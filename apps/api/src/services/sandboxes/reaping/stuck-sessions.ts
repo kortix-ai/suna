@@ -34,7 +34,7 @@ import { qualifiedColumn } from '../../../lib/sql-qualified-column';
 import { and, asc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 import { db } from '../../../lib/db';
-import { pauseComputeSession } from '../../../billing/services/compute-metering';
+import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from '../../sessions/session-status';
 import { config } from '../../../lib/config';
 import { transitionSession } from '../../sessions/lifecycle/status-transitions';

@@ -26,18 +26,18 @@ process.env.KORTIX_RESTRICT_ACCOUNT_CREATION = 'true';
 let callerId = MEMBER_ID;
 let isPlatformAdminMock = false;
 
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     c.set('userId', callerId);
     c.set('userEmail', 'caller@example.test');
     c.set('authType', 'supabase');
     // No sessionId set on purpose — the session-gate + resolveAccountId
-    // paths in accounts/index.ts both no-op without one.
+    // paths in http/accounts/index.ts both no-op without one.
     await next();
   },
 }));
 
-mock.module('../iam/platform-roles', () => ({
+mock.module('../services/iam/platform-roles', () => ({
   isPlatformAdmin: async () => isPlatformAdminMock,
   getPlatformRole: async () => (isPlatformAdminMock ? 'admin' : 'user'),
 }));
@@ -78,7 +78,7 @@ mock.module('../lib/db', () => ({
 let accountsRouter: any;
 
 beforeAll(async () => {
-  ({ accountsRouter } = await import('../accounts/index'));
+  ({ accountsRouter } = await import('../http/accounts/index'));
 });
 
 function createApp() {

@@ -18,7 +18,7 @@
  *     of rendering as a control that lies.
  *
  * Ranges mirror `validateOverridePatch`
- * (`apps/api/src/billing/services/entitlement-overrides.ts`) so a typo is a
+ * (`apps/api/src/services/billing/services/entitlement-overrides.ts`) so a typo is a
  * disabled Save button and an inline message, not a 400 the operator has to
  * decode.
  */

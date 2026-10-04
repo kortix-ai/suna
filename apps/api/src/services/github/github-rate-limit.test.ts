@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import { GitHubApiError, createRepo, githubRetryAfterSeconds } from './github';
 import { GitHubPersonalAccountCreateUnsupportedError } from './github-create-errors';
-import { createRepoFailureResult } from '../../projects/provision-core';
+import { createRepoFailureResult } from '../projects/provision-core';
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {

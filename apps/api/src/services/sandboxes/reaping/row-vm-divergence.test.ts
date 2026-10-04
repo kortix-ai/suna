@@ -17,7 +17,7 @@ import {
  * and rotates on (parked-runtime-verification.ts).
  *
  * It is not cosmetic. A session credential is refused whenever its sandbox row
- * is not `provisioning`/`active` (repositories/account-tokens.ts), so a wrong
+ * is not `provisioning`/`active` (services/repositories/account-tokens.ts), so a wrong
  * `stopped` row kills the live box's own credential: every call it makes to the
  * API answers 401, its runtime assets can never converge, and the daemon's
  * dead-token breaker shuts the daemon down with exit 0 — which the Platinum

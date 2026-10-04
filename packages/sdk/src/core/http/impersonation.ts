@@ -4,7 +4,7 @@
  * The client holds an ID, never a capability. `X-Kortix-Impersonate: <grantId>`
  * is only meaningful next to the operator's own Supabase JWT, and the API
  * re-validates ownership, expiry, revocation and the operator's CURRENT
- * platform role on every request (see apps/api/src/iam/impersonation.ts).
+ * platform role on every request (see apps/api/src/services/iam/impersonation.ts).
  * So nothing here is a security boundary — losing this value to another tab or
  * another user grants them nothing. What this module owes the user is honesty:
  * while a session is stored, EVERY request carries the header, and the app

@@ -24,10 +24,10 @@ mock.module('../services/audit/auth-audit', () => ({
   auditLogout: () => {},
   auditSessionFirstSight: () => {},
 }));
-mock.module('../middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
+mock.module('../http/middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
 
-const gotrueModule = await import('../auth/gotrue');
-const { authRouter } = await import('../auth');
+const gotrueModule = await import('../services/auth/gotrue');
+const { authRouter } = await import('../http/auth');
 
 type Seen = { url: string; method: string; headers: Record<string, string>; body: unknown };
 let seen: Seen[] = [];

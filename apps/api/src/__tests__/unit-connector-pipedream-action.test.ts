@@ -14,7 +14,7 @@
  * Docs: https://pipedream.com/docs/connect/api-reference/run-action
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { pipedreamConnectUrl, runPipedreamAction } from '../connectors/pipedream';
+import { pipedreamConnectUrl, runPipedreamAction } from '../services/connectors/pipedream';
 
 const PD_PROJECT = process.env.PIPEDREAM_PROJECT_ID!;
 

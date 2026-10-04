@@ -339,7 +339,7 @@ export function transientGitMirrorCause(err: unknown): GitOperationError | null 
  * Stable error code the platform API returns (HTTP 503) when a project's git
  * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
  * (see `isTransientGitMirrorError`). The global `app.onError` in
- * `apps/api/src/index.ts` attaches this code to the 503 body so the frontend
+ * `apps/api/src/app/index.ts` attaches this code to the 503 body so the frontend
  * can classify the response as an EXPECTED degradation instead of an opaque
  * `ApiError` that pages Sentry (Better Stack frontend pattern `b4d05df2…`).
  *

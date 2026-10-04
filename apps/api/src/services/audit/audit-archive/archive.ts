@@ -23,7 +23,7 @@
  */
 import type { Database } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
-import type { ObjectLockMode } from '../../../object-store/s3';
+import type { ObjectLockMode } from '../../../lib/object-store/s3';
 import {
   ARCHIVE_PART_ROWS,
   HOT_DAYS,

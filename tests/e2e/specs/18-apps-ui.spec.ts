@@ -160,7 +160,7 @@ test.describe('18 — Kortix Apps UI', () => {
           response.url().endsWith(`/v1/projects/${project.id}/features`),
       );
       // `Apps` is the registry's display name for the flag
-      // (apps/api/src/feature-flags/registry.ts:212).
+      // (apps/api/src/services/feature-flags/registry.ts:212).
       await featureFlagRow(panel, page, 'Apps').getByRole('switch').click();
       expect((await enabledRequest).postDataJSON()).toEqual({
         feature: 'apps',

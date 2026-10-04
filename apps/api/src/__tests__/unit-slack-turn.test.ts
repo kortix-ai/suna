@@ -10,7 +10,7 @@ const record = (fn: string) => (...args: unknown[]) => {
   slackCalls.push({ fn, args });
 };
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: async (...a: unknown[]) => record('addReaction')(...a),
   appendStream: async (...a: unknown[]) => {
     record('appendStream')(...a);
@@ -42,18 +42,18 @@ mock.module('../channels/slack-api', () => ({
   updateMessage: async (...a: unknown[]) => record('updateMessage')(...a),
 }));
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
   saveSlackOauthInstall: async () => {},
 }));
 
-mock.module('../channels/slack/interactivity', () => ({
+mock.module('../services/channels/slack/interactivity', () => ({
   respondViaUrl: async () => {},
 }));
 
 // Slack names U0TEST2; it cannot name U0TEST3.
 const nameLookups: Array<{ token: string; teamId: string; ids: string[] }> = [];
-mock.module('../channels/slack/labels', () => ({
+mock.module('../services/channels/slack/labels', () => ({
   slackUserNames: async (token: string, teamId: string, ids: string[]) => {
     nameLookups.push({ token, teamId, ids });
     return new Map(ids.filter((id) => id === 'U0TEST2').map((id) => [id, 'Alex Kim']));
@@ -61,7 +61,7 @@ mock.module('../channels/slack/labels', () => ({
   slackMessageLabels: async ({ event }: { event: { text?: string } }) => ({ channel: null, user: null, text: event.text ?? '' }),
 }));
 
-mock.module('../channels/slack/app', () => ({
+mock.module('../services/channels/slack/constants', () => ({
   STREAM_TTL_MS: 15 * 60 * 1000,
   ASK_TTL_MS: 15 * 60 * 1000,
   WORKING_EMOJI: 'hourglass_flowing_sand',
@@ -110,7 +110,7 @@ mock.module('../lib/db', () => ({
 }));
 
 const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep, relayProvisioningFailure } =
-  await import('../channels/slack/turn');
+  await import('../services/channels/slack/turn');
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {

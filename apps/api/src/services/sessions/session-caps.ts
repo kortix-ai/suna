@@ -3,7 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../../lib/db';
 
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/serializers';
+import { PROVISIONING_SESSION_STATUSES } from '../projects/lib/serializers';
 
 export async function countProvisioningProjectSessions(projectId: string): Promise<number> {
   const [row] = await db

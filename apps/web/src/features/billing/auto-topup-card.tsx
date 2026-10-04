@@ -147,7 +147,7 @@ export function AutoTopupCard({
   }, [enabled, threshold, amount, onChange]);
 
   // Same rule the server enforces in `validateAutoTopupConfig`
-  // (apps/api/src/billing/services/auto-topup.ts) — kept in lockstep via the
+  // (apps/api/src/services/billing/services/auto-topup.ts) — kept in lockstep via the
   // shared `AUTO_TOPUP_MIN_BUFFER` constant so client and server never
   // disagree. Checked live (not just on Save) so the field can warn before a
   // round trip to the server, instead of only after one fails.

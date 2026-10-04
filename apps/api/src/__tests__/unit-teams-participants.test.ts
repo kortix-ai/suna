@@ -48,13 +48,13 @@ mock.module('../lib/db', () => ({
   },
 }));
 mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
-mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['req-1', 'marko@example.com']]) }));
+mock.module('../services/projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['req-1', 'marko@example.com']]) }));
 // Where each card went: to one person (targeted), or to the whole conversation.
 const deliveries: Array<{ to: 'targeted' | 'public'; recipient?: string }> = [];
 let targetedAccepted = true;
 /** Teams user ids (`29:…`) by Entra object id, for the members Teams knows here. */
 let members: Record<string, string> = { 'aad-req': '29:req' };
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: unknown) => {
     cards.push(card);
     deliveries.push({ to: 'public' });
@@ -68,7 +68,7 @@ mock.module('../channels/teams-api', () => ({
   },
   conversationMemberId: async (_ref: unknown, aadObjectId: string) => members[aadObjectId] ?? null,
 }));
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     lookupChatIdentity: async () => identity,
     resolveProjectChatActor: async () => (deciderMayWork && identity ? { userId: identity.userId } : { reason: 'not_member' }),
@@ -76,7 +76,7 @@ mock.module('../channels/core/identity', () =>
 );
 
 const { ensureTeamsThreadParticipant, decideTeamsThreadJoin, policyFromMetadata, normalizeConversationPolicy } = await import(
-  '../channels/teams/participants'
+  '../services/channels/teams/participants'
 );
 
 const base = {

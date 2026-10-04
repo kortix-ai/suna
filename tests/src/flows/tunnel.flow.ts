@@ -6,7 +6,7 @@
  * (`connector_connections` row with `tunnel_id`), private to the member who
  * paired it unless shared with the project.
  *
- * Auth model (apps/api/src/index.ts):
+ * Auth model (apps/api/src/app/index.ts):
  *   - POST /v1/tunnel/device-auth and GET /v1/tunnel/device-auth/:code/status
  *     are PUBLIC (CLI device-flow create + poll).
  *   - Everything else under /v1/tunnel/* requires combinedAuth (ANON → 401).
@@ -256,7 +256,7 @@ flow(
         { method: "fs.list", params: { path: "/tmp" } },
         { params: { tunnelId } },
       );
-      // The API rewrites every 502 to 503 on the wire (apps/api/src/index.ts).
+      // The API rewrites every 502 to 503 on the wire (apps/api/src/app/index.ts).
       r.status(503).headerEquals("x-kortix-upstream-status", "502").body().has("$.code", -32004);
     });
 

@@ -7,7 +7,7 @@ import { parseManifestText, validateManifest } from '@kortix/manifest-schema';
 // resolves `../git/project-git` to. `withProjectGitAuth` is `../git/project-git` relative to this file,
 // the same module `./trigger-runtime.ts` imports it from. Mocking both lets the
 // synthesis path (no manifest committed yet) run with zero DB/network, same
-// pattern as `../../projects/lib/compile-agent-config.test.ts`.
+// pattern as `../projects/lib/compile-agent-config.test.ts`.
 let manifestFile: { path: string; content: string } | null = null;
 let manifestReader:
   | ((...args: unknown[]) => Promise<{ path: string; content: string } | null>)
@@ -38,8 +38,8 @@ const { loadManifestForEdit } = await import('./trigger-runtime');
 const { serializeManifest } = await import('./index');
 const { findProjectTriggerBySlug } = await import('./index');
 const { DEFAULT_AGENT_SENTINEL, extractAgents, resolveGovernedAgentGrant, loadProjectAgents } =
-  await import('../../projects/agents');
-const { applyDefaultAgentV2, applyAgentBlockV2 } = await import('../../projects/lib/agent-config-v2');
+  await import('../projects/agents');
+const { applyDefaultAgentV2, applyAgentBlockV2 } = await import('../projects/lib/agent-config-v2');
 
 const fakeProject = (overrides: Record<string, unknown> = {}) =>
   ({

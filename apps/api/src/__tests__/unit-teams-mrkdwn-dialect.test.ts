@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyTurnError } from '../channels/slack/errors';
-import { mrkdwnToTeamsMarkdown as toTeams } from '../channels/teams/markdown';
+import { classifyTurnError } from '../services/channels/slack/errors';
+import { mrkdwnToTeamsMarkdown as toTeams } from '../services/channels/teams/markdown';
 
 // `classifyTurnError` is shared with Slack and writes Slack's dialect. Seen on
 // dev 2026-09-21: a provider-auth failure reached a Teams card reading

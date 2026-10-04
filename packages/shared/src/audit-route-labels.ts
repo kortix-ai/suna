@@ -4,7 +4,7 @@
  * Key: `METHOD /template` (the router's template, exactly as `app.routes`
  * lists it), `ALL /template` for a catch-all `app.all` handler, or
  * `ENTRY name` for a request the server dispatches before the router
- * (`setInboundAuditEntrypoint` in `apps/api/src/index.ts`).
+ * (`setInboundAuditEntrypoint` in `apps/api/src/app/index.ts`).
  *
  * Value: `{ action, title }`, or the key of another route this one is an
  * alias of (a deprecated path, a `/*` twin, PUT next to PATCH).

@@ -24,7 +24,7 @@ export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
  * same `Authorization` either way.
  *
  * The proxy therefore STRIPS this header from everything it forwards (see
- * STRIP_FORWARD_HEADERS in sandbox-proxy/routes/preview.ts), which makes its
+ * STRIP_FORWARD_HEADERS in http/sandbox-proxy/preview.ts), which makes its
  * presence positive proof of a direct call and impossible to forge through the
  * proxy — the same mechanism that already protects `authorization` and `cookie`.
  *

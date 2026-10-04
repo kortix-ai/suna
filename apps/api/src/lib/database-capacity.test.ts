@@ -28,7 +28,7 @@ describe('production database connection capacity', () => {
     expect(auditDb).toContain("intFromEnv('DB_AUDIT_POOL_MAX', DEFAULT_AUDIT_POOL_MAX)");
 
     for (const relativePath of [
-      '../projects/routes/project-audit.ts',
+      '../http/projects/project-audit.ts',
       '../services/audit/audit.ts',
       '../services/usage/gateway-logs.ts',
     ]) {
@@ -38,7 +38,7 @@ describe('production database connection capacity', () => {
   });
 
   test('keeps the base-move LISTEN/NOTIFY connection on the bounded broadcast pool', () => {
-    // apps/api/src/bootstrap.ts awaits startConfigBaseMoveBroadcast() on EVERY
+    // apps/api/src/app/bootstrap.ts awaits startConfigBaseMoveBroadcast() on EVERY
     // replica at boot (not leader-gated), and the listener is never released:
     // this is a long-lived, per-task connection exactly like the leader-election
     // one, and the rolling-deployment ceiling must count it the same way.
@@ -47,7 +47,7 @@ describe('production database connection capacity', () => {
     expect(pgBroadcast).toContain('max: PG_BROADCAST_POOL_MAX');
 
     // The boot wiring moved into bootstrap.ts (KRTX-347 split).
-    const boot = readFileSync(new URL('../bootstrap.ts', import.meta.url), 'utf8');
+    const boot = readFileSync(new URL('../app/bootstrap.ts', import.meta.url), 'utf8');
     expect(boot).toContain('startConfigBaseMoveBroadcast');
   });
 

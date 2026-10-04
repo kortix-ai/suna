@@ -17,7 +17,7 @@ const rec = (fn: string) => (...args: unknown[]) => {
   return Promise.resolve();
 };
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   addReaction: rec('addReaction'),
   removeReaction: rec('removeReaction'),
   joinChannel: rec('joinChannel'),
@@ -33,8 +33,8 @@ mock.module('../channels/slack-api', () => ({
   getSlackUserDisplayName: async () => null,
 }));
 
-const { finalizeTurn } = await import('../channels/slack/turn');
-import type { LiveTurn } from '../channels/slack/types';
+const { finalizeTurn } = await import('../services/channels/slack/turn');
+import type { LiveTurn } from '../services/channels/slack/types';
 
 function makeHandle(over: Partial<LiveTurn> = {}): LiveTurn {
   return {

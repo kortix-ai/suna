@@ -21,7 +21,7 @@ function between(start: string, end: string): string {
 
 describe('a queue retry re-sends ONE delivery, not two', () => {
   // The proxy identifies a prompt delivery by a sha256 of the request body
-  // (apps/api/src/sandbox-proxy/prompt-dedupe.ts, 60s TTL) because the browser
+  // (apps/api/src/services/sandbox-proxy/prompt-dedupe.ts, 60s TTL) because the browser
   // cannot send `Idempotency-Key` — it is not on the API's CORS allow-list. The
   // SDK now mints a per-submission `messageID` into that body, so a retry that
   // mints a NEW one is no longer absorbed: a prompt that reached opencode but

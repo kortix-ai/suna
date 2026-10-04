@@ -32,7 +32,7 @@ function cloneError(stderr: string, extra: Record<string, unknown> = {}) {
 
 /**
  * A faithful reproduction of the production `app.onError` classification chain
- * (the relevant branches only — see apps/api/src/index.ts). Captures whether
+ * (the relevant branches only — see apps/api/src/app/index.ts). Captures whether
  * `captureException` (the Sentry/Better Stack paging call) would have fired,
  * and what status + headers the client gets.
  */

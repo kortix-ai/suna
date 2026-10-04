@@ -6,7 +6,7 @@
  * The HTTP enforcement of this number lives in `e2e-project-limit.test.ts`.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { MAX_PROJECTS_PER_ACCOUNT } from '../services/billing/services/tiers';
 
 // Mutable knobs the mocks read.
 let billingEnabled = true;
@@ -23,18 +23,18 @@ mock.module('../lib/config', () => ({
   ),
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => (currentTier === null ? null : { tier: currentTier }),
-  // Imported (not called) by billing/services/entitlements, which
-  // billing/account-limits now loads for the managed-models resolver — a named
+  // Imported (not called) by services/billing/services/entitlements, which
+  // services/billing/account-limits now loads for the managed-models resolver — a named
   // import from a wholesale-mocked module must exist or every co-loaded file
   // dies with "Export named ... not found".
   getCreditAccount: async () => (currentTier === null ? null : { tier: currentTier }),
 }));
 
 const { maxProjectsForAccount, FREE_TIER_PROJECT_LIMIT, clearAccountLimitCache } = await import(
-  '../billing/account-limits'
+  '../services/billing/account-limits'
 );
 
 // Distinct account id per call keeps the 60s tier cache from bleeding across

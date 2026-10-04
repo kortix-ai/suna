@@ -16,15 +16,15 @@ const people: Record<string, string | null> = {};
 let userLookups: string[] = [];
 let userDelayMs = 0;
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => token,
 }));
 
-mock.module('../channels/slack/binding-label', () => ({
+mock.module('../services/channels/slack/binding-label', () => ({
   backfillSlackBindingLabel: async () => bindingLabel,
 }));
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   getSlackUserDisplayName: async (_token: string, userId: string) => {
     userLookups.push(userId);
     if (userDelayMs) await new Promise((r) => setTimeout(r, userDelayMs));
@@ -33,7 +33,7 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 const { slackMessageLabels, slackUserNames, resetSlackUserNamesForTest, setSlackLabelBudgetForTest } = await import(
-  '../channels/slack/labels'
+  '../services/channels/slack/labels'
 );
 
 const event = (over: Record<string, unknown> = {}) =>

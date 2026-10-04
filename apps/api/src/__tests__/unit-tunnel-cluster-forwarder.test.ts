@@ -3,7 +3,7 @@ import {
   forwardPollMs,
   isTunnelConnectionLive,
   tunnelLiveWindowMs,
-} from '../tunnel/core/cluster-forwarder';
+} from '../services/tunnel/core/cluster-forwarder';
 
 // A NOTIFY wakes the forwarder and the waiting requester. The poll is only the
 // fallback, and only while this process holds the LISTEN.

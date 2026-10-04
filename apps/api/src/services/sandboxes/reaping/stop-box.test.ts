@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { logger } from '../../../lib/logger';
-import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
+import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 
 // T11: close the live opencode turn on a box BEFORE `provider.stop()`
 // powers it off, via `abortLiveTurnBeforeStop` (exported alongside
@@ -35,7 +35,7 @@ mock.module('./box-queries', () => ({
   },
 }));
 
-mock.module('../../../platform/providers', () => ({
+mock.module('../../platform/providers', () => ({
   getProvider: (_name: string) => ({
     stop: async (externalId: string) => {
       callOrder.push('provider.stop');
@@ -56,7 +56,7 @@ mock.module('./sandbox-state-sync', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 // Only `resolveServiceKey` / `resolveSandboxIngress` are overridden — those are
 // the two calls `abortLiveTurnBeforeStop` makes before its own `fetch`.
-mock.module('../../../sandbox-proxy/backend', () => ({
+mock.module('../../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
   resolveServiceKey: async (_externalId: string) => abortServiceKey,
   resolveSandboxIngress: async (_ref: string, _req: unknown) => ({

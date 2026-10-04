@@ -55,25 +55,25 @@ mock.module('../lib/db', () => ({
 }));
 // Spread the real modules and override only the seams under test — replacing
 // them wholesale would strip exports other importers in this process need.
-const realAccountTokens = await import('../repositories/account-tokens');
-const realApiKeys = await import('../repositories/api-keys');
-const realIamActions = await import('../iam/actions');
-const realIamAuthorize = await import('../iam/authorize');
+const realAccountTokens = await import('../services/repositories/account-tokens');
+const realApiKeys = await import('../services/repositories/api-keys');
+const realIamActions = await import('../services/iam/actions');
+const realIamAuthorize = await import('../services/iam/authorize');
 
 let validateCalls = 0;
-mock.module('../repositories/account-tokens', () => ({
+mock.module('../services/repositories/account-tokens', () => ({
   ...realAccountTokens,
   validateAccountToken: async () => {
     validateCalls += 1;
     return patResult;
   },
 }));
-mock.module('../repositories/api-keys', () => ({
+mock.module('../services/repositories/api-keys', () => ({
   ...realApiKeys,
   validateSecretKey: async () => apiKeyResult,
 }));
-mock.module('../iam/actions', () => ({ ...realIamActions }));
-mock.module('../iam/authorize', () => ({
+mock.module('../services/iam/actions', () => ({ ...realIamActions }));
+mock.module('../services/iam/authorize', () => ({
   ...realIamAuthorize,
   // The acting token is now part of the Actor's credential, not a trailing
   // argument — this assertion is the point of the test, so read it back out of

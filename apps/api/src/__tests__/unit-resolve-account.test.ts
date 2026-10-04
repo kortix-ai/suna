@@ -105,10 +105,10 @@ mock.module('@kortix/db', () => ({
   permissions: {},
   // Read by modules on the auth import graph.
   projects: {},
-  // projects/lib/on-behalf-of.ts (reached through the auth graph) reads the
+  // services/projects/lib/on-behalf-of.ts (reached through the auth graph) reads the
   // session row to resolve the human an agent session acts for.
   projectSessions: {},
-  // iam/actor.ts imports this pure reader; a partial mock without it fails
+  // services/iam/actor.ts imports this pure reader; a partial mock without it fails
   // the whole import chain at module load. Identity is enough — no stored
   // grant is read in this file.
   readStoredAgentGrant: (raw: unknown) => raw ?? null,
@@ -116,14 +116,14 @@ mock.module('@kortix/db', () => ({
 
 mock.module('../lib/db', () => ({ db: fakeDb }));
 
-mock.module('../billing/repositories/customers', () => ({
+mock.module('../services/billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => state.legacyCustomer,
   upsertCustomer: async (data: Record<string, unknown>) => {
     upsertCustomerCalls.push(data);
   },
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => null,
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     upsertCreditAccountCalls.push({ accountId, data });
@@ -135,7 +135,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   },
 }));
 
-mock.module('../billing/wallet', () => ({
+mock.module('../services/billing/wallet', () => ({
   wallet: {
     reset: async (input: Record<string, unknown>) => {
       walletResets.push(input);
@@ -144,7 +144,7 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-mock.module('../billing/services/tiers', () => ({
+mock.module('../services/billing/services/tiers', () => ({
   MACHINE_CREDIT_BONUS: 5,
   MINIMUM_CREDIT_FOR_RUN: 0.01,
   getTier: (tierName: string) => ({
@@ -163,7 +163,7 @@ mock.module('../billing/services/tiers', () => ({
   },
 }));
 
-mock.module('../billing/stripe', () => ({
+mock.module('../services/billing/stripe', () => ({
   getStripe: () => ({
     customers: {
       retrieve: async (id: string) => ({ id, deleted: false }),
@@ -179,9 +179,9 @@ mock.module('../billing/stripe', () => ({
   }),
 }));
 
-const { resolveAccountId, resolveScopedAccountId } = await import('../accounts/resolve-account');
+const { resolveAccountId, resolveScopedAccountId } = await import('../services/accounts/resolve-account');
 const { runWithContext } = await import('../lib/request-context');
-const { setImpersonationContext } = await import('../iam/impersonation');
+const { setImpersonationContext } = await import('../services/iam/impersonation');
 
 beforeEach(() => {
   state.membership = null;

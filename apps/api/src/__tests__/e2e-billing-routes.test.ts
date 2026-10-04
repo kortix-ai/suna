@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError, InsufficientCreditsError } from '../billing/errors';
+import { BillingError, InsufficientCreditsError } from '../services/billing/errors';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ let mockAccountDeleteAllowed = true;
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
 // Auth mock — bypass supabaseAuth, inject test user
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     c.set('userId', TEST_USER_ID);
     c.set('userEmail', 'test@kortix.dev');
@@ -53,7 +53,7 @@ mock.module('../middleware/auth', () => ({
   combinedAuth: async (c: any, next: any) => { await next(); },
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
   resolveScopedAccountId: async () => TEST_USER_ID,
 }));
@@ -63,10 +63,10 @@ mock.module('../accounts/resolve-account', () => ({
 // it through the barrel; `actorOf` is stubbed alongside because building a real
 // actor would read account_tokens through this suite's minimal db mock.
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
-// declares only `actorOf` breaks every other importer of `iam/actor`
+// declares only `actorOf` breaks every other importer of `services/iam/actor`
 // (`loadTokenBinding`, `actingPrincipal`, …) with a missing-export SyntaxError.
-const realIamActor = await import('../iam/actor');
-mock.module('../iam/actor', () => ({
+const realIamActor = await import('../services/iam/actor');
+mock.module('../services/iam/actor', () => ({
   ...realIamActor,
   actorOf: async (c: { get(k: string): unknown }, accountId: string) => ({
     userId: (c.get('userId') as string | undefined) ?? 'test-user',
@@ -75,7 +75,7 @@ mock.module('../iam/actor', () => ({
     ctx: {},
   }),
 }));
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   ACCOUNT_ACTIONS: {
     ACCOUNT_DELETE: 'account.delete',
   },
@@ -87,7 +87,7 @@ mock.module('../iam', () => ({
 }));
 
 // Credits service mock
-mock.module('../billing/services/credits', () => ({
+mock.module('../services/billing/services/credits', () => ({
   calculateTokenCost: (prompt: number, completion: number, model: string) => {
     // Realistic: mirrors real calculateTokenCost with TOKEN_PRICE_MULTIPLIER=1.2
     // Uses anthropic-level pricing as default (inputPer1M=3, outputPer1M=15)
@@ -98,7 +98,7 @@ mock.module('../billing/services/credits', () => ({
   getCreditSummary: () => ({ total: 100, daily: 3, monthly: 80, extra: 20 }),
 }));
 
-mock.module('../billing/wallet', () => ({
+mock.module('../services/billing/wallet', () => ({
   wallet: {
     debit: async () => {
       if (mockDeductError) throw mockDeductError;
@@ -108,7 +108,7 @@ mock.module('../billing/wallet', () => ({
 }));
 
 // Credit accounts repository mock
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => mockCreditBalance ? { accountId: TEST_USER_ID, ...mockCreditBalance } : null,
   getCreditBalance: async () => mockCreditBalance,
   updateCreditAccount: async () => {},
@@ -119,7 +119,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 // Transactions repository mock
-mock.module('../billing/repositories/transactions', () => ({
+mock.module('../services/billing/repositories/transactions', () => ({
   getTransactions: async () => ({ rows: [], total: 0 }),
   getTransactionsSummary: async () => mockTransactionsSummary,
   getUsageRecords: async () => ({ rows: [], total: 0 }),
@@ -129,7 +129,7 @@ mock.module('../billing/repositories/transactions', () => ({
 }));
 
 // Account deletion service mock
-mock.module('../billing/services/account-deletion', () => ({
+mock.module('../services/billing/services/account-deletion', () => ({
   getAccountDeletionStatus: async (accountId: string) => {
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionStatus;
@@ -163,7 +163,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../billing/stripe', () => ({
+mock.module('../services/billing/stripe', () => ({
   getStripe: () => ({
     webhooks: { constructEvent: () => ({}) },
     subscriptions: { retrieve: async () => ({}), update: async () => ({}), create: async () => ({}), cancel: async () => ({}) },
@@ -190,7 +190,7 @@ mock.module('../lib/config', () => ({
 }));
 
 // Customers repository mock
-mock.module('../billing/repositories/customers', () => ({
+mock.module('../services/billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => ({ id: 'cus_test_123', accountId: TEST_USER_ID, email: 'test@kortix.dev', provider: 'stripe', active: true }),
   getCustomerByStripeId: async () => null,
   listAccountStripeCustomerIds: async () => ['cus_test_123'],
@@ -199,7 +199,7 @@ mock.module('../billing/repositories/customers', () => ({
 }));
 
 // Account deletion repository mock
-mock.module('../billing/repositories/account-deletion', () => ({
+mock.module('../services/billing/repositories/account-deletion', () => ({
   getActiveDeletionRequest: async () => null,
   createDeletionRequest: async () => null,
   cancelDeletionRequest: async () => {},
@@ -209,7 +209,7 @@ mock.module('../billing/repositories/account-deletion', () => ({
 
 // ─── Import billing app AFTER mocks ──────────────────────────────────────────
 
-const { billingApp } = await import('../billing/index');
+const { billingApp } = await import('../http/billing/index');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 

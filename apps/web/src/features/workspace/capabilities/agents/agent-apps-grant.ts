@@ -3,7 +3,7 @@
  * with no React and no network, so it can be tested directly.
  *
  * `agents.<name>.apps` stores App SLUGS, never App ids (enforced by
- * `agentAppAccessDecision` in apps/api/src/apps/access.ts). A row's `id` is
+ * `agentAppAccessDecision` in apps/api/src/services/apps/access.ts). A row's `id` is
  * therefore the slug: it is what the checkbox writes into the grant and what
  * the gate matches on. Keying a row on `app_id` produces a grant the gate
  * never matches, and nothing says so.

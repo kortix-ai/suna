@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { agentConfigEtag } from '../../projects/lib/compile-agent-config';
+import { agentConfigEtag } from '../projects/lib/compile-agent-config';
 import {
   classifyAgentFiles,
   isConfigStale,

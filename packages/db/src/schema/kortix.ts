@@ -579,7 +579,7 @@ export const projectGitConnections = kortixSchema.table(
  * Readiness ledger for prebuilt project snapshot archives (S3 config provider).
  *
  * One row per (project, exact commit SHA). The producer worker
- * (`apps/api/src/git-proxy/project-snapshot-worker.ts`) claims `queued` rows,
+ * (`apps/api/src/services/git-proxy/project-snapshot-worker.ts`) claims `queued` rows,
  * builds a `.tar.gz` of the committed tree + sanitized shallow `.git` from the
  * API's Git mirror, uploads the archive THEN the manifest to the immutable
  * layout `<owner>/<repo>/<sha>/<external_repo_id>/project-snapshot-v1/`, and
@@ -3438,7 +3438,7 @@ export const auditEvents = kortixSchema.table(
     // 20260929004450093_drop_audit_events_account_client_source_time_index):
     // 0 scans since the last stats reset, 1.3 GB, one index write on every
     // audit row. The only query shaped to use it (`source` filter in
-    // apps/api/src/accounts/audit-filters.ts) is an OR across
+    // apps/api/src/services/accounts/audit-filters.ts) is an OR across
     // authoritative_source and client_reported_source, which Postgres cannot
     // push through a single composite index on one of those two columns --
     // EXPLAIN on prod confirmed the planner already used
@@ -3460,7 +3460,7 @@ export const auditEvents = kortixSchema.table(
       .where(sql`${table.correlationId} is not null`),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
-    // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
+    // (apps/api/src/http/ops/index.ts) is an index-only scan instead of a full
     // sequential scan. The composite indices above all have a different
     // leading column, so they can't serve a `WHERE occurred_at >= …` with no
     // account/actor/resource filter — the scan was exceeding statement_timeout
@@ -5219,7 +5219,7 @@ export const iamResourceGrants = kortixSchema
 //   object_policies   what "nobody scoped this object" means, per object TYPE
 
 /**
- * The permission catalog. Previously `apps/api/src/iam/actions.ts` +
+ * The permission catalog. Previously `apps/api/src/services/iam/actions.ts` +
  * `role-perms.ts` + `role-presets.ts NON_DELEGABLE_ACTIONS`, i.e. three code
  * constants with no database representation and no foreign key.
  *
@@ -6131,7 +6131,7 @@ export const connectorActions = kortixSchema.table(
  *
  * `arg` is a dot path into the call arguments; `match` uses the same
  * glob-or-`/regex/` grammar as the tool pattern. Semantics (including how an
- * unevaluable condition fails closed) live in apps/api/src/connectors/policy.ts —
+ * unevaluable condition fails closed) live in apps/api/src/services/connectors/policy.ts —
  * this is only the stored shape.
  */
 export interface ConnectorPolicyCondition {

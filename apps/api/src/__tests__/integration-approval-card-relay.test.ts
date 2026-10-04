@@ -3,7 +3,7 @@
  * still live in a chat thread.
  *
  * `decideConnectorApproval` (projects/lib) ends by relaying the outcome to
- * `channels/approval-card-relay` — the one up-edge the dedupe inverts into a
+ * `services/channels/approval-card-relay` — the one up-edge the dedupe inverts into a
  * caller-owned notification. This pin exercises the decision through the real
  * POST /approvals/:executionId route with a real database, and asserts the
  * card the decision leaves behind: exactly one updateBlocks call for the
@@ -13,13 +13,13 @@
  * Real: the connector_calls row, the project, the owner's role, the decision.
  * Faked: Slack's HTTP surface (slack-api), the install token, and Supabase
  * JWT verification — this lane has no reachable GoTrue, and five repo test
- * files replace the same module (see middleware/auth.ts's comment).
+ * files replace the same module (see http/middleware/auth.ts's comment).
  */
 import { afterAll, beforeAll, expect, mock, test } from 'bun:test';
 import { accountMembers, connectorCalls } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import * as realSlackApi from '../channels/slack-api';
-import * as realInstallStore from '../channels/install-store';
+import * as realSlackApi from '../services/channels/slack-api';
+import * as realInstallStore from '../services/channels/install-store';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -27,18 +27,18 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 const OWNER = crypto.randomUUID();
 const updated: Array<{ channel: string; ts: string; text: string; blocks: unknown[] }> = [];
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   ...realSlackApi,
   updateBlocks: async (_t: string, channel: string, ts: string, text: string, blocks: unknown[]) => {
     updated.push({ channel, ts, text, blocks });
     return true;
   },
 }));
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
-mock.module('../auth/jwt-verify', () => ({
+mock.module('../services/auth/jwt-verify', () => ({
   // One synthetic Supabase session for the project owner. The decision's
   // caller, not the JWT machinery, is the subject here.
   verifySupabaseJwt: async (token: string) =>
@@ -48,7 +48,7 @@ mock.module('../auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
 }));
 
-const { app } = await import('../index');
+const { app } = await import('../app/index');
 
 const TEAM = 'T0RELAYTEST';
 const CHANNEL = 'C0RELAYTEST';

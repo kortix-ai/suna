@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { deleteManagedProjectRepo } from '../projects/lib/project-deletion';
+import { deleteManagedProjectRepo } from '../services/projects/lib/project-deletion';
 
 const project = {
   projectId: '00000000-0000-4000-a000-000000000201',

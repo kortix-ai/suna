@@ -1,5 +1,5 @@
 /**
- * OAuth2 provider surface (apps/api/src/oauth/index.ts, mounted at /v1/oauth).
+ * OAuth2 provider surface (apps/api/src/http/oauth/index.ts, mounted at /v1/oauth).
  * Public endpoints: /authorize, /token. Auth (supabase JWT): consent.
  * Auth (oauthTokenAuth bearer access-token): /userinfo.
  *

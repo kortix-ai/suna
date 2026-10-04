@@ -3,13 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../../projects/starter';
+import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
 
 const execFileAsync = promisify(execFile);
 
 /**
  * Identity of the canonical starter scaffold — the SAME deterministic commit
- * `stageScaffoldRepo` (snapshots/build-context.ts) bakes into every sandbox
+ * `stageScaffoldRepo` (services/snapshots/build-context.ts) bakes into every sandbox
  * image at /opt/kortix/scaffold.git and `seed.ts` commits first into every
  * managed repo: pinned author, pinned dates, starter files only.
  *

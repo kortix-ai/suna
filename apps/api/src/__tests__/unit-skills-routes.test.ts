@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { skillsApp } from '../skills';
+import { skillsApp } from '../http/skills';
 
 // Mounted the same way app.ts mounts it, minus combinedAuth — the auth gate is
 // app.ts's `app.use('/v1/skills', ...)` registration; what is asserted here is

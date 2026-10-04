@@ -33,7 +33,7 @@ docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
 ## How sessions actually boot
 
 Production sessions do **not** use a shared snapshot. The snapshot builder
-(`apps/api/src/snapshots/builder.ts`) reads each project's
+(`apps/api/src/services/snapshots/builder.ts`) reads each project's
 `.kortix/Dockerfile`, layers the Kortix runtime (OpenCode REST, the
 `kortix-agent` binary, and the entrypoint) on
 top, and creates a per-project

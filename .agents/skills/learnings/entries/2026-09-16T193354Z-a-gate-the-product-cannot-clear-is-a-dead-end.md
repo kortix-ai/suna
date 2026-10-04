@@ -14,6 +14,6 @@ control or CLI command that clears it, for every caller who can hit it
 missing UI. *Incident:* a `user`-strategy connector had no connect flow
 anywhere — no shared account to offer, so the card rendered a button-less
 refusal and the composer spun on "Thinking" forever. *Enforcer:*
-`apps/api/src/projects/routes/session-prompts.test.ts` ("queues the
+`apps/api/src/http/projects/session-prompts.test.ts` ("queues the
 prompt even when the project has an unconnected connector"); the denial's
-`connect_url` remedy: `apps/api/src/connectors/principal-access.ts:110-114`.
+`connect_url` remedy: `apps/api/src/services/connectors/principal-access.ts:110-114`.

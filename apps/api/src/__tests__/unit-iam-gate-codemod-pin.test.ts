@@ -32,7 +32,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 /**
  * The file with its comments removed. Every scan below runs on this, because a
- * module that DOCUMENTS the old engine (`iam/actor.ts` explains, at length, why
+ * module that DOCUMENTS the old engine (`services/iam/actor.ts` explains, at length, why
  * `authorizeV2`'s trailing optional arguments were the bug) is not a module that
  * calls it — and a pin that cannot tell those apart gets deleted the first time
  * someone writes a good comment.
@@ -175,7 +175,7 @@ describe('the gate codemod is complete', () => {
   });
 
   test('the retired role Sets are gone from the whole source tree', () => {
-    // `iam/roles.ts` keeps the ROLE PARSER (normalizeProjectRole,
+    // `services/iam/roles.ts` keeps the ROLE PARSER (normalizeProjectRole,
     // parseAssignableProjectRole) and the two role TYPE unions, which the request
     // layer legitimately needs to validate a body value. The permission SETS are
     // DB rows (kortix.role_permissions) and must not come back in any form.
@@ -214,7 +214,7 @@ describe('the gate codemod is complete', () => {
     // a route that wants a leaf calls `assertProjectCapability` with the leaf.
     const offenders = PRODUCTION.filter(
       (f) =>
-        rel(f) !== 'projects/lib/project-access.ts' &&
+        rel(f) !== 'services/projects/lib/project-access.ts' &&
         /\biamActionForProjectAccess\s*\(/.test(code(f)),
     ).map(rel);
     expect(offenders).toEqual([]);
@@ -224,13 +224,13 @@ describe('the gate codemod is complete', () => {
     // routes.md §5.2: POST|DELETE /projects/:id/cli-token gated on
     // loadProjectForUser('manage') === project.write, so anyone who could edit
     // the project could mint a token that outlives the request.
-    const credentialRoutes = code(join(SRC, 'projects/routes/project-credentials.ts'));
+    const credentialRoutes = code(join(SRC, 'http/projects/project-credentials.ts'));
     const cliTokenGates = [...credentialRoutes.matchAll(/loadProjectForUser\(c, projectId, '(\w+)'\)/g)].map(
       (m) => m[1],
     );
     expect(cliTokenGates.filter((g) => g === 'credentials')).toHaveLength(2);
 
-    const tokens = code(join(SRC, 'accounts/core/tokens.ts'));
+    const tokens = code(join(SRC, 'http/accounts/core/tokens.ts'));
     expect(tokens).toContain("loadProjectForUser(c, projectId, 'credentials')");
   });
 

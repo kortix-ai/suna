@@ -23,7 +23,7 @@ let currentSession: string;
 
 let liveTurn: Record<string, unknown> | null = null;
 const stopped: string[] = [];
-mock.module('../channels/teams/turn', () => ({
+mock.module('../services/channels/teams/turn', () => ({
   loadTurn: async () => liveTurn,
   claimFinalize: async () => true,
   finalizeTurn: async () => {},
@@ -36,8 +36,8 @@ mock.module('../services/sessions/lifecycle/abort-runtime-turn', () => ({
   abortRuntimeTurn: async () => true,
 }));
 
-const { stopTeamsTurn } = await import('../channels/teams/stop');
-const { startFreshTeamsConversation } = await import('../channels/teams/fresh-start');
+const { stopTeamsTurn } = await import('../services/channels/teams/stop');
+const { startFreshTeamsConversation } = await import('../services/channels/teams/fresh-start');
 
 async function session(createdBy: string, policy: string): Promise<string> {
   const sessionId = crypto.randomUUID();

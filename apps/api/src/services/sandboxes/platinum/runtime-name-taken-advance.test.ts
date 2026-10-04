@@ -30,7 +30,7 @@
 // reads the ADVANCED attempt and never re-mints the stuck name.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { platinumHttpError } from '../../../__tests__/helpers/platinum-http-error';
-mock.module('../../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
+mock.module('../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -99,8 +99,8 @@ mock.module('./client', () => ({
     return {};
   },
 }));
-mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
-mock.module('../../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
+mock.module('../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
+mock.module('../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 const { PlatinumProvider } = await import('./runtime');
 

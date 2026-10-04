@@ -1,7 +1,7 @@
 // F3 — the no-blind-repost guarantee documented on `executeQueuedContinue`
 // (queued-continue.ts) depends on one cross-module relation:
 //
-//   DEDUPE_TTL_MS (sandbox-proxy/prompt-dedupe.ts) >=
+//   DEDUPE_TTL_MS (services/sandbox-proxy/prompt-dedupe.ts) >=
 //   UNDELIVERED_PROMPT_STARVATION_MS (session-lifecycle/undelivered-prompts.ts)
 //
 // A row the starvation reconciler sweeps and re-drains (re-POSTing the SAME
@@ -28,7 +28,7 @@ mock.module('../drain', () => ({
   drainSessionLifecycleQueue: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
 }));
 
-const { DEDUPE_TTL_MS } = await import('../../../../sandbox-proxy/prompt-dedupe');
+const { DEDUPE_TTL_MS } = await import('../../../sandbox-proxy/prompt-dedupe');
 const { UNDELIVERED_PROMPT_STARVATION_MS } = await import('../undelivered-prompts');
 
 describe('F3 — DEDUPE_TTL_MS >= UNDELIVERED_PROMPT_STARVATION_MS', () => {

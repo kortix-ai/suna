@@ -26,9 +26,9 @@ import {
 } from '@kortix/db';
 import { config } from '../lib/config';
 import { db } from '../lib/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { upsertResourceGrant } from '../iam/resource-grants';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { upsertResourceGrant } from '../services/iam/resource-grants';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

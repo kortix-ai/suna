@@ -17,7 +17,7 @@ export function isProjectLimitError(err: unknown): boolean {
  * EXPECTED, operator-fixable state, not a bug.
  *
  * Reads the message, never the status alone. The API's edge middleware
- * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES) sends every 502 as a 503
+ * (`apps/api/src/app/index.ts`, EDGE_REWRITTEN_STATUSES) sends every 502 as a 503
  * with the body kept, so a bare 503 is also any upstream failure — GitHub's
  * `/user/repos` 403 on create-repo read as "managed git isn't set up" in prod.
  */
@@ -29,7 +29,7 @@ export function isManagedGitUnavailableError(err: unknown): boolean {
 /**
  * True for the `409` `POST /projects/provision` returns when another call
  * carrying the SAME `idempotency_key` is mid-provision — see
- * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case.
+ * `apps/api/src/services/projects/lib/provision-idempotency.ts`'s `in_flight` case.
  * This is a RETRYABLE state, not a terminal failure: the concurrent call's
  * outcome just isn't decided yet. Checks `code` first — the precise signal
  * the route sends — and falls back to the message for a caller that only has

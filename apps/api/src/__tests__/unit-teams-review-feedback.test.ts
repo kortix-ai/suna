@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { REVIEW_FEEDBACK_INPUT, buildReviewCard } from '../channels/teams/cards';
+import { REVIEW_FEEDBACK_INPUT, buildReviewCard } from '../services/channels/teams/cards';
 
 // `handleReview` called `applyVerdict(..., { feedback: null })` unconditionally,
 // so `review_items.feedback` — a column that has always existed — was never

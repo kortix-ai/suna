@@ -7,7 +7,7 @@ import {
   isValidGitProxyProjectId,
   normalizeProjectId,
   scopeForService,
-} from '../git-proxy/parse';
+} from '../services/git-proxy/parse';
 
 describe('normalizeProjectId', () => {
   test('strips a trailing .git', () => {

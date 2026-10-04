@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   projectSessionIdForProjectPrincipal,
   resolveTokenBoundSessionId,
-} from '../../connectors/db-deps';
+} from '../connectors/db-deps';
 import { requestMemo, runWithContext } from '../../lib/request-context';
 import {
   type ValidatedSessionConnectorBinding,

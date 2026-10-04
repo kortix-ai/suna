@@ -1,7 +1,7 @@
 {
   "source_hash": "2d0e7059b459b9747b47245cfbe307d5b4d6172471ad1d38c110965beae0b7cb",
   "diff_files": [
-    "apps/api/src/projects/lib/serializers.ts",
+    "apps/api/src/services/projects/lib/serializers.ts",
     "apps/api/src/services/sessions/session-list-metadata.test.ts",
     "apps/web/src/components/projects/session-label.test.ts",
     "apps/web/src/components/projects/session-label.ts",

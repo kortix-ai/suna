@@ -61,17 +61,17 @@ export function filterCreatableAccounts(accounts: KortixAccount[], permissions: 
  * Preference order:
  * 1. Identity — `account_id === userId`. Personal accounts are created with
  *    `accountId === userId` by construction
- *    (`apps/api/src/accounts/core/bootstrap-personal-account.ts`: "Personal
+ *    (`apps/api/src/services/accounts/core/bootstrap-personal-account.ts`: "Personal
  *    accounts use `accountId === userId`"), so this is the only tier that can
  *    distinguish the account that IS the user from an account the user
  *    merely owns or administers. Replaces two tiers that were permanently
  *    dead against the real `GET /v1/accounts` shape: `name` always carries
  *    the `'s Account` possessive (`filterCreatableAccounts` stopped
  *    stripping it, Task 1), and `slug` is `accountId.slice(0, 8)`
- *    (`apps/api/src/accounts/core/accounts.ts:122`) — never an email or its
+ *    (`apps/api/src/http/accounts/core/accounts.ts:122`) — never an email or its
  *    local part.
  * 2. `is_primary_owner` — true for any account this user owns outright
- *    (`accountRole === 'owner'`, `apps/api/src/accounts/core/accounts.ts:126`),
+ *    (`accountRole === 'owner'`, `apps/api/src/http/accounts/core/accounts.ts:126`),
  *    including a team account that is NOT their personal one. Kept as a
  *    fallback for when identity does not resolve (`userId` not loaded yet,
  *    or the sole owned account is a team account) — the same proxy
@@ -107,13 +107,13 @@ export function resolveDefaultCreatableAccountId(
  *
  * Deliberately excludes a SOLE foreign account. `GET /v1/accounts` only ever
  * returns accounts this specific signed-in user is a genuine member of
- * (`accountMembers.userId = userId`, `apps/api/src/accounts/core/accounts.ts`),
+ * (`accountMembers.userId = userId`, `apps/api/src/http/accounts/core/accounts.ts`),
  * and `filterCreatableAccounts` further narrows that to owner/admin roles —
  * so a SOLE creatable account that is not the viewer's own is the ordinary
  * invited-admin shape: someone added as admin on an account before ever
  * having their own personal account bootstrapped (`bootstrapPersonalAccount`
  * only fires when the caller has ZERO existing memberships,
- * `apps/api/src/accounts/core/accounts.ts`). That is legitimate and common,
+ * `apps/api/src/http/accounts/core/accounts.ts`). That is legitimate and common,
  * not a leak — it is exactly the scenario Task 1's fix protects (Task 2
  * controller addendum A2.2), so it is never FOREIGN on its own.
  *

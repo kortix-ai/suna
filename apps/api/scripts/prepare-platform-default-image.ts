@@ -20,7 +20,7 @@
  */
 import { config } from '../src/lib/config';
 import { platinumUsRegion } from '../src/services/sandboxes/platinum/region';
-import { buildPlatformDefaultImageForRelease } from '../src/snapshots/builder';
+import { buildPlatformDefaultImageForRelease } from '../src/services/snapshots/builder';
 import { preparePlatinumTemplateRegion } from '../src/services/sandboxes/platinum/images-templates';
 
 /** Longest observed EU→US copy of a Kortix image (2026-10-02) was 255 s. */

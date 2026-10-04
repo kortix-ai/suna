@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { config } from '../../../lib/config';
-import { forwardToSandbox } from '../../../sandbox-proxy/forward';
+import { forwardToSandbox } from '../../sandbox-proxy/forward';
 
 import type { RuntimePromptFileWriteInput } from './prompt-attachment-materializer';
 

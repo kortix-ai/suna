@@ -64,7 +64,7 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
 
     expect(callers.sort()).toEqual([
       // definition + the re-export barrel, not decisions
-      'sandbox-proxy/routes/preview.ts',
+      'http/sandbox-proxy/preview.ts',
       'services/sandboxes/sandbox-deadline-policy.ts',
       'services/sandboxes/sandbox-deadline.ts',
     ]);
@@ -77,10 +77,10 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
 // token-scoped completion is the only event that removes terminal turn authority.
 describe('the fire-and-forget deadline wirings are actually wired', () => {
   for (const [file, call] of [
-    ['platform/services/session-sandbox.ts', 'grantWarmPoolLifetime('],
+    ['services/platform/services/session-sandbox.ts', 'grantWarmPoolLifetime('],
     // The token-scoped completion moved with the `end`/`turn_end` handler out
     // of the turn-stream route sleeve (KRTX-280); the wiring must still exist.
-    ['projects/routes/turn-stream-handlers.ts', 'completeSandboxTurn('],
+    ['http/projects/turn-stream-handlers.ts', 'completeSandboxTurn('],
   ] as const) {
     test(`${file} still calls ${call})`, async () => {
       const source = await Bun.file(join(API_SRC, file)).text();

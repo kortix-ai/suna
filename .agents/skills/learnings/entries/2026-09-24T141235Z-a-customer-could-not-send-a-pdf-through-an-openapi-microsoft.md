@@ -26,7 +26,7 @@ fuzzy field-name guesses. A reference marker must be a key no upstream API
 uses — an earlier draft keyed on `attachment_id` and would have hijacked APIs
 that use that field themselves.
 
-**Enforcement.** `apps/api/src/connectors/attachment-inline.test.ts` (profiles,
+**Enforcement.** `apps/api/src/services/connectors/attachment-inline.test.ts` (profiles,
 collision regression, redaction), `unit-connector-call.test.ts` (one header,
 no double encoding, spec media type), `e2e-connector-faces.test.ts` (real CLI
 and MCP processes against a Graph-strict fake upstream, byte-for-byte).

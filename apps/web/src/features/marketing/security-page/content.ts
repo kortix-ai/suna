@@ -42,7 +42,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *     true` and the network design is "Proposed — not scheduled". Dropped.
  *  4. Approval gates are NOT on by default. `policy.default_mode` falls back to
  *     `allow_all` for a project with no `policy:` block
- *     (apps/api/src/projects/policies.ts). The copy says "turn it on".
+ *     (apps/api/src/services/projects/policies.ts). The copy says "turn it on".
  *  5. "Only a human can merge" is too strong. Merge is default-deny for agents
  *     and needs an explicit `project.cr.merge` grant. The copy says exactly
  *     that, which is the stronger claim anyway.
@@ -126,8 +126,8 @@ export const isolation = {
 /* ── 2 · credentials ───────────────────────────────────────────────────────
    Grounded in apps/api/src/services/secrets/secrets.ts (AES-256-GCM, per-project key
    from HKDF-SHA256 over API_KEY_SECRET salted with the project id, versioned
-   envelope), apps/api/src/iam/agent-scope.ts (the userRole ∩ agentGrant rule),
-   apps/api/src/connectors/pipedream.ts (connector credentials resolved
+   envelope), apps/api/src/services/iam/agent-scope.ts (the userRole ∩ agentGrant rule),
+   apps/api/src/services/connectors/pipedream.ts (connector credentials resolved
    server-side), apps/api/src/services/sessions/sessions.ts
    (buildSessionSandboxEnvVars builds the sandbox env from project secrets, never
    from the API's own env) with apps/api/src/services/sandboxes/sandbox-env-names.ts
@@ -250,7 +250,7 @@ export const identity = {
 } as const;
 
 /* ── 4 · control ───────────────────────────────────────────────────────────
-   Grounded in apps/api/src/projects/policies.ts. The YAML below is the real
+   Grounded in apps/api/src/services/projects/policies.ts. The YAML below is the real
    parsed shape: `match` globs over fully-qualified tool paths, three actions,
    and argument `conditions`. CORRECTION: default_mode falls back to `allow_all`
    for a project with no `policy:` block, so the copy tells you to set `risk`
@@ -308,7 +308,7 @@ export const control = {
 } as const;
 
 /* ── 5 · change request ────────────────────────────────────────────────────
-   Grounded in apps/api/src/projects/routes/change-request-actions.ts, which gates merge twice: the
+   Grounded in apps/api/src/http/projects/change-request-actions.ts, which gates merge twice: the
    human capability `project.gitops.merge` and the per-agent `project.cr.merge`,
    which is DEFAULT-DENY. CORRECTION: "only a human can merge" is too strong —
    an admin can grant an agent that capability. The grant lives in kortix.yaml,

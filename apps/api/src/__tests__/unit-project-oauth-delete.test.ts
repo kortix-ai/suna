@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSecrets } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -18,7 +18,7 @@ const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+mock.module('../services/iam', () => ({ PROJECT_ACTIONS }));
 
 const deleteCalls: Array<{ table: unknown; where: unknown }> = [];
 const propagateCalls: Array<{ projectId: string; opts: unknown }> = [];
@@ -43,7 +43,7 @@ mock.module('../lib/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async (c: any) => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
@@ -82,8 +82,8 @@ mock.module('../services/audit/audit', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/provider-oauth')).registerProviderOauthRoutes();
 
 function buildApp(userId: string) {
   const app = new Hono();

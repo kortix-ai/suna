@@ -1,7 +1,7 @@
 /**
  * Session reminders — scheduled prompts into one session, stored in the
  * database (not kortix.yaml). Spec: tests/spec/end-to-end.md § Reminders.
- * Source of truth: apps/api/src/projects/routes/session-reminders.ts +
+ * Source of truth: apps/api/src/http/projects/session-reminders.ts +
  * projects/lib/session-reminders.ts.
  *
  * The local profile runs no trigger scheduler (KORTIX_TRIGGER_SCHEDULER_ENABLED

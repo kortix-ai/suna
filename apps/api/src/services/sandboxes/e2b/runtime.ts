@@ -1,13 +1,13 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
-import type { SandboxExecOptions, SandboxExecResult } from '../../../platform/providers/contract';
-import { isProviderNotFound } from '../../../platform/providers/status';
+import type { SandboxExecOptions, SandboxExecResult } from '../../platform/providers/contract';
+import { isProviderNotFound } from '../../platform/providers/status';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../../lib/config';
 import { configuredTimeoutMs, withTimeout } from '../../../lib/with-timeout';
-import { sandboxFrontendBaseUrl } from '../../../platform/sandbox-frontend-url';
-import { serviceKeyForExternalId } from '../../../platform/service-key';
+import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
+import { serviceKeyForExternalId } from '../../platform/service-key';
 import { e2bDomain } from './domain';
 import type {
   AppMachineSupport,
@@ -21,8 +21,8 @@ import type {
   SandboxIngressRequest,
   SandboxProvider,
   SandboxStatus,
-} from '../../../platform/providers/contract';
-import { assertWorkloadCredential, sandboxWorkloadType } from '../../../platform/providers/contract';
+} from '../../platform/providers/contract';
+import { assertWorkloadCredential, sandboxWorkloadType } from '../../platform/providers/contract';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
 // Kortix's own idle reaper normally pauses much sooner; this is the provider
@@ -60,7 +60,7 @@ const KORTIX_APPD_HEALTH_WAIT =
   '-H "Authorization: Bearer $KORTIX_APPD_TOKEN" ' +
   'http://127.0.0.1:7331/v1/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
-import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
+import { sandboxOwnershipMarker } from '../../platform/sandbox-ownership';
 
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';

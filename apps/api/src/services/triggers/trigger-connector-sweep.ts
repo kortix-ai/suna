@@ -4,7 +4,7 @@ import { qualifiedColumn } from '../../lib/sql-qualified-column';
 import { db } from '../../lib/db';
 import { invalidateProjectMirror } from '../git';
 import { countUncatalogedTriggerProjects } from './trigger-execution-store';
-import type { ProjectRow } from '../../projects/lib/serializers';
+import type { ProjectRow } from '../projects/lib/serializers';
 import { schedulerHealth, connectorProjectConcurrency, connectorProjectTimeoutMs, manifestCatalogBatchSize, manifestDiscoveryBatchSize, mapWithConcurrency, withTimeout } from './trigger-scheduler-state';
 
 let manifestCatalogCursor: string | null = null;
@@ -81,7 +81,7 @@ export async function runProjectConnectorSweep(): Promise<{
   let catalogCycleCompleted = false;
   let discoveryCycleCompleted = false;
   try {
-    const { syncProjectConnectors } = await import('../../connectors/sync');
+    const { syncProjectConnectors } = await import('../connectors/sync');
     const [catalogProjects, discoveryProjects] = await Promise.all([
       selectManifestCatalogProjects(),
       selectManifestDiscoveryProjects(),

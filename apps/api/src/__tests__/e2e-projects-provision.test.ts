@@ -115,8 +115,8 @@ mock.module('../services/git/backends', () => ({
   },
 }));
 
-const realAuthMiddleware = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realAuthMiddleware = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -191,7 +191,7 @@ mock.module('../services/git', () => ({
   resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
 }));
 
-mock.module("../snapshots/builder", () => ({
+mock.module("../services/snapshots/builder", () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
@@ -211,11 +211,11 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
-mock.module('../platform/services/session-sandbox', () => ({
+mock.module('../services/platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -225,7 +225,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
@@ -373,7 +373,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../http/projects/index');
 registerAllProjectRoutes();
 
 function createApp() {
@@ -639,7 +639,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // `default_agent: kortix`, but project.metadata.default_agent was never
     // mirrored from it — so every session silently stored the non-binding
     // 'default' sentinel and any agent-scope model pin set on 'kortix' was
-    // never applied (see llm-gateway/resolution/default-model.ts). Provision
+    // never applied (see services/llm-gateway/resolution/default-model.ts). Provision
     // must now stamp the mirror at creation time.
     expect(updatedProjectSets).toHaveLength(1);
     expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');

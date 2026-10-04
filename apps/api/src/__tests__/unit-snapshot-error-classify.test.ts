@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   classifySnapshotError,
   describeSnapshotError,
-} from '../snapshots/error-classify';
+} from '../services/snapshots/error-classify';
 
 describe('classifySnapshotError', () => {
   test('empty / null → unknown', () => {

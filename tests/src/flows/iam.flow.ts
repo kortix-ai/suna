@@ -7,7 +7,7 @@
  * `/v1/accounts/:accountId/iam/*` and gate on a named ACCOUNT action.
  * Run each as the gating role (2xx) and as a NONMEMBER/MEMBER (403).
  *
- * Source of truth: apps/api/src/accounts/iam.ts (mounted on accountsRouter
+ * Source of truth: apps/api/src/http/accounts/iam.ts (mounted on accountsRouter
  * at '/', i.e. under /v1/accounts).
  *
  * Entitlement-gated routes (rbac/sso/scim) need the fixture account unlocked
@@ -1851,13 +1851,13 @@ flow(
 //
 // PRE-EXISTING FAIL-OPEN WINDOW (tracked here, not fixed here): a policy flip
 // clears `oversightMemo` only on the replica that served the PATCH
-// (`apps/api/src/iam/session-oversight.ts:100` `invalidateSessionOversight`,
-// called from `apps/api/src/accounts/iam/session-oversight.ts:113`). Every
+// (`apps/api/src/services/iam/session-oversight.ts:100` `invalidateSessionOversight`,
+// called from `apps/api/src/http/accounts/iam/session-oversight.ts:113`). Every
 // OTHER replica keeps its own in-process copy of that memo
-// (`apps/api/src/iam/session-oversight.ts:93-97`, `TTL_MS` default 15000 ms,
+// (`apps/api/src/services/iam/session-oversight.ts:93-97`, `TTL_MS` default 15000 ms,
 // `session-oversight.ts:85-88`) and answers with the pre-flip verdict until
 // its own copy expires. Both readers of `hasAccountSessionOversight` —
-// the single-session read (`apps/api/src/projects/lib/access.ts:365`) and the
+// the single-session read (`apps/api/src/services/projects/lib/access.ts:365`) and the
 // project session inventory (`apps/api/src/services/sessions/session-list.ts:154`)
 // — go through the same memo, so for up to ~15 s after an owner turns
 // oversight OFF, an admin hitting an unlucky replica still opens a member's

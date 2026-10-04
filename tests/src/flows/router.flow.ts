@@ -5,7 +5,7 @@
  * by the sandbox runtime, which only ever holds KORTIX_TOKEN. So the real
  * boundary to pin here is "user-JWT and ANON both 401" on the key-gated routes.
  *
- * Confirmed in apps/api/src/router/index.ts:
+ * Confirmed in apps/api/src/http/router/index.ts:
  *   - /web-search/*, /image-search/*  → apiKeyAuth
  *   - /chat/*, /models, /models/*  → apiKeyAuth
  * Router routes are guarded by API key/session auth boundaries.

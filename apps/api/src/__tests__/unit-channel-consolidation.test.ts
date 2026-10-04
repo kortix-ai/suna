@@ -11,13 +11,13 @@ import {
   extractConnectors,
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
-} from '../projects/connectors';
+} from '../services/projects/connectors';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 import {
   hideSupersededSlack,
   withChannelDeclaration,
   withoutChannelDeclaration,
-} from '../connectors/channel-rules';
+} from '../services/connectors/channel-rules';
 
 function parse(body: string) {
   const src = [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, 'project:\n  name: t', body].join('\n');

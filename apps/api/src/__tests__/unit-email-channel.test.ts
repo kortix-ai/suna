@@ -7,9 +7,9 @@ import {
   createAgentMailWebhook,
   isAgentMailInboxLimitError,
   resolveAgentMailApiKey,
-} from '../channels/agentmail-api';
-import type { AgentMailMessageReceivedEvent } from '../channels/email/types';
-import { verifyAgentMailSignature } from '../channels/email/verify';
+} from '../services/channels/agentmail-api';
+import type { AgentMailMessageReceivedEvent } from '../services/channels/email/types';
+import { verifyAgentMailSignature } from '../services/channels/email/verify';
 import { config } from '../lib/config';
 
 let dbResults: unknown[][] = [];
@@ -70,9 +70,9 @@ const {
   resetEmailSessionLifecycleForTest,
   setEmailSenderPolicyLoaderForTest,
   setEmailSessionLifecycleForTest,
-} = await import('../channels/email/session');
-const { emailWebhookApp } = await import('../channels/email/app');
-await import('../channels/email/routes');
+} = await import('../services/channels/email/session');
+const { emailWebhookApp } = await import('../http/channels/email/app');
+await import('../http/channels/email/routes');
 
 const event: AgentMailMessageReceivedEvent = {
   type: 'event',

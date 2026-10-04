@@ -34,9 +34,9 @@ import { insertIntoView } from './helpers/compat-views';
 // config reads it once at import. Set it before the app loads.
 process.env.LLM_GATEWAY_ENABLED = 'true';
 const { db } = await import('../lib/db');
-const { app } = await import('../index');
-const { createAccountToken } = await import('../repositories/account-tokens');
-const { upsertResourceGrant } = await import('../iam/resource-grants');
+const { app } = await import('../app/index');
+const { createAccountToken } = await import('../services/repositories/account-tokens');
+const { upsertResourceGrant } = await import('../services/iam/resource-grants');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -92,7 +92,7 @@ beforeAll(async () => {
     createdBy: MEMBER,
     visibility: 'private',
   });
-  // Agents are deny-by-default for a member (iam/resource-grants.ts). Without
+  // Agents are deny-by-default for a member (services/iam/resource-grants.ts). Without
   // the grant every session-scoped route refuses on AGENT access and this suite
   // would stop measuring the project-role floor it exists to measure.
   await upsertResourceGrant({
@@ -168,7 +168,7 @@ function handlerFloor(source: string, method: string, path: string): string {
 }
 
 const SESSION_SCOPE_SRC = await Bun.file(
-  new URL('../projects/routes/session-scope.ts', import.meta.url).pathname,
+  new URL('../http/projects/session-scope.ts', import.meta.url).pathname,
 ).text();
 
 const base = `/v1/projects/${PROJECT}`;

@@ -103,7 +103,7 @@ import {
 
 /** The system role an OBJECT assignment carries. It grants nothing on its own —
  *  it marks "this principal may reach this object", and the principal's real
- *  role decides what they may do with it (`apps/api/src/iam/authorize.ts`). */
+ *  role decides what they may do with it (`apps/api/src/services/iam/authorize.ts`). */
 const OBJECT_ASSIGNMENT_ROLE_KEY = 'agent-user';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
@@ -239,7 +239,7 @@ export function diffAgentGrants(
  * The agent grants a draft actually writes for a PROJECT MEMBER.
  *
  * Agents are closed by default: a member with no grant rows can use none of
- * them (`objectUsable`, `apps/api/src/iam/authorize.ts`), and only the
+ * them (`objectUsable`, `apps/api/src/services/iam/authorize.ts`), and only the
  * manager tier bypasses that. So "All agents" for a member is not "write no
  * rows" — that would be "no agents" — it is one grant per agent the project
  * has today. A custom role's tier is not known here, so a custom role keeps
@@ -542,7 +542,7 @@ function PrincipalAccessDialog({
 
   // ── Agents (project scope only) ───────────────────────────────────────
   // Not for a project admin: the manager tier uses every agent regardless of
-  // grants (`objectUsable` in `apps/api/src/iam/authorize.ts`), so a picker
+  // grants (`objectUsable` in `apps/api/src/services/iam/authorize.ts`), so a picker
   // under that role would write rows that change nothing.
   const agentProjectId = agentAccessProjectId(scope, mode, attachProjectId);
   // An agent principal's role is its ceiling — "which agents may it use" is

@@ -6,7 +6,7 @@ import { SCOPE_HELP, parseRedirectUris, summarizeRedirectUris } from './oauth-ap
  * The register form's only real logic: turning the redirect-URI textarea into
  * the list `POST /accounts/{id}/iam/oauth-clients` accepts, or into a sentence
  * that names the offending line. The rules mirror `normalizeRedirectUris` in
- * `apps/api/src/repositories/oauth-clients.ts` so a typo is caught before the
+ * `apps/api/src/services/repositories/oauth-clients.ts` so a typo is caught before the
  * round-trip, with the same verdict the server would give.
  */
 describe('parseRedirectUris', () => {
@@ -87,7 +87,7 @@ describe('summarizeRedirectUris', () => {
 
 describe('SCOPE_HELP', () => {
   test('covers every scope the server supports', () => {
-    // `OAUTH_SCOPES` in `apps/api/src/oauth/access-token.ts`.
+    // `OAUTH_SCOPES` in `apps/api/src/services/oauth/access-token.ts`.
     expect(Object.keys(SCOPE_HELP).sort()).toEqual(['email', 'kortix', 'profile']);
   });
 });

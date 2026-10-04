@@ -41,7 +41,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
  *     `@ai-sdk/openai-compatible`, which is why vLLM / LiteLLM / Ollama are ONE
  *     entry and not three logos we do not integrate with.
  *   - The ChatGPT row is the Codex device-grant OAuth
- *     (`apps/api/src/projects/codex-device-auth.ts`) and is real. Cursor is NOT
+ *     (`apps/api/src/services/projects/codex-device-auth.ts`) and is real. Cursor is NOT
  *     — there is no Cursor auth path anywhere in the codebase, however often a
  *     README says otherwise. Never add it.
  *   - Model FAMILIES only, never version numbers. This panel has no build step

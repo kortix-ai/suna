@@ -22,17 +22,17 @@ const SECRET = 'unit-test-hs256-secret-not-real-0123456789';
 process.env.SUPABASE_JWT_SECRET = SECRET;
 process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '30000';
 
-type Verify = typeof import('../auth/jwt-verify').verifySupabaseJwt;
-type Liveness = typeof import('../auth/jwt-liveness');
-type Outcome = typeof import('../auth/jwt-verify-outcome').isInconclusiveVerifyFailure;
+type Verify = typeof import('../services/auth/jwt-verify').verifySupabaseJwt;
+type Liveness = typeof import('../services/auth/jwt-liveness');
+type Outcome = typeof import('../services/auth/jwt-verify-outcome').isInconclusiveVerifyFailure;
 let verifySupabaseJwt: Verify;
 let liveness: Liveness;
 let isInconclusive: Outcome;
 
 beforeAll(async () => {
-  ({ verifySupabaseJwt } = await import('../auth/jwt-verify'));
-  liveness = await import('../auth/jwt-liveness');
-  ({ isInconclusiveVerifyFailure: isInconclusive } = await import('../auth/jwt-verify-outcome'));
+  ({ verifySupabaseJwt } = await import('../services/auth/jwt-verify'));
+  liveness = await import('../services/auth/jwt-liveness');
+  ({ isInconclusiveVerifyFailure: isInconclusive } = await import('../services/auth/jwt-verify-outcome'));
 });
 
 const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -125,7 +125,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
   });
 
   test('the authenticated identity route refuses the same bearer after upstream logout', async () => {
-    const { supabaseAuth } = await import('../middleware/auth');
+    const { supabaseAuth } = await import('../http/middleware/auth');
     const { config } = await import('../lib/config');
     const previous = config.SUPABASE_JWT_LIVENESS_TTL_MS;
     config.SUPABASE_JWT_LIVENESS_TTL_MS = 0;

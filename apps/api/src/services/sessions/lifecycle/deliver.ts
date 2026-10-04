@@ -1,12 +1,12 @@
 import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
-import type { ProvisionTimeline } from '../../../platform/services/provision-timeline';
+import type { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../../lib/db';
-import { openSession } from '../../../projects/routes/shared';
-import { type SandboxRecord, resolveSandboxIngress } from '../../../sandbox-proxy/backend';
-import { serviceKeyForExternalId } from '../../../platform/service-key';
-import type { ProviderName } from '../../../platform/providers';
+import { openSession } from '../open/shared';
+import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { serviceKeyForExternalId } from '../../platform/service-key';
+import type { ProviderName } from '../../platform/providers';
 import { healSupersededSessionToken } from '../heal-session-token';
 import { syncSandboxEnvForPrompt } from '../../sandboxes/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
@@ -27,7 +27,7 @@ import { sessionTransitionLeaves, transitionSession } from './status-transitions
 //
 // T13: this loop's OWN retries (below, within `deadlineMs`) send the
 // same `send(...)` body every attempt, so they are safe to repeat by
-// construction — `apps/api/src/sandbox-proxy/prompt-dedupe.ts`'s claim,
+// construction — `apps/api/src/services/sandbox-proxy/prompt-dedupe.ts`'s claim,
 // reached through the SAME `forwardToSandbox` call `send` makes, absorbs them.
 // A 'pending' RETURN from this function is a different case: the CALLER
 // (`executeQueuedContinue` in `queued-continue.ts`) may re-invoke this whole loop later,
@@ -239,7 +239,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
 
     // Converge the box BEFORE the prompt goes on the wire — every time, not only
     // when this prompt carries an `opencodeEnv` override. The proxied
-    // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
+    // `prompt_async` route has always done this (services/sandbox-proxy/pre-prompt-env-sync);
     // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
     // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
     // with whatever the box had at boot: a stale gateway base URL after a

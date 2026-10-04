@@ -6,7 +6,7 @@ Kortix is an open-source, self-hostable AI Operating System: company/project sta
 
 ## Auth shape
 
-- API auth primitives are `apiKeyAuth`, `supabaseAuth`, and `combinedAuth` in `apps/api/src/middleware/auth.ts`. They set Hono context variables (`userId`, `accountId`, `authType`, `tokenProjectId`, `sessionId`, `iamTokenId`, `agentGrant`).
+- API auth primitives are `apiKeyAuth`, `supabaseAuth`, and `combinedAuth` in `apps/api/src/http/middleware/auth.ts`. They set Hono context variables (`userId`, `accountId`, `authType`, `tokenProjectId`, `sessionId`, `iamTokenId`, `agentGrant`).
 - `supabaseAuth` accepts Supabase JWTs, CLI PATs (`kortix_pat_...`), service-account tokens, and a narrow sandbox-token exception for clone credentials / turn stream / questions / catalog.
 - `combinedAuth` is used for preview proxy, connector administration, tunnel, secrets, providers and other mixed-token routes. It intentionally allows `?token=` only for `/v1/p/*` preview/WS and provision-stream flows.
 - Project routes mount `projectsApp.use('/*', supabaseAuth)` first; per-resource authorization is via IAM helpers such as `authorize`, `assertAuthorized`, `assertProjectCapability`, `requireScope`, `resolveProjectAccount`, and `loadProjectForUser`.

@@ -1,5 +1,5 @@
 /**
- * Account-scoped audit surface (apps/api/src/accounts/audit.ts, mounted under
+ * Account-scoped audit surface (apps/api/src/http/accounts/audit.ts, mounted under
  * /v1/accounts). Reads gated on audit.read; webhook CRUD gated on account.write.
  * Uses ctx.fixtures.team() — OWNER is authorized, NONMEMBER → 403. Maps to AUD-*.
  */

@@ -13,7 +13,7 @@ process gate). Never match one harness's text alone. In a client, call the SDK's
 `isRuntimeNotReadyResponse` / `isSandboxNotReadyError`.
 
 **Trigger surface:** Any `includes('… not ready')` or regex on a daemon 503 body:
-the preview proxy (`apps/api/src/sandbox-proxy/routes/preview.ts`), prompt
+the preview proxy (`apps/api/src/http/sandbox-proxy/preview.ts`), prompt
 dedupe, client error boundaries, toast suppression, telemetry ignore lists. Any
 new harness or daemon gate that answers 503 before forwarding a request.
 
@@ -27,7 +27,7 @@ match was in 5 web call sites, and no SDK pattern matched the pi text, so a pi
 boot window surfaced as an error instead of "starting". Blast radius: pi
 sessions only (`pi_harness`, opt-in).
 
-**Enforcement:** `apps/api/src/sandbox-proxy/routes/preview-characterization.test.ts`,
+**Enforcement:** `apps/api/src/http/sandbox-proxy/preview-characterization.test.ts`,
 "a not-ready 503 with the daemon text of a pi runtime passes through and
 releases the dedupe claim" (and the `runtime_not_ready` code case): both fail
 when the proxy matches one text again. `packages/sdk/src/core/http/runtime-errors.test.ts`

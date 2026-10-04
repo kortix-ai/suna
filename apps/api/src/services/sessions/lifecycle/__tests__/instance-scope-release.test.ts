@@ -75,14 +75,14 @@ mock.module('../../../../lib/db', () => ({
 mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
-mock.module('../../../../projects/routes/shared', () => ({
+mock.module('../../open/shared', () => ({
   openSession: async () => ({
     stage: 'ready',
     sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
     opencode_session_id: OC_SESSION_ID,
   }),
 }));
-mock.module('../../../../sandbox-proxy/forward', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
@@ -166,10 +166,10 @@ mock.module('../instance-release', () => ({
 mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
-mock.module('../../../../platform/service-key', () => ({
+mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
-mock.module('../../../../sandbox-proxy/backend', () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
   invalidateSandbox: () => {},
 }));

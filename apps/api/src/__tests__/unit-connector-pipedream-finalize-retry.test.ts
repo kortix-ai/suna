@@ -15,7 +15,7 @@ import {
   PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS,
   type PipedreamAccount,
   findPipedreamAccount,
-} from '../connectors/pipedream';
+} from '../services/connectors/pipedream';
 
 const ACCOUNT: PipedreamAccount = { id: 'apn_1', app: 'smartlead', appName: 'Smartlead' };
 const OTHER: PipedreamAccount = { id: 'apn_2', app: 'gmail', appName: 'Gmail' };

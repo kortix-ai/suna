@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { TEAMS_FORM_VERB, buildQuestionCard } from '../channels/teams/cards';
+import { TEAMS_FORM_VERB, buildQuestionCard } from '../services/channels/teams/cards';
 
 // The old card flattened EVERY option of EVERY question into one deduped
 // button row. Two questions offering "Yes" showed a single button, nothing
@@ -97,7 +97,7 @@ describe('buildQuestionCard — anything the buttons cannot express becomes a fo
   });
 
   test('`custom` ALONE never forces a form — the relay route defaults it to true', () => {
-    // projects/routes/turn-questions.ts is `obj.custom === false ? false : true`, so
+    // http/projects/turn-questions.ts is `obj.custom === false ? false : true`, so
     // nearly every question arrives with custom set. Gating the one-tap card on
     // it would turn every plain yes/no into a form with a Submit button.
     // Replying in chat is already the free-text path, and the card says so.
@@ -280,7 +280,7 @@ describe('buildQuestionCard — the form reads like the web question UI', () => 
 describe('buildFormCard — agent-authored forms are unchanged', () => {
   test('a choice field with no style keeps the Adaptive Cards default', async () => {
     // `teams ask --form-file` forms predate `style`; they must not change shape.
-    const { buildFormCard } = await import('../channels/teams/cards');
+    const { buildFormCard } = await import('../services/channels/teams/cards');
     const card = buildFormCard({ fields: [{ id: 'env', label: 'Env', type: 'choice', choices: ['dev', 'prod'] }] });
     expect(ofType(card, 'Input.ChoiceSet')[0].style).toBeUndefined();
   });

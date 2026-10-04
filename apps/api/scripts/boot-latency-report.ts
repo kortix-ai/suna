@@ -10,10 +10,10 @@
  *
  * This script boots nothing. It aggregates what production already recorded:
  *   - kind='provision'  → HOST marks (row+tokens, image-cached, provider-create, …)
- *                         written by platform/services/provider-events.ts
+ *                         written by services/platform/services/provider-events.ts
  *   - kind='boot'       → IN-GUEST marks (repo-materialized, opencode-*, …)
  *                         relayed by the daemon at runtime-ready and written by
- *                         platform/services/boot-timeline-store.ts
+ *                         services/platform/services/boot-timeline-store.ts
  *
  * Both live in kortix.provider_events, so one query gives the real distribution
  * per provider per stage. Use this — not a small live sample — for any claim about

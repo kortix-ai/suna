@@ -23,7 +23,7 @@
  * decision for every other running box is `deadline_at <= now()`.
  */
 
-import { isProviderNotFound, type SandboxStatus } from '../../../platform/providers/status';
+import { isProviderNotFound, type SandboxStatus } from '../../platform/providers/status';
 
 export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed';
 

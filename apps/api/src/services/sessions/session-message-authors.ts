@@ -7,7 +7,7 @@
 import { projectSessions, sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../../lib/db';
-import { resolveUserIdentities } from '../../projects/lib/user-identity';
+import { resolveUserIdentities } from '../projects/lib/user-identity';
 
 export type SessionMessageAuthor =
   | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url: string | null }

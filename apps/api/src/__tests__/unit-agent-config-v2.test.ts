@@ -11,7 +11,7 @@
  *
  * Behavior (mode/model/temperature/permission/…) is NOT covered here — it
  * lives in the agent's `.md` frontmatter, exercised by
- * `../projects/lib/compile-agent-config.test.ts` and
+ * `../services/projects/lib/compile-agent-config.test.ts` and
  * `@kortix/manifest-schema`'s `validateAgentMdFrontmatter` tests instead.
  */
 import { describe, expect, test } from 'bun:test';
@@ -20,9 +20,9 @@ import {
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
   readAgentBlockV2,
-} from '../projects/lib/agent-config-v2';
+} from '../services/projects/lib/agent-config-v2';
 import { parseManifestString, synthesizeBlankManifest } from '../services/triggers';
-import { extractAgents } from '../projects/agents';
+import { extractAgents } from '../services/projects/agents';
 
 const V2 = `
 kortix_version: 2

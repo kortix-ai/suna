@@ -144,7 +144,7 @@ export const SESSION_START_POLL_MS = 1_500;
  *  - `sandbox.external_id` — the provider sandbox id. The proxy route is the
  *    SDK's to compose (`getSandboxUrlForExternalId`), never the host's.
  *  - `runtime_url` — a RELATIVE path, `/p/<external_id>/8000`
- *    (`apps/api/src/projects/routes/shared.ts:526`). Returned verbatim it is a
+ *    (`apps/api/src/services/sessions/open/shared.ts:526`). Returned verbatim it is a
  *    string no host can fetch.
  *
  * The external id wins because it is the same derivation `startProjectSession`

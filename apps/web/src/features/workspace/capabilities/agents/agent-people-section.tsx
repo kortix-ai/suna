@@ -6,7 +6,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  *
  * This is THE access path in Kortix: a project manager grants a person or a
  * group an agent, never a skill or a secret directly (`object_policies` marks
- * `agent` closed and everything else open — `apps/api/src/iam/authorize.ts`),
+ * `agent` closed and everything else open — `apps/api/src/services/iam/authorize.ts`),
  * and the person inherits the agent's connectors and secrets through it.
  * That is why the agent is the object Customize is built around, and why
  * granting happens on the agent's own page instead of a hop to the account's

@@ -1,7 +1,7 @@
 // Billing v2 — pure-math unit tests for per-seat pricing: seat grants,
 // auto-topup defaults, the claim-card gate, renewal grants, and the LLM markup.
 // No mocks needed since these are pure functions on the tiers module. The
-// compute price is pinned in billing/services/compute-metering.test.ts.
+// compute price is pinned in services/billing/services/compute-metering.test.ts.
 
 import { afterEach, describe, test, expect } from 'bun:test';
 import {
@@ -11,7 +11,7 @@ import {
   canClaimPerSeat,
   llmPriceMarkup,
   resolveRenewalGrant,
-} from '../../billing/services/tiers';
+} from '../../services/billing/services/tiers';
 
 describe('Per-seat pricing math', () => {
   test('seat grant equals $25 included credits × seat count (NOT the $40 price)', () => {

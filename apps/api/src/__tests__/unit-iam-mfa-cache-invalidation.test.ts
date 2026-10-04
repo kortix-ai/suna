@@ -16,18 +16,18 @@ import { Hono } from 'hono';
 let mfaRequired = true;
 const invalidateCalls: string[] = [];
 
-const realIam = await import('../iam');
+const realIam = await import('../services/iam');
 
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   ...realIam,
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
   assertAuthorized: async () => {},
 }));
 
-const realCacheInvalidation = await import('../iam/cache-invalidation');
+const realCacheInvalidation = await import('../services/iam/cache-invalidation');
 const realInvalidateIamCacheForAccount = realCacheInvalidation.invalidateIamCacheForAccount;
 
-mock.module('../iam/cache-invalidation', () => ({
+mock.module('../services/iam/cache-invalidation', () => ({
   ...realCacheInvalidation,
   invalidateIamCacheForAccount: async (accountId: string) => {
     invalidateCalls.push(accountId);
@@ -58,8 +58,8 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { iamRouter } = await import('../accounts/iam/app');
-(await import('../accounts/iam/mfa')).registerIamMfaRoutes();
+const { iamRouter } = await import('../http/accounts/iam/app');
+(await import('../http/accounts/iam/mfa')).registerIamMfaRoutes();
 
 function buildApp() {
   const app = new Hono();

@@ -40,7 +40,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * member is scoped to, same direct-or-via-group shape), plus a top-level
  * `group_access` array — one entry per group with SOME access to this
  * project. Field names are copied byte-for-byte from the live handler
- * (`apps/api/src/projects/routes/project-access.ts`). The SDK's `ProjectAccessMember` /
+ * (`apps/api/src/http/projects/project-access.ts`). The SDK's `ProjectAccessMember` /
  * `ProjectAccessResponse` types do not carry these fields yet, so this file
  * declares its own extension types below rather than editing the SDK's
  * published types out from under a separate change.

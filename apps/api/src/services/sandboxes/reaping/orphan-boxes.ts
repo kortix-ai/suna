@@ -25,7 +25,7 @@ import { isNotNull } from 'drizzle-orm';
 import { appRuntimes, projectMonitorBoxes, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { config } from '../../../lib/config';
 import { db } from '../../../lib/db';
-import { getProvider, type ProviderName } from '../../../platform/providers';
+import { getProvider, type ProviderName } from '../../platform/providers';
 import { REAP_CONCURRENCY } from '../reaper-constants';
 import { hasProviderBoxReference } from './orphan-box-references';
 import {

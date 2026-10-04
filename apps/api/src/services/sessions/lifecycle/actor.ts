@@ -1,8 +1,8 @@
 import { accountMembers } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../../lib/db';
-import { accountRoleMap } from '../../../iam/read-models';
-import { ensureAgentServiceAccount } from '../../../repositories/service-accounts';
+import { accountRoleMap } from '../../iam/read-models';
+import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 
 export async function resolveProjectAutomationActor(accountId: string): Promise<string | null> {
   for (const [userId, role] of await accountRoleMap(accountId)) {
@@ -20,7 +20,7 @@ export async function resolveProjectAutomationActor(accountId: string): Promise<
  * provisioning/authorization actor — attribution and authorization stop
  * sharing one field. The session's own connector token already
  * carries this SAME service account independently (`mintConnectorToken` in
- * platform/services/session-sandbox.ts calls `ensureAgentServiceAccount`
+ * services/platform/services/session-sandbox.ts calls `ensureAgentServiceAccount`
  * itself) and the standing-role fallback that keeps an unactivated agent's
  * session usable (`resolveActingActor` in iam/engine-v2.ts) is untouched by
  * this — it still resolves through the launching/automation actor, exactly

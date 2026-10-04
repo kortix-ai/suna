@@ -75,7 +75,7 @@ describe('pricing model billing copy', () => {
  */
 describe('seat grant agrees with the API', () => {
   const apiTiersSource = readFileSync(
-    join(import.meta.dir, '../../../../api/src/billing/services/tiers.ts'),
+    join(import.meta.dir, '../../../../api/src/services/billing/services/tiers.ts'),
     'utf8',
   );
 

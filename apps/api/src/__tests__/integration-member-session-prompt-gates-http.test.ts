@@ -28,9 +28,9 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
 import { db } from '../lib/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { upsertResourceGrant } from '../iam/resource-grants';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { upsertResourceGrant } from '../services/iam/resource-grants';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
@@ -74,7 +74,7 @@ beforeAll(async () => {
     createdBy: MEMBER,
     visibility: 'private',
   });
-  // Agents are deny-by-default for a member (iam/resource-grants.ts), so the
+  // Agents are deny-by-default for a member (services/iam/resource-grants.ts), so the
   // member has to actually be granted the agent this session runs. Without it
   // every route below refuses on AGENT access and this suite would no longer be
   // measuring the project-role floor it exists to measure.

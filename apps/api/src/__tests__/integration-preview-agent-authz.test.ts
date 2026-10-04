@@ -6,7 +6,7 @@
  * member scoped OUT of an agent is refused before the re-mint, an authorized
  * switch re-mints, and an account owner keeps the implicit-Manager bypass.
  * The sibling unit test
- * (sandbox-proxy/routes/preview-agent-authz.test.ts) keeps only the no-gate paths
+ * (http/sandbox-proxy/preview-agent-authz.test.ts) keeps only the no-gate paths
  * and the undeclared-agent drop, with a stubbed `authorize`.
  *
  * Only the sandbox/transport collaborators are stubbed: there is no box here.
@@ -32,7 +32,7 @@ import * as realSnapshot from '../services/sessions/opencode-session-snapshot';
 // Spread the real modules and override only what this test must control: these
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
-import * as realBackend from '../sandbox-proxy/backend';
+import * as realBackend from '../services/sandbox-proxy/backend';
 import * as realOwnership from '../services/sessions/preview-ownership';
 import { insertIntoView } from './helpers/compat-views';
 
@@ -86,7 +86,7 @@ mock.module('../services/sessions/opencode-session-snapshot', () => ({
   ...realSnapshot,
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../sandbox-proxy/backend', () => ({
+mock.module('../services/sandbox-proxy/backend', () => ({
   ...realBackend,
   loadSandbox: async () => ({
     status: 'active',
@@ -108,22 +108,22 @@ mock.module('../sandbox-proxy/backend', () => ({
   wakeSandbox: async () => {},
 }));
 
-// `projects/routes/shared` is imported LAST, after every other stub is in
-// place. Its graph evaluates `sandbox-proxy/forward/turn-start.ts`, which binds
+// `services/sessions/open/shared` is imported LAST, after every other stub is in
+// place. Its graph evaluates `services/sandbox-proxy/forward/turn-start.ts`, which binds
 // `REAL_PRE_PROMPT_DEPS` (the env sync and token re-mint) by VALUE at module
 // evaluation. A static import here would evaluate it before `mock.module` ran,
 // and every prompt would hit the real re-mint (a git read of a repo that does
 // not exist → 503) instead of the stub.
-const realShared = await import('../projects/routes/shared');
-mock.module('../projects/routes/shared', () => ({
+const realShared = await import('../services/sessions/open/shared');
+mock.module('../services/sessions/open/shared', () => ({
   ...realShared,
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 
 const { db } = await import('../lib/db');
-const { upsertResourceGrant } = await import('../iam');
-const { forwardToSandbox } = await import('../sandbox-proxy/routes/preview');
-const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');
+const { upsertResourceGrant } = await import('../services/iam');
+const { forwardToSandbox } = await import('../http/sandbox-proxy/preview');
+const { __resetPromptDedupe } = await import('../services/sandbox-proxy/prompt-dedupe');
 
 const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = async () => {

@@ -9,8 +9,8 @@ import {
   relayRpcToConnectedAgent,
   startTunnelRpcForwarder,
   stopTunnelRpcForwarder,
-} from '../tunnel/core/cluster-forwarder';
-import { tunnelRelay } from '../tunnel/core/relay';
+} from '../services/tunnel/core/cluster-forwarder';
+import { tunnelRelay } from '../services/tunnel/core/relay';
 
 const tunnels = new Set<string>();
 const forwards = new Set<string>();

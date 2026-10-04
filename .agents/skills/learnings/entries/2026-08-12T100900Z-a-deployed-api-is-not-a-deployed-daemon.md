@@ -8,7 +8,7 @@ commit: da9af7cb9d
 **When:** shipping any change to `apps/kortix-sandbox-agent-server`, or turning
 on something that depends on one. `/health` reporting your commit proves the API
 rolled; it says nothing about the sandbox. The daemon is gzipped into the
-snapshot build context (`apps/api/src/snapshots/build-context.ts:185`) and
+snapshot build context (`apps/api/src/services/snapshots/build-context.ts:185`) and
 reaches a session only after that snapshot is rebuilt or agent-swapped
 (`snapshots/templates.ts:613`) AND the warm pool has cycled off the old one.
 Prove it in the guest, not from the API:

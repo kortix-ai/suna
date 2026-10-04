@@ -1,6 +1,6 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { getProvider } from '../../../platform/providers';
+import { getProvider } from '../../platform/providers';
 import { db } from '../../../lib/db';
 import { clearSandboxTurn } from '../../sandboxes/sandbox-turn-lifecycle';
 import { storedSandboxTurns } from '../session-turn-ledger';

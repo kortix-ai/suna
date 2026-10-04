@@ -195,7 +195,7 @@ export function resetClient(): void {
  * talks to. This is the one legitimate exception: a route the backend has
  * deliberately made reachable by a LOGGED-OUT visitor (e.g. the unauthenticated
  * public-share proxy, `/v1/p/public-share/{token}/{port}` — see
- * `apps/api/src/sandbox-proxy/routes/public-share.ts`, which strips the
+ * `apps/api/src/http/sandbox-proxy/public-share.ts`, which strips the
  * `authorization` header on the way through anyway). Routing that through
  * `authenticatedFetch` doesn't just send a redundant header — for an anonymous
  * visitor with no token, `authenticatedFetch` synthesizes a 401 response

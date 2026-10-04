@@ -12,9 +12,9 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { PROJECT_ACTIONS } from '../iam';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
+import { PROJECT_ACTIONS } from '../services/iam';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
 import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
@@ -166,7 +166,7 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 
 // Was the request denied by the RBAC capability gate? Every IAM denial throws a
 // "You don't have permission …" 403 (see humanizePermissionDenial in
-// iam/denial-message.ts — members.manage renders the friendly verb, not the raw
+// services/iam/denial-message.ts — members.manage renders the friendly verb, not the raw
 // leaf). Because the floor is now 'read' (which ALL four principals hold), the
 // only 403 a writer/member can hit on these routes is the members.manage
 // assert, and none of these routes entitlement-403 the free test account — so a

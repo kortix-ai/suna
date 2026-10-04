@@ -13,7 +13,7 @@
 // two properties that keep it honest: a remedy that matches the constraint, and
 // no disclosure of the account's wider permission model.
 import { describe, expect, test } from 'bun:test';
-import { buildDenialError, denialReasonMessage } from '../iam/denial-message';
+import { buildDenialError, denialReasonMessage } from '../services/iam/denial-message';
 
 describe('denialReasonMessage', () => {
   test('agent_scope_insufficient names the agent grant, not the role', () => {

@@ -33,7 +33,7 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => creditAccount,
   updateCreditAccount: async (_accountId: string, data: Record<string, unknown>) => {
     if (creditAccount) Object.assign(creditAccount, data);
@@ -41,15 +41,15 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 // billing-gate debits through wallet-debits, which fires the auto-topup check.
-mock.module('../billing/services/auto-topup', () => ({
+mock.module('../services/billing/services/auto-topup', () => ({
   checkAndTriggerAutoTopup: async () => {},
 }));
 
-mock.module('../billing/services/free-tier', () => ({
+mock.module('../services/billing/services/free-tier', () => ({
   ensureFreeTierAccountReady: async () => {},
 }));
 
-mock.module('../billing/wallet', () => ({
+mock.module('../services/billing/wallet', () => ({
   wallet: {
     debit: async ({ accountId, amount }: { accountId: string; amount: number }) => {
       debitCalls.push({ accountId, amount });
@@ -61,7 +61,7 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-const { checkBillingActive } = await import('../billing/services/billing-gate');
+const { checkBillingActive } = await import('../services/billing/services/billing-gate');
 
 describe('checkBillingActive — atomic admission hold (pure-wallet path)', () => {
   beforeEach(() => {

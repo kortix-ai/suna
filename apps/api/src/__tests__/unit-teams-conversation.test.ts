@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { describeTeamsConversation, isTeamsChannelThreadId, teamsChannelRoot } from '../channels/teams/util';
+import { describeTeamsConversation, isTeamsChannelThreadId, teamsChannelRoot } from '../services/channels/teams/util';
 
 const TEAM = '19:team-root@thread.tacv2';
 

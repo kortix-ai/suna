@@ -117,7 +117,7 @@ const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 //
 // The `value`s are raw `credit_accounts.tier` keys because the list route
 // filters on that stored column server-side (`inArray(creditAccounts.tier, …)`
-// in apps/api/src/admin/index.ts), so this list has to keep spelling the keys
+// in apps/api/src/http/admin/index.ts), so this list has to keep spelling the keys
 // exactly. The LABELS are the only thing this page still names by hand, and
 // they name a KEY, never an account: what an account's plan is comes from the
 // API's resolved `plan` block (see `PlanBadge` below), which is the same
@@ -128,7 +128,7 @@ const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 // `grandfathered` groups the keys that were sold once and are still honored
 // exactly as sold; the price disambiguates the repeated product names (there
 // are two "Pro"s at different prices). Order and prices follow PLAN_CATALOG in
-// apps/api/src/billing/services/plan-catalog.ts.
+// apps/api/src/services/billing/services/plan-catalog.ts.
 type TierFilterOption = { value: string; label: string; grandfathered?: boolean };
 const TIER_OPTIONS: TierFilterOption[] = [
   { value: 'none', label: 'No plan' },
@@ -300,7 +300,7 @@ function planBadgeVariant(account: AdminAccount): React.ComponentProps<typeof Ba
 }
 
 /** `free` and `none` are the only two keys in the free family (UNPAID_TIERS in
- *  apps/api/src/admin/accounts-query.ts). */
+ *  apps/api/src/services/admin/accounts-query.ts). */
 function isUnpaidTierKey(tier: string | null): boolean {
   return !tier || tier === 'free' || tier === 'none';
 }

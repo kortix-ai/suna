@@ -10,7 +10,7 @@ import {
   normalizeMcp,
   normalizeOpenApi,
   normalizePostmanCollection,
-} from '../connectors/normalize';
+} from '../services/connectors/normalize';
 
 describe('normalizeOpenApi', () => {
   const doc = {

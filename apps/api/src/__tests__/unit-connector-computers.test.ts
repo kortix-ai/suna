@@ -10,8 +10,8 @@
  *   • label   — duplicate machine names get a numbered label.
  */
 import { describe, expect, test } from 'bun:test';
-import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../connectors/computers';
-import { extractConnectors } from '../projects/connectors';
+import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../services/connectors/computers';
+import { extractConnectors } from '../services/projects/connectors';
 import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../services/triggers';
 import {
   handleCall,
@@ -20,7 +20,7 @@ import {
   type GatewayConnector,
   type GatewayAction,
   type GatewayDeps,
-} from '../connectors/gateway';
+} from '../services/connectors/gateway';
 
 /* ─── catalog ─────────────────────────────────────────────────────────────── */
 

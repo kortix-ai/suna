@@ -7,7 +7,7 @@ let creditSummary: any = null;
 let autoTopup: any = null;
 let isAdmin = false;
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => account,
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
@@ -17,16 +17,16 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getYearlyAccountsDueForRotation: async () => [],
 }));
 
-mock.module('../billing/services/credits', () => ({
+mock.module('../services/billing/services/credits', () => ({
   getCreditSummary: () => creditSummary,
   calculateTokenCost: () => 0,
 }));
 
-mock.module('../billing/services/auto-topup', () => ({
+mock.module('../services/billing/services/auto-topup', () => ({
   getAutoTopupSettings: async () => autoTopup,
 }));
 
-mock.module('../iam/platform-roles', () => ({
+mock.module('../services/iam/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
 
@@ -40,7 +40,7 @@ const noRows: unknown = new Proxy(() => undefined, {
 });
 mock.module('../lib/db', () => ({ ...realDb, db: noRows }));
 
-const { buildMinimalAccountState } = await import('../billing/services/account-state');
+const { buildMinimalAccountState } = await import('../services/billing/services/account-state');
 
 describe('buildMinimalAccountState revenuecat', () => {
   beforeEach(() => {

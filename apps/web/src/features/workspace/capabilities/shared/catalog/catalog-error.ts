@@ -8,7 +8,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * been ruled out by the fact that a response came back at all, and it sends the
  * one person who could report the fault off to check their wifi instead.
  *
- * The API deliberately returns an opaque body on a 500 (`apps/api/src/index.ts`
+ * The API deliberately returns an opaque body on a 500 (`apps/api/src/app/index.ts`
  * → `{"error":true,"message":"Internal server error"}`) so schema and table
  * names never reach a client, and that is right — the real cause is in the
  * server log, with `pgCode`, `schema` and `table` attached. So this does not

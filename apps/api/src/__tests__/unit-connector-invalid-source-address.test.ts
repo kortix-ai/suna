@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
  * Regression for Better Stack API prod pattern `f5c0ce61…` —
  * `Error: Only https registry URLs on public hosts are allowed.`
  * (mechanism `generic`, `handled:true`), call site `assertAllowedSourceAddress`
- * in `apps/api/src/marketplace/catalog.ts`, on
+ * in `apps/api/src/services/marketplace/catalog.ts`, on
  * `POST /v1/connectors/projects/:id/connectors` (8 occurrences, last 2026-08-04).
  *
  * Root cause: `assertAllowedSourceAddress` (the marketplace LFI/SSRF guard)
@@ -24,7 +24,7 @@ import { describe, expect, test } from 'bun:test';
  * The fix:
  *  1. `assertAllowedSourceAddress` now throws a TYPED
  *     `AllowedSourceValidationError` (stable `code: 'invalid_source_address'`),
- *     exported from `marketplace/catalog.ts` (mirrors `RepoFileNotFoundError`).
+ *     exported from `services/marketplace/catalog.ts` (mirrors `RepoFileNotFoundError`).
  *  2. The `POST /connectors` + `POST /connectors/auth-discovery` route handlers
  *     catch the typed error and return a STRUCTURED 400
  *     `{ error: 'invalid_source_address', code, message }` instead of letting
@@ -44,13 +44,13 @@ import {
   assertAllowedEndpointUrl,
   assertAllowedSourceAddress,
   isAllowedSourceValidationError,
-} from '../marketplace/catalog';
+} from '../services/marketplace/catalog';
 import { UnsafeEgressError } from '../lib/ssrf-guard';
 import {
   createConnectorRouter,
   type ConnectorPrincipal,
   type ConnectorRouterDeps,
-} from '../connectors/router';
+} from '../http/connectors/router';
 
 const PROJECT = 'proj-1';
 const ALICE = 'user-alice';

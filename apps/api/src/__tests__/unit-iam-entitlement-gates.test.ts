@@ -10,9 +10,9 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import * as realSsoRepository from '../repositories/sso';
+import * as realSsoRepository from '../services/repositories/sso';
 
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
   assertAuthorized: async () => {},
 }));
@@ -21,7 +21,7 @@ mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async () => {},
 }));
 
-mock.module('../billing/services/entitlements', () => ({
+mock.module('../services/billing/services/entitlements', () => ({
   accountHasEntitlement: async () => false,
 }));
 
@@ -33,7 +33,7 @@ const scimTokenRow = {
   createdAt: new Date('2026-01-01T00:00:00Z'),
   expiresAt: null as Date | null,
 };
-mock.module('../repositories/scim', () => ({
+mock.module('../services/repositories/scim', () => ({
   createScimToken: async () => scimTokenRow,
   listScimTokens: async () => [],
   revokeScimToken: async () => true,
@@ -63,7 +63,7 @@ const ssoMappingRow = {
 };
 // Spread the real module: `mock.module` replaces it wholesale, and the SSO
 // router also imports the pure domain-verification helpers from it.
-mock.module('../repositories/sso', () => ({
+mock.module('../services/repositories/sso', () => ({
   ...realSsoRepository,
   getSsoProvider: async () => ssoProviderRow,
   upsertSsoProvider: async () => ssoProviderRow,
@@ -73,9 +73,9 @@ mock.module('../repositories/sso', () => ({
   deleteSsoGroupMapping: async () => true,
 }));
 
-const { iamRouter } = await import('../accounts/iam/app');
-(await import('../accounts/iam/scim-tokens')).registerIamScimTokensRoutes();
-(await import('../accounts/iam/sso')).registerIamSsoRoutes();
+const { iamRouter } = await import('../http/accounts/iam/app');
+(await import('../http/accounts/iam/scim-tokens')).registerIamScimTokensRoutes();
+(await import('../http/accounts/iam/sso')).registerIamSsoRoutes();
 
 function buildApp() {
   const app = new Hono();

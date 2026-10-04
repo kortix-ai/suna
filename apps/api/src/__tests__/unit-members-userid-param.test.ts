@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { accountsRouter } from '../accounts/core/app';
-import { registerMemberRoutes } from '../accounts/core/members';
+import { accountsRouter } from '../http/accounts/core/app';
+import { registerMemberRoutes } from '../http/accounts/core/members';
 
 // A non-UUID :userId reached the uuid column query and surfaced as a
 // 500 `22P02 invalid input syntax for type uuid`. The route schema must

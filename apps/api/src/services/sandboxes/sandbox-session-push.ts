@@ -1,14 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../lib/db';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import type { ProviderName } from '../../platform/providers';
+import { resolveSandboxIngress } from '../sandbox-proxy/backend';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import type { ProviderName } from '../platform/providers';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
-} from '../../projects/lib/compile-agent-config';
+} from '../projects/lib/compile-agent-config';
 import { repositoryAccessFromSessionMetadata } from '../sessions/session-sandbox-metadata';
 import { hasConfigReleaseCapability } from '../sessions/session-config-release';
 import { resolveSandboxEnvSnapshot } from './sandbox-env-snapshot';

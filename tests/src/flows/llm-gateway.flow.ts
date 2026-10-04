@@ -38,10 +38,10 @@ flow('GW-1b', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /v1/llm/he
   });
 });
 
-// GW-8 — /internal/gateway/resolve-route (apps/api/src/llm-gateway/internal-routes.ts):
+// GW-8 — /internal/gateway/resolve-route (apps/api/src/http/llm-gateway/internal-routes.ts):
 // control-plane RPC the OUT-OF-PROCESS standalone gateway pod calls to resolve a
 // routing decision. Gated by a single shared `GATEWAY_INTERNAL_TOKEN` bearer
-// (apps/api/src/llm-gateway/internal-auth.ts matchesInternalToken) — a
+// (apps/api/src/services/llm-gateway/internal-auth.ts matchesInternalToken) — a
 // service-to-service secret the ke2e harness intentionally has no credential
 // for (KE2E_INTERNAL_SERVICE_KEY maps to the unrelated INTERNAL_SERVICE_KEY
 // used by /metrics + cron, not GATEWAY_INTERNAL_TOKEN). We can only exercise

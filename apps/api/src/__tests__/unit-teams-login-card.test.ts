@@ -22,7 +22,7 @@ mock.module('../lib/config', () => ({
 
 let latestPending: string | null = null;
 const latestCalls: Array<{ tenantId: string; teamsUserId: string }> = [];
-mock.module('../channels/teams/auth-resume', () => ({
+mock.module('../services/channels/teams/auth-resume', () => ({
   latestPendingTeamsAuthMessageId: async (input: { tenantId: string; teamsUserId: string }) => {
     latestCalls.push(input);
     return latestPending;
@@ -36,7 +36,7 @@ let sent: Sent[] = [];
 let targetedAccepted = true;
 let directOpens = true;
 const directCalls: Array<{ projectId: string; tenantId: string; userId: string }> = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendTargetedCard: async (_ref: unknown, recipient: string, card: unknown) => {
     if (!targetedAccepted) return null;
     sent.push({ to: 'targeted', card, recipient });
@@ -56,8 +56,8 @@ mock.module('../channels/teams-api', () => ({
   },
 }));
 
-const { sendTeamsLoginPrompt, botChatUrl } = await import('../channels/teams/login-card');
-const { verifyTeamsLoginState } = await import('../channels/teams/login');
+const { sendTeamsLoginPrompt, botChatUrl } = await import('../services/channels/teams/login-card');
+const { verifyTeamsLoginState } = await import('../services/channels/teams/login');
 
 const ref = { serviceUrl: 'https://smba.trafficmanager.net/emea/', conversationId: 'conv-1', projectId: 'proj-1' };
 const activity = (conversationType?: string) => ({

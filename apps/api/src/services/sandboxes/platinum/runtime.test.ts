@@ -12,7 +12,7 @@ process.env.DATABASE_URL ??= 'postgres://x';
 
 test('ALLOWED_SANDBOX_PROVIDERS=platinum makes Platinum the active provider', async () => {
   const { config } = await import('../../../lib/config');
-  const m = await import('../../../platform/providers/index');
+  const m = await import('../../platform/providers/index');
   expect(config.isPlatinumEnabled()).toBe(true);
   expect(config.getDefaultProvider()).toBe('platinum');
   const p = m.getProvider('platinum');
@@ -20,14 +20,14 @@ test('ALLOWED_SANDBOX_PROVIDERS=platinum makes Platinum the active provider', as
 });
 
 test('getProvider(platinum) throws without PLATINUM_API_KEY (fail-closed)', async () => {
-  const m = await import('../../../platform/providers/index');
+  const m = await import('../../platform/providers/index');
   const saved = process.env.PLATINUM_API_KEY;
   try {
     // Force a fresh instance path: a provider not yet cached would re-check the
     // key. We assert the guard exists in the factory source as the durable check.
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
-    const src = readFileSync(join(import.meta.dir, '../../../platform/providers/index.ts'), 'utf8');
+    const src = readFileSync(join(import.meta.dir, '../../platform/providers/index.ts'), 'utf8');
     expect(src.includes("case 'platinum':")).toBe(true);
     expect(/Platinum provider requires PLATINUM_API_KEY/.test(src)).toBe(true);
   } finally {

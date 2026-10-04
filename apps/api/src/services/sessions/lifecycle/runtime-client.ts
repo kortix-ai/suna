@@ -11,7 +11,7 @@ import { stableSessionAttachmentId } from '../session-attachment-identity';
 import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
-import { WIRE_ID_PLACED_HEADER } from '../../../sandbox-proxy/prompt-wire-id-repair';
+import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { config } from '../../../lib/config';
 import { logger } from '../../../lib/logger';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
@@ -21,8 +21,8 @@ import {
   resolveDeliverableAgent,
   runtimeAgentRoster,
 } from './agent-availability';
-import type { SandboxRecord } from '../../../sandbox-proxy/backend';
-import { forwardToSandbox } from '../../../sandbox-proxy/forward';
+import type { SandboxRecord } from '../../sandbox-proxy/backend';
+import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import {
   WORKSPACE,

@@ -1,9 +1,9 @@
 /**
- * The in-memory twin of `buildFilters` (accounts/audit-filters.ts): the same filters, applied to
+ * The in-memory twin of `buildFilters` (services/accounts/audit-filters.ts): the same filters, applied to
  * a row read back from the archive instead of a SQL predicate. A filter added to one must be
  * added to the other; `export-page.integration.test.ts` runs both over the same rows.
  */
-import type { AuditFilterInput } from '../../../accounts/audit-filters';
+import type { AuditFilterInput } from '../../accounts/audit-filters';
 
 /** The first day audit rows can carry `credential_kind` (same floor as buildFilters). */
 const CREDENTIAL_KIND_SINCE = '2026-09-30T00:00:00.000000Z';

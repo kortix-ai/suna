@@ -32,8 +32,8 @@ mock.module('../services/audit/auth-audit', () => ({
   auditSessionFirstSight: () => {},
 }));
 
-const gotrueModule = await import('../auth/gotrue');
-const { headlessAuthRouter } = await import('../auth/headless');
+const gotrueModule = await import('../services/auth/gotrue');
+const { headlessAuthRouter } = await import('../http/auth/headless');
 
 type Seen = { url: string; method: string; headers: Record<string, string>; body: unknown };
 let seen: Seen[] = [];

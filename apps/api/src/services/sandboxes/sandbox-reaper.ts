@@ -51,11 +51,11 @@ export {
   computeCloseWindowEnd,
   decideComputeClose,
   hasFailedRuntimeStart,
-} from '../../billing/services/compute-close-policy';
+} from '../billing/services/compute-close-policy';
 
 export {
   type OrphanComputeResult,
   countBillingInvariantViolations,
   countStaleLivenessWindows,
   reconcileOrphanComputeSessions,
-} from '../../billing/services/compute-invariant-sweep';
+} from '../billing/services/compute-invariant-sweep';

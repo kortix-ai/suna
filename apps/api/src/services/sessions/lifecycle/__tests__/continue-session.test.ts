@@ -55,7 +55,7 @@ mock.module('../../session-title-generate', () => ({
   },
 }));
 
-mock.module('../../../../sandbox-proxy/forward', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
@@ -78,7 +78,7 @@ mock.module('../../sessions', () => ({
   },
 }));
 
-mock.module('../../../../projects/routes/shared', () => ({
+mock.module('../../open/shared', () => ({
   openSession: async () => {
     opens++;
     if (openedStage) return { stage: openedStage, sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' }, opencode_session_id: OC_SESSION_ID };
@@ -90,11 +90,11 @@ mock.module('../status-transitions', () => ({
   sessionTransitionLeaves: (_action: string, status: string) => status === 'stopped',
   transitionSession: async (action: string) => { transitions.push(action); return true; },
 }));
-mock.module('../../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => 'key' }));
-mock.module('../../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), invalidateSandbox: () => {}, resolveServiceKey: async () => 'key' }));
+mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => 'key' }));
+mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), invalidateSandbox: () => {}, resolveServiceKey: async () => 'key' }));
 mock.module('../../../sandboxes/sandbox-env-sync', () => ({ syncSandboxEnvForPrompt: async () => { syncs++; } }));
 
-mock.module('../../../../projects/lib/on-behalf-of', () => ({
+mock.module('../../../projects/lib/on-behalf-of', () => ({
   // The pure source rule, reduced to the sources these cases send.
   channelPrompterForOnBehalfOf: (input: { source: string; userId: string | null }) =>
     input.source?.startsWith('trigger:') ? null : input.source === 'slack' ? input.userId : undefined,
@@ -221,7 +221,7 @@ describe('continueSession — server-side delivery titles the session', () => {
 // Regression for the hourly-heartbeat outage (2026-09-08, "delivery outcome:
 // pending"): postPrompt() stamped `boundCredentialSessionId: callerSessionId`
 // on its proxy access. That non-null binding strips the trigger-session manager
-// override (connectors/share.ts), which exists so an UNBOUND project manager —
+// override (services/connectors/share.ts), which exists so an UNBOUND project manager —
 // the account owner resolving the trigger's automation actor — can reach a
 // trigger-created private session. Every fire 403'd, then dead-lettered.
 describe('continueSession — trigger delivery access carries no agent binding', () => {

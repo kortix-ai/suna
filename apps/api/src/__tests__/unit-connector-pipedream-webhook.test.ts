@@ -19,7 +19,7 @@ import {
   type ConnectorPrincipal,
   type ConnectorRouterDeps,
   createConnectorRouter,
-} from '../connectors/router';
+} from '../http/connectors/router';
 
 const EXT_USER_ID = 'proj-1:smartlead';
 

@@ -43,7 +43,7 @@ import {
   grantFromLoadedAgents,
   isLaunchableAgentName,
   loadProjectAgents,
-} from '../../projects/agents';
+} from '../projects/agents';
 
 /**
  * The grant could not be resolved (manifest unreadable, loader threw). Callers

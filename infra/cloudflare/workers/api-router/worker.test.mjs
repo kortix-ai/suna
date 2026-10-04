@@ -118,7 +118,7 @@ describe('api-router worker', () => {
       'utf8',
     );
     const apiEntry = readFileSync(
-      new URL('../../../../apps/api/src/index.ts', import.meta.url),
+      new URL('../../../../apps/api/src/app/index.ts', import.meta.url),
       'utf8',
     );
     const gatewayEntry = readFileSync(

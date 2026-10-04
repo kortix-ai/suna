@@ -24,7 +24,7 @@ export {
 //     supports both. Kortix's bedrock transport
 //     (packages/llm-gateway/src/transports/bedrock/request.ts) authenticates
 //     ONLY with the bearer token; the BYOK resolver
-//     (apps/api/src/llm-gateway/resolution/resolve-candidates.ts +
+//     (apps/api/src/services/llm-gateway/resolution/resolve-candidates.ts +
 //     models/provider-registry.ts) reads ONLY AWS_BEARER_TOKEN_BEDROCK +
 //     AWS_REGION. SigV4 signing is unimplemented (explicit
 //     TODO(bedrock-sigv4) in request.ts). Treating all 4 vars as one AND-of-

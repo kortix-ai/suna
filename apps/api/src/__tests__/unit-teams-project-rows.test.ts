@@ -7,8 +7,8 @@ import { afterAll, describe, expect, mock, test } from 'bun:test';
 
 mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app.example.test', MANAGED_GIT_GITHUB_OWNER: 'managed-kortix' } }));
 const calls: string[][] = [];
-const realRepoPreview = await import('../channels/repo-preview');
-mock.module('../channels/repo-preview', () => ({
+const realRepoPreview = await import('../services/channels/repo-preview');
+mock.module('../services/channels/repo-preview', () => ({
   ...realRepoPreview,
   repoPreviewImages: async (urls: Iterable<string | null | undefined>) => {
     const list = [...urls].filter((u): u is string => Boolean(u));
@@ -16,7 +16,7 @@ mock.module('../channels/repo-preview', () => ({
     return new Map(list.filter((u) => u.includes('/octocat/')).map((u) => [u, `https://opengraph.githubassets.com/1/${u.split('github.com/')[1]}`]));
   },
 }));
-const { projectRows } = await import('../channels/teams/project-rows');
+const { projectRows } = await import('../services/channels/teams/project-rows');
 afterAll(() => mock.restore());
 
 describe('projectRows', () => {

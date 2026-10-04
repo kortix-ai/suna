@@ -14,13 +14,13 @@ import type {
   GatewayAction,
   GatewayConnector,
   GatewayDeps,
-} from '../connectors/gateway';
+} from '../services/connectors/gateway';
 import {
   type CatalogConnector,
   type ConnectorPrincipal,
   type ConnectorRouterDeps,
   createConnectorRouter,
-} from '../connectors/router';
+} from '../http/connectors/router';
 
 const ACCOUNT = 'acct-faces';
 const PROJECT = 'proj-faces';

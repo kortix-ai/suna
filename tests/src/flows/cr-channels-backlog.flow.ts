@@ -2,7 +2,7 @@
  * Backlog flows: CR-10 (change-request response-envelope SHAPES) and
  * CHN-9 (channel-webhook signature/configuration gate codes).
  *
- * CR-10 — Response-envelope shapes (verified against apps/api/src/projects/index.ts):
+ * CR-10 — Response-envelope shapes (verified against apps/api/src/http/projects/index.ts):
  *   - list  GET  /change-requests        → `{ change_requests: [...] }`   (line ~7880)
  *   - get   GET  /change-requests/:crId   → `{ change_request: {...} }`    (line ~8082)
  *   - merge POST /change-requests/:crId/merge → `{ change_request, merge }` (line ~8283)

@@ -10,8 +10,8 @@
  * what order relative to the provider call.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realComputeMetering from '../../billing/services/compute-metering';
-import * as realProviders from '../../platform/providers';
+import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
 let statements: Array<{ sql: string; inTransaction: boolean }> = [];
@@ -97,7 +97,7 @@ mock.module('../../lib/db', () => ({
   },
 }));
 
-mock.module('../../billing/services/compute-metering', () => ({
+mock.module('../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   endComputeSession: async () => {
     computeEnds += 1;
@@ -105,7 +105,7 @@ mock.module('../../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
 }));
 
-mock.module('../../platform/providers', () => ({
+mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     stop: async () => {

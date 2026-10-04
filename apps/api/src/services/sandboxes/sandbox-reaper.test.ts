@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import * as realComputeMetering from '../../billing/services/compute-metering';
-import * as realProviders from '../../platform/providers';
+import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
@@ -328,7 +328,7 @@ mock.module('../../lib/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../platform/providers', () => ({
+mock.module('../platform/providers', () => ({
   ...realProviders,
   // 60 minutes — the provider's own idle auto-stop, and therefore the ceiling
   // on how long a window may bill past its last liveness observation.
@@ -353,7 +353,9 @@ mock.module('../../platform/providers', () => ({
   }),
 }));
 
-mock.module('../../sandbox-proxy', () => ({
+const realSandboxProxyBackend = await import('../sandbox-proxy/backend');
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
@@ -362,7 +364,7 @@ mock.module('../../sandbox-proxy', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../billing/services/compute-metering', () => ({
+mock.module('../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
   markComputeSessionAlive: async (sandboxId: string, at: Date) => {
@@ -3572,7 +3574,7 @@ describe('reconcileOrphanComputeSessions', () => {
   const NOW3 = new Date('2026-07-29T12:00:00Z');
   // `lastAliveAt` defaults to "just observed" so each test isolates the rule it
   // is about; the liveness ceiling itself is asserted in its own tests below and
-  // in billing/services/compute-liveness.test.ts.
+  // in services/billing/services/compute-liveness.test.ts.
   const openRow = (over: Partial<any> = {}) => ({
     computeId: 'cs-1',
     sandboxId: 'sb-1',

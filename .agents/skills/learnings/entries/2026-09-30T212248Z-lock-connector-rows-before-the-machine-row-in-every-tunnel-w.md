@@ -10,4 +10,4 @@ incident_date: 2026-09-30
 
 **Incident:** 2026-09-30, PR #8515 core lane: `DELETE /v1/tunnel/connections/:id` answered 500 (40P01, flow TUN-4). `unpairMachine` locked the machine row, then its delete's SET NULL update took a key-share lock on the connector row. `attachComputerConnection` (#8383, #8396) holds the connector row and waits for the machine row. Zero prod occurrences in 30 days of logs. Fixed in this PR's unpair: connectors first, then the machine, plus a 3-try retry.
 
-**Enforcement:** `apps/api/src/connectors/integration-tunnel-unpair-lock-order.test.ts` (real PostgreSQL, deadlocks on the old order). Flow TUN-4 covers the route.
+**Enforcement:** `apps/api/src/services/connectors/integration-tunnel-unpair-lock-order.test.ts` (real PostgreSQL, deadlocks on the old order). Flow TUN-4 covers the route.

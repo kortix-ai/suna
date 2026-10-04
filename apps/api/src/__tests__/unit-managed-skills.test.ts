@@ -5,7 +5,7 @@ import {
   getManagedSkill,
   getManagedSkillFile,
   listManagedSkills,
-} from '../skills/catalog';
+} from '../services/skills/catalog';
 
 describe('managed skill catalog', () => {
   test('resolves every name in KORTIX_MANAGED_SKILL_NAMES', () => {

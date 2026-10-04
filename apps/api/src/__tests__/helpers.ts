@@ -8,7 +8,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError } from '../billing/errors';
+import { BillingError } from '../services/billing/errors';
 import type { AuthVariables } from '../types/app-env';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export function createTestApp(opts: TestAppOptions = {}) {
 
   // ─── Version (no auth — does NOT import db) ────────────────────────────
   // version.ts has zero db imports, safe to require unconditionally
-  const { versionRouter } = require('../platform/routes/version');
+  const { versionRouter } = require('../http/platform/version');
   app.route('/v1/platform/sandbox/version', versionRouter);
 
   // ─── Auth stub for all /v1/* routes that need it ───────────────────────

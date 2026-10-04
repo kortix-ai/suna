@@ -29,7 +29,7 @@
 //     something old code might still read (see MIGRATIONS.md).
 //
 // Why this index: the admin /ops/overview dashboard
-// (apps/api/src/ops/index.ts) counts `kortix.audit_events` from the last
+// (apps/api/src/http/ops/index.ts) counts `kortix.audit_events` from the last
 // 24h with no account/actor/resource filter:
 //   SELECT count(*)::int AS count FROM kortix.audit_events
 //   WHERE occurred_at >= now() - interval '24 hours'

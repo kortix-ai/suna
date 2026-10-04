@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../snapshots/build-state';
+import { currentFailedSnapshotBuild, sessionTemplateBuilds } from '../services/snapshots/build-state';
 
 describe('currentFailedSnapshotBuild', () => {
   test('returns the newest build when it failed', () => {

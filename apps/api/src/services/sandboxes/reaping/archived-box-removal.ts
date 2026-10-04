@@ -17,7 +17,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 
 import { type SandboxProviderName, config } from '../../../lib/config';
-import { getProvider } from '../../../platform/providers';
+import { getProvider } from '../../platform/providers';
 import { db } from '../../../lib/db';
 import { stripMetadataKeys } from '../../sessions/lifecycle/sandbox-metadata-sql';
 

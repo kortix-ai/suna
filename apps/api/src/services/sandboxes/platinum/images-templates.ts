@@ -1,8 +1,8 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { platinumJson, platinumJsonResponse, isPlatinumConfigured } from './client';
-import { normalizeExistingProviderState } from '../../../snapshots/providers/state';
-import type { BuildLogTap } from '../../../snapshots/providers/index';
-import { shortLivedObservation } from '../../../snapshots/observation-cache';
+import { normalizeExistingProviderState } from '../../snapshots/providers/state';
+import type { BuildLogTap } from '../../snapshots/providers/index';
+import { shortLivedObservation } from '../../snapshots/observation-cache';
 import { classifyPlatinumPollError, isTerminalPollError, retryAfterMsFromError } from './images-poll-classify';
 import { exponentialBackoffMs } from '../../../lib/backoff';
 

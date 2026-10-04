@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuditFilterInput } from '../../../accounts/audit-filters';
+import type { AuditFilterInput } from '../../accounts/audit-filters';
 import { normalizeInstant, rowMatches } from './row-filter';
 
 const none: AuditFilterInput = { actor: null, actionPrefix: null, resourceType: null, sinceRaw: null, untilRaw: null, q: null };

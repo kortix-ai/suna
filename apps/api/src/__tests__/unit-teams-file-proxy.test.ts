@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import type { TeamsActivity } from '../channels/teams/types';
+import type { TeamsActivity } from '../services/channels/teams/types';
 
 let apiCalls: Array<{ fn: string; args: unknown[] }> = [];
 /** When set, Teams refuses any activity carrying an inline data: image — as it
  *  does when the base64 payload pushes the activity past its size cap. */
 let refuseInlineImages = false;
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendActivity: async (...a: unknown[]) => {
     apiCalls.push({ fn: 'sendActivity', args: a });
     const activity = a[1] as { attachments?: Array<{ contentUrl?: string }> } | undefined;
@@ -26,13 +26,13 @@ mock.module('../channels/teams-api', () => ({
     attachments: [{ contentType: 'x', content: c }],
   }),
 }));
-mock.module('../channels/teams-auth', () => ({
+mock.module('../services/channels/teams-auth', () => ({
   graphToken: async () => 'graph-tok',
   botConnectorToken: async () => 'bot-tok',
   teamsChannelEnabled: () => true,
   teamsConfigured: () => true,
 }));
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadTeamsBotCredentials: async () => ({ appId: 'app-1', appPassword: 'secret' }),
   loadTeamsTenantForProject: async () => 'tenant-1',
   saveTeamsServiceUrl: async () => {},
@@ -41,7 +41,7 @@ mock.module('../channels/install-store', () => ({
 // The tenants the project's install proved (chat_installs), which the proxy
 // mints Graph tokens for — never the admin-writable MS_TEAMS_TENANT_ID secret.
 let provenTenants: string[] = ['tenant-1'];
-mock.module('../channels/teams/inbound', () => ({
+mock.module('../services/channels/teams/inbound', () => ({
   provenTeamsTenants: async () => provenTenants,
 }));
 
@@ -52,7 +52,7 @@ let bound = true;
 let storedServiceUrl = 'https://smba.trafficmanager.net/teams/';
 let storedType: string | null = null;
 let resolveCalls: Array<{ projectId: string; conversationId: string }> = [];
-mock.module('../channels/teams/post', () => ({
+mock.module('../services/channels/teams/post', () => ({
   resolveTeamsProjectConversation: async (projectId: string, conversationId: string) => {
     resolveCalls.push({ projectId, conversationId });
     if (!bound) return { ok: false, error: 'This project has no such Teams conversation.', status: 404 };
@@ -99,7 +99,7 @@ mock.module('../lib/db', () => ({
 }));
 
 const { downloadTeamsFile, initiateTeamsUpload, handleFileConsentInvoke } = await import(
-  '../channels/teams/file-proxy'
+  '../services/channels/teams/file-proxy'
 );
 
 let fetchCalls: Array<{ url: string; method: string; headers?: Record<string, string> }> = [];

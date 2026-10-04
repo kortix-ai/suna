@@ -10,4 +10,4 @@ incident_date: 2026-09-29
 
 **Incident:** 2026-09-23..29: 6 of ~254 prod provision requests in 7 days rolled back at stage=push after 2 instant pushes. The user lost the project create. Fix in the PR that added this entry.
 
-**Enforcement:** `apps/api/src/projects/managed-repo-seed.test.ts`, block `freshly created repo not yet reachable over git`.
+**Enforcement:** `apps/api/src/services/projects/managed-repo-seed.test.ts`, block `freshly created repo not yet reachable over git`.

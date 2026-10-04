@@ -13,7 +13,7 @@ A route is not verified for clients until a real client (curl with
 `Accept-Encoding: gzip`, Bun `fetch`, a browser) has read it through the real
 proxy.
 
-**Trigger surface:** changing `apps/api/src/sandbox-proxy/routes/preview.ts`
+**Trigger surface:** changing `apps/api/src/http/sandbox-proxy/preview.ts`
 response headers; adding a path to `forwardsClientEncoding`; moving an SDK,
 CLI or web read onto the daemon's `/kortix/runtime/*` namespace; any proxy
 test that mocks `fetch` and hands back a decoded body.
@@ -30,7 +30,7 @@ read a reply on a real stack. The branch's earlier real-sandbox runs did not
 include a client read of that route. Found by a benchmark driver whose reads
 of the route returned 6 KB of unparseable bytes.
 
-**Enforcement:** `apps/api/src/sandbox-proxy/preview-encoding-passthrough.test.ts`
+**Enforcement:** `apps/api/src/services/sandbox-proxy/preview-encoding-passthrough.test.ts`
 measures a real socket with the proxy's fetch options;
 `apps/api/src/__tests__/e2e-preview-proxy.test.ts` asserts the proxy keeps
 `content-encoding`; flow `RUN-2` (both harnesses, real sandboxes) reads

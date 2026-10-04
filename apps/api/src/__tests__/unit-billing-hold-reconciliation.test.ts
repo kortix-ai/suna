@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isPureHoldRefund, reconcileBillingHold } from '../llm-gateway/billing-hold-reconciliation';
+import { isPureHoldRefund, reconcileBillingHold } from '../services/llm-gateway/billing-hold-reconciliation';
 
 describe('reconcileBillingHold — the atomic admission-hold settlement math', () => {
   test('real cost exceeds the hold → collect the difference (top-up)', () => {

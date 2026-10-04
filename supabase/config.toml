@@ -54,7 +54,7 @@ enable_confirmations = false
 # unrelated feature depend on this provider's config and broke it in
 # production when the provider was switched off on one Supabase project. It
 # now uses the GitHub App's OWN OAuth client instead — see
-# apps/api/src/platform/routes/github-app.ts (oauth/authorize + oauth/callback)
+# apps/api/src/http/platform/github-app.ts (oauth/authorize + oauth/callback)
 # and KORTIX_GITHUB_APP_CLIENT_ID/KORTIX_GITHUB_APP_CLIENT_SECRET. Keep the
 # two separate: this one is per-user product login, that one is
 # per-account/org GitHub App authority.

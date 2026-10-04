@@ -16,11 +16,11 @@ import {
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
 } from '@kortix/shared';
-import { CODEX_USER_AGENT } from '../llm-gateway/credentials/codex-core';
+import { CODEX_USER_AGENT } from '../services/llm-gateway/credentials/codex-core';
 import {
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   buildLayeredDockerfile,
-} from '../snapshots/dockerfile-layer';
+} from '../services/snapshots/dockerfile-layer';
 
 const repoRoot = resolve(import.meta.dir, '../../../..');
 

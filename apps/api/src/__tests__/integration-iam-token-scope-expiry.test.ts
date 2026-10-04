@@ -10,9 +10,9 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accountTokens, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../lib/db';
-import { authorize } from '../iam/authorize';
-import { actorForToken, actorForUser } from '../iam/actor';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
+import { authorize } from '../services/iam/authorize';
+import { actorForToken, actorForUser } from '../services/iam/actor';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../services/iam';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

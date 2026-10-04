@@ -5,10 +5,10 @@ import { config } from '../../lib/config';
 let billing: Record<string, unknown> = { ok: true };
 let inserted: Record<string, unknown> | undefined;
 
-mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => billing }));
-mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => true }));
+mock.module('../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => billing }));
+mock.module('../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => true }));
 mock.module('../audit/audit', () => ({ recordAuditEvent: async () => {} }));
-mock.module('../../projects/agents', () => ({
+mock.module('../projects/agents', () => ({
   loadProjectAgents: async () => ({ defaultAgent: 'default' }),
   repositoryAccessFromLoadedAgents: () => false,
   legacyReadWorkspaceFromLoadedAgents: () => false,
@@ -29,9 +29,9 @@ mock.module('../../lib/db', () => ({
     }),
   },
 }));
-mock.module('../../platform/services/session-sandbox', () => ({ provisionSessionSandbox: async () => {} }));
+mock.module('../platform/services/session-sandbox', () => ({ provisionSessionSandbox: async () => {} }));
 mock.module('../git/project-git', () => ({ withProjectGitAuth: async (project: unknown) => project }));
-mock.module('../../git-proxy/project-snapshot', () => ({
+mock.module('../git-proxy/project-snapshot', () => ({
   resolveProjectSnapshotMode: () => 'git',
   resolveProjectSnapshotPinForSession: async () => ({ pin: null, descriptor: null }),
 }));

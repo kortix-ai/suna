@@ -27,7 +27,7 @@ const state = {
   auditCountWhenHandlerRan: -1,
 };
 
-mock.module('../iam/platform-roles', () => ({
+mock.module('../services/iam/platform-roles', () => ({
   isPlatformAdmin: async (userId: string) => state.platformAdmins.has(userId),
   getPlatformRole: async (userId: string) => (state.platformAdmins.has(userId) ? 'admin' : 'user'),
 }));
@@ -42,8 +42,8 @@ mock.module('../services/audit/audit', () => ({
 // Everything except the ONE database read is the real module: the pure
 // decision, the ALS context, the forbidden-path list. Only `loadImpersonationGrant`
 // is replaced, so the middleware test exercises the shipped gate.
-const realImpersonation = await import('../iam/impersonation');
-mock.module('../iam/impersonation', () => ({
+const realImpersonation = await import('../services/iam/impersonation');
+mock.module('../services/iam/impersonation', () => ({
   ...realImpersonation,
   loadImpersonationGrant: async (grantId: string) =>
     state.grant && state.grant.id === grantId ? state.grant : null,
@@ -409,7 +409,7 @@ describe('request-scoped context', () => {
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 
-const { applyImpersonation } = await import('../middleware/impersonation');
+const { applyImpersonation } = await import('../http/middleware/impersonation');
 
 interface FakeContextOptions {
   header?: string;

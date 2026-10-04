@@ -4,7 +4,7 @@
  * plan, so it is entitled to Kortix-managed models before a demo is recorded.
  *
  * A fresh preview account is free tier. `accountIsFreeTierForModels`
- * (apps/api/src/billing/services/tiers.ts) denies managed models to any tier
+ * (apps/api/src/services/billing/services/tiers.ts) denies managed models to any tier
  * that isn't paid — enforced everywhere on purpose since commit 406eb5e9ac
  * "fix(gateway): enforce paid managed model access", which deliberately
  * removed the earlier `env === 'dev' || env === 'preview'` bypass. Preview

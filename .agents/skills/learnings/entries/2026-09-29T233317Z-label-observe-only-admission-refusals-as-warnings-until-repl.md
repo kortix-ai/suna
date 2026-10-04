@@ -10,4 +10,4 @@ incident_date: 2026-09-29
 
 **Incident:** On 2026-09-29, old running boxes without `config.release.v1` produced error-level "box replaced" logs even though the kill switch kept the box serving. This created a new error-pattern spike without a matching start-route 5xx spike.
 
-**Enforcement:** `apps/api/src/runtime-convergence/__tests__/admit-running-sandbox.test.ts` checks both enforcement modes and their severity and wording.
+**Enforcement:** `apps/api/src/services/runtime-convergence/__tests__/admit-running-sandbox.test.ts` checks both enforcement modes and their severity and wording.

@@ -32,7 +32,7 @@ beforeEach(() => {
   };
 });
 
-const { processRevenueCatWebhook } = await import('../billing/services/webhooks');
+const { processRevenueCatWebhook } = await import('../services/billing/services/webhooks');
 
 describe('processRevenueCatWebhook canonical account writes', () => {
   test('writes initial purchase into canonical kortix account', async () => {

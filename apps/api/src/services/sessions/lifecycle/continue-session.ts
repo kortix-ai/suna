@@ -9,14 +9,14 @@ import { sessionAttachmentStore } from '../session-attachments';
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { ProvisionTimeline } from '../../../platform/services/provision-timeline';
-import type { SandboxRecord } from '../../../sandbox-proxy/backend';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { config } from '../../../lib/config';
 import {
   bindSessionTurnIdentity,
   channelPrompterForOnBehalfOf,
   clearSessionOnBehalfOfForPrompt,
-} from '../../../projects/lib/on-behalf-of';
+} from '../../projects/lib/on-behalf-of';
 import { logger } from '../../../lib/logger';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded, promptNeedsLandingProof } from './prompt-landing-proof';

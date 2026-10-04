@@ -10,7 +10,7 @@
  * it, up to three times, for a box a human might never come back to).
  *
  * That default is right when a human is looking: they will send again, or the
- * next page load's wake path (`sandbox-proxy/backend.ts` `wakeSandbox` ->
+ * next page load's wake path (`services/sandbox-proxy/backend.ts` `wakeSandbox` ->
  * `runtime-restart-recovery.ts` `recoverTurnsAfterRuntimeRestart`) resumes it
  * for them. It is wrong when NOBODY is looking — a trigger run, a scheduled
  * run, or a worker/sub-agent session spawned by another session

@@ -10,7 +10,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 
-mock.module('../iam', () => ({
+mock.module('../services/iam', () => ({
   ACCOUNT_ACTIONS: {
     GROUP_READ: 'group.read',
     GROUP_CREATE: 'group.create',
@@ -27,14 +27,14 @@ mock.module('../services/audit/audit', () => ({
 
 // Entitled account — these tests are about the IdP-managed guard, and a 402
 // would fire before it.
-mock.module('../billing/services/entitlements', () => ({
+mock.module('../services/billing/services/entitlements', () => ({
   accountHasEntitlement: async () => true,
 }));
 
-// The groups routes now build an `Actor`, and `iam/actor` registers its memos
+// The groups routes now build an `Actor`, and `services/iam/actor` registers its memos
 // here at module load — so this stub must declare the registration hooks too or
 // the import fails with `Export named 'registerPrincipalScopedMemo' not found`.
-mock.module('../iam/cache-invalidation', () => ({
+mock.module('../services/iam/cache-invalidation', () => ({
   invalidateIamCacheForGroup: async () => {},
   invalidateIamCacheForUser: () => {},
   invalidateIamCacheForUsers: () => {},
@@ -48,7 +48,7 @@ mock.module('../iam/cache-invalidation', () => ({
 
 // The routes resolve the request's principal before asking the engine; this
 // suite mocks the engine to allow-all, so the actor only has to exist.
-mock.module('../iam/actor', () => ({
+mock.module('../services/iam/actor', () => ({
   actorOf: async (c: { get(k: string): unknown }, accountId: string) => ({
     userId: (c.get('userId') as string | undefined) ?? 'user-1',
     accountId,
@@ -67,7 +67,7 @@ const base = {
 const scimGroup = { ...base, groupId: 'grp-scim', name: 'Engineers', source: 'scim' };
 const manualGroup = { ...base, groupId: 'grp-manual', name: 'Ops', source: 'manual' };
 
-mock.module('../repositories/iam', () => ({
+mock.module('../services/repositories/iam', () => ({
   getGroup: async (_accountId: string, groupId: string) =>
     groupId === 'grp-scim' ? scimGroup : groupId === 'grp-manual' ? manualGroup : null,
   updateGroup: async (
@@ -87,8 +87,8 @@ mock.module('../repositories/iam', () => ({
   listGroupMembers: async () => [],
 }));
 
-const { iamRouter } = await import('../accounts/iam/app');
-(await import('../accounts/iam/groups')).registerIamGroupsRoutes();
+const { iamRouter } = await import('../http/accounts/iam/app');
+(await import('../http/accounts/iam/groups')).registerIamGroupsRoutes();
 
 function buildApp() {
   const app = new Hono();

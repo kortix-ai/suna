@@ -10,7 +10,7 @@ const catalog = readFileSync(join(import.meta.dir, 'catalog', 'use-catalog.ts'),
  *
  * **The bug.** `listPipedreamApps` and `listPipedreamSections` are wired into
  * the API router only when `pipedreamConfigured()` is true — three env vars,
- * checked in `apps/api/src/connectors/pipedream.ts`. A self-host that never set
+ * checked in `apps/api/src/services/connectors/pipedream.ts`. A self-host that never set
  * them gets `501 FEATURE_NOT_SUPPORTED` from both. This page fired them anyway
  * on every load, and `catalogErrorCopy()` has no 501 branch, so the Discovery
  * tab answered with the generic "Server error … The server failed to answer

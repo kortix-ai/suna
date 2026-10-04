@@ -7,11 +7,11 @@
 // suppress (lifecycle events).
 //
 // Mocks the split fire/state seams, `../lib/db`, and
-// `../feature-flags/registry` via `mock.module` — process-global in bun:test,
+// `../services/feature-flags/registry` via `mock.module` — process-global in bun:test,
 // so this file runs under the suite's `--isolate`.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
-import { MONITOR_PROMPT_PREAMBLE } from '../projects/lib/monitor-events';
+import { MONITOR_PROMPT_PREAMBLE } from '../services/projects/lib/monitor-events';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const EPOCH = 'epoch-1';
@@ -63,7 +63,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../feature-flags/registry', () => ({
+mock.module('../services/feature-flags/registry', () => ({
   resolveFeatureFlag: (_metadata: unknown, key: string) =>
     key === 'monitors' ? flagEnabled : false,
 }));
@@ -81,7 +81,7 @@ mock.module('../services/triggers/trigger-fire', () => ({
 }));
 
 const { drainMonitorEvents, processMonitorEvent } = await import(
-  '../projects/lib/monitor-observer'
+  '../services/projects/lib/monitor-observer'
 );
 
 const SPEC = {

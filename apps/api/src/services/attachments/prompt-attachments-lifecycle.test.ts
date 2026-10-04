@@ -77,7 +77,7 @@ mock.module('../../lib/db', () => ({ db: fakeDb, hasDatabase: true }));
 
 let billing: Record<string, unknown> = { ok: true };
 const billingChecks: string[] = [];
-mock.module('../../billing/services/billing-gate', () => ({
+mock.module('../billing/services/billing-gate', () => ({
   checkBillingAdmission: async (accountId: string) => {
     billingChecks.push(accountId);
     return billing;

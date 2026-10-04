@@ -20,7 +20,7 @@
  * be unit-tested without booting the provider layer.
  */
 
-import type { SandboxStatus } from '../../../platform/providers/status';
+import type { SandboxStatus } from '../../platform/providers/status';
 
 const DAYTONA_STATE_MAP: Record<string, SandboxStatus> = {
   started: 'running',

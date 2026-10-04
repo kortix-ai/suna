@@ -1,5 +1,5 @@
 // Anonymous, read-only session-share viewing — `/v1/public/session-shares/:ref`
-// and `.../messages` (apps/api/src/public-session-shares/index.ts). `:ref` is a
+// and `.../messages` (apps/api/src/http/public-session-shares/index.ts). `:ref` is a
 // share's `share_id` or its `kps_` `public_token`. Only a `transcript` share
 // (`createSessionPublicShare(..., { transcript: true })`) reads `/messages`;
 // a `preview` or `file` share gets 404 there.

@@ -28,7 +28,7 @@ Fixed by answering 200 before the write, logging a failure instead of
 returning `{ok:false}` (KRTX-609). `/internal/gateway/usage` has the same
 shape and was not fixed here.
 
-**Enforcement:** `apps/api/src/llm-gateway/internal-routes.test.ts` — "answers
+**Enforcement:** `apps/api/src/http/llm-gateway/internal-routes.test.ts` — "answers
 200 while the audit-pool write is still pending" holds the write open and
 fails with a 1 s timeout if the handler waits. Run it in the `core` lane
 (`pnpm --filter kortix-api test`).

@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
-// The project routes were decomposed out of the old monolithic projects/index.ts
+// The project routes were decomposed out of the old monolithic http/projects/index.ts
 // into projects/routes/*.ts + projects/lib/*.ts. Scan the whole projects/ tree so
 // this safety check is robust to where the sandbox-lookup handler lives.
 function readProjectsSource(): string {
-  const root = join(import.meta.dir, '../projects');
+  const root = join(import.meta.dir, '../http/projects');
   const out: string[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {

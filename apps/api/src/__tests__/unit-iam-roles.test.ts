@@ -1,5 +1,5 @@
 /**
- * The role VOCABULARY — the two parsers in `iam/roles.ts` and the rank fold.
+ * The role VOCABULARY — the two parsers in `services/iam/roles.ts` and the rank fold.
  *
  * All that is left of `unit-iam-v2-role-perms.test.ts`. Everything it pinned
  * about what a role CAN DO moved to `integration-iam-role-catalog-parity.test.ts`,
@@ -16,7 +16,7 @@ import {
   normalizeProjectRole,
   parseAssignableProjectRole,
   PROJECT_ROLE_RANK,
-} from '../iam/roles';
+} from '../services/iam/roles';
 
 describe('project role rank', () => {
   test('manager outranks member, and maxProjectRole picks the stronger', () => {
@@ -78,7 +78,7 @@ describe('the two parsers', () => {
 describe('account manager tier', () => {
   // Owner and admin get implicit Manager on every project in the account; a
   // plain member gets nothing implicitly. The ENGINE expresses this as scope
-  // containment (`isImplicitManager` in iam/authorize.ts) rather than as a role
+  // containment (`isImplicitManager` in services/iam/authorize.ts) rather than as a role
   // lookup — this helper is the display-tier spelling of the same rule.
   test('owner and admin only', () => {
     expect(isAccountManager('owner')).toBe(true);

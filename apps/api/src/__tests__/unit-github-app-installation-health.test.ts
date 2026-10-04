@@ -7,19 +7,19 @@
  * JWT answers that in one call — GitHub 404s it outright when the installation
  * does not belong to the signing App.
  *
- * Seeds the stored identity (platform/services/github-app-identity.ts) for the
+ * Seeds the stored identity (services/platform/services/github-app-identity.ts) for the
  * appId/privateKey the JWT signer reads, and drives global fetch.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import { __setStoredAppIdentityForTests } from '../platform/services/github-app-identity';
+import { __setStoredAppIdentityForTests } from '../services/platform/services/github-app-identity';
 
 const TEST_APP_PRIVATE_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 })
   .privateKey.export({ type: 'pkcs8', format: 'pem' })
   .toString();
 
 const { checkManagedGithubAppInstallationHealthy, resetManagedGithubAppInstallationHealthCache } =
-  await import('../platform/routes/github-app');
+  await import('../http/platform/github-app');
 
 // Clear the env identity so only the seeded stored identity drives
 // `createGitHubAppJwt` — env wins whole, by design.

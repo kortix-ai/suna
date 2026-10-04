@@ -67,12 +67,12 @@ mock.module('../../../../lib/db', () => ({
 mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
-mock.module('../../../../projects/routes/shared', () => ({
+mock.module('../../open/shared', () => ({
   openSession: async () => {
     throw new Error('not expected: create_session never opens a session in this test');
   },
 }));
-mock.module('../../../../sandbox-proxy/forward', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     throw new Error('not expected: create_session never forwards a prompt in this test');
   },
@@ -138,10 +138,10 @@ mock.module('../instance-release', () => ({
 mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
-mock.module('../../../../platform/service-key', () => ({
+mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
-mock.module('../../../../sandbox-proxy/backend', () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
   invalidateSandbox: () => {},
 }));

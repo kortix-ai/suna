@@ -14,7 +14,7 @@
  *
  *   `metadata.warm === true`  ⇒  created speculatively, never used.
  *
- * `POST /projects/:id/sessions/warm` writes it (projects/routes/warm-sessions.ts). The
+ * `POST /projects/:id/sessions/warm` writes it (http/projects/warm-sessions.ts). The
  * `visible` list scope hides marked rows whose session is not actively
  * provisioning or running (services/sessions/session-inventory.ts): a live box
  * bills compute from creation (warmPoolGrantMs), and a billed session must

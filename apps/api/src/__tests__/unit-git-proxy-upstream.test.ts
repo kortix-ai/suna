@@ -10,7 +10,7 @@
  * idempotent ref-discovery body so the mid-stream socket close is caught here.
  */
 import { describe, expect, mock, test } from 'bun:test';
-import { fetchUpstreamBuffered, isTransientUpstreamError } from '../git-proxy/upstream';
+import { fetchUpstreamBuffered, isTransientUpstreamError } from '../services/git-proxy/upstream';
 
 describe('isTransientUpstreamError', () => {
   test('classifies Bun socket-close + common transient network errors', () => {

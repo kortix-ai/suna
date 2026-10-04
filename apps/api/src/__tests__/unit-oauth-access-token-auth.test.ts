@@ -10,7 +10,7 @@ import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
 import * as realAuthAudit from '../services/audit/auth-audit';
 import * as realSentry from '../lib/sentry';
-import * as realSsoSync from '../iam/sso-sync';
+import * as realSsoSync from '../services/iam/sso-sync';
 import * as realCrypto from '../lib/crypto';
 
 let secretKeyValidations: string[] = [];
@@ -23,7 +23,7 @@ mock.module('../lib/crypto', () => ({
   isKortixToken: (t: string) => t.startsWith('kortix_'),
 }));
 
-mock.module('../oauth/access-token', () => ({
+mock.module('../services/oauth/access-token', () => ({
   isOAuthAccessToken: (t: string) => t.startsWith('kortix_oat_'),
   oauthScopeAllowsPath: (scopes: string[], path: string) =>
     scopes.includes('kortix') || path === '/v1/accounts/me' || path === '/v1/oauth/userinfo',
@@ -53,22 +53,22 @@ mock.module('../oauth/access-token', () => ({
   },
 }));
 
-mock.module('../repositories/service-accounts', () => ({
+mock.module('../services/repositories/service-accounts', () => ({
   validateServiceAccountToken: async () => ({ isValid: false, error: 'Invalid service account' }),
 }));
 
-mock.module('../repositories/api-keys', () => ({
+mock.module('../services/repositories/api-keys', () => ({
   validateSecretKey: async (t: string) => {
     secretKeyValidations.push(t);
     return { isValid: false, error: 'Invalid Kortix token' };
   },
 }));
 
-mock.module('../repositories/account-tokens', () => ({
+mock.module('../services/repositories/account-tokens', () => ({
   validateAccountToken: async () => ({ isValid: false, error: 'invalid' }),
 }));
 
-mock.module('../auth/jwt-verify', () => ({
+mock.module('../services/auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => ({ ok: false }),
 }));
@@ -95,9 +95,9 @@ mock.module('../services/audit/auth-audit', () => ({
 
 mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
+mock.module('../services/iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
-const { combinedAuth, supabaseAuth } = await import('../middleware/auth');
+const { combinedAuth, supabaseAuth } = await import('../http/middleware/auth');
 
 function appWith(middleware: typeof combinedAuth) {
   const app = new Hono();

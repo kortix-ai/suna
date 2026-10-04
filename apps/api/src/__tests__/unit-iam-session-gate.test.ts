@@ -1,7 +1,7 @@
 // Pure unit coverage for evaluateSessionGate — the verdict matrix.
 
 import { describe, expect, test } from 'bun:test';
-import { evaluateSessionGate } from '../iam/session-gate';
+import { evaluateSessionGate } from '../services/iam/session-gate';
 
 const nowMs = 1_700_000_000_000;
 

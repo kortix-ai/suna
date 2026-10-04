@@ -5,7 +5,7 @@
 // straight into "Failed to load roles — You don't have permission
 // (role.read)". `role.read` lives in ADMIN_EXTRAS (`apps/api/src/iam/
 // role-perms.ts`), and `GET .../iam/roles` asserts it
-// (`apps/api/src/accounts/iam/custom-roles.ts`), so that item could never
+// (`apps/api/src/http/accounts/iam/custom-roles.ts`), so that item could never
 // resolve for a member. Same class of hole for Members/Groups, which were also
 // unconditional — they happen to be in the member baseline today, but nothing
 // said so and nothing would have caught it changing.
@@ -299,7 +299,7 @@ describe('account hub — the drill-down panels need entitlement AND permission 
   // The THIRD site of this bug class, and the one nobody had named: the member
   // panel's "What they can do" grid and its "View as this member" simulator
   // both build themselves from `GET .../iam/permissions`, which asserts
-  // `role.read` (`apps/api/src/accounts/iam/assignments.ts`). Both rendered
+  // `role.read` (`apps/api/src/http/accounts/iam/assignments.ts`). Both rendered
   // unconditionally, so a plain member drilling into `?member=<id>` took a 403
   // and got an empty grid. Gating the QUERY alone is not enough here — an empty
   // "What they can do" section is the "pane that can only fail" the nav rule

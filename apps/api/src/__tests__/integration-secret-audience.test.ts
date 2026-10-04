@@ -26,8 +26,8 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
-import { clearAuthorizeCaches } from '../iam/authorize';
+import { assignRole, SYSTEM_ACTOR } from '../services/iam/assignments';
+import { clearAuthorizeCaches } from '../services/iam/authorize';
 import {
   getProjectSecretValueForConsumer,
   listProjectSecrets,

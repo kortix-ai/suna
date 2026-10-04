@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-mock.module('../../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
+mock.module('../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'e2b';
 process.env.E2B_API_KEY = 'e2b_test_key';
@@ -148,14 +148,14 @@ mock.module('e2b', () => ({
   SandboxNotFoundError: FakeSandboxNotFoundError,
 }));
 
-mock.module('../../../platform/service-key', () => ({
+mock.module('../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'service-key-test',
 }));
 
 const { config } = await import('../../../lib/config');
 const { E2BProvider, E2B_INGRESS_HANDLE_TTL_MS, E2B_RUNNING_STATUS_CACHE_TTL_MS } =
   await import('./runtime');
-const { getProvider } = await import('../../../platform/providers/index');
+const { getProvider } = await import('../../platform/providers/index');
 
 beforeEach(() => {
   createdTemplate = undefined;

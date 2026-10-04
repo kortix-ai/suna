@@ -96,7 +96,7 @@ const liveDeps: RuntimeRestartRecoveryDeps = {
   // Fire-and-forget: the drain re-checks every claim itself, so a kick that
   // loses a race is a no-op and a lost kick falls back to the scheduler tick.
   //
-  // DYNAMIC import on purpose. `sandbox-proxy/backend.ts` imports this module,
+  // DYNAMIC import on purpose. `services/sandbox-proxy/backend.ts` imports this module,
   // and pulling the whole engine into that graph statically drags every module
   // the engine touches into tests that only mock part of it — two suites broke
   // on a partially-mocked `services/sandboxes/daytona/client` / `services/git/index` the moment the

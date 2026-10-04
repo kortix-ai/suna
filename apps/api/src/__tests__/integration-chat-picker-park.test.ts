@@ -11,14 +11,14 @@ import {
   consumePendingSlackAuthMessage,
   consumePendingSlackPickerMessage,
   createPendingSlackPickerMessage,
-} from '../channels/slack/auth-resume';
-import type { SlackEnvelope } from '../channels/slack/types';
+} from '../services/channels/slack/auth-resume';
+import type { SlackEnvelope } from '../services/channels/slack/types';
 import {
   consumePendingTeamsPickerMessage,
   createPendingTeamsPickerMessage,
   latestPendingTeamsAuthMessageId,
-} from '../channels/teams/auth-resume';
-import type { TeamsActivity } from '../channels/teams/types';
+} from '../services/channels/teams/auth-resume';
+import type { TeamsActivity } from '../services/channels/teams/types';
 import { db } from '../lib/db';
 
 const WORKSPACE = `picker-park-${crypto.randomUUID()}`;

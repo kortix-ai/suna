@@ -1,0 +1,500 @@
+/**
+ * Headless regular auth — `/v1/auth/*` public routes.
+ *
+ * Sign-up, password sign-in, magic link + OTP, social sign-in (PKCE), refresh
+ * and password reset, served by the Kortix API so a client (the SDK, a CLI, a
+ * native app, a third-party backend) never talks to Supabase. Each route is a
+ * thin, rate-limited translation to GoTrue (./gotrue.ts); the responses are
+ * GoTrue's session and user, with errors passed through as
+ * `{error, error_description}` and the upstream status.
+ *
+ * `GET /client-config` hands a client the public values it needs to sign in
+ * when it only knows the API URL (the mobile app's self-hosted sheet).
+ *
+ * Bearer-carrying routes (`GET /user`, `POST /password/update`,
+ * `POST /sign-out`) live on the authenticated router in ./index.ts.
+ */
+import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
+import { sql } from 'drizzle-orm';
+import type { Context } from 'hono';
+import { db } from '../../lib/db';
+import { makeOpenApiApp, json, errors } from '../openapi';
+import type { AppEnv } from '../../types/app-env';
+import { TokenBucketRateLimiter } from '../middleware/rate-limit';
+import { auditLoginFail } from '../../services/audit/auth-audit';
+import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from '../../services/auth/gotrue';
+import { ssoEnforcedForEmail } from '../../services/repositories/sso';
+import { requestClientIp, requestClientKey } from '../../lib/client-ip';
+import { config } from '../../lib/config';
+
+export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
+
+// replica-local: limit × API replicas (http/middleware/rate-limit.ts).
+const limiter = new TokenBucketRateLimiter('headless-auth');
+/** Per client IP: generous for a human, tight enough to blunt credential stuffing. */
+const IP_POLICY = { limit: 30, windowMs: 60_000 };
+
+const SessionSchema = z
+  .object({
+    access_token: z.string(),
+    refresh_token: z.string(),
+    token_type: z.string(),
+    expires_in: z.number(),
+    expires_at: z.number().optional(),
+  })
+  .openapi('AuthSession');
+const UserSchema = z.object({ id: z.string(), email: z.string().nullable().optional() }).passthrough().openapi('AuthUser');
+const SessionResponse = z.object({ session: SessionSchema, user: UserSchema });
+const Email = z.string().email().max(320);
+const OTP_TYPES = ['magiclink', 'signup', 'recovery', 'email', 'email_change'] as const;
+
+function throttled(c: Context): Response | null {
+  const key = requestClientKey(c);
+  const verdict = limiter.check(key, IP_POLICY);
+  if (verdict.allowed) return null;
+  return c.json(
+    { error: 'over_request_rate_limit', error_description: 'Too many authentication attempts. Try again shortly.' },
+    429,
+    { 'retry-after': String(Math.ceil((verdict.retryAfterMs ?? verdict.resetMs) / 1000)) },
+  );
+}
+
+/** `redirect_to` is handed to GoTrue, which enforces its own allow-list; we only refuse non-http(s). */
+function safeRedirect(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function upstreamError(c: Context, result: { status: number; body: { error?: string; error_description?: string } }) {
+  const status = result.status >= 400 && result.status < 600 ? result.status : 502;
+  return c.json({ error: result.body.error ?? 'auth_error', error_description: result.body.error_description ?? '' }, status as never);
+}
+
+/**
+ * 403 when the email's domain belongs to an account that enforces SSO-only
+ * sign-in on a verified domain. Same rule as `/access/check-email` and the web
+ * sign-in form; enforced here so a direct API call cannot use the password or
+ * email-code door either. A lookup failure fails open, like the web form: the
+ * database being unreachable must not lock every user out.
+ */
+async function ssoRequired(c: Context, email: string): Promise<Response | null> {
+  const provider = await ssoEnforcedForEmail(email).catch(() => null);
+  if (!provider) return null;
+  auditLoginFail({ c, reason: 'sso_required', authType: 'supabase' });
+  return c.json(
+    {
+      error: 'sso_required',
+      error_description: 'Your organization requires single sign-on. Sign in with SSO.',
+    },
+    403,
+  );
+}
+
+function sessionResponse(c: Context, body: Record<string, unknown>, status: 200 | 201 = 200) {
+  const session = sessionFrom(body);
+  if (!session) {
+    return c.json({ error: 'auth_error', error_description: 'Supabase returned no session' }, 502);
+  }
+  return c.json({ session, user: (body.user as GoTrueUser | undefined) ?? null }, status);
+}
+
+// ─── GET /client-config ──────────────────────────────────────────────────────
+
+/** A comma list from config; null when the setting is unset. */
+function listOrNull(value: string | undefined): string[] | null {
+  if (value === undefined) return null;
+  return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/client-config',
+    tags: ['auth'],
+    summary: 'Public sign-in configuration for a client that knows only the API URL',
+    responses: {
+      200: json(
+        z
+          .object({
+            supabase_url: z.string(),
+            supabase_anon_key: z.string().nullable(),
+            frontend_url: z.string().nullable(),
+            auth_methods: z.array(z.string()).nullable(),
+            auth_providers: z.array(z.string()).nullable(),
+          })
+          .openapi('AuthClientConfig'),
+        'Public values only: the anon key is public by design. Null = not configured on this API.',
+      ),
+      ...errors(429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    return c.json(
+      {
+        supabase_url: config.SUPABASE_PUBLIC_URL || config.SUPABASE_URL,
+        supabase_anon_key: config.SUPABASE_ANON_KEY || null,
+        frontend_url: config.FRONTEND_URL || null,
+        auth_methods: listOrNull(config.KORTIX_PUBLIC_AUTH_METHODS),
+        auth_providers: listOrNull(config.KORTIX_PUBLIC_AUTH_PROVIDERS),
+      },
+      200,
+    );
+  },
+);
+
+// ─── POST /signup ───────────────────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/signup',
+    tags: ['auth'],
+    summary: 'Create an account with email + password (headless)',
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({
+              email: Email,
+              password: z.string().min(8).max(256),
+              data: z.record(z.unknown()).optional(),
+              redirect_to: z.string().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({ user: UserSchema.nullable(), session: SessionSchema.nullable(), requires_email_confirmation: z.boolean() }),
+        'Created. `session` is null until the email is confirmed when confirmation is required.',
+      ),
+      ...errors(400, 422, 429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const result = await gotrue<Record<string, unknown>>('/signup', {
+      body: { email: body.email.trim().toLowerCase(), password: body.password, data: body.data ?? {} },
+      clientIp: requestClientIp(c),
+      query: { redirect_to: safeRedirect(body.redirect_to) },
+    });
+    if (!result.ok) {
+      auditLoginFail({ c, reason: `signup_failed:${result.body.error ?? result.status}`, authType: 'supabase' });
+      return upstreamError(c, result);
+    }
+    const session = sessionFrom(result.body);
+    // GoTrue answers a bare user (no session) when email confirmation is on.
+    const user = (result.body.user as GoTrueUser | undefined) ?? (typeof result.body.id === 'string' ? (result.body as GoTrueUser) : null);
+    return c.json({ user, session, requires_email_confirmation: session === null }, 200);
+  },
+);
+
+// ─── POST /sign-in/password ─────────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sign-in/password',
+    tags: ['auth'],
+    summary: 'Sign in with email + password (headless)',
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
+    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const denied = await ssoRequired(c, body.email);
+    if (denied) return denied;
+    const result = await gotrue<Record<string, unknown>>('/token', {
+      body: { email: body.email.trim().toLowerCase(), password: body.password },
+      clientIp: requestClientIp(c),
+      query: { grant_type: 'password' },
+    });
+    if (!result.ok) {
+      auditLoginFail({ c, reason: `password_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
+      return upstreamError(c, result);
+    }
+    return sessionResponse(c, result.body);
+  },
+);
+
+// ─── POST /sign-in/magic-link ───────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sign-in/magic-link',
+    tags: ['auth'],
+    summary: 'Email a magic link / one-time code (headless)',
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({
+              email: Email,
+              create_user: z.boolean().optional(),
+              redirect_to: z.string().optional(),
+              data: z.record(z.unknown()).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent'), ...errors(400, 403, 422, 429) },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const denied = await ssoRequired(c, body.email);
+    if (denied) return denied;
+    const result = await gotrue('/otp', {
+      body: { email: body.email.trim().toLowerCase(), create_user: body.create_user ?? true, data: body.data ?? {} },
+      clientIp: requestClientIp(c),
+      query: { redirect_to: safeRedirect(body.redirect_to) },
+    });
+    if (!result.ok) return upstreamError(c, result);
+    return c.json({ sent: true as const });
+  },
+);
+
+// ─── POST /verify-otp ───────────────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/verify-otp',
+    tags: ['auth'],
+    summary: 'Exchange an emailed code for a session (headless)',
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({ email: Email, token: z.string().min(4).max(64), type: z.enum(OTP_TYPES) }),
+          },
+        },
+      },
+    },
+    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    // Every OTP type answers with a session, recovery included.
+    const denied = await ssoRequired(c, body.email);
+    if (denied) return denied;
+    const result = await gotrue<Record<string, unknown>>('/verify', {
+      body: { email: body.email.trim().toLowerCase(), token: body.token.trim(), type: body.type },
+      clientIp: requestClientIp(c),
+    });
+    if (!result.ok) {
+      auditLoginFail({ c, reason: `otp_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
+      return upstreamError(c, result);
+    }
+    return sessionResponse(c, result.body);
+  },
+);
+
+// ─── POST /sign-in/oauth  (social, PKCE) ────────────────────────────────────
+
+const PROVIDERS = ['google', 'github', 'azure', 'apple', 'gitlab', 'bitbucket', 'discord', 'slack', 'linkedin_oidc', 'keycloak', 'workos', 'sso'] as const;
+
+function b64url(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64url');
+}
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sign-in/oauth',
+    tags: ['auth'],
+    summary: 'Start a social sign-in (PKCE): returns the provider URL and the code verifier to keep',
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({ provider: z.enum(PROVIDERS), redirect_to: z.string(), scopes: z.string().optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ url: z.string(), code_verifier: z.string() }), 'Send the user to `url`; keep `code_verifier` for /oauth/exchange'),
+      ...errors(400, 429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const redirectTo = safeRedirect(body.redirect_to);
+    if (!redirectTo) return c.json({ error: 'invalid_request', error_description: 'redirect_to must be an absolute http(s) URL' }, 400);
+    const verifierBytes = new Uint8Array(48);
+    crypto.getRandomValues(verifierBytes);
+    const codeVerifier = b64url(verifierBytes);
+    const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier))));
+    const result = await gotrueAuthorizeUrl({
+      provider: body.provider,
+      redirect_to: redirectTo,
+      scopes: body.scopes,
+      code_challenge: challenge,
+      code_challenge_method: 's256',
+    });
+    if (!result.ok) return upstreamError(c, result);
+    return c.json({ url: result.body.url, code_verifier: codeVerifier });
+  },
+);
+
+// ─── POST /oauth/exchange ───────────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/oauth/exchange',
+    tags: ['auth'],
+    summary: 'Exchange the social sign-in code (+ PKCE verifier) for a session',
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
+    responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 429) },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const result = await gotrue<Record<string, unknown>>('/token', {
+      body: { auth_code: body.code, code_verifier: body.code_verifier },
+      clientIp: requestClientIp(c),
+      query: { grant_type: 'pkce' },
+    });
+    if (!result.ok) {
+      auditLoginFail({ c, reason: `oauth_exchange_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
+      return upstreamError(c, result);
+    }
+    return sessionResponse(c, result.body);
+  },
+);
+
+// ─── POST /refresh ──────────────────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/refresh',
+    tags: ['auth'],
+    summary: 'Rotate a session with its refresh token (headless)',
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
+    responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429, 503) },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const digest = createHash('sha256').update(body.refresh_token).digest('hex');
+    // A unique insert is atomic across replicas. Fail closed if the store is down.
+    let claimed: { token_hash: string }[];
+    try {
+      claimed = await db.execute<{ token_hash: string }>(sql`
+        INSERT INTO kortix.used_refresh_tokens (token_hash, expires_at)
+        VALUES (${digest}, now() + interval '90 days')
+        ON CONFLICT DO NOTHING RETURNING token_hash
+      `);
+    } catch {
+      return c.json({ error: 'auth_unavailable', error_description: 'Refresh temporarily unavailable' }, 503);
+    }
+    if (!claimed.length) return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
+    const result = await gotrue<Record<string, unknown>>('/token', {
+      body: { refresh_token: body.refresh_token },
+      clientIp: requestClientIp(c),
+      query: { grant_type: 'refresh_token' },
+    });
+    // A failed response does not prove GoTrue left the token untouched: it may
+    // have rotated it before the response was lost. Keep the claim fail-closed.
+    if (!result.ok) return upstreamError(c, result);
+    return sessionResponse(c, result.body);
+  },
+);
+
+// ─── POST /password/reset ───────────────────────────────────────────────────
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sign-in/sso',
+    tags: ['auth'],
+    summary: 'Start enterprise SSO for an email domain (headless)',
+    description:
+      "Asks whether an email domain has an enterprise IdP and returns the redirect URL to send the browser to. Unauthenticated by design: the caller is signing IN, so there is no bearer yet, and the answer is not a secret — it is what the IdP's own discovery endpoint publishes.",
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({ domain: z.string().min(1).max(253), redirect_to: z.string().optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ url: z.string() }), 'Send the browser here'),
+      ...errors(400, 404, 429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const result = await gotrue<{ url?: string }>('/sso', {
+      body: { domain: body.domain.trim().toLowerCase() },
+      clientIp: requestClientIp(c),
+      query: { redirect_to: safeRedirect(body.redirect_to) },
+    });
+    // A domain with no provider is an ordinary answer, not a fault — pass
+    // GoTrue's own status through so the caller can tell "no IdP here" from
+    // "SSO is broken".
+    if (!result.ok) return upstreamError(c, result);
+    return c.json({ url: result.body.url ?? '' });
+  },
+);
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/password/reset',
+    tags: ['auth'],
+    summary: 'Email a password-recovery link / code (headless)',
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
+    responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent (also when the address is unknown)'), ...errors(400, 429) },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    const body = c.req.valid('json');
+    const result = await gotrue('/recover', {
+      body: { email: body.email.trim().toLowerCase() },
+      clientIp: requestClientIp(c),
+      query: { redirect_to: safeRedirect(body.redirect_to) },
+    });
+    // Never reveal whether the address exists: GoTrue already answers 200 for
+    // unknown emails; only a genuine upstream failure or rate limit surfaces.
+    if (!result.ok && result.status !== 404 && result.status !== 422) return upstreamError(c, result);
+    return c.json({ sent: true as const });
+  },
+);
+
+export type { GoTrueSession };

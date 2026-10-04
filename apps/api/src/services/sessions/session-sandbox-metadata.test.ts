@@ -10,7 +10,7 @@ import {
   isRepositoryProjectAction,
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
-import { PROJECT_ACTIONS } from '../../iam/actions';
+import { PROJECT_ACTIONS } from '../iam/actions';
 
 describe('sandboxSlugFromSessionMetadata', () => {
   test('returns a persisted template slug', () => {

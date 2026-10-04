@@ -1,5 +1,5 @@
-import type { SecretGrant, SessionVisibility } from '../../connectors/share';
-import type { UserIdentity } from '../../projects/lib/user-identity';
+import type { SecretGrant, SessionVisibility } from '../connectors/share';
+import type { UserIdentity } from '../projects/lib/user-identity';
 
 /** How many people `participants` lists; `total` carries the full count. */
 export const SESSION_PARTICIPANT_LIMIT = 20;

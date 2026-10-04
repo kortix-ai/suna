@@ -2,8 +2,8 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../lib/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 
 // PATCH /v1/projects/:projectId/features (canonical) and .../experimental

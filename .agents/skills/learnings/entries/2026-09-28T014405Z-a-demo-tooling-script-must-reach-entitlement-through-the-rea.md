@@ -5,7 +5,7 @@ incident_date: 2026-09-28
 # A demo/tooling script must reach entitlement through the real subscribe route, never a bootstrap-time bypass
 
 **Rule:** A fresh preview account is free tier on purpose
-(`accountIsFreeTierForModels`, `apps/api/src/billing/services/tiers.ts` — the
+(`accountIsFreeTierForModels`, `apps/api/src/services/billing/services/tiers.ts` — the
 `env === 'dev' || 'preview'` bypass was deliberately removed in 406eb5e9ac
 "enforce paid managed model access"). When tooling needs a preview account
 entitled to managed models, drive it through the real Stripe test-mode
@@ -15,7 +15,7 @@ subscribe route (`POST /v1/billing/create-inline-checkout` +
 environment-gated bypass in account bootstrap, and never write
 `entitlement_overrides` / `managed_models_override` from a new code path —
 those columns are admin-owned by design
-(`apps/api/src/billing/repositories/credit-accounts.ts`'s "there are
+(`apps/api/src/services/billing/repositories/credit-accounts.ts`'s "there are
 deliberately no setters" note) and a second writer is exactly the bypass that
 boundary exists to prevent.
 

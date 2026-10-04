@@ -13,7 +13,7 @@ import { projectTriggerRuntime } from '@kortix/db';
 import { db } from '../lib/db';
 import { resolveTriggerActor } from '../services/triggers/trigger-runtime';
 import { resolveProjectAutomationActor } from '../services/sessions/lifecycle';
-import type { ProjectRow } from '../projects/lib/serializers';
+import type { ProjectRow } from '../services/projects/lib/serializers';
 
 let ctx: { projectId: string; accountId: string } | null = null;
 const SLUG = `e2e-actor-${crypto.randomUUID().slice(0, 8)}`;

@@ -5,7 +5,7 @@ import { isRemotePushPolicyRejection, isTransientGitMirrorError } from '../git/m
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github/github';
 import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToTomlEntry } from './index';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from '../git/project-git';
-import type { ProjectRow } from '../../projects/lib/serializers';
+import type { ProjectRow } from '../projects/lib/serializers';
 
 /**
  * Read the project's manifest. If the manifest doesn't exist yet (brand-new
@@ -186,7 +186,7 @@ async function commitGitHubRepoFile(
   invalidateProjectMirror(project.projectId);
   // The base branch moved through the Contents API. The git-CLI path below
   // notifies from `commitMultipleFilesToBranch`.
-  void import('../../projects/lib/config-convergence-triggers')
+  void import('../projects/lib/config-convergence-triggers')
     .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
     .catch(() => {});
   return { ok: true };

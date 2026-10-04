@@ -556,7 +556,7 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       # Non-secret task environment. KORTIX_PREVIEW_BASE_DOMAIN is the wildcard
       # every sandbox preview origin sits under; it is declared, never derived
-      # (see apps/api/src/sandbox-proxy/preview-hosts.ts). Setting it is what
+      # (see apps/api/src/services/sandbox-proxy/preview-hosts.ts). Setting it is what
       # makes clients stop using the path proxy, so it goes in only once the
       # certificate pack for that wildcard is active. Unset = path proxy, which
       # is also the complete rollback. Keep the fast-boot flag false for the
@@ -589,7 +589,7 @@ jobs:
       # resumes a short body in place (PR #7399).
       #
       # KORTIX_CONFIG_ARCHIVE_S3_* points the API's ONE object store
-      # (apps/api/src/object-store/s3.ts) at the SAME bucket for config release
+      # (apps/api/src/lib/object-store/s3.ts) at the SAME bucket for config release
       # archives, under the `config-releases/` prefix
       # (KORTIX_CONFIG_ARCHIVE_S3_PREFIX, default). Own keys, not the snapshot
       # ones, so naming a config bucket never starts the snapshot producer.

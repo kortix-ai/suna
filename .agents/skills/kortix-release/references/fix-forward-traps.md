@@ -90,7 +90,7 @@ Two outcomes, never a third:
   ```
 
   Real example: alert 6965, `js/weak-cryptographic-algorithm` on
-  `apps/api/src/connectors/call.ts:318` — OAuth 1.0a (RFC 5849 §3.4.2)
+  `apps/api/src/services/connectors/call.ts:318` — OAuth 1.0a (RFC 5849 §3.4.2)
   mandates HMAC-SHA1 as the signature method, and HMAC-SHA1 is not broken as a
   MAC (the break is in SHA-1 as a collision-resistant hash, which does not
   apply to its use as a MAC); changing the algorithm would break every OAuth1

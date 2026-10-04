@@ -21,7 +21,7 @@
  * process.on('unhandledRejection') → captureException → Sentry → Better Stack.
  *
  * It cannot be caught/converted at the JS layer, and the proxy path is
- * request-deadline-exempt (middleware/request-deadline.ts EXEMPT_PREFIXES
+ * request-deadline-exempt (http/middleware/request-deadline.ts EXEMPT_PREFIXES
  * includes '/v1/router'), so the correct, codebase-consistent fix is to drop
  * this transient upstream/network class in the Sentry ignoreErrors filter — the
  * same pattern sentry.ts already uses for sibling classes (ETIMEDOUT,
@@ -145,7 +145,7 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
 // a future refactor can't silently re-enable the paging.
 describe('http-errors.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', () => {
   const handlerSrc = readFileSync(
-    fileURLToPath(new URL('../middleware/http-errors.ts', import.meta.url)),
+    fileURLToPath(new URL('../http/middleware/http-errors.ts', import.meta.url)),
     'utf8',
   );
 

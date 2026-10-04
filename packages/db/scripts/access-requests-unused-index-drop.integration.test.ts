@@ -5,7 +5,7 @@
  * secondary indexes the baseline built (`idx_access_requests_email`,
  * `idx_access_requests_status`) have `pg_stat_user_indexes.idx_scan = 0` in
  * prod and no code path reads the table at all (the one reference is the
- * waitlist endpoint's INSERT, apps/api/src/access-control/index.ts:123). Dropped by
+ * waitlist endpoint's INSERT, apps/api/src/http/access-control/index.ts:123). Dropped by
  * the `.concurrent.ts` migrations; the table itself and its primary key
  * stay. Reads the live catalog, never source text; mirrors
  * `account-secret-resources-fk-index.integration.test.ts`.

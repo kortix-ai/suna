@@ -18,7 +18,7 @@ produced 37 warn lines in an hour against a 0.54/hour baseline (68×) — the
 Better Stack log spike this repo pages on. The settlements themselves were
 correct and each one's ledger row was already written.
 
-**Enforcement:** `apps/api/src/billing/wallet/wallet.test.ts` "settlement
+**Enforcement:** `apps/api/src/services/billing/wallet/wallet.test.ts` "settlement
 overdraft logging" — three successive settlements on a drained wallet warn
 exactly once, and a re-drain after a top-up warns again; both assertions fail
 without the transition gate in `wallet.settle`.

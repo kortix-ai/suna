@@ -79,7 +79,7 @@ export interface ApiResponse<T = any> {
  * auth-discovery, Pipedream. `makeRequest` classifies a 501 carrying this code
  * as an EXPECTED "feature unavailable" state and drops it from Sentry; callers
  * branch on `err.code === FEATURE_NOT_SUPPORTED_CODE`. Must stay in sync with
- * `apps/api/src/connectors/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
+ * `apps/api/src/http/connectors/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
  */
 export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
 
@@ -87,8 +87,8 @@ export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
  * Stable error code the platform API returns (HTTP 409) when a user tries to
  * set a model their account can't use — e.g. a managed model on a free tier,
  * or a BYOK model whose provider isn't connected. The API emits this from the
- * model-defaults PUT (`apps/api/src/projects/routes/models.ts`) and the channel
- * binding model set (`apps/api/src/projects/routes/channel-bindings.ts`) via
+ * model-defaults PUT (`apps/api/src/http/projects/models.ts`) and the channel
+ * binding model set (`apps/api/src/http/projects/channel-bindings.ts`) via
  * `isModelServableForAccount`. This is an EXPECTED condition — a UI validation
  * error, not a server bug — so `makeRequest` classifies a 409 carrying this
  * code as SILENT to `onError` (Sentry) but still returns the `ApiError` so the
@@ -103,9 +103,9 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
 /**
  * Stable error code the platform API returns (HTTP 409) when ANOTHER call
  * carrying the same `idempotency_key` is still mid-provision — see
- * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case and
+ * `apps/api/src/services/projects/lib/provision-idempotency.ts`'s `in_flight` case and
  * the two `POST /projects/provision` handlers in
- * `apps/api/src/projects/routes/projects.ts`. This is a RETRYABLE, EXPECTED state:
+ * `apps/api/src/http/projects/projects.ts`. This is a RETRYABLE, EXPECTED state:
  * the concurrent attempt simply hasn't committed yet, and the caller retries
  * with the same key until it does. First-run onboarding hits it whenever a
  * second tab (or the other entry door) races the same auto-create, so it must
@@ -131,7 +131,7 @@ export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
  * classifies a 503 carrying this code as SILENT to `onError` (Sentry) but still
  * returns the `ApiError`, so the dashboard can render its own unavailable
  * state. A genuine 503 (no typed code) still reports. Must stay in sync with
- * `ANALYTICS_UNAVAILABLE_CODE` in apps/api/src/admin/analytics.ts.
+ * `ANALYTICS_UNAVAILABLE_CODE` in apps/api/src/http/admin/analytics.ts.
  */
 export const ANALYTICS_UNAVAILABLE_CODE = 'analytics_unavailable';
 
@@ -149,7 +149,7 @@ export const ANALYTICS_UNAVAILABLE_CODE = 'analytics_unavailable';
  * still returns the `ApiError`, so the console can render its own
  * unavailable state. A genuine 503 (no typed code) still reports. Must stay
  * in sync with `ACCOUNTS_LIST_UNAVAILABLE_CODE` in
- * apps/api/src/admin/index.ts. Mirrors `ANALYTICS_UNAVAILABLE_CODE`.
+ * apps/api/src/http/admin/index.ts. Mirrors `ANALYTICS_UNAVAILABLE_CODE`.
  */
 export const ACCOUNTS_LIST_UNAVAILABLE_CODE = 'accounts_list_unavailable';
 

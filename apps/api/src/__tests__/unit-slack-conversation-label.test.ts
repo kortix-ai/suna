@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { describeSlackConversation, slackSendsForm } from '../channels/slack-api';
+import { describeSlackConversation, slackSendsForm } from '../services/channels/slack-api';
 
 /**
  * Every Slack binding on dev had no name (2026-10-02): `getChannelName` sent

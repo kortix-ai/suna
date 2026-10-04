@@ -1,5 +1,5 @@
 /**
- * Headless regular auth — /v1/auth/* (apps/api/src/auth/headless.ts + index.ts).
+ * Headless regular auth — /v1/auth/* (apps/api/src/http/auth/headless.ts + index.ts).
  * Public client config, sign-up, password sign-in, refresh, magic link, OTP
  * verify, social start, password reset/update, user, sign-out — all through the Kortix API against
  * the local GoTrue. Maps to spec AUTH-3..AUTH-6.

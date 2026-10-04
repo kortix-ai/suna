@@ -282,7 +282,7 @@ const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
  * warm session was created when the user landed on the project home —
  * possibly long before the send — but its title generation starts at the
  * first prompt, i.e. at adoption, which stamps `metadata.last_activity_at`
- * (apps/api/src/projects/routes/warm-sessions.ts). Windowing on `created_at`
+ * (apps/api/src/http/projects/warm-sessions.ts). Windowing on `created_at`
  * alone skipped the fast poll for exactly the sessions the home send
  * produces.
  */

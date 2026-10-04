@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-// resolveBillingFromRow (billing/services/resolve-billing.ts) states an
+// resolveBillingFromRow (services/billing/services/resolve-billing.ts) states an
 // account's whole billing situation from one credit_accounts row: which plan it
 // behaves as, where that came from, its effective entitlements after the
 // account-level overrides, and its concurrent-session cap.
@@ -12,12 +12,12 @@ import { describe, expect, test } from 'bun:test';
 // No mocks: the module is pure by construction. If it ever needs one, it has
 // stopped being pure and that is the bug.
 
-import { PLAN_CATALOG } from '../billing/services/plan-catalog';
+import { PLAN_CATALOG } from '../services/billing/services/plan-catalog';
 import {
   type BillingRow,
   activeTrialSeatLimit,
   resolveBillingFromRow,
-} from '../billing/services/resolve-billing';
+} from '../services/billing/services/resolve-billing';
 
 const NOW = Date.UTC(2026, 0, 15, 12, 0, 0);
 const HOUR = 3_600_000;

@@ -1,6 +1,6 @@
 -- ⚠️ COLLISION GUARD (review before deploy). The retired V1 IAM engine left
 -- orphaned tables named iam_roles / iam_policies in some environments — see
--- apps/api/src/accounts/iam.ts: "still exist but are no longer read from or
+-- apps/api/src/http/accounts/iam.ts: "still exist but are no longer read from or
 -- written to". They are DEAD (zero code reads/writes after the V1 retirement)
 -- and their V1 shape differs from the tables below, so drop any leftover before
 -- recreating. IF EXISTS makes this a no-op where they were never present or were

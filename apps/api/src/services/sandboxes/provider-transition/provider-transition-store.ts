@@ -16,7 +16,7 @@
  */
 import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { providerTransitions, projects, type Database } from '@kortix/db';
-import { metadataMerge } from '../../../projects/lib/metadata-merge';
+import { metadataMerge } from '../../projects/lib/metadata-merge';
 import { auditProviderTransition, type ProviderTransitionAuditRow } from './provider-transition-audit';
 import {
   LIVE_TRANSITION_STATUSES,

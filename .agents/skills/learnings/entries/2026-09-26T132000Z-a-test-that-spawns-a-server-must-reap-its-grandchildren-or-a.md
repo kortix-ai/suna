@@ -15,7 +15,7 @@ the body names the leaker.
 **Trigger surface:** Any test that `spawn`s a server and asserts against
 `http://127.0.0.1:<port>`, especially one that draws the port from a fixed range
 instead of binding `:0` and reading the assigned port. In this repo:
-`apps/api/src/snapshots/pi-worker-park.test.ts`, whose `bootPark` uses
+`apps/api/src/services/snapshots/pi-worker-park.test.ts`, whose `bootPark` uses
 `18800 + Math.floor(Math.random() * 500)` and whose `afterEach` kills only the
 park server, never the session worker the park server hands the port to.
 

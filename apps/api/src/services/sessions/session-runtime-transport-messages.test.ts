@@ -4,7 +4,7 @@ let serviceKey: string | null = 'svc-key';
 let ingressThrow: Error | null = null;
 const signedFor: string[] = [];
 
-mock.module('../../sandbox-proxy/backend', () => ({
+mock.module('../sandbox-proxy/backend', () => ({
   resolveServiceKey: async () => serviceKey,
   resolveSandboxIngress: async () => {
     if (ingressThrow) throw ingressThrow;

@@ -6,7 +6,7 @@
  * (the agent then fails closed, same as any unparseable entry).
  */
 import { describe, expect, test } from 'bun:test';
-import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
+import { extractAgents, grantFromLoadedAgents } from '../services/projects/agents';
 import { parseManifestString } from '../services/triggers';
 
 const v2 = (block: string) =>

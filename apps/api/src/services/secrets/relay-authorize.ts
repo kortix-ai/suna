@@ -35,7 +35,7 @@ import { config } from '../../lib/config';
 import { decryptProjectSecret, intersectSecretGrants } from './secrets';
 import { ACTIVE_SESSION_STATUSES } from '../sessions/session-status';
 import { db } from '../../lib/db';
-import { resolveSessionPersonalOwner } from '../../projects/lib/personal-resources';
+import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { filterSecretRowsByAudience, secretAudienceSubject } from './secret-audience';
 import type { SessionHandleFacts } from './handle-substitution';
 import type { SecretBrokerError, SecretSubstitution } from './http-broker';

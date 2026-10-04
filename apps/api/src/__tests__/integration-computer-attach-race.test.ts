@@ -13,15 +13,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, connectorConnections, tunnelConnections } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type pg from 'pg';
-import { ensureProjectComputer } from '../connectors/sync';
+import { ensureProjectComputer } from '../services/connectors/sync';
 import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 import { interleave } from './helpers/interleave';
 
 // The route runs through the real app; the owner's account token is the caller.
-const { app } = await import('../index');
-const { createAccountToken } = await import('../repositories/account-tokens');
+const { app } = await import('../app/index');
+const { createAccountToken } = await import('../services/repositories/account-tokens');
 
 const OWNER = crypto.randomUUID();
 let project: SeededProject;

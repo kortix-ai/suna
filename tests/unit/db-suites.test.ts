@@ -35,7 +35,7 @@ describe('db-suites discovery', () => {
   it('finds the apps/api, packages/db, and tests/migration PostgreSQL suites', () => {
     expect(files.has('apps/api/src/__tests__/integration-prompt-inbox.test.ts')).toBe(true);
     expect(files.has('apps/api/src/__tests__/integration-session-status-transitions.test.ts')).toBe(true);
-    expect(files.has('apps/api/src/billing/repositories/compute-sessions.integration.test.ts')).toBe(true);
+    expect(files.has('apps/api/src/services/billing/repositories/compute-sessions.integration.test.ts')).toBe(true);
     expect(files.has('packages/db/scripts/centralized-audit-v2.integration.test.ts')).toBe(true);
     expect(files.has('tests/migration/wallet-ledger.test.ts')).toBe(true);
     const inboxSuite = suites.find((suite) => suite.file.endsWith('integration-prompt-inbox.test.ts'));
@@ -51,7 +51,7 @@ describe('db-suites discovery', () => {
     for (const file of files) {
       expect(file).not.toMatch(/\.live\.test\.ts$/);
     }
-    expect(files.has('apps/api/src/projects/lib/metadata-merge.test.ts')).toBe(false);
+    expect(files.has('apps/api/src/services/projects/lib/metadata-merge.test.ts')).toBe(false);
   });
 
   // The invariant that keeps a new DB suite from skipping silently in a unit

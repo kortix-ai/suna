@@ -3,7 +3,7 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Teams `/models`, `/model <id>` and the model card's buttons. The list and
 // every check run as the person who typed, with the conversation's personal
-// scope (channels/model-access.ts, pinned in unit-channel-model-access). This
+// scope (services/channels/model-access.ts, pinned in unit-channel-model-access). This
 // file pins who that is, what the card offers, and what a choice does to the
 // conversation's live session: on dev, `/model` answered "Model set to …"
 // while the live session kept failing on its old ChatGPT model.
@@ -13,17 +13,17 @@ const testConfig = { TEAMS_REQUIRE_USER_IDENTITY: true };
 mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: testConfig }));
 
 let gate: Record<string, unknown> | null = null;
-mock.module('../channels/slack/model-gate', () => ({ channelModelContext: async () => gate }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+mock.module('../services/channels/slack/model-gate', () => ({ channelModelContext: async () => gate }));
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 
 let actor: { userId: string } | { reason: string } = { userId: 'ivan' };
 const actorLookups: string[] = [];
-mock.module('../channels/teams/identity', () => ({
+mock.module('../services/channels/teams/identity', () => ({
   teamsUserId: () => 'aad-ivan',
 }));
 // The same linked person decides the scope and, through core/settings.ts,
 // whether they may change this conversation's settings at all.
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     resolveChatActor: async (user: { platformUserId: string }) => {
       actorLookups.push(user.platformUserId);
@@ -42,7 +42,7 @@ let live: {
 } | null = null;
 // The project a live-session lookup was confined to.
 const liveLookups: Array<string | undefined> = [];
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   conversationSession: async (_tenant: string, _conversation: string, projectId?: string) => {
     liveLookups.push(projectId);
     return live;
@@ -50,14 +50,14 @@ mock.module('../channels/teams/binding', () => ({
   teamsChannelCtx: () => CTX,
 }));
 
-mock.module('../channels/teams/participants', () => ({
+mock.module('../services/channels/teams/participants', () => ({
   normalizeConversationPolicy: (v: unknown) =>
     v === 'owner_only' || v === 'owner_approval' || v === 'project_open' ? v : 'project_open',
 }));
 
 let selection: Record<string, unknown> | null = null;
 const stored: Array<string | null> = [];
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   setChannelAgent: async () => ({ ok: true }),
   setChannelConversationPolicy: async () => true,
@@ -67,7 +67,7 @@ mock.module('../channels/slack/selection', () => ({
   },
 }));
 
-mock.module('../llm-gateway/models/picker', () => ({
+mock.module('../services/llm-gateway/models/picker', () => ({
   labelForModelRef: (ref: string) => ref.replace(/^kortix\//, '').replace('anthropic/claude-opus-4-8', 'Claude Opus 4.8'),
 }));
 
@@ -82,7 +82,7 @@ const keyWrites: Array<Record<string, unknown>> = [];
 let liveReachesPersonal = true;
 let catalog: Array<Record<string, unknown>> = [];
 
-mock.module('../channels/model-access', () => ({
+mock.module('../services/channels/model-access', () => ({
   channelModelScope: (input: {
     projectId: string;
     accountId: string;
@@ -127,7 +127,7 @@ mock.module('../channels/model-access', () => ({
   listChannelModels: async () => ({ models: catalog, defaultModel: 'glm-5.3-flash' }),
 }));
 
-const { applyTeamsModelChoice, buildTeamsModelsCard, statusModel, teamsModelScope } = await import('../channels/teams/model-choice');
+const { applyTeamsModelChoice, buildTeamsModelsCard, statusModel, teamsModelScope } = await import('../services/channels/teams/model-choice');
 
 const personal = { conversation: { id: 'a:synthetic-chat', conversationType: 'personal' }, from: { id: '29:x', aadObjectId: 'aad-ivan' } };
 const groupChat = { ...personal, conversation: { id: 'a:synthetic-chat', conversationType: 'groupChat' } };

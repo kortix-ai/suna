@@ -59,28 +59,28 @@
 
 import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { configReleasesEnabled } from '../../config-releases/enabled';
-import { resolveDesiredRelease } from '../../config-releases/desired';
-import { ownerMayUseAgent } from '../../config-releases/repoint';
+import { configReleasesEnabled } from '../config-releases/enabled';
+import { resolveDesiredRelease } from '../config-releases/desired';
+import { ownerMayUseAgent } from '../config-releases/repoint';
 import {
   __clearRunningReleasesForTests,
   lastKnownRunningRelease,
   noteRunningRelease,
-} from '../../config-releases/running-release';
+} from '../config-releases/running-release';
 import {
   __clearRunningAssetsForTests,
   forgetRunningAssets,
   lastKnownAssetVerdict,
   noteRunningAssets,
   shouldReportPinned,
-} from '../../runtime-assets/running-assets';
+} from '../runtime-assets/running-assets';
 import {
   __clearRunningCatalogForTests,
   lastKnownManagedCatalog,
   modelConfirmation,
   noteModelConfirmation,
   noteRunningCatalog,
-} from '../../runtime-assets/running-catalog';
+} from '../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 import { db } from '../../lib/db';
 import { ttlMemo } from '../../lib/ttl-memo';
@@ -359,7 +359,7 @@ export async function probeRunningRelease(sessionId: string): Promise<string | n
  */
 async function noteAssetsFromHealth(
   sessionId: string,
-  runtime: import('../../runtime-assets/daemon-runtime-report').DaemonRuntimeReport | null,
+  runtime: import('../runtime-assets/daemon-runtime-report').DaemonRuntimeReport | null,
 ): Promise<void> {
   try {
     if (!runtime) return;
@@ -374,7 +374,7 @@ async function noteAssetsFromHealth(
       });
     }
     const { manifestFingerprint, runningAssetsVerdict } = await import(
-      '../../runtime-assets/manifest'
+      '../runtime-assets/manifest'
     );
     const verdict = await runningAssetsVerdict(runtime.running);
     // 'unknown' is never remembered: an older daemon with no `running` block
@@ -408,7 +408,7 @@ const defaultDeps: TurnStartConvergenceDeps = {
   desiredReleaseId: (target, sessionId) => desiredReleases.get(target, sessionId),
   runningReleaseId: lastKnownRunningRelease,
   probeRunningRelease,
-  // DYNAMIC import on purpose. `sandbox-proxy/forward/turn-start.ts` calls this
+  // DYNAMIC import on purpose. `services/sandbox-proxy/forward/turn-start.ts` calls this
   // gate on every turn start, and a static edge would pull the whole reload
   // graph — `session-reload` and `sandbox-env-sync` among them — into the
   // proxy's module graph. Five proxy unit tests that partially mock
@@ -529,11 +529,11 @@ export interface AssetConvergenceDeps {
 function defaultAssetDeps(): AssetConvergenceDeps {
   return {
     // DYNAMIC imports, same reason as `converge` above: this gate runs on every
-    // turn start from `sandbox-proxy/forward/turn-start.ts`, and a static edge would
+    // turn start from `services/sandbox-proxy/forward/turn-start.ts`, and a static edge would
     // pull the manifest graph (which hashes ~200 MB of binary on first use) and
     // the whole reload graph into the proxy's module graph. A box that is
     // already current never reaches either.
-    fingerprint: async () => (await import('../../runtime-assets/manifest')).manifestFingerprint(),
+    fingerprint: async () => (await import('../runtime-assets/manifest')).manifestFingerprint(),
     lastVerdict: lastKnownAssetVerdict,
     forget: forgetRunningAssets,
     refresh: (sessionId, context) => {
@@ -610,7 +610,7 @@ export function scheduleAssetConvergence(
 // failure this closes. See `model-catalog-turn-start.ts` for the full design.
 //
 // DYNAMIC imports, same reasoning as `converge` and `defaultAssetDeps` above:
-// `model-catalog-turn-start.ts` imports `sandbox-proxy/backend` and
+// `model-catalog-turn-start.ts` imports `services/sandbox-proxy/backend` and
 // `sandbox-runtime-refresh.ts`, and a static edge would pull that graph into
 // every proxy unit test's module load. A request that carries no model, or
 // one for a non-managed provider, never reaches either import.
@@ -629,7 +629,7 @@ export async function convergeModelCatalogForTurnStart(
     const [{ convergeModelCatalogBeforeTurnStart, convergeSandboxModelCatalog }, { isRuntimeManagedModelId }] =
       await Promise.all([
         import('./model-catalog-turn-start'),
-        import('../../llm-gateway/models/managed-models'),
+        import('../llm-gateway/models/managed-models'),
       ]);
     return await convergeModelCatalogBeforeTurnStart(sessionId, requestedManagedModelId, {
       isManagedModelId: isRuntimeManagedModelId,

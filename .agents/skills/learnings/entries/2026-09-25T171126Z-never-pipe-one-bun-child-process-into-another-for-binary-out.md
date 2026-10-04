@@ -14,6 +14,6 @@ it shipped. `materializeRepoContext` already avoids the same failure class.
 file (`git archive -o <file>`), then read the file with the second. Never trust
 exit codes alone for a pipeline: check the byte count or a digest at the end.
 
-**Enforcement.** `apps/api/src/config-releases/builder.test.ts` builds an archive
+**Enforcement.** `apps/api/src/services/config-releases/builder.test.ts` builds an archive
 larger than the truncation point and asserts it is complete and byte-identical
 across two builds.

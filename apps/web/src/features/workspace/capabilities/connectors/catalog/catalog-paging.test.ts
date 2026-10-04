@@ -8,7 +8,7 @@ import { shouldLoadOnScroll } from './catalog-paging';
  * window. All three were removed with the machinery they described: they
  * existed only so the client could accumulate enough pages to fake a category
  * filter, and the API performs that filter now
- * (`apps/api/src/connectors/pipedream-index.ts`).
+ * (`apps/api/src/services/connectors/pipedream-index.ts`).
  *
  * One mechanism is left, and it is the one the user drives.
  */

@@ -1,10 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-// Characterization test for the plan catalog (billing/services/plan-catalog.ts).
+// Characterization test for the plan catalog (services/billing/services/plan-catalog.ts).
 //
 // The catalog is a SECOND SPELLING of facts that already live in `TIERS`
-// (billing/services/tiers.ts) and the legacy multiplier table
-// (billing/account-limits.ts). It exists so the billing refactor has one typed
+// (services/billing/services/tiers.ts) and the legacy multiplier table
+// (services/billing/account-limits.ts). It exists so the billing refactor has one typed
 // record per plan instead of a dozen ad-hoc derivations — but it is only safe
 // while the two spellings agree exactly. This test is that guarantee: it walks
 // EVERY key in TIERS and asserts the catalog record reproduces what today's
@@ -34,7 +34,7 @@ mock.module('../lib/config', () => ({
 
 // account-limits.ts and entitlements.ts both reach the credit-account repo at
 // import time. Nothing under test calls these; the stub only keeps the DB out.
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => null,
   getSubscriptionInfo: async () => null,
 }));
@@ -46,12 +46,12 @@ const {
   getTierOrder,
   isValidTier,
   tierGrantsAllModels,
-} = await import('../billing/services/tiers');
+} = await import('../services/billing/services/tiers');
 const { sessionLlmPolicyForTier } = await import(
-  '../billing/account-limits'
+  '../services/billing/account-limits'
 );
 const { getPlanRecord, listPlanRecords, PLAN_CATALOG, PLAN_FAMILIES, resolvePlanRecord } =
-  await import('../billing/services/plan-catalog');
+  await import('../services/billing/services/plan-catalog');
 
 /** The multiplier `tierMultiplier` applied, recovered from the emitted policy. */
 function observedLlmMultiplier(tier: string): number {

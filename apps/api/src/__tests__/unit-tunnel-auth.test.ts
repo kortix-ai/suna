@@ -1,5 +1,5 @@
 /**
- * Unit tests for the tunnel auth tiers (apps/api/src/tunnel/routes/auth.ts).
+ * Unit tests for the tunnel auth tiers (apps/api/src/http/tunnel/auth.ts).
  *
  * Direct machine access is the pairing human's (plus account managers for
  * owner-less team machines). Project and session credentials reach machines
@@ -13,11 +13,11 @@ import {
   requireUserCredential,
   getTunnelReadContext,
   getTunnelOwnerContext,
-} from '../tunnel/routes/auth';
-import { createConnectionsRouter } from '../tunnel/routes/connections';
-import { effectiveRegisteredCapabilities, tunnelAgentAuthAuditEvent } from '../tunnel';
-import { tunnelRelay } from '../tunnel/core/relay';
-import { heartbeatManager } from '../tunnel/core/heartbeat';
+} from '../http/tunnel/auth';
+import { createConnectionsRouter } from '../http/tunnel/connections';
+import { effectiveRegisteredCapabilities, tunnelAgentAuthAuditEvent } from '../http/tunnel';
+import { tunnelRelay } from '../services/tunnel/core/relay';
+import { heartbeatManager } from '../services/tunnel/core/heartbeat';
 
 /** Minimal stand-in for a Hono context: only `c.get(key)` is used here. */
 function fakeCtx(values: Record<string, unknown>) {

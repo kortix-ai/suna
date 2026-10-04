@@ -21,7 +21,7 @@ mock.module('../../apps/api/src/lib/db', () => ({
 }));
 
 const { getUsageBreakdownThisPeriod } = await import(
-  '../../apps/api/src/billing/services/usage-breakdown'
+  '../../apps/api/src/services/billing/services/usage-breakdown'
 );
 
 const PERIOD_START = '2026-07-01T00:00:00.000Z';

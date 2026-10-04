@@ -1,6 +1,6 @@
 /**
  * Unit tests for the in-app self-host GitHub App setup flow's pure/network
- * pieces (platform/routes/github-app.ts): manifest construction, the
+ * pieces (http/platform/github-app.ts): manifest construction, the
  * create-app URL, the signed manifest-start state (sign/verify, tamper +
  * expiry rejection), and the manifest-conversion API call (fetch mocked via
  * the function's own `fetchImpl` param — no `mock.module` needed here).
@@ -9,7 +9,7 @@
  * platform_settings round trip, and unit-github-app-isconfigured.test.ts for
  * the DB-first/env-fallback accessor flip (that one needs `mock.module`, kept
  * in its own file/test-run per the cross-file mock-leakage caveat documented
- * in platform/services/session-sandbox.test.ts).
+ * in services/platform/services/session-sandbox.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -18,7 +18,7 @@ import {
   exchangeManifestCode,
   signManifestStartState,
   verifyManifestStartState,
-} from '../platform/routes/github-app';
+} from '../http/platform/github-app';
 
 const ORIG_SECRET = process.env.SUPABASE_JWT_SECRET;
 beforeEach(() => {

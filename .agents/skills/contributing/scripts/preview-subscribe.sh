@@ -5,7 +5,7 @@
 #   preview-subscribe.sh <preview-origin> <agent-browser-session> [tier_key]
 #
 # A fresh preview account is free tier and gets no managed models — by design
-# (apps/api/src/billing/services/tiers.ts: accountIsFreeTierForModels denies
+# (apps/api/src/services/billing/services/tiers.ts: accountIsFreeTierForModels denies
 # managed models to every unpaid tier, in every environment, since commit
 # 406eb5e9ac). Its model picker is then empty and an agent turn has nothing to
 # answer with. preview-environments.md already names the fix ("subscribe with

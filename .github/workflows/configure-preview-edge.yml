@@ -8,7 +8,7 @@ name: Configure Sandbox Preview Edge
 # the moment it emits anything root-absolute (`<a href="/learn">`,
 # `fetch('/api')`, `pushState`, a service worker, a WebSocket). Only a real
 # origin makes an arbitrary app work unmodified. See
-# apps/api/src/sandbox-proxy/preview-hosts.ts.
+# apps/api/src/services/sandbox-proxy/preview-hosts.ts.
 #
 # Sibling of configure-apps-edge.yml, which does the same for `*.apps.kortix.com`.
 

@@ -9,7 +9,7 @@ import {
   deleteGatewayKey,
   listGatewayKeys,
   validateGatewayKey,
-} from '../llm-gateway/gateway-keys';
+} from '../services/llm-gateway/gateway-keys';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

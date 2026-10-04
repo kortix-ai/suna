@@ -629,7 +629,7 @@ interface MemSpec {
 
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
-  // The API HOSTS THE GATEWAY IN-PROCESS (apps/api/src/index.ts mounts
+  // The API HOSTS THE GATEWAY IN-PROCESS (apps/api/src/app/index.ts mounts
   // `/v1/llm` via mountLlmGateway), so every byte the note below describes for
   // the standalone gateway also transits this container. 640m was the same
   // mistake one service down: on 2026-08-21 the dev API — capped at 1024 MiB,

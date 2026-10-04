@@ -194,7 +194,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../../../projects/routes/shared', () => ({
+mock.module('../../open/shared', () => ({
   openSession: async (input: { sessionId: string }) => {
     events.push(`open:${input.sessionId}`);
     const delay = openDelayBySession[input.sessionId];
@@ -207,7 +207,7 @@ mock.module('../../../../projects/routes/shared', () => ({
   },
 }));
 
-mock.module('../../../../sandbox-proxy/forward', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
@@ -409,10 +409,10 @@ mock.module('../../opencode-mapping', () => ({
 // continue-session-runtime-env.test.ts; this file records whether it ran.
 let serviceKeyAvailable = true;
 let envSyncCalls = 0;
-mock.module('../../../../platform/service-key', () => ({
+mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
-mock.module('../../../../sandbox-proxy/backend', () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
   invalidateSandbox: () => {},
 }));

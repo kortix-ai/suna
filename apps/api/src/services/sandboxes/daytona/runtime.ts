@@ -5,8 +5,8 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from '../../../platform/providers/contract';
-import { isProviderNotFound } from '../../../platform/providers/status';
+import type { SandboxExecOptions, SandboxExecResult } from '../../platform/providers/contract';
+import { isProviderNotFound } from '../../platform/providers/status';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../../lib/config';
 import { triggerEmergencyDiskArchiveSweep } from '../disk-quota-guard';
@@ -17,15 +17,15 @@ import {
   listStoppedDaytonaSandboxesOldestFirst,
 } from './client';
 import { configuredTimeoutMs, withTimeout } from '../../../lib/with-timeout';
-import { serviceKeyForExternalId } from '../../../platform/service-key';
-import { sandboxFrontendBaseUrl } from '../../../platform/sandbox-frontend-url';
+import { serviceKeyForExternalId } from '../../platform/service-key';
+import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import {
   assertWorkloadCredential,
   providerAutoStopBackstopMinutes,
   sandboxWorkloadType,
-} from '../../../platform/providers/contract';
+} from '../../platform/providers/contract';
 import { classifyDaytonaState } from './state';
-import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
+import { sandboxOwnershipMarker } from '../../platform/sandbox-ownership';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
 // @daytonaio/sdk's Daytona.createAxiosInstance) — effectively unbounded for
@@ -108,7 +108,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxWorkloadType,
-} from '../../../platform/providers/contract';
+} from '../../platform/providers/contract';
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
 // is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
@@ -201,8 +201,8 @@ export class DaytonaProvider implements SandboxProvider {
 
     // Every Daytona sandbox boots from its project's own per-project
     // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
-    // we get here (see platform/services/session-sandbox.ts +
-    // snapshots/builder.ts). There is intentionally no shared platform
+    // we get here (see services/platform/services/session-sandbox.ts +
+    // services/snapshots/builder.ts). There is intentionally no shared platform
     // fallback: a missing snapshot means the project's first build
     // hasn't finished, which is a session-creation error — not something
     // we paper over with an unrelated image.
@@ -211,7 +211,7 @@ export class DaytonaProvider implements SandboxProvider {
       throw new Error(
         'Daytona create() called without opts.snapshot. ' +
           'Every sandbox must boot from a per-project snapshot built by ' +
-          'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
+          'apps/api/src/services/snapshots/builder.ts. There is no shared fallback.',
       );
     }
 

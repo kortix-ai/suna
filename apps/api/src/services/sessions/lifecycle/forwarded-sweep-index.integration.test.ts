@@ -32,7 +32,7 @@
  *
  * A near-empty test table costs a seq scan as the CORRECT choice on its own,
  * so the plan test forces the planner away from one (`enable_seqscan = off`,
- * same technique as `admin/accounts-list-index.integration.test.ts`) and
+ * same technique as `services/admin/accounts-list-index.integration.test.ts`) and
  * asserts the index is STRUCTURALLY usable for the shipped statement, not
  * that the planner picks it unprompted on this table's size. A predicate the
  * partial index cannot serve — a rewrite of the `result->>'status'` match, a

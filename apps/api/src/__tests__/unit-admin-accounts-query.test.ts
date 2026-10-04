@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseAdminAccountsListQuery, UNPAID_TIERS } from '../admin/accounts-query';
+import { parseAdminAccountsListQuery, UNPAID_TIERS } from '../services/admin/accounts-query';
 
 /** Build a query accessor from a plain record, mirroring c.req.query(k). */
 function get(params: Record<string, string>) {

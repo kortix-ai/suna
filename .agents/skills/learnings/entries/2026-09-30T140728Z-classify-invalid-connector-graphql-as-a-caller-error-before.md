@@ -10,4 +10,4 @@ incident_date: 2026-09-30
 
 **Incident:** On 2026-09-29 and 2026-09-30, malformed agent-generated queries returned `GRAPHQL_VALIDATION_FAILED` and `INPUT_ERROR`. The API wrapped them as upstream 502 and emitted warnings despite a healthy provider (KRTX-678).
 
-**Enforcement:** `bun test apps/api/src/connectors/composio.test.ts` checks that invalid GraphQL returns status 400 and keeps the diagnostic.
+**Enforcement:** `bun test apps/api/src/services/connectors/composio.test.ts` checks that invalid GraphQL returns status 400 and keeps the diagnostic.

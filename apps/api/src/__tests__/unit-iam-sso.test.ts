@@ -6,7 +6,7 @@ import {
   extractGroupClaims,
   extractSsoProviderId,
   resolveClaimedGroupIds,
-} from '../iam/sso-sync';
+} from '../services/iam/sso-sync';
 
 describe('extractSsoProviderId', () => {
   test('reads sso_provider_id from app_metadata', () => {

@@ -46,7 +46,7 @@ export interface CapabilityTab {
  * Customize is agent-centric (Marko, 2026-09-01). An agent is the only
  * object a project manager grants a person or a group access to — the object
  * policy for `agent` is `closed`, every other resource is `open`
- * (`apps/api/src/iam/authorize.ts`) — so it is the primitive every other
+ * (`apps/api/src/services/iam/authorize.ts`) — so it is the primitive every other
  * decision hangs off: which model it thinks with, which skills it loads,
  * which connectors and secrets it may reach, when a trigger starts it. The
  * bar is ordered the way that decision is made: Agents leads, alone, and the

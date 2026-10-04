@@ -17,16 +17,16 @@ mock.module('../lib/config', () => ({
   SANDBOX_VERSION: 'test',
   config: { MICROSOFT_APP_ID: 'app-1', MICROSOFT_APP_PASSWORD: 'secret' },
 }));
-mock.module('../channels/teams-auth', () => ({ teamsConfigured: () => true }));
+mock.module('../services/channels/teams-auth', () => ({ teamsConfigured: () => true }));
 // The project's own bot app id; null = the project brings no bot.
 let byoAppId: string | null = 'byo-app';
-mock.module('../channels/install-store', () => ({ loadTeamsAppIdForProject: async () => byoAppId }));
-mock.module('../channels/teams/jwt', () => ({ validateInboundActivityJwt: async () => true }));
-mock.module('../channels/teams/file-proxy', () => ({ handleFileConsentInvoke: async () => {} }));
+mock.module('../services/channels/install-store', () => ({ loadTeamsAppIdForProject: async () => byoAppId }));
+mock.module('../services/channels/teams/jwt', () => ({ validateInboundActivityJwt: async () => true }));
+mock.module('../services/channels/teams/file-proxy', () => ({ handleFileConsentInvoke: async () => {} }));
 // The tenants the BYO project's install proved (chat_installs).
 let provenTenants: string[] = ['tenant-1'];
 const inbounds: unknown[] = [];
-mock.module('../channels/teams/inbound', () => ({
+mock.module('../services/channels/teams/inbound', () => ({
   MANAGED_TEAMS_INBOUND: { kind: 'managed' },
   scopeProjectTeamsActivity: async (projectId: string, activity: { conversation?: { tenantId?: string } }) => {
     const tenantId = activity.conversation?.tenantId;
@@ -34,20 +34,20 @@ mock.module('../channels/teams/inbound', () => ({
   },
 }));
 const cardInbounds: unknown[] = [];
-mock.module('../channels/teams/interactivity', () => ({
+mock.module('../services/channels/teams/interactivity', () => ({
   handleAdaptiveCardAction: async (_activity: unknown, inbound: unknown) => {
     cardInbounds.push(inbound);
     return { statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value: {} };
   },
 }));
 const messageActionInbounds: unknown[] = [];
-mock.module('../channels/teams/message-action', () => ({
+mock.module('../services/channels/teams/message-action', () => ({
   handleOpenInKortixAction: async (_activity: unknown, inbound: unknown) => {
     messageActionInbounds.push(inbound);
     return { task: { type: 'message', value: 'MESSAGE-ACTION' } };
   },
 }));
-mock.module('../channels/teams/dispatch', () => ({
+mock.module('../services/channels/teams/dispatch', () => ({
   handleTeamsActivity: (activity: { id: string }, inbound: unknown) =>
     new Promise<void>((resolve) => {
       dispatched.push(activity.id);
@@ -62,8 +62,8 @@ mock.module('../channels/teams/dispatch', () => ({
 /** The bring-your-own path's project: the endpoint answers only for a UUID. */
 const PROJECT = '11111111-2222-4333-8444-555555555555';
 
-await import('../channels/teams/routes');
-const { teamsWebhookApp } = await import('../channels/teams/app');
+await import('../http/channels/teams/routes');
+const { teamsWebhookApp } = await import('../http/channels/teams/app');
 
 beforeEach(() => {
   byoAppId = 'byo-app';

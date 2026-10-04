@@ -30,7 +30,7 @@ interface AccountSummary {
 }
 
 /** One entry of the server's self-describing catalog — `buildFeatureFlagCatalog`
- *  in apps/api/src/feature-flags/registry.ts, serialized as
+ *  in apps/api/src/services/feature-flags/registry.ts, serialized as
  *  `project.experimental_features`. The UI renders straight from it, so the
  *  spec reads its expectations from the same source instead of hard-coding a
  *  flag list that would rot the moment a flag is added. */
@@ -114,7 +114,7 @@ test.describe("19 — Feature flags UI", () => {
   // capability gate itself is unit-covered by the `canEdit` fail-closed logic
   // in experimental-tab.tsx and enforced server-side by
   // `assertProjectCapability(PROJECT_CUSTOMIZE_WRITE)` on
-  // `PATCH /projects/:id/features` (apps/api/src/projects/routes/project-settings.ts).
+  // `PATCH /projects/:id/features` (apps/api/src/http/projects/project-settings.ts).
   test("lists every available flag, toggles one through PATCH /features, and persists it", async ({
     page,
   }) => {
@@ -173,7 +173,7 @@ test.describe("19 — Feature flags UI", () => {
       expect(flags.length).toBeGreaterThan(0);
 
       // A `catalogHidden` flag is resolvable but never offered as a toggle
-      // (apps/api/src/feature-flags/registry.ts, "Hidden flags").
+      // (apps/api/src/services/feature-flags/registry.ts, "Hidden flags").
       // `agent_principal` is how Kortix works now, so the catalog omits it and
       // the page cannot render a row for it. The effective map still carries
       // it — support switches one project back through

@@ -5,7 +5,7 @@ const SESSION_ID = 'sess-review';
 let turn: Record<string, unknown> | null = null;
 const finalized: Array<Record<string, unknown>> = [];
 let ownedRef: Record<string, unknown> | null = null;
-mock.module('../channels/teams/turn', () => ({
+mock.module('../services/channels/teams/turn', () => ({
   loadTurn: async () => turn,
   conversationRefForSession: async () => ownedRef,
   finalizeTurn: async (_h: unknown, opts: Record<string, unknown>) => {
@@ -18,7 +18,7 @@ mock.module('../channels/teams/turn', () => ({
 let cardOk = true;
 let textOk = true;
 const texts: string[] = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async () => (cardOk ? 'activity-1' : null),
   sendText: async (_ref: unknown, text: string) => {
     texts.push(text);
@@ -33,7 +33,7 @@ const ITEM = {
   risk: 'high',
 };
 
-const load = async () => await import('../channels/teams/review');
+const load = async () => await import('../services/channels/teams/review');
 
 beforeEach(() => {
   turn = {

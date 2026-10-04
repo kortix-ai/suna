@@ -65,7 +65,7 @@ interface Instruction {
 
 /**
  * The buildah-portability guard's heredoc detector, ported VERBATIM from
- * `stageBuildContext` (apps/api/src/snapshots/build-context.ts). Keep the two
+ * `stageBuildContext` (apps/api/src/services/snapshots/build-context.ts). Keep the two
  * in lock-step: this is the authoring-time copy of a check that otherwise only
  * fires server-side, mid-build.
  */
@@ -159,7 +159,7 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
   const instructions = parseInstructions(text);
 
   // ── 1. COPY/ADD from the build context ───────────────────────────────────
-  // `stageBuildContext` (apps/api/src/snapshots/build-context.ts) stages ONLY
+  // `stageBuildContext` (apps/api/src/services/snapshots/build-context.ts) stages ONLY
   // Kortix's own artifacts — the context is a CLOSED set and none of it is
   // anything a user Dockerfile would legitimately COPY. The user's repo is
   // NEVER in the build context — it is git-cloned to /workspace when a session
@@ -195,7 +195,7 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
 
   // ── 2. RUN heredocs ──────────────────────────────────────────────────────
   // Rationale ported verbatim from the buildah-portability guard in
-  // apps/api/src/snapshots/build-context.ts:
+  // apps/api/src/services/snapshots/build-context.ts:
   //
   //   The SAME composed context ships to BOTH providers. Daytona builds with
   //   BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs);

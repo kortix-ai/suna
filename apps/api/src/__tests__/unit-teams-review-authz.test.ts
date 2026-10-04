@@ -17,11 +17,11 @@ const ITEM_ACCOUNT = 'acct-owning-the-item';
 
 const actorCalls: Array<{ tenantId: string; uid: string; accountId: string; projectId: string }> = [];
 let actorResult: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
-mock.module('../channels/teams/identity', () => ({
+mock.module('../services/channels/teams/identity', () => ({
   teamsUserId: () => '29:presser',
   notifyAdminsOfTeamsAccessRequest: async () => {},
 }));
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
   
   resolveChatActor: async (
@@ -38,7 +38,7 @@ mock.module('../channels/core/identity', () =>
 );
 
 const verdicts: Array<Record<string, unknown>> = [];
-mock.module('../projects/review-items', () => ({
+mock.module('../services/projects/review-items', () => ({
   getReviewItemById: async () => ({
     reviewItemId: 'ri_1',
     accountId: ITEM_ACCOUNT,
@@ -49,21 +49,21 @@ mock.module('../projects/review-items', () => ({
   },
 }));
 
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   conversationSession: async () => null,
   resolveConversationProject: async () => PROJECT,
   setConversationProject: async () => {},
   teamsChannelCtx: () => ({ platform: 'teams', teamId: TENANT, channelId: CONVO }),
 }));
 
-mock.module('../channels/teams/session', () => ({
+mock.module('../services/channels/teams/session', () => ({
   createOrJoinTeamsConversationSession: async () => {},
 }));
 
 // The conversation's session row: which project the card's session lives in.
 let threadRow: { sessionId: string; projectId: string } | null = null;
-const realThreads = await import('../channels/core/threads');
-mock.module('../channels/core/threads', () => ({
+const realThreads = await import('../services/channels/core/threads');
+mock.module('../services/channels/core/threads', () => ({
   ...realThreads,
   findChatThread: async () => threadRow,
 }));
@@ -71,7 +71,7 @@ mock.module('../channels/core/threads', () => ({
 // The project's `teams` flag, which gates card actions as it gates messages.
 let teamsOn = true;
 const flagChecks: string[] = [];
-mock.module('../feature-flags/for-project', () => ({
+mock.module('../services/feature-flags/for-project', () => ({
   projectFeatureFlagEnabled: async (projectId: string, key: string) => {
     flagChecks.push(`${projectId}:${key}`);
     return teamsOn;
@@ -86,7 +86,7 @@ const activity = {
   value: { action: { verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: 'ri_1', verdict: 'approve' } } },
 };
 
-const load = async () => await import('../channels/teams/interactivity');
+const load = async () => await import('../services/channels/teams/interactivity');
 
 beforeEach(() => {
   actorCalls.length = 0;

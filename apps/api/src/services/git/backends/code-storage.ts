@@ -23,7 +23,7 @@
  * through it with a scope-appropriate, short-lived claim set. It's
  * deliberately synchronous (Node's `crypto.createSign` supports fully sync
  * EC/RSA signing) rather than using the async `jose` SignJWT path used
- * elsewhere in this repo (e.g. channels/teams/jwt.ts's verify side) — sync
+ * elsewhere in this repo (e.g. services/channels/teams/jwt.ts's verify side) — sync
  * matters because `buildUpstream` is a SYNC method on `GitHostBackend`
  * (types.ts docstring: token resolution stays with the project layer for
  * OTHER backends, but code.storage mints its own on demand, and it can't

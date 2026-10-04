@@ -4,7 +4,7 @@ import { HTTPException } from 'hono/http-exception';
 // DEADLINE_MS is read from env at module load, and static imports are hoisted
 // above top-level code — so we must set the env var and then *dynamically*
 // import the middleware, otherwise it captures the default 28s budget.
-type RequestDeadlineModule = typeof import('../middleware/request-deadline');
+type RequestDeadlineModule = typeof import('../http/middleware/request-deadline');
 
 let requestDeadline: RequestDeadlineModule['requestDeadline'];
 let isRequestDeadlineHTTPException: RequestDeadlineModule['isRequestDeadlineHTTPException'];
@@ -13,7 +13,7 @@ let REQUEST_DEADLINE_CODE: RequestDeadlineModule['REQUEST_DEADLINE_CODE'];
 
 beforeAll(async () => {
   process.env.REQUEST_DEADLINE_MS = '50';
-  const mod = await import('../middleware/request-deadline');
+  const mod = await import('../http/middleware/request-deadline');
   requestDeadline = mod.requestDeadline;
   isRequestDeadlineHTTPException = mod.isRequestDeadlineHTTPException;
   RequestDeadlineHTTPException = mod.RequestDeadlineHTTPException;

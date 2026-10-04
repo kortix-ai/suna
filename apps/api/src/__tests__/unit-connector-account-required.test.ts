@@ -13,12 +13,12 @@
  * `default_account` field — all with fake deps, no database.
  */
 import { describe, expect, test } from 'bun:test';
-import type { GatewayDeps } from '../connectors/gateway';
+import type { GatewayDeps } from '../services/connectors/gateway';
 import {
   createConnectorRouter,
   type ConnectorPrincipal,
   type ConnectorRouterDeps,
-} from '../connectors/router';
+} from '../http/connectors/router';
 
 const PROJECT = 'proj-1';
 const ALICE = 'user-alice';

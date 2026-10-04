@@ -4,7 +4,7 @@ import {
   resolveSessionProvider,
   sessionProviderIsLocked,
   warmPrebakeProviders,
-} from '../../projects/lib/provider-precedence';
+} from '../projects/lib/provider-precedence';
 
 // Per-project sandbox-provider override — precedence unit test. Deterministic:
 // `allowed` + `isEnabled` are injected (they model config.ALLOWED_SANDBOX_PROVIDERS

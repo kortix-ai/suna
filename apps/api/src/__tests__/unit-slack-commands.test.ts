@@ -32,7 +32,7 @@ let setModelResult = true;
 const setAgentCalls: Array<string | null> = [];
 const setModelCalls: Array<string | null> = [];
 const setPolicyCalls: string[] = [];
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   setChannelAgent: async (_ctx: unknown, a: string | null) => { setAgentCalls.push(a); return setAgentResult; },
   setChannelModel: async (_ctx: unknown, m: string | null) => { setModelCalls.push(m); return setModelResult; },
@@ -62,16 +62,16 @@ let modelGate: unknown = {
   // (flag off) has its own cases.
   llmGatewayEnabled: true,
 };
-mock.module('../channels/slack/model-gate', () => ({
+mock.module('../services/channels/slack/model-gate', () => ({
   // The gate follows the binding: an unbound channel has no project.
   channelModelContext: async () => (selection ? modelGate : null),
 }));
 let servable = true;
-mock.module('../llm-gateway/resolution/default-model', () => ({
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async () => servable,
   resolveEffectiveModel: async () => ({ model: 'anthropic/claude-opus-4-8', source: 'project' }),
 }));
-mock.module('../llm-gateway/models/picker', () => ({
+mock.module('../services/llm-gateway/models/picker', () => ({
   listPickerModels: async () => ({
     models: [
       {
@@ -93,7 +93,7 @@ mock.module('../llm-gateway/models/picker', () => ({
 // whose list, checks and copy are pinned in unit-slack-model-choice.
 const modelCalls: Array<{ fn: string; ctx: unknown; choice?: string }> = [];
 const pickerResponse = { response_type: 'ephemeral', blocks: [{ type: 'header', text: { type: 'plain_text', text: 'Models' } }] };
-mock.module('../channels/slack/model-choice', () => ({
+mock.module('../services/channels/slack/model-choice', () => ({
   buildSlackModelsResponse: async (c: unknown) => {
     modelCalls.push({ fn: 'list', ctx: c });
     return pickerResponse;
@@ -111,7 +111,7 @@ mock.module('../channels/slack/model-choice', () => ({
 let identityRow: { userId: string } | null = null;
 let settingsActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 const actorChecks: Array<{ projectId: string; action: string }> = [];
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
   
   lookupChatIdentity: async () => identityRow,
@@ -125,17 +125,23 @@ mock.module('../channels/core/identity', () =>
   },
 }),
 );
-mock.module('../accounts/core/app', () => ({
+const realOwnerEmails = await import('../services/accounts/core/owner-emails');
+mock.module('../services/accounts/core/owner-emails', () => ({
+  ...realOwnerEmails,
   lookupEmailsByUserIds: async (ids: string[]) =>
     new Map(ids.map((id) => [id, `${id}@example.com`])),
+}));
+const realAccountName = await import('../services/accounts/core/account-name');
+mock.module('../services/accounts/core/account-name', () => ({
+  ...realAccountName,
   defaultAccountName: (email: string | null | undefined) => email ?? 'Account',
 }));
 
 // Repo previews are probed over the network; these tests decide which load.
 let loadablePreviews = new Map<string, string>();
 const previewRequests: string[][] = [];
-const realRepoPreview = await import('../channels/repo-preview');
-mock.module('../channels/repo-preview', () => ({
+const realRepoPreview = await import('../services/channels/repo-preview');
+mock.module('../services/channels/repo-preview', () => ({
   ...realRepoPreview,
   repoPreviewImages: async (urls: Iterable<string | null | undefined>) => {
     const list = [...urls].filter((u): u is string => Boolean(u));
@@ -144,10 +150,10 @@ mock.module('../channels/repo-preview', () => ({
   },
 }));
 let recentSessions: unknown[] | null = [];
-mock.module('../channels/core/sessions', () => ({ listVisibleChatSessions: async () => recentSessions }));
+mock.module('../services/channels/core/sessions', () => ({ listVisibleChatSessions: async () => recentSessions }));
 
 const { config } = await import('../lib/config');
-const { handleSlashCommand } = await import('../channels/slack/commands');
+const { handleSlashCommand } = await import('../services/channels/slack/commands');
 
 const ctx = { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' };
 

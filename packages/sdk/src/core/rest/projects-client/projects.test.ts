@@ -333,7 +333,7 @@ test('a project response carries the icon through to KortixProject', async () =>
 // ── B44: `icon` on the updateProject body ────────────────────────────────────
 //
 // `PATCH /v1/projects/:projectId` reads THREE states off `icon`, and only the
-// request body can tell them apart (apps/api/src/projects/routes/project-detail.ts):
+// request body can tell them apart (apps/api/src/http/projects/project-detail.ts):
 //
 //   key absent  → the stored icon is left alone
 //   icon: null  → the stored icon is removed
@@ -588,7 +588,7 @@ test('a project response with a null icon_glyph reaches the caller as null', asy
 // ── B-default-branch: `default_branch` on `ProvisionProjectInput` ───────────
 //
 // Carried Minor: apps/web sends `default_branch` on provision and the server
-// (apps/api/src/projects/routes/projects.ts) reads it, but the SDK's
+// (apps/api/src/http/projects/projects.ts) reads it, but the SDK's
 // `ProvisionProjectInput` never declared it — forcing a double-cast at the
 // web call site. Additive only: a new optional field, no existing member
 // touched.
@@ -625,7 +625,7 @@ test('provisionProject sends default_branch on the wire', async () => {
 //
 // POST /projects/provision-stream reports the same create as provisionProject,
 // but as a series of data-only SSE frames (`data: {"type":…}\n\n`, no `event:`
-// line — see apps/api/src/projects/routes/projects.ts). Frame parsing is line-by-line
+// line — see apps/api/src/http/projects/projects.ts). Frame parsing is line-by-line
 // on purpose: SSE allows `: comment` lines and, in principle, an `event:` line
 // ahead of `data:`; a parser that hard-fails on any frame that isn't EXACTLY
 // `data: <json>` breaks on the first spec-legal frame a server adds.
@@ -824,7 +824,7 @@ describe('provisionProjectStream', () => {
   });
 
   // Guards the pre-stream denial path documented in
-  // apps/api/src/projects/routes/projects.ts: an unauthorized caller gets a plain
+  // apps/api/src/http/projects/projects.ts: an unauthorized caller gets a plain
   // JSON 403, never a 200 SSE stream carrying an error frame. The client must
   // not silently hang or resolve undefined when the response never opens a
   // stream body at all.
@@ -844,7 +844,7 @@ describe('provisionProjectStream', () => {
   //
   // Every failure `provisionProjectStream` threw used to be a bare `new
   // Error(message)` — no `.status`, no `.code`, even though the server sends
-  // both (`apps/api/src/projects/routes/projects.ts`'s error frame, and the
+  // both (`apps/api/src/http/projects/projects.ts`'s error frame, and the
   // pre-stream denial body) and `apps/web`'s `messageFor`/`isRetryableError`
   // (`use-create-workspace.ts`) classify EVERY create failure by reading
   // exactly those two fields. On the streaming path — the one every user

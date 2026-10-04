@@ -10,8 +10,8 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db } from '../lib/db';
-import { createAccountToken, validateAccountToken } from '../repositories/account-tokens';
-import { agentMayPerform, agentMayUseConnector } from '../iam/agent-scope';
+import { createAccountToken, validateAccountToken } from '../services/repositories/account-tokens';
+import { agentMayPerform, agentMayUseConnector } from '../services/iam/agent-scope';
 
 let tokenId: string | null = null;
 

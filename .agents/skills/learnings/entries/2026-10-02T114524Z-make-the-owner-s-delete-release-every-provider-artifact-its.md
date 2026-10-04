@@ -28,9 +28,9 @@ branch `apps-template-reclaim`: App delete and the new
 `DELETE /apps/:id/deployments/:did` release images; project maintenance sweeps
 the rest per configured provider.
 
-**Enforcement:** `apps/api/src/apps/images.test.ts` (foreign ids untouched,
+**Enforcement:** `apps/api/src/services/apps/images.test.ts` (foreign ids untouched,
 unreadable DB deletes nothing, per-pass cap, pinned image is `pending`),
-`apps/api/src/apps/images.integration.test.ts` (the sweep's SQL on real
+`apps/api/src/services/apps/images.integration.test.ts` (the sweep's SQL on real
 PostgreSQL), flow `APP-7`, and the `app_images_*` maintenance heartbeat
 counters. Not enforced: a check that every artifact prefix has a reclaim path
 on every enabled provider — that lint is the TODO.

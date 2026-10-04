@@ -42,11 +42,11 @@ mock.module('../disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 
-mock.module('../../../platform/service-key', () => ({
+mock.module('../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => null,
 }));
 
-mock.module('../../../platform/sandbox-frontend-url', () => ({
+mock.module('../../platform/sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.com',
 }));
 
@@ -154,7 +154,7 @@ test('getStatus() reports missing Daytona sandboxes as removed', async () => {
 // nothing; 12h clears the 8.4h worst turn measured on 30 days of prod.
 test('native auto-stop is a backstop that clears the longest measured turn', async () => {
   const { daytonaLifecycle } = await import('./runtime');
-  const { providerAutoStopBackstopMinutes } = await import('../../../platform/providers/index');
+  const { providerAutoStopBackstopMinutes } = await import('../../platform/providers/index');
 
   expect(providerAutoStopBackstopMinutes()).toBe(720);
   expect(daytonaLifecycle().autoStopInterval).toBe(720);

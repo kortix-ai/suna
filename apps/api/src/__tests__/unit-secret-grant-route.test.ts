@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSecrets } from '@kortix/db';
 import { Hono } from 'hono';
-import { PROJECT_ACTIONS } from '../iam/actions';
-import * as realAccess from '../projects/lib/access';
+import { PROJECT_ACTIONS } from '../services/iam/actions';
+import * as realAccess from '../services/projects/lib/access';
 import * as realTriggers from '../services/triggers/trigger-runtime';
 import { parseManifestString, synthesizeBlankManifest } from '../services/triggers';
 import type { ParsedManifest } from '../services/triggers';
@@ -16,13 +16,13 @@ const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
-// The `../iam` barrel is stubbed to keep its heavy dependency graph out of this
-// unit test, but the action strings come from the REAL leaf — `iam/actions.ts`
+// The `../services/iam` barrel is stubbed to keep its heavy dependency graph out of this
+// unit test, but the action strings come from the REAL leaf — `services/iam/actions.ts`
 // has no imports of its own, so there is no reason to hand-copy them. A
 // hand-written subset silently resolves every unlisted key to `undefined`: the
 // `project.secret.read` assertion this suite now pins read as `undefined` and
 // the capability check passed while enforcing nothing.
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+mock.module('../services/iam', () => ({ PROJECT_ACTIONS }));
 
 type SecretFixture = { identifier: string; ownerUserId: string | null; strategy: string };
 
@@ -104,7 +104,7 @@ const databaseMock = {
 };
 
 mock.module('../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, name: 'demo' },
@@ -142,8 +142,8 @@ mock.module('../services/sandboxes/sandbox-env-sync', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/agent-scope')).registerAgentScopeRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/agent-scope')).registerAgentScopeRoutes();
 
 function buildApp() {
   const app = new Hono<{

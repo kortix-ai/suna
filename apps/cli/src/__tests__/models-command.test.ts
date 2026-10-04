@@ -59,7 +59,7 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
-/** Mirrors GET /projects/:id/model-picker (apps/api/src/projects/routes/models.ts). */
+/** Mirrors GET /projects/:id/model-picker (apps/api/src/http/projects/models.ts). */
 function picker(overrides: Record<string, boolean>, models?: Record<string, unknown>) {
   const all: Record<string, unknown> = models ?? {
     'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'zai' },
@@ -287,7 +287,7 @@ describe('kortix models', () => {
 
   test('an empty picker points at providers, never at an empty ls (the dogfood dead end)', async () => {
     // A fresh account on internal billing serves zero models until a provider
-    // key is connected (apps/api/src/llm-gateway/models/picker-catalog.ts). The
+    // key is connected (apps/api/src/services/llm-gateway/models/picker-catalog.ts). The
     // hint used to send the user to `kortix models ls`, which then printed
     // "No models served for this project." — a dead end.
     const config = writeConfig(startServer({}, { models: {} }));

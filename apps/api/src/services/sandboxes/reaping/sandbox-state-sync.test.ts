@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // in between, and the money-critical "settle the meter before flipping the
 // status" order was carried by a comment repeated in each copy.
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import * as realComputeMetering from '../../../billing/services/compute-metering';
+import * as realComputeMetering from '../../billing/services/compute-metering';
 import { RUNTIME_WAKE_LEASE_MS } from '../../sessions/lifecycle/runtime-wake-fence';
 import { mockConfigModule } from './test-support/mock-config';
 
@@ -83,7 +83,9 @@ mock.module('../../../lib/db', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy', () => ({
+const realSandboxProxyBackend = await import('../../sandbox-proxy/backend');
+mock.module('../../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
@@ -92,7 +94,7 @@ mock.module('../../../sandbox-proxy', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../../billing/services/compute-metering', () => ({
+mock.module('../../billing/services/compute-metering', () => ({
   ...realComputeMetering,
   pauseComputeSession: async (sandboxId: string) => {
     events.push(`pause:${sandboxId}`);
@@ -101,7 +103,7 @@ mock.module('../../../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
 }));
 
-mock.module('../../../repositories/account-tokens', () => ({
+mock.module('../../repositories/account-tokens', () => ({
   revokeSessionConnectorTokens: async (sessionId: string, accountId: string) => {
     revokedTokens.push({ sessionId, accountId });
     return 1;
@@ -225,7 +227,7 @@ describe('applyStoppedState', () => {
   });
 
   test('a billing failure never blocks the stop', async () => {
-    mock.module('../../../billing/services/compute-metering', () => ({
+    mock.module('../../billing/services/compute-metering', () => ({
       ...realComputeMetering,
       pauseComputeSession: async () => {
         throw new Error('wallet unreachable');
@@ -239,7 +241,7 @@ describe('applyStoppedState', () => {
       await applyStoppedState(write);
     } finally {
       console.warn = warn;
-      mock.module('../../../billing/services/compute-metering', () => ({
+      mock.module('../../billing/services/compute-metering', () => ({
         ...realComputeMetering,
         pauseComputeSession: async (sandboxId: string) => {
           events.push(`pause:${sandboxId}`);
@@ -275,7 +277,7 @@ describe('applyStoppedState', () => {
 
   // The lost update: a whole-object write assembled from a stale SELECT drops
   // whatever a concurrent writer put in the column in between — the
-  // `runtimeWakeId` wake fence (projects/routes/shared.ts) and, one table over,
+  // `runtimeWakeId` wake fence (services/sessions/open/shared.ts) and, one table over,
   // the `lastAliveAt` stamp the compute clamp bills against.
   //
   // The fixture deliberately avoids a `stopReason` key inside `metadata` here:
@@ -544,7 +546,7 @@ describe('reconcileSandboxStoppedByExternalId', () => {
   });
 
   // Account deletion, the orphan-box sweep, and the access path in
-  // projects/routes/shared.ts all call this AFTER stopping the box themselves.
+  // services/sessions/open/shared.ts all call this AFTER stopping the box themselves.
   // Making those wait for a second observation would leave the row `active`
   // against a box that is off — still billing — and shared.ts reads the row back
   // expecting `stopped` before it resumes it, so a deferred park breaks session

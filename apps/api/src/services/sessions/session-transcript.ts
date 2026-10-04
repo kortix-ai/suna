@@ -13,7 +13,7 @@ import {
   sandboxOpencodeEndpoint,
 } from './opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandboxes/sandbox-fetch';
-import type { ProjectSessionRow } from '../../projects/lib/serializers';
+import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type CompactMessage,
   type CompactToolCall,

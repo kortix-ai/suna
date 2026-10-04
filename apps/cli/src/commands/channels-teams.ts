@@ -150,7 +150,7 @@ export async function teamsManifest(ctxOpts: {
 }): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  // The Teams app manifest is BUILT by the API (apps/api/src/channels/teams-manifest.ts)
+  // The Teams app manifest is BUILT by the API (apps/api/src/services/channels/teams-manifest.ts)
   // from the project's own app id and base URL. The checked-in
   // teams-app-manifest.json is a stale hand file and is not read at runtime.
   // Print it so an operator can review/submit it manually if the one-click flow
@@ -167,7 +167,7 @@ export async function teamsManifest(ctxOpts: {
           orgConsentUrl: mode.orgConsentUrl,
           orgInstalled: mode.orgInstalled,
           deepLinkUrl: mode.deepLinkUrl,
-          note: 'The Teams app manifest is generated server-side by apps/api/src/channels/teams-manifest.ts. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
+          note: 'The Teams app manifest is generated server-side by apps/api/src/services/channels/teams-manifest.ts. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/services/channels/teams/app-package.ts.',
         },
         null,
         2,

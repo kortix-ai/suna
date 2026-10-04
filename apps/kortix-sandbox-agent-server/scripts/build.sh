@@ -62,7 +62,7 @@ compile_with_retry
 chmod +x dist/kortix-agent
 
 # Invalidate the snapshot builder's source-staleness memo (dist/kortix-agent.srchash,
-# see apps/api/src/snapshots/build-context.ts `agentBinaryStale`). This freshly
+# see apps/api/src/services/snapshots/build-context.ts `agentBinaryStale`). This freshly
 # compiled binary IS current, so the guard must re-memoize the source hash from
 # it rather than trust a stale record from a previous build.
 rm -f dist/kortix-agent.srchash

@@ -2,7 +2,7 @@
  * Golden + invariant tests over the RENDERED layer text.
  *
  * Why a golden: the rendered Dockerfile is not hashed into snapshot identity (it
- * enters only via RUNTIME_LAYER_VERSION in apps/api/src/snapshots/templates.ts),
+ * enters only via RUNTIME_LAYER_VERSION in apps/api/src/services/snapshots/templates.ts),
  * it is never executed in CI, and its failures land minutes later inside a remote
  * provider build. So the text is effectively unreviewed — a
  * `find /workspace -mindepth 1 -delete` sat inside a `set +e … true` block,

@@ -73,7 +73,7 @@ mock.module('../secrets/secrets', () => ({
 mock.module('../secrets/network-secret-boundary', () => ({
   resolveSessionNetworkBoundary: async () => [],
 }));
-mock.module('../../sandbox-proxy/backend', () => ({
+mock.module('../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async (externalId: string) => ({
     url: `https://daemon.test/${externalId}`,
     headers: {},

@@ -82,7 +82,7 @@ mock.module('../services/git/backends', () => ({
 
 // The limit *number* is controlled here; the plan→number policy lives in the
 // real maxProjectsForAccount (see unit-project-limit-policy.test.ts).
-mock.module('../billing/account-limits', () => ({
+mock.module('../services/billing/account-limits', () => ({
   FREE_TIER_PROJECT_LIMIT: 3,
   maxProjectsForAccount: async () => projectLimit,
   resolveAccountTier: async () => 'free',
@@ -90,8 +90,8 @@ mock.module('../billing/account-limits', () => ({
   clearAccountLimitCache: () => {},
 }));
 
-const realAuthMiddleware = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realAuthMiddleware = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -143,7 +143,7 @@ mock.module('../services/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
 }));
 
-mock.module('../snapshots/builder', () => ({
+mock.module('../services/snapshots/builder', () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: 'kortix-meta-test', slug: 'meta', contentHash: 'b'.repeat(64), built: false, isDefault: false }),
@@ -163,11 +163,11 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
-mock.module('../platform/services/session-sandbox', () => ({
+mock.module('../services/platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -177,7 +177,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
@@ -255,7 +255,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../http/projects/index');
 registerAllProjectRoutes();
 
 function createApp() {

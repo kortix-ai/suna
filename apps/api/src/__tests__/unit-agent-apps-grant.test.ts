@@ -12,10 +12,10 @@ import {
   extractAgents,
   grantFromLoadedAgents,
   resolveGovernedAgentGrant,
-} from '../projects/agents';
+} from '../services/projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../services/triggers';
 import { agentGrantDiffers } from '../services/secrets/secret-grant';
-import { agentMayOpenApp } from '../iam/agent-scope';
+import { agentMayOpenApp } from '../services/iam/agent-scope';
 
 function parseV2(agentsBody: string) {
   const text = ['kortix_version: 2', 'default_agent: reporter', 'project:', '  name: test', 'agents:', agentsBody].join('\n');

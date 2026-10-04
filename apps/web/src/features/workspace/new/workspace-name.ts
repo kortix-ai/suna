@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of the name rules in `POST /v1/projects/provision`
- * (`apps/api/src/projects/routes/projects.ts`). The server stays authoritative — this
+ * (`apps/api/src/http/projects/projects.ts`). The server stays authoritative — this
  * exists so a bad name is an inline field error instead of a network round-trip
  * that ends in a 400.
  *
@@ -9,7 +9,7 @@
  * dies on the DB insert, leaving an orphaned managed repo per retry.
  */
 
-// Mirrored from apps/api/src/projects/lib/serializers.ts:570
+// Mirrored from apps/api/src/services/projects/lib/serializers.ts:570
 export const WORKSPACE_NAME_MAX_LENGTH = 120;
 export const WORKSPACE_NAME_PATTERN = /^[a-zA-Z0-9._ -]+$/;
 

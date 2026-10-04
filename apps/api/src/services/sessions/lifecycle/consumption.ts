@@ -1,7 +1,7 @@
 import { sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { logger } from '../../../lib/logger';
-import { DEDUPE_TTL_MS } from '../../../sandbox-proxy/prompt-dedupe';
+import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
 import { ORPHANED_PROMPT_MIN_AGE_MS } from '../../sandboxes/reaper-constants';
 import { db } from '../../../lib/db';
 import { PROMPT_NEVER_RAN_END_REASONS } from './redelivery';

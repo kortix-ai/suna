@@ -6,7 +6,7 @@
  * Dockerfile + Kortix runtime layer) to the provider and let it build
  * server-side. Daytona uses Image.fromDockerfile(); Platinum uses
  * `POST /v1/templates/from-build` (tar.gz of the same context staged by
- * snapshots/build-context.ts, so the produced image is identical). Platinum's
+ * services/snapshots/build-context.ts, so the produced image is identical). Platinum's
  * host then runs `podman build` + bakes its microVM init/agent, same as its
  * from-spec path.
  */
@@ -20,10 +20,10 @@ import {
   DEFAULT_DISK_GB,
   KORTIX_ENTRYPOINT,
   stageRuntimeBuildContext,
-} from '../../../snapshots/build-context';
-import { SANDBOX_SPEC_LIMITS } from '../../../snapshots/dockerfile-layer';
-import { tarBuildContext } from '../../../snapshots/staging-tar';
-import { normalizeExistingProviderState } from '../../../snapshots/providers/state';
+} from '../../snapshots/build-context';
+import { SANDBOX_SPEC_LIMITS } from '../../snapshots/dockerfile-layer';
+import { tarBuildContext } from '../../snapshots/staging-tar';
+import { normalizeExistingProviderState } from '../../snapshots/providers/state';
 import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure } from './images-templates';
 import type { PlatinumClient, PlatinumTemplate } from './images-templates';
 import { uploadWithRetry, templateInUseCount } from './images-upload';
@@ -36,8 +36,8 @@ import type {
   BuildSnapshotResult,
   ProviderState,
   SandboxProviderAdapter,
-} from '../../../snapshots/providers/index';
-import { SnapshotInUseError } from '../../../snapshots/providers/errors';
+} from '../../snapshots/providers/index';
+import { SnapshotInUseError } from '../../snapshots/providers/errors';
 
 const MB_PER_GB = 1024;
 const BUILD_ATTEMPTS = 3;
@@ -166,7 +166,7 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
   //   - `org_template_quota_exceeded` (api/templates.ts pickBuildHost) — the
   //     per-org COUNT cap on live templates (tiers 10/50/500). This does NOT
   //     self-clear: nothing frees a template row on its own, and Kortix has no
-  //     org-wide GC for Platinum (snapshots/quota-gc.ts is Daytona-only — it
+  //     org-wide GC for Platinum (services/snapshots/quota-gc.ts is Daytona-only — it
   //     imports listDaytonaSnapshots/deleteDaytonaSnapshotById exclusively). So
   //     burning BUILD_ATTEMPTS on it is pure delay in front of a wall, and it
   //     buries the one error an operator actually needs to see. Fail fast; the

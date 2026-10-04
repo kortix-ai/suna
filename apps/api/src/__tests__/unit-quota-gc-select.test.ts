@@ -11,7 +11,7 @@ import {
   SCOPED_PPWARM_PREFIX,
   type SnapshotLike,
   selectSnapshotsToReap,
-} from '../snapshots/quota-gc-select';
+} from '../services/snapshots/quota-gc-select';
 
 const NOW = Date.parse('2026-07-08T00:00:00Z');
 const DAY = 86_400_000;

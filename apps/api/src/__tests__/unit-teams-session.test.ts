@@ -92,7 +92,7 @@ const startPlans: Array<Record<string, unknown>> = [];
 const followUpPlans: Array<Record<string, unknown>> = [];
 let startPlan: { model: string | null; pools?: Record<string, string[]> } = { model: null };
 let followUpModel: string | null = null;
-mock.module('../channels/model-access', () => ({
+mock.module('../services/channels/model-access', () => ({
   projectChannelModelScope: async (_project: unknown, person: { linkedUserId: string | null; oneToOne: boolean }) => ({
     ...person,
     personalUserId: person.oneToOne ? person.linkedUserId : null,
@@ -107,7 +107,7 @@ mock.module('../channels/model-access', () => ({
   },
 }));
 
-mock.module('../channels/teams/turn', () => ({
+mock.module('../services/channels/teams/turn', () => ({
   startTurn: async () => {
     calls.push('startTurn');
     return {
@@ -152,14 +152,14 @@ mock.module('../channels/teams/turn', () => ({
   },
 }));
 
-mock.module('../channels/teams/identity', () => ({
+mock.module('../services/channels/teams/identity', () => ({
   teamsUserId: () => 'aad-user-1',
   postTeamsIdentityPrompt: async (input: Record<string, unknown>) => {
     calls.push('postTeamsIdentityPrompt');
     prompts.push(input);
   },
 }));
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
   
   // Reached by the AGENT_NOT_DECLARED recovery picker, which scopes its list
@@ -173,7 +173,7 @@ mock.module('../channels/core/identity', () =>
 );
 
 const bindings: Array<Record<string, unknown>> = [];
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   ensureTeamsConversationBinding: async (input: Record<string, unknown>) => {
     bindings.push(input);
     return true;
@@ -184,9 +184,9 @@ mock.module('../channels/teams/binding', () => ({
 // `mock.module` REPLACES the module wholesale, so every export the
 // session-start path reaches through this file has to be listed. Session start
 // pulls `listProjectAgents` through the AGENT_NOT_DECLARED recovery picker
-// (channels/teams/agent-picker.ts -> channels/scoped-agents.ts).
+// (services/channels/teams/agent-picker.ts -> services/channels/scoped-agents.ts).
 let channelSelection: Record<string, unknown> | null = null;
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   currentChannelSelection: async () => channelSelection,
   listProjectAgents: async () => [],
 }));
@@ -194,7 +194,7 @@ mock.module('../channels/slack/selection', () => ({
 let participantVerdict: { allowed: true } | { allowed: false; notice: string } = { allowed: true };
 const owners: Array<Record<string, unknown>> = [];
 const gateCalls: Array<Record<string, unknown>> = [];
-mock.module('../channels/teams/participants', () => ({
+mock.module('../services/channels/teams/participants', () => ({
   ensureTeamsThreadParticipant: async (input: Record<string, unknown>) => {
     calls.push('ensureTeamsThreadParticipant');
     gateCalls.push(input);
@@ -208,7 +208,7 @@ mock.module('../channels/teams/participants', () => ({
 
 // What the sender alone is told in a channel or group chat (a targeted message).
 const privateReplies: Array<{ recipient: string | undefined; card: unknown }> = [];
-mock.module('../channels/teams/private-reply', () => ({
+mock.module('../services/channels/teams/private-reply', () => ({
   replyPrivately: async (_ref: unknown, sender: { from?: { id?: string } }, card: unknown) => {
     calls.push('replyPrivately');
     privateReplies.push({ recipient: sender.from?.id, card });
@@ -220,8 +220,8 @@ mock.module('../channels/teams/private-reply', () => ({
 // Per-resource agent scoping at session start (scoped-agents.ts).
 let agentAllowed = true;
 const agentChecks: Array<{ userId: string; agentName: string | null | undefined }> = [];
-const realScopedAgents = await import('../channels/scoped-agents');
-mock.module('../channels/scoped-agents', () => ({
+const realScopedAgents = await import('../services/channels/scoped-agents');
+mock.module('../services/channels/scoped-agents', () => ({
   ...realScopedAgents,
   userMayLaunchAgent: async (_project: unknown, userId: string, agentName: string | null | undefined) => {
     agentChecks.push({ userId, agentName });
@@ -229,7 +229,7 @@ mock.module('../channels/scoped-agents', () => ({
   },
 }));
 
-const session = await import('../channels/teams/session');
+const session = await import('../services/channels/teams/session');
 const { createOrJoinTeamsConversationSession, setTeamsSessionLifecycleForTest, resetTeamsSessionLifecycleForTest } = session;
 
 const activity = {

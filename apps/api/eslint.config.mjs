@@ -8,31 +8,52 @@
 // needs fails too, so the counts only shrink: after you fix a violation, run
 // `pnpm --filter kortix-api lint:prune` and commit the smaller file.
 // Never run `--suppress-all` or `--suppress-rule` to absorb a new violation.
+//
+// The one exception is a change to a rule's DEFINITION. R4 (2026-10-04) moved
+// apps/api into app/ http/ workers/ services/ lib/ types/, redefined
+// kortix-api/layers by folder, added kortix-api/service-surface and widened
+// no-restricted-imports (Drizzle anywhere in http/, Hono outside http/ and
+// app/). Those three rules were re-baselined once, in that commit.
 import { dirname, relative, resolve, sep } from 'node:path';
 import tseslint from 'typescript-eslint';
 
 const SRC = resolve(import.meta.dirname, 'src');
 
-// A route file, by path, until R4 moves every controller into one layer.
-const ROUTE_FILES = ['src/**/routes/**/*.ts', 'src/**/routes.ts', 'src/**/*-routes.ts', 'src/**/router.ts'];
-
 /**
- * The layer of a module path, lowest first: 0 shared (lib/, shared/,
- * types/), 1 services (everything else), 2 http (route files,
- * and the index.ts at the top of each domain, which mounts its routes), 3 app (the
- * composition root). A module imports its own layer or a lower one.
- * null: outside src/.
+ * The layer of a module path, lowest first (R4 of the API and SDK refactor
+ * plan): 0 shared (lib/, types/), 1 services (services/<name>/), 2 workers
+ * (workers/: timers and leader-gated loops), 3 http (http/: routes,
+ * middleware, openapi, errors; Hono lives only here), 4 app (app/: index,
+ * bootstrap, inbound dispatch). A module imports its own layer or a lower one.
+ * null: not production code (src/__tests__, src/scripts) or outside src/.
  * @param {string} abs
  */
 export function layerOf(abs) {
-  const rel = relative(SRC, abs).split(sep).join('/').replace(/\.ts$/, '');
+  const rel = relative(SRC, abs).split(sep).join('/');
   if (rel.startsWith('..')) return null;
-  if (/^(lib|shared|types)\//.test(rel)) return 0;
-  if (['index', 'app', 'bootstrap'].includes(rel)) return 3;
-  if (/(^|\/)routes(\/|$)|(^|\/)(router|[^/]*-routes)$|^[^/]+\/index$/.test(rel)) return 2;
-  return 1;
+  const top = rel.split('/')[0];
+  return { lib: 0, types: 0, services: 1, workers: 2, http: 3, app: 4 }[top] ?? null;
 }
-const LAYER_NAMES = ['shared', 'services', 'http', 'app'];
+const LAYER_NAMES = ['shared', 'services', 'workers', 'http', 'app'];
+
+/**
+ * The services/<name>/ domain a module path belongs to, or null.
+ * @param {string} abs
+ */
+function serviceOf(abs) {
+  const parts = relative(SRC, abs).split(sep);
+  return parts[0] === 'services' && parts.length > 2 ? parts[1] : null;
+}
+
+/** @param {any} context @param {(source: any) => void} check */
+function eachImport(context, check) {
+  return {
+    ImportDeclaration: (/** @type {any} */ node) => check(node.source),
+    ExportNamedDeclaration: (/** @type {any} */ node) => check(node.source),
+    ExportAllDeclaration: (/** @type {any} */ node) => check(node.source),
+    ImportExpression: (/** @type {any} */ node) => check(node.source),
+  };
+}
 
 /** @type {import('eslint').Rule.RuleModule} */
 const layers = {
@@ -40,26 +61,42 @@ const layers = {
     type: 'problem',
     messages: {
       upward:
-        'A {{from}} module imports the {{to}} layer. Layers, lowest first: shared (lib/, shared/, types/) → services → http (route files, domain index.ts) → app. Import only your own layer or a lower one.',
+        'A {{from}} module imports the {{to}} layer. Layers, lowest first: shared (lib/, types/) → services → workers → http → app. Import only your own layer or a lower one.',
     },
     schema: [],
   },
   create(context) {
     const from = layerOf(context.filename);
-    /** @param {any} source */
-    const check = (source) => {
+    return eachImport(context, (source) => {
       if (from === null || typeof source?.value !== 'string' || !source.value.startsWith('.')) return;
       const to = layerOf(resolve(dirname(context.filename), source.value));
       if (to !== null && to > from) {
         context.report({ node: source, messageId: 'upward', data: { from: LAYER_NAMES[from], to: LAYER_NAMES[to] } });
       }
-    };
-    return {
-      ImportDeclaration: (node) => check(node.source),
-      ExportNamedDeclaration: (node) => check(node.source),
-      ExportAllDeclaration: (node) => check(node.source),
-      ImportExpression: (node) => check(node.source),
-    };
+    });
+  },
+};
+
+/** @type {import('eslint').Rule.RuleModule} */
+const serviceSurface = {
+  meta: {
+    type: 'problem',
+    messages: {
+      deep: "Import services/{{name}} through its surface, services/{{name}}/index.ts. Export what you need from there instead of reaching into '{{path}}'.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const from = serviceOf(context.filename);
+    return eachImport(context, (source) => {
+      if (typeof source?.value !== 'string' || !source.value.startsWith('.')) return;
+      const target = resolve(dirname(context.filename), source.value);
+      const name = serviceOf(target) ?? (relative(SRC, target).split(sep).join('/').match(/^services\/([^/]+)$/)?.[1] ?? null);
+      if (name === null || name === from) return;
+      const rel = relative(resolve(SRC, 'services', name), target).split(sep).join('/').replace(/\.ts$/, '');
+      if (rel === '' || rel === 'index') return;
+      context.report({ node: source, messageId: 'deep', data: { name, path: source.value } });
+    });
   },
 };
 
@@ -100,9 +137,10 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    plugins: { 'kortix-api': { rules: { layers, 'replica-local': replicaLocal } } },
+    plugins: { 'kortix-api': { rules: { layers, 'replica-local': replicaLocal, 'service-surface': serviceSurface } } },
     rules: {
       'kortix-api/layers': 'error',
+      'kortix-api/service-surface': 'error',
       'kortix-api/replica-local': 'error',
       'no-console': 'error',
       'no-restricted-syntax': [
@@ -120,21 +158,37 @@ export default tseslint.config(
     rules: {
       'no-restricted-properties': [
         'error',
-        { object: 'process', property: 'env', message: 'Read configuration through config.ts.' },
+        { object: 'process', property: 'env', message: 'Read configuration through lib/config.ts.' },
       ],
     },
   },
   {
-    files: ROUTE_FILES,
+    files: ['src/http/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
           paths: [
-            { name: 'drizzle-orm', message: 'A route calls a service. Queries live in services.' },
-            { name: '@kortix/db', message: 'A route calls a service. Queries live in services.' },
+            { name: 'drizzle-orm', message: 'HTTP calls a service. Queries live in services.' },
+            { name: '@kortix/db', message: 'HTTP calls a service. Queries live in services.' },
           ],
-          patterns: [{ group: ['drizzle-orm/*', '@kortix/db/*'], message: 'A route calls a service. Queries live in services.' }],
+          patterns: [{ group: ['drizzle-orm/*', '@kortix/db/*'], message: 'HTTP calls a service. Queries live in services.' }],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/lib/**/*.ts', 'src/types/**/*.ts', 'src/services/**/*.ts', 'src/workers/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'hono', message: 'Hono lives only in http/ and app/. A service takes plain values (an Actor, ids), not a request.' },
+          ],
+          patterns: [
+            { group: ['hono/*', '@hono/*'], message: 'Hono lives only in http/ and app/. A service takes plain values (an Actor, ids), not a request.' },
+          ],
         },
       ],
     },

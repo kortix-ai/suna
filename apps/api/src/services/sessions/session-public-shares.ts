@@ -9,7 +9,7 @@ import {
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../../lib/config';
 import { db } from '../../lib/db';
-import { previewOriginFor } from '../../sandbox-proxy/preview-hosts';
+import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
 
 export { shareIdFromPublicRef } from './public-share-ref';
@@ -476,7 +476,7 @@ export async function resolvePublicShare(
     return { ok: false as const, status: 410, error: 'Share link expired' };
   }
   // A deleted session keeps its row (soft delete stamps `metadata.deletedAt`,
-  // the predicate `sessionIsTombstoned` in projects/lib/access.ts reads) and
+  // the predicate `sessionIsTombstoned` in services/projects/lib/access.ts reads) and
   // its saved transcript. Its links must end with it, even one the delete path
   // failed to revoke.
   if (typeof (row.sessionMetadata as Record<string, unknown> | null)?.deletedAt === 'string') {

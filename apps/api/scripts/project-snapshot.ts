@@ -29,8 +29,8 @@ import {
   queueProjectSnapshotForRef,
   readProjectSnapshot,
   retryProjectSnapshot,
-} from '../src/git-proxy/project-snapshot';
-import { runProjectSnapshotWorkerOnce } from '../src/git-proxy/project-snapshot-worker';
+} from '../src/services/git-proxy/project-snapshot';
+import { runProjectSnapshotWorkerOnce } from '../src/services/git-proxy/project-snapshot-worker';
 import {
   PROJECT_SNAPSHOT_FORMAT,
   getObjectText,
@@ -41,7 +41,7 @@ import {
   projectSnapshotManifestKey,
   projectSnapshotS3Client,
   projectSnapshotStorageConfigured,
-} from '../src/git-proxy/project-snapshot-store';
+} from '../src/services/git-proxy/project-snapshot-store';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);

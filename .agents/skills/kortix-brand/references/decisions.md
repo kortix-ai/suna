@@ -266,7 +266,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Source:** fresh-agent QA round 1, 2026-10-01.
 
 ### Q15 Remove versus Delete, and invite defaults
-- **Decision:** Remove uses the effect-plus-way-back confirmation. "This cannot be undone." is for Delete. Invite is email-only with the lowest-privilege default role. Why: Remove keeps the object. Source for the invite email: `apps/api/src/accounts/email.ts`.
+- **Decision:** Remove uses the effect-plus-way-back confirmation. "This cannot be undone." is for Delete. Invite is email-only with the lowest-privilege default role. Why: Remove keeps the object. Source for the invite email: `apps/api/src/services/accounts/email.ts`.
 - **Where:** `verbal/voice-and-tone.md`.
 - **Source:** fresh-agent QA round 1, 2026-10-01.
 
@@ -357,7 +357,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Each status hue carries one meaning in `visual-system.json`.** `kortix-yellow` is "pending". `kortix-blue` is "info, open, in review". *Why:* the file still carried the yellow-as-info mapping that D5 retired.
 - **Rule text in `visual-system.json` follows D4j.** `rounded-lg` is for floating panels. `rounded-sm` covers the segmented chip and menu rows. `shadow-xs` covers the segmented chip. `bg-input` has no new use.
 - **Rules from the deleted skills that were still true came back.** *Where:* `visual/layout.md` (no generic 3-up grid), `visual/motion.md` (no opacity with a large `y` translate), `SKILL.md` (precedence, conflict flagging), `verbal/voice-and-tone.md` (the `kortix-sandbox-agent-server` term, marked internal), `verbal/claims.md` (SAML 2.0 only).
-- **Rules from the deleted skills that were dropped on purpose.** The grant-in-`kortix.yaml` merge wording is false as written, because a dashboard config edit can commit straight to the default branch. The SCIM pagination caveat is fixed in code (`apps/api/src/scim/app.ts:79-90`). The product-marketing personas, objections and switching-dynamics sections stay in K1: no file in this repo reads them.
+- **Rules from the deleted skills that were dropped on purpose.** The grant-in-`kortix.yaml` merge wording is false as written, because a dashboard config edit can commit straight to the default branch. The SCIM pagination caveat is fixed in code (`apps/api/src/http/scim/app.ts:79-90`). The product-marketing personas, objections and switching-dynamics sections stay in K1: no file in this repo reads them.
 - **Each visual file keeps its rationalization table and drops the red-flag list and the checklist.** *Why:* the rules above them already state the same checks.
 - **Source:** brand-kit review 2026-10-01.
 

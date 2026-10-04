@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
 // (scripts/test.sh) so the real config loads fine — and we deliberately do NOT
 // `mock.module('../lib/config')` here: in bun that mock is process-GLOBAL and leaks
 // into sibling test files (it broke the daytona suite in combined runs).
-import { computeSnapshotHash } from '../snapshots/hash';
+import { computeSnapshotHash } from '../services/snapshots/hash';
 
 describe('Snapshot hash — runtime fingerprint coupling (mass-rebuild root cause)', () => {
   const userImage = {

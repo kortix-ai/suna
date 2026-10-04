@@ -32,7 +32,7 @@ import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
  * `sandbox port unreachable` is NOT one of these, and the one-word gap between
  * it and `sandbox upstream unreachable` is the whole reason it is called out
  * here rather than silently absent. Both come out of `portUnreachableResponse`
- * in `apps/api/src/sandbox-proxy/routes/preview.ts`, and only one of them says
+ * in `apps/api/src/http/sandbox-proxy/preview.ts`, and only one of them says
  * anything about a prompt:
  *
  *   - `sandbox upstream unreachable` (preview.ts:1546) is the final giveup, and

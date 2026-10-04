@@ -13,7 +13,7 @@ between the check and the write fails the write with Postgres 23503, and the
 request answers 500.
 
 **Trigger surface:** Writing `connector_connections.tunnel_id`
-(`attachComputerConnection` in `apps/api/src/connectors/computers.ts`), or any
+(`attachComputerConnection` in `apps/api/src/services/connectors/computers.ts`), or any
 new insert or update that references a row a concurrent route deletes, when the
 referenced row was read outside the writing transaction or without a lock.
 

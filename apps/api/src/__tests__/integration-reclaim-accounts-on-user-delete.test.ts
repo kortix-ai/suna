@@ -16,9 +16,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, accountMembers, projects } from '@kortix/db';
 import { inArray, sql } from 'drizzle-orm';
 
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { resolveAccountId } from '../accounts/resolve-account';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { resolveAccountId } from '../services/accounts/resolve-account';
 import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 

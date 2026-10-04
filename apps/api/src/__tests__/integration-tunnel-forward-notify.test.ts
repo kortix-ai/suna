@@ -24,7 +24,7 @@ import {
   relayRpcToConnectedAgent,
   startTunnelRpcForwarder,
   stopTunnelRpcForwarder,
-} from '../tunnel/core/cluster-forwarder';
+} from '../services/tunnel/core/cluster-forwarder';
 
 const PEER_ID = 'peer-replica:1';
 const tunnels = new Set<string>();

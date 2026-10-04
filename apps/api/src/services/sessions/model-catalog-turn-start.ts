@@ -9,7 +9,7 @@
  *
  * A model catalog is neither of the other two shapes. A catalog that merely
  * CHANGED must not make every prompt wait for an OpenCode restart — that is
- * `runtime-assets/manifest.ts`'s new `managed-catalog` component, which rides
+ * `services/runtime-assets/manifest.ts`'s new `managed-catalog` component, which rides
  * the existing non-blocking asset lane (`scheduleAssetConvergence`) and a
  * plain `POST /kortix/refresh?restart=0` (see `convergeManagedModelCatalog`,
  * `allowRestart: false`, in the daemon). But a catalog that is missing THE
@@ -37,14 +37,14 @@
  * place; it decides nothing about whether the gateway serves the model.
  */
 
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { resolveSandboxIngress } from '../sandbox-proxy/backend';
 import { loadActiveSandbox } from '../sandboxes/sandbox-runtime-refresh';
 import {
   lastKnownManagedCatalog,
   modelConfirmation,
   noteModelConfirmation,
   noteRunningCatalog,
-} from '../../runtime-assets/running-catalog';
+} from '../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 
 /**

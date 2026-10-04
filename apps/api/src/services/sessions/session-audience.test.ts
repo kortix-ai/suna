@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { SESSION_PARTICIPANT_LIMIT, buildSessionParticipants, sessionAudienceIds } from './session-audience';
-import type { UserIdentity } from '../../projects/lib/user-identity';
+import type { UserIdentity } from '../projects/lib/user-identity';
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const MEMBER = '22222222-2222-4222-8222-222222222222';

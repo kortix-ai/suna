@@ -18,7 +18,7 @@
  * lives here and the dependency direction stays one-way.
  */
 
-import { classifyRuntimeRequest, turnStartBodyFields } from '../../sandbox-proxy/runtime-request';
+import { classifyRuntimeRequest, turnStartBodyFields } from '../sandbox-proxy/runtime-request';
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { mintWireMessageId } from './wire-message-id';

@@ -28,5 +28,5 @@ endpoint provider and linked openrouter.ai.
 **Enforcement.** `packages/llm-catalog/src/managed.test.ts` (pool size ≥ 5,
 `allow_fallbacks: true`, `max_price`, the excluded endpoints),
 `packages/llm-gateway/src/pipeline/simple-handler.test.ts` (failover and
-public-identity suites), `apps/api/src/llm-gateway/__tests__/gateway.live.test.ts`
+public-identity suites), `apps/api/src/services/llm-gateway/__tests__/gateway.live.test.ts`
 (real Morph + OpenRouter). PR #7589.

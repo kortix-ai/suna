@@ -24,7 +24,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const { validateSecretKey } = await import('../repositories/api-keys');
+const { validateSecretKey } = await import('../services/repositories/api-keys');
 
 function captureWarn(): { warns: string[]; restore: () => void } {
   const warns: string[] = [];

@@ -29,7 +29,7 @@
  * a new route; nothing in the product needs one yet.
  *
  * **The narrowing is server-side and has to be.** `?mine=true` maps to
- * `listPersonalAccountTokens` (`apps/api/src/repositories/account-tokens.ts`),
+ * `listPersonalAccountTokens` (`apps/api/src/services/repositories/account-tokens.ts`),
  * which filters on `user_id`, `session_id`, `service_account_id` and
  * `agent_grant`. The list payload carries none of those columns, so a browser
  * cannot do this filtering — the old surface guessed at the session tokens

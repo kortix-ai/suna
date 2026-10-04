@@ -32,7 +32,7 @@ const PROJECT_ROW = {
 };
 
 let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
+mock.module('../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => llmGatewayEnabled,
 }));
 

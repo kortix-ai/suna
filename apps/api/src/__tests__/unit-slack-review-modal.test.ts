@@ -6,7 +6,7 @@ import {
   decodeReviewMetadata,
   encodeReviewMetadata,
   readReviewFeedback,
-} from '../channels/slack/review-modal';
+} from '../services/channels/slack/review-modal';
 
 // `applyVerdict` has always accepted `feedback` and `review_items.feedback` has
 // always existed — neither channel ever filled it. "Request changes" sent the

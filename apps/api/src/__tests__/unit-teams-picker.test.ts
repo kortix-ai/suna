@@ -25,36 +25,36 @@ function chain(result: unknown[]): any {
 }
 mock.module('../lib/db', () => ({ hasDatabase: true, db: { insert: () => chain([{ eventId: 'x' }]), delete: () => chain([]), select: () => chain([]) } }));
 mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+mock.module('../services/channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: unknown) => {
     cards.push(card);
     return 'card-1';
   },
 }));
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   listTenantProjects: async () => [],
   resolveConversationProjectDetailed: async () => resolution,
   resolveConversationProject: async () => 'p1',
 }));
-mock.module('../channels/teams/auth-resume', () => ({
+mock.module('../services/channels/teams/auth-resume', () => ({
   createPendingTeamsPickerMessage: async () => parkedId,
 }));
-mock.module('../channels/teams/commands', () => ({
+mock.module('../services/channels/teams/commands', () => ({
   parseTeamsCommand: (t: string) => (t.startsWith('/') ? { verb: t.slice(1).split(' ')[0], arg: '' } : null),
   handleTeamsCommand: async (i: { command: { verb: string } }) => {
     commandsRun.push(i.command.verb);
     return true;
   },
 }));
-mock.module('../channels/teams/session', () => ({
+mock.module('../services/channels/teams/session', () => ({
   hasConversationSession: async () => false,
   createOrJoinTeamsConversationSession: async (i: { conversationId: string }) => {
     sessionsStarted.push(i.conversationId);
   },
 }));
 
-const { handleTeamsActivity } = await import('../channels/teams/dispatch');
+const { handleTeamsActivity } = await import('../services/channels/teams/dispatch');
 
 let n = 0;
 const activity = (text: string, where: 'personal' | 'channel' | 'mention' = 'personal') => {

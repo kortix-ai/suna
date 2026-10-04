@@ -33,19 +33,19 @@ const managedModel = (id: string) => ({
   openrouterProvider: { only: ['x'], allow_fallbacks: false, zdr: true as const, data_collection: 'deny' as const },
 });
 
-mock.module('../llm-gateway/models/served-managed-models', () => ({
+mock.module('../services/llm-gateway/models/served-managed-models', () => ({
   SERVED_MANAGED_MODELS: [managedModel('deepseek-v4.1-flash'), managedModel('glm-5.3-flash')],
   platformDefaultModelId: () => 'glm-5.3-flash',
 }));
 
 let projectDefaultModel: string | null = 'glm-5.3-flash';
-mock.module('../llm-gateway/resolution/default-model', () => ({
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   resolveEffectiveModel: async () => ({ model: projectDefaultModel, source: 'project' as const }),
   isModelServableForAccount: async () => true,
   invalidateAccountModelDefaults: () => {},
 }));
 
-const { repointRetiredSessionModel } = await import('../llm-gateway/resolution/session-model-repoint');
+const { repointRetiredSessionModel } = await import('../services/llm-gateway/resolution/session-model-repoint');
 const { buildSessionSandboxEnvVars } = await import('../services/sessions/sessions');
 
 let project: SeededProject;

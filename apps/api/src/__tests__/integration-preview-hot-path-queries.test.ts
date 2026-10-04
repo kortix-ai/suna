@@ -46,8 +46,8 @@ globalForDb.__kortixApiDbUrl = DATABASE_URL;
 // The fake box: answers every path with a small JSON body, like a file list.
 const box = Bun.serve({ port: 0, fetch: () => Response.json([{ name: 'a.txt', type: 'file' }]) });
 
-const realProviders = await import('../platform/providers');
-mock.module('../platform/providers', () => ({
+const realProviders = await import('../services/platform/providers');
+mock.module('../services/platform/providers', () => ({
   ...realProviders,
   getProvider: (name: string) => ({
     name,
@@ -61,9 +61,9 @@ mock.module('../platform/providers', () => ({
 const prefetched: string[] = [];
 // Bun patches a mocked module's namespace in place: keep the real functions.
 const { prefetchSandbox: realPrefetchSandbox, takePrefetchedSandbox } = await import(
-  '../sandbox-proxy/prefetch'
+  '../services/sandbox-proxy/prefetch'
 );
-mock.module('../sandbox-proxy/prefetch', () => ({
+mock.module('../services/sandbox-proxy/prefetch', () => ({
   takePrefetchedSandbox,
   prefetchSandbox: (...args: Parameters<typeof realPrefetchSandbox>) => {
     prefetched.push(args[1]);
@@ -78,8 +78,8 @@ const { Hono } = await import('hono');
 const { config } = await import('../lib/config');
 const { db } = await import('../lib/db');
 const { runWithContext } = await import('../lib/request-context');
-const { createAccountToken } = await import('../repositories/account-tokens');
-const { sandboxProxyApp } = await import('../sandbox-proxy');
+const { createAccountToken } = await import('../services/repositories/account-tokens');
+const { sandboxProxyApp } = await import('../http/sandbox-proxy');
 const { insertIntoView } = await import('./helpers/compat-views');
 
 const run = crypto.randomUUID().slice(0, 8);

@@ -1,0 +1,741 @@
+/**
+ * What the runtime assets of THIS deploy are, and how to identify them.
+ *
+ * The deployed API image carries the exact `kortix` CLI binary it bakes into
+ * sandbox snapshots (apps/api/Dockerfile copies the `sandbox-cli` stage output to
+ * `apps/cli/dist/kortix`) and the exact managed-skill bodies it seeds projects
+ * with (`@kortix/starter`, whose templates ship in the same image). So the API a
+ * sandbox already talks to is the authoritative source for both — no GitHub
+ * release, no separate artifact store, and CLI↔API consistency by construction:
+ * whatever a sandbox converges on is by definition the build that serves it.
+ *
+ * The same image also carries the compiled `kortix-agent` daemon
+ * (apps/api/Dockerfile:234), so the manifest describes that too and a box can
+ * converge the daemon itself — not only what the daemon manages.
+ *
+ * All digests are computed once and memoized. No input can change for the
+ * lifetime of a process: the binaries are baked into immutable image layers, and
+ * the templates are a compiled-in package. The one exception is `policy`, which
+ * is read live from the env on every call so a kill switch never waits on a
+ * deploy — see agentSelfUpdateEnabled().
+ */
+
+import { createHash } from 'node:crypto';
+import { open, stat } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildFileSha256 } from '@kortix/shared/sandbox-runtime-artifact';
+import { OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
+import {
+  managedSkillOverlayFiles,
+  managedSkillOverlayHash,
+  type ManagedSkillOverlayFile,
+} from './managed-skills';
+import { RUNTIME_MANAGED_MODELS } from '../llm-gateway/models/managed-models';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '../../../../..');
+
+/**
+ * The same binary the snapshot builder bakes — read through the same env
+ * override so a test (or a pinned local run) points both at one file. Read per
+ * call rather than as a module const for the reason build-context.ts documents:
+ * suites override the env after import.
+ */
+export function runtimeCliBinaryPath(): string {
+  return (
+    process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH || resolve(REPO_ROOT, 'apps/cli/dist/kortix')
+  );
+}
+
+/**
+ * The `kortix-agent` daemon binary, resolved exactly like the CLI above and
+ * through the SAME env override the snapshot builder already uses
+ * (`KORTIX_SNAPSHOT_AGENT_BIN_PATH`, services/snapshots/build-context.ts:55). The
+ * deployed API image carries it: apps/api/Dockerfile:234 copies
+ * `/agent/dist/kortix-agent` out of the `sandbox-agent` stage into
+ * `apps/kortix-sandbox-agent-server/dist/kortix-agent`. So the daemon a box
+ * converges to is by construction the daemon the API serving it was built with.
+ */
+export function runtimeAgentBinaryPath(): string {
+  return (
+    process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH ||
+    resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent')
+  );
+}
+
+/** Sidecar written by apps/cli/scripts/build.sh naming the version it stamped. */
+export function runtimeEntrypointPath(): string {
+  return (
+    process.env.KORTIX_SANDBOX_ENTRYPOINT_PATH || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh')
+  );
+}
+
+function runtimeCliVersionPath(): string {
+  return `${runtimeCliBinaryPath()}.version`;
+}
+
+/**
+ * The version stamped into THIS image, as the agent's version string.
+ *
+ * apps/kortix-sandbox-agent-server/scripts/build.sh writes no `.version`
+ * sidecar (unlike apps/cli/scripts/build.sh), so there is nothing to read off
+ * disk. The next best true statement is the image's own stamp: the agent binary
+ * in this image was compiled from the same source tree as the API serving it,
+ * in the same `docker build`. Format matches what the CLI stage stamps
+ * (`<version>+<commit8>`, apps/api/Dockerfile:86) so the two components read
+ * alike.
+ *
+ * Null — never fabricated — when the image carries no stamp (a local checkout).
+ * Informational only: every reconcile decision is made on `sha256`, because a
+ * version string cannot prove which bytes are on disk.
+ */
+function runtimeAgentVersion(): string | null {
+  const version = process.env.KORTIX_VERSION?.trim();
+  if (!version) return null;
+  const commit = (process.env.KORTIX_COMMIT || 'unknown').trim().slice(0, 8);
+  return `${version}+${commit}`;
+}
+
+/**
+ * Is a box allowed to converge its own daemon?
+ *
+ * OPERATOR RUNBOOK — flipping this needs no code deploy and no new image:
+ *   • ECS (dev/prod): update the `RUNTIME_AGENT_SELF_UPDATE` env var on the
+ *     kortix-api task definition to `false` and roll the service. New tasks
+ *     serve `policy.agent_self_update: false` on their next manifest read.
+ *   • k8s: `kubectl set env deploy/kortix-api RUNTIME_AGENT_SELF_UPDATE=false`.
+ *   • self-host / local: set it in the API's env before boot.
+ * Anything other than a literal `false`/`0` (case-insensitive) leaves it on, so
+ * a typo fails SAFE — towards the documented default, not towards a silent
+ * fleet-wide freeze nobody notices.
+ *
+ * Read per call rather than memoized: it costs nothing, and it must never be
+ * the thing that makes a kill switch take one extra deploy to land.
+ */
+function agentSelfUpdateEnabled(): boolean {
+  const raw = process.env.RUNTIME_AGENT_SELF_UPDATE?.trim().toLowerCase();
+  return !(raw === 'false' || raw === '0');
+}
+
+/**
+ * The monotonic build number a box uses to refuse going backwards.
+ *
+ * WHY THIS IS NOT A TIMESTAMP TAKEN AT REQUEST TIME. A box records the highest
+ * `build` it converged to and ignores anything lower. A per-request `Date.now()`
+ * would be different on every read and identical across two concurrently-live
+ * API versions, which defeats the guard entirely.
+ *
+ * WHAT WE ACTUALLY HAVE. Nothing in the deployed image is a purpose-built
+ * monotonic counter — stated plainly rather than implied:
+ *   • `KORTIX_VERSION` is `X.Y.Z-dev.<sha8>` on dev. The sha does not order.
+ *   • `KORTIX_COMMIT` is a sha. It does not order either.
+ *   • Process start time is NOT stable per deploy: every replica boots at a
+ *     different instant, and a restarted OLD pod would out-rank a NEW one.
+ * The best available source is the mtime of a binary baked into the image
+ * layer. apps/api/Dockerfile:280 `touch`es the agent binary as the last step of
+ * the runner stage, so its mtime IS the image build time; it is stored in the
+ * layer, so every replica of one image reports the identical value; and a later
+ * build necessarily has a later mtime. We take the max of the agent and CLI
+ * binaries so a missing one degrades instead of regressing.
+ *
+ * DOCUMENTED LIMITATIONS.
+ *   1. Monotonic only because images are built in chronological order. A
+ *      deliberate rollback re-deploys an OLDER image with a LOWER build, and
+ *      boxes will correctly refuse to converge backwards to it. The remedy is
+ *      `RUNTIME_ASSETS_BUILD` (below) or `RUNTIME_AGENT_SELF_UPDATE=false`.
+ *   2. A build backend that normalizes layer timestamps (SOURCE_DATE_EPOCH,
+ *      buildkit `rewrite-timestamp`) would flatten this to 0. Nothing in
+ *      .github/workflows sets either today. `0` degrades safely: it never
+ *      exceeds a recorded build, so a box simply stops treating it as newer.
+ *   3. Multi-arch builds produce one image per arch with mtimes seconds apart.
+ *      dev and prod build `linux/amd64` only (deploy-dev.yml:367,609).
+ *
+ * `RUNTIME_ASSETS_BUILD` overrides it with an explicit integer, which is the
+ * escape hatch for limitation 1: set it above the highest value already served
+ * and a rolled-back image out-ranks the build it is replacing.
+ */
+function buildIdOverride(): number | null {
+  const raw = process.env.RUNTIME_ASSETS_BUILD?.trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+/** One downloadable binary this deploy serves. */
+export interface RuntimeBinaryComponent {
+  /** Informational. Null when the build stamped nothing; never fabricated. */
+  version: string | null;
+  sha256: string;
+  size: number;
+  /** Where to GET it, relative to the API root the box already talks to. */
+  path: string;
+}
+
+export interface RuntimeComponents {
+  /** Absent when the API image carries no agent binary — the box then skips it. */
+  agent?: RuntimeBinaryComponent;
+  /** Absent when the API image carries no CLI binary. Mirrors the v1 `cli_*` keys. */
+  cli?: RuntimeBinaryComponent;
+  /**
+   * The supervising sandbox entrypoint (apps/sandbox/entrypoint.sh).
+   *
+   * OUT-OF-BAND REPAIR ONLY — stated here because it was advertised and
+   * unconsumed, which reads as a fifth convergeable component and is not one.
+   * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
+   * apps/kortix-sandbox-agent-server/src/harness` returns doc comments and
+   * nothing else: `reconcileRuntimeAssets` handles cli, skills, agent and the
+   * harness `opencode` component, and no box has ever fetched this.
+   *
+   * WHY IT IS NOT IMPLEMENTED, rather than merely not done yet. The supervisor
+   * IS the entrypoint: it is the running shell. Replacing the file under it does
+   * not replace the process — `bash` re-reads a script from its current offset,
+   * so an in-place rewrite corrupts the RUNNING supervisor rather than updating
+   * it. Doing it safely means writing beside it and having the supervisor `exec`
+   * the new copy at the top of its next loop iteration, which is a change to the
+   * supervisor's own control flow — the one component whose failure cannot be
+   * rolled back by anything else on the box. It is deliberately not part of the
+   * runtime-asset lane.
+   *
+   * It stays served so a human (or a repair job) can fetch the current
+   * supervisor for a box whose copy is broken. `runningAssetsVerdict` therefore
+   * EXCLUDES it from the comparison — a component no box converges must never
+   * make a box read as behind. Absent when the API image carries no copy.
+   */
+  entrypoint?: RuntimeBinaryComponent;
+  /** Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane. */
+  opencode: { version: string; source: 'npm' };
+  'managed-skills': { hash: string; count: number };
+  /**
+   * The THIRD convergeable asset, alongside binaries and the skill overlay —
+   * added for the incident this closes: a box's `kortix` provider map is
+   * learned once, at OpenCode process start, and nothing before this made
+   * "the managed lineup moved" a fact the control plane could read per box.
+   * `ids` is `RUNTIME_MANAGED_MODELS`' current id list — config-derived
+   * (`LLM_GATEWAY_MANAGED_MODELS`), fixed for the life of this process, so it
+   * belongs beside the binary digests rather than beside `policy`. Empty on a
+   * self-host deploy with the managed provider off; `runningAssetsVerdict`
+   * then has nothing to converge a box on, same as an unbuilt CLI.
+   */
+  'managed-catalog': { ids: readonly string[] };
+}
+
+export interface RuntimeAssetsPolicy {
+  /** Kill switch. False stops daemon self-update fleet-wide without shipping a daemon. */
+  agent_self_update: boolean;
+}
+
+/**
+ * V1 KEYS ARE PERMANENT. Daemons already running in the field read
+ * `cli_version` / `cli_sha256` / `cli_size` / `managed_skills_hash` /
+ * `managed_skills_count` off this document (see
+ * apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts). Removing or renaming
+ * one breaks every box that already exists — the same failure class as the
+ * accept-encoding two-list divergence. New daemons prefer `components`; old
+ * daemons keep working because their keys are still here. `runtime-assets/
+ * __tests__/manifest.test.ts` guards this so a future refactor cannot quietly
+ * drop one.
+ */
+export interface RuntimeAssetsManifest {
+  /**
+   * The version string compiled INTO the binary, or null when the build wrote no
+   * sidecar (a plain local `bun run build`, where the binary reports `dev`).
+   * Informational only — reconcile decisions are made on `cli_sha256`, because a
+   * version string cannot prove which bytes are on disk.
+   */
+  cli_version: string | null;
+  /** null when the API image carries no CLI binary; the sandbox then skips CLI reconcile. */
+  cli_sha256: string | null;
+  cli_size: number | null;
+  managed_skills_hash: string;
+  managed_skills_count: number;
+
+  // ── v2, additive ──────────────────────────────────────────────────────────
+  /** Monotonic per deploy. See buildIdOverride() for the derivation and its limits. */
+  build: number;
+  components: RuntimeComponents;
+  policy: RuntimeAssetsPolicy;
+}
+
+/**
+ * Everything in the manifest that costs a hash or a stat. Memoized; the inputs
+ * cannot change for the lifetime of a process (immutable image layers).
+ * `policy` is deliberately NOT in here — see agentSelfUpdateEnabled().
+ */
+type RuntimeAssetsDigests = Omit<RuntimeAssetsManifest, 'policy'>;
+
+let manifestPromise: Promise<RuntimeAssetsDigests> | null = null;
+let overlayCache: { files: ManagedSkillOverlayFile[]; hash: string } | null = null;
+
+export function managedSkillOverlay(): { files: ManagedSkillOverlayFile[]; hash: string } {
+  if (!overlayCache) {
+    const files = managedSkillOverlayFiles();
+    overlayCache = { files, hash: managedSkillOverlayHash(files) };
+  }
+  return overlayCache;
+}
+
+/**
+ * Digest + size + mtime of one baked binary, or null when the image carries
+ * none. An absent binary is a legitimate state — a `bun run dev` checkout that
+ * never compiled it. Report null and let the box skip that one component rather
+ * than fail the whole manifest and take the other components down with it.
+ */
+async function measureBinary(
+  path: string,
+): Promise<{ sha256: string; size: number; mtimeMs: number } | null> {
+  try {
+    const stats = await stat(path);
+    if (!stats.isFile() || stats.size === 0) return null;
+    return {
+      sha256: await buildFileSha256(path),
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function computeManifest(): Promise<RuntimeAssetsDigests> {
+  const overlay = managedSkillOverlay();
+  // Both binaries are hashed here, once per process, concurrently. Hashing
+  // ~95 MB + ~104 MB per request is not acceptable; this is the whole reason
+  // the memo below stores the promise rather than the value.
+  const [cli, agent, entrypoint] = await Promise.all([
+    measureBinary(runtimeCliBinaryPath()),
+    measureBinary(runtimeAgentBinaryPath()),
+    measureBinary(runtimeEntrypointPath()),
+  ]);
+  let version: string | null = null;
+  if (cli) {
+    version = (await Bun.file(runtimeCliVersionPath()).text().catch(() => '')).trim() || null;
+  }
+
+  const mtimes = [agent?.mtimeMs, cli?.mtimeMs].filter(
+    (value): value is number => typeof value === 'number' && Number.isFinite(value),
+  );
+  const build =
+    buildIdOverride() ??
+    (mtimes.length > 0 ? Math.floor(Math.max(...mtimes) / 1000) : 0);
+
+  const components: RuntimeComponents = {
+    opencode: { version: OPENCODE_VERSION, source: 'npm' },
+    'managed-skills': { hash: overlay.hash, count: overlay.files.length },
+    'managed-catalog': { ids: RUNTIME_MANAGED_MODELS.map((model) => model.id) },
+  };
+  if (agent) {
+    components.agent = {
+      version: runtimeAgentVersion(),
+      sha256: agent.sha256,
+      size: agent.size,
+      path: '/v1/runtime-assets/agent',
+    };
+  }
+  if (entrypoint) {
+    components.entrypoint = {
+      version: null,
+      sha256: entrypoint.sha256,
+      size: entrypoint.size,
+      path: '/v1/runtime-assets/entrypoint',
+    };
+  }
+  if (cli) {
+    // Deliberately the SAME values as the v1 `cli_*` keys above — one
+    // measurement, two spellings. A v1 daemon and a v2 daemon must never
+    // converge on different bytes.
+    components.cli = {
+      version,
+      sha256: cli.sha256,
+      size: cli.size,
+      path: '/v1/runtime-assets/cli',
+    };
+  }
+
+  return {
+    cli_version: version,
+    cli_sha256: cli?.sha256 ?? null,
+    cli_size: cli?.size ?? null,
+    managed_skills_hash: overlay.hash,
+    managed_skills_count: overlay.files.length,
+    build,
+    components,
+  };
+}
+
+function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
+  if (!manifestPromise) {
+    // Store the promise, not the value: two concurrent first requests must not
+    // both hash a 100 MB binary.
+    manifestPromise = computeManifest().catch((error) => {
+      manifestPromise = null;
+      throw error;
+    });
+  }
+  return manifestPromise;
+}
+
+export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
+  // Assembled per call so `policy` is read live: the kill switch must never
+  // cost an extra deploy. Everything expensive comes from the memo, so the
+  // marginal cost of a call is one object spread.
+  return { ...(await runtimeAssetsDigests()), policy: { agent_self_update: agentSelfUpdateEnabled() } };
+}
+
+// ---------------------------------------------------------------------------
+// Content-addressed chunks
+//
+// THE WASTE THIS REMOVES. A changed CLI made every box refetch ~105 MB, of
+// which ~90 MB provably did not change: that prefix is the embedded Bun
+// runtime, identical in every `bun --compile` output. Measured on real
+// linux-x64 builds at 1 MiB fixed chunks — two CLI builds differing only in
+// `KORTIX_CLI_VERSION` share 100 of 102 chunks (98.0%), and the CLI and the
+// daemon share 89 of 102 (87.3%) — but ONLY when both were compiled by the
+// same Bun. The shipped API image uses two (`SANDBOX_AGENT_BUN_VERSION=1.3.11`
+// for the daemon, `BUN_VERSION=1.2` for the CLI), and measured against a
+// deployed preview those two share 0 of 111 chunks. Same-artifact reuse, which
+// is what a CLI update actually is, is unaffected.
+//
+// FIXED-SIZE, and content-defined chunking is NOT the next increment. The
+// usual argument for a rolling hash is that an insertion shifts every later
+// byte out of alignment. It does not here: `bun --compile` pads its output to
+// a fixed length, so a 400-byte source addition to apps/cli produced a
+// 106,727,552-byte binary exactly like the build before it and moved the same
+// 2 of 102 chunks. There is nothing left for a rolling hash to recover.
+//
+// ONE STORE FOR BOTH BINARIES. `runtimeChunkSource` resolves a chunk hash
+// against every binary this image carries, so the ~90 MB the CLI and the
+// daemon share is one set of chunks on the server exactly as it is on the box.
+
+/**
+ * 1 MiB. The size every measurement above was taken at.
+ *
+ * Smaller buys almost nothing (256 KiB measured 88.0% cross-artifact against
+ * 87.3%) and quadruples the manifest; larger loses reuse (4 MiB measured
+ * 80.8%). It is served in the manifest rather than assumed, so it can move
+ * without a daemon release.
+ */
+export const RUNTIME_CHUNK_SIZE = 1024 * 1024;
+
+/** One binary, named chunk by chunk. Offsets are implied: chunk `i` starts at `i * chunk_size`. */
+export interface RuntimeChunkManifest {
+  /** The whole-file digest. This stays the authority — a box verifies its assembly against it. */
+  sha256: string;
+  size: number;
+  chunk_size: number;
+  /** sha256 of each chunk, in file order. The last one may be shorter than `chunk_size`. */
+  chunks: string[];
+}
+
+interface ChunkSource {
+  path: string;
+  offset: number;
+  length: number;
+}
+
+interface ChunkIndex {
+  manifests: Partial<Record<'agent' | 'cli', RuntimeChunkManifest>>;
+  /** chunk sha256 → where to read those bytes. One map for every component. */
+  sources: Map<string, ChunkSource>;
+}
+
+let chunkIndexPromise: Promise<ChunkIndex> | null = null;
+
+/**
+ * Hash one binary chunk by chunk without ever holding it in memory.
+ *
+ * `readFile` would put ~105 MB on the heap per binary, and this runs inside
+ * the request deadline on a shared API process. One reused 1 MiB buffer does
+ * not.
+ */
+async function indexBinary(
+  path: string,
+  sources: Map<string, ChunkSource>,
+): Promise<RuntimeChunkManifest | null> {
+  // Open FIRST and stat the HANDLE, never the path. A stat-then-open pair is a
+  // TOCTOU race (CodeQL js/file-system-race) and the handle already answers
+  // every question the path stat did.
+  let handle;
+  try {
+    handle = await open(path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile() || stats.size === 0) return null;
+    const buffer = Buffer.allocUnsafe(RUNTIME_CHUNK_SIZE);
+    const whole = createHash('sha256');
+    const chunks: string[] = [];
+    for (let offset = 0; offset < stats.size; offset += RUNTIME_CHUNK_SIZE) {
+      const length = Math.min(RUNTIME_CHUNK_SIZE, stats.size - offset);
+      const { bytesRead } = await handle.read(buffer, 0, length, offset);
+      if (bytesRead !== length) throw new Error(`short read at ${offset} of ${path}`);
+      const bytes = buffer.subarray(0, length);
+      whole.update(bytes);
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      chunks.push(digest);
+      // First writer wins. A chunk both binaries carry is served from whichever
+      // was indexed first; the bytes are the same by definition of the hash.
+      if (!sources.has(digest)) sources.set(digest, { path, offset, length });
+    }
+    return { sha256: whole.digest('hex'), size: stats.size, chunk_size: RUNTIME_CHUNK_SIZE, chunks };
+  } finally {
+    await handle.close();
+  }
+}
+
+function chunkIndex(): Promise<ChunkIndex> {
+  if (!chunkIndexPromise) {
+    // Same memo discipline as the digest manifest: store the PROMISE, so a
+    // post-deploy burst of converging boxes hashes ~210 MB once, not N times.
+    chunkIndexPromise = (async () => {
+      const sources = new Map<string, ChunkSource>();
+      // Sequential, not concurrent: each pass holds one 1 MiB buffer and this
+      // is a cold-start cost paid once per process.
+      const cli = await indexBinary(runtimeCliBinaryPath(), sources);
+      const agent = await indexBinary(runtimeAgentBinaryPath(), sources);
+      const manifests: ChunkIndex['manifests'] = {};
+      if (cli) manifests.cli = cli;
+      if (agent) manifests.agent = agent;
+      return { manifests, sources };
+    })().catch((error) => {
+      chunkIndexPromise = null;
+      throw error;
+    });
+  }
+  return chunkIndexPromise;
+}
+
+/** The chunk manifest for one component, or null when the image carries no such binary. */
+export async function runtimeChunkManifest(
+  component: 'agent' | 'cli',
+): Promise<RuntimeChunkManifest | null> {
+  return (await chunkIndex()).manifests[component] ?? null;
+}
+
+/**
+ * Build the chunk index off the request path.
+ *
+ * Same reasoning as the digest memo's boot warm-up: it reads ~200 MB, and the
+ * first caller is a booting sandbox inside a 25 s request deadline. Never
+ * throws — an absent binary is a legitimate state and the routes report it.
+ */
+export function warmRuntimeChunkIndex(): void {
+  void chunkIndex().catch(() => {});
+}
+
+/** Where one chunk's bytes live, or null when this image carries no chunk with that hash. */
+export async function runtimeChunkSource(sha256: string): Promise<ChunkSource | null> {
+  return (await chunkIndex()).sources.get(sha256) ?? null;
+}
+
+/**
+ * One chunk's bytes, READ not streamed, or null when no binary carries it.
+ *
+ * THE DEFECT THIS REPLACES, found on a deployed preview and by no unit test:
+ * the route returned `Bun.file(path).slice(offset, offset + length).stream()`.
+ * On this image's Bun that streamed the WHOLE FILE — a request for one 1 MiB
+ * chunk answered 200 with all 116,127,104 bytes and no `Content-Length`. The
+ * index was right and the digest check downstream still refused it, so it
+ * degraded safely while delivering the exact opposite of the optimization.
+ * Locally, on a newer Bun, the same handler HUNG instead (the response-stream
+ * hang this repo already knows: drain, never hand a large stream straight on).
+ *
+ * A chunk is 1 MiB. Streaming it buys nothing and costs two Bun-version
+ * behaviours to reason about; one positional read into a Buffer has neither.
+ */
+export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> {
+  const source = await runtimeChunkSource(sha256);
+  if (!source) return null;
+  let handle;
+  try {
+    handle = await open(source.path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    // `alloc`, not `allocUnsafe`: allocUnsafe serves small sizes out of Node's
+    // shared 8 KB pool, so a SHORT trailing chunk would come back as a view
+    // into a buffer holding other requests' bytes — and `.buffer` on it is the
+    // whole pool, not the chunk. The route hands `.buffer` to the response, so
+    // that distinction is the difference between one chunk and a leak.
+    const buffer = Buffer.alloc(source.length);
+    const { bytesRead } = await handle.read(buffer, 0, source.length, source.offset);
+    // A short read means the file changed under the index. Answer nothing
+    // rather than bytes that do not hash to the name they were asked for.
+    return bytesRead === source.length ? buffer : null;
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Test-only: drop both memos so a case can recompute against a mutated fixture. */
+export function _resetRuntimeAssetsCache(): void {
+  manifestPromise = null;
+  overlayCache = null;
+  chunkIndexPromise = null;
+}
+
+// ---------------------------------------------------------------------------
+// "Is this box running what this deploy serves?"
+//
+// THE ASYMMETRY THAT DECIDES THIS WHOLE LANE, stated once where every later
+// reader will find it: CONFIG blocks the turn, because config changes what the
+// agent IS — `convergeBeforeTurnStart` awaits, and a stale box pays
+// 10,287-10,907 ms. BINARIES MUST NOT BLOCK. A box one turn behind on the CLI
+// is the state that already exists today; a box that makes the user wait for
+// ~100 MB is a regression. So everything below DETECTS and SCHEDULES. It never
+// applies and it is never awaited on the send path.
+// ---------------------------------------------------------------------------
+
+/** What a daemon says it is running, from the health `runtime.running` block. */
+export interface RunningAssetsReport {
+  cli_sha256: string | null;
+  managed_skills_hash: string | null;
+  agent_sha256: string | null;
+  staged_agent_sha256: string | null;
+  opencode_version: string | null;
+  /**
+   * Managed model ids this box currently believes are servable. Null means
+   * UNCONFIRMED, never "empty" — either no live fetch has ever succeeded on
+   * this box, or the daemon predates the field. See `runningAssetsVerdict`'s
+   * doc for why unconfirmed reads as `behind`, not `unknown`, for this one
+   * component.
+   */
+  managed_model_ids: string[] | null;
+}
+
+/** Sorted + joined so id ORDER never manufactures a false difference — both
+ *  sides of every comparison in this file go through this same function. */
+function managedCatalogFingerprint(ids: readonly string[]): string {
+  return [...ids].sort().join(',');
+}
+
+export type RunningAssetsVerdict =
+  /** Every component this deploy can converge matches what the box runs. */
+  | 'current'
+  /** At least one component differs, and the box can be brought forward. */
+  | 'behind'
+  /** The box reported nothing comparable. Never treated as evidence of either. */
+  | 'unknown';
+
+/**
+ * A stable id for the manifest a verdict was computed against.
+ *
+ * LOAD-BEARING, not decorative. Both memos in this lane are per-process, so a
+ * new API process starts empty and a deploy is self-healing on its own. The
+ * fingerprint covers the case a fresh process does not: during a ROLLING deploy
+ * two API versions serve two manifests at once, and the box's epoch guard
+ * (`manifest build N is older than converged build M`) refuses to go backwards.
+ * Keying the memo by fingerprint stops process A from caching a `behind`
+ * verdict computed against B's manifest and re-scheduling, for the length of
+ * the rollout, a download the box will refuse. That is the same failure shape as
+ * the 2026-07-22 mutual-rebuild loop the epoch guard exists to close.
+ *
+ * BOTH env-only switches are in here, because both change what a verdict MEANS
+ * and neither waits on a deploy. `RUNTIME_ASSETS_BUILD` moves `build`.
+ * `RUNTIME_AGENT_SELF_UPDATE` is subtler: `runningAssetsVerdict` reads it live
+ * and SKIPS the agent comparison entirely while it is off, so `current` taken
+ * with the switch off is a claim about the CLI, the overlay and OpenCode only.
+ * Reading the switch live is therefore necessary but not sufficient — a live
+ * read cannot revisit a verdict already in the memo. Without the switch in the
+ * key, turning self-update back ON leaves those narrower verdicts valid for the
+ * whole `RUNNING_ASSETS_TTL_MS`, and a box genuinely behind on the daemon is not
+ * nudged for ten minutes after an operator asked for exactly that. In the key,
+ * the flip invalidates every entry at once and the next send re-measures.
+ */
+export async function manifestFingerprint(): Promise<string> {
+  const digests = await runtimeAssetsDigests();
+  const c = digests.components;
+  return [
+    digests.build,
+    c.agent?.sha256 ?? '',
+    c.cli?.sha256 ?? '',
+    c['managed-skills'].hash,
+    c.opencode.version,
+    c.entrypoint?.sha256 ?? '',
+    c['managed-catalog'].ids.length > 0 ? managedCatalogFingerprint(c['managed-catalog'].ids) : '',
+    // Not a digest — the comparison's SHAPE. See above.
+    agentSelfUpdateEnabled() ? 'agent-update:on' : 'agent-update:off',
+  ].join('|');
+}
+
+/**
+ * Compare what a box reports it runs against what this deploy serves.
+ *
+ * SHA TO SHA wherever a sha exists, never version string to version string — a
+ * version string cannot prove which bytes are on disk. `opencode` is the one
+ * exception and it is forced: the manifest carries only a version for it,
+ * because the bytes come from npm and 167 MB has no business crossing our
+ * control plane.
+ *
+ * A component the manifest does not state is NOT a difference — a local
+ * checkout that never built the CLI states no cli digest, and a box cannot be
+ * behind something that was never described. A component the BOX does not state
+ * is `unknown`, which is deliberately not `behind`: an older daemon with no
+ * `running` block must not make every turn schedule a pass for ever.
+ *
+ * `entrypoint` is excluded on purpose. The manifest advertises it and no box
+ * consumes it — see the note on `components.entrypoint`.
+ *
+ * `agent` is skipped entirely when `RUNTIME_AGENT_SELF_UPDATE` is off, read
+ * LIVE here: a fleet frozen by the kill switch is not "behind", and telling the
+ * control plane it is would have every turn schedule a pass the daemon is
+ * guaranteed to refuse.
+ *
+ * A STAGED agent still reads as `behind`, and that is correct: the bytes are on
+ * disk but the box is not running them. The scheduled pass is then a manifest
+ * read and no download (`staged === expected` short-circuits in the daemon),
+ * and it is what asks for the swap at the next safe boundary.
+ *
+ * `managed-catalog` breaks the "box states nothing ⇒ unknown" rule the other
+ * components follow, and it does so ON PURPOSE. `managed_model_ids: null`
+ * does not mean "an older daemon with no such field" the way it does for a
+ * missing sha — every daemon in the field reports this key once this ships.
+ * It means UNCONFIRMED: no live fetch has ever succeeded, so the box is
+ * running the baked/bundled managed set with no proof it matches this
+ * deploy's lineup. Reading that as `unknown` (skip) is exactly the silent
+ * staleness a real dev box hit 2026-09-26 — woken, healthy, cli/skills/
+ * opencode all current, and STILL serving a month-old managed lineup because
+ * nothing treated the unconfirmed catalog as a reason to converge. So: stated
+ * lineup + null box report ⇒ `behind`, unconditionally.
+ */
+export async function runningAssetsVerdict(
+  running: RunningAssetsReport | null,
+): Promise<RunningAssetsVerdict> {
+  if (!running) return 'unknown';
+  const { components } = await runtimeAssetsDigests();
+  let compared = 0;
+  const differs = (want: string | null | undefined, have: string | null): boolean | null => {
+    if (!want) return null; // this deploy states nothing to converge on
+    if (!have) return null; // this box states nothing comparable
+    compared += 1;
+    return want !== have;
+  };
+  const managedCatalogIds = components['managed-catalog'].ids;
+  const managedCatalogDiffers = ((): boolean | null => {
+    if (managedCatalogIds.length === 0) return null; // nothing to converge on
+    if (running.managed_model_ids == null) {
+      compared += 1;
+      return true; // unconfirmed — see the doc above, never treated as fine
+    }
+    compared += 1;
+    return (
+      managedCatalogFingerprint(managedCatalogIds) !==
+      managedCatalogFingerprint(running.managed_model_ids)
+    );
+  })();
+  const checks = [
+    differs(components.cli?.sha256, running.cli_sha256),
+    differs(components['managed-skills'].hash, running.managed_skills_hash),
+    differs(components.opencode.version, running.opencode_version),
+    agentSelfUpdateEnabled() ? differs(components.agent?.sha256, running.agent_sha256) : null,
+    managedCatalogDiffers,
+  ];
+  if (checks.some((c) => c === true)) return 'behind';
+  return compared > 0 ? 'current' : 'unknown';
+}

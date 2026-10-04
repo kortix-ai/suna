@@ -22,7 +22,7 @@ cold replica's local cache permanently lacks it.
 **Incident:** 2026-09-25, staging release gate run 36188978457 (`b6872877`,
 `CONFIG_RELEASES_ENABLED=true`, #7691). `CFG-7` failed: "the project's own
 stored archive: 404". `serveConfigArchive`
-(`apps/api/src/config-releases/serve-archive.ts`) gated on
+(`apps/api/src/services/config-releases/serve-archive.ts`) gated on
 `isTreeObject(mirror, treeId)` before ever consulting the S3 store. After a
 project's git origin is replaced with a second, unrelated repository, the OLD
 config tree is unreachable from the new origin's history — no fetch
@@ -35,7 +35,7 @@ was durably stored in S3 under the project's own key. No user impact: caught
 by the CFG-7 flow before the feature reached prod (`CONFIG_RELEASES_ENABLED`
 stays off on prod). Fix: PR #7701.
 
-**Enforcement:** `apps/api/src/config-releases/serve-archive.test.ts` — "CFG-7:
+**Enforcement:** `apps/api/src/services/config-releases/serve-archive.test.ts` — "CFG-7:
 a tree the mirror no longer has (repository replaced) still serves from the
 store" and its 404-when-both-miss sibling. `tests/src/flows/config-releases.flow.ts`
 `CFG-7` proves it end to end against a real replaced repository.

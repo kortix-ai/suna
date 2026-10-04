@@ -5,7 +5,7 @@ const {
   PlatinumAdapter,
   PlatinumTemplateListingError,
 } = await import('./images');
-const { SnapshotInUseError } = await import('../../../snapshots/providers/errors');
+const { SnapshotInUseError } = await import('../../snapshots/providers/errors');
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {

@@ -6,7 +6,7 @@ import { runWorkerTick } from '../audit/audit-scope';
 import { isLeader } from '../../lib/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from './trigger-execution-store';
 import type { GitTriggerSpec } from './index';
-import { drainMonitorEvents } from '../../projects/lib/monitor-observer';
+import { drainMonitorEvents } from '../projects/lib/monitor-observer';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';

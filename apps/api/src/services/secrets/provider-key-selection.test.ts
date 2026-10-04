@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // member-gated listUsableGatewaySecrets. Both ask for the key name the
 // gateway reads, derived from the provider: no caller passes a name.
 
-mock.module('../../llm-gateway/models/provider-registry', () => ({
+mock.module('../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (id: string) => (id === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));
 

@@ -23,7 +23,7 @@ import {
   auditLabelForAction,
 } from '@kortix/shared/audit-labels';
 
-const { app } = await import('../index');
+const { app } = await import('../app/index');
 
 type RouteRow = { method: string; path: string; handler: (...args: unknown[]) => unknown };
 
@@ -40,7 +40,7 @@ const manifest = JSON.parse(
 const manifestKeys = new Set(manifest.routes.map((route) => `${route.method} ${route.path}`));
 
 // The pre-Hono entrypoints moved into inbound-dispatch.ts (KRTX-347 split).
-const dispatchSource = readFileSync(new URL('../sandbox-proxy/inbound-dispatch.ts', import.meta.url), 'utf8');
+const dispatchSource = readFileSync(new URL('../app/inbound-dispatch.ts', import.meta.url), 'utf8');
 const entrypointKeys = new Set(
   [...dispatchSource.matchAll(/setInboundAuditEntrypoint\(\s*'[a-z_]+',\s*'([^']+)'\s*\)/g)].map(
     (match) => `ENTRY ${match[1]}`,

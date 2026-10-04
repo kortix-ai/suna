@@ -7,11 +7,11 @@ import {
   buildRestoreScript,
   legacyRehydrateSpec,
   rekeyOpencodeDb,
-} from '../projects/legacy-migration-rehydrate';
+} from '../services/projects/legacy-migration-rehydrate';
 import {
   seedOpencodeSchema,
   writeConversations,
-} from '../projects/suna-migration/opencode-db-writer';
+} from '../services/projects/suna-migration/opencode-db-writer';
 
 describe('legacyRehydrateSpec', () => {
   const PROJECT = '11111111-1111-4111-8111-111111111111';

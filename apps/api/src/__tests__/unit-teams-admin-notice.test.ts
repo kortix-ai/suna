@@ -8,12 +8,12 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 mock.module('../lib/config', () => ({ config: { FRONTEND_URL: 'https://app.example.test' } }));
 
 const managerNotices: unknown[] = [];
-mock.module('../projects/lib/access-requests', () => ({
+mock.module('../services/projects/lib/access-requests', () => ({
   notifyProjectAccessRequestManagers: async (input: unknown) => {
     managerNotices.push(input);
   },
 }));
-mock.module('../iam/read-models', () => ({
+mock.module('../services/iam/read-models', () => ({
   accountRoleMap: async () => new Map([
     ['owner-1', 'owner'],
     ['admin-2', 'admin'],
@@ -22,14 +22,14 @@ mock.module('../iam/read-models', () => ({
   ]),
   isAccountManagerRole: (role: string) => role === 'owner' || role === 'admin',
 }));
-mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['requester', 'requester@example.test'], ['user-1', 'alex@example.test']]) }));
+mock.module('../services/projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['requester', 'requester@example.test'], ['user-1', 'alex@example.test']]) }));
 const teamsLinks: Record<string, string | null> = { 'owner-1': 'aad-owner', 'admin-2': 'aad-admin', requester: 'aad-requester', 'member-3': 'aad-member' };
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({ lookupChatUserForKortixUser: async (_p: string, _w: string, userId: string) => teamsLinks[userId] ?? null }),
 );
 let refusedFor = new Set<string>();
 const sent: Array<{ to: string; card: string }> = [];
-mock.module('../channels/teams-api', () => ({
+mock.module('../services/channels/teams-api', () => ({
   openDirectConversation: async (input: { userId: string }) =>
     refusedFor.has(input.userId) ? null : { serviceUrl: 'https://smba.trafficmanager.net/emea/', conversationId: `dm:${input.userId}` },
   sendCard: async (ref: { conversationId: string }, card: unknown) => {
@@ -45,10 +45,10 @@ mock.module('../channels/teams-api', () => ({
     return true;
   },
 }));
-mock.module('../channels/teams/login-card', () => ({ sendTeamsLoginPrompt: async () => {} }));
-mock.module('../channels/teams/auth-resume', () => ({ createPendingTeamsAuthMessage: async () => 'p-1' }));
+mock.module('../services/channels/teams/login-card', () => ({ sendTeamsLoginPrompt: async () => {} }));
+mock.module('../services/channels/teams/auth-resume', () => ({ createPendingTeamsAuthMessage: async () => 'p-1' }));
 
-const { confirmTeamsConnected, notifyAdminsOfTeamsAccessRequest, postTeamsIdentityPrompt } = await import('../channels/teams/identity');
+const { confirmTeamsConnected, notifyAdminsOfTeamsAccessRequest, postTeamsIdentityPrompt } = await import('../services/channels/teams/identity');
 const request = { tenantId: 'tenant-1', projectId: 'proj-1', accountId: 'acct-1', requesterUserId: 'requester' };
 
 beforeEach(() => {

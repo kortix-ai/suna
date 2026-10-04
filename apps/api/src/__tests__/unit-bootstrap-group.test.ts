@@ -2,8 +2,8 @@
 // decides whether a parked SCIM Group membership materializes on invite accept.
 // Malformed jsonb must be rejected (null), never fed into account_group_members.
 import { describe, expect, test } from 'bun:test';
-import { validateBootstrapGroup } from '../accounts/invites';
-import { parseGroupPut, resolveInviteMemberAction, stripGroupGrant } from '../scim/groups';
+import { validateBootstrapGroup } from '../http/accounts/invites';
+import { parseGroupPut, resolveInviteMemberAction, stripGroupGrant } from '../http/scim/groups';
 
 const UUID = '5888c520-d8f0-489a-a807-d2f8bf007fd1';
 

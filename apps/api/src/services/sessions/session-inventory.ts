@@ -4,9 +4,9 @@ import {
   isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
-} from '../../connectors/share';
+} from '../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
-import { agentSessionStanding } from '../../projects/lib/agent-session-standing';
+import { agentSessionStanding } from '../projects/lib/agent-session-standing';
 import { ACTIVE_SESSION_STATUSES } from './session-status';
 import { isWarmProjectSession } from './warm-sessions';
 
@@ -100,7 +100,7 @@ export function selectSessionRowsForViewer(input: {
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
   /**
-   * The caller holds account session oversight (see iam/session-oversight.ts).
+   * The caller holds account session oversight (see services/iam/session-oversight.ts).
    * Applied to the `project` scope only: that is the manager inventory (the
    * Sessions page). The default `visible` scope feeds the sidebar, and an admin
    * must not get every member's private session there.

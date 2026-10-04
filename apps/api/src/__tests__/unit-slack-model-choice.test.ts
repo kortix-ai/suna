@@ -3,7 +3,7 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Slack `/kortix models`, `/kortix model <id>` and the picker's controls. The
 // list and every check run as the person who typed, with the conversation's
-// personal scope (channels/model-access.ts, pinned in
+// personal scope (services/channels/model-access.ts, pinned in
 // unit-channel-model-access). Before this, Slack listed Kortix models plus
 // one model per legacy project key and checked every pick as the ACCOUNT
 // OWNER: a model reached through a shared key or a ChatGPT subscription was
@@ -13,14 +13,14 @@ const testConfig = { SLACK_REQUIRE_USER_IDENTITY: true };
 mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: testConfig }));
 
 let gate: Record<string, unknown> | null = null;
-mock.module('../channels/slack/model-gate', () => ({ channelModelContext: async () => gate }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+mock.module('../services/channels/slack/model-gate', () => ({ channelModelContext: async () => gate }));
+mock.module('../services/feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 
 let actor: { userId: string } | { reason: string } = { userId: 'ivan' };
 const actorLookups: string[] = [];
 // The same linked person decides the scope and, through core/settings.ts,
 // whether they may change this channel's settings at all.
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     resolveChatActor: async (user: { platformUserId: string }) => {
       actorLookups.push(user.platformUserId);
@@ -33,7 +33,7 @@ mock.module('../channels/core/identity', () =>
 let selection: Record<string, unknown> | null = null;
 const stored: Array<string | null> = [];
 let bound = true;
-mock.module('../channels/slack/selection', () => ({
+mock.module('../services/channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   setChannelAgent: async () => ({ ok: true }),
   setChannelConversationPolicy: async () => true,
@@ -43,7 +43,7 @@ mock.module('../channels/slack/selection', () => ({
   },
 }));
 
-mock.module('../llm-gateway/models/picker', () => ({
+mock.module('../services/llm-gateway/models/picker', () => ({
   labelForModelRef: (ref: string) => ref.replace(/^kortix\//, '').replace('anthropic/claude-opus-4-8', 'Claude Opus 4.8'),
 }));
 
@@ -56,7 +56,7 @@ let grantVerdict: { ok: false; reason: 'agent_grant'; envVar: string; providerId
 const grantAgents: Array<string | null | undefined> = [];
 let catalog: Array<Record<string, unknown>> = [];
 
-mock.module('../channels/model-access', () => ({
+mock.module('../services/channels/model-access', () => ({
   channelModelScope: (input: {
     projectId: string;
     accountId: string;
@@ -92,7 +92,7 @@ mock.module('../channels/model-access', () => ({
   listChannelModels: async () => ({ models: catalog, defaultModel: 'glm-5.3-flash' }),
 }));
 
-const { applySlackModelChoice, buildSlackModelsResponse, slackModelScope } = await import('../channels/slack/model-choice');
+const { applySlackModelChoice, buildSlackModelsResponse, slackModelScope } = await import('../services/channels/slack/model-choice');
 
 const dm = { teamId: 'T1', channelId: 'D1', slackUserId: 'U1', command: '/kortix' };
 const channel = { ...dm, channelId: 'C1' };

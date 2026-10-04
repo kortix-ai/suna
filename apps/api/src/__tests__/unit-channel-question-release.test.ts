@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import { channelOfSessionMetadata, questionReleaseSentinel } from '../channels/question-release';
+import { channelOfSessionMetadata, questionReleaseSentinel } from '../services/channels/question-release';
 
 // The agent's `question` tool BLOCKS. In a chat channel the answer arrives
 // later as a new turn, so the call must be released or the turn hangs. That
@@ -145,7 +145,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
 // release is one branch inside a route handler with no seam to import, and
 // what matters is which inputs gate it and where it sits.
 describe('POST /turn-question releases channel questions, and only those', () => {
-  const src = Bun.file(new URL('../projects/routes/turn-questions.ts', import.meta.url).pathname);
+  const src = Bun.file(new URL('../http/projects/turn-questions.ts', import.meta.url).pathname);
 
   const handler = async () => {
     const all = await src.text();

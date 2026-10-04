@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { publishTeamsAppToCatalog, TEAMS_CATALOG_PUBLISH_TIMEOUT_MS } from '../channels/teams/catalog';
-import { TEAMS_MANIFEST_VERSION } from '../channels/teams-manifest';
+import { publishTeamsAppToCatalog, TEAMS_CATALOG_PUBLISH_TIMEOUT_MS } from '../services/channels/teams/catalog';
+import { TEAMS_MANIFEST_VERSION } from '../services/channels/teams-manifest';
 
 const realFetch = globalThis.fetch;
 

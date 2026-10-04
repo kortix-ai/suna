@@ -4,7 +4,7 @@
  * WAS removed in PR5 alongside the old V1 approval/break-glass machinery,
  * but a DB-backed custom-role/policy surface was rebuilt from scratch in
  * Phase 3 of feat/iam-rbac-v1 (June 2026) at those same route prefixes —
- * see apps/api/src/accounts/iam/custom-roles.ts and
+ * see apps/api/src/http/accounts/iam/custom-roles.ts and
  * tests/src/flows/iam.flow.ts for coverage of that surface. This file only
  * covers the pieces that still have no CRUD surface (see below).
  *

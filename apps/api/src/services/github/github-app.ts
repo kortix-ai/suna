@@ -1,9 +1,9 @@
 import { createHmac, createSign, timingSafeEqual } from "node:crypto";
-import { resolveAppIdentity } from "../../platform/services/github-app-identity";
+import { resolveAppIdentity } from "../platform/services/github-app-identity";
 import { ghFetch } from "./github-http";
 // The App identity is resolved WHOLE from one source — env or the
 // `github_app_identity` platform setting — by
-// platform/services/github-app-identity.ts. These accessors never mix the two
+// services/platform/services/github-app-identity.ts. These accessors never mix the two
 // field by field: one stored row shadowing six env values is the 2026-09-16
 // production incident.
 export function githubAppId() {
@@ -20,7 +20,7 @@ export function isGithubAppConfigured() {
 
 // The App's own OAuth client (every GitHub App gets one for "user access
 // token" / user-to-server flows) — used to prove a caller's GitHub identity
-// and org role for account-linking (see platform/routes/github-app.ts's
+// and org role for account-linking (see http/platform/github-app.ts's
 // oauth/authorize + oauth/callback).
 export function githubAppClientId() {
   return resolveAppIdentity()?.clientId ?? null;
@@ -72,7 +72,7 @@ const permissionDriftLogged = new Set<string>();
 
 /**
  * Every permission a Kortix flow reads or writes through the App. The
- * self-host manifest (platform/routes/github-app.ts) requests exactly this
+ * self-host manifest (http/platform/github-app.ts) requests exactly this
  * set, and `resolveGitHubAppPermissions()` compares a hand-made App against it.
  *
  * - `administration: write` — `createRepo` under a connected organization.
@@ -255,7 +255,7 @@ export function verifyGitHubAppInstallStatePayload(
   nowMs = Date.now(),
 ): GitHubAppInstallState | null {
   // Defensive against bare/missing `state` query params — the install-callback
-  // route (apps/api/src/platform/routes/github-app.ts) calls this with
+  // route (apps/api/src/http/platform/github-app.ts) calls this with
   // `query.state`, which is `string | undefined` (zod schema marks it
   // `optional()`). Without this guard, `undefined.split('.')` throws a
   // TypeError that surfaces as a 500 on a bare GET /install-callback hit —
@@ -349,7 +349,7 @@ function base64UrlJson(value: unknown) {
 /**
  * Sign a GitHub App JWT for an EXPLICIT (appId, privateKey) pair — split out
  * of `createGitHubAppJwt` so the "paste an existing App" setup route
- * (platform/routes/github-app.ts's POST /app) can validate credentials a user
+ * (http/platform/github-app.ts's POST /app) can validate credentials a user
  * just typed in *before* they're stored as the platform's active config
  * (`createGitHubAppJwt` below only ever signs for whatever is ALREADY
  * configured).

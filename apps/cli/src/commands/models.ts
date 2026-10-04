@@ -9,7 +9,7 @@
  *     family), not the resolved set; `PUT /model-enablement` replaces the WHOLE
  *     exception map, so every write here reads the current map first and merges
  *     into it. The gateway still serves a disabled model if a caller names it
- *     outright (apps/api/src/projects/routes/models.ts).
+ *     outright (apps/api/src/http/projects/models.ts).
  *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
  *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *

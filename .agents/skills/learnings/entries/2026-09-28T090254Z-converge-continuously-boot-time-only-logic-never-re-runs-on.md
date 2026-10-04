@@ -43,12 +43,12 @@ while its gate tests four fields, so a box that failed on `runtimeBuild ===
 null` reported `last: current/ok` — a reading that says "converged" beside the
 words "not converged", and cost a diagnostic cycle.
 
-**Enforcement:** `apps/api/src/projects/routes/wake-repair-grace.test.ts` pins
+**Enforcement:** `apps/api/src/http/projects/wake-repair-grace.test.ts` pins
 the repair-in-flight guard on the wake fence and was red-proofed against the
 unfixed code (2 of 7 failed, on exactly the repair-in-flight cases; the 5 that
 must still park passed both before and after).
 `apps/api/src/services/sessions/session-model-repair.test.ts` and the
 platform-default-floor block in
-`apps/api/src/llm-gateway/resolution/session-model.test.ts` pin the model
+`apps/api/src/services/llm-gateway/resolution/session-model.test.ts` pin the model
 repair. No enforcer exists for the general "does this also run on resume?"
 question — that one is still a review question, and it is the one to build next.

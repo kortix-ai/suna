@@ -19,11 +19,11 @@
  */
 import { sessionProviderSecretPools } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import { toWireModel } from '../../llm-gateway/resolution/effective';
+import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
+import { toWireModel } from '../llm-gateway/resolution/effective';
 import { providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
 import { db } from '../../lib/db';
-import { resolveSessionPersonalOwner, type PersonalSessionVisibility } from '../../projects/lib/personal-resources';
+import { resolveSessionPersonalOwner, type PersonalSessionVisibility } from '../projects/lib/personal-resources';
 
 /** Does the session have a selection for the provider? An empty one counts. */
 async function hasProviderSelection(sessionId: string, providerId: string): Promise<boolean> {

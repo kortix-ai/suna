@@ -1,0 +1,412 @@
+// ════════════════════════════════════════════════════════════════════════════
+// Preview WebSocket reverse-proxy
+//
+// The path-based preview proxy (`/v1/p/{sandboxId}/{port}/*`) is an HTTP-only
+// reverse proxy (see forward/). Browser WebSocket clients — today the
+// xterm PTY terminal — need a real upgrade, which Hono/`fetch()` can't do; the
+// upgrade has to happen at the `Bun.serve()` level.
+//
+// This module:
+//   1. authenticates the upgrade via the `?token=` query param (browsers can't
+//      set Authorization headers on a WebSocket) — mirroring `combinedAuth`,
+//   2. resolves the upstream WS URL + headers (Daytona preview link + service
+//      key + signed user-context), and
+//   3. pipes bytes both ways once Bun upgrades the client socket.
+//
+// IMPORTANT — opencode PTY usually targets port 4096, not 8000.
+// opencode serves its PTY WebSocket (`/pty/{id}/connect`) directly on its
+// internal port 4096. Daytona can expose that port directly. Platinum cannot:
+// the opencode process is loopback-bound and direct public exposure would bypass
+// the sandbox agent's signed user-context auth. The resolver therefore keeps
+// Daytona on 4096 and sends Platinum PTY upgrades through the agent bridge on
+// 8000.
+// ════════════════════════════════════════════════════════════════════════════
+
+import { authenticatePreviewPrincipalDetailed } from './preview-auth';
+import { bindPreviewResource, bindPreviewSession } from './preview-audit';
+import { resolvePreviewWsUpstream } from './forward';
+import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../sessions/opencode-ports';
+import { healthRuntimePort } from '@kortix/api-contract/runtime-relay';
+import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
+import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
+
+// opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
+// a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
+//
+// That port MOVES. A verified config reload boots the replacement opencode on
+// the idle half of the port pair and promotes it, so after one reload the live
+// port is the other half and this constant points at a dead socket. It is now
+// only the fallback for a daemon too old to report where opencode actually is.
+const OPENCODE_FALLBACK_PORT = OPENCODE_PRIMARY_PORT;
+
+/** The daemon's own port — where its health endpoint answers. */
+const AGENT_PORT = 8000;
+
+/**
+ * Ask the box which port opencode is on right now.
+ *
+ * Deliberately NOT cached: the value changes on exactly the event we care about
+ * (a reload), so a cache would be stale precisely when it matters and would
+ * reintroduce the dead-socket bug it was meant to avoid. A PTY connect is a
+ * human opening a terminal — rare enough to afford one short round-trip.
+ *
+ * Falls back to 4096 on anything unexpected: an older daemon that does not
+ * report the field, an unreachable box, a slow one. That is the previous
+ * behaviour, so this can only improve on it.
+ */
+async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
+  try {
+    const { url, headers } = await resolveSandboxIngress(sandboxId, {
+      port: AGENT_PORT,
+      transport: 'http',
+    });
+    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!res.ok) return OPENCODE_FALLBACK_PORT;
+    const port = healthRuntimePort((await res.json().catch(() => null)) as Record<string, unknown> | null);
+    // Must be one of the pair. A daemon reporting anything else is either
+    // misconfigured or not the daemon, and following it blindly would let a
+    // response body redirect the PTY at an arbitrary port inside the sandbox.
+    return port !== null && isOpencodePort(port)
+      ? port
+      : OPENCODE_FALLBACK_PORT;
+  } catch {
+    return OPENCODE_FALLBACK_PORT;
+  }
+}
+
+/**
+ * How often the proxy pings BOTH legs of a preview WebSocket.
+ *
+ * A terminal is idle by nature: a shell sitting at its prompt emits nothing,
+ * and a user reading output types nothing. Measured on a real Platinum box, the
+ * API→sandbox leg is dropped after exactly 60 s with no bytes on it — the
+ * browser can only render that as close code `1006`, which is the
+ * "Connection closed (1006)" / "Reconnecting in Ns (code 1006)" ladder users
+ * hit on every environment, once a minute, forever.
+ *
+ * Nothing else on this path can fix it. The daemon does not ping, the browser
+ * does not ping, and no data byte may be injected in either direction: an
+ * upstream byte is typed into the user's shell and a downstream byte is printed
+ * into their terminal. A WebSocket PING is a control frame — it keeps the
+ * connection non-idle at every hop and is invisible to xterm and to the PTY.
+ *
+ * 25 s clears the 60 s provider-edge cut with two pings to spare, and also
+ * clears Cloudflare's ~100 s WebSocket idle timeout on the browser leg.
+ */
+export const PREVIEW_WS_KEEPALIVE_MS = 25_000;
+
+/** Per-connection state stashed on the upgraded socket's `data`. */
+export interface PreviewWsData {
+  type: 'preview-ws';
+  url: string;
+  headers: Record<string, string>;
+  /** Cache identity for refreshing a refused upstream handshake. */
+  ingress?: { sandboxId: string; port: number };
+  // Populated in the `open` handler once the upstream socket exists.
+  upstream?: WebSocket;
+  ready?: boolean;
+  queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
+  /** Interval that pings both legs — see PREVIEW_WS_KEEPALIVE_MS. */
+  keepalive?: ReturnType<typeof setInterval>;
+}
+
+/** Minimal shape of the Bun server WebSocket we touch. */
+interface ServerWs {
+  data: PreviewWsData;
+  send: (data: string | ArrayBufferView | ArrayBuffer) => void;
+  close: (code?: number, reason?: string) => void;
+  /** Bun's ServerWebSocket sends a PING control frame. */
+  ping?: (data?: string | ArrayBufferView | ArrayBuffer) => void;
+}
+
+/**
+ * Ping both legs once. Exported so the keepalive is unit-tested without a
+ * socket pair: it must ping the CLIENT and the UPSTREAM, and a throw on one leg
+ * must not stop the other.
+ */
+export function pingPreviewWsLegs(ws: ServerWs): void {
+  try {
+    ws.ping?.();
+  } catch {
+    // A socket that rejects a ping is closing; its own close handler cleans up.
+  }
+  const upstream = ws.data.upstream as (WebSocket & { ping?: () => void }) | undefined;
+  if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
+  try {
+    upstream.ping?.();
+  } catch {
+    // Same: the upstream close handler tears the pair down.
+  }
+}
+
+/** Stop the keepalive. Idempotent — both close paths call it. */
+export function stopPreviewWsKeepalive(state: PreviewWsData): void {
+  if (!state.keepalive) return;
+  clearInterval(state.keepalive);
+  state.keepalive = undefined;
+}
+
+/** True when the path is a path-based preview route eligible for WS proxying. */
+export function matchPreviewWsPath(
+  pathname: string,
+): { sandboxId: string; port: number; remainingPath: string } | null {
+  const m = pathname.match(/^\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/);
+  if (!m) return null;
+  const sandboxId = m[1];
+  if (sandboxId === 'auth' || sandboxId === 'share') return null;
+  const port = parseInt(m[2], 10);
+  if (Number.isNaN(port) || port < 1 || port > 65535) return null;
+  return { sandboxId, port, remainingPath: m[3] || '/' };
+}
+
+/**
+ * Authenticate + resolve everything needed to upgrade a preview WS.
+ * On success returns the `data` payload to hand to `server.upgrade`.
+ * On failure returns an HTTP status + message for the caller to respond with.
+ */
+export async function preparePreviewWsUpgrade(
+  url: URL,
+): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const match = matchPreviewWsPath(url.pathname);
+  if (!match) return { ok: false, status: 404, message: 'not a preview route' };
+
+  const { sandboxId, port, remainingPath } = match;
+  // The PTY terminal: a shell into the sandbox. The validator names the
+  // caller; this names the sandbox, so the owner sees who opened it.
+  bindPreviewResource(sandboxId, port);
+
+  const principal = await authenticatePreviewPrincipalDetailed(
+    url.searchParams.get('token'),
+    sandboxId,
+  );
+  if (!principal) return { ok: false, status: 401, message: 'unauthorized' };
+
+  return resolveUpgradeForPrincipal({
+    sandboxId,
+    port,
+    remainingPath,
+    search: url.search,
+    userId: principal.userId,
+    callerSessionId: principal.sessionId,
+  });
+}
+
+/**
+ * Upgrade a WebSocket that arrived on a preview ORIGIN.
+ *
+ * The path form authenticates with `?token=` because it has nowhere else to put
+ * a credential. An app on its own origin does not have that option at all: it
+ * writes `new WebSocket('/hmr')`, and neither a header nor a query parameter is
+ * reachable from that call — which is exactly why the origin proxy issues a
+ * cookie. WebSocket handshakes are ordinary HTTP requests and carry it.
+ *
+ * Sandbox and port come from the Host header, so the whole path belongs to the
+ * app; `/v1/p/...` means nothing here.
+ */
+export async function preparePreviewHostWsUpgrade(
+  req: Request,
+  url: URL,
+): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const resolved = resolvePreviewRequest(req, url);
+  if (!resolved) return { ok: false, status: 404, message: 'not a preview host' };
+  if (!resolved.verified) return { ok: false, status: 403, message: 'unsigned preview host' };
+  const { target } = resolved;
+
+  // A WebSocket handshake is a cross-site-capable, cookie-bearing request that
+  // no CORS policy governs: evil.com can open one and the browser attaches the
+  // `SameSite=None` preview cookie. Require the browser's own same-site answer.
+  const wsSite = req.headers.get('sec-fetch-site');
+  if (wsSite && wsSite !== 'same-origin' && wsSite !== 'none') {
+    return { ok: false, status: 403, message: 'cross-site websocket to a preview' };
+  }
+
+  let session = sessionFromCookies(req, target);
+  if (!session) {
+    // No cookie yet — accept the same one-shot credential the HTTP handshake
+    // takes, so a client that opens a socket before any page load still works.
+    const established = await establishPreviewSession(req, url, target);
+    if ('refusal' in established) {
+      return { ok: false, status: established.refusal.status, message: established.refusal.message };
+    }
+    session = established.session;
+  }
+  bindPreviewSession(session);
+  bindPreviewResource(session.sandboxId, target.port);
+  if (session.kind !== 'principal') {
+    // A public share is a read-only view of an artifact, not a socket.
+    return { ok: false, status: 403, message: 'websocket not available on a shared preview' };
+  }
+
+  return resolveUpgradeForPrincipal({
+    sandboxId: session.sandboxId,
+    port: target.port,
+    remainingPath: url.pathname || '/',
+    search: url.search,
+    userId: session.userId,
+    callerSessionId: session.callerSessionId,
+  });
+}
+
+/** Shared tail of both upgrade paths: pick the upstream port and resolve it. */
+async function resolveUpgradeForPrincipal(input: {
+  sandboxId: string;
+  port: number;
+  remainingPath: string;
+  search: string;
+  userId: string;
+  callerSessionId: string | null;
+}): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const { sandboxId, port, remainingPath, userId, callerSessionId } = input;
+
+  // opencode PTY (and any other opencode endpoint) must reach opencode directly
+  // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
+  // proxied against the port the client addressed.
+  const ptyKind = classifyPtyWebSocketPath(remainingPath);
+  const upstreamPort =
+    ptyKind === 'opencode' ? await resolveLiveOpencodePort(sandboxId) : port;
+
+  // Strip our own auth credentials before forwarding — opencode authenticates
+  // via the Daytona preview token header, not our query params.
+  const upstreamQuery = new URLSearchParams(input.search);
+  // `wake=1` is OUR resume signal (see shouldWakeStoppedSandboxForWsAttach) and
+  // means nothing to the daemon — strip it with the credentials.
+  const wakeRequested = upstreamQuery.get('wake') === '1';
+  upstreamQuery.delete('token');
+  upstreamQuery.delete('public_share');
+  upstreamQuery.delete('wake');
+  const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
+
+  try {
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId,
+      upstreamPort,
+      userId,
+      remainingPath,
+      queryString,
+      callerSessionId,
+      // A PreviewPrincipal's sessionId is the SANDBOX's own token binding, never
+      // a Supabase login id — so it is also the correct agent binding.
+      boundCredentialSessionId: callerSessionId,
+      wakeRequested,
+    });
+    if (!upstream.ok) {
+      return { ok: false, status: upstream.status, message: upstream.message };
+    }
+    return {
+      ok: true,
+      data: {
+        type: 'preview-ws', url: upstream.url, headers: upstream.headers,
+        ingress: { sandboxId, port: upstreamPort },
+      },
+    };
+  } catch (err) {
+    console.warn('[PREVIEW-WS] upstream resolve failed:', (err as Error)?.message || err);
+    return { ok: false, status: 502, message: 'failed to resolve sandbox upstream' };
+  }
+}
+
+// Preserve meaningful standard close codes, but never emit reserved wire-only
+// values (1005/1006) or an arbitrary invalid number.
+export function sanitizePreviewWsCloseCode(code: number | undefined): number {
+  // 1004/1005/1006/1015 are reserved and cannot be emitted on the wire. Keep
+  // every other standard close code intact so clients can distinguish a clean
+  // shell exit from an upstream restart/server failure. Unknown values use a
+  // stable application code instead of being disguised as a normal 1000 close.
+  if (
+    typeof code === 'number' &&
+    ((code >= 1000 && code <= 1014 && ![1004, 1005, 1006].includes(code)) ||
+      (code >= 3000 && code <= 4999))
+  ) {
+    return code;
+  }
+  return 4500;
+}
+
+// ── Byte-piping handlers, wired into Bun.serve's `websocket` config ──────────
+
+export const previewWsHandlers = {
+  open(ws: ServerWs) {
+    const state = ws.data;
+    state.queue = [];
+    state.ready = false;
+    const invalidateFailedHandshake = () => {
+      if (!state.ready && state.ingress) {
+        invalidatePreviewLink(state.ingress.sandboxId, state.ingress.port);
+      }
+    };
+
+    let upstream: WebSocket;
+    try {
+      // Bun extends the WebSocket constructor with a `headers` option so we can
+      // forward the Daytona preview token / service key / signed user-context.
+      upstream = new WebSocket(state.url, { headers: state.headers } as any);
+    } catch (err) {
+      invalidateFailedHandshake();
+      console.warn('[PREVIEW-WS] upstream connect threw:', (err as Error)?.message || err);
+      try { ws.close(1011, 'upstream connect failed'); } catch {}
+      return;
+    }
+
+    upstream.binaryType = 'arraybuffer';
+    state.upstream = upstream;
+
+    upstream.onopen = () => {
+      state.ready = true;
+      const queued = state.queue ?? [];
+      state.queue = [];
+      for (const msg of queued) {
+        try { upstream.send(msg as any); } catch {}
+      }
+      // Armed only once the pair is actually established — a ping before the
+      // upstream opens has nothing to keep alive.
+      stopPreviewWsKeepalive(state);
+      state.keepalive = setInterval(() => pingPreviewWsLegs(ws), PREVIEW_WS_KEEPALIVE_MS);
+    };
+
+    upstream.onmessage = (ev: MessageEvent) => {
+      try { ws.send(ev.data as any); } catch {}
+    };
+
+    upstream.onclose = (ev: CloseEvent) => {
+      invalidateFailedHandshake();
+      stopPreviewWsKeepalive(state);
+      try { ws.close(sanitizePreviewWsCloseCode(ev.code), (ev.reason || '').slice(0, 120)); } catch {}
+    };
+
+    upstream.onerror = () => {
+      invalidateFailedHandshake();
+      stopPreviewWsKeepalive(state);
+      try { ws.close(4502, 'upstream error'); } catch {}
+    };
+  },
+
+  message(ws: ServerWs, message: string | Buffer) {
+    const state = ws.data;
+    const upstream = state.upstream;
+    if (state.ready && upstream && upstream.readyState === WebSocket.OPEN) {
+      try { upstream.send(message as any); } catch {}
+    } else {
+      (state.queue ??= []).push(message);
+    }
+  },
+
+  close(ws: ServerWs) {
+    // The interval holds a reference to the socket pair. Leaving it armed after
+    // a close leaks one timer per terminal the box has ever opened.
+    stopPreviewWsKeepalive(ws.data);
+    try { ws.data.upstream?.close(); } catch {}
+  },
+};

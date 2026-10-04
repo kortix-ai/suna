@@ -16,7 +16,7 @@ catalog serves (`MS_TEAMS_APP_VERSION`, read at each publish) and offer the
 update. A Graph refusal that names a missing grant must reach the user as who
 fixes it, not as Graph's text alone.
 
-**Trigger surface:** Editing `apps/api/src/channels/teams-manifest.ts` (its
+**Trigger surface:** Editing `apps/api/src/services/channels/teams-manifest.ts` (its
 RSC permissions, commands, message actions, or descriptions); debugging a
 Teams read that answers `403` "Resource specific consent grants on the
 request ''".

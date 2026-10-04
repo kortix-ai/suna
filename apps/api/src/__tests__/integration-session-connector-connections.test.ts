@@ -18,7 +18,7 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { deleteAgentMailInstall, saveAgentMailInstall } from '../channels/install-store';
+import { deleteAgentMailInstall, saveAgentMailInstall } from '../services/channels/install-store';
 import {
   connectionIsEffectiveProjectDefault,
   connectorIdsWithSharedCredentials,
@@ -32,10 +32,10 @@ import {
   upsertCredential,
   upsertConnectionOAuth2Credential,
   upsertConnectionCredential,
-} from '../connectors/credentials';
-import { makeDbGatewayDeps } from '../connectors/db-deps';
-import { finalizePipedreamConnectionAuthorization } from '../connectors/pipedream';
-import { reconcileEmailConnections } from '../connectors/sync';
+} from '../services/connectors/credentials';
+import { makeDbGatewayDeps } from '../services/connectors/db-deps';
+import { finalizePipedreamConnectionAuthorization } from '../services/connectors/pipedream';
+import { reconcileEmailConnections } from '../services/connectors/sync';
 import {
   listEntitledConnectorConnections,
   resolveEffectiveSessionConnectorBindings,

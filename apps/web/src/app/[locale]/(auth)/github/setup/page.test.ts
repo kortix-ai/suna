@@ -84,7 +84,7 @@ describe('GitHub installation setup', () => {
     expect(popupSource).toContain("hashParams.get('github_token')");
     expect(popupSource).not.toContain("get('access_token')");
     const apiSource = readFileSync(
-      new URL('../../../../../../../api/src/platform/routes/github-app.ts', import.meta.url),
+      new URL('../../../../../../../api/src/http/platform/github-app.ts', import.meta.url),
       'utf8',
     );
     expect(apiSource).toContain('new URLSearchParams({ github_token: accessToken })');

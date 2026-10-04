@@ -27,7 +27,7 @@ an interrupted/empty LLM turn. The real cause, found only after pulling
 plan-tier gate: the flows' sessions request a managed model
 (`kortix/deepseek-v4.1-flash`) but never entitle their account, so every real
 turn 400s `"<model>" requires a paid plan.` (`plan_upgrade_required`,
-`apps/api/src/llm-gateway/resolution/resolve-candidates.ts`) before it
+`apps/api/src/services/llm-gateway/resolution/resolve-candidates.ts`) before it
 reaches OpenCode — unrelated to config releases or the turn-start gate. Two
 people (one human, one agent) independently mis-theorized "empty answer" as
 a convergence defect before checking the untruncated artifact. Fixed by

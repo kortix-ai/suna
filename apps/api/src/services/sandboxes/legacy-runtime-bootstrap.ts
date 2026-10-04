@@ -43,7 +43,7 @@
 import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { ProviderName, SandboxExecResult } from '../../platform/providers';
+import type { ProviderName, SandboxExecResult } from '../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from '../sessions/session-config-release';
 import { exponentialBackoffMs } from '../../lib/backoff';
 
@@ -124,7 +124,7 @@ export const LEGACY_OPENCODE_HOME = 'auto';
  * this box right now" is `runtime.running` (`RunningRuntimeAssets`), and it
  * must be compared SHA-TO-SHA against the manifest, never version string to
  * version string — the same rule `runningAssetsVerdict`
- * (`runtime-assets/manifest.ts`) already applies on the turn-start lane. So:
+ * (`services/runtime-assets/manifest.ts`) already applies on the turn-start lane. So:
  * `runtime.build` is informational only below, never an input to "is this
  * box current".
  *
@@ -594,7 +594,7 @@ export interface LegacyBootstrapDeps {
    *
    * The script used to authenticate its manifest fetch and every asset
    * download with the box's OWN token — which a wrong `stopped` row has
-   * already killed (repositories/account-tokens.ts refuses a session
+   * already killed (services/repositories/account-tokens.ts refuses a session
    * credential whose sandbox row is not `provisioning`/`active`). So the cure
    * needed the very credential the disease destroys. Null = no credential
    * could be minted; the script falls back to the box's own token.

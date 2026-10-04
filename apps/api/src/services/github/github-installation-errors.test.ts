@@ -65,11 +65,11 @@ describe('every route that mints an installation token maps it', () => {
   // A predicate nobody calls protects nobody. These are the three surfaces a
   // user reaches with a stale connection: browse repositories, browse
   // branches, and create or link a repository.
-  const routes = ['routes/github-repositories.ts', 'routes/project-from-repository.ts'];
+  const routes = ['github-repositories.ts', 'project-from-repository.ts'];
 
   for (const route of routes) {
     test(`${route} maps the unreachable installation`, () => {
-      const source = readFileSync(join(import.meta.dir, '../../projects', route), 'utf8');
+      const source = readFileSync(join(import.meta.dir, '../../http/projects', route), 'utf8');
       expect(source).toContain('isGitHubInstallationUnreachable');
       expect(source).toContain('githubInstallationUnreachableBody');
     });
@@ -77,7 +77,7 @@ describe('every route that mints an installation token maps it', () => {
 
   test('github-repositories.ts maps it on BOTH of its routes', () => {
     const source = readFileSync(
-      join(import.meta.dir, '../../projects', 'routes/github-repositories.ts'),
+      join(import.meta.dir, '../../http/projects', 'github-repositories.ts'),
       'utf8',
     );
     const occurrences = source.split('isGitHubInstallationUnreachable(').length - 1;

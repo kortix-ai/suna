@@ -13,7 +13,7 @@
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import * as realShared from '../projects/routes/shared';
+import * as realShared from '../services/sessions/open/shared';
 import * as realTitle from '../services/sessions/session-title-generate';
 import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -21,7 +21,7 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 type OpenResult = Record<string, unknown> | null;
 let openSessionImpl: (sessionId: string) => Promise<OpenResult> = async () => null;
 
-mock.module('../projects/routes/shared', () => ({
+mock.module('../services/sessions/open/shared', () => ({
   ...realShared,
   openSession: async (args: { sessionId: string }) => openSessionImpl(args.sessionId),
 }));

@@ -6,7 +6,7 @@ import { parseChannelMessage, slackChannelNames, slackConversationName } from '.
 
 /**
  * The scaffolds below are copied from the API renderers that produce them:
- * apps/api/src/channels/slack/session.ts, teams/session.ts,
+ * apps/api/src/services/channels/slack/session.ts, teams/session.ts,
  * telegram-webhook.ts. If one of those changes shape, the matching case here
  * is what tells you the session view will fall back to the raw prompt.
  */

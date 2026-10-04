@@ -204,8 +204,8 @@ function resetState() {
   deniedIamAction = null;
 }
 
-const realAuthMiddleware = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realAuthMiddleware = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
@@ -346,7 +346,7 @@ mock.module('../services/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
 }));
 
-mock.module('../snapshots/builder', () => ({
+mock.module('../services/snapshots/builder', () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
@@ -457,8 +457,8 @@ mock.module('../services/github/github', () => ({
 // session-open runtime guarantee's dynamic import
 // (legacy-runtime-bootstrap-wiring.ts) now reaches on every `/start`,
 // surfacing as an unrelated 500 attributed to no test.
-const realSessionSandbox = await import('../platform/services/session-sandbox');
-mock.module('../platform/services/session-sandbox', () => ({
+const realSessionSandbox = await import('../services/platform/services/session-sandbox');
+mock.module('../services/platform/services/session-sandbox', () => ({
   ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
     // The env arrives as a promise: provisioning awaits it where it builds the
@@ -474,8 +474,8 @@ mock.module('../platform/services/session-sandbox', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 // `await import`, not a top-level `import`: the latter hoists above the
 // process.env writes here, and the barrel pulls in config, which reads them once.
-const realProviders = await import('../platform/providers');
-mock.module('../platform/providers', () => ({
+const realProviders = await import('../services/platform/providers');
+mock.module('../services/platform/providers', () => ({
   ...realProviders,
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
     constructor(message: string) {
@@ -575,8 +575,8 @@ mock.module('../services/sessions/opencode-mapping', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-const realComputeMetering = await import('../billing/services/compute-metering');
-mock.module('../billing/services/compute-metering', () => ({
+const realComputeMetering = await import('../services/billing/services/compute-metering');
+mock.module('../services/billing/services/compute-metering', () => ({
   ...realComputeMetering,
   reopenComputeForSandbox: async () => {
     computeReopenCalls += 1;
@@ -590,7 +590,7 @@ mock.module('../billing/services/compute-metering', () => ({
 // Session create runs the billing gate. Return a billing-active account so the
 // contract holds regardless of whether KORTIX_BILLING_INTERNAL_ENABLED is set
 // in the run environment (the gate is a no-op when billing is disabled).
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'pro' }),
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
@@ -608,7 +608,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
@@ -624,14 +624,14 @@ mockIamEngineAllowAll((action) => {
 // those rows rather than from `role_assignments`. See mockIamReadModels.
 mockIamReadModels();
 
-mock.module('../repositories/account-tokens', () => ({
+mock.module('../services/repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
   validateAccountToken: async () => null,
 }));
 
-mock.module('../billing/account-limits', () => ({
+mock.module('../services/billing/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
@@ -639,8 +639,8 @@ mock.module('../billing/account-limits', () => ({
   clearAccountLimitCache: () => undefined,
 }));
 
-const realDefaultModelResolution = await import('../llm-gateway/resolution/default-model');
-mock.module('../llm-gateway/resolution/default-model', () => ({
+const realDefaultModelResolution = await import('../services/llm-gateway/resolution/default-model');
+mock.module('../services/llm-gateway/resolution/default-model', () => ({
   ...realDefaultModelResolution,
   isModelServableForAccount: async () => true,
 }));
@@ -1126,12 +1126,12 @@ mock.module('../services/attachments/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../http/projects/index');
 registerAllProjectRoutes();
 const { encryptProjectSecret } = await import('../services/secrets/secrets');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../services/sessions/open/shared');
 const { TITLE_SOURCE_MAX_CHARS } = await import('../services/sessions/session-title-generate');
-const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
+const { invalidateSandbox, resolveSandboxIngress } = await import('../services/sandbox-proxy/backend');
 const { reconcileSandboxStoppedByExternalId } = await import(
   '../services/sandboxes/reaping/sandbox-state-sync'
 );

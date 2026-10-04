@@ -17,7 +17,7 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../sandbox-proxy/backend', () => ({
+mock.module('../services/sandbox-proxy/backend', () => ({
   resolveServiceKey: async () => 'svc-key',
   resolveSandboxIngress: async () => ({
     url: 'https://sandbox.test',

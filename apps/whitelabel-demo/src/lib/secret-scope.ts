@@ -13,7 +13,7 @@ import type { ProjectSecret } from '@kortix/sdk';
  * The scope column is NOT serialized onto the listed row (see `SecretSchema`
  * in `packages/api-contract`), so the only signal a client has is the env KEY.
  * These are the exact keys the platform writes with `scope: 'connector'` when a
- * chat channel is installed (`apps/api/src/channels/install-store.ts`) — an
+ * chat channel is installed (`apps/api/src/services/channels/install-store.ts`) — an
  * exact-name table rather than a `SLACK_*`-style prefix, so a hand-created
  * secret that merely starts the same way is still treated as the ordinary
  * runtime secret it is.

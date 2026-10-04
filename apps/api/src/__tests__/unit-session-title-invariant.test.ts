@@ -49,7 +49,7 @@ describe('session-title invariant', () => {
       offenders(/\.insert\(\s*projectSessions\b/, [
         'services/sessions/sessions.ts',
         'services/sessions/session-create.ts',
-        'projects/suna-migration/suna-migration-phases.ts',
+        'services/projects/suna-migration/suna-migration-phases.ts',
       ]),
     ).toEqual([]);
   });
@@ -61,7 +61,7 @@ describe('session-title invariant', () => {
       // THE writer.
       'services/sessions/session-title-generate.ts',
       // carries the legacy Suna thread title onto the migrated row.
-      'projects/suna-migration/suna-migration-phases.ts',
+      'services/projects/suna-migration/suna-migration-phases.ts',
     ];
     const hits = sourceFiles().filter((rel) => {
       if (allow.includes(rel)) return false;
@@ -77,7 +77,7 @@ describe('session-title invariant', () => {
     // generator may call that delete.
     expect(
       offenders(/\bdeleteGatewayKey\b/, [
-        'llm-gateway/gateway-keys.ts',
+        'services/llm-gateway/gateway-keys.ts',
         'services/sessions/session-title-generate.ts',
       ]),
     ).toEqual([]);

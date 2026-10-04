@@ -59,7 +59,7 @@ mock.module('../lib/config', () => ({
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
 const { chatIdentityStub } = await import('./helpers/chat-identity-stub');
-mock.module('../channels/core/identity', () =>
+mock.module('../services/channels/core/identity', () =>
   chatIdentityStub({
     resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
       actorChecks.push({ user: user.platformUserId, projectId, action });
@@ -71,7 +71,7 @@ mock.module('../channels/core/identity', () =>
 let turn: Record<string, unknown> | null = null;
 const closed: string[] = [];
 const turnDeletes: string[] = [];
-mock.module('../channels/teams/turn', () => ({
+mock.module('../services/channels/teams/turn', () => ({
   loadTurn: async () => turn,
   closeAbandonedTurn: async (h: { sessionId: string }) => {
     closed.push(h.sessionId);
@@ -81,7 +81,7 @@ mock.module('../channels/teams/turn', () => ({
   },
 }));
 
-const { messageAfterFreshStart, startFreshTeamsConversation } = await import('../channels/teams/fresh-start');
+const { messageAfterFreshStart, startFreshTeamsConversation } = await import('../services/channels/teams/fresh-start');
 
 const fresh = (over: Partial<Parameters<typeof startFreshTeamsConversation>[0]> = {}) =>
   startFreshTeamsConversation({

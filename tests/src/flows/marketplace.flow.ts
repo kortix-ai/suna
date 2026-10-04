@@ -1,5 +1,5 @@
 /**
- * Global marketplace catalog (apps/api/src/marketplace/index.ts +
+ * Global marketplace catalog (apps/api/src/http/marketplace/index.ts +
  * catalog.ts), mounted at /v1/marketplace — a READ-ONLY browse of the
  * installable-item catalog (skills/agents/projects/templates), distinct from
  * the per-project install engine deleted by the marketplace-as-projects
@@ -12,7 +12,7 @@
  * Also covers the ONE surviving project-scoped marketplace route —
  * `POST /v1/projects/:projectId/marketplace/install-session`, the
  * agent-driven replacement for the deleted deterministic install engine
- * (apps/api/src/projects/routes/marketplace-install-session.ts). It kicks off a real session/agent
+ * (apps/api/src/http/projects/marketplace-install-session.ts). It kicks off a real session/agent
  * once past validation, so — same convention as PROJ-13's OAuth `start` in
  * projects-misc.flow.ts — we assert the request-validation boundary only,
  * never drive the full flow.
@@ -27,7 +27,7 @@ const NOPE = '00000000-0000-4000-a000-000000000000';
 const KNOWN_ITEM_ID = 'kortix-starter:access-policy-skill';
 const KNOWN_ITEM_FILE_TARGET = '@skills/access-policy/SKILL.md';
 // One of the curated, vetted, public, read-only FEATURED_MARKETPLACES
-// addresses (apps/api/src/marketplace/catalog.ts) — any signed-in user may
+// addresses (apps/api/src/services/marketplace/catalog.ts) — any signed-in user may
 // add one of these without admin (see POST /sources's own comment), so it's
 // the only address a non-admin OWNER can safely create+clean up for real.
 const FEATURED_ADDRESS = 'anthropics/skills';
@@ -261,7 +261,7 @@ flow(
 // ─── MKTP-11 — POST /v1/projects/:projectId/marketplace/install-session ───
 // Agent-driven replacement for the deleted deterministic per-project install
 // engine. Validates projectId access + body BEFORE spawning any real
-// session/agent (apps/api/src/projects/routes/marketplace-install-session.ts) — we assert
+// session/agent (apps/api/src/http/projects/marketplace-install-session.ts) — we assert
 // that boundary only, matching PROJ-13's convention for similarly heavy
 // routes (projects-misc.flow.ts).
 flow(

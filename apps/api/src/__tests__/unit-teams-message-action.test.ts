@@ -11,17 +11,17 @@ const sessions: Record<string, { sessionId: string; projectId: string }> = {
   'a:personal': { sessionId: 'sess-dm', projectId: 'proj-1' },
 };
 const sessionLookups: Array<{ id: string; scope?: string }> = [];
-mock.module('../channels/teams/binding', () => ({
+mock.module('../services/channels/teams/binding', () => ({
   conversationSession: async (_t: string, id: string, scope?: string) => {
     sessionLookups.push({ id, scope });
     return sessions[id] ? { sessionId: sessions[id]!.sessionId, status: 'running' } : null;
   },
 }));
-mock.module('../channels/teams/inbound', () => ({
+mock.module('../services/channels/teams/inbound', () => ({
   conversationProjectFor: async (_inbound: unknown, _t: string, id: string) => sessions[id]?.projectId ?? (id.startsWith(CHANNEL) ? 'proj-1' : null),
 }));
 
-const { handleOpenInKortixAction, sessionConversationIds } = await import('../channels/teams/message-action');
+const { handleOpenInKortixAction, sessionConversationIds } = await import('../services/channels/teams/message-action');
 const MANAGED = { kind: 'managed' } as never;
 const invoke = (conversationId: string, value: Record<string, unknown>) =>
   ({ type: 'invoke', name: 'composeExtension/fetchTask', conversation: { id: conversationId, tenantId: 'tenant-1' }, value }) as never;

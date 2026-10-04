@@ -14,8 +14,8 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-const { webSearchTavily } = await import('../router/services/tavily');
-const { imageSearchSerper } = await import('../router/services/serper');
+const { webSearchTavily } = await import('../services/router/services/tavily');
+const { imageSearchSerper } = await import('../services/router/services/serper');
 
 type FetchCall = {
   url: string;

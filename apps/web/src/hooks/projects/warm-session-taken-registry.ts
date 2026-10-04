@@ -2,7 +2,7 @@
  * Cross-tab registry of warm-session ids this BROWSER has already taken.
  *
  * Why it exists: the server deliberately reuses one warm session per user per
- * project (`apps/api/src/projects/routes/warm-sessions.ts`), so every tab the
+ * project (`apps/api/src/http/projects/warm-sessions.ts`), so every tab the
  * user has open on a project holds the SAME session id in its in-memory ready
  * store (`use-warm-project-session.ts`). The moment one tab takes it for a
  * send, every other tab's held copy silently points at a session that now has

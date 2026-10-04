@@ -37,9 +37,9 @@ beforeEach(() => {
 });
 
 const { initializeFreeTierAccount, ensureFreeTierAccountReady } = await import(
-  '../../billing/services/free-tier'
+  '../../services/billing/services/free-tier'
 );
-const { processFreeTierCreditRotation } = await import('../../billing/services/free-tier-rotation');
+const { processFreeTierCreditRotation } = await import('../../services/billing/services/free-tier-rotation');
 
 describe('free tier account setup', () => {
   test('initializes a free account with one idempotent $2 expiring grant', async () => {

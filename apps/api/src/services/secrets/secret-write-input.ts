@@ -18,7 +18,7 @@ import type { SecretEgressPolicy } from '@kortix/db';
 import { networkBoundaryPolicyError } from './network-boundary';
 import { parseEgressPolicy } from './strategy';
 import { isValidIdentifier, isValidSecretName } from './secrets';
-import { CODEX_AUTH_JSON_SECRET_NAME, isTeamsInstallSecretName, normalizeString } from '../../projects/lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, isTeamsInstallSecretName, normalizeString } from '../projects/lib/serializers';
 
 export type SecretWriteInput = {
   name: string;

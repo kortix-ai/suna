@@ -110,7 +110,7 @@ let projectRoleGrantsGate: Promise<void> | null = null;
 let projectRoleGrantsReached = false;
 let projectRowReads = 0;
 
-// The engine module itself is the seam now — `../iam` re-exports it, and every
+// The engine module itself is the seam now — `../services/iam` re-exports it, and every
 // route calls it with the structured `Actor`. Mirror the role gate against the
 // test's mocked membership rows so viewer/non-member denial is still exercised.
 // The read models project from THIS suite's own row state — `account_members`
@@ -160,7 +160,7 @@ mockIamAssignments({
   },
 });
 
-mock.module('../iam/authorize', () => {
+mock.module('../services/iam/authorize', () => {
   const isManager = (userId: string): boolean => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -218,8 +218,8 @@ mock.module('../iam/authorize', () => {
 });
 
 
-const realAuthMiddleware = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realAuthMiddleware = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -299,7 +299,7 @@ mock.module('../services/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
-mock.module('../projects/lib/project-deletion', () => ({
+mock.module('../services/projects/lib/project-deletion', () => ({
   deleteManagedProjectRepo: async (project: ProjectRow) => {
     deleteManagedRepoCalls.push(project);
     if (deleteManagedRepoError) throw deleteManagedRepoError;
@@ -307,7 +307,7 @@ mock.module('../projects/lib/project-deletion', () => ({
   },
 }));
 
-mock.module("../snapshots/builder", () => ({
+mock.module("../services/snapshots/builder", () => ({
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
@@ -383,11 +383,11 @@ mock.module('../services/github/github', () => ({
   isGithubPatConfigured: () => true,
 }));
 
-mock.module('../platform/services/session-sandbox', () => ({
+mock.module('../services/platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../accounts/resolve-account', () => ({
+mock.module('../services/accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -406,7 +406,7 @@ mock.module('../lib/supabase', () => ({
   }),
 }));
 
-mock.module('../billing/repositories/credit-accounts', () => ({
+mock.module('../services/billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
@@ -459,7 +459,7 @@ mock.module('../services/attachments/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../http/projects/index');
 registerAllProjectRoutes();
 
 function createApp() {

@@ -14,7 +14,7 @@ import {
   resolveGrantedSecretEnv,
   type ResolvedProjectSecret,
 } from '../services/secrets/secrets';
-import { agentMayUseEnv } from '../iam/agent-scope';
+import { agentMayUseEnv } from '../services/iam/agent-scope';
 import type { AgentGrant } from '@kortix/db';
 
 describe('isValidIdentifier', () => {

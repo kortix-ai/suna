@@ -9,7 +9,7 @@ import {
 } from '@kortix/db';
 import { Hono } from 'hono';
 import { config } from '../lib/config';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 import * as realProjectSecrets from '../services/secrets/secrets';
 import { mintHandle } from '../services/secrets/strategy';
 
@@ -117,7 +117,7 @@ const databaseMock = {
 };
 
 mock.module('../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
@@ -170,8 +170,8 @@ mock.module('../services/secrets/http-broker', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/secret-broker')).registerSecretBrokerRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/secret-broker')).registerSecretBrokerRoutes();
 
 function buildApp() {
   const app = new Hono<{

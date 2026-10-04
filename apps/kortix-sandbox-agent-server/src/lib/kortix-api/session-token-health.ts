@@ -60,7 +60,7 @@ import { logger } from '../log/logger'
  * one sweep (apps/api/src/services/sandboxes/reaping/row-vm-divergence.ts).
  */
 // Keep terminal credential-state reasons aligned with validateToken in
-// apps/api/src/repositories/account-tokens.ts. Other responses reset the streak.
+// apps/api/src/services/repositories/account-tokens.ts. Other responses reset the streak.
 const SESSION_TOKEN_DEAD_PATTERN =
   /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity/i
 

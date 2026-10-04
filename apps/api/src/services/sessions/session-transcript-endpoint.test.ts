@@ -18,8 +18,8 @@ import type { MirrorSnapshot } from './session-transcript-mirror';
 let resolveServiceKeyCalls = 0;
 let resolveServiceKeyHang = false;
 
-const realBackend = await import('../../sandbox-proxy/backend');
-mock.module('../../sandbox-proxy/backend', () => ({
+const realBackend = await import('../sandbox-proxy/backend');
+mock.module('../sandbox-proxy/backend', () => ({
   ...realBackend,
   resolveServiceKey: async () => {
     resolveServiceKeyCalls += 1;

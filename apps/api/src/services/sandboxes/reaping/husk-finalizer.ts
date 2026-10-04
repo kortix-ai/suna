@@ -51,7 +51,7 @@
  * guess, so the transcript read stays.
  */
 
-import { resolveSandboxIngress, resolveServiceKey } from '../../../sandbox-proxy/backend';
+import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import {
   KORTIX_USER_CONTEXT_HEADER,
   encodeKortixUserContext,

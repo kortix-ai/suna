@@ -173,7 +173,7 @@ export function retiredEndpointError(name: string, instead?: string): ApiError {
 
 /**
  * The machine-readable `code` every flag-gated route rejects with. Mirrors
- * `FEATURE_DISABLED_CODE` in `apps/api/src/feature-flags/gate.ts`. Clients
+ * `FEATURE_DISABLED_CODE` in `apps/api/src/services/feature-flags/gate.ts`. Clients
  * branch on this, never on the prose in `error`.
  */
 export const FEATURE_DISABLED_CODE = 'feature_disabled' as const;

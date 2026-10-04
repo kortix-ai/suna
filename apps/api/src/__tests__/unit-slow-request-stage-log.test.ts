@@ -28,7 +28,7 @@ mock.module('../services/audit/audit', () => ({
 
 describe('the completion log line of a slow request', () => {
   test('carries server_timing; a fast request does not', async () => {
-    const { installHttpMiddleware } = await import('../middleware/http-middleware');
+    const { installHttpMiddleware } = await import('../http/middleware/http-middleware');
     const { runWithContext } = await import('../lib/request-context');
     const { timeStage } = await import('../lib/server-timing');
 
@@ -77,7 +77,7 @@ describe('the completion log line of a slow request', () => {
   });
 
   test('a failed proxy request logs its hop but never its response body', async () => {
-    const { installHttpMiddleware } = await import('../middleware/http-middleware');
+    const { installHttpMiddleware } = await import('../http/middleware/http-middleware');
     const { runWithContext } = await import('../lib/request-context');
     const lines: Array<Record<string, unknown>> = [];
     const original = appLogger.warn;

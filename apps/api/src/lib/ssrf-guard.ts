@@ -2,7 +2,7 @@
  * SSRF egress guard — DNS-resolving replacement for the old hostname-string
  * `isPrivateHost` regex.
  *
- * The previous guard (`marketplace/catalog.ts:isPrivateHost`) only string-matched
+ * The previous guard (`services/marketplace/catalog.ts:isPrivateHost`) only string-matched
  * the hostname, so a public domain that DNS-resolves to a private/link-local/
  * cloud-metadata IP (DNS-rebinding) passed the check and was then fetched with
  * the server's network position. This module resolves the hostname at fetch

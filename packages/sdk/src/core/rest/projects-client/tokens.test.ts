@@ -9,7 +9,7 @@
  *
  * With `{ mine: true }` it is the read behind a person's own settings page:
  * only the keys THEY minted by hand. The narrowing happens server-side
- * (`listPersonalAccountTokens`, `apps/api/src/repositories/account-tokens.ts`)
+ * (`listPersonalAccountTokens`, `apps/api/src/services/repositories/account-tokens.ts`)
  * because a browser cannot filter on `user_id` / `session_id` /
  * `service_account_id` — the list payload carries none of them.
  */

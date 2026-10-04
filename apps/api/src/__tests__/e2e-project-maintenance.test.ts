@@ -57,8 +57,8 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-const actualProviders = await import('../platform/providers');
-mock.module('../platform/providers', () => ({
+const actualProviders = await import('../services/platform/providers');
+mock.module('../services/platform/providers', () => ({
   ...actualProviders,
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
     constructor(message: string) {
@@ -74,7 +74,9 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
+const realSandboxProxyBackend = await import('../services/sandbox-proxy/backend');
+mock.module('../services/sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
   invalidateProviderCache: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },

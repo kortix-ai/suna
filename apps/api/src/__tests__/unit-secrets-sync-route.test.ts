@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import { PROJECT_ACTIONS } from '../iam/actions';
-import * as realAccess from '../projects/lib/access';
+import { PROJECT_ACTIONS } from '../services/iam/actions';
+import * as realAccess from '../services/projects/lib/access';
 
 // POST /v1/projects/:projectId/secrets/sync — who syncs what.
 //
@@ -18,16 +18,16 @@ const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#7936 added importers), and bun reports it as an
 // unhandled `Export named ... not found` between tests.
-const realIam = await import('../iam');
-mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
-const realAuth = await import('../middleware/auth');
-mock.module('../middleware/auth', () => ({
+const realIam = await import('../services/iam');
+mock.module('../services/iam', () => ({ ...realIam, PROJECT_ACTIONS }));
+const realAuth = await import('../http/middleware/auth');
+mock.module('../http/middleware/auth', () => ({
   ...realAuth,
   supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next(),
 }));
 
 const capabilities: string[] = [];
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, name: 'demo' },
@@ -81,8 +81,8 @@ mock.module('../services/sessions/session-token-grant', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-(await import('../projects/routes/secrets')).registerSecretsRoutes();
+const { projectsApp } = await import('../http/projects/app');
+(await import('../http/projects/secrets')).registerSecretsRoutes();
 
 type Caller = { sessionId?: string; agentGrant?: Record<string, unknown> | null; authType?: string };
 

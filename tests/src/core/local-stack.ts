@@ -624,7 +624,7 @@ export async function ensureLocalStack(
   const owned: Bun.Subprocess[] = [];
   const api = apiWasHealthy
     ? null
-    : Bun.spawn(["bun", "--no-env-file", "run", "src/index.ts"], {
+    : Bun.spawn(["bun", "--no-env-file", "run", "src/app/index.ts"], {
         cwd: join(topology.root, "apps/api"),
         detached: true,
         env: {

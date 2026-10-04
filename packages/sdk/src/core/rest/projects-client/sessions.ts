@@ -36,7 +36,7 @@ export interface ProjectSessionMetadata {
    * inside a turn. Written at create time by
    * `apps/api/src/services/sessions/sessions.ts:1566` and deliberately retained on
    * the list payload (`LIST_OMITTED_SESSION_METADATA_KEYS`,
-   * `apps/api/src/projects/lib/serializers.ts:84`). Absent on a root session.
+   * `apps/api/src/services/projects/lib/serializers.ts:84`). Absent on a root session.
    *
    * Read it through {@link sessionParentId}, which also rejects a malformed or
    * self-referential value.

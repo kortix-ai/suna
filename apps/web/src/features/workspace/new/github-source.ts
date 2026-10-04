@@ -5,7 +5,7 @@
  * Select but `disabled`, and `canSubmit` additionally required
  * `source === 'managed'` — so both were dead options with an apology under
  * them. Nothing was missing on the server: `POST /projects/create-repo` and
- * `POST /projects/link-repository` (`apps/api/src/projects/routes/project-from-repository.ts`) are
+ * `POST /projects/link-repository` (`apps/api/src/http/projects/project-from-repository.ts`) are
  * live, and `createProjectRepo` / `linkRepository` are exported from
  * `@kortix/sdk`. Only the client wiring was gone, deleted with
  * `project-create-modal.tsx` in #6276.

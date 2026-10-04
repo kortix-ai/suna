@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isE2BConcurrentBuildConflict, waitForConcurrentE2BBuild } from './images-build-conflict';
-import type { ProviderState } from '../../../snapshots/providers/index';
+import type { ProviderState } from '../../snapshots/providers/index';
 
 describe('E2B concurrent build conflict', () => {
   test('matches only the E2B waiting-state conflict', () => {

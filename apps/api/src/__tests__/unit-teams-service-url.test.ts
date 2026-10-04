@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { assertValidTeamsServiceUrl } from '../channels/teams-service-url';
+import { assertValidTeamsServiceUrl } from '../services/channels/teams-service-url';
 
 // Every outbound Teams call carries the bot connector token. A host an outsider
 // can register must never pass: the list accepted `*.azurewebsites.net` until

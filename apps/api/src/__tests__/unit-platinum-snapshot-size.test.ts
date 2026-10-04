@@ -374,7 +374,7 @@ describe('Daytona / E2B build payloads are unaffected by the Platinum build-size
   });
 
   test('the shared DEFAULT_DISK_GB Daytona/E2B consume is untouched by this change', async () => {
-    const { DEFAULT_DISK_GB, DEFAULT_MEMORY_GB, DEFAULT_CPU } = await import('../snapshots/build-context');
+    const { DEFAULT_DISK_GB, DEFAULT_MEMORY_GB, DEFAULT_CPU } = await import('../services/snapshots/build-context');
     expect(DEFAULT_DISK_GB).toBe(20);
     expect(DEFAULT_MEMORY_GB).toBe(6);
     expect(DEFAULT_CPU).toBe(2);

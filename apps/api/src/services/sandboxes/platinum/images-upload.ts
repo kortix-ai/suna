@@ -1,5 +1,5 @@
 import { config } from '../../../lib/config';
-import { assertSafePresignedUploadUrl, parseUploadHostAllowlist, sanitizeUrlForLog } from '../../../snapshots/providers/upload-url-guard';
+import { assertSafePresignedUploadUrl, parseUploadHostAllowlist, sanitizeUrlForLog } from '../../snapshots/providers/upload-url-guard';
 
 const UPLOAD_ATTEMPTS = 3;
 const UPLOAD_MIN_TIMEOUT_MS = 10 * 60_000;

@@ -5,7 +5,7 @@ import { Hono } from 'hono';
  * Mocked db.execute result queue.
  *
  * Each entry is consumed in `Promise.all` order by the /ops/overview
- * handler (see apps/api/src/ops/index.ts). An entry is either a plain
+ * handler (see apps/api/src/http/ops/index.ts). An entry is either a plain
  * result object `{ rows: [...] }` or a `throw` marker `{ __throw: Error }`
  * — the marker makes that one query reject so the safe* wrappers can be
  * exercised against a simulated statement_timeout / connection failure.
@@ -24,14 +24,14 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../middleware/auth', () => ({
+mock.module('../http/middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     c.set('userId', '00000000-0000-4000-a000-000000000001');
     await next();
   },
 }));
 
-mock.module('../middleware/require-admin', () => ({
+mock.module('../http/middleware/require-admin', () => ({
   requireAdmin: async (_c: any, next: any) => {
     await next();
   },
@@ -41,11 +41,11 @@ mock.module('../lib/config', () => ({
   config: { KORTIX_BILLING_INTERNAL_ENABLED: false, INTERNAL_KORTIX_ENV: 'dev' },
 }));
 
-mock.module('../tunnel', () => ({
+mock.module('../http/tunnel', () => ({
   getTunnelServiceStatus: () => ({ enabled: true, connectedAgents: 2 }),
 }));
 
-const { opsApp } = await import('../ops');
+const { opsApp } = await import('../http/ops');
 
 function app() {
   const hono = new Hono();

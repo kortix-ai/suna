@@ -7,7 +7,7 @@ const modalSource = readFileSync(join(import.meta.dir, 'schedule-create-modal.ts
 /**
  * Comments stripped, same convention as `new-workspace-errors.test.ts`.
  * Guards the webhook wizard's signing-secret contract from the caller side:
- * trigger validation (apps/api/src/projects/lib/webhook-secret-policy.ts)
+ * trigger validation (apps/api/src/services/projects/lib/webhook-secret-policy.ts)
  * accepts a secret_env only when it is delivered as broker to the connector
  * consumer, so the wizard must never create it without an explicit policy.
  */

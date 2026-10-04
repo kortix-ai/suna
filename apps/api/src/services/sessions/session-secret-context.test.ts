@@ -35,7 +35,7 @@ mock.module('../secrets/secret-grant', () => ({
     return 'all' as const;
   },
 }));
-mock.module('../../projects/lib/personal-resources', () => ({
+mock.module('../projects/lib/personal-resources', () => ({
   resolveSessionPersonalOwner: async () => {
     reads.owner += 1;
     return 'user-1';

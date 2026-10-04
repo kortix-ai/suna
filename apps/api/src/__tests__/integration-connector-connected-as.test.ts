@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, connectorConnections, connectors, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import type { ComposioRuntime, ComposioSessionLike } from '../connectors/composio';
+import type { ComposioRuntime, ComposioSessionLike } from '../services/connectors/composio';
 
 // `connectorConnect` loads the Composio adapter only when
 // `config.COMPOSIO_API_KEY` is set, and config reads it once at import. The
@@ -24,8 +24,8 @@ import type { ComposioRuntime, ComposioSessionLike } from '../connectors/composi
 // Set before the API modules load, restored in afterAll.
 const previousKey = process.env.COMPOSIO_API_KEY;
 process.env.COMPOSIO_API_KEY = 'test-composio-key';
-const { setComposioRuntimeForTest } = await import('../connectors/composio');
-const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
+const { setComposioRuntimeForTest } = await import('../services/connectors/composio');
+const { dbConnectorRouterDeps } = await import('../services/connectors/db-deps');
 const { db } = await import('../lib/db');
 
 const ACCOUNT = crypto.randomUUID();

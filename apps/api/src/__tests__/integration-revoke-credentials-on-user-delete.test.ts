@@ -19,9 +19,9 @@ import {
 import { readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { createServiceAccount } from '../repositories/service-accounts';
+import { app } from '../app/index';
+import { createAccountToken } from '../services/repositories/account-tokens';
+import { createServiceAccount } from '../services/repositories/service-accounts';
 import { hashSecretKey } from '../lib/crypto';
 import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';

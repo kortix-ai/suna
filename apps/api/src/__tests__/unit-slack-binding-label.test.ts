@@ -34,18 +34,18 @@ mock.module('../lib/db', () => ({
   },
 }));
 
-mock.module('../channels/install-store', () => ({
+mock.module('../services/channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
 
-mock.module('../channels/slack-api', () => ({
+mock.module('../services/channels/slack-api', () => ({
   describeSlackConversation: async () => {
     slackCalls += 1;
     return slackLabel;
   },
 }));
 
-const { backfillSlackBindingLabel, resetSlackLabelMissesForTest } = await import('../channels/slack/binding-label');
+const { backfillSlackBindingLabel, resetSlackLabelMissesForTest } = await import('../services/channels/slack/binding-label');
 
 beforeEach(() => {
   storedRow = { channelName: null, channelType: null };

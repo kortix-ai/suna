@@ -36,7 +36,7 @@ NEW_KORTIX_TOKEN='__KORTIX_TOKEN__'
 TOKEN_ROTATED=false
 # Credential the CONTROL PLANE vouches for, minted for this repair and revoked
 # when it returns. The box's own session token is refused whenever its sandbox
-# row is not `provisioning`/`active` (apps/api/src/repositories/account-tokens.ts),
+# row is not `provisioning`/`active` (apps/api/src/services/repositories/account-tokens.ts),
 # so a repair that authenticates with it cannot run on the boxes that need it
 # most — a wrong row kills the token, the dead token stops convergence, and the
 # cure needs the same dead token. Empty = fall back to the box's own token.

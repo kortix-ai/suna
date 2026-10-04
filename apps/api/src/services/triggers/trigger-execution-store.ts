@@ -1,7 +1,7 @@
 import { projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, asc, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '../../lib/db';
-import { featureFlagDef } from '../../feature-flags/registry';
+import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './index';
 import { exponentialBackoffMs } from '../../lib/backoff';

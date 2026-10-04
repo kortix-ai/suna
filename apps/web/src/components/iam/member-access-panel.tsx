@@ -143,7 +143,7 @@ export interface MemberAccessPanelProps {
   canReadPolicies: boolean;
   /** `role.read` — asserted by `GET .../iam/permissions`, the CATALOG read
    *  behind "What they can do" and "View as this member"
-   *  (`apps/api/src/accounts/iam/assignments.ts`, the `/iam/permissions`
+   *  (`apps/api/src/http/accounts/iam/assignments.ts`, the `/iam/permissions`
    *  route). Without it the catalog comes back 403 and both surfaces can only
    *  ever render empty, so they are not rendered at all — the same rule the
    *  hub's left rail follows. Required, for the reason above. */

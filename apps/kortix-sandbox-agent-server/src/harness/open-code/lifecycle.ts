@@ -429,7 +429,7 @@ export async function buildOpencodeConfigContent(
   // CLI uses to post back to the thread). Contributor #3 keys off it.
   const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
   // (4) Server-compiled agent config (kortix_version 2 projects only — see
-  // apps/api/src/projects/lib/compile-agent-config.ts). apps/api compiles the
+  // apps/api/src/services/projects/lib/compile-agent-config.ts). apps/api compiles the
   // manifest's `agents:` map into OpenCode's `agent` map + top-level model
   // server-side and hands it down sealed; the daemon only LAYERS its own
   // session-local overlays (MCP/gateway/Slack below) on top, never composes

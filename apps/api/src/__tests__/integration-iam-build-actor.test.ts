@@ -3,7 +3,7 @@
  *
  * This is the seam that replaces "the route remembered to thread
  * `c.get('iamTokenId')`". It has to classify all five auth branches correctly
- * from the context keys `middleware/auth.ts` sets, because everything
+ * from the context keys `http/middleware/auth.ts` sets, because everything
  * downstream — token confinement, the agent-grant fold, standing identity — is
  * derived from the credential it produces, not from an argument a caller may
  * forget.
@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../lib/db';
-import { buildActor, type Actor } from '../iam/actor';
+import { buildActor, type Actor } from '../services/iam/actor';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -28,7 +28,7 @@ async function raw(text: string): Promise<void> {
 }
 
 /** Mount a handler behind a middleware that sets exactly the keys the matching
- *  branch of `middleware/auth.ts` sets, then return the Actor it produced. */
+ *  branch of `http/middleware/auth.ts` sets, then return the Actor it produced. */
 async function actorFromContext(keys: Record<string, unknown>): Promise<Actor | null> {
   const app = new Hono();
   let captured: Actor | null = null;

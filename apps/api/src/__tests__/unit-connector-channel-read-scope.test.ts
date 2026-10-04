@@ -1,6 +1,6 @@
 /**
  * The gateway and the `/call` route apply the Slack/Teams read confinement
- * (connectors/channel-read-scope.ts) in the right order:
+ * (services/connectors/channel-read-scope.ts) in the right order:
  *   - a read of another project's conversation is denied before the credential,
  *     the approval gate or the provider, and the denial is audited;
  *   - the answer reaches the agent only after the gate filtered it;
@@ -13,9 +13,9 @@ import {
   CONVERSATION_NOT_IN_PROJECT,
   type ChannelOwnership,
   gateChannelRead,
-} from '../connectors/channel-read-scope';
-import { gateChannelWrite } from '../connectors/channel-write-scope';
-import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
+} from '../services/connectors/channel-read-scope';
+import { gateChannelWrite } from '../services/connectors/channel-write-scope';
+import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../services/connectors/channels';
 import {
   type CallInput,
   type ExecutionRecord,
@@ -23,8 +23,8 @@ import {
   type GatewayConnector,
   type GatewayDeps,
   handleCall,
-} from '../connectors/gateway';
-import { type ConnectorPrincipal, type ConnectorRouterDeps, createConnectorRouter } from '../connectors/router';
+} from '../services/connectors/gateway';
+import { type ConnectorPrincipal, type ConnectorRouterDeps, createConnectorRouter } from '../http/connectors/router';
 
 const MINE = 'proj-mine';
 const OTHER = 'proj-other';

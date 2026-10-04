@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
+import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../services/connectors/channels';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const SLACK_CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
@@ -48,7 +48,7 @@ interface World {
   binds: Array<Record<string, unknown>>;
 }
 
-// The API's structured denial (apps/api/src/iam/denial-message.ts): `error` is
+// The API's structured denial (apps/api/src/services/iam/denial-message.ts): `error` is
 // a boolean flag and the reason is in `message`.
 function structuredDenial(action: string): Record<string, unknown> {
   return {
@@ -567,7 +567,7 @@ describe('slack CLI', () => {
   test('surfaces a structured upload denial instead of "HTTP 403: true"', async () => {
     // `slack send --file` posts through the platform upload proxy. A denied
     // project capability answers with the structured denial body
-    // `{ error: true, message, code, action }` (iam/denial-message.ts); reading
+    // `{ error: true, message, code, action }` (services/iam/denial-message.ts); reading
     // the boolean `error` as the message printed `HTTP 403: true` and hid the
     // reason. An agent debugged a real delivery regression off that.
     world.denial = structuredDenial('project.connector.write');

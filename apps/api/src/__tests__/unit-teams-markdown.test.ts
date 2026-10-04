@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { markdownToCardElements } from '../channels/teams/markdown';
+import { markdownToCardElements } from '../services/channels/teams/markdown';
 
 /**
  * The first live Teams answer on dev (2026-09-18, a dev session) rendered

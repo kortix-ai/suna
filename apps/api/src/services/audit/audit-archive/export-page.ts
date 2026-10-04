@@ -11,7 +11,7 @@
  */
 import { type Database, auditEvents, auditEventsAll } from '@kortix/db';
 import { and, asc, getTableColumns, sql } from 'drizzle-orm';
-import { type AuditFilterInput, buildFilters } from '../../../accounts/audit-filters';
+import { type AuditFilterInput, buildFilters } from '../../accounts/audit-filters';
 import { type AuditEventRow, buildAuditCursorCondition } from '../audit-query';
 import { decodeRows, weekEnd, weekStartOf } from './format';
 import { normalizeInstant, rowMatches } from './row-filter';

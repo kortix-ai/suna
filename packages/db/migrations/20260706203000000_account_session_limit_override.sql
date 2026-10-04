@@ -2,11 +2,11 @@
 --
 -- Per-account concurrent-session override. The cap on simultaneously running
 -- project sessions is tier-driven (TierConfig.concurrentSessionLimit in
--- apps/api/src/billing/services/tiers.ts). This column lets an operator raise
+-- apps/api/src/services/billing/services/tiers.ts). This column lets an operator raise
 -- (or lower) the cap for a single account without changing its plan tier —
 -- e.g. enterprise deals or internal dogfood accounts. NULL (the default)
 -- means "no override": the account's tier decides. Resolution lives in
--- resolveAccountSessionLimit (apps/api/src/billing/account-limits.ts).
+-- resolveAccountSessionLimit (apps/api/src/services/billing/account-limits.ts).
 
 ALTER TABLE "kortix"."credit_accounts"
   ADD COLUMN IF NOT EXISTS "max_concurrent_sessions" integer;

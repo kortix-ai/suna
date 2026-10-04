@@ -30,7 +30,7 @@ Our pin in `packages/shared/src/runtime-versions.json` was 1.18.19.
    `GET <sandbox_url>/global/health` reports the new version and
    `/opt/kortix/runtime-assets-state.json` records it.
 
-*Automation:* `apps/api/src/snapshots/__tests__/config-deps-version.test.ts`
+*Automation:* `apps/api/src/services/snapshots/__tests__/config-deps-version.test.ts`
 guards the lockstep pins; the shared sandbox goldens fail on a pin drift.
 
 *Incident:* no outage. SampleCo's Bedrock model was unusable in native mode

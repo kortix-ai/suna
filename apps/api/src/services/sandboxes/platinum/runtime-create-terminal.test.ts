@@ -5,7 +5,7 @@
 // one session: Platinum state=failed-start while comp status=active).
 // Env is set before importing anything that reads config at module load.
 import { test, expect, mock, beforeEach } from 'bun:test';
-mock.module('../../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
+mock.module('../../platform/sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
 process.env.PLATINUM_API_KEY = 'pt_test_key';
@@ -37,8 +37,8 @@ mock.module('./client', () => ({
 }));
 
 // Keep service-key + frontend-url from touching real deps.
-mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
-mock.module('../../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
+mock.module('../../platform/service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' }));
+mock.module('../../platform/sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 async function makeProvider() {
   const { PlatinumProvider } = await import('./runtime');

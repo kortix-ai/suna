@@ -75,7 +75,7 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   // their own instance. Signups, existing teams, and SSO/JIT membership are
   // entirely unaffected; only POST /v1/accounts (creating an ADDITIONAL/org
   // account) is gated to platform admins (KORTIX_PLATFORM_ADMIN_EMAILS) — see
-  // registerAccountRoutes() in apps/api/src/accounts/core/accounts.ts.
+  // registerAccountRoutes() in apps/api/src/http/accounts/core/accounts.ts.
   // KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION mirrors it on the frontend to
   // hide "New account" UI for non-admins. `kortix self-host init/configure`'s
   // deployment-shape question (promptFeatureFlags) flips both; disable via

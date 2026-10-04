@@ -108,17 +108,17 @@ mock.module('../lib/supabase', () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: null } }) } },
   }),
 }));
-mock.module('../accounts/resolve-account', () => ({ resolveAccountId: async () => 'acct' }));
-mock.module('../openapi', () => ({ makeOpenApiApp: () => ({}) }));
+mock.module('../services/accounts/resolve-account', () => ({ resolveAccountId: async () => 'acct' }));
+mock.module('../http/openapi', () => ({ makeOpenApiApp: () => ({}) }));
 // The email a claim matches comes from the email-trust rule, not the token:
 // an SSO identity whose IdP did not verify the email's domain resolves to ''.
 const trust = { byUser: new Map<string, string>() };
-mock.module('../iam/email-trust', () => ({
+mock.module('../services/iam/email-trust', () => ({
   trustedEmailForUser: async (userId: string) => trust.byUser.get(userId) ?? '',
   emailTrustedSql: () => ({ op: 'sql', args: ['true'] }),
 }));
 
-const { autoClaimPendingInvites } = await import('../accounts/core/app');
+const { autoClaimPendingInvites } = await import('../http/accounts/core/app');
 
 function makeInvite(overrides: Partial<FakeInvite>): FakeInvite {
   return {

@@ -14,8 +14,8 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import * as realComputeMetering from '../billing/services/compute-metering';
-import * as realProviders from '../platform/providers';
+import * as realComputeMetering from '../services/billing/services/compute-metering';
+import * as realProviders from '../services/platform/providers';
 import * as realSandboxRuntimeRefresh from '../services/sandboxes/sandbox-runtime-refresh';
 import * as realSessionAttachments from '../services/sessions/session-attachments';
 import { db } from '../lib/db';
@@ -32,7 +32,7 @@ let providerStarts = 0;
 let onProviderStart: () => Promise<void> = async () => {};
 /** Compute meters (re)opened: one per runtime that became active. */
 let computeReopens = 0;
-mock.module('../platform/providers', () => ({
+mock.module('../services/platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     start: async () => {
@@ -56,7 +56,7 @@ mock.module('../services/sessions/session-attachments', () => ({
 
 // Billing and the post-wake daemon refresh are other lanes. The count of
 // meter reopens is the billing half of the resume contract.
-mock.module('../billing/services/compute-metering', () => ({
+mock.module('../services/billing/services/compute-metering', () => ({
   ...realComputeMetering,
   reopenComputeForSandbox: async () => {
     computeReopens += 1;
@@ -69,7 +69,7 @@ mock.module('../services/sandboxes/sandbox-runtime-refresh', () => ({
 }));
 
 const { applyStoppedState } = await import('../services/sandboxes/reaping/sandbox-state-sync');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../services/sessions/open/shared');
 const {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,

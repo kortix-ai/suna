@@ -62,7 +62,7 @@ describe('isDeliveredButDisconnected — nothing was delivered, keep failing', (
 
   test('a dead PREVIEW PORT is not a prompt delivery', () => {
     // `portUnreachableResponse(..., reason: 'sandbox port unreachable')` in
-    // `apps/api/src/sandbox-proxy/routes/preview.ts:1370` is guarded by
+    // `apps/api/src/http/sandbox-proxy/preview.ts:1370` is guarded by
     // `!promptDelivery && isBrowserNavigation(incomingHeaders)` — it answers a
     // BROWSER NAVIGATION to a dead preview port, and never a prompt POST.
     // Nothing about it says the agent received anything, so a mutation that

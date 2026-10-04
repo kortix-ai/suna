@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { connectors, projectSecrets, projectSessionSecretHandles, roleAssignments } from '@kortix/db';
 import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../services/projects/lib/access';
 import type {
   ProjectSecretPropagationResult,
   ProjectSecretPropagationTarget,
@@ -23,8 +23,8 @@ const PROJECT_ACTIONS = {
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#7936 added importers), and bun reports it as an
 // unhandled `Export named ... not found` between tests.
-const realIam = await import('../iam');
-mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
+const realIam = await import('../services/iam');
+mock.module('../services/iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
 let authType: 'service_account' | 'supabase' | 'pat' = 'supabase';
@@ -204,7 +204,7 @@ mock.module('../lib/db', () => ({ hasDatabase: true, db: databaseMock }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../services/projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
     // Egress delivery is gated by the experimental `secrets_egress` flag; these
@@ -250,12 +250,12 @@ mock.module('../services/audit/audit', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
+const { projectsApp } = await import('../http/projects/app');
 // The secret and provider-OAuth routes, in production registration order.
 // secrets.ts registers the `/secrets/*` write rate limit ahead of them.
-(await import('../projects/routes/secrets')).registerSecretsRoutes();
-(await import('../projects/routes/secret-delivery')).registerSecretDeliveryRoutes();
-(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
+(await import('../http/projects/secrets')).registerSecretsRoutes();
+(await import('../http/projects/secret-delivery')).registerSecretDeliveryRoutes();
+(await import('../http/projects/provider-oauth')).registerProviderOauthRoutes();
 
 function buildApp() {
   const app = new Hono<{

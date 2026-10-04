@@ -286,7 +286,7 @@ function rawFilesForRoot(name: string, dir: string): StarterFile[] {
  * accidental matches in code/docs (e.g. `{{ body.action }}` in a
  * trigger prompt) from being treated as substitution targets. Exported so
  * other callers with their own `{{var}}` content (e.g. the API's
- * `registry:project` clone path in `apps/api/src/projects/seed-files.ts`)
+ * `registry:project` clone path in `apps/api/src/services/projects/seed-files.ts`)
  * reuse this exact convention instead of reimplementing the regex.
  */
 export function interpolateVars(input: string, vars: Record<string, string>): string {

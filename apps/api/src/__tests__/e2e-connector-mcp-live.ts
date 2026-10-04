@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { and, eq, desc, sql } from 'drizzle-orm';
 import { db } from '../lib/db';
 import { connectors, connectorActions, connectorCalls } from '@kortix/db';
-import { createAccountToken } from '../repositories/account-tokens';
+import { createAccountToken } from '../services/repositories/account-tokens';
 
 const API_URL = process.env.LIVE_API_URL ?? 'http://localhost:8008/v1';
 const PROJECT_ID = process.env.LIVE_PROJECT_ID ?? '';

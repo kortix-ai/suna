@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { projectsApp } from '../projects/lib/app';
+import { projectsApp } from '../http/projects/app';
 // Importing the routes module registers the account-scoped GitHub routes on
 // `projectsApp`. No mocks: the request must die at the guard, before any
 // database access.
-import { registerGithubInstallationsRoutes } from '../projects/routes/github-installations';
+import { registerGithubInstallationsRoutes } from '../http/projects/github-installations';
 registerGithubInstallationsRoutes();
 
 // A malformed `account_id` used to flow from the query string through

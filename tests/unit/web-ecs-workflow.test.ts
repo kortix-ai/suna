@@ -365,7 +365,7 @@ describe('web ECS migration', () => {
    * googletagmanager.com, connect.facebook.net and doubleclick.net — and, worse
    * for the gate, attached it to cross-origin XHR against staging-api. That put
    * the two header names into `Access-Control-Request-Headers`, which the API's
-   * fixed `Access-Control-Allow-Headers` list (apps/api/src/middleware/cors.ts)
+   * fixed `Access-Control-Allow-Headers` list (apps/api/src/http/middleware/cors.ts)
    * does not contain, so Chromium killed every browser API call with
    * `net::ERR_FAILED`. Nine of the eleven specs red in release runs
    * 32306385663 and 32310893789 died that way. The bypass is a cookie now.

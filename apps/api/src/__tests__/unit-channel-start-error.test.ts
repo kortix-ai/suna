@@ -4,8 +4,8 @@ import {
   SLACK_START_ERROR_COMMANDS,
   TEAMS_START_ERROR_COMMANDS,
   startErrorMessage,
-} from '../channels/start-error';
-import { buildAgentPickerCard } from '../channels/teams/cards';
+} from '../services/channels/start-error';
+import { buildAgentPickerCard } from '../services/channels/teams/cards';
 
 // Teams used to carry its own four-branch copy of this classifier (402 / 429 /
 // 404 / generic). Every error CODE and every 400, 403, 409 and 5xx collapsed

@@ -771,7 +771,7 @@ function GroupProjectAccessCard({
     staleTime: 30_000,
   });
   // Defensive client-side sort. The API also sets ORDER BY (see twin
-  // query in apps/api/src/accounts/iam.ts), but a stable order here
+  // query in apps/api/src/http/accounts/iam.ts), but a stable order here
   // means a role change can't ever visibly reshuffle rows even if a
   // future API refactor drops the ORDER BY.
   const grants = useMemo(() => {

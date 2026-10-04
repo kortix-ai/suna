@@ -163,7 +163,7 @@ function startSystemSkillsServer() {
 }
 
 /** The API's one feature-flag gate body — 403 `{ error, code, feature }` from
- *  `featureDisabledBody('apps')` in apps/api/src/feature-flags/gate.ts. Copied
+ *  `featureDisabledBody('apps')` in apps/api/src/services/feature-flags/gate.ts. Copied
  *  verbatim so the test asserts the real wire shape, not a paraphrase. */
 const APPS_FEATURE_DISABLED_BODY = {
   error: 'Apps is not enabled for this project. Enable it in Settings → Feature flags.',

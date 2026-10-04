@@ -309,8 +309,8 @@ describe('rescopeSessionSecrets — narrowing away from an unrestricted session'
  * of the two carries a pinned line satisfies it.
  */
 const ROUTE =
-  readFileSync(join(import.meta.dir, '..', '..', 'projects', 'routes', 'session-scope.ts'), 'utf8') +
-  readFileSync(join(import.meta.dir, '..', '..', 'projects', 'routes', 'session-scope-decide.ts'), 'utf8');
+  readFileSync(join(import.meta.dir, '..', '..', 'http', 'projects', 'session-scope.ts'), 'utf8') +
+  readFileSync(join(import.meta.dir, '..', '..', 'http', 'projects', 'session-scope-decide.ts'), 'utf8');
 
 describe('the scope route surfaces the narrowing', () => {
   test('retroactive and the warning key off `narrowed`, not the dropped names', () => {

@@ -29,7 +29,7 @@ import { WARM_SESSION_METADATA_KEY } from './warm-sessions';
  * the database, so it cannot fail for any of the reasons the snapshot does.
  *
  * Warm-session adoption also stamps this key once, at `/start`
- * (`dropWarmSessionMarkerOnAdopt`, projects/routes/warm-sessions.ts): the
+ * (`dropWarmSessionMarkerOnAdopt`, http/projects/warm-sessions.ts): the
  * take that fires that `/start` is itself a user send, and the first prompt
  * re-stamps here seconds later.
  */

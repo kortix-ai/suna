@@ -12,7 +12,7 @@ config and pass it explicitly. Never show the broker's raw error body as the
 user's message.
 
 **Trigger surface:** Listing, adding, syncing, or connecting any app through a managed
-auth broker (Composio Tool Router, Pipedream): `apps/api/src/connectors/composio*.ts`,
+auth broker (Composio Tool Router, Pipedream): `apps/api/src/services/connectors/composio*.ts`,
 the Connectors catalogue, and connector sync.
 
 **Incident:** 2026-09-26 prod, reported by a user: adding X failed with Composio's raw

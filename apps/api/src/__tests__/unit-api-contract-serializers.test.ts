@@ -8,8 +8,8 @@ import {
 } from '@kortix/api-contract';
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { config } from '../lib/config';
-import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
-import { serializeSandboxRow } from '../projects/routes/shared';
+import { buildSecretView, serializeProject, serializeSession } from '../services/projects/lib/serializers';
+import { serializeSandboxRow } from '../services/sessions/open/shared';
 
 const NOW = new Date('2026-07-01T12:00:00.000Z');
 const PROJECT_ID = '11111111-2222-4333-8444-555555555555';

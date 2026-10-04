@@ -5,7 +5,7 @@
  * Proves the whole stack below the HTTP layer — `upsertResourceGrant` ->
  * `loadObjectGrants` memo -> `objectUsable` -> cache bust on mutate — over the
  * canonical store. Before the cutover this exercised `iam_resource_grants` and
- * a second copy of the fold that lived in `iam/resource-grants.ts`; both are
+ * a second copy of the fold that lived in `services/iam/resource-grants.ts`; both are
  * gone, and `kortix.iam_resource_grants` is a compatibility view over the rows
  * this test writes.
  *
@@ -16,9 +16,9 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { db } from '../lib/db';
-import { deleteResourceGrant, upsertResourceGrant } from '../iam/resource-grants';
-import { loadObjectGrants, objectUsable } from '../iam/authorize';
-import { invalidateIamCacheForProjectResources } from '../iam/cache-invalidation';
+import { deleteResourceGrant, upsertResourceGrant } from '../services/iam/resource-grants';
+import { loadObjectGrants, objectUsable } from '../services/iam/authorize';
+import { invalidateIamCacheForProjectResources } from '../services/iam/cache-invalidation';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
