@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Wählen Sie die freigegebenen Schlüssel aus, die diese Sitzung verwenden darf.",
     "sessionKeyPool": "Sitzungsschlüsselpool",
     "sharedSessionKeys": "Diese Sitzung ist für das Projekt freigegeben, daher funktionieren hier nur Schlüssel, die für das ganze Projekt freigegeben sind. Ihnen zugewiesene Schlüssel funktionieren in Ihren privaten Sitzungen.",
+    "promptedSessionKeys": "Ein anderes Mitglied hat in dieser Sitzung geschrieben, daher handelt sie nicht mehr für ihren Besitzer. Hier funktionieren nur Schlüssel, die mit dem ganzen Projekt geteilt sind.",
+    "noPersonSessionKeys": "Diese Sitzung handelt für keine Person: Sie wurde vor den persönlichen Schlüsseln oder unbeaufsichtigt gestartet. Hier funktionieren nur Schlüssel, die mit dem ganzen Projekt geteilt sind. Starte eine neue Sitzung, um deine eigenen Schlüssel zu nutzen.",
     "projectDefaultShort": "Projektstandard",
     "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
     "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
