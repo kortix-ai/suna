@@ -4,7 +4,7 @@
  * these and drop every other KORTIX_* variable: CI runs with none of them
  * set, while a Kortix sandbox injects its runtime identity under KORTIX_*,
  * which would make every lane test the sandbox instead of the product.
- * Each name is documented in tests/README.md.
+ * Documented in tests/README.md and next to the consumers named below.
  */
 export const RUNNER_CONTROLS = new Set([
   // tests/bin/package-quality.ts and apps/api/scripts/test.sh
