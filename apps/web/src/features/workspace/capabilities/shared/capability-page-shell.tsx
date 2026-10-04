@@ -45,7 +45,12 @@ export function CapabilityPageShell({
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-10 pb-20 lg:py-14">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
+          {/* `sm:max-w-md` fixes where the description wraps. Without it the
+              text column took whatever the right-hand group left, and that
+              group fills in after data and permissions resolve — so the
+              description re-wrapped and the header grew 20px under the
+              reader (Agents 52 → 72px, Secrets 92 → 112px). */}
+          <div className="space-y-1 sm:max-w-md">
             <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
             <p className="text-muted-foreground text-sm text-balance">{description}</p>
           </div>

@@ -17,6 +17,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, objectPolicies, permissions } from '@kortix/db';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
+import { VALID_ACTIONS } from './actions';
 
 /** How long a catalog/system-role read is reused. Structural data, not grants. */
 const CATALOG_TTL_MS = (() => {
@@ -70,7 +71,10 @@ const loadCatalogMemo = ttlMemo({
         implies: permissions.implies,
       })
       .from(permissions);
-    const all = rows.map((r) => ({
+    // A catalog row the code no longer knows is a retired action (e.g. the
+    // split `project.customize.*`): its row stays until a later contract
+    // migration deletes it, but it is never offered or reported again.
+    const all = rows.filter((r) => VALID_ACTIONS.has(r.action)).map((r) => ({
       action: r.action,
       scopeType: r.scopeType as ScopeType,
       resourceType: r.resourceType,

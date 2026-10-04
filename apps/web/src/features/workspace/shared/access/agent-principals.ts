@@ -240,10 +240,8 @@ export interface AgentAuthorityState {
 
 /** The whole agent-authority read for one agent: ceiling and intersection.
  *
- *  It does NOT read the `agent_principal` project flag. That flag is no longer
- *  a choice the product presents — it is the default behavior, and its one
- *  remaining off-switch is a support lever, not a UI state. Enforcement stays
- *  server-side (`apps/api/src/iam/agent-principal.ts`). */
+ *  There is no project switch for this model. Enforcement stays server-side
+ *  (`apps/api/src/iam/agent-principal.ts`). */
 export function useAgentAuthority({
   projectId,
   accountId,

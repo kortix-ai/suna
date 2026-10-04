@@ -187,8 +187,8 @@ function denyFor(
       const toDefault = !isDelete(update) && update.ref === `${HEADS_PREFIX}${ctx.defaultBranch}`;
       return {
         reason: toDefault
-          ? `pushing ${ctx.defaultBranch} skips change-request review and needs agent, trigger and ` +
-            `customize write permission; push your own branch (${principal.branch}) and open a change request`
+          ? `pushing ${ctx.defaultBranch} skips change-request review and needs agent and trigger ` +
+            `write permission; push your own branch (${principal.branch}) and open a change request`
           : outsideLane
             ? `a session may only push its own branch (${principal.branch}); ` +
               'commit there and open a change request to land this elsewhere'

@@ -216,7 +216,7 @@ describe('deriveEffectiveRole', () => {
 });
 
 /**
- * Spec §2 (agents as principals): under the `agent_principal` flag an agent
+ * Spec §2 (agents as principals): an agent
  * session acts as ITSELF. Ownership and visibility used to key on the launcher's
  * user id, so an agent session could see and stop its launcher's OTHER private
  * sessions. It owns only its own session and the sessions it spawned.

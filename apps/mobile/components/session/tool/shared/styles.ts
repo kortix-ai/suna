@@ -8,9 +8,6 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export const monoFont = MONO_FONT_FAMILY;
 
-export function cardBorder(isDark: boolean) {
-  return withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
-}
 export function cardBg(isDark: boolean) {
   // Light branch keeps a near-white card fill (not the transparent
   // light.foreground-alpha shape used elsewhere) — matches the original

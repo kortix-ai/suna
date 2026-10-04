@@ -18,12 +18,15 @@ import {
   BuildingsIcon,
   ClockClockwiseIcon,
   DesktopIcon,
+  DownloadSimpleIcon,
   GitBranchIcon,
   HardDrivesIcon,
   PlugsConnectedIcon,
   ShieldCheckIcon,
+  StackIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
+import Image from 'next/image';
 import Link from '@/components/site-link';
 import { useEffect, useRef, useState } from 'react';
 
@@ -42,7 +45,13 @@ const LINK_ICONS: Record<string, Icon | typeof Slack> = {
   clock: ClockClockwiseIcon,
   chats: Slack,
   users: UsersThreeIcon,
+  stack: StackIcon,
+  download: DownloadSimpleIcon,
 };
+
+/** Panel width and column grid by column count (plus the featured card). */
+const PANEL_WIDTH = ['w-60', 'w-60', 'w-2xl', 'w-4xl'] as const;
+const GRID_COLS = ['', '', 'grid-cols-2', 'grid-cols-3'] as const;
 
 /**
  * Radix keys its menu state and generated ids off this value. Both the Product
@@ -75,7 +84,7 @@ export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
   const hasActiveLink = menu.columns.some((column) =>
     column.links.some((link) => isNavActive(link.href)),
   );
-  const isWide = menu.columns.length > 1;
+  const count = Math.min(menu.columns.length, 3);
 
   // Escape closes the menu and returns focus to the trigger. Without this guard
   // the trigger's onFocus re-opens the menu the user just dismissed. Radix binds
@@ -127,11 +136,19 @@ export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
           </NavigationMenuTrigger>
           <NavigationMenuContent className="[&>div]:bg-transparent [&>div]:p-0">
             {/* A single-column menu is a short list, so it gets a narrow panel;
-                only the two-column product menu earns the full width. */}
-            <div className={cn('max-w-[calc(100vw-2.5rem)] rounded-xl', isWide ? 'w-2xl' : 'w-60')}>
-              <div className={cn('grid gap-x-3 p-1', isWide && 'grid-cols-2')}>
+                multi-column menus widen per column, plus the featured card. */}
+            <div
+              className={cn(
+                'flex max-w-[calc(100vw-2.5rem)] gap-2 rounded-xl p-2',
+                menu.feature ? 'w-6xl' : PANEL_WIDTH[count],
+              )}
+            >
+              <div className={cn('grid flex-1 gap-x-3', GRID_COLS[count])}>
                 {menu.columns.map((column) => (
                   <div key={column.title} className="flex flex-col gap-0.5">
+                    {count > 1 && (
+                      <span className="text-muted-foreground px-2 pt-1 pb-2 text-xs">{column.title}</span>
+                    )}
                     {column.links.map((link) => {
                       const LinkIcon = link.icon ? LINK_ICONS[link.icon] : undefined;
                       return (
@@ -173,6 +190,22 @@ export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
                   </div>
                 ))}
               </div>
+              {menu.feature && (
+                <NavigationMenuLink asChild>
+                  <Link
+                    href={menu.feature.href}
+                    className="bg-foreground/5 hidden w-64 shrink-0 flex-col items-stretch gap-3 rounded-md p-2 lg:flex"
+                  >
+                    <span className="relative aspect-video overflow-hidden rounded-sm">
+                      <Image src={menu.feature.image} alt="" fill sizes="256px" className="object-cover object-left-top" />
+                    </span>
+                    <span className="text-foreground px-1 text-sm font-medium">{menu.feature.title}</span>
+                    <span className="text-muted-foreground px-1 pb-1 text-xs leading-snug text-pretty">
+                      {menu.feature.description}
+                    </span>
+                  </Link>
+                </NavigationMenuLink>
+              )}
             </div>
           </NavigationMenuContent>
         </NavigationMenuItem>

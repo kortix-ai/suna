@@ -123,7 +123,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_READ,
     );
     return c.json(
       await routingPolicyDocument(
@@ -160,7 +160,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
     );
     let policy;
     try {
@@ -242,7 +242,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
     );
     await resetProjectRoutingPolicy({ projectId, accountId: loaded.row.accountId });
     invalidateAccountModelDefaults(loaded.row.accountId);
