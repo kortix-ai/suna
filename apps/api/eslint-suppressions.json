@@ -735,17 +735,14 @@
       "count": 2
     }
   },
-  "src/connectors/connector-list.ts": {
-    "kortix-api/layers": {
+  "src/connectors/db-deps-connect.ts": {
+    "no-console": {
       "count": 1
     }
   },
-  "src/connectors/db-deps.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
+  "src/connectors/db-deps-principal.ts": {
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/connectors/manifest-crud.ts": {
@@ -768,15 +765,35 @@
       "count": 1
     }
   },
-  "src/connectors/router.ts": {
+  "src/connectors/routes/admin.ts": {
+    "no-restricted-syntax": {
+      "count": 7
+    }
+  },
+  "src/connectors/routes/catalogues.ts": {
+    "no-restricted-syntax": {
+      "count": 8
+    }
+  },
+  "src/connectors/routes/connect.ts": {
     "no-console": {
-      "count": 2
-    },
-    "no-restricted-imports": {
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 37
+      "count": 4
+    }
+  },
+  "src/connectors/routes/gateway.ts": {
+    "no-console": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 8
+    }
+  },
+  "src/connectors/routes/settings.ts": {
+    "no-restricted-syntax": {
+      "count": 10
     }
   },
   "src/connectors/sync.ts": {
