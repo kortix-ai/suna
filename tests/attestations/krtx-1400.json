@@ -1,5 +1,5 @@
 {
-  "source_hash": "55265c47b2d6ab6b4da00a7362bc2e37c7cc424b573d2efb673b47a859ae4463",
+  "source_hash": "4c328fa50ce6861ee58de838ced77bc97c93fc9ddb0ac743c63790642fe7ac8e",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
@@ -18,13 +18,13 @@
     "tests/bin/package-quality.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "59ebacb617b77bffe39921b1a6ea0aa73f2e01e4bf5c6503f971a67e95c34131",
-  "head": "749ae5125be852a1eb1d2b133fafb3dc32f2e71a",
+  "diff_hash": "c9e6b50b7548fbfc5c3482dac0a315f40a96e20e6bf2d29eaeed1ff4399facbd",
+  "head": "15b8e9250503fc7e40fad4605ce386640066c878",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T01:31:04.375Z"
+  "at": "2026-10-04T02:30:13.253Z"
 }
