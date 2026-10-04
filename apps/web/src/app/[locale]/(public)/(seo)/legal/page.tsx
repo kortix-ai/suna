@@ -3,8 +3,8 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import Link from '@/components/site-link';
-import { Separator } from '@/components/ui/separator';
 import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/doc-rail';
+import { PageHero } from '@/features/marketing/component/page-hero';
 import { cn } from '@/lib/utils';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { m } from 'motion/react';
@@ -420,21 +420,17 @@ function LegalContent() {
 
   return (
     <main className="bg-background min-h-screen">
-      {/* Same container and header rhythm as /changelog and /blog: max-w-6xl,
-          px-6, and top padding that clears the fixed navbar in (seo)/layout. */}
-      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
-        <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-          <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-            {t.raw('appLegalPage.line48JsxTextLegalInformation')}
-          </h1>
-          <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty">
+      <PageHero size="band"
+        title={t.raw('appLegalPage.line48JsxTextLegalInformation')}
+        sub={
+          <>
             {t.raw('appLegalPage.line93JsxTextInformationAccordingToLegalRequirements')}
             {' — '}
             {t.raw('i18nComplete.text5f7ba416b298')}
-          </p>
-        </header>
-
-        <Separator />
+          </>
+        }
+      />
+      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
 
         <div className={DOC_GRID}>
           {/* Same rail component /support uses — horizontal scroller below
@@ -471,7 +467,7 @@ function LegalContent() {
             className={DOC_BODY}
           >
             <div className="mb-8">
-              <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+              <h2 className="text-foreground text-2xl font-normal tracking-tight text-balance">
                 {activeTab === 'imprint'
                   ? 'Imprint'
                   : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
@@ -501,13 +497,7 @@ export default function LegalPage() {
     <Suspense
       fallback={
         <main className="bg-background min-h-screen">
-          <div className="mx-auto max-w-6xl px-6">
-            <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-              <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                {tI18nComplete.raw('textcad20810fc2d')}
-              </h1>
-            </header>
-          </div>
+          <PageHero size="band" title={tI18nComplete.raw('textcad20810fc2d')} />
         </main>
       }
     >
