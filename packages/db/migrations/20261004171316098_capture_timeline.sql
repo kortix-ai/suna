@@ -65,6 +65,7 @@ CREATE TABLE "kortix"."capture_devices" (
 	"project_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
 	"machine_key_sha256" varchar(64) NOT NULL,
+	"machine_id" varchar(64),
 	"token_hash" varchar(128),
 	"token_issued_at" timestamp with time zone,
 	"name" text,

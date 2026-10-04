@@ -5048,6 +5048,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "machine_id": {
+          "name": "machine_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "token_hash": {
           "name": "token_hash",
           "type": "varchar(128)",

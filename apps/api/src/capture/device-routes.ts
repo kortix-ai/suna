@@ -322,7 +322,20 @@ export function createCaptureRouter() {
       middleware: [supabaseAuth] as const,
       request: {
         params: z.object({ user_code: z.string() }),
-        body: { content: { 'application/json': { schema: z.object({ project_id: z.string().uuid() }) } } },
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({
+                project_id: z.string().uuid(),
+                machine_id: z
+                  .string()
+                  .regex(/^[0-9a-f]{64}$/)
+                  .optional()
+                  .describe("The computer agent's machine id for this computer (the Kortix desktop app sends it); joins the device to the person's computer"),
+              }),
+            },
+          },
+        },
       },
       responses: { 200: json(GrantSchema, 'The approved sign-in'), ...errors(400, 401, 403, 404, 409, 429) },
     }),
@@ -340,7 +353,7 @@ export function createCaptureRouter() {
       if (grant.status !== 'pending' || grant.expiresAt.getTime() < Date.now()) {
         return c.json({ error: `This sign-in is ${grantView(grant).status}`, code: 'capture_grant_not_pending' }, 409);
       }
-      const approved = await approveDeviceGrant(grant, { projectId, accountId: loaded.row.accountId, userId });
+      const approved = await approveDeviceGrant(grant, { projectId, accountId: loaded.row.accountId, userId }, c.req.valid('json').machine_id);
       if (!approved) return c.json({ error: 'This sign-in was decided already', code: 'capture_grant_not_pending' }, 409);
       await ensurePolicyObject({ projectId, accountId: loaded.row.accountId });
       return c.json(grantView(approved), 200);

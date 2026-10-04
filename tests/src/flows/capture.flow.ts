@@ -150,8 +150,14 @@ flow(
     await enableCapture(ctx, projectId);
     let device = { device_token: '', prefix: '', device_id: '' };
 
-    await ctx.step('the member approves into the project → approved; a second decision → 409', async () => {
-      (await asMember.post(path(R.approve), { project_id: projectId }, { params: { user_code: grant.user_code } }))
+    const computerMachineId = syntheticMachineKey(ctx.fixtures.name('cap1-computer'));
+
+    await ctx.step('approving with a machine_id that is not 64 hex → 400', async () => {
+      (await asMember.post(path(R.approve), { project_id: projectId, machine_id: 'not-hex' }, { params: { user_code: grant.user_code } })).status(400);
+    });
+
+    await ctx.step('the member approves into the project with this computer’s machine_id → approved; a second decision → 409', async () => {
+      (await asMember.post(path(R.approve), { project_id: projectId, machine_id: computerMachineId }, { params: { user_code: grant.user_code } }))
         .status(200)
         .body()
         .has('$.status', 'approved')
@@ -180,7 +186,13 @@ flow(
       if (again.device_id !== device.device_id) throw new Error(`device ${again.device_id} != ${device.device_id}`);
       (await anon.withBearer(device.device_token).post(path(R.credentials))).status(401);
       device = again;
-      (await asMember.get(path(R.devices), { params: { projectId } })).status(200).body().has('$.devices[0].device_id', device.device_id).has('$.devices[0].name', 'Fixture Computer');
+      // An approval without machine_id keeps the computer link the first one set.
+      (await asMember.get(path(R.devices), { params: { projectId } }))
+        .status(200)
+        .body()
+        .has('$.devices[0].device_id', device.device_id)
+        .has('$.devices[0].name', 'Fixture Computer')
+        .has('$.devices[0].machine_id', computerMachineId);
     });
 
     await ctx.step('a denied sign-in → the device reads access_denied', async () => {

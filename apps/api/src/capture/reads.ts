@@ -52,6 +52,7 @@ export function deviceView(device: Device, now = Date.now()) {
     os_version: device.osVersion,
     arch: device.arch,
     app_version: device.appVersion,
+    machine_id: device.machineId,
     live: { state: liveState(device.status, now), status: device.status, reported_at: device.statusReportedAt?.toISOString() ?? null },
     policy_override: device.policyOverride ? PolicySchema.parse(device.policyOverride) : null,
     last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,

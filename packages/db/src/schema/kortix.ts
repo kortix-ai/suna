@@ -6657,6 +6657,13 @@ export const captureDevices = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     machineKeySha256: varchar('machine_key_sha256', { length: 64 }).notNull(),
+    /**
+     * The computer this device runs on, as the computer agent names it
+     * (`machineInfo.machineId` of a tunnel connection: sha256 of
+     * "kortix-machine:" + the OS machine id). Set by the Kortix desktop app at
+     * approval; joins a device to the person's computer. Null for other apps.
+     */
+    machineId: varchar('machine_id', { length: 64 }),
     /** Hash of the current device token (`hashSecretKey`). Null after a revoke. */
     tokenHash: varchar('token_hash', { length: 128 }),
     tokenIssuedAt: timestamp('token_issued_at', { withTimezone: true }),

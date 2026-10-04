@@ -139,8 +139,10 @@ export async function grantByUserCode(userCode: string): Promise<Grant | null> {
 export async function approveDeviceGrant(
   grant: Grant,
   owner: { projectId: string; accountId: string; userId: string },
+  /** The computer agent's id for this machine (sent by the Kortix desktop app). */
+  machineId?: string,
 ): Promise<Grant | null> {
-  const fields = deviceFields(grant.deviceInfo);
+  const fields = { ...deviceFields(grant.deviceInfo), ...(machineId ? { machineId } : {}) };
   return db.transaction(async (tx) => {
     const [device] = await tx
       .insert(captureDevices)
