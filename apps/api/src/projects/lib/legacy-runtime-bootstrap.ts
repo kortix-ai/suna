@@ -45,6 +45,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
+import { exponentialBackoffMs } from '../../shared/backoff';
 
 /**
  * The in-box script ships as a sidecar file, not a template literal: bash is
@@ -91,8 +92,11 @@ export const LEGACY_BOOTSTRAP_MAX_ATTEMPTS = 3;
  * fine": widening the wait is the point.
  */
 export function legacyBootstrapCooldownMs(attempts: number): number {
-  const exponent = Math.max(0, attempts - 1);
-  return Math.min(LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS, LEGACY_BOOTSTRAP_COOLDOWN_MS * 2 ** exponent);
+  return exponentialBackoffMs({
+    attempt: attempts,
+    baseMs: LEGACY_BOOTSTRAP_COOLDOWN_MS,
+    capMs: LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
+  });
 }
 /** A `running` stamp older than this is a crashed attempt, not a live one. */
 export const LEGACY_BOOTSTRAP_STALE_RUNNING_MS = 20 * 60 * 1000;

@@ -1,4 +1,5 @@
 import type { SandboxProviderName } from '../lib/config';
+import { withTimeout } from '../shared/with-timeout';
 import type { ProviderState, SandboxProviderAdapter } from './providers';
 
 export const SANDBOX_TEMPLATE_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
@@ -30,23 +31,6 @@ export interface ProviderCoverageDependencies {
 }
 
 export const PROVIDER_COVERAGE_OBSERVATION_TIMEOUT_MS = 5_000;
-
-async function withObservationTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`Provider observation timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 /**
  * A reusable sandbox template is provider-neutral infrastructure. Keep its
@@ -103,9 +87,10 @@ export async function observeTemplateProviderCoverage(
       }
 
       try {
-        const state = await withObservationTimeout(
+        const state = await withTimeout(
           dependencies.getProvider(provider).getSnapshotState(snapshotName),
           dependencies.observationTimeoutMs ?? PROVIDER_COVERAGE_OBSERVATION_TIMEOUT_MS,
+          'Provider observation',
         );
         return {
           provider,
