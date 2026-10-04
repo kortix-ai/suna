@@ -33,13 +33,60 @@ import { isDeepStrictEqual } from 'node:util';
  *  `@kortix/manifest-schema`'s exported `SLUG_RE` directly (it used to be
  *  re-derived here as a local copy under the mistaken assumption that the
  *  regex wasn't exported). */
-export function isValidAgentName(name: string): boolean {
+function isValidAgentName(name: string): boolean {
   return SLUG_RE.test(name);
 }
 
-export type NormalizeRequiredConnectorsResult =
+type NormalizeRequiredConnectorsResult =
   | { ok: true; block: Record<string, unknown> }
   | { ok: false; error: string };
+
+/** The raw `agents` map, or the one malformed-map rejection every reader and
+ *  writer shares. `map: undefined` means the manifest has no `agents:` yet. */
+function agentsMapOf(
+  manifest: ParsedManifest,
+): { ok: true; map: Record<string, unknown> | undefined } | { ok: false; error: string } {
+  const raw = manifest.raw.agents;
+  if (raw === undefined || raw === null) return { ok: true, map: undefined };
+  if (Array.isArray(raw) || typeof raw !== 'object') {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  return { ok: true, map: raw as Record<string, unknown> };
+}
+
+/** One agent's raw block: null when undeclared, the plain object when not —
+ *  and the one malformed-entry rejection. */
+function agentBlockOf(
+  agentName: string,
+  entry: unknown,
+): { ok: true; block: Record<string, unknown> | null } | { ok: false; error: string } {
+  if (entry === undefined || entry === null) return { ok: true, block: null };
+  if (typeof entry !== 'object' || Array.isArray(entry)) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  return { ok: true, block: entry as Record<string, unknown> };
+}
+
+/** Canonicalize both legacy alias pairs in one pass: connectors_personal →
+ *  connectors_required, then kortix_cli → kortix_permissions. */
+function normalizeGovernanceAliases(block: Record<string, unknown>): NormalizeRequiredConnectorsResult {
+  const connectors = normalizeRequiredConnectorAliases(block);
+  if (!connectors.ok) return connectors;
+  return normalizeKortixPermissionAliases(connectors.block);
+}
+
+/** One grant-set write: `all` writes the keyword, `[]` writes deny-by-default
+ *  by omitting the key (v2 is deny-by-default), a list writes verbatim. */
+function writeGrantSet(
+  block: Record<string, unknown>,
+  key: string,
+  value: readonly string[] | 'all' | undefined,
+): void {
+  if (value === undefined) return;
+  if (value === 'all') block[key] = 'all';
+  else if (value.length === 0) delete block[key];
+  else block[key] = value;
+}
 
 function normalizeConnectorList(value: unknown, field: string): string[] | string {
   if (!Array.isArray(value)) return `${field} must be a list of connector slugs`;
@@ -95,7 +142,7 @@ export function normalizeRequiredConnectorAliases(
  * value). Both present with different values is an error — the manifest
  * validator rejects that too. Mirrors `normalizeRequiredConnectorAliases`.
  */
-export function normalizeKortixPermissionAliases(
+function normalizeKortixPermissionAliases(
   source: Record<string, unknown>,
 ): NormalizeRequiredConnectorsResult {
   const legacy = source.kortix_cli;
@@ -158,7 +205,7 @@ function pruneRequiredConnectors(block: Record<string, unknown>): void {
   else delete block.connectors_required;
 }
 
-export type ReadAgentBlockResult =
+type ReadAgentBlockResult =
   | { ok: true; schemaVersion: number; block: AgentBlockV2 | null; defaultAgent: string | null }
   | { ok: false; error: string };
 
@@ -173,28 +220,19 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   if (manifest.schemaVersion !== 2) {
     return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent: null };
   }
-  const rawAgents = manifest.raw.agents;
   const defaultAgentRaw = manifest.raw.default_agent;
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
-  if (rawAgents === undefined || rawAgents === null) {
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return agents;
+  const entry = agentBlockOf(agentName, agents.map?.[agentName]);
+  if (!entry.ok) return entry;
+  if (!entry.block) {
     return { ok: true, schemaVersion: 2, block: null, defaultAgent };
   }
-  if (Array.isArray(rawAgents) || typeof rawAgents !== 'object') {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const entry = (rawAgents as Record<string, unknown>)[agentName];
-  if (entry === undefined) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
-  }
-  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
-  }
-  const normalized = normalizeRequiredConnectorAliases(entry as Record<string, unknown>);
-  if (!normalized.ok) return normalized;
-  const permissions = normalizeKortixPermissionAliases(normalized.block);
-  if (!permissions.ok) return permissions;
-  const repository = normalizeRepositoryAccess(permissions.block, true);
+  const aliases = normalizeGovernanceAliases(entry.block);
+  if (!aliases.ok) return aliases;
+  const repository = normalizeRepositoryAccess(aliases.block, true);
   if (!repository.ok) return repository;
   return {
     ok: true,
@@ -241,23 +279,13 @@ function applyAgentMapBlock(
       error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
     };
   }
-  const rawAgents = manifest.raw.agents;
-  if (
-    rawAgents !== undefined &&
-    rawAgents !== null &&
-    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
-  ) {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const normalizedConnectors = normalizeRequiredConnectorAliases(block);
-  if (!normalizedConnectors.ok) return normalizedConnectors;
-  const normalized = normalizeKortixPermissionAliases(normalizedConnectors.block);
-  if (!normalized.ok) return normalized;
-  pruneRequiredConnectors(normalized.block);
-  const nextAgents: Record<string, unknown> = {
-    ...(rawAgents as Record<string, unknown> | undefined),
-  };
-  const repository = normalizeRepositoryAccess(normalized.block);
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return agents;
+  const aliases = normalizeGovernanceAliases(block);
+  if (!aliases.ok) return aliases;
+  pruneRequiredConnectors(aliases.block);
+  const nextAgents: Record<string, unknown> = { ...agents.map };
+  const repository = normalizeRepositoryAccess(aliases.block);
   if (!repository.ok) return repository;
   // Older API replicas ignore repository_access. Keep their deny signal during rollout and rollback.
   if (repository.block.repository_access === false) repository.block.workspace = 'runtime';
@@ -378,34 +406,21 @@ export function applyAgentScopeV2(
     rawAgents && typeof rawAgents === 'object' && !Array.isArray(rawAgents)
       ? (rawAgents as Record<string, unknown>)[agentName]
       : undefined;
-  if (existing === undefined || existing === null) {
+  const entry = agentBlockOf(agentName, existing);
+  if (!entry.ok) return entry;
+  if (!entry.block) {
     return {
       ok: false,
       notFound: true,
       error: `No agent "${agentName}" declared in ${manifest.path || 'kortix.yaml'}`,
     };
   }
-  if (typeof existing !== 'object' || Array.isArray(existing)) {
-    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
-  }
-  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  const normalized = normalizeRequiredConnectorAliases(entry.block);
   if (!normalized.ok) return normalized;
   const merged: Record<string, unknown> = normalized.block;
-  if (scope.env !== undefined) {
-    if (scope.env === 'all') merged.secrets = 'all';
-    else if (scope.env.length === 0) delete merged.secrets;
-    else merged.secrets = scope.env;
-  }
-  if (scope.connectors !== undefined) {
-    if (scope.connectors === 'all') merged.connectors = 'all';
-    else if (scope.connectors.length === 0) delete merged.connectors;
-    else merged.connectors = scope.connectors;
-  }
-  if (scope.apps !== undefined) {
-    if (scope.apps === 'all') merged.apps = 'all';
-    else if (scope.apps.length === 0) delete merged.apps;
-    else merged.apps = scope.apps;
-  }
+  writeGrantSet(merged, 'secrets', scope.env);
+  writeGrantSet(merged, 'connectors', scope.connectors);
+  writeGrantSet(merged, 'apps', scope.apps);
   if (scope.connectorsRequired !== undefined) {
     const required = Array.from(new Set(scope.connectorsRequired));
     if (required.length === 0) delete merged.connectors_required;
@@ -436,7 +451,7 @@ function listAdmits(list: readonly string[], identifier: string): boolean {
   return list.some((entry) => entry.toUpperCase() === target);
 }
 
-export type GrantSecretToAgentResult =
+type GrantSecretToAgentResult =
   | {
       ok: true;
       raw: Record<string, unknown>;
@@ -485,27 +500,18 @@ export function grantSecretToAgentV2(
         'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 (kortix.yaml) to grant a secret to an agent.',
     };
   }
-  const rawAgents = manifest.raw.agents;
-  if (
-    rawAgents !== undefined &&
-    rawAgents !== null &&
-    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
-  ) {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const agentsMap = (rawAgents ?? undefined) as Record<string, unknown> | undefined;
+  const agents = agentsMapOf(manifest);
+  if (!agents.ok) return agents;
   const adoptedGovernance =
-    (manifest.revision ?? null) === null || !agentsMap || Object.keys(agentsMap).length === 0;
+    (manifest.revision ?? null) === null || !agents.map || Object.keys(agents.map).length === 0;
 
-  const existing = agentsMap?.[agentName];
-  if (existing === undefined || existing === null) {
+  const entry = agentBlockOf(agentName, agents.map?.[agentName]);
+  if (!entry.ok) return entry;
+  if (!entry.block) {
     const applied = applyAgentBlockV2(manifest, agentName, { secrets: [identifier] });
     return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
   }
-  if (typeof existing !== 'object' || Array.isArray(existing)) {
-    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
-  }
-  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  const normalized = normalizeRequiredConnectorAliases(entry.block);
   if (!normalized.ok) return normalized;
   const merged = normalized.block;
 

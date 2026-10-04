@@ -1,5 +1,10 @@
-import type { projectGitConnections } from '@kortix/db';
 import type { GitHubRepo } from '../github';
+import { projectGitConnections, projectGitCredentials } from '@kortix/db';
+import { encryptProjectSecret } from '../secrets';
+import { db } from '../../shared/db';
+
+/** A `db.transaction` handle, the type every transaction-scoped write takes. */
+export type ProjectGitWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * The one shape of a `project_git_connections` row write.
@@ -16,6 +21,27 @@ import type { GitHubRepo } from '../github';
  * the pooled `db` handle behind it cannot join — so the call sites keep their
  * transaction-scoped inserts and share these value builders instead.
  */
+
+/**
+ * Insert or replace the project's one GitHub token credential in the caller's
+ * transaction and return its id — the one writer behind project registration
+ * and repository replacement (same conflict target, same not-persisted guard).
+ */
+export async function upsertProjectGitCredential(
+  tx: ProjectGitWriteTx,
+  input: { accountId: string; projectId: string; token: string; createdBy: string; now: Date },
+): Promise<string> {
+  const valueEnc = encryptProjectSecret(input.projectId, input.token);
+  const [credential] = await tx.insert(projectGitCredentials).values({
+    accountId: input.accountId, projectId: input.projectId, provider: 'github',
+    authMethod: 'token', valueEnc, createdBy: input.createdBy, updatedAt: input.now,
+  }).onConflictDoUpdate({
+    target: [projectGitCredentials.projectId, projectGitCredentials.provider],
+    set: { valueEnc, createdBy: input.createdBy, updatedAt: input.now },
+  }).returning();
+  if (!credential) throw new Error('Project Git credential was not persisted');
+  return credential.credentialId;
+}
 
 /** How the project's git connection authenticates. */
 export type ProjectGitWriteAuth =

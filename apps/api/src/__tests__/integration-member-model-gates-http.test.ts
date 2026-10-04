@@ -22,7 +22,7 @@
  *   2. A member can WRITE the session model on a session they own
  *      (`PUT /sessions/:sid/model`), and that route is floored 'session'.
  *   3. A member still CANNOT write project-level model configuration
- *      (`PUT /model-enablement`) — that asserts project.customize.write.
+ *      (`PUT /model-enablement`) — that asserts project.model.write.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
@@ -234,7 +234,7 @@ describe('project member — model selection', () => {
     });
     expect(res.status).toBe(403);
     const text = JSON.stringify(await res.json().catch(() => ({})));
-    expect(text).toContain('project.customize.write');
+    expect(text).toContain('project.model.write');
   });
 
   test('a manager is not refused project-level model configuration', async () => {

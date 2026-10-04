@@ -29,6 +29,7 @@ import {
   loadApprovalRow,
   normalizeApprovalNote,
 } from '../lib/connector-approval-decision';
+import { markApprovalCardDecided } from '../../channels/approval-card-relay';
 import { callerKortixSessionId } from '../lib/caller-session';
 
 // GET /v1/projects/:projectId/approvals
@@ -355,6 +356,8 @@ projectsApp.openapi(
       actorUserId: loaded.userId,
       auditSource: inferAuditSource(c, 'human'),
       resume: 'queue',
+      updateStaleCard: () =>
+        markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),
     });
     if (outcome === 'preview_unavailable') {
       return c.json(
