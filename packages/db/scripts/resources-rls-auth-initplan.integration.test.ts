@@ -244,7 +244,7 @@ describe.skipIf(!databaseUrl)('public.resources RLS initplan migration — real 
     // auth.uid() as the querying role. Prod grants USAGE on both schemas to
     // postgres and authenticated; the lane's superuser-created stubs (and the
     // --no-privileges auth dump) carry no such grant, so mirror prod here.
-    await raw(`GRANT USAGE ON SCHEMA basejump TO PUBLIC`);
+    await raw('GRANT USAGE ON SCHEMA basejump TO PUBLIC');
     await raw('GRANT SELECT ON basejump.account_user TO PUBLIC');
     await raw(`GRANT USAGE ON SCHEMA auth TO ${PROBE_ROLE}`);
   });
@@ -314,81 +314,81 @@ describe.skipIf(!databaseUrl)('public.resources RLS initplan migration — real 
     // The probe role is not the table owner, so RLS applies to it without
     // FORCE — the same rows an authenticated client would see.
     // User A (account A): sees own row + the NULL-account row.
-      await asUser(USER_A, async (query) => {
-        const visible = await query(`SELECT id::text, account_id::text FROM ${TABLE} ORDER BY id`);
-        expect(visible.rows.map((r) => r.id)).toEqual([ROW_A, ROW_NULL]);
-      });
+    await asUser(USER_A, async (query) => {
+      const visible = await query(`SELECT id::text, account_id::text FROM ${TABLE} ORDER BY id`);
+      expect(visible.rows.map((r) => r.id)).toEqual([ROW_A, ROW_NULL]);
+    });
 
-      // User B (account B): sees only its own row + the NULL-account row (RLS
-      // hides A's; the NULL exception is visible to every member).
-      await asUser(USER_B, async (query) => {
-        const visible = await query(`SELECT id::text FROM ${TABLE} ORDER BY id`);
-        expect(visible.rows.map((r) => r.id)).toEqual([ROW_B, ROW_NULL]);
-      });
+    // User B (account B): sees only its own row + the NULL-account row (RLS
+    // hides A's; the NULL exception is visible to every member).
+    await asUser(USER_B, async (query) => {
+      const visible = await query(`SELECT id::text FROM ${TABLE} ORDER BY id`);
+      expect(visible.rows.map((r) => r.id)).toEqual([ROW_B, ROW_NULL]);
+    });
 
-      // INSERT: own account and the NULL exception pass; a foreign one is rejected.
-      await asUser(USER_A, async (query) => {
-        const own = await query(
-          `INSERT INTO ${TABLE} (id, account_id, type) VALUES (gen_random_uuid(), '${ACCOUNT_A}', 'sandbox') RETURNING id::text`,
+    // INSERT: own account and the NULL exception pass; a foreign one is rejected.
+    await asUser(USER_A, async (query) => {
+      const own = await query(
+        `INSERT INTO ${TABLE} (id, account_id, type) VALUES (gen_random_uuid(), '${ACCOUNT_A}', 'sandbox') RETURNING id::text`,
+      );
+      expect(own.rowCount).toBe(1);
+    });
+    await asUser(USER_A, async (query) => {
+      const open = await query(
+        `INSERT INTO ${TABLE} (id, account_id, type) VALUES (gen_random_uuid(), NULL, 'sandbox') RETURNING id::text`,
+      );
+      expect(open.rowCount).toBe(1);
+    });
+    await asUser(USER_A, async (query) => {
+      let rejected = false;
+      try {
+        await query(
+          `INSERT INTO ${TABLE} (id, account_id, type) VALUES (gen_random_uuid(), '${ACCOUNT_B}', 'sandbox')`,
         );
-        expect(own.rowCount).toBe(1);
-      });
-      await asUser(USER_A, async (query) => {
-        const open = await query(
-          `INSERT INTO ${TABLE} (id, account_id, type) VALUES (gen_random_uuid(), NULL, 'sandbox') RETURNING id::text`,
-        );
-        expect(open.rowCount).toBe(1);
-      });
-      await asUser(USER_A, async (query) => {
-        let rejected = false;
-        try {
-          await query(
-            `INSERT INTO ${TABLE} (id, account_id, type) VALUES (gen_random_uuid(), '${ACCOUNT_B}', 'sandbox')`,
-          );
-        } catch (error) {
-          rejected = pgErrorCode(error) === '42501';
-        }
-        expect(rejected).toBe(true);
-      });
+      } catch (error) {
+        rejected = pgErrorCode(error) === '42501';
+      }
+      expect(rejected).toBe(true);
+    });
 
-      // UPDATE: own row updates; reparenting it to another account is rejected
-      // by the implicit WITH CHECK; another account's row is invisible (0 rows).
-      await asUser(USER_A, async (query) => {
-        const own = await query(
-          `UPDATE ${TABLE} SET status = 'paused' WHERE id = '${ROW_A}' RETURNING id::text`,
-        );
-        expect(own.rowCount).toBe(1);
-      });
-      await asUser(USER_A, async (query) => {
-        let rejected = false;
-        try {
-          await query(`UPDATE ${TABLE} SET account_id = '${ACCOUNT_B}' WHERE id = '${ROW_A}'`);
-        } catch (error) {
-          rejected = pgErrorCode(error) === '42501';
-        }
-        expect(rejected).toBe(true);
-      });
-      await asUser(USER_A, async (query) => {
-        const foreign = await query(
-          `UPDATE ${TABLE} SET status = 'paused' WHERE id = '${ROW_B}' RETURNING id::text`,
-        );
-        expect(foreign.rowCount).toBe(0);
-      });
+    // UPDATE: own row updates; reparenting it to another account is rejected
+    // by the implicit WITH CHECK; another account's row is invisible (0 rows).
+    await asUser(USER_A, async (query) => {
+      const own = await query(
+        `UPDATE ${TABLE} SET status = 'paused' WHERE id = '${ROW_A}' RETURNING id::text`,
+      );
+      expect(own.rowCount).toBe(1);
+    });
+    await asUser(USER_A, async (query) => {
+      let rejected = false;
+      try {
+        await query(`UPDATE ${TABLE} SET account_id = '${ACCOUNT_B}' WHERE id = '${ROW_A}'`);
+      } catch (error) {
+        rejected = pgErrorCode(error) === '42501';
+      }
+      expect(rejected).toBe(true);
+    });
+    await asUser(USER_A, async (query) => {
+      const foreign = await query(
+        `UPDATE ${TABLE} SET status = 'paused' WHERE id = '${ROW_B}' RETURNING id::text`,
+      );
+      expect(foreign.rowCount).toBe(0);
+    });
 
-      // DELETE: own row deletes; the NULL-account row and the foreign row are
-      // invisible (the DELETE policy has no NULL branch, as in prod).
-      await asUser(USER_A, async (query) => {
-        const own = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_A}' RETURNING id::text`);
-        expect(own.rowCount).toBe(1);
-      });
-      await asUser(USER_A, async (query) => {
-        const open = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_NULL}' RETURNING id::text`);
-        expect(open.rowCount).toBe(0);
-      });
-      await asUser(USER_A, async (query) => {
-        const foreign = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_B}' RETURNING id::text`);
-        expect(foreign.rowCount).toBe(0);
-      });
+    // DELETE: own row deletes; the NULL-account row and the foreign row are
+    // invisible (the DELETE policy has no NULL branch, as in prod).
+    await asUser(USER_A, async (query) => {
+      const own = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_A}' RETURNING id::text`);
+      expect(own.rowCount).toBe(1);
+    });
+    await asUser(USER_A, async (query) => {
+      const open = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_NULL}' RETURNING id::text`);
+      expect(open.rowCount).toBe(0);
+    });
+    await asUser(USER_A, async (query) => {
+      const foreign = await query(`DELETE FROM ${TABLE} WHERE id = '${ROW_B}' RETURNING id::text`);
+      expect(foreign.rowCount).toBe(0);
+    });
   });
 
   test('is a no-op where the legacy table does not exist (baseline databases)', async () => {
