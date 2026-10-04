@@ -1,16 +1,18 @@
 {
-  "source_hash": "fdfc634f7582070867949f11897463cca85ada07734cb73eb0480c3803ee8770",
+  "source_hash": "846713e8cbe24b9b2f83862a9b8c2789e497c9faaa731b47329701a2bbeeb240",
   "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-04T003157Z-a-read-path-that-loads-git-backed-project-resources-bounds-t.md",
     "apps/api/src/__tests__/unit-resource-grants-config-bound.test.ts",
     "apps/api/src/projects/routes/resource-grants.ts"
   ],
-  "diff_hash": "509e1abfd27728410b5c807f2ab1803a3952365781237911e399e56d872c7105",
-  "head": "a63e4a8f77c4e2fb3c8598695800d830d5335a4b",
+  "diff_hash": "13aed4c8e13a2d1c115f590c6634c2f97174a8962e53cfc4f8351e954a12a2a9",
+  "head": "d938fbac1d3214a32bfcb34f0101eb6c0bbaaeb0",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T00:01:20.589Z"
+  "at": "2026-10-04T00:44:45.888Z"
 }
