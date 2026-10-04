@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const deleted = { success: true, message: 'Deleted' };
 const scheduled = { success: true, message: 'Scheduled', deletion_scheduled_for: '2030-01-01', can_cancel: true };
-const deleteAccountImmediately = mock(async (_accountId?: string) => deleted);
+const deleteAccountImmediately = mock(async (_accountId?: string): Promise<typeof deleted & { identity_deleted?: boolean }> => deleted);
 const requestAccountDeletion = mock(async (_reason?: string, _accountId?: string) => scheduled);
 const cancelAccountDeletion = mock(async (_accountId?: string) => ({ success: true, message: 'Cancelled' }));
 const performSignOut = mock(async () => {});
