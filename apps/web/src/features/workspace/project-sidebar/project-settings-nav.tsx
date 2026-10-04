@@ -55,6 +55,10 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   { key: 'agent', action: PROJECT_ACTIONS.PROJECT_AGENT_READ },
   { key: 'skills', action: PROJECT_ACTIONS.PROJECT_SKILL_READ },
   { key: 'connectors', action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ },
+  // Drives — which company drives this project's agents may use (Kortix
+  // Drive). Flag-gated by the bar itself (`drives`); anyone who can read the
+  // project can see what its sessions mount.
+  { key: 'drives', action: PROJECT_ACTIONS.PROJECT_READ },
   // Triggers covers both schedules and webhooks — two views of one resource,
   // a project trigger — so it has one leaf. `project.trigger.read` is in
   // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), so every project
