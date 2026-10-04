@@ -1,0 +1,17 @@
+{
+  "source_hash": "3919a963c179b46648784e712833a001468c70fc90e23cd1b76c20a81af03046",
+  "diff_files": [
+    "apps/api/src/lib/request-log-level.test.ts",
+    "apps/api/src/lib/request-log-level.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "bc304efce16d7e13b9a8e369de8ea5096661a765da5329f0cc620f74706ba2a2",
+  "head": "bf1347eb941766cea830f1906784bf9ecdf2ac76",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:42:25.559Z"
+}
