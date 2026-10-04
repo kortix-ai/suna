@@ -181,7 +181,7 @@ describe('env token vs .kortix/link.json host', () => {
       const ctx = await resolveProjectContext();
       expect(ctx).toBeNull();
       expect(writes.join('')).toContain('kortix-internal-dev');
-      expect(writes.join('')).toContain('--host kortix-internal-dev');
+      expect(writes.join('')).toContain('kortix login --host kortix-internal-dev');
     } finally {
       process.stderr.write = realWrite;
     }

@@ -303,7 +303,7 @@ describe('kortix cr resolves one principal (KRTX-1486)', () => {
 
     expect(code).not.toBe(0);
     expect(stderr).toContain('team');
-    expect(stderr).toContain('--host team');
+    expect(stderr).toContain('kortix login --host team');
     // No doomed request: the ambient token must never reach either host.
     expect(sandboxHost.calls).toEqual([]);
     expect(configHost.calls).toEqual([]);

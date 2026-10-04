@@ -52,7 +52,8 @@ interface ProjectContextOpts {
  * supplies the credential. Inside a sandbox the env token authenticates the
  * env host — but a project that came from the config side (link.json or the
  * active host's default) is paired with THAT host's stored credential, or the
- * command stops with an explicit --host/login pointer; see the guard below.
+ * command stops with an explicit `kortix login --host` pointer; see the guard
+ * below.
  *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
@@ -118,7 +119,7 @@ export async function resolveProjectContext(
     // cross-project and reads silently return the token-bound project's rows
     // (KRTX-1486). When the config side supplies the project, its own host
     // supplies the credential; without stored credentials for that host, stop
-    // with an explicit pointer to --host instead of a doomed request.
+    // with an explicit login pointer instead of a doomed request.
     if (projectId && envTokenAuth && (ref?.source === 'link' || ref?.source === 'default')) {
       const link = ref.source === 'link' ? loadLink() : null;
       const configHostName = link?.host ?? activeHostName() ?? undefined;
@@ -126,12 +127,17 @@ export async function resolveProjectContext(
       if (configAuth?.token) {
         auth = configAuth;
       } else {
-        const hostLabel = configHostName ? `host "${configHostName}"` : 'a host with no stored credentials';
+        const hostLabel = configHostName
+          ? `host "${configHostName}"`
+          : 'a host with no stored credentials';
         const from = ref.source === 'link' ? '.kortix/link.json' : 'the active host default';
+        // `--host <name>` cannot rescue this state: it resolves the same
+        // stored credentials that are absent here, so the only working fix
+        // is logging in on that host.
         process.stderr.write(
           `${status.err(
             `Project is bound to ${hostLabel} (${from}) but only the ambient sandbox session token is available here — it cannot act on that project.`,
-          )} Run ${C.cyan}kortix login --host ${configHostName ?? '<host>'}${C.reset} first, or pass ${C.cyan}--host ${configHostName ?? '<host>'}${C.reset} explicitly.\n`,
+          )} Run ${C.cyan}kortix login --host ${configHostName ?? '<host>'}${C.reset} first.\n`,
         );
         return null;
       }
