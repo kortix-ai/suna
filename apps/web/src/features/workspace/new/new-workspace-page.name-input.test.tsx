@@ -21,11 +21,6 @@ mock.module('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
   usePathname: () => '/new',
-  useSelectedLayoutSegment: () => null,
-  useSelectedLayoutSegments: () => [],
-  redirect: () => {},
-  permanentRedirect: () => {},
-  notFound: () => {},
 }));
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({
@@ -157,7 +152,7 @@ async function renderPage(): Promise<ReactTestRenderer> {
   return renderer;
 }
 
-/** Type into the field the way a keystroke lands: a fresh instance per act. */
+/** Type into the field the way a keystroke lands: onChange through the live input. */
 async function type(renderer: ReactTestRenderer, value: string): Promise<void> {
   await act(async () => {
     findInput(renderer).props.onChange({ target: { value } });
