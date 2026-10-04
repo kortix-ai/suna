@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { KortixExecutionEnv } from './kortix-env.ts';
+import { ResponseError } from './rpc-transport.ts';
 import type { RpcTransport } from './rpc-transport.ts';
 
 /** The daemon's wire body shapes, as rpcOnce consumes them. */
@@ -89,6 +90,17 @@ describe('KortixExecutionEnv.rpc retry policy', () => {
     expect(r.ok).toBe(false);
     expect(transport.calls).toBe(1);
     if (!r.ok) expect(r.error.message).toBe('rpc timeout');
+  });
+
+  test('a response-received failure is not retried — the request was delivered', async () => {
+    const transport = new ScriptedTransport([() => Promise.reject(new ResponseError('HTTP 502'))]);
+    const r = await env(transport).writeFile('/tmp/plan.md', 'hi');
+    expect(r.ok).toBe(false);
+    expect(transport.calls).toBe(1);
+    if (!r.ok) {
+      expect(r.error.name).toBe('FileError');
+      expect(r.error.message).toBe('HTTP 502');
+    }
   });
 
   test('a successful call is made exactly once', async () => {
