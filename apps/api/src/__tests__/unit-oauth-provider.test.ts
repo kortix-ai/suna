@@ -18,7 +18,7 @@ const VERIFIER = 'verifier_' + 'x'.repeat(43);
 const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url');
 
 // Real scrypt hashing needs API_KEY_SECRET (scripts/test.env provides it).
-const { hashSecretKey } = await import('../shared/crypto');
+const { hashSecretKey } = await import('../lib/crypto');
 
 const clients: Record<string, Record<string, unknown>> = {
   [CONFIDENTIAL_ID]: {
@@ -97,9 +97,9 @@ mock.module('../lib/config', () => ({
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#8006 added one), and bun reports it as an unhandled
 // `Export named ... not found` between tests.
-const realDb = await import('../shared/db');
-mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
-mock.module('../shared/supabase', () => ({
+const realDb = await import('../lib/db');
+mock.module('../lib/db', () => ({ ...realDb, db: fake.db }));
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: { email: 'oauth@example.test' } } }) } },
   }),

@@ -16,7 +16,7 @@ import {
 } from '../channels/core/identity';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

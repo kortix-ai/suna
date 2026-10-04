@@ -2,7 +2,7 @@ import { posix, win32 } from 'path';
 import { eq, and } from 'drizzle-orm';
 import { tunnelPermissions } from '@kortix/db';
 import type { TunnelFilesystemScope, TunnelShellScope, TunnelPermissionScope } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   desktopFeatureForMethod,
   validateTunnelPermissionScope,

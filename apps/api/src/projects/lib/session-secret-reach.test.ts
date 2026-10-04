@@ -3,7 +3,7 @@ import { projectSessions, projects } from '@kortix/db';
 
 let sessionRows: Array<Record<string, unknown>> = [];
 let projectRows: Array<Record<string, unknown>> = [];
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: (table: unknown) => ({

@@ -73,7 +73,7 @@ const fakeDb: FakeDb = {
     }
   },
 };
-mock.module('../shared/db', () => ({ db: fakeDb, hasDatabase: true }));
+mock.module('../lib/db', () => ({ db: fakeDb, hasDatabase: true }));
 
 let billing: Record<string, unknown> = { ok: true };
 const billingChecks: string[] = [];

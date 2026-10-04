@@ -20,12 +20,12 @@ mock.module('../../lib/config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 
-mock.module('../../shared/db', () => ({ db: {} }));
+mock.module('../../lib/db', () => ({ db: {} }));
 
 let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
 let activityRefreshes: string[];
 
-mock.module('../../shared/daytona', () => ({
+mock.module('../../services/sandboxes/daytona/client', () => ({
   getDaytona: () => ({
     get: (externalId: string) => getDaytonaSandbox(externalId),
   }),

@@ -67,7 +67,7 @@ mock.module('../../middleware/auth', () => ({
 /** Every `.set({...})` the handler issued, in call order. */
 let setCalls: Record<string, unknown>[] = [];
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     update: () => ({

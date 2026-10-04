@@ -29,7 +29,7 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import {
   deleteSupabaseSamlProvider,
   registerSupabaseSamlProvider,

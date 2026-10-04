@@ -23,7 +23,7 @@
 import { describe, expect, test } from 'bun:test';
 import { eq, isNull, sql } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, objectPolicies, permissions } from '@kortix/db';
-import { db, hasDatabase } from '../shared/db';
+import { db, hasDatabase } from '../lib/db';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
 import { pendingPrincipalId } from '../iam/actor';
 

@@ -89,7 +89,7 @@ mock.module('../channels/slack/model-gate', () => ({
 
 const writes: Array<{ op: string; values?: unknown }> = [];
 let insertReturning: unknown[] = [{ sessionId: 's1' }];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({
       values: (values: unknown) => ({

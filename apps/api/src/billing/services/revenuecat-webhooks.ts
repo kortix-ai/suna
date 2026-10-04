@@ -6,7 +6,7 @@ import { mapRevenueCatProductToTier, getRevenueCatPeriodType, isRevenueCatAnonym
 import { wallet } from '../wallet';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveAccountId } from '../../accounts/resolve-account';
 
 /**
  * A deleted account keeps its row (ledger history, audit) but is terminal:

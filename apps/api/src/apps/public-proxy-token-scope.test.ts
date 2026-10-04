@@ -16,7 +16,7 @@
  * token may act only on its bound project.
  */
 import { describe, expect, mock, test } from 'bun:test';
-import * as realCrypto from '../shared/crypto';
+import * as realCrypto from '../lib/crypto';
 
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.kortix.com';
@@ -41,7 +41,7 @@ const BINDING_BY_TOKEN_ID = new Map(
   Object.values(TOKENS).map((t) => [t.tokenId, t.projectId] as const),
 );
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   // Spread the real module: mock.module replaces it WHOLESALE, so every
   // export that a transitively imported module uses must stay present.
   ...realCrypto,
@@ -228,7 +228,7 @@ describe('an App request names its caller and the App in the request audit', () 
   // public App are the customer's own end users and are not audited; a Kortix
   // caller the gate identifies is, including one the gate refuses.
   const { runWithContext } = require('../lib/request-context');
-  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const { attachInboundAuditScope } = require('../services/audit/audit-scope');
 
   async function scopeAfter(projectId: string, token: string) {
     return runWithContext('GET', '/api/things', async () => {

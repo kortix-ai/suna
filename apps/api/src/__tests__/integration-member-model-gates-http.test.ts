@@ -33,7 +33,7 @@ import { insertIntoView } from './helpers/compat-views';
 // (config.LLM_GATEWAY_ENABLED, default off) wins over any project override, and
 // config reads it once at import. Set it before the app loads.
 process.env.LLM_GATEWAY_ENABLED = 'true';
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { upsertResourceGrant } = await import('../iam/resource-grants');

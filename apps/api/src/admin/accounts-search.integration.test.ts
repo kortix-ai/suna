@@ -27,8 +27,8 @@
 import { describe, expect, test } from 'bun:test';
 import { accounts } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { db } from '../lib/db';
+import { qualifiedColumn } from '../lib/sql-qualified-column';
 import { adminAccountsSearchCondition } from './accounts-search';
 
 // Synthetic fixtures. No real ids, no real emails.

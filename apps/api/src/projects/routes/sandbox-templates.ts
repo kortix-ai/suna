@@ -21,7 +21,7 @@ import { loadGitProject } from '../lib/git';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { serializeTemplate } from '../lib/serializers';
 import { templateProviderObservation } from '../lib/template-provider-observation';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerSandboxTemplatesRoutes(): void {
   // ─── Template CRUD ─────────────────────────────────────────────────────────
   // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-

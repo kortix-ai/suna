@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 
 let mockPayload: { userId: string; sandboxId: string } | null = null;
 
@@ -14,8 +14,8 @@ mock.module('../lib/config', () => ({
   config: {},
   SANDBOX_VERSION: 'test-version',
 }));
-mock.module('../shared/db', () => ({ db: {} }));
-mock.module('../shared/daytona', () => ({
+mock.module('../lib/db', () => ({ db: {} }));
+mock.module('../services/sandboxes/daytona/client', () => ({
   getDaytona: () => ({}),
   archiveDaytonaSandboxById: async () => ({ ok: true }),
   isDaytonaDiskQuotaError: () => false,
@@ -27,7 +27,7 @@ mock.module('../projects/disk-quota-guard', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>
     mockPayload ? { ...mockPayload, sandboxId, userId } : null,
@@ -35,7 +35,7 @@ mock.module('../shared/preview-ownership', () => ({
   // satisfied for anything else that imports it in the same test run.
   resolveSandboxProjectId: async () => null,
 }));
-mock.module('../shared/kortix-user-context', () => ({
+mock.module('../services/sessions/kortix-user-context', () => ({
   KORTIX_USER_CONTEXT_HEADER: 'X-Kortix-User-Context',
   encodeKortixUserContext: (payload: any, key: string) => `signed:${key}:${payload.userId}`,
 }));

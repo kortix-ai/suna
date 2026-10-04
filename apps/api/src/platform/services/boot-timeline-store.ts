@@ -1,5 +1,5 @@
 import { providerEvents } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export type BootTimelineMark = { label: string; atMs: number };
 

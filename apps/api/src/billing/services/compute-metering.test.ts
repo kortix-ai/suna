@@ -86,7 +86,7 @@ mock.module('../repositories/compute-sessions', () => ({
   },
 }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: new Proxy(
     {},
     {

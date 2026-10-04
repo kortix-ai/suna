@@ -7,8 +7,8 @@
  */
 import { and, inArray, isNull, lt, or } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
-import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
+import { db } from '../../lib/db';
+import { runWorkerTick } from '../../services/audit/audit-scope';
 import { logger as appLogger } from '../../lib/logger';
 import { driveSunaMigration, LEASE_TTL_MS } from './suna-migration-runner';
 

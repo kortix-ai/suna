@@ -18,7 +18,7 @@ import * as realTeamsApi from '../channels/teams-api';
 import * as realInstallStore from '../channels/install-store';
 import * as realBinding from '../channels/teams/binding';
 import * as realTeamsSession from '../channels/teams/session';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

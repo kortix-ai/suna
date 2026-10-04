@@ -17,7 +17,7 @@ import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 import { and, asc, count, eq, isNotNull, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   nextTriggerScheduleSlot,
   triggerScheduleRevision,

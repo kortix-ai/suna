@@ -11,14 +11,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { accountRoleFor } from '../../iam/read-models';
 import { invalidateSessionOversight } from '../../iam/session-oversight';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 const SessionOversightStatus = z.object({
   enabled: z.boolean(),

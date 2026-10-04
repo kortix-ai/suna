@@ -20,17 +20,17 @@ function makeChain(): any {
 // Owner emails now come from a single `auth.users` lookup via `db.execute`
 // (they used to be one Supabase admin HTTP call per owner).
 let emailsById: Record<string, string> = {};
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => Object.entries(emailsById).map(([id, email]) => ({ id, email })) },
   hasDatabase: () => true,
 }));
 
 // Retained because other modules in this import graph still construct a client.
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({ auth: { admin: {} } }),
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => 'acc-x',
 }));
 

@@ -51,7 +51,7 @@ function createQueryBuilder(rows: unknown[]) {
   return builder;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: (_fields: Record<string, unknown>) => createQueryBuilder(results.shift() ?? []),
   },

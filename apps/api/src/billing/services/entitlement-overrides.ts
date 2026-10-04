@@ -26,7 +26,7 @@
  * gate that reads it.
  */
 
-import { isPlainObject } from '../../shared/json';
+import { isPlainObject } from '../../lib/json';
 
 /** One override: the value, plus an optional ISO-8601 expiry. */
 export interface OverrideEntry<T> {

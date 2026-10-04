@@ -18,8 +18,8 @@ import {
 import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
 import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
-import { isUuid } from '../../shared/validate';
-import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../lib/validate';
+import { readJsonObject } from '../../lib/http-body';
 import {
   deleteInboxPrompt,
   editInboxPrompt,

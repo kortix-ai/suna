@@ -3,7 +3,7 @@ import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
 import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../lib/config';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAppComputeAllowed } from './limits';
 import { AppHostingProvider } from './hosting';

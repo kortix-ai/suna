@@ -35,7 +35,7 @@
 import { describe, expect, test } from 'bun:test';
 import { accounts, creditAccounts } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 type Rows = { rows?: Array<Record<string, unknown>> } & Array<Record<string, unknown>>;
 const planText = (result: unknown) =>

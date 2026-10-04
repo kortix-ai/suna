@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 // disk-quota-guard.ts takes its Daytona list/archive functions purely via an
 // injected `deps` object (no runtime import from ../shared/daytona), so this
 // file needs no module mocking at all — which matters here specifically:
-// shared/daytona.test.ts unit-tests that real module directly, and bun's
+// services/sandboxes/daytona/client.test.ts unit-tests that real module directly, and bun's
 // mock.module() is a process-wide registry (confirmed: it is NOT scoped per
 // test file despite bunfig.toml's `isolation = true`), so a mock.module call
 // in this file would silently hijack the module the OTHER file is testing.

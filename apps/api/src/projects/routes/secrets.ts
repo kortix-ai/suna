@@ -14,8 +14,8 @@ import {
   SecretDeliveryStrategySchema,
   SecretEgressPolicySchema,
 } from '@kortix/api-contract';
-import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { inferAuditSource, runAuditedTransaction } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { requestPersonalOwner } from '../lib/personal-resources';
@@ -46,7 +46,7 @@ import {
   loadSecretViewsForUser,
   type SecretAgentGrantConfig,
 } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import {
   SecretWriteResultSchema,
   type SecretDeliverySync,

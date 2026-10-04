@@ -20,7 +20,7 @@ function makeChain(result: unknown[] = []): any {
   return chain;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => makeChain([]),
     update: () => makeChain([]),

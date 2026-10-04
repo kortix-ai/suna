@@ -10,7 +10,7 @@
  * write path into any tenant's log.
  *
  * Its own file: the budget is read from the environment once, when
- * `shared/audit` is imported.
+ * `services/audit/audit` is imported.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
@@ -20,7 +20,7 @@ process.env.KORTIX_AUDIT_ANONYMOUS_PER_SECOND = '2';
 let auditRows: Array<Record<string, unknown>> = [];
 let projectRows: Array<{ accountId: string }> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({
       values: (values: Record<string, unknown>) => {
@@ -40,8 +40,8 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest } = await import('../shared/audit');
-const { __clearProjectAccountLookupForTests } = await import('../shared/project-account-lookup');
+const { auditApiRequest } = await import('../services/audit/audit');
+const { __clearProjectAccountLookupForTests } = await import('../accounts/project-account-lookup');
 
 const USER = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';

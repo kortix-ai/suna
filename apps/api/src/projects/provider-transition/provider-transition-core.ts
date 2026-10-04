@@ -7,7 +7,7 @@
  * (provider-transition-worker.ts) call into these.
  */
 
-import { exponentialBackoffMs } from '../../shared/backoff';
+import { exponentialBackoffMs } from '../../lib/backoff';
 
 export type ProviderTransitionStatus =
   | 'pending'

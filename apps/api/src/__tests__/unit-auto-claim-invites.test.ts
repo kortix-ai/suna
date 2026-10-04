@@ -102,13 +102,13 @@ mock.module('@kortix/db', () => ({
   objectPolicies: {},
   permissions: {},
 }));
-mock.module('../shared/db', () => ({ db: fakeDb }));
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/db', () => ({ db: fakeDb }));
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: null } }) } },
   }),
 }));
-mock.module('../shared/resolve-account', () => ({ resolveAccountId: async () => 'acct' }));
+mock.module('../accounts/resolve-account', () => ({ resolveAccountId: async () => 'acct' }));
 mock.module('../openapi', () => ({ makeOpenApiApp: () => ({}) }));
 // The email a claim matches comes from the email-trust rule, not the token:
 // an SSO identity whose IdP did not verify the email's domain resolves to ''.

@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, sandboxComputeSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
-import { isUniqueViolation } from '../../shared/postgres-errors';
+import { db } from '../../lib/db';
+import { isUniqueViolation } from '../../lib/postgres-errors';
 import {
   claimComputeWindow,
   findStaleActiveSessions,

@@ -13,11 +13,11 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
 import { makeOpenApiApp } from '../openapi';
-import { recordAuditEvent } from '../shared/audit';
-import { db } from '../shared/db';
+import { recordAuditEvent } from '../services/audit/audit';
+import { db } from '../lib/db';
 import { withDirectoryTransaction } from '../iam/directory-transaction';
 import { emailTrustedSql } from '../iam/email-trust';
-import { getSupabase } from '../shared/supabase';
+import { getSupabase } from '../lib/supabase';
 
 // SCIM payloads are large/dynamic — model permissively.
 export const ScimResource = z.record(z.string(), z.any());

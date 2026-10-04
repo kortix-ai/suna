@@ -33,7 +33,7 @@ import * as realSnapshot from '../projects/opencode-session-snapshot';
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
 import * as realBackend from '../sandbox-proxy/backend';
-import * as realOwnership from '../shared/preview-ownership';
+import * as realOwnership from '../services/sessions/preview-ownership';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
@@ -57,7 +57,7 @@ mock.module('../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
 }));
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realOwnership,
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
@@ -120,7 +120,7 @@ mock.module('../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 const { upsertResourceGrant } = await import('../iam');
 const { forwardToSandbox } = await import('../sandbox-proxy/routes/preview');
 const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');

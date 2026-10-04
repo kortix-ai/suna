@@ -35,7 +35,7 @@ its pid), `src/__tests__/config-release-converge.test.ts` ("the late turn is
 caught before the swap"),
 `apps/api/src/projects/lib/__tests__/turn-start-convergence-cross-process.test.ts`
 (two independent caches, one bus),
-`apps/api/src/shared/__tests__/integration-pg-broadcast.test.ts` (the same over
+`apps/api/src/lib/__tests__/integration-pg-broadcast.test.ts` (the same over
 real PostgreSQL), and flow `CFG-12`, which lands a prompt inside the window on a
 real box both by racing it and by parking the convergence with
 `?delay_before_swap_ms`.

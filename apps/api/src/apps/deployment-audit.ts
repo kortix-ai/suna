@@ -7,7 +7,7 @@
  * the actor (inherited from its tick); the member who started the deployment
  * is the initiator.
  */
-import type { AuditEventInput } from '../shared/audit';
+import type { AuditEventInput } from '../services/audit/audit';
 
 export interface DeploymentAuditRef {
   appId: string;
@@ -48,7 +48,7 @@ export function deploymentOutcomeEvent(ref: DeploymentAuditRef, result: Deployme
 }
 
 async function defaultRecord(event: AuditEventInput): Promise<unknown> {
-  const { recordAuditEvent } = await import('../shared/audit');
+  const { recordAuditEvent } = await import('../services/audit/audit');
   return recordAuditEvent(event);
 }
 

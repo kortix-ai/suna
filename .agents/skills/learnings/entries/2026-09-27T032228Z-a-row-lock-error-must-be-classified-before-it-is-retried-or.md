@@ -23,7 +23,7 @@ takes a per-key row lock held to COMMIT. Also applies to reviewing a "queue
 drop" or "batch dropped" log line: before treating it as expected best-effort
 loss, check what SQLSTATE it carries.
 
-**Incident:** `AuditQueue.write()` (`apps/api/src/shared/audit-queue.ts`)
+**Incident:** `AuditQueue.write()` (`apps/api/src/services/audit/audit-queue.ts`)
 caught every write failure with one branch: log it, count it as `failed`, and
 discard the batch. `audit-db.ts` already had `isAuditContentionError` — built
 for the SAME `audit_session_sequences` row-lock contention, used correctly by
@@ -39,13 +39,13 @@ replicas still hold the same session's sequence row from different Postgres
 backends, and that stays true after this fix — only the classify-then-drop
 step changed.
 
-**Enforcement:** `apps/api/src/shared/audit-queue.test.ts`, describe block
+**Enforcement:** `apps/api/src/services/audit/audit-queue.test.ts`, describe block
 "AuditQueue never drops a contended batch": every documented contention
 SQLSTATE (57014/55P03/40001/40P01/57P03/08006/53300) and a driver-level
 connection code are asserted to requeue instead of dead-letter, a genuine data
 error (23505) is asserted to still dead-letter exactly once, and a
 "backs off exponentially instead of retrying every flushMs" case pins the
-backoff. `apps/api/src/shared/error-cause.test.ts` and `audit-db.test.ts`
+backoff. `apps/api/src/lib/error-cause.test.ts` and `audit-db.test.ts`
 already pinned the classifier itself; it now lives in the dependency-free
 `error-cause.ts` (moved from `audit-db.ts`, which imports the live `db` pool)
 so the flush path can call it directly without breaking its own

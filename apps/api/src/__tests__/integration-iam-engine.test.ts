@@ -24,7 +24,7 @@ import {
   projectMembers,
   projects,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { authorize } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';

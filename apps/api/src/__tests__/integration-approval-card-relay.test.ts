@@ -20,7 +20,7 @@ import { accountMembers, connectorCalls } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import * as realSlackApi from '../channels/slack-api';
 import * as realInstallStore from '../channels/install-store';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
@@ -38,7 +38,7 @@ mock.module('../channels/install-store', () => ({
   ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   // One synthetic Supabase session for the project owner. The decision's
   // caller, not the JWT machinery, is the subject here.
   verifySupabaseJwt: async (token: string) =>

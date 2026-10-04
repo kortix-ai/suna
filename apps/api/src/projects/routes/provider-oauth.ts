@@ -3,8 +3,8 @@ import { parseSharingIntent } from '../../connectors/share';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { recordAuditEvent, runAuditedTransaction } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import { roleAllows } from '../access';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import {
@@ -39,7 +39,7 @@ import {
   loadSecretViewsForUser,
   normalizeString,
 } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //

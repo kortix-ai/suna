@@ -1,5 +1,5 @@
 /** Shared by the secret write routes: the write response, delivery-sync summary, and boundary checks. */
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { type ProjectSecretPropagationResult } from './sandbox-env-sync';
 import { z } from '@hono/zod-openapi';
 import { SecretSchema as ContractSecretSchema } from '@kortix/api-contract';

@@ -26,7 +26,7 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 
 
 
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 
 

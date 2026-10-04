@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { withProjectGitAuth } from '../../projects/lib/git';
 import { listRepoFiles, loadProjectConfig } from '../../projects/git';
 

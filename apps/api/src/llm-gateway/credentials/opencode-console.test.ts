@@ -3,10 +3,10 @@ import { describe, expect, mock, test } from 'bun:test';
 // The refresh path persists the rotated login and audits it; record both.
 const writes: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: { update: () => ({ set: (values: Record<string, unknown>) => ({ where: async () => { writes.push(values); } }) }) },
 }));
-mock.module('../../shared/audit', () => ({ recordAuditEvent: async (event: Record<string, unknown>) => { audits.push(event); } }));
+mock.module('../../services/audit/audit', () => ({ recordAuditEvent: async (event: Record<string, unknown>) => { audits.push(event); } }));
 
 const {
   opencodeInferenceBaseUrl, parseOpencodeLogin, pollOpencodeDeviceAuth, resolveOpencodeLogin, startOpencodeDeviceAuth,

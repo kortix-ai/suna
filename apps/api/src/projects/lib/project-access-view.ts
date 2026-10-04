@@ -1,4 +1,4 @@
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import { normalizeProjectRole } from '../../iam/roles';
 import { accountRoleMap, customRoleBindings, foldProjectAccess, groupProjectGrants, objectGrantRows, projectRoleGrants } from '../../iam/read-models';

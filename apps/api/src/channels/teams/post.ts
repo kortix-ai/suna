@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { loadTeamsServiceUrlForProject } from '../install-store';
 import { deleteActivity, sendActivity, sendCard, updateCard } from '../teams-api';
 import { buildNoticeCard, withoutPostbackActions } from './cards';

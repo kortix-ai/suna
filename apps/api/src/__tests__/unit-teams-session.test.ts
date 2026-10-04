@@ -54,7 +54,7 @@ function chain(result: unknown[]): any {
 const { chatEventDedup: chatEventDedupTable } = await import('@kortix/db');
 
 let selectCount = 0;
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => {

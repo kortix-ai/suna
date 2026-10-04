@@ -17,7 +17,7 @@ let selectedRow: { config: Record<string, unknown> | null } | null = null;
 let updateCalls: Array<{ config: unknown; sessionId: string | null }> = [];
 let capturedWhereSessionId: string | null = null;
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({

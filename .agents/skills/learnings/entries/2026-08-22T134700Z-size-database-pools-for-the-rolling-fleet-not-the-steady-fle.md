@@ -22,7 +22,7 @@ long-lived pool and every concurrent startup probe. Reserve explicit capacity
 for Supabase, operators, migrations, and request-scoped clients. A steady-state
 calculation is invalid for a service with `deployment_maximum_percent = 200`.
 
-**The enforcement.** `apps/api/src/shared/database-capacity.test.ts` pins the
+**The enforcement.** `apps/api/src/lib/database-capacity.test.ts` pins the
 production server limit, ECS maximum capacity, rolling overlap, main pool,
 audit pool, leader connection, startup probe, and non-API reserve. The test
 fails when the API connection ceiling exceeds the available application budget.

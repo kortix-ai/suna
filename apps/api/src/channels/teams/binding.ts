@@ -1,6 +1,6 @@
 import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
 import { stripTeamsMentions } from './util';

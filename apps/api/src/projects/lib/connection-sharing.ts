@@ -10,7 +10,7 @@ import { accountGroups } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { loadObjectGrants } from '../../iam/authorize';
 import { objectGrantRows } from '../../iam/read-models';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { lookupEmailsByUserIds } from './access';
 
 export async function loadConnectionSharing(input: {

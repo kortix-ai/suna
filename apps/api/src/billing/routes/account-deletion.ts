@@ -6,12 +6,12 @@ import {
   cancelAccountDeletion,
   deleteAccountImmediately,
 } from '../services/account-deletion';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveAccountId } from '../../accounts/resolve-account';
 import { makeOpenApiApp, json, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 
 import { actorOf } from '../../iam/actor';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
 
 async function resolveDeletionContext(c: any) {

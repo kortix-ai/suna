@@ -9,7 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from '../lib/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -29,14 +29,14 @@ import {
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
-import { db, withDbTransaction } from '../shared/db';
-import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
-import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
+import { db, withDbTransaction } from '../lib/db';
+import { TokenBucketRateLimiter, enforceRateLimit } from '../middleware/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../services/audit/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
-import { readJsonObject } from '../shared/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
 // in-session Connect button's finalize can reuse it. Re-exported: this module is where
@@ -104,7 +104,7 @@ const ConnectorFinalizeSchema = z.object({
 // client IP so a flood of garbage tokens (each a distinct, never-colliding key)
 // can't allocate unbounded rate-limit buckets or dodge the limit entirely.
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
-// replica-local: limit × API replicas (shared/rate-limit.ts).
+// replica-local: limit × API replicas (middleware/rate-limit.ts).
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
 function createSetupLinkRateLimitMiddleware() {

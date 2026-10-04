@@ -28,9 +28,9 @@ Object.assign(process.env, {
   DAYTONA_TARGET: 'us',
 });
 
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 const { seedAccount } = await import('../__tests__/helpers/integration-fixtures');
-const { recordUsageEvent } = await import('../shared/usage-events');
+const { recordUsageEvent } = await import('../services/usage/usage-events');
 const { recordGatewayUsage } = await import('./hooks');
 
 const ACTOR = '00000000-0000-4000-a000-000000009b02';

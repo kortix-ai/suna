@@ -16,7 +16,7 @@ import {
 } from '../lib/access';
 import { AccessMemberSchema, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/user-identity';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerProjectAccessRoutes(): void {
   // GET /v1/projects/:projectId/access
   // Lists every account member and their explicit/effective project access.

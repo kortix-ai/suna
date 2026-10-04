@@ -3,12 +3,12 @@ import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../lib/config';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
-import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
+import { revokeAllPublicSharesForSession } from '../../services/sessions/session-public-shares';
 import {
   legacyRehydrateSpec,
   rehydrateSessionChat,

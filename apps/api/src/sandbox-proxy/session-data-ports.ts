@@ -1,4 +1,4 @@
-import { OPENCODE_PORTS } from '../shared/opencode-ports';
+import { OPENCODE_PORTS } from '../services/sessions/opencode-ports';
 
 /**
  * Ports whose traffic is the SESSION's conversation, not arbitrary user code.
@@ -8,7 +8,7 @@ import { OPENCODE_PORTS } from '../shared/opencode-ports';
  *   - 8000 — the in-box agent daemon (OpenCode REST/SSE + owner-synced secrets)
  *   - 4096 / 4097 — opencode's own HTTP/SSE server, reached DIRECTLY on Daytona.
  *     A PAIR, because the daemon's verified reload boots the replacement on the
- *     idle half and swaps onto it, so either can be live (shared/opencode-ports).
+ *     idle half and swaps onto it, so either can be live (services/sessions/opencode-ports).
  *     Listing only 4096 would reopen the leak this module documents below on any
  *     session that has reloaded its config — the gate would wave the live port
  *     through as ordinary user code.
@@ -25,7 +25,7 @@ import { OPENCODE_PORTS } from '../shared/opencode-ports';
  * gate is what does that, via `callerSessionId`. Skipping it for :4096 handed
  * end-user A's sandbox token a path to end-user B's conversation on Daytona.
  *
- * `PUBLIC_SHARE_BLOCKED_PORTS` (shared/session-public-shares.ts) already treats
+ * `PUBLIC_SHARE_BLOCKED_PORTS` (services/sessions/session-public-shares.ts) already treats
  * the opencode ports and 8000 as equally sensitive. This is the same judgement, applied to the
  * gate that had drifted from it.
  */

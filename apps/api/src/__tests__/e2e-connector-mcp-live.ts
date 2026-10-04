@@ -15,7 +15,7 @@
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, desc, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { connectors, connectorActions, connectorCalls } from '@kortix/db';
 import { createAccountToken } from '../repositories/account-tokens';
 

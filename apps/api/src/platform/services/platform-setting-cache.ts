@@ -37,7 +37,7 @@ export function createCachedPlatformSetting<T>(
   async function refresh(): Promise<void> {
     let value: T = parse(undefined);
     try {
-      const { hasDatabase, db } = await import('../../shared/db');
+      const { hasDatabase, db } = await import('../../lib/db');
       if (hasDatabase) {
         const { platformSettings } = await import('@kortix/db');
         const { eq } = await import('drizzle-orm');
@@ -64,7 +64,7 @@ export function createCachedPlatformSetting<T>(
   }
 
   async function persist(value: unknown | null): Promise<void> {
-    const { hasDatabase, db } = await import('../../shared/db');
+    const { hasDatabase, db } = await import('../../lib/db');
     if (!hasDatabase) {
       throw new Error(`Database not configured — cannot store platform setting "${key}"`);
     }

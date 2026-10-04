@@ -8,16 +8,16 @@ import { createCachedPlatformSetting } from '../platform/services/platform-setti
 // hot reloads — the promise never settles, the handler hangs, and Bun's
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
-import { hasDatabase } from '../shared/db';
+import { hasDatabase } from '../lib/db';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
-import { computeEtag, etagMatches } from '../shared/http-cache';
-import { readJsonObject } from '../shared/http-body';
-import { getPlatformRole } from '../shared/platform-roles';
-import { createDemoRequestRateLimitMiddleware } from '../shared/rate-limit';
+import { computeEtag, etagMatches } from '../lib/http-cache';
+import { readJsonObject } from '../lib/http-body';
+import { getPlatformRole } from '../iam/platform-roles';
+import { createDemoRequestRateLimitMiddleware } from '../middleware/rate-limit';
 
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public

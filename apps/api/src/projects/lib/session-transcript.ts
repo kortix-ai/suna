@@ -5,8 +5,8 @@ import type {
   SessionTranscript as SessionTranscriptDigest,
   SessionTranscriptSyncEnvelope,
 } from '@kortix/api-contract';
-import { db } from '../../shared/db';
-import { withTimeout } from '../../shared/with-timeout';
+import { db } from '../../lib/db';
+import { withTimeout } from '../../lib/with-timeout';
 import { logger as appLogger } from '../../lib/logger';
 import {
   ensureOpencodeSessionPin,

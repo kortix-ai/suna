@@ -116,7 +116,7 @@ export function applySessionSort(
 
 /**
  * The owner-catalog fetch's page size — deliberately the API's actual
- * ceiling (`MAX_COST_LIMIT` in `apps/api/src/shared/cost-window.ts`, which
+ * ceiling (`MAX_COST_LIMIT` in `apps/api/src/services/usage/cost-window.ts`, which
  * `parseCostPagination` enforces on every `/usage/session-costs` request),
  * not the visible table's `SESSION_COST_PAGE_SIZE` (25). This query exists
  * only to enumerate owners for the dropdown, so it should see as much of the

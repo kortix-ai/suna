@@ -83,7 +83,7 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  *
  * `account_id` is ALWAYS resolved here — never left for the server to
  * default from an omitted key. `resolveAccountId`
- * (`apps/api/src/shared/resolve-account.ts:117-129`) picks the caller's
+ * (`apps/api/src/accounts/resolve-account.ts:117-129`) picks the caller's
  * EARLIEST-JOINED account membership with NO role check when `account_id` is
  * absent:
  *
@@ -244,7 +244,7 @@ export function buildManagedImportRequest(
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
  * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
- * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
+ * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/billing/account-limits.ts`)
  * means every free-tier user who already has one project and clicks
  * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply

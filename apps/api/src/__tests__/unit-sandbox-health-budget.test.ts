@@ -21,8 +21,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { TimeoutError, withTimeout } from '../shared/with-timeout';
-import { ttlMemo } from '../shared/ttl-memo';
+import { TimeoutError, withTimeout } from '../lib/with-timeout';
+import { ttlMemo } from '../lib/ttl-memo';
 
 // Kept in sync with apps/api/src/projects/routes/sandboxes.ts. Re-declared here rather
 // than imported because the route module validates server env (FRONTEND_URL,

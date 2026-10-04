@@ -1327,7 +1327,7 @@ flow(
         )
       ).rows as Array<{ action: string; before: any; after: any; agent_name: string | null }>;
     // Audit rows reach the table through the 250 ms flush queue
-    // (`AUDIT_FLUSH_MS_DEFAULT`, apps/api/src/shared/audit-queue.ts): the
+    // (`AUDIT_FLUSH_MS_DEFAULT`, apps/api/src/services/audit/audit-queue.ts): the
     // descriptor answers before the row is committed. A read taken the moment
     // the call returns is ahead of the writer, and CFG-4 read 0 rows 0.5 s into
     // the flow on CI run 36161395127. So: wait for a row the step expects, and

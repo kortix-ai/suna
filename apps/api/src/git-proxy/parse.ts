@@ -3,7 +3,7 @@
  * stay trivially unit-testable.
  */
 import type { GitScope } from '../projects/git-backends';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 /** Strip an optional trailing `.git` from the project path segment. */
 export function normalizeProjectId(raw: string): string {

@@ -9,7 +9,7 @@
  * stays behavior-preserving: the same assertions must pass before and after.
  *
  * Unit-level by design: the drizzle calls are captured through a mocked
- * `../../shared/db` transaction. The Docker-backed integration suites
+ * `../../lib/db` transaction. The Docker-backed integration suites
  * (`repository-replacement.integration.test.ts`,
  * `project-registration.icon.integration.test.ts`) carry the end-to-end
  * proof against a real PostgreSQL.
@@ -120,7 +120,7 @@ function makeTx() {
   };
 }
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     transaction: async (fn: (tx: unknown) => unknown) => fn(makeTx()),
   },

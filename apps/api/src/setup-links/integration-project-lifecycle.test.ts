@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, mock, test } from 'bun:test';
 import { accounts, projects, projectSecrets } from '@kortix/db';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { mintSetupLink } from './token';
 
 const propagated: string[] = [];

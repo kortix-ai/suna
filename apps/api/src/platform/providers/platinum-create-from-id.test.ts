@@ -28,7 +28,7 @@ setTestEnv('PLATINUM_TEMPLATE', 'tpl_default');
 let calls: Array<{ path: string; method: string; body: Record<string, unknown> | undefined }> = [];
 let sandboxesError: Error | null = null;
 
-mock.module('../../shared/platinum', () => ({
+mock.module('../../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected Platinum materialization request');

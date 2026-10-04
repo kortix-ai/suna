@@ -6,7 +6,7 @@
 // monitor, filtered line) and what it must never let a template author
 // suppress (lifecycle events).
 //
-// Mocks the split fire/state seams, `../shared/db`, and
+// Mocks the split fire/state seams, `../lib/db`, and
 // `../feature-flags/registry` via `mock.module` — process-global in bun:test,
 // so this file runs under the suite's `--isolate`.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -42,7 +42,7 @@ function thenableUpdate(table: unknown, patch: Record<string, unknown>) {
   return pending;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: (_fields?: unknown) => ({

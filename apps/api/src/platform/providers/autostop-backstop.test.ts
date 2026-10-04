@@ -22,7 +22,7 @@ const cfg: {
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES?: number;
 } = {};
 mock.module('../../lib/config', () => ({ config: cfg, SANDBOX_VERSION: 'test-version' }));
-mock.module('../../shared/db', () => ({ db: {} }));
+mock.module('../../lib/db', () => ({ db: {} }));
 
 const { providerAutoStopBackstopMinutes } = await import('./index');
 const { billingLivenessGraceMinutes } = await import('../../billing/services/compute-liveness');

@@ -5,15 +5,15 @@
 
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
-import { db } from '../shared/db';
-import { createLastUsedTracker } from '../shared/throttled-last-used';
-import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
+import { db } from '../lib/db';
+import { createLastUsedTracker } from './throttled-last-used';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../auth/token-hash';
 import {
   generateServiceAccountSecret,
   hashSecretKey,
   isApiKeySecretConfigured,
   isServiceAccountToken,
-} from '../shared/crypto';
+} from '../lib/crypto';
 
 const updateLastUsedThrottled = createLastUsedTracker((saId) =>
   db.update(serviceAccounts).set({ lastUsedAt: new Date() }).where(eq(serviceAccounts.serviceAccountId, saId)),

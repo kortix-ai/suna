@@ -36,8 +36,8 @@
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
-import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
-import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
+import { isDaytonaRateLimitError } from '../../services/sandboxes/daytona/rate-limit';
+import { isDaytonaTransientProviderError } from '../../services/sandboxes/daytona/transient';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
@@ -1029,8 +1029,8 @@ async function reconcileNotRunningSandbox(
 function countReapFailure(result: ReapResult, row: ReapCandidate, err: unknown): void {
   // An expected, transient provider failure — a Daytona org-wide 429
   // (`ThrottlerException`) or a gateway blip — is the provider working as
-  // designed. Every other call site classifies it (`shared/daytona-rate-limit.ts`,
-  // `shared/daytona-transient.ts`) so it never pages; the reaper must too,
+  // designed. Every other call site classifies it (`services/sandboxes/daytona/rate-limit.ts`,
+  // `services/sandboxes/daytona/transient.ts`) so it never pages; the reaper must too,
   // or one org throttle across a live fleet emits an error line per box.
   // Counting it separately and logging NOTHING here keeps this page quiet
   // while the next pass still retries the renewal.

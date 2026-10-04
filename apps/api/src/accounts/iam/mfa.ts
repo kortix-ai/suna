@@ -9,13 +9,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({

@@ -9,7 +9,7 @@
  * validation (no DB) and the IAM verdict for `project.app.read`.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realCrypto from '../shared/crypto';
+import * as realCrypto from '../lib/crypto';
 
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.kortix.com';
@@ -43,7 +43,7 @@ const BY_ID = new Map(Object.values(TOKENS).map((t) => [t.tokenId, t]));
 const asResult = (t: Tok | undefined) =>
   t ? { isValid: true, userId: HUMAN, accountId: ACCOUNT, ...t } : { isValid: false, error: 'Invalid PAT' };
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   ...realCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),

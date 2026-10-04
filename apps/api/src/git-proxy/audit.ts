@@ -4,7 +4,7 @@
  * The proxy authenticates its own git Basic/Bearer credential, so the auth
  * middleware never sees an identity here. It used to write its own row per
  * clone and push; it now writes INTO the request's audit scope and the server
- * edge writes the one row (shared/audit-scope.ts):
+ * edge writes the one row (services/audit/audit-scope.ts):
  *
  *   - `bindGitProxyPrincipal` — called by the proxy's authenticator the moment
  *     the credential is proven, so EVERY git request is attributed: ref
@@ -17,7 +17,7 @@
  *
  * Attribution follows:
  * a session credential names the agent, the human it acts on behalf of, and
- * the initiator (shared/agent-audit-attribution.ts, resolved when the row is
+ * the initiator (services/audit/agent-audit-attribution.ts, resolved when the row is
  * written); a person names the user; a monitor box or an account API key is
  * `system`.
  */
@@ -28,11 +28,11 @@ import type { ProjectRow } from '../projects/lib/serializers';
 import { eq } from 'drizzle-orm';
 import { accountTokens } from '@kortix/db';
 import { loadTokenBinding } from '../iam/actor';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { agentPrincipalModeFor } from '../iam/agent-principal';
-import type { AuditActorType, AuditOutcome } from '../shared/audit';
-import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
-import { resolveAgentAuditAttribution, type AgentAuditAttribution } from '../shared/agent-audit-attribution';
+import type { AuditActorType, AuditOutcome } from '../services/audit/audit';
+import { annotateAuditEvent, bindAuditPrincipal } from '../services/audit/audit-scope';
+import { resolveAgentAuditAttribution, type AgentAuditAttribution } from '../services/audit/agent-audit-attribution';
 
 export type GitAuditAction = 'git.clone' | 'git.push';
 

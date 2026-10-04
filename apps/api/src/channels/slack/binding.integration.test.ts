@@ -10,7 +10,7 @@ import { accounts, chatThreads, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { findChatThread } from '../core/threads';
 import { deleteSlackInstall, saveSlackInstall } from '../install-store';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { bindSlackThreadToSession } from './binding';
 import { resolveOauthProject } from './dispatch';
 

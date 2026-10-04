@@ -3,18 +3,18 @@ import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
-import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
-import { canAccessPreviewSandbox } from '../shared/preview-ownership';
-import { getSupabase } from '../shared/supabase';
-import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
-// From its own module, not '../shared/jwt-verify': five test files replace that
+import { isKortixToken, isAccountToken, isServiceAccountToken } from '../lib/crypto';
+import { canAccessPreviewSandbox } from '../services/sessions/preview-ownership';
+import { getSupabase } from '../lib/supabase';
+import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../auth/jwt-verify';
+// From its own module, not '../auth/jwt-verify': five test files replace that
 // module wholesale, and a mock cannot be allowed to change how a real failure is
 // classified.
-import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
+import { isInconclusiveVerifyFailure } from '../auth/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
-import { requestClientKey } from '../shared/client-ip';
+import { auditLoginFail, auditLoginSuccess } from '../services/audit/auth-audit';
+import { requestClientKey } from '../lib/client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { withActor } from './auth-actor';

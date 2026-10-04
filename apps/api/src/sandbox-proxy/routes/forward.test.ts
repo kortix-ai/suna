@@ -19,8 +19,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
 import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../projects/wire-message-id';
-import * as realKortixUserContext from '../../shared/kortix-user-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
+import * as realKortixUserContext from '../../services/sessions/kortix-user-context';
+import * as realPreviewOwnership from '../../services/sessions/preview-ownership';
 import { PROXY_ATTEMPT_TIMEOUT_MS, PROXY_IMPORT_ATTEMPT_TIMEOUT_MS } from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
@@ -41,11 +41,11 @@ mock.module('../../lib/request-context', () => ({
 }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every other one.
-mock.module('../../shared/kortix-user-context', () => ({
+mock.module('../../services/sessions/kortix-user-context', () => ({
   ...realKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
 }));
-mock.module('../../shared/preview-ownership', () => ({
+mock.module('../../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,

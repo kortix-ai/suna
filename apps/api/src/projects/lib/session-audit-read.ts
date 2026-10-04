@@ -22,7 +22,7 @@
 
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { connectorCalls, connectors } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { approvalPageUrl } from '../../setup-links/token';
 import { lookupEmailsByUserIds } from '../lib/access';
 

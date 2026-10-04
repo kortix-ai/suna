@@ -14,7 +14,7 @@ import type { Context } from 'hono';
 // proof is `src/__tests__/integration-sandbox-metadata-race.test.ts` (the
 // `db-suites` lane); this hermetic guard keeps the SHAPE in the unit run.
 const statements: Array<{ kind: 'select' | 'update'; set?: unknown; where?: unknown }> = [];
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => {
       statements.push({ kind: 'select' });

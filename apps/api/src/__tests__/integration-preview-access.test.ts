@@ -2,7 +2,7 @@
  * Integration test (real local PostgreSQL): who may reach a sandbox through
  * the preview proxy, and which public share links resolve.
  *
- * `shared/preview-ownership.ts` and `shared/session-public-shares.ts` decide
+ * `services/sessions/preview-ownership.ts` and `services/sessions/session-public-shares.ts` decide
  * both. Every route-level suite replaces them with a stub, so this file is the
  * one place their real rules run: against real accounts, memberships,
  * platform roles, sessions, sandboxes and share rows.
@@ -17,13 +17,13 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   canAccessPreviewSandbox,
   canAccessSandboxSession,
   clearPreviewOwnershipCache,
-} from '../shared/preview-ownership';
-import { createPublicShare, resolvePublicShare } from '../shared/session-public-shares';
+} from '../services/sessions/preview-ownership';
+import { createPublicShare, resolvePublicShare } from '../services/sessions/session-public-shares';
 import { insertIntoView } from './helpers/compat-views';
 
 const run = crypto.randomUUID().slice(0, 8);

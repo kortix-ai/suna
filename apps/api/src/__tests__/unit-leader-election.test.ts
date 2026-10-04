@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { interpretAcquireResult, runsSingletonWorkers, shouldDemote } from '../shared/leader-election';
+import { interpretAcquireResult, runsSingletonWorkers, shouldDemote } from '../lib/leader-election';
 
 const ME = 'host-123-abc';
 const OTHER = 'host-999-xyz';

@@ -31,7 +31,7 @@ mock.module('../../projects/secrets', () => ({
   resolveProjectSecretForConsumer,
 }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     update: (table: unknown) => ({
       set: (value: Record<string, unknown>) => {
@@ -47,7 +47,7 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-mock.module('../../shared/audit', () => ({
+mock.module('../../services/audit/audit', () => ({
   recordAuditEvent: async (event: Record<string, unknown>) => {
     audits.push(event);
   },

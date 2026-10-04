@@ -40,7 +40,7 @@ import {
 import { monthStartUtc, monthlyComputeColumns, sumMonthlyComputeCost } from '../../billing/services/compute-accrual';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { MONITOR_PROVIDER, monitorProviderConfigured } from './monitor-box-provider';
 import {
   MONITOR_EVENT_RETENTION_DAYS,

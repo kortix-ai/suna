@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { creditAccounts, sandboxMembers, sandboxes } from '@kortix/db';
 
 export interface CapStatus {

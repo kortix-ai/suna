@@ -6,7 +6,7 @@
 // the push sender (list a user's tokens, drop tokens Expo reports as gone).
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { pushDeviceTokens, type Database } from '@kortix/db';
-import { db as defaultDb } from '../shared/db';
+import { db as defaultDb } from '../lib/db';
 
 export type PushPlatform = 'ios' | 'android';
 

@@ -20,7 +20,7 @@ function paramsOf(query: unknown): string[] {
   return params.filter((p): p is string => typeof p === 'string');
 }
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     execute: async (query: unknown) => {
       state.calls.push({ ids: paramsOf(query) });

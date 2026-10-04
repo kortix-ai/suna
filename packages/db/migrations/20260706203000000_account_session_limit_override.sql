@@ -6,7 +6,7 @@
 -- (or lower) the cap for a single account without changing its plan tier —
 -- e.g. enterprise deals or internal dogfood accounts. NULL (the default)
 -- means "no override": the account's tier decides. Resolution lives in
--- resolveAccountSessionLimit (apps/api/src/shared/account-limits.ts).
+-- resolveAccountSessionLimit (apps/api/src/billing/account-limits.ts).
 
 ALTER TABLE "kortix"."credit_accounts"
   ADD COLUMN IF NOT EXISTS "max_concurrent_sessions" integer;

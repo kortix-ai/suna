@@ -8,7 +8,7 @@ import {
   projectTriggerSessionAccessGrants,
 } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveAgentRunAttribution } from './session-lifecycle/actor';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,

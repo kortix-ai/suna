@@ -26,9 +26,9 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
-import { getDaytona } from '../../shared/daytona';
-import { withTimeout } from '../../shared/with-timeout';
+import { db } from '../../lib/db';
+import { getDaytona } from '../../services/sandboxes/daytona/client';
+import { withTimeout } from '../../lib/with-timeout';
 import { ensureSandboxImage } from '../../snapshots/builder';
 import type { GitBackedProject } from '../../projects/git';
 import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';

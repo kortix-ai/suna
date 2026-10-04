@@ -2,7 +2,7 @@ import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { reloadSessionConfig, type SessionReloadResult } from './session-reload';
 
 /**

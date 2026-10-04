@@ -136,7 +136,7 @@ mock.module('../../secrets/account-resource', () => ({
   },
 }));
 
-mock.module('../../shared/db', () => ({ db: {
+mock.module('../../lib/db', () => ({ db: {
   select: () => ({ from: (table: unknown) => {
     if (table !== sessionProviderSecretPools) throw new Error('unexpected select');
     let rows: unknown[] = [];

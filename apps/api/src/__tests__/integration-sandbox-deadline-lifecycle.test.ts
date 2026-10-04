@@ -31,7 +31,7 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 const { extendSandboxDeadline, shortenSandboxDeadline } = await import(
   '../projects/sandbox-deadline'
 );

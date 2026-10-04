@@ -34,12 +34,12 @@ import {
   tunnelDeviceAuthRequests,
   usageEvents,
 } from '@kortix/db';
-import { getSupabase } from '../../shared/supabase';
-import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
-import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
+import { getSupabase } from '../../lib/supabase';
+import { forgetUserJwtLiveness } from '../../auth/jwt-liveness';
+import { getStripe } from '../stripe';
+import { db } from '../../lib/db';
 import { BillingError } from '../errors';
-import { isUniqueViolation } from '../../shared/postgres-errors';
+import { isUniqueViolation } from '../../lib/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
 import {
@@ -209,7 +209,7 @@ export interface SandboxReclaimSummary {
  * Every account this user OWNS, including the account passed in.
  *
  * Deletion used to sweep exactly one account: the route resolves the caller
- * through `resolveAccountId` (shared/resolve-account.ts), which returns the
+ * through `resolveAccountId` (accounts/resolve-account.ts), which returns the
  * user's EARLIEST-JOINED membership and nothing else. A user who owned a team
  * account created after their personal one therefore had every team sandbox
  * survive the deletion, still running and still billing, with no account left

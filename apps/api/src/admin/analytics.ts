@@ -27,7 +27,7 @@ import { and, gte, lt, sql } from 'drizzle-orm';
 
 import { classifyLedgerKind } from '../billing/services/usage-breakdown';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import type { AppEnv } from '../types/app-env';
 import {
   DEFAULT_ANALYTICS_DAYS,

@@ -24,7 +24,7 @@ function makeChain(op: string): DbChain {
   return chain;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain('select'),
     insert: () => makeChain('insert'),

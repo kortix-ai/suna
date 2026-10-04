@@ -15,7 +15,7 @@
  */
 
 import type Stripe from 'stripe';
-import { getStripe } from '../../shared/stripe';
+import { getStripe } from '../stripe';
 import { wallet } from '../wallet';
 import {
   INCLUDED_CREDITS_RATIO,

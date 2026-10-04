@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { sandboxes, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 /**
  * The serviceKey == the sandbox's KORTIX_TOKEN — the bearer the daemon's

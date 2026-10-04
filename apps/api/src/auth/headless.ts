@@ -18,19 +18,19 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types/app-env';
-import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { auditLoginFail } from '../shared/auth-audit';
+import { TokenBucketRateLimiter } from '../middleware/rate-limit';
+import { auditLoginFail } from '../services/audit/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
-import { requestClientIp, requestClientKey } from '../shared/client-ip';
+import { requestClientIp, requestClientKey } from '../lib/client-ip';
 import { config } from '../lib/config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
-// replica-local: limit × API replicas (shared/rate-limit.ts).
+// replica-local: limit × API replicas (middleware/rate-limit.ts).
 const limiter = new TokenBucketRateLimiter('headless-auth');
 /** Per client IP: generous for a human, tight enough to blunt credential stuffing. */
 const IP_POLICY = { limit: 30, windowMs: 60_000 };

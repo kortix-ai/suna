@@ -9,8 +9,8 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { oauthClients } from '@kortix/db';
-import { db } from '../shared/db';
-import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
+import { db } from '../lib/db';
+import { hashSecretKey, randomAlphanumeric } from '../lib/crypto';
 import { isOAuthScope, OAUTH_SCOPES } from '../oauth/access-token';
 
 export const OAUTH_CLIENT_SECRET_PREFIX = 'kortix_ocs_';

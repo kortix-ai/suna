@@ -7,7 +7,7 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import { config } from '../lib/config';
-import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
+import { getSupabase, toPublicStorageUrl } from '../lib/supabase';
 import { ensureBackupBucket } from '../projects/legacy-migration-storage';
 
 function arg(flag: string): string | undefined {

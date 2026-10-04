@@ -10,7 +10,7 @@
 // API and the gateway can be flipped or rolled back INDEPENDENTLY from this one
 // router with no DNS change. Both backends of a service run the same image
 // against the same DB, so a flip is safe (background-worker leadership is a
-// single global DB lease — see apps/api/src/shared/leader-election.ts — so only
+// single global DB lease — see apps/api/src/lib/leader-election.ts — so only
 // one side ever runs cron). Flipping is instant and instantly reversible.
 const STRICT_TRANSPORT_SECURITY = 'max-age=31536000';
 const MAINTENANCE_LEVELS = new Set([

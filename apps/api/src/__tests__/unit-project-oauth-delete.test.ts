@@ -28,7 +28,7 @@ const auditEvents: Array<Record<string, unknown>> = [];
 // for 'manager'; the GET secrets route uses the same test for `canManageShared`.
 let effectiveRole: 'manager' | 'member' = 'manager';
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     delete: (table: unknown) => ({
@@ -67,16 +67,16 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
   },
 }));
 
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   inferAuditSource: () => 'api',
   recordAuditEvent: async (event: Record<string, unknown>) => {
     auditEvents.push(event);
   },
   runAuditedTransaction: async <T>(
-    operation: (tx: typeof import('../shared/db').db) => Promise<T>,
+    operation: (tx: typeof import('../lib/db').db) => Promise<T>,
     event: (result: T) => Record<string, unknown>,
   ) => {
-    const result = await operation((await import('../shared/db')).db);
+    const result = await operation((await import('../lib/db')).db);
     auditEvents.push(event(result));
     return result;
   },

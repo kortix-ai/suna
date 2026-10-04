@@ -18,7 +18,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
-import * as realDbModule from '../shared/db';
+import * as realDbModule from '../lib/db';
 import * as realAccess from '../projects/lib/access';
 
 const PROJECT_ID = crypto.randomUUID();

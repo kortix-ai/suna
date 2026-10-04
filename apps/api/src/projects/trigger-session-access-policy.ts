@@ -1,5 +1,5 @@
 import type { TriggerSessionAccess } from '@kortix/api-contract';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 export const PRIVATE_TRIGGER_SESSION_ACCESS: TriggerSessionAccess = {
   mode: 'private',

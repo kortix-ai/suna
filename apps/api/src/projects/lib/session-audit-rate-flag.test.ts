@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 let updateCalls: Array<{ set: Record<string, unknown> }> = [];
 let updateShouldThrow = false;
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     update: () => ({

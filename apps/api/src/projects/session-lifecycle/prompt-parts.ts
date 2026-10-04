@@ -15,7 +15,7 @@
 import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 
 export const PROMPT_MAX_PARTS = 64;
 export const PROMPT_TEXT_PREVIEW_CHARS = 2000;

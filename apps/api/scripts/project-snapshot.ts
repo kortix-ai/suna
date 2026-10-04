@@ -23,7 +23,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3';
 import { projectSnapshotArchives, projects } from '@kortix/db';
-import { db } from '../src/shared/db';
+import { db } from '../src/lib/db';
 import {
   enqueueProjectSnapshot,
   queueProjectSnapshotForRef,

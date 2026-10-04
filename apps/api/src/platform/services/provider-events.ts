@@ -1,4 +1,4 @@
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { providerEvents } from '@kortix/db';
 
 export type ProviderEventInput = {

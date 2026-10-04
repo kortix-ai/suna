@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
 import { logger as appLogger } from '../lib/logger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 import { WARM_SESSION_METADATA_KEY } from './lib/warm-sessions';
 

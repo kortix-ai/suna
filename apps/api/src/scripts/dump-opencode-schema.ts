@@ -1,4 +1,4 @@
-import { getDaytona } from '../shared/daytona';
+import { getDaytona } from '../services/sandboxes/daytona/client';
 
 const externalId = Bun.argv[2];
 if (!externalId) { console.error('usage: dump-opencode-schema.ts <external_id>'); process.exit(2); }

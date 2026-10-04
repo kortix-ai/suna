@@ -17,7 +17,7 @@ query reads.
 **Incident:** 2026-09-26, v0.13.32 deploy-prod run 36199394074. Migration
 `20260924221824222_connector_sync_fences_and_usage_request_id` timed out adding
 `usage_events.request_id`. The holder was the audit reconciliation query
-(`apps/api/src/shared/audit-reconciliation.ts`, `WITH candidates AS`): ~3M calls,
+(`apps/api/src/services/audit/audit-reconciliation.ts`, `WITH candidates AS`): ~3M calls,
 mean 0.2-0.5 s, max 25 s, `AccessShareLock` on `usage_events` and `projects`.
 The whole migration rolled back; prod stayed on v0.13.31. The re-run applied all
 22 migrations. No user impact.

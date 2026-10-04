@@ -21,7 +21,7 @@ import { logger } from '../../lib/logger';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded, promptNeedsLandingProof } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';

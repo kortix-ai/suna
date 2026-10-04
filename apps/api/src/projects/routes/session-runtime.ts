@@ -18,7 +18,7 @@ import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { isWarmProjectSession } from '../lib/warm-sessions';

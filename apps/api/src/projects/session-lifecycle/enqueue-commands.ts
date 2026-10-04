@@ -1,7 +1,7 @@
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import type { CreateSessionCommand, QueuedCreateSessionPayload, SessionInvocationSource, SessionLifecycleResult } from './types';
 import type { PromptOverridesWire, PromptPartWire, QueuedContinueSessionPayload } from './prompt-payload';

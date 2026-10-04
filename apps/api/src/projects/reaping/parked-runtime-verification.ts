@@ -40,7 +40,7 @@ import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { endComputeSession } from '../../billing/services/compute-metering';
 import { type SandboxProviderName, config } from '../../lib/config';
 import { type InPlaceRecoveryStatus, getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,

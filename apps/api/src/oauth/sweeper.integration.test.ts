@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import { oauthAccessTokens, oauthAuthorizationRequests, oauthClients, oauthConsents } from '@kortix/db';
 import { eq, inArray } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { SELF_REGISTERED_DESCRIPTION, sweepAbandonedSelfRegisteredClients, sweepExpiredAuthorizationRequests } from './index';
 
 const confirmed = Boolean(

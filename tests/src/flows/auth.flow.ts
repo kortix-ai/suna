@@ -10,7 +10,7 @@
  * that PRX-1 and other flows need for the rest of the run.
  * Logout revokes the GoTrue session. `supabaseAuth` confirms every access
  * token (ES256 and HS256) with GoTrue through the liveness cache in
- * apps/api/src/shared/jwt-liveness.ts, so the revoked bearer gets 401 on
+ * apps/api/src/auth/jwt-liveness.ts, so the revoked bearer gets 401 on
  * `GET /v1/accounts/me`, a route without the account session gate.
  * The logout endpoint is documented to *always* return 200 once authed — even
  * when there's nothing to revoke — so clients never have to handle "not signed

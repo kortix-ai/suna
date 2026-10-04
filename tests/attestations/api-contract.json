@@ -58,7 +58,7 @@
     "apps/api/src/secrets/http-broker.ts",
     "apps/api/src/setup-links/approval-app.ts",
     "apps/api/src/setup-links/public-app.ts",
-    "apps/api/src/shared/opencode-audit-ingestion.ts",
+    "apps/api/src/services/audit/opencode-audit-ingestion.ts",
     "apps/api/src/snapshots/runtime-images.ts",
     "apps/api/src/snapshots/template-runtime-fingerprint.ts",
     "apps/api/src/snapshots/templates-fingerprint.test.ts",

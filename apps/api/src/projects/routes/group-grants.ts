@@ -19,14 +19,14 @@ import {
 } from '../../iam/read-models';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 
 /**

@@ -10,9 +10,9 @@
 
 import { rm } from 'node:fs/promises';
 import { Image } from '@daytonaio/sdk';
-import { getDaytona, isDaytonaConfigured, listDaytonaSnapshots } from '../../shared/daytona';
-import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
-import { withTimeout } from '../../shared/with-timeout';
+import { getDaytona, isDaytonaConfigured, listDaytonaSnapshots } from '../../services/sandboxes/daytona/client';
+import { isDaytonaRateLimitError } from '../../services/sandboxes/daytona/rate-limit';
+import { withTimeout } from '../../lib/with-timeout';
 import {
   DEFAULT_CPU,
   DEFAULT_DISK_GB,
@@ -335,7 +335,7 @@ const RATE_LIMIT_RETRY_BASE_MS = 15_000;
 // Requests") MUST be retryable: a throttled build attempt is not a build
 // failure, and failing it re-queues the whole bake later — which generates
 // MORE API traffic and feeds the very storm that caused the 429 (observed
-// live in prod 2026-07-22). Classification lives in shared/daytona-rate-limit
+// live in prod 2026-07-22). Classification lives in services/sandboxes/daytona/rate-limit
 // (the same conservative classifier app.onError uses).
 function isTransientDaytonaError(err: unknown): boolean {
   if (isDaytonaRateLimitError(err)) return true;

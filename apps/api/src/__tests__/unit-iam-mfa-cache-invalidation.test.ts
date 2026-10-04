@@ -5,7 +5,7 @@
  * up to IAM_CACHE_TTL_MS — an admin who just disabled the requirement stays
  * locked out, or a member who should now be locked out keeps access.
  *
- * ttlMemo bypasses caching entirely under `bun test` (see shared/ttl-memo.ts),
+ * ttlMemo bypasses caching entirely under `bun test` (see lib/ttl-memo.ts),
  * so the real cache can't be exercised end to end here — this instead proves
  * the route WIRES the bust in: it calls invalidateIamCacheForAccount with the
  * account whose flag just changed, and only when the value actually changed.
@@ -35,11 +35,11 @@ mock.module('../iam/cache-invalidation', () => ({
   },
 }));
 
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async () => {},
 }));
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

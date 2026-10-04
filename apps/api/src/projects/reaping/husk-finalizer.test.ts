@@ -3,7 +3,7 @@ import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
-} from '../../shared/kortix-user-context';
+} from '../../services/sessions/kortix-user-context';
 
 // The reaper's terminal observation says "no turn in flight". It does NOT say
 // "the assistant message is closed". `finalizeHuskTurn` is what closes the gap:

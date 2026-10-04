@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realCrypto from '../shared/crypto';
+import * as realCrypto from '../lib/crypto';
 import { Hono } from 'hono';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
-import * as realAuthAudit from '../shared/auth-audit';
+import * as realAuthAudit from '../services/audit/auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../iam/sso-sync';
 
@@ -24,7 +24,7 @@ const sandboxProjectByOwnSandboxId: Record<string, string> = {
   [SANDBOX_B]: PROJECT_B,
 };
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   // Spread the real module: mock.module replaces it WHOLESALE, so every
   // export that a transitively imported module uses must stay present.
   ...realCrypto,
@@ -107,19 +107,19 @@ mock.module('../repositories/api-keys', () => ({
   },
 }));
 
-// `no-keys` is inconclusive (see shared/jwt-verify-outcome.ts) and falls
-// through to the shared/supabase network mock below; the preview-ownership
+// `no-keys` is inconclusive (see auth/jwt-verify-outcome.ts) and falls
+// through to the lib/supabase network mock below; the preview-ownership
 // tests' jwt-* tokens get their own verdicts, everything else (incl. the
 // project-scope tests' non-Kortix bearer) keeps the original always-fall-through
 // behavior.
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async (token: string) => {
     if (token === 'jwt-owner') return { ok: true, userId: 'user-owner', email: 'owner@kortix.dev' };
     if (token === 'jwt-other') return { ok: true, userId: 'user-other', email: 'other@kortix.dev' };
     // jwt-fallback-{owner,other} AND every other/unrecognized bearer (e.g. the
     // project-scope tests' plain JWT-shaped token): local verification can't
-    // judge it, so it falls through to the shared/supabase network mock above.
+    // judge it, so it falls through to the lib/supabase network mock above.
     return { ok: false, reason: 'no-keys' };
   },
 }));
@@ -128,7 +128,7 @@ mock.module('../shared/jwt-verify', () => ({
  * (stays null) by every other test, reproducing the original always-401 stub. */
 let mockSupabaseUser: { id: string; email?: string } | null = null;
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       getUser: async () => ({
@@ -152,7 +152,7 @@ const OWNING_USERS = new Set(['user-owner', 'user-fallback-owner']);
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ accountId, userId }: { accountId?: string; userId?: string }) => {
     if (!mockSandboxAccountId) return false;
@@ -166,7 +166,7 @@ mock.module('../shared/preview-ownership', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/auth-audit', () => ({
+mock.module('../services/audit/auth-audit', () => ({
   ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},
@@ -516,9 +516,9 @@ describe('typed 401 for a credential the API can never take back', () => {
     // The typed body tells a reading client to stop; a client that ignores it
     // would otherwise put one warn line per refusal into the API log. The
     // mark is what routes the exception through the global error handler's
-    // dead-credential log throttle (shared/dead-credential-log.ts).
+    // dead-credential log throttle (services/audit/dead-credential-log.ts).
     const err = deadCredential401('PAT not found or revoked');
-    const { isDeadCredential } = require('../shared/dead-credential-log') as {
+    const { isDeadCredential } = require('../services/audit/dead-credential-log') as {
       isDeadCredential: (e: unknown) => boolean;
     };
     expect(isDeadCredential(err)).toBe(true);

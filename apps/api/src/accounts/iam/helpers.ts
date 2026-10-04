@@ -3,8 +3,8 @@
 // the compact HttpError used by the policy-parser short-circuits.
 
 import { Context } from 'hono';
-import { recordAuditEvent } from '../../shared/audit';
-import { requestClientIp } from '../../shared/client-ip';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { requestClientIp } from '../../lib/client-ip';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import type { TierEntitlements } from '../../billing/types';
 

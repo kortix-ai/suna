@@ -3,13 +3,13 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
 import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../lib/config";
-import { db } from "../../shared/db";
+import { db } from "../../lib/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { actorOf } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { accountRolesForUser } from '../../iam/read-models';
-import { impersonatedAccountFor } from "../../shared/impersonation";
-import { isPlatformAdmin } from "../../shared/platform-roles";
+import { impersonatedAccountFor } from "../../iam/impersonation";
+import { isPlatformAdmin } from "../../iam/platform-roles";
 import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
@@ -25,7 +25,7 @@ import {
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -114,7 +114,7 @@ export function registerAccountRoutes(): void {
       // web landing door (which takes the first account in this list) put a
       // brand-new user straight into a stranger's workspace.
       //
-      // `resolveAccountId` (shared/resolve-account.ts) never had this bug —
+      // `resolveAccountId` (accounts/resolve-account.ts) never had this bug —
       // it bootstraps unconditionally the moment a caller has NO membership,
       // and never claims invites itself. Deciding on the PRE-claim
       // membership set here (not the post-claim one) makes this route agree

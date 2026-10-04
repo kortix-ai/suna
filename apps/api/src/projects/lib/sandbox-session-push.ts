@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import type { ProviderName } from '../../platform/providers';

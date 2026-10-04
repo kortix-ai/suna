@@ -38,7 +38,7 @@
 import { sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import type { StoredSandboxTurn } from '../session-turn-ledger';
 import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';

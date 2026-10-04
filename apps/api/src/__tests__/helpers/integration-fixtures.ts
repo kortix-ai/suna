@@ -6,7 +6,7 @@
 // here instead of borrowing a row some other writer created.
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);

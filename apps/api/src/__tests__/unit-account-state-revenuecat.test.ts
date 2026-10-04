@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import * as realDb from '../shared/db';
+import * as realDb from '../lib/db';
 
 let account: any = null;
 let creditSummary: any = null;
@@ -26,7 +26,7 @@ mock.module('../billing/services/auto-topup', () => ({
   getAutoTopupSettings: async () => autoTopup,
 }));
 
-mock.module('../shared/platform-roles', () => ({
+mock.module('../iam/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
 
@@ -38,7 +38,7 @@ const noRows: unknown = new Proxy(() => undefined, {
   get: (_target, property) =>
     property === 'then' ? (resolve: (rows: unknown[]) => void) => resolve([]) : () => noRows,
 });
-mock.module('../shared/db', () => ({ ...realDb, db: noRows }));
+mock.module('../lib/db', () => ({ ...realDb, db: noRows }));
 
 const { buildMinimalAccountState } = await import('../billing/services/account-state');
 

@@ -16,7 +16,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import * as realDbModule from '../shared/db';
+import * as realDbModule from '../lib/db';
 
 import {
   type SeededProject,

@@ -39,9 +39,9 @@ function storedTurnRuntimeSessionId(turn: Record<string, unknown>): unknown {
   return turn.runtimeSessionId ?? turn.opencodeSessionId;
 }
 
-let databasePromise: Promise<typeof import('../shared/db')['db']> | null = null;
+let databasePromise: Promise<typeof import('../lib/db')['db']> | null = null;
 function database() {
-  databasePromise ??= import('../shared/db').then((module) => module.db);
+  databasePromise ??= import('../lib/db').then((module) => module.db);
   return databasePromise;
 }
 

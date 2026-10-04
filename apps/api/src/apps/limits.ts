@@ -26,8 +26,8 @@ import { config } from '../lib/config';
 import { assertAppBudgetAvailable } from './budget';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import { getTier } from '../billing/services/tiers';
-import { resolveAccountTier } from '../shared/account-limits';
-import { db } from '../shared/db';
+import { resolveAccountTier } from '../billing/account-limits';
+import { db } from '../lib/db';
 import { SANDBOX_SPEC_LIMITS } from '../snapshots/dockerfile-layer';
 
 /** An App machine may not exceed what a session sandbox may. */

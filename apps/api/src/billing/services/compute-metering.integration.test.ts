@@ -54,7 +54,7 @@ mock.module('../../platform/providers', () => ({
   }),
 }));
 
-const { db } = await import('../../shared/db');
+const { db } = await import('../../lib/db');
 const fixtures = await import('../../__tests__/helpers/integration-fixtures');
 const {
   endComputeSession,

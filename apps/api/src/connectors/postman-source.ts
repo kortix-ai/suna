@@ -1,5 +1,5 @@
 import { parseSpecDocument } from './spec-doc';
-import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { mapWithConcurrency } from '../lib/map-with-concurrency';
 
 export type PostmanSourceDocumentKind = 'openapi' | 'postman';
 

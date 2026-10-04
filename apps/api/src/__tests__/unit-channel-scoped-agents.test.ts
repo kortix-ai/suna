@@ -12,7 +12,7 @@ const DECLARED = [
 ];
 
 let projectRow: { accountId: string } | undefined = { accountId: 'acct-1' };
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({

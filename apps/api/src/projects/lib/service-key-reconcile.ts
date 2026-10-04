@@ -44,7 +44,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { isPlausibleServiceKey } from './heal-session-token';
 

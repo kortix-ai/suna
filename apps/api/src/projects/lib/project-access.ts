@@ -8,7 +8,7 @@ import { accountMemberships, projects } from '@kortix/db';
 import { authorize, assertAuthorized, type Verdict } from '../../iam/authorize';
 import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
-import { ttlMemo } from '../../shared/ttl-memo';
+import { ttlMemo } from '../../lib/ttl-memo';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
 // engine are both replaced wholesale by `mock.module` in several route tests,
@@ -16,12 +16,12 @@ import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../ia
 // that.
 import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { projectRoleForUser } from '../../iam/read-models';
-import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
-import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../shared/impersonation';
-import { isPlatformAdmin } from '../../shared/platform-roles';
-import { resolveAccountId } from '../../shared/resolve-account';
-import { isUuid } from '../../shared/validate';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { db } from '../../lib/db';
+import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../iam/impersonation';
+import { isPlatformAdmin } from '../../iam/platform-roles';
+import { resolveAccountId } from '../../accounts/resolve-account';
+import { isUuid } from '../../lib/validate';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { normalizeString } from './serializers';
@@ -164,7 +164,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   // A malformed account_id is caller input, not a lookup miss: past this point
   // it reaches the account-membership query, whose account_id comparison is a
   // uuid column, and Postgres answers SQLSTATE 22P02 — a 500. Refuse the shape
-  // before any lookup (see shared/validate.ts for the shape contract).
+  // before any lookup (see lib/validate.ts for the shape contract).
   if (requested && !isUuid(requested)) {
     throw new HTTPException(400, {
       message: 'account_id must be a valid id',

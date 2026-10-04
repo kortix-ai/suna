@@ -4,8 +4,8 @@ import { tunnelConnections } from '@kortix/db';
 import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
-} from '../../shared/impersonation';
-import { resolveAccountId } from '../../shared/resolve-account';
+} from '../../iam/impersonation';
+import { resolveAccountId } from '../../accounts/resolve-account';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
 

@@ -62,7 +62,7 @@ import { projectsApp, SessionSnapshotSchema } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import type { AppEnv } from '../../types/app-env';
 import { readSessionAuditActions } from '../lib/session-audit-read';
 import { serializePrompt } from '../lib/session-prompt-view';

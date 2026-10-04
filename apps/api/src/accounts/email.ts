@@ -3,7 +3,7 @@
 // one platform transport (lib/email/transport.ts).
 import { config } from '../lib/config';
 import { renderEmail, renderText, actionButton, S } from '../lib/email/template';
-import { escapeHtml } from '../shared/html';
+import { escapeHtml } from '../lib/html';
 import { isEmailConfigured, sendEmail, type EmailSendResult } from '../lib/email/transport';
 
 export type EmailDeliveryResult = EmailSendResult;

@@ -2,14 +2,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   createSession,
   resolveProjectAutomationActor,
 } from '../projects/session-lifecycle';
 import { loadTelegramWebhookSecretForProject } from './install-store';
 import { makeOpenApiApp, json, errors } from '../openapi';
-import { bindIntegrationPrincipal } from '../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../services/audit/audit-scope';
 
 export const telegramWebhookApp = makeOpenApiApp();
 

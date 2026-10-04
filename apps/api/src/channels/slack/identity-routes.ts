@@ -13,7 +13,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { inArray } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
@@ -27,7 +27,7 @@ import { spawnAgentTurn } from './dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
 import { chatUser, completeChatLogin } from '../core/identity';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { buildDenialError } from '../../iam/denial-message';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 

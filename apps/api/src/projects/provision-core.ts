@@ -45,7 +45,7 @@ import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
 import { config } from '../lib/config';
 import { logger as appLogger } from '../lib/logger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -83,7 +83,7 @@ import {
   normalizeString,
   serializeProject,
 } from './lib/serializers';
-import { readJsonObject } from '../shared/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';

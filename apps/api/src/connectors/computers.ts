@@ -12,7 +12,7 @@
  */
 import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
 /** Default name of a project's computer connector. */

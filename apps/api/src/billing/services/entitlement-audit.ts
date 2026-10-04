@@ -10,7 +10,7 @@
  */
 
 import { creditAccounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   type EntitlementBreach,
   expiringCreditExceedsEntitlement,

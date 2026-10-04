@@ -8,7 +8,7 @@
 import { chatChannelBindings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { getTeamsTeam, listTeamsTeamChannels } from '../teams-api';
 import { ensureTeamsConversationBinding } from './binding';
 import type { TeamsActivity } from './types';

@@ -327,11 +327,11 @@ mock.module('../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabledById: async () => mockedProjectLlmGatewayEnabled(projectRow.metadata),
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
@@ -653,7 +653,7 @@ const triggerDbMock: any = {
 triggerDbMock.transaction = async (run: (tx: typeof triggerDbMock) => Promise<unknown>) =>
   run(triggerDbMock);
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: triggerDbMock,
 }));
@@ -795,7 +795,7 @@ const {
   runProjectTriggerSweep,
 } = await import('../projects/index');
 registerAllProjectRoutes();
-const { resetRateLimiters } = await import('../shared/rate-limit');
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();

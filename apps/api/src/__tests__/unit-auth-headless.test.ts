@@ -16,7 +16,7 @@ const testConfig: Record<string, unknown> = {
 };
 mock.module('../lib/config', () => ({ config: testConfig }));
 const claims = new Set<string>();
-mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
+mock.module('../lib/db', () => ({ db: { execute: async (query: SQL) => {
   const rendered = new PgDialect().sqlToQuery(query);
   const digest = rendered.params[0];
   if (typeof digest !== 'string') throw new Error('missing token digest');
@@ -25,7 +25,7 @@ mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
   claims.add(digest);
   return [{ token_hash: digest }];
 } } }));
-mock.module('../shared/auth-audit', () => ({
+mock.module('../services/audit/auth-audit', () => ({
   auditLoginFail: () => {},
   auditLoginSuccess: () => {},
   auditLogout: () => {},

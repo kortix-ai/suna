@@ -9,7 +9,7 @@ const state = {
   failure: false,
 };
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     execute: async (query: SQL) => {
@@ -20,7 +20,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({ auth: { admin: {
     listUsers: async () => ({ data: {
       users: Array.from({ length: 1000 }, (_, i) => ({ id: `other-${i}`, email: `other-${i}@example.com` })),

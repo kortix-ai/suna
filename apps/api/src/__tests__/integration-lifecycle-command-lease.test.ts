@@ -36,7 +36,7 @@ import {
 } from '../projects/session-lifecycle/store';
 import type { CreateSessionCommand } from '../projects/session-lifecycle/types';
 import { logger } from '../lib/logger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 type Row = Record<string, unknown>;

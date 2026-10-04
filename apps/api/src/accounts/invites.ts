@@ -8,17 +8,17 @@ import {
   projects,
 } from '@kortix/db';
 import type { AppEnv } from '../types/app-env';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { supabaseAuth } from '../middleware/auth';
-import { getSupabase } from '../shared/supabase';
-import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
+import { getSupabase } from '../lib/supabase';
+import { createInviteAcceptRateLimitMiddleware } from '../middleware/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 import { logger } from '../lib/logger';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();

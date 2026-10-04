@@ -49,10 +49,10 @@ import { tunnelRateLimiter } from './core/rate-limiter';
 // `bun --hot` (local dev) a dynamic import inside the WS auth handler can wedge
 // and never settle, so onAuthenticate hangs → the agent never gets `auth_ok`
 // and the tunnel is stuck "offline" forever. See the prod-timeout incident note.
-import { fingerprintTunnelCredentialHash, isTunnelToken, verifySecretKey } from '../shared/crypto';
-import { db } from '../shared/db';
-import { runWorkerTick } from '../shared/audit-scope';
-import { type AuditEventInput, recordAuditEvent } from '../shared/audit';
+import { fingerprintTunnelCredentialHash, isTunnelToken, verifySecretKey } from '../lib/crypto';
+import { db } from '../lib/db';
+import { runWorkerTick } from '../services/audit/audit-scope';
+import { type AuditEventInput, recordAuditEvent } from '../services/audit/audit';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 

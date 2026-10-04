@@ -4,7 +4,7 @@ import { UpdateConnectionCredentialInputSchema } from '@kortix/api-contract';
 import type { Context } from 'hono';
 import { INVALID_SOURCE_ADDRESS_CODE, isAllowedSourceValidationError } from '../../marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { UnsafeEgressError } from '../../shared/ssrf-guard';
+import { UnsafeEgressError } from '../../lib/ssrf-guard';
 import type { ConnectorAuthDiscovery } from '../auth-discovery';
 import type { ConnectorRouterDeps, CrudOutcome } from '../router';
 import {

@@ -30,7 +30,7 @@
  * after the tables are gone.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '../src/shared/db';
+import { db } from '../src/lib/db';
 
 /**
  * uuid5 namespace for a `pending` (invitee) principal. MUST match

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import {
   continueSession as continueLifecycleSession,

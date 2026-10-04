@@ -25,7 +25,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { config } from '../lib/config';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { upsertResourceGrant } from '../iam/resource-grants';

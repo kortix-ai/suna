@@ -22,8 +22,8 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
-import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
+import { db } from '../../lib/db';
+import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../lib/pg-broadcast';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
 import { sessionRuntimeFetch } from './runtime-fetch';

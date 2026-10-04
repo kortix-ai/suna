@@ -1,7 +1,7 @@
 import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq, gt, or, sql } from 'drizzle-orm';
-import { qualifiedColumn } from '../../shared/sql-qualified-column';
-import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../lib/sql-qualified-column';
+import { db } from '../../lib/db';
 import { invalidateProjectMirror } from '../git';
 import { countUncatalogedTriggerProjects } from '../trigger-execution-store';
 import type { ProjectRow } from './serializers';

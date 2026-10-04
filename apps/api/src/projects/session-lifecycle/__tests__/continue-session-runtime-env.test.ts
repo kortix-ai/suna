@@ -15,7 +15,7 @@ mock.module('../../../lib/config', () => ({
   SANDBOX_VERSION: 'test',
 }));
 
-mock.module('../../../shared/db', () => ({
+mock.module('../../../lib/db', () => ({
   // `mock.module` replaces the WHOLE module: every export the import graph
   // reaches must exist here. `hasDatabase` entered this test's graph when
   // runtime-client.ts imports opencode-mapping (staged-revert check).

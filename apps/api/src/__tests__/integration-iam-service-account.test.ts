@@ -11,7 +11,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accounts, iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { authorize } from '../iam/authorize';
 import { actorForServiceAccount } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';

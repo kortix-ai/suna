@@ -26,7 +26,7 @@ import {
   projectSessionSecretHandles,
   projectSessions,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
 import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
 import {

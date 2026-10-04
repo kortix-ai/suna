@@ -5,7 +5,7 @@ import {
   getProjectSecretValueForConsumer,
   getProjectSecretValuesForConsumer,
 } from '../projects/secrets';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { TEAMS_MANIFEST_VERSION } from './teams-manifest';
 
 export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';

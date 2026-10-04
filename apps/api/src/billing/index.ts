@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../lib/config';
-import { runWorkerTick } from '../shared/audit-scope';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { supabaseAuth } from '../middleware/auth';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types/app-env';

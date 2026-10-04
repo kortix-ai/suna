@@ -24,7 +24,7 @@ import {
   type Writer,
 } from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { registerInviteRoutes, registerMemberInviteRoute } from './invites';
 import { grantAccountRole } from './member-role-write';
 import { canSeeSensitiveMemberColumns } from './member-visibility';
@@ -38,7 +38,7 @@ import {
   lookupEmailsByUserIds,
   parseRole,
 } from './app';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { logger } from '../../lib/logger';
 
 

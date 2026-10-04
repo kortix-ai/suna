@@ -13,7 +13,7 @@ import {
 } from "../lib/access";
 import { callerKortixSessionId } from "../lib/caller-session";
 import { sessionAttachmentStore } from "../lib/session-attachments";
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 
 const path = "/{projectId}/sessions/{sessionId}/attachments";
 const params = z.object({

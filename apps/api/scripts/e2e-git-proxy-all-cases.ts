@@ -28,8 +28,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { db } from '../src/shared/db';
-import { generateAccountTokenPair, hashSecretKey } from '../src/shared/crypto';
+import { db } from '../src/lib/db';
+import { generateAccountTokenPair, hashSecretKey } from '../src/lib/crypto';
 import { createApiKey } from '../src/repositories/api-keys';
 import { encryptProjectSecret } from '../src/projects/secrets';
 

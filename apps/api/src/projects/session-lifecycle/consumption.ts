@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
 import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { PROMPT_NEVER_RAN_END_REASONS } from './redelivery';
 import { wireMessageIdMatches } from './wire-id-match';
 

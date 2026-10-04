@@ -17,7 +17,7 @@ import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { dropWarmSessionMarkerOnAdopt } from '../projects/routes/warm-sessions';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

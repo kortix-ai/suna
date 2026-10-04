@@ -17,7 +17,7 @@ import {
 } from '../../repositories/service-accounts';
 import { iamRouter, AccountIdParam, ServiceAccountSchema } from './app';
 import { auditIam, isUniqueViolation } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 export function registerIamServiceAccountsRoutes(): void {
   iamRouter.openapi(

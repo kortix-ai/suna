@@ -6,7 +6,7 @@ import * as tar from 'tar';
 import { validateRef, validateSha } from '../projects/git-ref';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { sha256File } from '../shared/sha256-file';
+import { sha256File } from '../lib/sha256-file';
 
 export const COMPILED_CHECKOUT_FORMAT = 'kortix.compiled-checkout.v1';
 export const COMPILED_CHECKOUT_CONTENT_TYPE =

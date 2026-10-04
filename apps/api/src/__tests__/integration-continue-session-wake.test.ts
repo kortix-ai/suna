@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import * as realShared from '../projects/routes/shared';
 import * as realTitle from '../projects/session-title-generate';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 type OpenResult = Record<string, unknown> | null;

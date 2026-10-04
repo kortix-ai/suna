@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSecretResources, projectSecrets } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   encryptProjectSecret,
   resolveProjectSecretForConsumer,
 } from '../../projects/secrets';
-import { recordAuditEvent } from '../../shared/audit';
+import { recordAuditEvent } from '../../services/audit/audit';
 import { type CodexAccountLogin, encryptAccountSecret, loadCodexAccountLogin } from '../../secrets/account-resource';
 import {
   CodexRefreshError,

@@ -27,7 +27,7 @@ import {
   projects,
   projectSessions,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { resolveAccountIdentityByEmail } from '../iam/account-identity';

@@ -171,8 +171,8 @@ mockIamAssignments({
   },
 });
 
-const realPlatformRoles = await import('../shared/platform-roles');
-mock.module('../shared/platform-roles', () => ({
+const realPlatformRoles = await import('../iam/platform-roles');
+mock.module('../iam/platform-roles', () => ({
   ...realPlatformRoles,
   isPlatformAdmin: async () => platformAdmin,
   // The managed-git PAT paths ask the NARROWER question — a cloud platform
@@ -429,11 +429,11 @@ mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
@@ -663,7 +663,7 @@ const starterDbMock: any = {
 starterDbMock.transaction = async (run: (tx: typeof starterDbMock) => Promise<unknown>) =>
   run(starterDbMock);
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: starterDbMock,
 }));

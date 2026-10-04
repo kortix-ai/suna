@@ -7,7 +7,7 @@ incident_date: 2026-09-27
 **Rule:** Every connection a process opens and never releases — a request
 pool, an audit pool, a leader-election client, or a `sql.listen()`
 subscription — is a long-lived, per-task connection. Add its `max` to
-`apps/api/src/shared/database-capacity.ts`'s rolling-deployment ceiling in the
+`apps/api/src/lib/database-capacity.ts`'s rolling-deployment ceiling in the
 SAME change that introduces it, before merge, not after an incident finds it.
 
 **Trigger surface:** Adding any `postgres(databaseUrl, { max: N, ... })` call
@@ -15,7 +15,7 @@ that is created once (module scope, or awaited once at boot) and kept open —
 especially a `sql.listen()` subscription, which by design takes a connection
 out of the pool for the connection's whole lifetime.
 
-**Incident:** `apps/api/src/shared/pg-broadcast.ts` (`startConfigBaseMoveBroadcast`,
+**Incident:** `apps/api/src/lib/pg-broadcast.ts` (`startConfigBaseMoveBroadcast`,
 introduced #7699, 2026-09-26 17:11 CEST) opens a dedicated `max: 1`,
 `idle_timeout: 0` LISTEN connection, awaited unconditionally on EVERY replica
 at boot — not leader-gated, never released. `database-capacity.ts` counted the
@@ -32,7 +32,7 @@ rollout finished. Daily counts climbed 10 → 14 → 34 → 92 → 63 → 44 →
 now-5-over ceiling; only the widest overlap window (this rollout) tipped it
 over enough to be visible as a burst.
 
-**Enforcement:** `apps/api/src/shared/database-capacity.test.ts` now pins
+**Enforcement:** `apps/api/src/lib/database-capacity.test.ts` now pins
 `PG_BROADCAST_POOL_MAX` (1) and asserts `pg-broadcast.ts` imports it instead of
 a literal `max: 1`, so a future always-on connection added the same way
 without updating the budget fails this test immediately. Fixed by folding the

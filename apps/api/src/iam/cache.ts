@@ -1,12 +1,12 @@
 // Request-context derivation shared by IAM callers.
 
 import type { Context } from 'hono';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../lib/client-ip';
 import type { RequestContext } from './actor';
 
 /**
  * Derive the request context (IP + MFA AAL) from a Hono Context. The IP
- * follows the trusted-proxy rule in shared/client-ip.ts. mfaAal is populated
+ * follows the trusted-proxy rule in lib/client-ip.ts. mfaAal is populated
  * by supabaseAuth from the JWT.
  *
  * Folded into the cache key so two requests under the same user but with

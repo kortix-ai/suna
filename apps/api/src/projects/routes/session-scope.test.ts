@@ -222,7 +222,7 @@ const fakeDb: any = {
   }),
   transaction: async (fn: (tx: unknown) => Promise<void>) => fn(fakeDb),
 };
-mock.module('../../shared/db', () => ({ db: fakeDb }));
+mock.module('../../lib/db', () => ({ db: fakeDb }));
 
 (await import('./session-scope')).registerSessionScopeRoutes();
 

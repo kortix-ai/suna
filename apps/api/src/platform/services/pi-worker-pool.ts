@@ -24,10 +24,10 @@
  */
 import { randomUUID } from 'node:crypto';
 import { config } from '../../lib/config';
-import { runWorkerTick } from '../../shared/audit-scope';
+import { runWorkerTick } from '../../services/audit/audit-scope';
 import { ensurePiWorkerImage } from '../../snapshots/builder';
-import { getDaytona } from '../../shared/daytona';
-import { withTimeout } from '../../shared/with-timeout';
+import { getDaytona } from '../../services/sandboxes/daytona/client';
+import { withTimeout } from '../../lib/with-timeout';
 import { managedSandboxLabels } from '../providers/daytona';
 import { providerAutoStopBackstopMinutes } from '../providers';
 

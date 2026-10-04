@@ -12,11 +12,11 @@
  * table again.
  */
 
-import { qualifiedColumn } from '../../shared/sql-qualified-column';
+import { qualifiedColumn } from '../../lib/sql-qualified-column';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { holdsStopClaim, noLiveStopClaim } from '../session-lifecycle/stop-claim';
 import { reapBatchSize } from '../reaper-constants';
 import { mergeMetadata } from './sandbox-state-sync';

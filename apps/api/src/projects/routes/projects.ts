@@ -8,7 +8,7 @@ import { actorOf } from '../../iam/actor';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager } from '../access';
 import { getBackend, hasBackend } from '../git-backends';
@@ -30,7 +30,7 @@ import {
   normalizeString,
   serializeProject,
 } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);
 

@@ -19,7 +19,7 @@ import {
   latestPendingTeamsAuthMessageId,
 } from '../channels/teams/auth-resume';
 import type { TeamsActivity } from '../channels/teams/types';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const WORKSPACE = `picker-park-${crypto.randomUUID()}`;
 

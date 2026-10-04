@@ -17,7 +17,7 @@ setTestEnv('PLATINUM_API_URL', 'https://api.platinum.dev');
 setTestEnv('PLATINUM_API_KEY', 'pt_test_key');
 
 const { resolveSessionSandboxRegion } = await import('./sandbox-region');
-const { platinumUsRegion } = await import('../../shared/platinum-region');
+const { platinumUsRegion } = await import('../../services/sandboxes/platinum/region');
 const { resolveFeatureFlag, buildFeatureFlagCatalog } = await import('../../feature-flags/registry');
 
 const ON = { experimental: { us_region: true } };

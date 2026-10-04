@@ -4,7 +4,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerManifestValidationRoutes(): void {
   // ─── Manifest validation ──────────────────────────────────────────────────
   // One schema, exercised in three places: the CLI (`kortix ship` pre-flight +

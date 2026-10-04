@@ -340,7 +340,7 @@ mock.module('../iam/email-trust', () => ({
   emailTrustedSql: () => sql`true`,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   toPublicStorageUrl: (url: string) => url,
   getSupabase: () => ({
     auth: {
@@ -362,12 +362,12 @@ mock.module('../accounts/email', () => ({
   },
 }));
 
-mock.module('../shared/rate-limit', () => ({
+mock.module('../middleware/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async (userId: string) => {
     const existing = memberRows.find((row) => row.userId === userId);
     if (existing) return existing.accountId;
@@ -391,7 +391,7 @@ mock.module('../shared/resolve-account', () => ({
   },
 }));
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     select: (fields?: Record<string, unknown>) => ({

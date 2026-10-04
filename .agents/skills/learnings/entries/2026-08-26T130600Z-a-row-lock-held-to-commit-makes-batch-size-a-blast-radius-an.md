@@ -22,7 +22,7 @@ not work; (4) report contention (57014/55P03/40001/40P01) as a retryable 503 wit
 500 [57014] 445 times in 3h, each at ~10s, while the sandbox relay's flat 1s
 retry re-entered the same lock queue and kept the convoy alive. Predecessor:
 PR #6702's dedicated audit pool isolated the damage but did not remove it.
-*Enforcer:* `statementBatches` + its tests (`apps/api/src/shared/audit-queue.ts`),
-`isAuditContentionError` tests (`apps/api/src/shared/audit-db.test.ts`), the
+*Enforcer:* `statementBatches` + its tests (`apps/api/src/services/audit/audit-queue.ts`),
+`isAuditContentionError` tests (`apps/api/src/services/audit/audit-db.test.ts`), the
 per-session lock-scope integration test in
 `packages/db/scripts/centralized-audit-v2.integration.test.ts`.

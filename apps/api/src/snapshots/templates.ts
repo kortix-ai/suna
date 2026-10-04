@@ -15,7 +15,7 @@
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
 import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';

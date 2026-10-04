@@ -1,7 +1,7 @@
 import { type SessionRuntimeContext, SessionRuntimeContextSchema } from '@kortix/api-contract';
 import { projectSessionRuntimeContexts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 
 /** The only environment variable a public runtime_context request can create. */

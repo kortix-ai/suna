@@ -6,7 +6,7 @@
 import { rm } from 'node:fs/promises';
 import { mapLimit } from '@kortix/registry';
 import { validateRef } from '../git-ref';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';

@@ -18,7 +18,7 @@ import {
   loadApprovalRow,
 } from '../../projects/lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../approval-card-relay';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { type ChatUser, resolveChatActor } from './identity';
 
 export async function decideChatApproval(input: {

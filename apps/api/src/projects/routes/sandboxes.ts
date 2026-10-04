@@ -12,8 +12,8 @@ import {
 import { sessionTemplateBuilds } from '../../snapshots/build-state';
 import { pickPrimaryTemplate, resolveSandboxRuntimeStatus } from '../../snapshots/sandbox-status';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
-import { withTimeout } from '../../shared/with-timeout';
-import { ttlMemo } from '../../shared/ttl-memo';
+import { withTimeout } from '../../lib/with-timeout';
+import { ttlMemo } from '../../lib/ttl-memo';
 import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import { TemplateNotFoundError } from '../../snapshots/templates';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -31,7 +31,7 @@ import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';
 import { templateProviderObservation } from '../lib/template-provider-observation';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export type LegacyStripeSyncResult = {
   status:
@@ -72,7 +72,7 @@ export async function syncLegacyStripeSubscription(
       };
     }
 
-    const { getStripe } = await import('../../shared/stripe');
+    const { getStripe } = await import('../stripe');
     const stripe = getStripe();
     const { getBillingPeriodByPriceId, getTier, getTierByPriceId } = await import('./tiers');
     const { applyStripeSync } = await import('./account-write-owner');

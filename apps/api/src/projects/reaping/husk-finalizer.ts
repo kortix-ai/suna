@@ -55,7 +55,7 @@ import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/ba
 import {
   KORTIX_USER_CONTEXT_HEADER,
   encodeKortixUserContext,
-} from '../../shared/kortix-user-context';
+} from '../../services/sessions/kortix-user-context';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { runtimeServesTurnVerbs, runtimeVerbPaths, turnVerbMissing } from '../session-lifecycle/runtime-fetch';
 import { legacyRuntimePaths } from '../session-lifecycle/legacy-runtime-rest';
@@ -137,7 +137,7 @@ const HUSK_SETTLE_MS = 2_000;
 /**
  * Reach the box the same way `abortLiveTurnBeforeStop` (stop-box.ts:72-111)
  * does. `sandboxOpencodeEndpoint` is NOT reused: it resolves a preview user
- * context, which returns null without an actor user (shared/preview-ownership.ts:284),
+ * context, which returns null without an actor user (services/sessions/preview-ownership.ts:284),
  * so the signed header is omitted and the daemon's auth gate 401s every
  * non-`/kortix/*` path. The reaper has no actor user.
  */

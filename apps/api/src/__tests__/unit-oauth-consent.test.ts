@@ -76,8 +76,8 @@ mock.module('../lib/config', () => ({
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#8006 added one), and bun reports it as an unhandled
 // `Export named ... not found` between tests.
-const realDb = await import('../shared/db');
-mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
+const realDb = await import('../lib/db');
+mock.module('../lib/db', () => ({ ...realDb, db: fake.db }));
 
 const { oauthApp } = await import('../oauth');
 

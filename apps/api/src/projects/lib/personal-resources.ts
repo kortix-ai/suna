@@ -27,7 +27,7 @@ import { accountTokens, projectSessions, readStoredAgentGrant } from '@kortix/db
 import type { AgentGrant } from '@kortix/db';
 import { loadTokenBinding, type Actor } from '../../iam/actor';
 import { agentPrincipalModeFor, isGovernedAgentGrant } from '../../iam/agent-principal';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { ConnectionAgentPrincipalReach } from './connection-access';
 import type { Context } from 'hono';
 import { getRequestOnBehalfOf, resolveSessionOnBehalfOf } from './on-behalf-of';

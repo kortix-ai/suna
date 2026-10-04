@@ -157,7 +157,7 @@ flow(
  * SPEC DRIFT: the spec claims write ops require a `billing.write` capability and that
  * `MEMBER`/`AUDITOR` → 403. The code has NO such role/capability gate: billing write
  * routes resolve the account purely by MEMBERSHIP via `resolveScopedAccountId`
- * (apps/api/src/shared/resolve-account.ts) — any member of the account passes, only a
+ * (apps/api/src/accounts/resolve-account.ts) — any member of the account passes, only a
  * NON-member (403) or ANON (401) is rejected. There is no `requirePermission('billing.write')`
  * anywhere under apps/api/src/billing/routes.
  *

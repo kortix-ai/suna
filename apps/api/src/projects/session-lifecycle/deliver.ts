@@ -2,7 +2,7 @@ import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
 import type { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { openSession } from '../routes/shared';
 import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';

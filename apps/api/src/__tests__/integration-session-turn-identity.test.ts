@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountMemberships, accountTokens, accounts, projectSessions, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   bindSessionTurnIdentity,
   channelPrompterForOnBehalfOf,

@@ -63,7 +63,7 @@ describe('gitPrincipalEnvelope', () => {
 
 describe('git proxy attribution binds into the request scope', () => {
   const { runWithContext } = require('../lib/request-context');
-  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const { attachInboundAuditScope } = require('../services/audit/audit-scope');
   const { annotateGitTransfer, bindGitProxyPrincipal } = require('./audit');
   const project = {
     projectId: '00000000-0000-4000-a000-000000000201',

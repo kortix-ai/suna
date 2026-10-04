@@ -28,11 +28,11 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { auth, errors, json } from '../openapi';
 import { config } from '../lib/config';
-import { db } from '../shared/db';
-import { rewriteStorageOrigin } from '../shared/storage-url';
-import { getSupabase } from '../shared/supabase';
+import { db } from '../lib/db';
+import { rewriteStorageOrigin } from '../lib/storage-url';
+import { getSupabase } from '../lib/supabase';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
-import { readJsonObject } from '../shared/http-body';
+import { readJsonObject } from '../lib/http-body';
 import { auditIam, requireEntitlement } from './iam/helpers';
 
 export const BRANDING_BUCKET = 'branding';

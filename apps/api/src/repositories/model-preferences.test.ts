@@ -35,7 +35,7 @@ function chain(): any {
   c.then = (resolve: (rows: any[]) => unknown) => Promise.resolve(resolve(selectRows));
   return c;
 }
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: { select: () => chain(), insert: () => chain(), delete: () => chain() },
   hasDatabase: () => true,
 }));

@@ -8,7 +8,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { deleteGroup } from '../repositories/iam';
 import { directoryUserById, directoryGroupIds, saveDirectoryGroups } from './directory-users';
 import { groupChanges, memberValues, InvalidGroupMemberError, type GroupChange } from './group-patch';

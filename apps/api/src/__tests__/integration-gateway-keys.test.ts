@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, gatewayApiKeys, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { hashSecretKey } from '../shared/crypto';
-import { db } from '../shared/db';
+import { hashSecretKey } from '../lib/crypto';
+import { db } from '../lib/db';
 import {
   INTERNAL_SESSION_TITLE_KEY_NAME,
   createGatewayKey,

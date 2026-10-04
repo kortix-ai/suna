@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatThreads, projectSessions } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /**
  * Thread → session binding for every chat channel.

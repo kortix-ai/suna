@@ -6,12 +6,12 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../../lib/request-context';
-import { attachInboundAuditScope, currentInboundAuditScope } from '../../shared/audit-scope';
-import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
+import { attachInboundAuditScope, currentInboundAuditScope } from '../../services/audit/audit-scope';
+import { MAX_BATCH_SIZE } from '../../services/audit/opencode-audit-ingestion';
 import {
   SESSION_EVENT_RATE_LIMITED_ACTION,
   __resetAuditRateGuardForTest,
-} from '../../shared/opencode-audit-rate-guard';
+} from '../../services/audit/opencode-audit-rate-guard';
 
 const ORIGINAL_ENV = {
   ALLOWED_SANDBOX_PROVIDERS: process.env.ALLOWED_SANDBOX_PROVIDERS,
@@ -61,7 +61,7 @@ function rowsFor(table: unknown): unknown[] {
   return [];
 }
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     select: () => ({
@@ -511,7 +511,7 @@ describe('audit ingest request-deadline budget', () => {
   /**
    * Drive the route inside a request context whose inbound audit scope carries
    * the given `startedAt` — exactly what the edge does in production
-   * (`shared/audit-edge.ts`).
+   * (`services/audit/audit-edge.ts`).
    */
   async function postWithStartedAt(count: number, startedAtMsAgo: number) {
     return runWithContext(

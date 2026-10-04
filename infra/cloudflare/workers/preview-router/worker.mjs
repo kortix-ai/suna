@@ -11,7 +11,7 @@
  * segment and decides which API origin the request is forwarded to. The
  * forward loses the public hostname, so this Worker re-states it in a header
  * and SIGNS it — otherwise anyone who can reach the API origin could name any
- * preview. See apps/api/src/shared/edge-signature.ts for the verifier.
+ * preview. See apps/api/src/edge/edge-signature.ts for the verifier.
  *
  * Mirrors infra/cloudflare/workers/apps-router/worker.mjs; the two edges differ
  * only in hostname shape and header names.

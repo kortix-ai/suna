@@ -14,7 +14,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import type { ChannelPlatform } from '../projects/connectors';
 import { channelDefaultSlug, channelLabel } from './channels';
 import { withChannelDeclaration, withoutChannelDeclaration } from './channel-rules';

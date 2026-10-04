@@ -12,8 +12,8 @@
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
-import { db } from '../shared/db';
-import { hashSecretKeyAsync, markTokenValidated } from '../shared/token-hash';
+import { db } from '../lib/db';
+import { hashSecretKeyAsync, markTokenValidated } from '../auth/token-hash';
 
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'kortix_oat_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'kortix_ort_';

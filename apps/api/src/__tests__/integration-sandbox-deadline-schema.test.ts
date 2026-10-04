@@ -12,7 +12,7 @@
  */
 import { afterAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const created: string[] = [];
 

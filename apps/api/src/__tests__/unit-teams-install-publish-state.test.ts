@@ -18,7 +18,7 @@ function makeChain(result: unknown[]): any {
   return chain;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain([{ updatedAt: new Date('2026-09-17T10:00:00.000Z') }]),
     insert: () => makeChain([]),

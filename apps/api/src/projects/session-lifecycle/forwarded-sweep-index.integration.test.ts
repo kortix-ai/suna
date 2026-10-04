@@ -43,7 +43,7 @@ import { describe, expect, test } from 'bun:test';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, asc, eq, lte, sql } from 'drizzle-orm';
 import { INBOX_FORWARD_CONFIRM_GRACE_MS } from './consumption';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   removeSeeded,
   seedProject,

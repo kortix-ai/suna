@@ -1,7 +1,7 @@
 import { appDeployments, appRuntimes, sandboxComputeSessions } from '@kortix/db';
 import { and, eq, gte } from 'drizzle-orm';
 import { monthStartUtc, monthlyComputeColumns, sumMonthlyComputeCost } from '../billing/services/compute-accrual';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 export class AppBudgetExceededError extends Error {
   constructor(

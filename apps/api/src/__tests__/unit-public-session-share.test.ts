@@ -19,7 +19,7 @@ let ingressResolves = 0;
 let invalidations = 0;
 let wakes = 0;
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({

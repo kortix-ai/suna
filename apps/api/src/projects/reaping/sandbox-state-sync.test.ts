@@ -61,7 +61,7 @@ const savepoint = async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(t
 
 const transactionScope = { update: updater, execute: executor, transaction: savepoint };
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
       events.push('tx:begin');

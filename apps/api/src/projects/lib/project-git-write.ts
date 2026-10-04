@@ -1,7 +1,7 @@
 import type { GitHubRepo } from '../github';
 import { projectGitConnections, projectGitCredentials } from '@kortix/db';
 import { encryptProjectSecret } from '../secrets';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** A `db.transaction` handle, the type every transaction-scoped write takes. */
 type ProjectGitWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];

@@ -1,5 +1,5 @@
 import type { SandboxProviderName } from '../lib/config';
-import { withTimeout } from '../shared/with-timeout';
+import { withTimeout } from '../lib/with-timeout';
 import type { ProviderState, SandboxProviderAdapter } from './providers';
 
 export const SANDBOX_TEMPLATE_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;

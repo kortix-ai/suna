@@ -66,11 +66,11 @@ mock.module('./usage-breakdown', () => ({
   getUsageBreakdownThisPeriod: async (_accountId: string) => trackedDelay(null),
 }));
 
-mock.module('../../shared/platform-roles', () => ({
+mock.module('../../iam/platform-roles', () => ({
   isPlatformAdmin: async (_accountId: string) => trackedDelay(false),
 }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: (table: unknown) => ({

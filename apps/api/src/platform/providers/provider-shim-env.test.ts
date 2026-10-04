@@ -83,7 +83,7 @@ mock.module('e2b', () => ({
   SandboxNotFoundError: class extends Error {},
 }));
 
-mock.module('../../shared/daytona', () => ({
+mock.module('../../services/sandboxes/daytona/client', () => ({
   getDaytona: () => ({
     create: async (params: { envVars: Record<string, string> }) => {
       deliveredEnv = params.envVars;
@@ -104,7 +104,7 @@ mock.module('../../projects/disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 
-mock.module('../../shared/platinum', () => ({
+mock.module('../../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected Platinum materialization request');

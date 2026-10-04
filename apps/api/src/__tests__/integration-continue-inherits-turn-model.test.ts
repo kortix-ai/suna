@@ -13,7 +13,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { buildContinueSessionCommandValues } from '../projects/session-lifecycle';
 import { continuationOverrides } from '../projects/session-lifecycle/queued-continue-delivery';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   removeSeeded,
   seedProject,

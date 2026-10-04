@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { verifySupabaseJwt } from '../shared/jwt-verify';
-import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
+import { verifySupabaseJwt } from '../auth/jwt-verify';
+import { isInconclusiveVerifyFailure } from '../auth/jwt-verify-outcome';
 
 /**
  * Regression cover for the 2026-08-21 prod near-miss.
@@ -106,7 +106,7 @@ describe('every verifySupabaseJwt caller routes on the shared predicate', () => 
   function productionSources(): string[] {
     const glob = new Bun.Glob('**/*.ts');
     return [...glob.scanSync({ cwd: srcRoot })].filter(
-      (f) => !f.endsWith('.test.ts') && !f.includes('__tests__/') && f !== 'shared/jwt-verify.ts',
+      (f) => !f.endsWith('.test.ts') && !f.includes('__tests__/') && f !== 'auth/jwt-verify.ts',
     );
   }
 

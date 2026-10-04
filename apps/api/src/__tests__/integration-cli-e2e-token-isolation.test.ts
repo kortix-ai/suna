@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import postgres from 'postgres';
 import { resolve } from 'node:path';
-import { hashSecretKey } from '../shared/crypto';
+import { hashSecretKey } from '../lib/crypto';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error('TEST_DATABASE_URL must point to isolated test PostgreSQL');

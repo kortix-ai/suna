@@ -6,7 +6,7 @@
  * logged-out visitor with a share link should see the session's title and a
  * read-only, sanitized transcript, with NO client-side sandbox access at all
  * — the API does the sandbox round-trip server-side and returns compacted
- * JSON (see `shared/public-session-share-view.ts`).
+ * JSON (see `services/sessions/public-session-share-view.ts`).
  *
  * `:shareId` is either the share's raw `share_id` (the uuid primary key on
  * `project_session_public_shares`, what the CRUD routes call `share_id`) or
@@ -38,13 +38,13 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { createPublicSessionShareRateLimitMiddleware } from '../shared/rate-limit';
+import { createPublicSessionShareRateLimitMiddleware } from '../middleware/rate-limit';
 import {
   publicShareToken,
   resolvePublicShare,
   shareIdFromPublicRef,
-} from '../shared/session-public-shares';
-import { getPublicSessionInfo, getPublicSessionMessages } from '../shared/public-session-share-view';
+} from '../services/sessions/session-public-shares';
+import { getPublicSessionInfo, getPublicSessionMessages } from '../services/sessions/public-session-share-view';
 
 export const publicSessionSharesApp = makeOpenApiApp();
 

@@ -31,7 +31,7 @@ const auditWhere: string[] = [];
 let sessionProjectId: string | null = 'project-owner';
 const { PgDialect } = await import('drizzle-orm/pg-core');
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: (projection: Record<string, unknown>) => ({
       from: (_table: unknown) => {

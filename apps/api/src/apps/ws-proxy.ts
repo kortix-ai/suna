@@ -2,7 +2,7 @@ import { appRuntimes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { type SandboxProviderName } from '../lib/config';
 import { markComputeSessionAlive } from '../billing/services/compute-metering';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { ingressTargetUrl } from '../platform/providers/ingress-url';

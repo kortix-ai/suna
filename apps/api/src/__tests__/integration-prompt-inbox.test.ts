@@ -50,7 +50,7 @@ import {
   requeueUnverifiedRedelivery,
 } from '../projects/session-lifecycle/store';
 import type { CommandLease } from '../projects/session-lifecycle/command-lease';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { logger } from '../lib/logger';
 import { promptState } from '../projects/lib/session-prompt-view';
 

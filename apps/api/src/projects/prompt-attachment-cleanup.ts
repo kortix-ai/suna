@@ -1,7 +1,7 @@
 import { promptAttachments, promptAttachmentReferences, sessionLifecycleCommands } from '@kortix/db';
 import { PROMPT_ATTACHMENT_TTL_MS } from '@kortix/shared';
 import { and, asc, eq, gt, inArray, lt, ne, or, sql, type SQLWrapper } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import type { PromptPartWire } from './session-lifecycle/store';
 import { PromptAttachmentError, type PromptAttachmentScope, type Row, type Transaction, storage, chunkedMode, chunkBytes, filePath, chunkPath, assertOwner, noReferences, FINALIZE_LEASE_MS } from './prompt-attachment-storage';
 

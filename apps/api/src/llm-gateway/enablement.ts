@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 
 /** True only when the platform gateway is available and this project opted in. */

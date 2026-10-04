@@ -6,8 +6,8 @@
  * multiple API instances are safe. Resumes EVERY non-terminal status (pending,
  * building, ready, activating) — a crash at ready or mid-activating converges.
  */
-import { db as appDb } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
+import { db as appDb } from '../../lib/db';
+import { runWorkerTick } from '../../services/audit/audit-scope';
 import { logger } from '../../lib/logger';
 import { driveProviderTransition } from './provider-transition-runner';
 import { defaultTransitionDeps } from './provider-transition-service';

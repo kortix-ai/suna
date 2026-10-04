@@ -10,9 +10,9 @@
  */
 import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { isUniqueViolation } from '../shared/postgres-errors';
-import { isUuid } from '../shared/validate';
+import { db } from '../lib/db';
+import { isUniqueViolation } from '../lib/postgres-errors';
+import { isUuid } from '../lib/validate';
 
 /** The authorized identity: an email, a login, or a display name. */
 export const CONNECTED_AS_KEY = 'connected_as';

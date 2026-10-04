@@ -68,7 +68,7 @@
  * entry names the release and the spec section that ends it.
  */
 import { config } from '../lib/config';
-import { platinumUsRegion } from '../shared/platinum-region';
+import { platinumUsRegion } from '../services/sandboxes/platinum/region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';

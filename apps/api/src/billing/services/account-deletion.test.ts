@@ -122,8 +122,8 @@ let deletedUsers: string[] = [];
 let deleteUserError: Error | null = null;
 const { config } = await import('../../lib/config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
-const liveness = await import('../../shared/jwt-liveness');
-mock.module('../../shared/supabase', () => ({
+const liveness = await import('../../auth/jwt-liveness');
+mock.module('../../lib/supabase', () => ({
   getSupabase: () => ({ auth: { admin: { deleteUser: async (id: string) => {
     if (deleteUserError) return { error: deleteUserError };
     deletedUsers.push(id);
@@ -136,7 +136,7 @@ mock.module('../../shared/supabase', () => ({
  * so the two different SELECTs (owned accounts vs sandboxes) and the session
  * settle UPDATE are told apart by identity rather than by call order.
  */
-mock.module('../../shared/db', () => {
+mock.module('../../lib/db', () => {
   interface FakeDb {
     select: () => {
       from: (table: unknown) => {
@@ -244,7 +244,7 @@ mock.module('../../projects/sandbox-reaper', () => ({
   },
 }));
 
-mock.module('../../shared/stripe', () => ({
+mock.module('../stripe', () => ({
   getStripe: () => ({
     subscriptions: { cancel: async () => undefined },
   }),

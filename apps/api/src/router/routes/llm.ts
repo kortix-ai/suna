@@ -10,7 +10,7 @@ import {
   settleStreamUsage,
 } from '../services/llm';
 import { getSandboxMemberCapStatus } from '../services/member-spend';
-import { resolveActorFromRequest, type ActorContext } from '../../shared/actor-context';
+import { resolveActorFromRequest, type ActorContext } from '../actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 import {

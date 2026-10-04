@@ -2,10 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { projectSnapshotArchives, projects } from '@kortix/db';
 import type { GitBackedProject } from '../projects/git/types';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { PROJECT_SNAPSHOT_FORMAT, type ProjectSnapshotRepository } from './project-snapshot-store';
 import { buildProjectSnapshotArchive, publishProjectSnapshot, ProjectSnapshotTooLargeError, type BuiltProjectSnapshot } from './project-snapshot-build';
-import { exponentialBackoffMs } from '../shared/backoff';
+import { exponentialBackoffMs } from '../lib/backoff';
 
 // ── Worker claim / settle ───────────────────────────────────────────────────
 

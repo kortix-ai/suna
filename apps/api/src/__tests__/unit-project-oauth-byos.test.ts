@@ -33,7 +33,7 @@ let pooledEnabled = true;
 let resourceRows: Array<Record<string, unknown>> = [];
 let updatedRows: Array<Record<string, unknown>> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({
@@ -114,7 +114,7 @@ mock.module('../secrets/account-resource', () => ({
   memberMayReadProject: async () => true,
 }));
 mock.module('../projects/lib/sandbox-env-sync', () => ({ propagateProjectSecretsToActiveSandboxes: async () => {} }));
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   inferAuditSource: () => 'api',
   recordAuditEvent: async (event: Record<string, unknown>) => { auditEvents.push(event); },
   runAuditedTransaction: async <T>(operation: () => Promise<T>) => operation(),

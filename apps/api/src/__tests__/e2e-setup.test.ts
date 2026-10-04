@@ -151,7 +151,7 @@ describe('Billing no-DB guard', () => {
   });
 
   it('account-state route uses hasDatabase guard', async () => {
-    const { hasDatabase } = await import('../shared/db');
+    const { hasDatabase } = await import('../lib/db');
     if (hasDatabase) {
       expect(process.env.DATABASE_URL).toBeTruthy();
       return;
@@ -173,7 +173,7 @@ describe('Billing no-DB guard', () => {
   });
 
   it('minimal account-state route uses hasDatabase guard', async () => {
-    const { hasDatabase } = await import('../shared/db');
+    const { hasDatabase } = await import('../lib/db');
     if (hasDatabase) {
       expect(process.env.DATABASE_URL).toBeTruthy();
       return;
@@ -196,7 +196,7 @@ describe('Billing no-DB guard', () => {
 
 describe('Database guard checks', () => {
   it('hasDatabase is exposed as a boolean', async () => {
-    const { hasDatabase } = await import('../shared/db');
+    const { hasDatabase } = await import('../lib/db');
     expect(typeof hasDatabase).toBe('boolean');
   });
 

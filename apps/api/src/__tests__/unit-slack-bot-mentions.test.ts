@@ -34,7 +34,7 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve([]));
   return chain;
 }
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: { select: () => makeChain() },
   hasDatabase: () => true,
 }));

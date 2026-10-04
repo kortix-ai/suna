@@ -66,7 +66,7 @@ function freshSessionRow(): typeof SESSION_ROW {
 // Spread the real modules: `mock.module` replaces them WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

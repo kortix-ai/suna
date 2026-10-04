@@ -11,7 +11,7 @@ import * as realAccess from '../lib/access';
  *   1. `GET /gateway/logs` pagination — the handler asks the DB for
  *      `limit + 1` rows, slices to `limit`, and reports `next_offset`.
  *   2. the log-row projection (camelCase row → snake_case wire, spend split
- *      from shared/llm-spend.ts, deprecated aliases).
+ *      from services/usage/llm-spend.ts, deprecated aliases).
  *   3. one spend total — `GET /gateway/overview` aggregates and maps
  *      `total_cost` / `kortix_cost` / `provider_cost`.
  *   4. route registration — all 19 `/gateway/*` routes stay registered on
@@ -59,7 +59,7 @@ const databaseMock = {
   }),
 };
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: databaseMock,
   hasDatabase: true,
   withDbTransaction: async () => {

@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { getSandboxProvider, type ProviderState } from './providers';
 import { config, type SandboxProviderName } from '../lib/config';
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';

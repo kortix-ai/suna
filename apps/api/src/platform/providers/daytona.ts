@@ -15,8 +15,8 @@ import {
   getDaytona,
   isDaytonaDiskQuotaError,
   listStoppedDaytonaSandboxesOldestFirst,
-} from '../../shared/daytona';
-import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
+} from '../../services/sandboxes/daytona/client';
+import { configuredTimeoutMs, withTimeout } from '../../lib/with-timeout';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import {

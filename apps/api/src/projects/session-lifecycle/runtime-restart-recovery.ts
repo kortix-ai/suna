@@ -22,7 +22,7 @@ import { sessionSandboxes } from '@kortix/db';
  * itself; `MAX_PROMPT_REDELIVERIES` in redelivery.ts bounds any loop.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { settleOpenSandboxTurns } from '../session-turn-ledger';
 import { storedSandboxTurns } from '../session-turn-ledger';
 import { type PromptRedelivery, requeueAbandonedPrompt } from './redelivery';
@@ -99,7 +99,7 @@ const liveDeps: RuntimeRestartRecoveryDeps = {
   // DYNAMIC import on purpose. `sandbox-proxy/backend.ts` imports this module,
   // and pulling the whole engine into that graph statically drags every module
   // the engine touches into tests that only mock part of it — two suites broke
-  // on a partially-mocked `shared/daytona` / `projects/git` the moment the
+  // on a partially-mocked `services/sandboxes/daytona/client` / `projects/git` the moment the
   // static edge existed. Nothing here needs the engine before this call.
   kickDrain: () =>
     void import('./drain')

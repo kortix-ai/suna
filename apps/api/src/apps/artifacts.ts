@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { posix, resolve, sep } from 'node:path';
 import * as tar from 'tar';
-import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
+import { getSupabase, toPublicStorageUrl } from '../lib/supabase';
 
 export const APP_ARTIFACT_BUCKET = 'app-artifacts';
 // Managed Supabase Storage rejects bucket limits above the project's global

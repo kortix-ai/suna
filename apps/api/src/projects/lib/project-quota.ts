@@ -1,8 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
+import { db } from '../../lib/db';
+import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../billing/account-limits';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a typed 403 response to send, or null when the account may create another

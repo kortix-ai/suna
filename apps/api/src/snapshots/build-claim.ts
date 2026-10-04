@@ -13,7 +13,7 @@
  */
 import { workerLeaderLease } from '@kortix/db';
 import { and, eq, gte, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const OWNER = `${process.pid}:${crypto.randomUUID()}`;
 export const SNAPSHOT_BUILD_CLAIM_TTL_MS = 12 * 60 * 1000;

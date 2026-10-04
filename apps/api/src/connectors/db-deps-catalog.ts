@@ -15,7 +15,7 @@ import {
   listEntitledConnectorConnectionsBatch,
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import {

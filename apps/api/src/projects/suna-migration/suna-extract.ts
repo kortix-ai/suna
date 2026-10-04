@@ -7,7 +7,7 @@
  * (the synthesized config from buildStarterFiles; each legacy sandbox's own
  * v1 kortix.toml is excluded below, it isn't carried over).
  */
-import { getDaytona } from '../../shared/daytona';
+import { getDaytona } from '../../services/sandboxes/daytona/client';
 
 // Stripped from each legacy/<slug>/ — Suna-era config + heavy/system dirs.
 const EXCLUDES = [

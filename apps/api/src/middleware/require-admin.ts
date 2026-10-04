@@ -1,7 +1,7 @@
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { getPlatformRole } from '../shared/platform-roles';
-import { getImpersonationContext } from '../shared/impersonation';
+import { getPlatformRole } from '../iam/platform-roles';
+import { getImpersonationContext } from '../iam/impersonation';
 
 export async function requireAdmin(c: Context, next: Next) {
   const accountId = c.get('userId') as string | undefined;

@@ -1,6 +1,6 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
 import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';

@@ -386,7 +386,7 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
   try {
     const { projects } = await import('@kortix/db');
     const { eq } = await import('drizzle-orm');
-    const { db } = await import('../shared/db');
+    const { db } = await import('../lib/db');
     const [row] = await db
       .select()
       .from(projects)

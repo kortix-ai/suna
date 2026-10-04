@@ -41,7 +41,7 @@ const transactionClient = {
   }),
 };
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     transaction: async (operation: (tx: typeof transactionClient) => Promise<unknown>) => {
       calls.push('begin');
@@ -65,7 +65,7 @@ mock.module('../lib/request-context', () => ({
   getRequestContext: () => null,
 }));
 
-const { runAuditedTransaction } = await import('../shared/audit');
+const { runAuditedTransaction } = await import('../services/audit/audit');
 
 describe('runAuditedTransaction', () => {
   test('stores the mutation and canonical audit event in one transaction', async () => {

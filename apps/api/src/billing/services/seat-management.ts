@@ -13,8 +13,8 @@
 
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers } from '@kortix/db';
-import { db } from '../../shared/db';
-import { getStripe } from '../../shared/stripe';
+import { db } from '../../lib/db';
+import { getStripe } from '../stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { mintYoloTokenForMember, revokeYoloTokenForMember } from './yolo-tokens';
 import { getActiveYoloTokenRow } from '../repositories/yolo-tokens';
@@ -103,7 +103,7 @@ async function resolveSeatSubscriptionItemId(
 export async function trialSeatLimitBlocksNewMember(
   accountId: string,
 ): Promise<{ limit: number; members: number } | null> {
-  const { resolveTrialSeatLimit } = await import('../../shared/account-limits');
+  const { resolveTrialSeatLimit } = await import('../account-limits');
   const limit = await resolveTrialSeatLimit(accountId);
   if (limit === null) return null;
   const account = await getCreditAccount(accountId);

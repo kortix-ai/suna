@@ -36,8 +36,8 @@ import {
   getProvider,
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
-import { db } from '../../shared/db';
-import { isUniqueViolation } from '../../shared/postgres-errors';
+import { db } from '../../lib/db';
+import { isUniqueViolation } from '../../lib/postgres-errors';
 import {
   type SandboxSpec,
   claimComputeWindow,

@@ -32,12 +32,12 @@ import {
   type SandboxIngressRoute,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
-import { db } from '../shared/db';
-import { resolvePreviewUserContext } from '../shared/preview-ownership';
+import { db } from '../lib/db';
+import { resolvePreviewUserContext } from '../services/sessions/preview-ownership';
 import {
   encodeKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER,
-} from '../shared/kortix-user-context';
+} from '../services/sessions/kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;

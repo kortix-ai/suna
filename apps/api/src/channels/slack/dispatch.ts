@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   loadSlackBotUserIdForProject,
   loadSlackTokenForProject,

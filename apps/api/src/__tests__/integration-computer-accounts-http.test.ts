@@ -45,14 +45,14 @@ import { ensureDefaultConnection } from '../connectors/credentials';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { ensureProjectComputer, syncProjectConnectors } from '../connectors/sync';
 import { runWithContext } from '../lib/request-context';
-import { setImpersonationContext } from '../shared/impersonation';
+import { setImpersonationContext } from '../iam/impersonation';
 import { handleCall } from '../connectors/gateway';
 import type { ConnectorPrincipal } from '../connectors/router';
 import { app } from '../index';
 import { listEntitledConnectorConnections } from '../projects/lib/session-connector-bindings';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
 import {
   createConnectionsRouter,
@@ -61,7 +61,7 @@ import {
 } from '../tunnel/routes/connections';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
-import { generateTunnelToken, hashSecretKey } from '../shared/crypto';
+import { generateTunnelToken, hashSecretKey } from '../lib/crypto';
 import { parseAccessState } from '../tunnel';
 import { computerAccessErrorKind, machineAccess } from '../tunnel/core/rpc-core';
 

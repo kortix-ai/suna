@@ -5,8 +5,8 @@ import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../lib/config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
-import { db } from '../../shared/db';
-import { getSupabase } from '../../shared/supabase';
+import { db } from '../../lib/db';
+import { getSupabase } from '../../lib/supabase';
 import { profileNameFromMetadata } from './account-name';
 import { defaultAccountName } from './app';
 

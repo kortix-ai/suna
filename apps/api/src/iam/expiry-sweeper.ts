@@ -28,8 +28,8 @@
 // returned to EXACTLY ONE replica — no duplicate audit events.
 
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { runWorkerTick } from '../shared/audit-scope';
+import { db } from '../lib/db';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { auditAssignmentExpired, listAssignmentsByIds } from './assignments';
 
 const TICK_MS = 60_000;

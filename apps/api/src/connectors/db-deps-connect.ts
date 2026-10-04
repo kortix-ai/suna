@@ -2,7 +2,7 @@
 import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { config } from '../lib/config';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { rowMetadata, CONNECTED_AS_KEY } from './connection-identity';
 
 export function composioConnectionMetadata(input: {

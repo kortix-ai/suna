@@ -20,7 +20,7 @@ function makeChain(kind?: string): any {
   return chain;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain('select'),
     insert: () => makeChain('insert'),

@@ -2,15 +2,15 @@ import { and, eq, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
 import { capabilityForMethod, TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';
 import { config } from '../../lib/config';
-import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
-import { fingerprintTunnelCredentialHash } from '../../shared/crypto';
-import { API_INSTANCE, API_INSTANCE_ID, API_STARTED_AT } from '../../shared/instance';
+import { db } from '../../lib/db';
+import { runWorkerTick } from '../../services/audit/audit-scope';
+import { fingerprintTunnelCredentialHash } from '../../lib/crypto';
+import { API_INSTANCE, API_INSTANCE_ID, API_STARTED_AT } from '../../lib/instance';
 import {
   TUNNEL_FORWARD_CHANNEL,
   isPgBroadcastListening,
   onTunnelForwardNotify,
-} from '../../shared/pg-broadcast';
+} from '../../lib/pg-broadcast';
 import { tunnelRelay } from './relay';
 
 // A NOTIFY on TUNNEL_FORWARD_CHANNEL wakes both loops: the owner's forwarder

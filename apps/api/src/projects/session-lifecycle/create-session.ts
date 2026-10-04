@@ -8,7 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';

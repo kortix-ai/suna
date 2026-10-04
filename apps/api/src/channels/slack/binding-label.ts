@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { describeSlackConversation, type SlackConversationLabel, type SlackConversationType } from '../slack-api';
 

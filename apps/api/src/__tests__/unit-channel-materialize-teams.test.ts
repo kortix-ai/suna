@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let projectMetadata: unknown = {};
 let hasTeamsInstall = true;
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

@@ -5,7 +5,7 @@ import { isProviderNotFound } from './status';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../lib/config';
-import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
+import { configuredTimeoutMs, withTimeout } from '../../lib/with-timeout';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import { e2bDomain } from './e2b-domain';

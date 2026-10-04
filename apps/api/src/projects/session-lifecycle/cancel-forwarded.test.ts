@@ -41,7 +41,7 @@ let sessionRow: Record<string, unknown> | null = null;
 let deletedMessages: string[] = [];
 let closedTurns: string[] = [];
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     select: (projection?: Record<string, unknown>) => ({

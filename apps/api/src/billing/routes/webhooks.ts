@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { config } from '../../lib/config';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 
 export const webhooksRouter = makeOpenApiApp();
 

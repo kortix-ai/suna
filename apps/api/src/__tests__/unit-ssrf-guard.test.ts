@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { isPrivateIp, UnsafeEgressError, assertSafeEgressUrl, safeEgressFetch } from '../shared/ssrf-guard';
+import { isPrivateIp, UnsafeEgressError, assertSafeEgressUrl, safeEgressFetch } from '../lib/ssrf-guard';
 
 // `node:dns/promises` is mocked per-test below so no real network DNS happens.
 let dnsResults: Record<string, Array<{ address: string; family: number }>> = {};

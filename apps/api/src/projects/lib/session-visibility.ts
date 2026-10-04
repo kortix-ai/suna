@@ -15,11 +15,11 @@ import { authorize } from '../../iam/authorize';
 import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { agentSessionStanding } from './agent-session-standing';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
-import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import { projectSessions, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { ttlMemo } from '../../shared/ttl-memo';
+import { ttlMemo } from '../../lib/ttl-memo';
 import { roleAllows, type ProjectRole } from '../access';
 import type { ProjectRow, ProjectSessionRow } from './serializers';
 

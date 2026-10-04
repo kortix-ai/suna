@@ -12,16 +12,16 @@
 // its own file.
 import { describe, expect, mock, test } from 'bun:test';
 import * as realProviders from '../platform/providers';
-import * as realKortixUserContext from '../shared/kortix-user-context';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realKortixUserContext from '../services/sessions/kortix-user-context';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 
 mock.module('../lib/config', () => ({ config: {} }));
-mock.module('../shared/db', () => ({ db: {} }));
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../lib/db', () => ({ db: {} }));
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   resolvePreviewUserContext: async () => null,
 }));
-mock.module('../shared/kortix-user-context', () => ({
+mock.module('../services/sessions/kortix-user-context', () => ({
   ...realKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
   encodeKortixUserContext: () => '',

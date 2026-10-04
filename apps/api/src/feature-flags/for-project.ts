@@ -8,7 +8,7 @@
  */
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveFeatureFlag, type FeatureFlagKey } from './registry';
 
 /** Effective per-project state for one flag. Unknown project ⇒ false. */

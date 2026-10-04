@@ -79,7 +79,7 @@ mock.module('../../middleware/auth', () => ({
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../accounts/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
 }));
 
@@ -106,7 +106,7 @@ mock.module('../../projects/lib/access', () => ({
   },
 }));
 
-mock.module('../../shared/session-costs', () => ({
+mock.module('../../services/usage/session-costs', () => ({
   listSessionCosts: async (input: Record<string, unknown>) => {
     listInput = input;
     return {

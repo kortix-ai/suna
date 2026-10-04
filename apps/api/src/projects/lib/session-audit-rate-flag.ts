@@ -2,7 +2,7 @@
  * Durable marker for a session whose audit-event ingest rate stays over the
  * ceiling for several consecutive windows.
  *
- * The rate guard itself (shared/opencode-audit-rate-guard.ts) is per-process and
+ * The rate guard itself (services/audit/opencode-audit-rate-guard.ts) is per-process and
  * in-memory, which is right for the hot path but invisible the moment the task
  * restarts. This writes the condition into `session_sandboxes.metadata` so it
  * survives a restart, is queryable during an incident, and gives the 5-minute
@@ -20,7 +20,7 @@
 
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 
 /** Metadata key the marker is written under. */

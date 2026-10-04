@@ -3,8 +3,8 @@ import { and, eq, isNull, lt, lte, or } from 'drizzle-orm';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
-import { db } from '../shared/db';
-import { runWorkerTick } from '../shared/audit-scope';
+import { db } from '../lib/db';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { AppHostingProvider } from './hosting';
 
 let running = false;

@@ -28,7 +28,7 @@ mock.module('../connectors/db-deps', () => ({
 // public-app suite, and stubbing a shared module leaks across files even under
 // --isolate. Mock what it depends on instead, which also exercises the real
 // notifier rather than a stand-in.
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

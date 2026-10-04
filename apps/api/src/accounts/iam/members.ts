@@ -12,7 +12,7 @@ import {
   accountMemberships,
   projects,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import {
@@ -42,7 +42,7 @@ import {
   isResourceType,
 } from './app';
 import { auditIam } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.

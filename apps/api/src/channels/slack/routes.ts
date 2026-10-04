@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { chatInstalls } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { generateSlackManifest, resolveBaseUrl } from '../slack-manifest';
 import { loadSlackSigningSecretForProject } from '../install-store';
@@ -24,7 +24,7 @@ import { handleBlockAction, handleMessageShortcut, handleViewSubmission } from '
 import { handleSlashCommand } from './commands';
 import { CANONICAL_SLACK_INBOUND, inboundProjectId, scopeProjectSlackRequest, type SlackInbound } from './inbound';
 import type { SlackInteractionPayload, SlashResponse } from './types';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 
 // ── Shared slash + interactivity processing ───────────────────────────────────
 // The canonical OAuth app and per-project (BYO) apps run the SAME logic. They

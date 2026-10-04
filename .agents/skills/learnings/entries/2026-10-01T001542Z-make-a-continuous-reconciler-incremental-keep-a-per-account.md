@@ -10,4 +10,4 @@ incident_date: 2026-10-01
 
 **Incident:** 2026-10-01 prod. The audit reconciliation query was the top `pg_stat_statements` entry: ~3.7M calls, 189-387 ms mean, 45-65k buffers per call, ~1.1M seconds total. It re-scanned the full history of 45,872 accounts on every replica, every cycle, and starved session create, /start, and gateway authorize (25 s deadline 503s). The fix is the high-water mark in `kortix.audit_reconciliation_state`. The drain poll on `session_lifecycle_commands` is not at fault: it ran in 2 ms read-only and slowed only because the DB was saturated.
 
-**Enforcement:** `apps/api/src/shared/audit-reconciliation-incremental.integration.test.ts` (db-suites). It fails when a pass rescans reconciled history, loses rows after a partial pass, or skips the weekly full rescan.
+**Enforcement:** `apps/api/src/services/audit/audit-reconciliation-incremental.integration.test.ts` (db-suites). It fails when a pass rescans reconciled history, loses rows after a partial pass, or skips the weekly full rescan.

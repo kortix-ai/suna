@@ -19,10 +19,10 @@ import {
   llmActivityGrantMs,
 } from '../projects/sandbox-deadline';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { tokenRefusalReason } from '../shared/session-lease-refusal';
-import { isGatewayKey } from '../shared/crypto';
-import { recordGatewayTrace } from '../shared/gateway-logs';
-import { recordUsageEvent } from '../shared/usage-events';
+import { tokenRefusalReason } from '../services/sessions/session-lease-refusal';
+import { isGatewayKey } from '../lib/crypto';
+import { recordGatewayTrace } from '../services/usage/gateway-logs';
+import { recordUsageEvent } from '../services/usage/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';

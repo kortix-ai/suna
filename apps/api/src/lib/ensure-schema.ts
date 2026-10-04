@@ -11,7 +11,7 @@
 import { join } from 'node:path';
 import postgres from 'postgres';
 import { config } from './config';
-import { SCHEMA_CHECK_POOL_MAX } from '../shared/database-capacity';
+import { SCHEMA_CHECK_POOL_MAX } from './database-capacity';
 
 export async function ensureSchema(): Promise<void> {
   if (!config.DATABASE_URL) {

@@ -59,7 +59,7 @@ function normalizeHeaders(h: RequestInit['headers']): Record<string, string> {
   return { ...(h as Record<string, string>) };
 }
 
-mock.module('../../shared/platinum', () => ({
+mock.module('../../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected Platinum materialization request');

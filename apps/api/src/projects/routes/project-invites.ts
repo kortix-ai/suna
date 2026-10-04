@@ -5,7 +5,7 @@ import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { assignPendingProjectRole, revokePendingAssignments } from '../../iam/assignments';
 import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accounts } from '@kortix/db';
@@ -19,7 +19,7 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerProjectInvitesRoutes(): void {
   // PUT /v1/projects/:projectId/access/:userId
   // POST /v1/projects/:projectId/access/invite

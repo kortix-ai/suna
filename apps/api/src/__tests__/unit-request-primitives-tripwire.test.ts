@@ -1,10 +1,10 @@
 /**
  * Tripwire: request primitives have one implementation each.
  *
- *   client address   → shared/client-ip.ts (requestClientIp, requestClientKey)
- *   UUID shape check → shared/validate.ts  (isUuid)
- *   JSON object body → shared/http-body.ts (readJsonObject)
- *   HTML escaping    → shared/html.ts      (escapeHtml)
+ *   client address   → lib/client-ip.ts (requestClientIp, requestClientKey)
+ *   UUID shape check → lib/validate.ts  (isUuid)
+ *   JSON object body → lib/http-body.ts (readJsonObject)
+ *   HTML escaping    → lib/html.ts      (escapeHtml)
  *
  * A private copy drifts. An address read outside the trusted-proxy rule is not
  * the address KORTIX_TRUSTED_PROXY_HOPS selects, and a strict UUID regex refuses
@@ -60,7 +60,7 @@ function staleAllowlist(pattern: RegExp, allow: Record<string, string>): string[
 // header does not match.
 const XFF_READ = /[([]\s*['"`]x-forwarded-for['"`]/i;
 const XFF_ALLOW: Record<string, string> = {
-  'shared/client-ip.ts': 'the one implementation',
+  'lib/client-ip.ts': 'the one implementation',
   'platform/services/sandbox-egress-pin.ts':
     'reads cf-connecting-ip first and pins the sandbox egress address; a deliberate special case',
   'auth/gotrue.ts': 'sets the header on an outbound request to GoTrue',
@@ -74,7 +74,7 @@ const XFF_ALLOW: Record<string, string> = {
 // Any 8-4-4-4-12 hex regex literal, strict or loose.
 const UUID_LITERAL = /\[0-9a-f\]\{8\}-/i;
 const UUID_ALLOW: Record<string, string> = {
-  'shared/validate.ts': 'the one implementation',
+  'lib/validate.ts': 'the one implementation',
   // TODO(follow-up): convert once each open change lands.
   'connectors/db-deps-rows.ts': 'open PR #7236 edits this file',
   'iam/sso-sync.ts': 'open SSO identity work edits this file',
@@ -93,16 +93,16 @@ const JSON_OBJECT_ALLOW: Record<string, string> = {};
 
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
-  'shared/html.ts': 'the one implementation',
+  'lib/html.ts': 'the one implementation',
 };
 
 describe('request primitives have one implementation', () => {
-  test('X-Forwarded-For is read only in shared/client-ip.ts', () => {
+  test('X-Forwarded-For is read only in lib/client-ip.ts', () => {
     expect(offenders(XFF_READ, XFF_ALLOW)).toEqual([]);
     expect(staleAllowlist(XFF_READ, XFF_ALLOW)).toEqual([]);
   });
 
-  test('UUID regex literals live only in shared/validate.ts', () => {
+  test('UUID regex literals live only in lib/validate.ts', () => {
     expect(offenders(UUID_LITERAL, UUID_ALLOW)).toEqual([]);
     expect(staleAllowlist(UUID_LITERAL, UUID_ALLOW)).toEqual([]);
   });
@@ -116,18 +116,18 @@ describe('request primitives have one implementation', () => {
     expect(JSON_OBJECT_INLINE.test('const body = await readJsonObject(c);')).toBe(false);
   });
 
-  test('JSON object bodies are read only through shared/http-body.ts', () => {
+  test('JSON object bodies are read only through lib/http-body.ts', () => {
     expect(offenders(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
     expect(staleAllowlist(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
   });
 
-  test('escapeHtml is defined only in shared/html.ts', () => {
+  test('escapeHtml is defined only in lib/html.ts', () => {
     expect(offenders(ESCAPE_HTML_DEF, ESCAPE_HTML_ALLOW)).toEqual([]);
     expect(staleAllowlist(ESCAPE_HTML_DEF, ESCAPE_HTML_ALLOW)).toEqual([]);
   });
 
   test('the scan sees the source tree', () => {
     expect(FILES.length).toBeGreaterThan(500);
-    expect(FILES.some((f) => f.rel === 'shared/client-ip.ts')).toBe(true);
+    expect(FILES.some((f) => f.rel === 'lib/client-ip.ts')).toBe(true);
   });
 });

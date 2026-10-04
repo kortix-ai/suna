@@ -56,7 +56,7 @@ function makeChain(): any {
 }
 // Every table a delete targeted, so a released claim can be asserted.
 const deletedFrom: unknown[] = [];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain(),
     insert: () => makeChain(),

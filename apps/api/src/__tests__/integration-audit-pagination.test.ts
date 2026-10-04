@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { auditEventsAll } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import pg from 'pg';
-import { db } from '../shared/db';
-import { buildAuditCursorCondition, parseAuditCursor } from '../shared/audit-query';
+import { db } from '../lib/db';
+import { buildAuditCursorCondition, parseAuditCursor } from '../services/audit/audit-query';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';

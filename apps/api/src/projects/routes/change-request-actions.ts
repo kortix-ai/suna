@@ -11,7 +11,7 @@ import { refusesSelfMerge } from '../change-request-policy';
 import { manifestChange } from '../change-request-governance';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
 import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
@@ -27,7 +27,7 @@ import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
   // Body: { message?: string }

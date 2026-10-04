@@ -100,7 +100,7 @@ mock.module('@daytonaio/sdk', () => ({
   },
 }));
 
-mock.module('../shared/daytona', () => ({
+mock.module('../services/sandboxes/daytona/client', () => ({
   getDaytona: () => ({
     snapshot: {
       create: async () => {

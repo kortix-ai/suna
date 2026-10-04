@@ -39,7 +39,7 @@ function intFromEnv(name: string, fallback: number): number {
  * 10 new tasks during a rolling deployment. The API also owns an audit pool,
  * a leader-election connection, a base-move LISTEN/NOTIFY connection, and a
  * transient startup schema probe. The capacity invariant in
- * apps/api/src/shared/database-capacity.test.ts accounts for all five sources
+ * apps/api/src/lib/database-capacity.test.ts accounts for all five sources
  * and preserves a non-API reserve. If replica count or pool size grows, update
  * that invariant before changing this default.
  *

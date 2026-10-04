@@ -10,13 +10,13 @@
  *
  * `auth.users` is in the same Postgres the API already pools, and reading it
  * directly is the established pattern in this codebase (`iam/account-identity.ts`,
- * `shared/platform-roles.ts`, `admin/index.ts`). One indexed lookup replaces the
+ * `iam/platform-roles.ts`, `admin/index.ts`). One indexed lookup replaces the
  * fan-out, and a short TTL cache collapses repeat calls.
  *
  * Kept as a leaf module (only `db` + `sql`) so it stays unit-testable.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 // Owner emails change rarely and only decorate a display name, so a short TTL
 // is the right trade. Bounded so a large tenant cannot grow the map without end.

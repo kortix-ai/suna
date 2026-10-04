@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let rows: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({
@@ -13,7 +13,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async (event: Record<string, unknown>) => {
     audits.push(event);
   },

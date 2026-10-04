@@ -14,7 +14,7 @@ mock.module('../lib/config', () => ({
 
 // userExistsInAuth reads auth.users through the shared pool: answer from the
 // email value interpolated into the query.
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({ values: async () => {} }),
     execute: async (query: { queryChunks?: unknown[] }) => {
@@ -24,7 +24,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../shared/access-control-cache', () => ({
+mock.module('../access-control/access-control-cache', () => ({
   areSignupsEnabled: () => signupsOpen,
   canSignUp: (email: string) => signupsOpen || allowlisted.has(email.toLowerCase()),
   startAccessControlCache: () => {},

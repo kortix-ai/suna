@@ -13,18 +13,18 @@
  */
 
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
-import { requestClientKey } from '../../shared/client-ip';
+import { requestClientKey } from '../../lib/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   generateDeviceCode,
   deriveDeviceSetupToken,
   hashSecretKey,
   verifySecretKey,
   randomAlphanumeric,
-} from '../../shared/crypto';
+} from '../../lib/crypto';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { config } from '../../lib/config';
 import type { AppEnv } from '../../types/app-env';
@@ -36,8 +36,8 @@ import { attachComputerConnection } from '../../connectors/computers';
 import { PROJECT_ACTIONS } from '../../iam';
 import { loadProjectForUser, projectCapabilityAllowed } from '../../projects/lib/access';
 import { parseConnectorConnectOwner } from '../../projects/lib/connection-access';
-import { readJsonObject } from '../../shared/http-body';
-import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../lib/http-body';
+import { isUuid } from '../../lib/validate';
 import { tunnelRelay } from '../core/relay';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 import { retireSupersededRegistrations } from './connections';

@@ -2,10 +2,10 @@ import type { AgentGrant } from '@kortix/db';
 import { config } from '../lib/config';
 import { validateAccountToken, validateAccountTokenById } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
-import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
-import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
+import { isAccountToken, isServiceAccountToken } from '../lib/crypto';
+import { annotateAuditEvent, bindAuditPrincipal } from '../services/audit/audit-scope';
 import { appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
-import { escapeHtml } from '../shared/html';
+import { escapeHtml } from '../lib/html';
 import { appBrowserNavigation, appFrameAncestors, PROXY_PAGE_SYMBOL, PROXY_PAGE_TOKENS } from './public-proxy-status';
 import { APP_VIEWER_HEADER, APP_VIEWER_TOKEN_HEADER, appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
 
@@ -460,7 +460,7 @@ function bindAppBearerPrincipal(app: AppAccessRow, principal: AppBearerPrincipal
  * Name the Kortix user the App's signed session proves. Called once the gate
  * has let the request through, for public Apps too: a public App still
  * recognises a signed-in viewer, and that viewer is audited. An anonymous
- * visitor binds nothing and is not audited (shared/audit.ts).
+ * visitor binds nothing and is not audited (services/audit/audit.ts).
  */
 export function bindAppViewerSession(userId: string): void {
   bindAuditPrincipal({

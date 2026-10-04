@@ -27,13 +27,13 @@
  * it (organic growth, a stuck error-state backlog, a future misconfig).
  */
 
-// Deliberately no runtime import from '../shared/daytona' — only the type,
+// Deliberately no runtime import from '../services/sandboxes/daytona/client' — only the type,
 // which is erased at compile time. Callers (platform/providers/daytona.ts)
 // wire in the real list/archive functions explicitly via `deps`. This keeps
 // the module free of any Daytona-client/config side effects, which matters
 // for testability (a bare `deps` contract needs no module mocking at all).
-import type { DaytonaStoppedSandboxSummary } from '../shared/daytona';
-import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import type { DaytonaStoppedSandboxSummary } from '../services/sandboxes/daytona/client';
+import { mapWithConcurrency } from '../lib/map-with-concurrency';
 
 /** Hard safety cap on how many sandboxes one sweep pass will even consider —
  *  not a target: every candidate under this cap gets archived. Sized far

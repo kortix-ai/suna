@@ -8,7 +8,7 @@ import {
   projectAccessRequests,
   projects,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { authorize } from '../../iam';
 import { mfaGateBlocks } from '../../iam/authorize';
 import { actorForUser } from '../../iam/actor';

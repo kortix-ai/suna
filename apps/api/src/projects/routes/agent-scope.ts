@@ -36,7 +36,7 @@ import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
 import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isValidIdentifier } from '../secrets';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';

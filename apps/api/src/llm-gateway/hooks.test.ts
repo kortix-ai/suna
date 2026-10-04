@@ -41,7 +41,7 @@ mock.module('../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => !realAccountIsFreeTierForModels(accountTier),
 }));
 
-// Real `../shared/crypto` is used as-is (pure token-shape checks, no DB) — a
+// Real `../lib/crypto` is used as-is (pure token-shape checks, no DB) — a
 // 'good'/'nope' test token never matches the `kortix_gw_` prefix, so
 // `isGatewayKey` naturally returns false without mocking.
 

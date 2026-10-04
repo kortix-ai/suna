@@ -13,7 +13,7 @@
  * table for UI display + "Fix with agent."
  */
 
-import { runWorkerTick } from '../shared/audit-scope';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
 import {

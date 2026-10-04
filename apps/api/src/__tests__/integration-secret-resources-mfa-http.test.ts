@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

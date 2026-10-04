@@ -2,7 +2,7 @@
 // requests, magic links, signup confirmations, password recovery — is rendered
 // through renderEmail() so they are visibly one product rather than a branded
 // invite next to a default GoTrue plain-text link.
-import { escapeHtml } from '../../shared/html';
+import { escapeHtml } from '../html';
 import { EMAIL_COLORS, EMAIL_FONT_MONO, EMAIL_FONT_SANS, EMAIL_LAYOUT as L } from './brand-tokens.generated';
 
 // Colors and fonts come from the brand kit (brand-tokens.generated.ts). Rules:

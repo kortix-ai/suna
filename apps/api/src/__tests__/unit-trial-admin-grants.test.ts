@@ -21,10 +21,10 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 mock.module('../billing/services/entitlements', () => ({
   invalidateCachedAccountTier: () => {},
 }));
-mock.module('../shared/account-limits', () => ({
+mock.module('../billing/account-limits', () => ({
   clearAccountLimitCache: () => {},
 }));
-mock.module('../shared/db', () => ({ db: {} }));
+mock.module('../lib/db', () => ({ db: {} }));
 // tiers.ts (grantForSeats lives there) imports the validated env config; stub
 // the two fields it can touch so the test runs without a booted environment.
 mock.module('../lib/config', () => ({

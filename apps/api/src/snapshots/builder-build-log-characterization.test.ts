@@ -7,7 +7,7 @@ const provider = 'daytona';
 
 mock.module('../lib/config', () => ({ SANDBOX_VERSION: 'test', config: { ALLOWED_SANDBOX_PROVIDERS: [provider] } }));
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async (n: number) => rows.slice(0, n) }) }) }) }),
     update: () => ({ set: (values: any) => ({ where: async () => {

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import { emailTrustedSql } from './email-trust';
 

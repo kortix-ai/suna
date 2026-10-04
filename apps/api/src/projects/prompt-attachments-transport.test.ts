@@ -93,7 +93,7 @@ const fakeDb: FakeDb = {
     }
   },
 };
-mock.module('../shared/db', () => ({ db: fakeDb, hasDatabase: true }));
+mock.module('../lib/db', () => ({ db: fakeDb, hasDatabase: true }));
 
 const storage: { method: string; path: string; inTransaction: boolean; body?: unknown }[] = [];
 let object: Uint8Array | undefined;

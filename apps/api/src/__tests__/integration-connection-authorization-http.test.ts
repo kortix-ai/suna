@@ -36,12 +36,12 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { mintSetupLink } from '../setup-links/token';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   publicShareToken,
   publicShareTokenHash,
   resolvePublicShare,
-} from '../shared/session-public-shares';
+} from '../services/sessions/session-public-shares';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

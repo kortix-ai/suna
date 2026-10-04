@@ -1,7 +1,7 @@
 /**
  * Leader-only worker that turns queued `project_snapshot_archives` rows into
  * published archives. Same shape as the other singleton workers
- * (`shared/audit-webhooks.ts`): a recursive `setTimeout` tick so a slow build
+ * (`services/audit/audit-webhooks.ts`): a recursive `setTimeout` tick so a slow build
  * can never overlap the next tick in this process, `SKIP LOCKED` claims so a
  * leadership flap can never double-build a row, and every outcome settled on
  * the row itself so failure stays visible and retryable.
@@ -16,7 +16,7 @@ import {
   type ProcessedProjectSnapshot,
 } from './project-snapshot';
 import { projectSnapshotStorageConfigured } from './project-snapshot-store';
-import { runWorkerTick } from '../shared/audit-scope';
+import { runWorkerTick } from '../services/audit/audit-scope';
 
 const CLAIM_BATCH = 2;
 const IDLE_MS = 5_000;

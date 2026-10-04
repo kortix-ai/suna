@@ -22,7 +22,7 @@ const mockStripeClient = {
   },
 };
 
-mock.module('../shared/stripe', () => ({
+mock.module('../billing/stripe', () => ({
   getStripe: () => mockStripeClient,
 }));
 
@@ -78,11 +78,11 @@ mock.module('../billing/services/subscriptions', () => ({
   cancelFreeSubscriptionForUpgrade: async () => null,
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async (id: string) => id,
 }));
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     // isWebhookEventProcessed: the event has not been processed yet.

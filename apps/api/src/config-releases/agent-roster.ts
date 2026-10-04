@@ -19,7 +19,7 @@ import type { GitBackedProject } from '../projects/git/types';
 import { extractAgents } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
 import { manifestCandidatePaths, manifestFormatForPath } from '@kortix/manifest-schema';
-import { ttlMemo } from '../shared/ttl-memo';
+import { ttlMemo } from '../lib/ttl-memo';
 import type { DeclaredAgentRoster } from './session-agent';
 
 const ROSTER_TTL_MS = 60_000;

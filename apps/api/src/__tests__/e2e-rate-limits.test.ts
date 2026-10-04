@@ -15,7 +15,7 @@ mock.module('../lib/config', () => ({
   },
 }));
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({
       values: async (values: Record<string, unknown>) => {
@@ -32,8 +32,8 @@ const {
   createPublicSessionShareRateLimitMiddleware,
   createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
-} = await import('../shared/rate-limit');
-const { sessionLlmPolicyForTier } = await import('../shared/account-limits');
+} = await import('../middleware/rate-limit');
+const { sessionLlmPolicyForTier } = await import('../billing/account-limits');
 
 describe('audited rate limits', () => {
   beforeEach(() => {

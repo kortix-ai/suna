@@ -28,8 +28,8 @@
  */
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { isRetiredManagedModelId } from '../models/managed-models';
 import { SERVED_MANAGED_MODELS, platformDefaultModelId } from '../models/served-managed-models';

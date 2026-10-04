@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
 import { eq, inArray } from 'drizzle-orm';
 
-import { fingerprintTunnelCredentialHash, hashSecretKey } from '../shared/crypto';
-import { db } from '../shared/db';
-import { API_INSTANCE_ID } from '../shared/instance';
+import { fingerprintTunnelCredentialHash, hashSecretKey } from '../lib/crypto';
+import { db } from '../lib/db';
+import { API_INSTANCE_ID } from '../lib/instance';
 import {
   relayRpcToConnectedAgent,
   startTunnelRpcForwarder,

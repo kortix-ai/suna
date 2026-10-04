@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { config } from '../lib/config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';

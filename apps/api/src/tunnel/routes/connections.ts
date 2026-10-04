@@ -14,24 +14,24 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { tunnelRelay } from '../core/relay';
 import {
   generateTunnelToken,
   hashSecretKey,
   isTunnelToken,
   verifySecretKey,
-} from '../../shared/crypto';
-import { requestClientKey } from '../../shared/client-ip';
-import { isUuid } from '../../shared/validate';
+} from '../../lib/crypto';
+import { requestClientKey } from '../../lib/client-ip';
+import { isUuid } from '../../lib/validate';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import type { AppEnv } from '../../types/app-env';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../core/rpc-core';
-import { retryOnDeadlock } from '../../shared/error-cause';
-import { readJsonObject } from '../../shared/http-body';
+import { retryOnDeadlock } from '../../lib/error-cause';
+import { readJsonObject } from '../../lib/http-body';
 import { uniqueComputerLabel } from '../../connectors/computers';
 
 /** Permissive connection row shape, as persisted + serialized. */

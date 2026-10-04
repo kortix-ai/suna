@@ -12,7 +12,7 @@ import { createRoute, z } from '@hono/zod-openapi'
 import type { Context } from 'hono'
 import { resolveProvider } from '../index'
 import { combinedAuth } from '../../middleware/auth'
-import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
+import { canAccessPreviewSandbox } from '../../services/sessions/preview-ownership'
 import { makeOpenApiApp, json, errors, auth } from '../../openapi'
 import { shareUpstreamResult } from '../share-upstream'
 

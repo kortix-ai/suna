@@ -35,10 +35,10 @@ const WORKERS: Record<string, string> = {
   'app-deployments': 'apps/deployment-worker.ts',
   'app-idle-reaper': 'apps/idle-reaper.ts',
   'pi-worker-pool': 'platform/services/pi-worker-pool.ts',
-  'audit-webhooks': 'shared/audit-webhooks.ts',
-  'audit-reconciliation': 'shared/audit-reconciliation-worker.ts',
-  'audit-partitions': 'shared/audit-partition-worker.ts',
-  'audit-archive': 'shared/audit-archive/worker.ts',
+  'audit-webhooks': 'services/audit/audit-webhooks.ts',
+  'audit-reconciliation': 'services/audit/audit-reconciliation-worker.ts',
+  'audit-partitions': 'services/audit/audit-partition-worker.ts',
+  'audit-archive': 'services/audit/audit-archive/worker.ts',
   'project-snapshots': 'git-proxy/project-snapshot-worker.ts',
   'iam-grant-expiry': 'iam/expiry-sweeper.ts',
   'oauth-sweep': 'oauth/sweeper.ts',
@@ -68,7 +68,7 @@ const NOT_WORKERS: Record<string, string> = {
   'llm-gateway/models/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/preview-state-page.ts': 'browser JavaScript inside an HTML string',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
-  'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',
+  'access-control/access-control-cache.ts': 'refreshes the in-memory access-control cache',
   'snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
 };
 

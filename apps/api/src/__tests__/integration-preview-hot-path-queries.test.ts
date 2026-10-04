@@ -23,8 +23,8 @@ import { createDb } from '@kortix/db';
 import { beginStage } from '../lib/server-timing';
 
 // Capture every statement this process sends. Installed before anything
-// imports `shared/db`, which reuses the instance it finds here for the same
-// URL. Static imports above must not load `shared/db` (they are hoisted).
+// imports `lib/db`, which reuses the instance it finds here for the same
+// URL. Static imports above must not load `lib/db` (they are hoisted).
 const statements: string[] = [];
 const capture = { on: false };
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
@@ -76,7 +76,7 @@ const { accounts, accountMembers, accountTokens, projects, projectSessions, sess
 const { eq } = await import('drizzle-orm');
 const { Hono } = await import('hono');
 const { config } = await import('../lib/config');
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 const { runWithContext } = await import('../lib/request-context');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { sandboxProxyApp } = await import('../sandbox-proxy');

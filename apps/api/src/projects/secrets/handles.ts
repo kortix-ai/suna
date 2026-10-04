@@ -4,8 +4,8 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { config } from '../../lib/config';
 import type { SecretEgressPolicy } from '../../secrets/strategy';
 import { mintHandle, newLookupId } from '../../secrets/strategy';
-import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import type { ResolvedProjectSecret } from '../secrets';
 
 /**

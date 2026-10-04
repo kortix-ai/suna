@@ -1,14 +1,14 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../lib/config';
-import { requestClientKey } from '../shared/client-ip';
-import { isTokenHashCached, isTokenValidated } from '../shared/token-hash';
+import { requestClientKey } from '../lib/client-ip';
+import { isTokenHashCached, isTokenValidated } from '../auth/token-hash';
 
 /**
  * Pre-authentication budget for UNKNOWN Kortix bearer tokens, per client IP.
  *
  * Validating a token this process has never seen costs one scrypt (see
- * shared/token-hash.ts). A token already seen costs nothing, so only the
+ * auth/token-hash.ts). A token already seen costs nothing, so only the
  * refusals of never-seen tokens count against the caller's address. Once an
  * address exceeds `KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN` such refusals, further
  * never-seen tokens from it are answered 429 before any hashing. Tokens this

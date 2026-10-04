@@ -30,8 +30,8 @@
  */
 import { and, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { iamRoles, roleAssignments } from '@kortix/db';
-import { db } from '../shared/db';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { db } from '../lib/db';
+import { qualifiedColumn } from '../lib/sql-qualified-column';
 import type { ScopeType } from './catalog';
 
 // ─── Vocabulary ─────────────────────────────────────────────────────────────

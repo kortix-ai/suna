@@ -14,7 +14,7 @@ import { accountMembers, connectorConnections, tunnelConnections } from '@kortix
 import { and, eq, sql } from 'drizzle-orm';
 import type pg from 'pg';
 import { ensureProjectComputer } from '../connectors/sync';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 import { interleave } from './helpers/interleave';

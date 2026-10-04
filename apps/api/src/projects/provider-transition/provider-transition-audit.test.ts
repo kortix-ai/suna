@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { AuditEventInput } from '../../shared/audit';
+import type { AuditEventInput } from '../../services/audit/audit';
 import { auditProviderTransition, providerTransitionAuditEvent } from './provider-transition-audit';
 
 const ROW = {

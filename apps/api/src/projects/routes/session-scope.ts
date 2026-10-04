@@ -6,15 +6,15 @@
 import { SessionScopeSchema, SessionScopeInputSchema } from '@kortix/api-contract';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../lib/config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { isUuid } from '../../shared/validate';
-import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../lib/validate';
+import { readJsonObject } from '../../lib/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { allowStaleMirrorReads } from '../git/mirror';
@@ -26,7 +26,7 @@ import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush,
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
+import { canonicalConnectorAlias, publicConnectorAlias } from '../../connectors/connector-alias';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';

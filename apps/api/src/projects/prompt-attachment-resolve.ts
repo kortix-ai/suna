@@ -1,8 +1,8 @@
 import { promptAttachments, promptAttachmentReferences, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { MAX_PROMPT_ATTACHMENT_BYTES } from '@kortix/shared';
 import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { toPublicStorageUrl } from '../shared/supabase';
+import { db } from '../lib/db';
+import { toPublicStorageUrl } from '../lib/supabase';
 import { buildPromptAttachmentReference } from './session-lifecycle/prompt-attachment-reference';
 import type { PromptPartWire } from './session-lifecycle/store';
 import { PromptAttachmentError, download, filePath, digest, storage } from './prompt-attachment-storage';

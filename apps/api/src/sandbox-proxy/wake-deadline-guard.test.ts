@@ -9,14 +9,14 @@
 // `mock.module` is process-global in bun, so this lives in its own file.
 import { describe, expect, mock, test } from 'bun:test';
 import * as realProviders from '../platform/providers';
-import * as realPreviewOwnership from '../shared/preview-ownership';
-import * as realKortixUserContext from '../shared/kortix-user-context';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
+import * as realKortixUserContext from '../services/sessions/kortix-user-context';
 
 let ensureRunningCalls: string[] = [];
 let deadlineAt: Date | null = new Date(Date.now() + 60 * 60_000);
 
 mock.module('../lib/config', () => ({ config: {} }));
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   resolvePreviewUserContext: async () => null,
 }));
@@ -25,7 +25,7 @@ mock.module('../shared/preview-ownership', () => ({
 // in whatever unrelated file imports the missing name next, as
 // `SyntaxError: Export named '…' not found`, attributed to no test at all.
 // Overriding only what this file needs keeps new exports working by default.
-mock.module('../shared/kortix-user-context', () => ({
+mock.module('../services/sessions/kortix-user-context', () => ({
   ...realKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
   encodeKortixUserContext: () => '',
@@ -53,7 +53,7 @@ mock.module('../platform/providers', () => ({
 // Two selects run: loadSandbox (the record) then the deadline probe. Both are
 // served from the same chainable stub; the deadline probe is the one that
 // resolves to a row carrying `deadlineAt`.
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: (fields: Record<string, unknown>) => {
       const isDeadlineProbe = 'deadlineAt' in (fields ?? {});

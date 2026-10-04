@@ -20,11 +20,11 @@ import { json, errors, auth } from '../../openapi';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountGroups, projects } from '@kortix/db';
 import { objectGrantRows } from '../../iam/read-models';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { iamRouter, AccountIdParam } from './app';
 
 const ResourceGrantRowSchema = z

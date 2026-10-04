@@ -1,7 +1,7 @@
 import { promptAttachments } from '@kortix/db';
 import { PROMPT_ATTACHMENT_TTL_MS } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { PromptAttachmentError, type PromptAttachmentScope, storage, storageUnavailable, chunkedMode, chunkBytes, formatBytes, filePath, chunkPath, metadata, assertOwner, assertUnexpired, selectAttachment, digest, download, STORAGE_TIMEOUT_MS, COMPLETE_BOUND_MS, FINALIZE_LEASE_MS } from './prompt-attachment-storage';
 
 /** Chunked assembly holds one whole file in memory; this bounds it per process. */

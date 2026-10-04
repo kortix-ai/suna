@@ -33,7 +33,7 @@
 
 import { inArray, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { wallet } from '../billing/wallet';
 

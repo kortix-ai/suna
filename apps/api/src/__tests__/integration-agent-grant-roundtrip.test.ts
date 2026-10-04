@@ -9,7 +9,7 @@
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { createAccountToken, validateAccountToken } from '../repositories/account-tokens';
 import { agentMayPerform, agentMayUseConnector } from '../iam/agent-scope';
 

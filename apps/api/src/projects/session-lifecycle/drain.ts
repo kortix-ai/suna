@@ -11,7 +11,7 @@ import {
   sandboxInstanceId,
 } from '../instance-scope';
 import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
-import { runWorkerTick } from '../../shared/audit-scope';
+import { runWorkerTick } from '../../services/audit/audit-scope';
 import {
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,

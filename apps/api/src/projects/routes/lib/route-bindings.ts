@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { isUuid } from '../../../shared/validate';
+import { isUuid } from '../../../lib/validate';
 import type { ProjectAccessAction } from '../../access';
 import { loadProjectForUser } from '../../lib/access';
 

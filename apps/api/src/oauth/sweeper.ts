@@ -3,7 +3,7 @@
 // and safe when several API tasks run them: a row a peer already deleted is not
 // matched. Recursive setTimeout keeps ticks serial per process.
 
-import { runWorkerTick } from '../shared/audit-scope';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { sweepAbandonedSelfRegisteredClients, sweepExpiredAuthorizationRequests } from './index';
 
 const TICK_MS = 60 * 60_000;

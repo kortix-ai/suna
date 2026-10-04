@@ -91,7 +91,7 @@ describe('fingerprintOf', () => {
 describe('buildCreatePayload: account_id is always sent explicitly', () => {
   test('MANDATORY: falls back to the first creatable account when the picker is hidden (state.accountId is null)', () => {
     // This is the exact scenario `resolveAccountId`
-    // (apps/api/src/shared/resolve-account.ts:117-129) gets wrong if account_id
+    // (apps/api/src/accounts/resolve-account.ts:117-129) gets wrong if account_id
     // is omitted: it picks the EARLIEST-JOINED membership with NO role check,
     // which can be a DIFFERENT account than the single creatable one the
     // picker hid. Omitting account_id here would 403.

@@ -14,7 +14,7 @@ import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
 import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
-import { resolveAccountId } from '../shared/resolve-account';
+import { resolveAccountId } from './resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
 // Enforce per-account session policies (max lifetime / idle timeout /

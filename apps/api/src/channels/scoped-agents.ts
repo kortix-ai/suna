@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { filterAccessibleObjects, unscopedResourceIds } from '../iam';
 import { actorForUser } from '../iam/actor';
 import { listProjectAgents, type ProjectAgent } from './slack/selection';

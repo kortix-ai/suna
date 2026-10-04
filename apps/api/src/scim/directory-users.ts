@@ -1,6 +1,6 @@
 import { accountScimUsers } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { buildInviteUser, type UserShape } from './app';
 import { ENTERPRISE_USER_SCHEMA } from './user-profile';
 

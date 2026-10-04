@@ -7,7 +7,7 @@ import {
   resourceProxyPath,
   touchPublicShare,
   transcriptShareViewerUrl,
-} from '../../shared/session-public-shares';
+} from '../../services/sessions/session-public-shares';
 import { previewOriginFor } from '../preview-hosts';
 import { forwardToSandbox, stripFrameAncestors } from './preview';
 

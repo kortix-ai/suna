@@ -15,8 +15,8 @@
  */
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, objectPolicies, permissions } from '@kortix/db';
-import { db } from '../shared/db';
-import { ttlMemo } from '../shared/ttl-memo';
+import { db } from '../lib/db';
+import { ttlMemo } from '../lib/ttl-memo';
 import { VALID_ACTIONS } from './actions';
 
 /** How long a catalog/system-role read is reused. Structural data, not grants. */

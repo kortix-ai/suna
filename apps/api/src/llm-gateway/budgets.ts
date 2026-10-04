@@ -1,8 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
-import { db } from '../shared/db';
-import { totalSpendSql } from '../shared/llm-spend';
+import { db } from '../lib/db';
+import { totalSpendSql } from '../services/usage/llm-spend';
 
 type Period = 'day' | 'week' | 'month';
 
@@ -34,7 +34,7 @@ async function spendForPeriod(
     // project spends on inference; measuring it with `final_cost` alone made
     // every budget on a BYOK project permanently inert, because BYOK routes
     // resolve to `billingMode: 'none'` with `markup: 0` and bill 0 no matter
-    // how many tokens they burn. See shared/llm-spend.ts.
+    // how many tokens they burn. See services/usage/llm-spend.ts.
     .select({ cost: totalSpendSql })
     .from(gatewayRequestLogs)
     .where(and(...conds));

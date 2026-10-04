@@ -82,7 +82,7 @@ mock.module('../projects/git-backends', () => ({
 
 // The limit *number* is controlled here; the plan→number policy lives in the
 // real maxProjectsForAccount (see unit-project-limit-policy.test.ts).
-mock.module('../shared/account-limits', () => ({
+mock.module('../billing/account-limits', () => ({
   FREE_TIER_PROJECT_LIMIT: 3,
   maxProjectsForAccount: async () => projectLimit,
   resolveAccountTier: async () => 'free',
@@ -167,11 +167,11 @@ mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: { email: 'limit@example.test' } } }) } },
   }),
@@ -215,7 +215,7 @@ function thenable(rows: any[]) {
   };
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     // `projection` lets us distinguish the count(*) quota query from the

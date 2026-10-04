@@ -9,7 +9,7 @@ import {
 import { SLUG_RE } from '@kortix/manifest-schema';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { ChannelPlatform } from '../projects/connectors';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
 import { credentialExists } from './credentials';
 import {

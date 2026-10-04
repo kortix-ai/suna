@@ -1,7 +1,7 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { escapeMrkdwn, formatRelativeTime, sessionWebUrl } from './util';
 import { SLACK_PREVIEW_WAIT_MS, repoPreviewImages } from '../repo-preview';

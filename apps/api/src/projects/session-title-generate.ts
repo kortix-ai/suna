@@ -10,7 +10,7 @@ import {
 } from '../llm-gateway/gateway-keys';
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib/opencode-title';
 import type { ProjectSessionRow } from './lib/serializers';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';

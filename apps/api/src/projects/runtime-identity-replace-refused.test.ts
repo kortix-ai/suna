@@ -81,7 +81,7 @@ const transactionScope: Record<string, unknown> = {
   },
 };
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
       inTransaction = true;

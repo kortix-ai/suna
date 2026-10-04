@@ -27,12 +27,12 @@ import { and, eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { BOOT_PHASE_HEADER } from '@kortix/api-contract/runtime-relay';
 import { logger as appLogger } from '../lib/logger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   KORTIX_USER_CONTEXT_HEADER,
   encodeKortixUserContext,
-} from '../shared/kortix-user-context';
-import { resolvePreviewUserContext } from '../shared/preview-ownership';
+} from '../services/sessions/kortix-user-context';
+import { resolvePreviewUserContext } from '../services/sessions/preview-ownership';
 import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
   pickCanonicalRoot,

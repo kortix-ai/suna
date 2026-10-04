@@ -23,7 +23,7 @@
 
 import { config } from '../lib/config';
 import { ObjectStore, type PutOutcome } from '../object-store/s3';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 export interface ConfigArchiveStore {
   putIfAbsent(key: string, body: Buffer): Promise<PutOutcome>;

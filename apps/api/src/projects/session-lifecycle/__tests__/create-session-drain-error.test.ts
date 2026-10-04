@@ -39,7 +39,7 @@ mock.module('../../../lib/config', () => ({
   SANDBOX_VERSION: 'test',
 }));
 
-mock.module('../../../shared/db', () => ({
+mock.module('../../../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     select: (projection?: Record<string, unknown>) => ({

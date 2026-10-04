@@ -26,7 +26,7 @@
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export interface PendingQuestion {
   id: string;

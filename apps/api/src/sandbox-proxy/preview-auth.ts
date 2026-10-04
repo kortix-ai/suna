@@ -25,16 +25,16 @@
  * failure — callers respond 401.
  */
 
-import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
+import { isKortixToken, isAccountToken, isServiceAccountToken } from '../lib/crypto';
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isOAuthAccessToken, OAUTH_SCOPE_KORTIX, validateOAuthAccessToken } from '../oauth/access-token';
-import { verifySupabaseJwt } from '../shared/jwt-verify';
-import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
-import { getSupabase } from '../shared/supabase';
-import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
-import { bindAuditPrincipal } from '../shared/audit-scope';
+import { verifySupabaseJwt } from '../auth/jwt-verify';
+import { isInconclusiveVerifyFailure } from '../auth/jwt-verify-outcome';
+import { getSupabase } from '../lib/supabase';
+import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../services/sessions/preview-ownership';
+import { bindAuditPrincipal } from '../services/audit/audit-scope';
 import { previewActorFields } from './preview-audit';
 import type { PreviewPrincipalKind } from './preview-session';
 

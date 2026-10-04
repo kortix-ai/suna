@@ -5,7 +5,7 @@ import { endComputeSession, reopenComputeForSandbox } from '../billing/services/
 import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
 import { getProvider, type ProviderName } from '../platform/providers';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { settleOpenSandboxTurns } from './session-turn-ledger';
 import type { StopReason } from './stop-reason';
 import {

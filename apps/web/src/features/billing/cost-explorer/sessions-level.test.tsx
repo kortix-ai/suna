@@ -187,7 +187,7 @@ describe('buildSessionsLevelOwnerCatalogInput', () => {
   });
 
   // The catalog fetch must use the API's actual ceiling (`MAX_COST_LIMIT` in
-  // apps/api/src/shared/cost-window.ts), not the visible table's smaller
+  // apps/api/src/services/usage/cost-window.ts), not the visible table's smaller
   // page — a fix-round finding caught this hardcoded to SESSION_COST_PAGE_SIZE
   // (25), silently missing any owner outside the top 25 sessions by spend.
   // Pinned as its own assertion (not folded into the test above) so a future

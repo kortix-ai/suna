@@ -5,12 +5,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { accounts, accountSessionActivity } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, HttpError } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field

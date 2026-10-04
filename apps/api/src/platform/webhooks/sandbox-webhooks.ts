@@ -25,7 +25,7 @@ import {
   reconcileSandboxStoppedByExternalId,
   reconcileSandboxRemovedByExternalId,
 } from '../../projects/sandbox-reaper';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 import { readStandardWebhookHeaders, verifyStandardWebhook } from '../../lib/webhooks/standard-webhooks';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';

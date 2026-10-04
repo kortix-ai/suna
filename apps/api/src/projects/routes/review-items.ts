@@ -11,13 +11,13 @@ import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { normalizeString } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { isAdaptedId } from '../review-adapters';
 import {
   type ReviewSegment,

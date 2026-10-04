@@ -1,6 +1,6 @@
 import { makeOpenApiApp } from '../../../openapi';
 import { getProxyServices } from '../../config/proxy-services';
-import { type ActorContext } from '../../../shared/actor-context';
+import { type ActorContext } from '../../actor-context';
 
 // Catch-all billed proxy. Every route here is a Hono `.all()` (concrete method
 // unknown at definition time → cannot use createRoute), so these intentionally do

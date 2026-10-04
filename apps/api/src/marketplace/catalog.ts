@@ -39,8 +39,8 @@ import {
   type RegistryRef,
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
-import { safeEgressFetch } from "../shared/ssrf-guard";
-import { mapWithConcurrency } from "../shared/map-with-concurrency";
+import { safeEgressFetch } from "../lib/ssrf-guard";
+import { mapWithConcurrency } from "../lib/map-with-concurrency";
 
 export interface ItemCapabilities {
   secrets: string[];

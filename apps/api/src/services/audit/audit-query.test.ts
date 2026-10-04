@@ -1,0 +1,78 @@
+import { describe, expect, test } from 'bun:test';
+import {
+  parseAuditCursor,
+  parseAuditInstant,
+  parseAuditLimit,
+  parseAuditSessionCursor,
+  serializeAuditEvent,
+} from './audit-query';
+
+describe('strict audit query validation', () => {
+  test('accepts exact limits and rejects clamping or parseInt prefixes', () => {
+    expect(parseAuditLimit(null)).toBe(50);
+    expect(parseAuditLimit('200')).toBe(200);
+    for (const value of ['0', '-1', '201', '12x', '1.5', '']) {
+      expect(() => parseAuditLimit(value)).toThrow('limit must be an integer');
+    }
+  });
+
+  test('accepts ISO instants and rejects date-only or normalized garbage', () => {
+    expect(parseAuditInstant('2026-08-07T12:00:00Z', 'since')?.toISOString()).toBe(
+      '2026-08-07T12:00:00.000Z',
+    );
+    for (const value of ['2026-08-07', 'yesterday', '2026-13-40T99:00:00Z']) {
+      expect(() => parseAuditInstant(value, 'since')).toThrow('since must be an ISO-8601 instant');
+    }
+  });
+
+  test('validates every cursor component', () => {
+    const id = 'a7100000-0000-4000-a000-000000000001';
+    expect(parseAuditCursor(`2026-08-07T12:00:00Z|${id}`)?.eventId).toBe(id);
+    expect(parseAuditSessionCursor(`42|${id}`)?.sequence).toBe(42);
+    for (const value of ['bad', `yesterday|${id}`, '2026-08-07T12:00:00Z|bad', `x|${id}`]) {
+      expect(() => parseAuditCursor(value)).toThrow();
+    }
+  });
+
+  test('accepts every id a uuid column stores, not only RFC 4122 versions', () => {
+    // services/audit/audit.ts writes any uuid-shaped id; the cursor must read it back.
+    const id = 'a7100000-0000-0000-0000-000000000001';
+    expect(parseAuditCursor(`2026-08-07T12:00:00Z|${id}`)?.eventId).toBe(id);
+    expect(parseAuditSessionCursor(`42|${id}`)?.eventId).toBe(id);
+  });
+});
+
+describe('serializeAuditEvent credential fields', () => {
+  const row = {
+    eventId: 'a7100000-0000-4000-a000-000000000001',
+    occurredAt: new Date('2026-08-07T12:00:00Z'),
+    credentialKind: 'oauth_app',
+    credentialId: 'client-1',
+    clientReportedSource: null,
+  } as unknown as Parameters<typeof serializeAuditEvent>[0];
+
+  test('exposes kind and id, and the display name only when looked up', () => {
+    expect(serializeAuditEvent(row)).toMatchObject({
+      credential_kind: 'oauth_app',
+      credential_id: 'client-1',
+      credential_name: null,
+    });
+    expect(serializeAuditEvent(row, new Map([['oauth_app:client-1', 'Claude Code']]))).toMatchObject({
+      credential_name: 'Claude Code',
+    });
+  });
+});
+
+describe('serializeAuditEvent runtime session', () => {
+  test('names the runtime session neutrally and under its pre-W4 name', () => {
+    const row = {
+      eventId: 'a7100000-0000-4000-a000-000000000002',
+      occurredAt: new Date('2026-08-07T12:00:00Z'),
+      runtimeSessionId: 'ses_root',
+    } as unknown as Parameters<typeof serializeAuditEvent>[0];
+    expect(serializeAuditEvent(row)).toMatchObject({
+      runtime_session_id: 'ses_root',
+      opencode_session_id: 'ses_root',
+    });
+  });
+});

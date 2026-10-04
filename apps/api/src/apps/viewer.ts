@@ -31,8 +31,8 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { accountGroupMembers, oauthAccessTokens, oauthClients } from '@kortix/db';
-import { db } from '../shared/db';
-import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
+import { db } from '../lib/db';
+import { hashSecretKey, randomAlphanumeric } from '../lib/crypto';
 import { validateOAuthAccessToken } from '../oauth/access-token';
 /*
  * The narrow email lookup (drizzle + db, its own cache, never throws) rather

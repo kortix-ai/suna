@@ -6,7 +6,7 @@
 // sandbox-token-only auth against the project's OWN monitor box, the feature
 // flag, ingest dedup, and the platform-enforced rate bound.
 //
-// Mocks `../shared/db` and `../feature-flags/registry` via `mock.module`
+// Mocks `../lib/db` and `../feature-flags/registry` via `mock.module`
 // (process-global in bun:test — the suite runs with `--isolate`).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
@@ -44,7 +44,7 @@ function box(overrides: Record<string, unknown> = {}) {
   return { boxId: 'box-1', projectId: PROJECT_ID, boxEpoch: EPOCH, ...overrides };
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: (_fields?: unknown) => ({

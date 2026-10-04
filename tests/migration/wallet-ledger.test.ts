@@ -8,7 +8,7 @@
 // stronger: a request-keyed grant now applies once for the life of the ledger,
 // not once per hour.
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
-import { contextualDatabase } from '../../apps/api/src/shared/db-context';
+import { contextualDatabase } from '../../apps/api/src/lib/db-context';
 import { createDb } from '../../packages/db/src/client';
 import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
@@ -148,7 +148,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
     // order cannot decide which database the wallet writes to.
     database = createDb(url);
     const scoped = contextualDatabase(database);
-    mock.module('../../apps/api/src/shared/db', () => ({
+    mock.module('../../apps/api/src/lib/db', () => ({
       hasDatabase: true,
       db: scoped.db,
       withDbTransaction: scoped.transaction,

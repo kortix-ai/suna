@@ -45,7 +45,7 @@ import {
   validateSessionConnectorBindings,
 } from '../projects/lib/session-connector-bindings';
 import { encryptProjectSecret } from '../projects/secrets';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT_A = crypto.randomUUID();
 const ACCOUNT_B = crypto.randomUUID();

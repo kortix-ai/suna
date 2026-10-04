@@ -7,7 +7,7 @@ import { sandboxDatabaseOwner, sandboxOwnershipMarker } from '../platform/sandbo
 import { PlatinumProvider } from '../platform/providers/platinum';
 import { reapOrphanProviderBoxes } from '../projects/reaping/orphan-boxes';
 import { hasProviderBoxReference } from '../projects/reaping/orphan-box-references';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const peerName = `owner_peer_${crypto.randomUUID().replaceAll('-', '')}`;
 const admin = postgres(process.env.TEST_DATABASE_ADMIN_URL!, { max: 1 });

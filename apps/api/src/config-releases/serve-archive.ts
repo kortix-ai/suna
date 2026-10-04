@@ -23,7 +23,7 @@
 import { config } from '../lib/config';
 import { runGitCapture } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { rewriteStorageOrigin } from '../shared/storage-url';
+import { rewriteStorageOrigin } from '../lib/storage-url';
 import { classifyIpHost, sanitizeUrlForLog } from '../snapshots/providers/upload-url-guard';
 import {
   buildConfigArchive,

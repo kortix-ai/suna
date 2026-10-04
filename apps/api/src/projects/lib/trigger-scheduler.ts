@@ -1,9 +1,9 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { config } from '../../lib/config';
-import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
-import { isLeader } from '../../shared/leader-election';
+import { db } from '../../lib/db';
+import { runWorkerTick } from '../../services/audit/audit-scope';
+import { isLeader } from '../../lib/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from '../trigger-execution-store';
 import type { GitTriggerSpec } from '../triggers';
 import { drainMonitorEvents } from './monitor-observer';

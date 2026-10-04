@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { teamsPendingUploads } from '@kortix/db';
 import { eq, lt } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { loadTeamsBotCredentials } from '../install-store';
 import { provenTeamsTenants } from './inbound';
 import { sendActivity, sendCard } from '../teams-api';

@@ -6,7 +6,7 @@
  * that asked for it is audited when made; the outcome often lands later in the
  * `provider-transition` worker, which is the actor then.
  */
-import type { AuditEventInput } from '../../shared/audit';
+import type { AuditEventInput } from '../../services/audit/audit';
 
 export interface ProviderTransitionAuditRow {
   transitionId: string;
@@ -54,7 +54,7 @@ export function providerTransitionAuditEvent(
 }
 
 async function defaultRecord(event: AuditEventInput): Promise<unknown> {
-  const { recordAuditEvent } = await import('../../shared/audit');
+  const { recordAuditEvent } = await import('../../services/audit/audit');
   return recordAuditEvent(event);
 }
 

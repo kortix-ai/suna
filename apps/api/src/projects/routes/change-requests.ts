@@ -2,7 +2,7 @@
 import { config, type SandboxProviderName } from '../../lib/config';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   getCrById,
   getNextCrNumber,
@@ -34,7 +34,7 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { continueSession } from '../session-lifecycle';
 
 // ─── Change Requests ────────────────────────────────────────────────────────

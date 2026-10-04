@@ -1,6 +1,6 @@
 /**
  * The sites that record a caller address (audit rows, IAM request context,
- * session activity) read it through shared/client-ip.ts. With the default
+ * session activity) read it through lib/client-ip.ts. With the default
  * KORTIX_TRUSTED_PROXY_HOPS = 2 the recorded address is the entry two places
  * from the right of X-Forwarded-For, never the caller-written leftmost entry.
  *
@@ -10,8 +10,8 @@ import { describe, expect, test } from 'bun:test';
 import { Hono, type Context } from 'hono';
 import { buildActor } from '../iam/actor';
 import { deriveRequestContext } from '../iam/cache';
-import { attachInboundAuditScope } from '../shared/audit-scope';
-import { requestClientIp } from '../shared/client-ip';
+import { attachInboundAuditScope } from '../services/audit/audit-scope';
+import { requestClientIp } from '../lib/client-ip';
 import { requestAuditContext } from '../projects/lib/serializers';
 
 const CALLER_WRITTEN = '192.0.2.1';

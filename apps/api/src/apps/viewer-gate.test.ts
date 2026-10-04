@@ -8,7 +8,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as realViewer from './viewer';
 import * as realAccess from './access';
-import * as realCrypto from '../shared/crypto';
+import * as realCrypto from '../lib/crypto';
 
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.kortix.com';
@@ -21,7 +21,7 @@ const OTHER_USER = '99999999-9999-4999-8999-999999999999';
 
 let mintedFor: Array<{ appId: string; userId: string; scope: string }> = [];
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   ...realCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),

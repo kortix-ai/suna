@@ -48,7 +48,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { type ProviderName, getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { REAP_CONCURRENCY } from '../reaper-constants';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';

@@ -3,7 +3,7 @@ import { describe, expect, it, mock } from 'bun:test';
 // The registry's group/account helpers query the DB for member ids; stub a
 // minimal select().from().where() chain so this stays a pure unit test.
 let nextMemberRows: Array<{ userId: string }> = [];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

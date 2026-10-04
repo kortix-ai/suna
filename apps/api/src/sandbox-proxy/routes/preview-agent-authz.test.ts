@@ -12,8 +12,8 @@
 // side-effecting, and the re-mint is the thing that grants B.
 import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
-import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../services/sessions/preview-ownership';
+import * as realKortixUserContext from '../../services/sessions/kortix-user-context';
 
 let sessionAgentName: string | null = 'pipeline-hygiene';
 
@@ -45,11 +45,11 @@ mock.module('../../lib/request-context', () => ({
 // in whatever unrelated file imports the missing name next, as
 // `SyntaxError: Export named '…' not found`, attributed to no test at all.
 // Overriding only what this file needs keeps new exports working by default.
-mock.module('../../shared/kortix-user-context', () => ({
+mock.module('../../services/sessions/kortix-user-context', () => ({
   ...realKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
 }));
-mock.module('../../shared/preview-ownership', () => ({
+mock.module('../../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,

@@ -19,10 +19,10 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../../billing/services/account-write-owner';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isPlatformAdmin } from '../../iam/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 const DemoStateSchema = z.object({ enabled: z.boolean() }).openapi('EnterpriseDemoState');
 export function registerIamEnterpriseDemoRoutes(): void {

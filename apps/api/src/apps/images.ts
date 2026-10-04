@@ -33,8 +33,8 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
 import { getProvider, type SandboxProvider } from '../platform/providers';
-import { db } from '../shared/db';
-import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { db } from '../lib/db';
+import { mapWithConcurrency } from '../lib/map-with-concurrency';
 import { getSandboxProvider } from '../snapshots/providers';
 import { SnapshotInUseError } from '../snapshots/providers/errors';
 import {

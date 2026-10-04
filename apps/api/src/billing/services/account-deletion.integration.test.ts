@@ -7,15 +7,15 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { sql, type SQL } from 'drizzle-orm';
 import * as realProviders from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 const deletedUsers: string[] = [];
 
 // The service's external seams are mocked; the database is real. Spread the
 // real module: `mock.module` replaces it WHOLESALE, so a stub that lists
 // exports by hand deletes every export it omits.
-import * as realSupabase from '../../shared/supabase';
-mock.module('../../shared/supabase', () => ({
+import * as realSupabase from '../../lib/supabase';
+mock.module('../../lib/supabase', () => ({
   ...realSupabase,
   getSupabase: () => ({
     auth: {
@@ -28,7 +28,7 @@ mock.module('../../shared/supabase', () => ({
     },
   }),
 }));
-mock.module('../../shared/stripe', () => ({
+mock.module('../stripe', () => ({
   getStripe: () => ({ subscriptions: { cancel: async () => undefined } }),
 }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that

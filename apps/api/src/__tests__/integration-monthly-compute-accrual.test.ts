@@ -29,7 +29,7 @@ import { eq, inArray } from 'drizzle-orm';
 import * as realMetering from '../billing/services/compute-metering';
 import { seedAccount } from './helpers/integration-fixtures';
 
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const unbilledSeconds: number[] = [];
 mock.module('../billing/services/compute-metering', () => ({

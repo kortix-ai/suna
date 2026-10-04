@@ -12,14 +12,14 @@ import { inArray } from 'drizzle-orm';
 import postgres from 'postgres';
 
 import { config } from '../lib/config';
-import { hashSecretKey } from '../shared/crypto';
-import { db } from '../shared/db';
-import { API_INSTANCE_ID } from '../shared/instance';
+import { hashSecretKey } from '../lib/crypto';
+import { db } from '../lib/db';
+import { API_INSTANCE_ID } from '../lib/instance';
 import {
   TUNNEL_FORWARD_CHANNEL,
   startConfigBaseMoveBroadcast,
   stopConfigBaseMoveBroadcast,
-} from '../shared/pg-broadcast';
+} from '../lib/pg-broadcast';
 import {
   relayRpcToConnectedAgent,
   startTunnelRpcForwarder,

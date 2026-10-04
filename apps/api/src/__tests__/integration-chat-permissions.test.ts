@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { accountMembers, chatThreadParticipants, chatThreads, chatUserIdentities, projectMembers, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

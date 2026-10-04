@@ -25,7 +25,7 @@ to "I have keys, verify locally", **without anything being promoted**, and it
 cannot be undone: a `standby` key may only move to `in_use` or
 `previously_used`, so the JWKS cannot be emptied again.
 
-That mattered because `apps/api/src/shared/jwt-verify.ts` implements ES256/RS256
+That mattered because `apps/api/src/auth/jwt-verify.ts` implements ES256/RS256
 only, selects a key by `kid` and falls through to *first key in the cache* when a
 token carries none, and `middleware/auth.ts` treated `unsupported-alg` as a hard
 401 rather than an inconclusive result. A legacy token with no `kid` would have

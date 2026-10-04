@@ -25,7 +25,7 @@
 
 import { projectSnapshotBuilds } from '@kortix/db';
 import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 /**
  * How far back a finished build may be and still be servable while a newer

@@ -24,7 +24,7 @@ import { and, eq, isNotNull, lte, sql } from 'drizzle-orm';
 
 import { type SandboxProviderName, config } from '../../lib/config';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { finalizeRecoveredRuntimeIfRunning, preserveEstablishedRuntime } from '../runtime-identity';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';

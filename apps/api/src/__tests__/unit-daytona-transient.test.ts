@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'bun:test';
 import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
-} from '../shared/daytona-transient';
+} from '../services/sandboxes/daytona/transient';
 
 // Real SDK classes — same shape prod throws. Imported here so the classifier's
 // instanceof path (the strongest signal) is exercised against the genuine
@@ -99,7 +99,7 @@ describe('isDaytonaTransientProviderError', () => {
   describe('negative cases (NOT transient provider failures — must stay loud)', () => {
     it('does NOT match a DaytonaRateLimitError (429 — owned by isDaytonaRateLimitError)', () => {
       // The 429 throttler is owned by the sibling classifier
-      // `isDaytonaRateLimitError` (shared/daytona-rate-limit.ts). It has its
+      // `isDaytonaRateLimitError` (services/sandboxes/daytona/rate-limit.ts). It has its
       // own Retry-After semantics and must NOT be matched here — otherwise the
       // two classifiers would both fire and the more-specific 429 branch could
       // be shadowed.

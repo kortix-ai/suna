@@ -12,7 +12,7 @@ import { and, or } from 'drizzle-orm';
 import { config } from '../../lib/config';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
@@ -32,7 +32,7 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
-import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { TimeoutError, withTimeout } from '../../lib/with-timeout';
 import { logger } from '../../lib/logger';
 import { timeConfigStage } from '../lib/config-stage-timing';
 import { computeDesiredRuntime } from '../../runtime-convergence/desired';

@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { platformSettings } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const SOURCES_KEY = 'marketplace.sources';
 

@@ -31,13 +31,13 @@
  */
 import { gatewayRequestLogs, projectSessions } from '@kortix/db';
 import { desc, eq, sql } from 'drizzle-orm';
-import { getCostSummary, listCostByProject } from '../src/shared/cost-rollups';
-import { db } from '../src/shared/db';
+import { getCostSummary, listCostByProject } from '../src/services/usage/cost-rollups';
+import { db } from '../src/lib/db';
 import {
   getSessionCostRecord,
   listProjectGatewaySessionSpend,
   listSessionCosts,
-} from '../src/shared/session-costs';
+} from '../src/services/usage/session-costs';
 
 interface Anchor {
   accountId: string;

@@ -1,8 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { gatewayApiKeys } from '@kortix/db';
-import { db } from '../shared/db';
-import { generateGatewayKeyPair, hashSecretKey } from '../shared/crypto';
-import { hashSecretKeyAsync, markTokenValidated } from '../shared/token-hash';
+import { db } from '../lib/db';
+import { generateGatewayKeyPair, hashSecretKey } from '../lib/crypto';
+import { hashSecretKeyAsync, markTokenValidated } from '../auth/token-hash';
 
 /**
  * Name of the short-lived key session-title generation mints for each internal

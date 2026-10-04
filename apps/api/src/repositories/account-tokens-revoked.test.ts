@@ -25,7 +25,7 @@ let capturedWhere: unknown = null;
 let rows: Array<Record<string, unknown>> = [];
 let leaseRows: Array<Record<string, unknown>> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: (table: unknown) => table === sessionSandboxes ? ({
@@ -49,7 +49,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { validateAccountToken } = await import('./account-tokens');
-const { generateAccountTokenPair } = await import('../shared/crypto');
+const { generateAccountTokenPair } = await import('../lib/crypto');
 
 /**
  * Every column the condition tree constrains.

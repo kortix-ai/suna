@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { yoloMemberTokens } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export async function getActiveYoloTokenRow(userId: string, accountId: string) {
   const [row] = await db

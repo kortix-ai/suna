@@ -7,15 +7,15 @@ import { stopModelPricing } from './llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
 import { runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
-import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
-import { shutdownAuditEvents } from './shared/audit';
+import { startAccessControlCache, stopAccessControlCache } from './access-control/access-control-cache';
+import { shutdownAuditEvents } from './services/audit/audit';
 import {
   startAuditReconciliationWorker,
   stopAuditReconciliationWorker,
-} from './shared/audit-reconciliation-worker';
-import { startAuditPartitionWorker, stopAuditPartitionWorker } from './shared/audit-partition-worker';
-import { startAuditArchiveWorker, stopAuditArchiveWorker } from './shared/audit-archive/worker';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
+} from './services/audit/audit-reconciliation-worker';
+import { startAuditPartitionWorker, stopAuditPartitionWorker } from './services/audit/audit-partition-worker';
+import { startAuditArchiveWorker, stopAuditArchiveWorker } from './services/audit/audit-archive/worker';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from './services/audit/audit-webhooks';
 import {
   startProjectSnapshotWorker,
   stopProjectSnapshotWorker,
@@ -24,7 +24,7 @@ import {
   runsSingletonWorkers,
   startLeaderElection,
   stopLeaderElection,
-} from './shared/leader-election';
+} from './lib/leader-election';
 import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
@@ -165,10 +165,10 @@ async function startReplicaServices() {
     .catch(() => {});
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
-  // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
+  // from a memo resolved before it (lib/pg-broadcast.ts). Awaited because it
   // is one connection and it must be in place before the first turn; it never
   // rejects, and a failure degrades to the memo's TTL.
-  await import('./shared/pg-broadcast').then(async (m) => {
+  await import('./lib/pg-broadcast').then(async (m) => {
     const listening = await m.startConfigBaseMoveBroadcast();
     if (!listening) return;
     const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
@@ -185,7 +185,7 @@ async function startReplicaServices() {
 // up to 10); running these on every replica would double-fire cron triggers
 // (N duplicate paid agent sessions + duplicate external side effects) and
 // double-run legacy migrations. Leader
-// election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
+// election (lib/leader-election.ts) starts/stops these via onAcquire/onRelease.
 // The guard makes start/stop idempotent across leadership flaps.
 let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
@@ -326,7 +326,7 @@ export async function shutdown(signal: string) {
   stopSessionLifecycleWorker();
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
-  await import('./shared/pg-broadcast')
+  await import('./lib/pg-broadcast')
     .then((m) => m.stopConfigBaseMoveBroadcast())
     .catch(() => {});
   // Flush observability data before exit. The audit queue is drained here

@@ -13,11 +13,11 @@ import {
 } from '../projects/git/mirror';
 import { resolvePrefixEscape } from '../sandbox-proxy/prefix-escape';
 import { previewBaseDomain } from '../sandbox-proxy/preview-hosts';
-import { deadCredentialLogDecision, isDeadCredential } from '../shared/dead-credential-log';
-import { inspectDatabaseError } from '../shared/database-errors';
-import { isDaytonaRateLimitError } from '../shared/daytona-rate-limit';
-import { isDaytonaTransientProviderError } from '../shared/daytona-transient';
-import { isPlatinumSandboxNotRunningError } from '../shared/platinum';
+import { deadCredentialLogDecision, isDeadCredential } from '../services/audit/dead-credential-log';
+import { inspectDatabaseError } from '../lib/database-errors';
+import { isDaytonaRateLimitError } from '../services/sandboxes/daytona/rate-limit';
+import { isDaytonaTransientProviderError } from '../services/sandboxes/daytona/transient';
+import { isPlatinumSandboxNotRunningError } from '../services/sandboxes/platinum/client';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
 // predicate, body); the dispatcher below calls them in the original ladder
@@ -42,7 +42,7 @@ function handlePlatinumSandboxNotRunning(err: Error, c: Context, method: string,
   // captureException and surfaced as a retryable 503 + Retry-After (mirroring
   // the request-deadline 503 pattern). Other Platinum failures still throw a
   // generic Error and fall through to the generic capture below. See
-  // shared/platinum.ts PlatinumSandboxNotRunningError.
+  // services/sandboxes/platinum/client.ts PlatinumSandboxNotRunningError.
   if (isPlatinumSandboxNotRunningError(err)) {
     appLogger.warn(`${method} ${path} -> 503 [PlatinumSandboxNotRunningError] ${err.message}`, {
       method,
@@ -70,7 +70,7 @@ function handleDaytonaRateLimit(err: Error, c: Context, method: string, path: st
   // deadline patterns). Other Daytona failures (404 missing box, 409 conflict,
   // 5xx outage, timeout, disk quota) still throw a generic error and fall
   // through to the generic capture below, so unexpected failures stay loud.
-  // See shared/daytona-rate-limit.ts.
+  // See services/sandboxes/daytona/rate-limit.ts.
   if (isDaytonaRateLimitError(err)) {
     appLogger.warn(`${method} ${path} -> 503 [DaytonaRateLimitError] ${err.message}`, {
       method,
@@ -176,7 +176,7 @@ function handleDaytonaTransientProviderError(err: Error, c: Context, method: str
   // Stack pattern `e98d61f1…` (`DaytonaError` with message
   // `<html>…<h1>502 Bad Gateway</h1>…</html>`, thrown from the SDK's axios
   // response interceptor at `createDaytonaError`). The 429 throttler case
-  // is owned by `shared/daytona-rate-limit.ts` (`isDaytonaRateLimitError`)
+  // is owned by `services/sandboxes/daytona/rate-limit.ts` (`isDaytonaRateLimitError`)
   // and is NOT matched here — this classifier is the sibling for transient
   // gateway / connection / timeout failures. It downgrades those to a
   // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the
@@ -187,7 +187,7 @@ function handleDaytonaTransientProviderError(err: Error, c: Context, method: str
   // failures (404 missing box, 409 conflict, 401/403 auth, 400 validation,
   // disk quota, unexpected 5xx with a JSON body) still throw a generic
   // error and fall through to the generic capture below, so unexpected
-  // failures stay loud. See shared/daytona-transient.ts.
+  // failures stay loud. See services/sandboxes/daytona/transient.ts.
   if (isDaytonaTransientProviderError(err)) {
     appLogger.warn(
       `${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`,
@@ -254,7 +254,7 @@ function handleHttpException(err: HTTPException, c: Context, method: string, pat
     // per streamed step — turns every refusal into a warn line, ~1.19M in ten
     // days across the sandbox relay routes (KRTX-1039). Rate-limit the LINE
     // (first per window per normalized key, best-effort count in `suppressed`), never
-    // the response; see shared/dead-credential-log.ts. Every other HTTPException
+    // the response; see services/audit/dead-credential-log.ts. Every other HTTPException
     // keeps its per-request line.
     if (isDeadCredential(err)) {
       const { log, suppressed } = deadCredentialLogDecision(`${method} ${path.replace(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/gi, ':id')} ${err.status} ${reason}`, Date.now());

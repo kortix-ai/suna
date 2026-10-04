@@ -7,7 +7,7 @@
 // operator who configures Resend or SES (no SMTP anywhere) still gets working
 // magic links.
 import { actionButton, renderEmail, renderText, S } from '../../lib/email/template';
-import { escapeHtml } from '../../shared/html';
+import { escapeHtml } from '../../lib/html';
 
 export type AuthEmailActionType =
   | 'signup'

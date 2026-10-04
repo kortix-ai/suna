@@ -18,7 +18,7 @@ import { and, eq } from 'drizzle-orm';
 import { accountGithubUserTokens } from '@kortix/db';
 
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** A token read back out of the store, already decrypted. */
 export interface StoredGitHubUserToken {

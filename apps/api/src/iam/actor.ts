@@ -19,9 +19,9 @@ import type { Context } from 'hono';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { accountTokens, readStoredAgentGrant, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
 import { createHash } from 'node:crypto';
-import { requestClientIp } from '../shared/client-ip';
-import { db } from '../shared/db';
-import { ttlMemo } from '../shared/ttl-memo';
+import { requestClientIp } from '../lib/client-ip';
+import { db } from '../lib/db';
+import { ttlMemo } from '../lib/ttl-memo';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
 import { agentPrincipalModeFor } from './agent-principal';
 
@@ -100,7 +100,7 @@ export type Credential =
  * type the retired V1 engine's public surface still had a caller for.
  */
 export interface RequestContext {
-  /** Caller's source IP, per the trusted-proxy rule in shared/client-ip.ts. */
+  /** Caller's source IP, per the trusted-proxy rule in lib/client-ip.ts. */
   ip?: string;
   /** JWT's `aal` claim — 'aal1' = password-only, 'aal2' = MFA-verified. */
   mfaAal?: string;

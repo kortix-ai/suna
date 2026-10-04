@@ -20,13 +20,13 @@ import {
  * never failing the whole sweep.
  */
 import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
-import { getImpersonationContext } from '../shared/impersonation';
+import { getImpersonationContext } from '../iam/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
-import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
-import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
+import { safeEgressFetch, UnsafeEgressError } from '../lib/ssrf-guard';
+import { configuredTimeoutMs, withTimeout } from '../lib/with-timeout';
 import { config } from '../lib/config';
 import {
   type ConnectorSpec,
@@ -42,8 +42,8 @@ import {
 } from '../projects/secrets';
 import { extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
-import { db } from '../shared/db';
-import { isUniqueViolation } from '../shared/postgres-errors';
+import { db } from '../lib/db';
+import { isUniqueViolation } from '../lib/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';

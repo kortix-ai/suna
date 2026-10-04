@@ -6,17 +6,17 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
-import * as realAuthAudit from '../shared/auth-audit';
+import * as realAuthAudit from '../services/audit/auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../iam/sso-sync';
-import * as realCrypto from '../shared/crypto';
+import * as realCrypto from '../lib/crypto';
 
 let secretKeyValidations: string[] = [];
 let oauthValidations: string[] = [];
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   ...realCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
@@ -68,12 +68,12 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => ({ isValid: false, error: 'invalid' }),
 }));
 
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => ({ ok: false }),
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       getUser: async () => ({ data: { user: null }, error: { message: 'invalid' } }),
@@ -81,13 +81,13 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   resolveSandboxProjectId: async () => null,
 }));
 
-mock.module('../shared/auth-audit', () => ({
+mock.module('../services/audit/auth-audit', () => ({
   ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},

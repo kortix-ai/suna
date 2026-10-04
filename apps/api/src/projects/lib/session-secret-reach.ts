@@ -16,7 +16,7 @@
  */
 import { projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 

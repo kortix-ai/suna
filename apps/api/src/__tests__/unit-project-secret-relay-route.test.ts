@@ -111,7 +111,7 @@ const databaseMock = {
   }),
 };
 
-mock.module('../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
+mock.module('../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
 mock.module('../projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
@@ -123,7 +123,7 @@ mock.module('../projects/secrets', () => ({
   ...realProjectSecrets,
   decryptProjectSecret: () => SECRET_VALUE,
 }));
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async (event: Record<string, unknown>) => {
     audits.push(event);
   },

@@ -61,7 +61,7 @@ export function registerGlobalMocks() {
   if (_registered) return;
   _registered = true;
 
-  mock.module('../../shared/stripe', () => ({
+  mock.module('../../billing/stripe', () => ({
     getStripe: () => mockRegistry.stripeClient ?? createMockStripeClient(),
   }));
 
@@ -73,7 +73,7 @@ export function registerGlobalMocks() {
     },
   }));
 
-  mock.module('../../shared/resolve-account', () => ({
+  mock.module('../../accounts/resolve-account', () => ({
     resolveAccountId: async (userId: string) =>
       mockRegistry.resolveAccountId ? mockRegistry.resolveAccountId(userId) : userId,
   }));
@@ -150,7 +150,7 @@ export function registerGlobalMocks() {
   // A module mock REPLACES the whole module, so every export the code under
   // test imports has to appear here — a missing one is not a silent undefined,
   // it is a hard `SyntaxError: Export named 'x' not found` that kills the file.
-  mock.module('../../shared/db', () => {
+  mock.module('../../lib/db', () => {
     const db = {
       select: () => ({
         from: () => ({

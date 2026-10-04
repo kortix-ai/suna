@@ -11,7 +11,7 @@
  * swallow the next hundred lines of this file from its view.
  */
 import { projectsApp } from '../lib/app';
-import { createProjectSecretWriteRateLimitMiddleware } from '../../shared/rate-limit';
+import { createProjectSecretWriteRateLimitMiddleware } from '../../middleware/rate-limit';
 export function registerSecretRateLimitRoutes(): void {
   projectsApp.use('/:projectId/secrets/' + '*', createProjectSecretWriteRateLimitMiddleware());
 }

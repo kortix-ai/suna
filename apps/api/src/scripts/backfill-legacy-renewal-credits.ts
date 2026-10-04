@@ -44,8 +44,8 @@
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { creditAccounts, creditLedger } from '@kortix/db';
 import Stripe from 'stripe';
-import { db } from '../shared/db';
-import { getStripe } from '../shared/stripe';
+import { db } from '../lib/db';
+import { getStripe } from '../billing/stripe';
 import { wallet } from '../billing/wallet';
 import { INCLUDED_CREDITS_RATIO, getMonthlyCredits } from '../billing/services/tiers';
 

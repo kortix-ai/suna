@@ -1,5 +1,5 @@
-import { APP_EDGE_HEADERS } from '../shared/edge-signature';
-import { isKortixToken } from '../shared/crypto';
+import { APP_EDGE_HEADERS } from '../edge/edge-signature';
+import { isKortixToken } from '../lib/crypto';
 import { appAccessCookieName } from './access';
 import { APP_AUTHORIZATION_HEADER, type AppViewerHeaders } from './public-proxy-access';
 import { appFrameAncestors } from './public-proxy-status';

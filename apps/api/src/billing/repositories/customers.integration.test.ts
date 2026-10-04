@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { billingCustomers } from '@kortix/db';
 import { asc, eq } from 'drizzle-orm';
 import { seedAccount } from '../../__tests__/helpers/integration-fixtures';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   getCustomerByAccountId,
   getCustomerByStripeId,

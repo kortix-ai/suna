@@ -2,7 +2,7 @@ import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { setContextField } from '../../lib/request-context';
-import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefusal } from '../../shared/preview-ownership';
+import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefusal } from '../../services/sessions/preview-ownership';
 import type { SandboxRecord } from '../backend';
 import { DEFAULT_AGENT_SENTINEL, jsonProxyError } from '../pre-prompt-env-sync';
 import { stripInBoxProxyPrefix } from '../runtime-request';

@@ -14,7 +14,7 @@ mock.module('../../lib/config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 
-mock.module('../../shared/db', () => ({ db: {} }));
+mock.module('../../lib/db', () => ({ db: {} }));
 
 let previewLinkCalls: number[] = [];
 let processCommands: Array<{ command: string; timeout: number | undefined }> = [];
@@ -23,7 +23,7 @@ let previewLinkImpl: (port: number) => Promise<unknown> = async (port) => {
   return { url: 'https://preview.example.com', token: 'tok' };
 };
 
-mock.module('../../shared/daytona', () => ({
+mock.module('../../services/sandboxes/daytona/client', () => ({
   getDaytona: () => ({
     create: async () => ({
       id: 'sbx-eager-1',

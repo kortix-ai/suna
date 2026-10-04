@@ -3,7 +3,7 @@ import { ConnectionSchema, type ComputerMachineStatus } from '@kortix/api-contra
 import { tunnelConnections } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { connectedAsOf } from '../../connectors/connection-identity';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isTunnelConnectionLive } from '../../tunnel/core/cluster-forwarder';
 import { machineAccess } from '../../tunnel/core/rpc-core';
 

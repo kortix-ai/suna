@@ -3,7 +3,7 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
-import { isSelfHostOperator } from '../../shared/platform-roles';
+import { isSelfHostOperator } from '../../iam/platform-roles';
 import { managedGithubToken } from '../git-backends';
 import {
   addRepositoryToInstallation,
@@ -40,7 +40,7 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 export function registerProjectFromRepositoryRoutes(): void {
   // POST /v1/projects/link-repository

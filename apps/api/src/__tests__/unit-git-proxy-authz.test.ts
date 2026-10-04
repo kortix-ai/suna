@@ -32,7 +32,7 @@ let authorizeCalls: Array<{
   actingTokenId?: string;
 }> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: (fields?: Record<string, unknown>) => {
       const rows = fields?.agentGrant
@@ -456,7 +456,7 @@ describe('a refused git credential still names who presented it', () => {
   // row that cannot say WHO was refused is no evidence at all. The request's
   // audit scope must carry the identity the token proved before the refusal.
   const { runWithContext } = require('../lib/request-context');
-  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const { attachInboundAuditScope } = require('../services/audit/audit-scope');
 
   async function principalAfter(token: string, scope: 'read' | 'write') {
     return runWithContext('POST', `/v1/git/${PROJECT_ID}/git-receive-pack`, async () => {

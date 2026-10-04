@@ -521,7 +521,7 @@ flow(
       action.status(200);
 
       // Audit writes are an in-process async queue since #6618
-      // (apps/api/src/shared/audit-queue.ts, 250 ms batch timer). The list
+      // (apps/api/src/services/audit/audit-queue.ts, 250 ms batch timer). The list
       // route flushes — but flushes ITS OWN process's queue, and deployed
       // staging runs 3 API tasks, so the read usually lands on a task that did
       // not emit the event. Run 32306385663 read 0 events for that reason. Poll

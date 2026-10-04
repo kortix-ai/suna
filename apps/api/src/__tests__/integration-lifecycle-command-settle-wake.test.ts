@@ -10,13 +10,13 @@ import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
 import { config } from '../lib/config';
 import { cancelForwardedPrompt } from '../projects/session-lifecycle/cancel-forwarded';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   LIFECYCLE_COMMAND_SETTLED_CHANNEL,
   startConfigBaseMoveBroadcast,
   stopConfigBaseMoveBroadcast,
   waitForLifecycleCommandSettle,
-} from '../shared/pg-broadcast';
+} from '../lib/pg-broadcast';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 
 let project: SeededProject;

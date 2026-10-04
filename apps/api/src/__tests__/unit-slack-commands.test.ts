@@ -13,7 +13,7 @@ function makeChain(): any {
   return chain;
 }
 let deletes = 0;
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain(),
     update: () => makeChain(),

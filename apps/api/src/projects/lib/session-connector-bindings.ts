@@ -14,7 +14,7 @@ import { mapLimit } from '@kortix/registry';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
-} from '../../shared/connector-alias';
+} from '../../connectors/connector-alias';
 import {
   loadAgentMailInstall,
   loadSlackInstall,
@@ -25,8 +25,8 @@ import {
   connectionCredentialExists,
   connectionIsEffectiveProjectDefault,
 } from '../../connectors/credentials';
-import { db } from '../../shared/db';
-import { isUniqueViolation } from '../../shared/postgres-errors';
+import { db } from '../../lib/db';
+import { isUniqueViolation } from '../../lib/postgres-errors';
 import {
   type ConnectionAudienceReach,
   type ConnectionReachabilityActor,

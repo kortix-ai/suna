@@ -5,8 +5,8 @@
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
-import { inferAuditSource } from '../../shared/audit';
+import { db } from '../../lib/db';
+import { inferAuditSource } from '../../services/audit/audit';
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions, sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
@@ -15,13 +15,13 @@ import {
   maySeeSessionApprovals,
 } from '../lib/approval-authority';
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { AnyObject, OkSchema, projectsApp } from '../lib/app';
 import {
   normalizeString,
   parseBoundedPositiveInt,
 } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import {
   approvalTargetSession,
   decideConnectorApproval,

@@ -34,7 +34,7 @@ let budgetRows: Array<{
   action: 'block' | 'warn';
 }> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -317,7 +317,7 @@ describe('checkBudget', () => {
  *
  * Asserted on the rendered SQL rather than on a mocked number: the number comes
  * from `spendQueue` here, so only the expression itself can prove which cost
- * the gate reads. See shared/llm-spend.ts.
+ * the gate reads. See services/usage/llm-spend.ts.
  */
 describe('checkBudget spend measurement', () => {
   beforeEach(() => {

@@ -2,7 +2,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../lib/config';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { abortLiveTurnBeforeStop } from '../reaping/stop-box';

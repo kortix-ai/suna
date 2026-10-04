@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import * as database from '../shared/db';
+import * as database from '../lib/db';
 
 export function withDirectoryTransaction<T>(accountId: string, action: () => Promise<T>): Promise<T> {
   return database.withDbTransaction(async () => {

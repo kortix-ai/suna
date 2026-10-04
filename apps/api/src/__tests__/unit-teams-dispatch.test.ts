@@ -23,7 +23,7 @@ function chain(result: unknown[]): any {
   return c;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     insert: () => chain([{ eventId: 'fresh' }]),

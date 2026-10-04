@@ -26,7 +26,7 @@
 
 import { eq } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { fetchRuntimeState } from './session-runtime-transport';
 import {
   saveRuntimeProjection,

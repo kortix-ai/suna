@@ -28,7 +28,7 @@ import {
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
 import { setProjectModelOverrides } from '../../repositories/project-routing-policies';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';

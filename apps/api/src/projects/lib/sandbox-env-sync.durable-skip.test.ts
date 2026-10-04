@@ -72,7 +72,7 @@ function extractEnvSyncWrite(fragment: unknown): { signature: unknown; appliedAt
   return signature === undefined ? null : { signature, appliedAtMs };
 }
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: (columns: Record<string, unknown>) => ({

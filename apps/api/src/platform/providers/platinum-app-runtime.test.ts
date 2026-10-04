@@ -46,7 +46,7 @@ const platinumJson = async (path: string, init: RequestInit = {}) => {
   return {};
 };
 
-mock.module("../../shared/platinum", () => ({
+mock.module("../../services/sandboxes/platinum/client", () => ({
   isPlatinumConfigured: () => true,
   // start() reads the /start status (a 202 means a restore is still running).
   platinumJsonResponse: async (path: string, init: RequestInit = {}) => {

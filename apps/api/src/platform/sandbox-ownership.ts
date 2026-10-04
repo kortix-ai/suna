@@ -32,7 +32,7 @@ export async function sandboxDatabaseOwner(database: Database): Promise<string> 
  * for an independent installation, before enabling workers or creating boxes.
  */
 export async function sandboxOwnershipMarker(database?: Database): Promise<string> {
-  const owner = await sandboxDatabaseOwner(database ?? (await import('../shared/db')).db);
+  const owner = await sandboxDatabaseOwner(database ?? (await import('../lib/db')).db);
   return `v2-${createHash('sha256').update(JSON.stringify([
     owner, config.INTERNAL_KORTIX_ENV, currentInstanceId() ?? null,
   ])).digest('hex')}`;

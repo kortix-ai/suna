@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ttlMemo } from '../../shared/ttl-memo';
+import { ttlMemo } from '../../lib/ttl-memo';
 import { CONFIG_WITH_FILES_TTL_MS, skillSlugFromPath } from './project-resources';
 
 /**

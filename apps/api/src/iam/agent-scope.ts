@@ -1,5 +1,5 @@
 import { DEPRECATED_KORTIX_PERMISSION_ALIASES } from '@kortix/manifest-schema';
-import { canonicalConnectorAlias } from '../shared/connector-alias';
+import { canonicalConnectorAlias } from '../connectors/connector-alias';
 /**
  * Agent-session scope enforcement — the `kortix_permissions` half of per-agent
  * authorization.

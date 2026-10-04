@@ -2,7 +2,7 @@
 
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { healSupersededSessionToken } from '../lib/heal-session-token';
 import { openSession } from '../routes/shared';
 import { awaitTerminalStage } from './await-stage';

@@ -1,5 +1,5 @@
 import { config } from '../lib/config';
-import { getSupabase } from '../shared/supabase';
+import { getSupabase } from '../lib/supabase';
 
 const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;
 const ARCHIVE_FILE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024;

@@ -23,7 +23,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { projects, sessionProviderSecretPools } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';

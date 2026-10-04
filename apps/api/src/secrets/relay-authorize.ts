@@ -34,7 +34,7 @@ import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { config } from '../lib/config';
 import { decryptProjectSecret, intersectSecretGrants } from '../projects/secrets';
 import { ACTIVE_SESSION_STATUSES } from '../projects/lib/session-status';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { filterSecretRowsByAudience, secretAudienceSubject } from '../projects/lib/secret-audience';
 import type { SessionHandleFacts } from './handle-substitution';

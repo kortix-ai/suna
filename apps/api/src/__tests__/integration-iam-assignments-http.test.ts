@@ -13,7 +13,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db, hasDatabase } from '../shared/db';
+import { db, hasDatabase } from '../lib/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { loadSystemRoles } from '../iam/catalog';

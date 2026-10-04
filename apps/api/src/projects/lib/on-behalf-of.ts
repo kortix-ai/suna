@@ -24,7 +24,7 @@ import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../lib/config';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A
  *  re-mint of the session credential reads it and never restores the value. */

@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { chatPendingAuthMessages } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { TeamsActivity } from './types';
 
 const PENDING_AUTH_TTL_MS = 10 * 60 * 1000;

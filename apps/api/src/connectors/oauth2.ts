@@ -16,7 +16,7 @@ import {
   customFetch,
   modifyAssertion,
 } from 'oauth4webapi';
-import { safeEgressFetch } from '../shared/ssrf-guard';
+import { safeEgressFetch } from '../lib/ssrf-guard';
 
 export interface OAuth2AccessToken {
   access_token: string;

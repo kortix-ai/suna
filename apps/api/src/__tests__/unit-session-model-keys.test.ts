@@ -80,7 +80,7 @@ let replaced: Array<{ sessionId: string; providerId: string; secretIds: string[]
 /** A selection another request stores between the check and the write. */
 let concurrentSelection: string | null = null;
 const dialect = new PgDialect();
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: (table: unknown) => ({
       values: (row: { sessionId: string; providerId: string; secretIds: string[] }) => ({

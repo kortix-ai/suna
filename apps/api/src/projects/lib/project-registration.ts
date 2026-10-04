@@ -6,7 +6,7 @@ import {
 
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { grantProjectRole } from './access';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { GitHubRepo } from '../github';
 import {
   type ProjectGitWriteAuth,

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let executeError: unknown = null;
 let rpcResult: Record<string, unknown> = { success: true };
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     execute: async () => {
       if (executeError) throw executeError;

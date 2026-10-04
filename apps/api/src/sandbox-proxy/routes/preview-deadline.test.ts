@@ -13,8 +13,8 @@
 // `mock.module` is process-global in bun, so this lives in its own file.
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realKortixUserContext from '../../shared/kortix-user-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
+import * as realKortixUserContext from '../../services/sessions/kortix-user-context';
+import * as realPreviewOwnership from '../../services/sessions/preview-ownership';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sb-1',
@@ -46,7 +46,7 @@ mock.module('../../lib/config', () => ({
 }));
 // Importing the real lifecycle export surface must not initialize the actual
 // database module. The route under test replaces every lifecycle write below.
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: { execute: async () => [] },
 }));
 mock.module('../../lib/request-context', () => ({
@@ -58,11 +58,11 @@ mock.module('../../lib/request-context', () => ({
 // in whatever unrelated file imports the missing name next, as
 // `SyntaxError: Export named '…' not found`, attributed to no test at all.
 // Overriding only what this file needs keeps new exports working by default.
-mock.module('../../shared/kortix-user-context', () => ({
+mock.module('../../services/sessions/kortix-user-context', () => ({
   ...realKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
 }));
-mock.module('../../shared/preview-ownership', () => ({
+mock.module('../../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,

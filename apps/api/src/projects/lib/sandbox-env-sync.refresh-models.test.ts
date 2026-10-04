@@ -44,7 +44,7 @@ let snapshotNames: string[] = ['EXAMPLE'];
 let snapshotRevision = 'rev-1';
 let snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: (columns: Record<string, unknown>) => ({

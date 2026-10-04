@@ -33,7 +33,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { AppEnv } from '../../types/app-env';
 import { RuntimeProjectionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';

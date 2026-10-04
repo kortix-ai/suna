@@ -1,9 +1,9 @@
 import { connectorAttachments } from '@kortix/db';
 import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
+import { db } from '../lib/db';
+import { getSupabase, toPublicStorageUrl } from '../lib/supabase';
 import type { InlineAttachmentFile } from './attachment-inline';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 export const MAX_CONNECTOR_ATTACHMENT_FILES = 20;
 export const MAX_CONNECTOR_ATTACHMENT_BYTES = 25 * 1024 * 1024;

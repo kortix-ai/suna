@@ -1,12 +1,12 @@
 import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayRequestLogs } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { splitLlmSpend } from '../../shared/llm-spend';
+import { splitLlmSpend } from '../../services/usage/llm-spend';
 import { classifyGatewayLogReference } from './gateway-log-reference';
 
 const LIST_LIMIT_DEFAULT = 50;
@@ -38,7 +38,7 @@ const LIST_COLUMNS = {
 };
 
 function serializeLogRow(r: Record<string, any>) {
-  // See shared/llm-spend.ts. `final_cost` alone answers "what did Kortix bill
+  // See services/usage/llm-spend.ts. `final_cost` alone answers "what did Kortix bill
   // you", which is 0 on every BYOK request — it is not what the call cost you.
   const spend = splitLlmSpend({
     billingMode: r.billingMode,

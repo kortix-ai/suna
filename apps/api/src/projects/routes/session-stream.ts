@@ -51,7 +51,7 @@ import { sessionSandboxes } from '@kortix/db';
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -60,7 +60,7 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,

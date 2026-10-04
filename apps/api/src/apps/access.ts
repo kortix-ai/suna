@@ -6,7 +6,7 @@ import { config } from '../lib/config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorForToken, actorForUser } from '../iam/actor';
 import { agentMayOpenApp } from '../iam/agent-scope';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppAccessTokenKind = 'kortix' | 'password';

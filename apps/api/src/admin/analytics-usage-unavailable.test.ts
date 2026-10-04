@@ -11,7 +11,7 @@
  * behaviour, where the body carried `(error as Error).message` (the SQL) and
  * the status was 500.
  *
- * `db` is mocked (the harness pattern from shared/cost-rollups.test.ts): the
+ * `db` is mocked (the harness pattern from services/usage/cost-rollups.test.ts): the
  * route is driven through the real `analyticsApp`, and every `select()` chain
  * either resolves to queued rows or rejects with the driver's 57014 error.
  */
@@ -43,7 +43,7 @@ function createQueryBuilder(rows: unknown[]) {
   return builder;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: (_fields: Record<string, unknown>) => ({
       from: (_table: unknown) => createQueryBuilder(results.shift() ?? []),

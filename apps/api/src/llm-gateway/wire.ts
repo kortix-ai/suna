@@ -1,7 +1,7 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../lib/config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { createLlmGatewayRateLimitMiddleware } from '../shared/rate-limit';
+import { createLlmGatewayRateLimitMiddleware } from '../middleware/rate-limit';
 import { createInternalGatewayRoutes } from './internal-routes';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────

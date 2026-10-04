@@ -9,11 +9,11 @@
  */
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { runWithContext } from '../lib/request-context';
-import { attachInboundAuditScope } from '../shared/audit-scope';
+import { attachInboundAuditScope } from '../services/audit/audit-scope';
 
-const realOwnership = await import('../shared/preview-ownership');
+const realOwnership = await import('../services/sessions/preview-ownership');
 let ownerLookups = 0;
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realOwnership,
   resolveSandboxOwner: async (id: string) => {
     ownerLookups += 1;

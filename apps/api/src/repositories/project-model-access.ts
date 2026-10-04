@@ -1,7 +1,7 @@
 import { projects, projectLlmRoutingPolicies } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { modelAccessAllows, readModelAccess, updateModelAccess, type ModelAccessChange } from '../llm-gateway/model-access';
 
 export async function getProjectModelAccess(projectId: string) {

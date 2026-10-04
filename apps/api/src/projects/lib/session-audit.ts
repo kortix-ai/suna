@@ -1,4 +1,4 @@
-import type { AuditActorType, AuditEventInput } from '../../shared/audit';
+import type { AuditActorType, AuditEventInput } from '../../services/audit/audit';
 
 interface SessionCreatedAuditInput {
   accountId: string;

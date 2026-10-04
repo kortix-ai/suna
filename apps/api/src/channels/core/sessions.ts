@@ -1,10 +1,10 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { chatThreads, projectSessions, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { canAccessSandboxSession } from '../../shared/preview-ownership';
+import { canAccessSandboxSession } from '../../services/sessions/preview-ownership';
 import { type ChatUser, isAccountMember, lookupChatIdentity } from './identity';
 
 export interface ChatSessionListing {

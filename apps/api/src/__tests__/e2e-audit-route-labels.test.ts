@@ -26,7 +26,7 @@ function captured(values: Record<string, unknown> | Array<Record<string, unknown
   };
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({ values: captured }),
     select: () => {
@@ -41,9 +41,9 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest, recordAuditEvent } = await import('../shared/audit');
-const { runInboundAudit } = await import('../shared/audit-edge');
-const { annotateAuditEvent, setInboundAuditEntrypoint } = await import('../shared/audit-scope');
+const { auditApiRequest, recordAuditEvent } = await import('../services/audit/audit');
+const { runInboundAudit } = await import('../services/audit/audit-edge');
+const { annotateAuditEvent, setInboundAuditEntrypoint } = await import('../services/audit/audit-scope');
 
 /** The shape of the real API: an auth middleware on a sub-router, then the endpoints. */
 function projectsApp(): Hono {

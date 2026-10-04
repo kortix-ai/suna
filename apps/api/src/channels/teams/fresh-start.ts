@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { chatEventDedup, chatThreadParticipants, chatThreads, projectSessions } from '@kortix/db';
 import { config } from '../../lib/config';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { chatUser, resolveProjectChatActor } from '../core/identity';
 import { normalizeConversationPolicy, policyFromMetadata } from './participants';

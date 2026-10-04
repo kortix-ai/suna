@@ -42,7 +42,7 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, grantsByAgent } from '../agents';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';

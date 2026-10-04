@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -11,12 +11,12 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
+import { listProjectGatewaySessionSpend } from '../../services/usage/session-costs';
 import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
   totalSpendSql,
-} from '../../shared/llm-spend';
+} from '../../services/usage/llm-spend';
 export function registerGatewaySpendRoutes(): void {
   projectsApp.openapi(
     createRoute({

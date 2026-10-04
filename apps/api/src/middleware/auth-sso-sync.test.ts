@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../lib/request-context';
-import * as realAuthAudit from '../shared/auth-audit';
+import * as realAuthAudit from '../services/audit/auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../iam/sso-sync';
 
 let verifyResult: unknown;
 let networkUser: unknown;
 
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => verifyResult,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: { getUser: async () => ({ data: { user: networkUser }, error: networkUser ? null : { message: 'x' } }) },
   }),
@@ -32,7 +32,7 @@ mock.module('../iam/sso-sync', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/auth-audit', () => ({ ...realAuthAudit, ...realAuthAudit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+mock.module('../services/audit/auth-audit', () => ({ ...realAuthAudit, ...realAuthAudit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
 mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in

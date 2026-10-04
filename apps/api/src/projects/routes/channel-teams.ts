@@ -20,8 +20,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { readJsonObject } from '../../shared/http-body';
-import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../lib/http-body';
+import { isUuid } from '../../lib/validate';
 
 function teamsPublicBaseUrl(): string | undefined {
   return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;

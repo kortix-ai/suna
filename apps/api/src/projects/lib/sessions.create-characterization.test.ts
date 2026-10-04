@@ -7,7 +7,7 @@ let inserted: Record<string, unknown> | undefined;
 
 mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => billing }));
 mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => true }));
-mock.module('../../shared/audit', () => ({ recordAuditEvent: async () => {} }));
+mock.module('../../services/audit/audit', () => ({ recordAuditEvent: async () => {} }));
 mock.module('../agents', () => ({
   loadProjectAgents: async () => ({ defaultAgent: 'default' }),
   repositoryAccessFromLoadedAgents: () => false,
@@ -19,7 +19,7 @@ mock.module('./session-connector-bindings', () => ({
   validateSessionConnectorBindings: async () => ({ ok: true, bindings: [] }),
   sessionConnectorBindingsRequirePrivateVisibility: () => false,
 }));
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     transaction: async (fn: (tx: unknown) => unknown) => fn({
       insert: () => ({ values: (value: Record<string, unknown>) => {

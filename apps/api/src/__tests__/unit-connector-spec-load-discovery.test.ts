@@ -42,7 +42,7 @@ mock.module('node:dns/promises', () => ({
 
 const { discoverConnectorAuthFromSource } = await import('../connectors/sync');
 const { AllowedSourceValidationError } = await import('../marketplace/catalog');
-const { UnsafeEgressError } = await import('../shared/ssrf-guard');
+const { UnsafeEgressError } = await import('../lib/ssrf-guard');
 import type { GitBackedProject } from '../projects/git';
 
 const PROJECT = { projectId: 'proj-1', defaultBranch: 'main' } as GitBackedProject;

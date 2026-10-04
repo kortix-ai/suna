@@ -4,7 +4,7 @@ import { connectorCalls } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   type SessionLifecycleCommandRow,
   markCommandFailed,

@@ -10,7 +10,7 @@ import {
 } from '../projects/access';
 import { normalizeProjectRole as parseProjectRole } from '../iam/roles';
 import { iamActionForProjectAccess } from '../projects/lib/access';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 describe('isUuid project-id guard', () => {
   test.each([

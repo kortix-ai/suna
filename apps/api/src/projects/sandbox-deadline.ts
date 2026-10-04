@@ -31,7 +31,7 @@
  */
 
 import { type SQL, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   NON_TURN_DEADLINE_CAP_MS,
   idleGraceMs,

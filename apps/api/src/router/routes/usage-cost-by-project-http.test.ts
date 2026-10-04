@@ -48,7 +48,7 @@ mock.module('../../middleware/auth', () => ({
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../accounts/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => {
     if (resolveAccountDenied) {
       throw new HTTPException(403, { message: 'Forbidden' });
@@ -77,7 +77,7 @@ mock.module('../../projects/lib/access', () => ({
   },
 }));
 
-mock.module('../../shared/cost-rollups', () => ({
+mock.module('../../services/usage/cost-rollups', () => ({
   listCostByProject: async (input: Record<string, unknown>) => {
     listInput = input;
     return {
@@ -100,7 +100,7 @@ mock.module('../../shared/cost-rollups', () => ({
 // /session-costs routes). It is never exercised in this file, but it pulls in
 // projects/lib/access's resolveSessionOwnerIdentities, which is not mocked
 // here — mock it out too so that unrelated route's module load never runs.
-mock.module('../../shared/session-costs', () => ({
+mock.module('../../services/usage/session-costs', () => ({
   listSessionCosts: async () => {
     throw new Error('listSessionCosts should not be called from cost-by-project tests');
   },

@@ -5,7 +5,7 @@
  */
 import { and, eq, ne } from 'drizzle-orm';
 import { projects, sandboxTemplates, type Database } from '@kortix/db';
-import { db as appDb } from '../../shared/db';
+import { db as appDb } from '../../lib/db';
 import { getSandboxProvider } from '../../snapshots/providers';
 import {
   DEFAULT_SANDBOX_SLUG,

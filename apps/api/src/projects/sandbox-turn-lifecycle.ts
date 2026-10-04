@@ -189,7 +189,7 @@ export async function beginSandboxTurn(
   // returned, so a stop cannot commit between the two (it waits on the sandbox
   // row lock and then settles this row, or lands first and the grant matches
   // nothing). It ran as a second round trip before the prompt's upstream call.
-  const { withDbTransaction } = await import('../shared/db');
+  const { withDbTransaction } = await import('../lib/db');
   const result = await withDbTransaction(async () => {
     await execute(sql`SELECT session.session_id FROM kortix.project_sessions session
       WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE ${targetPredicate(target)})
@@ -235,7 +235,7 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
   try {
     // Nested contextual transaction is a savepoint: a ledger statement error
     // must not poison admission's outer authority + wake transaction.
-    const { withDbTransaction } = await import('../shared/db');
+    const { withDbTransaction } = await import('../lib/db');
     return await withDbTransaction(() => execute(combined));
   } catch (error) {
     logger.warn(
@@ -574,7 +574,7 @@ export async function completeSandboxTurn(
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
   }
-  const { withDbTransaction } = await import('../shared/db');
+  const { withDbTransaction } = await import('../lib/db');
   const result = await withDbTransaction(async () => {
     // Match lifecycle writers' session -> sandbox lock order.
     await execute(sql`SELECT session_id FROM kortix.project_sessions

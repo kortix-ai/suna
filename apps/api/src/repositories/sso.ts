@@ -9,7 +9,7 @@ import {
   accountSsoProviders,
   accountGroups,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 export type SsoProvider = {
   ssoProviderId: string;

@@ -73,7 +73,7 @@ let returningRow: Record<string, unknown> = projectRow();
 // ── The database. Only `update(...).set(...).where(...).returning()` is
 // reachable from this handler, so only that chain is implemented; anything else
 // throws rather than silently resolving.
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     update: () => ({

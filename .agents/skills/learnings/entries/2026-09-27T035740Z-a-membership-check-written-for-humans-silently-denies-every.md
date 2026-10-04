@@ -15,7 +15,7 @@ check when the codebase has more than one principal table (e.g.
 `account_members` and `service_accounts`), especially on an attribution field
 (`created_by`, `actor_id`) that can hold either kind of id.
 
-**Incident:** `isAccountMember` (`apps/api/src/shared/preview-ownership.ts`)
+**Incident:** `isAccountMember` (`apps/api/src/services/sessions/preview-ownership.ts`)
 only checked `account_members`. A trigger/automation session is attributed
 to the agent's `service_accounts` row, never an `account_members` row, so
 `resolvePreviewUserContext` returned null for every one of those sessions and

@@ -22,10 +22,10 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSecretResources, projectSecrets } from '@kortix/db';
 import type { ProviderKind } from '@kortix/llm-gateway';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../../projects/secrets/envelope';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
-import { recordAuditEvent } from '../../shared/audit';
+import { recordAuditEvent } from '../../services/audit/audit';
 import { isPermanentRefreshRejection, refreshErrorCode } from './codex-core';
 
 const CONSOLE = 'https://opencode.ai/console';

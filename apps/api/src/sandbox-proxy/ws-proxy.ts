@@ -26,7 +26,7 @@ import { authenticatePreviewPrincipalDetailed } from './preview-auth';
 import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { resolvePreviewWsUpstream } from './forward';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
-import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
+import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../services/sessions/opencode-ports';
 import { healthRuntimePort } from '@kortix/api-contract/runtime-relay';
 import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';

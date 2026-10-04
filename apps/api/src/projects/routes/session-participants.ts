@@ -3,7 +3,7 @@ import { accountGroupMembers } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   assertProjectCapability,
   loadProjectForUser,

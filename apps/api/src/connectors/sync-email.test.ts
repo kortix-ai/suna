@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test';
 import * as realInstallStore from '../channels/install-store';
-import * as realDb from '../shared/db';
+import * as realDb from '../lib/db';
 import * as realCredentials from './credentials';
 
 const writes: string[] = [];
@@ -13,7 +13,7 @@ mock.module('../channels/install-store', () => ({
     return [];
   },
 }));
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   ...realDb,
   hasDatabase: () => true,
   db: {

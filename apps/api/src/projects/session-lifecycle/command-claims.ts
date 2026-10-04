@@ -1,8 +1,8 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { currentInstanceId } from '../instance-scope';
-import { db } from '../../shared/db';
-import { qualifiedColumn } from '../../shared/sql-qualified-column';
+import { db } from '../../lib/db';
+import { qualifiedColumn } from '../../lib/sql-qualified-column';
 import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferSelect;

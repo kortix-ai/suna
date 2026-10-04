@@ -28,7 +28,7 @@ mock.module('../lib/config', () => mockConfigModule());
 // pin it so the adoption snapshot is deterministic across runs.
 const realCrypto = await import('node:crypto');
 mock.module('node:crypto', () => ({ ...realCrypto, randomUUID: () => 'adopt-token' }));
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   withDbTransaction: async (action: () => Promise<unknown>) => action(),
   db: {
     execute: async (query: unknown) => {

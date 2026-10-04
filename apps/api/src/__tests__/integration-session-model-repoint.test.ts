@@ -18,7 +18,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { auditEvents, projectSessions } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 const managedModel = (id: string) => ({

@@ -30,11 +30,11 @@ import {
   saveOAuth2Application,
 } from '../../connectors/oauth2-store';
 import { PROJECT_ACTIONS } from '../../iam';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { OkSchema } from '../lib/app';
 

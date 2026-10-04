@@ -2,7 +2,7 @@ import { appRuntimes, apps } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../lib/config';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { ingressTargetUrl } from '../platform/providers/ingress-url';
 import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError } from './limits';

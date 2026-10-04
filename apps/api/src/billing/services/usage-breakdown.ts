@@ -20,7 +20,7 @@
 
 import { creditLedger } from '@kortix/db';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 const COMPUTE_DEBIT_KINDS = ['compute_debit'] as const;
 const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as const;

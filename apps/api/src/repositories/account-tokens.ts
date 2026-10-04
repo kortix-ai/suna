@@ -1,17 +1,17 @@
 import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
-import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
+import { SESSION_LEASE_REFUSAL } from '../services/sessions/session-lease-refusal';
 import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
-import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
+import { db } from '../lib/db';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../auth/token-hash';
 import {
   hashSecretKey,
   generateAccountTokenPair,
   isApiKeySecretConfigured,
   isAccountToken,
-} from '../shared/crypto';
+} from '../lib/crypto';
 import type { AgentGrant } from '@kortix/db';
-import { isUuid } from '../shared/validate';
-import { createLastUsedTracker } from '../shared/throttled-last-used';
+import { isUuid } from '../lib/validate';
+import { createLastUsedTracker } from './throttled-last-used';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

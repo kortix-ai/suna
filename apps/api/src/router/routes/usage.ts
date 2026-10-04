@@ -8,8 +8,8 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
-import { CSV_ROW_CAP, toCsv } from '../../shared/cost-csv';
-import { getCostSummary, listCostByProject } from '../../shared/cost-rollups';
+import { CSV_ROW_CAP, toCsv } from '../../services/usage/cost-csv';
+import { getCostSummary, listCostByProject } from '../../services/usage/cost-rollups';
 import {
   type CostSort,
   type CostWindow,
@@ -17,10 +17,10 @@ import {
   parseCostPagination,
   parseCostSort,
   parseCostWindow,
-} from '../../shared/cost-window';
-import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
-import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
+} from '../../services/usage/cost-window';
+import { db } from '../../lib/db';
+import { resolveScopedAccountId } from '../../accounts/resolve-account';
+import { getSessionCostRecord, listSessionCosts } from '../../services/usage/session-costs';
 import type { AppEnv } from '../../types/app-env';
 import {
   InvalidUsageQueryError,

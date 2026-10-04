@@ -11,7 +11,7 @@ import { chatUserIdentities, connectorCalls, projectSessions } from '@kortix/db'
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { approvalPreviewReviewable } from '../connectors/args-preview';
 import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { loadSlackTokenForProject } from './install-store';
 import { postBlocks, updateBlocks } from './slack-api';
 import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks, slackUserIdsIn } from './slack/approval-card';

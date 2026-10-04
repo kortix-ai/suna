@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { runWorkerTick } from '../shared/audit-scope';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import type { ReapResult } from './sandbox-reaper';
 
 const DEFAULT_ACTIVE_TURN_RENEWAL_INTERVAL_MS = 20_000;

@@ -15,7 +15,7 @@
 
 import { config } from '../lib/config';
 import { SESSION_DATA_PORTS } from '../sandbox-proxy/session-data-ports';
-import { isOpencodePort } from '../shared/opencode-ports';
+import { isOpencodePort } from '../services/sessions/opencode-ports';
 import { positiveEnvInt } from './reaper-constants';
 
 /**

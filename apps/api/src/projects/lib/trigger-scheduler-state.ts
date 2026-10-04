@@ -1,5 +1,5 @@
 import { config } from '../../lib/config';
-import { isPlainObject } from '../../shared/json';
+import { isPlainObject } from '../../lib/json';
 
 export type TriggerSchedulerTimer = ReturnType<typeof setInterval>;
 
@@ -122,9 +122,9 @@ export function manifestCatalogBatchSize(): number {
 
 // Callers read only `error.message` and pass budgets > 0, so the shared
 // helper (TimeoutError, same message, non-positive = unbounded) is identical.
-export { withTimeout } from '../../shared/with-timeout';
+export { withTimeout } from '../../lib/with-timeout';
 
-export { mapWithConcurrency } from '../../shared/map-with-concurrency';
+export { mapWithConcurrency } from '../../lib/map-with-concurrency';
 
 /**
  * Pure stall check: is the leader's scheduler failing to make progress? Surfaced

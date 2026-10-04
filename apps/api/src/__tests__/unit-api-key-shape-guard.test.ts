@@ -6,7 +6,7 @@ process.env.API_KEY_SECRET = 'unit-api-key-shape-guard-secret';
 
 let selectCalls = 0;
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => {
       selectCalls += 1;

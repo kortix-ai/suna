@@ -1,5 +1,5 @@
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { platinumUsRegion } from '../../shared/platinum-region';
+import { platinumUsRegion } from '../../services/sandboxes/platinum/region';
 
 /**
  * The region a session's sandbox is created in, or `undefined` for the

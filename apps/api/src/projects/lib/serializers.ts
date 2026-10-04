@@ -21,9 +21,9 @@ import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../lib/config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
-import { requestClientIp } from '../../shared/client-ip';
-import { normalizeJsonObject } from '../../shared/json';
-import { db } from '../../shared/db';
+import { requestClientIp } from '../../lib/client-ip';
+import { normalizeJsonObject } from '../../lib/json';
+import { db } from '../../lib/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
   type SnapshotErrorCategory,

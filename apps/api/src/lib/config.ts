@@ -172,7 +172,7 @@ const envSchema = z.object({
   KORTIX_PUBLIC_AUTH_PROVIDERS: z.string().optional(),
   // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
   // API checks an HS256 access token's signature and expiry locally instead of
-  // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
+  // asking GoTrue on every request (auth/jwt-verify.ts). Optional: without it
   // HS256 tokens keep the per-request GoTrue round trip.
   SUPABASE_JWT_SECRET: optStr,
   // How long a GoTrue confirmation that an HS256 token's session is still live
@@ -303,7 +303,7 @@ const envSchema = z.object({
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
   // except a platform admin (KORTIX_PLATFORM_ADMIN_EMAILS — see
-  // shared/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
+  // iam/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
   // the removed KORTIX_SINGLE_ACCOUNT_MODE: signups still work, teams/orgs
   // still fully function, SSO/JIT still lands users in their org — only the
   // CREATION of new accounts by ordinary users is gated. The personal-account
@@ -802,7 +802,7 @@ const envSchema = z.object({
   // the entry this many places from the right; everything to its left was
   // written by the client. Cloud: Cloudflare + ALB = 2. Self-host Caddy
   // replaces an untrusted header with one entry, which the rule also reads
-  // correctly. See shared/client-ip.ts.
+  // correctly. See lib/client-ip.ts.
   KORTIX_TRUSTED_PROXY_HOPS: optInt(2),
   // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
   // this process recently). A token already validated here is not counted.

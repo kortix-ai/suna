@@ -6,12 +6,12 @@ import './lib/sentry';
 
 import { config } from './lib/config';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
-import { runInboundAudit } from './shared/audit-edge';
+import { runInboundAudit } from './services/audit/audit-edge';
 import { describeEmailChain } from './lib/email/transport';
 import { initModelPricing } from './llm-gateway/models/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
-import { primeDaytonaTransientClassifier } from './shared/daytona-transient';
+import { primeDaytonaRateLimitClassifier } from './services/sandboxes/daytona/rate-limit';
+import { primeDaytonaTransientClassifier } from './services/sandboxes/daytona/transient';
 import { ensureSchema } from './lib/ensure-schema';
 import { dispatchInbound } from './sandbox-proxy/inbound-dispatch';
 import { bootServices, markSchemaReady, shutdown } from './bootstrap';
@@ -29,7 +29,7 @@ export { app };
 // Pre-load the Daytona SDK's `DaytonaRateLimitError` class so the synchronous
 // `isDaytonaRateLimitError` classifier (on the global `app.onError` hot path)
 // has its strongest instanceof signal available the first time a 429 throws —
-// see shared/daytona-rate-limit.ts. Fire-and-forget: the classifier's
+// see services/sandboxes/daytona/rate-limit.ts. Fire-and-forget: the classifier's
 // name/statusCode/message fallbacks already cover the rare race where a 429
 // throws before this resolves, so we never block startup on it.
 void primeDaytonaRateLimitClassifier();
@@ -38,7 +38,7 @@ void primeDaytonaRateLimitClassifier();
 // classes so the synchronous `isDaytonaTransientProviderError` classifier (on
 // the global `app.onError` hot path) has its strongest instanceof signal
 // available the first time a transient gateway / connection / timeout failure
-// throws — see shared/daytona-transient.ts. Fire-and-forget: the classifier's
+// throws — see services/sandboxes/daytona/transient.ts. Fire-and-forget: the classifier's
 // name / statusCode / message fallbacks already cover the rare race where a
 // transient failure throws before this resolves, so we never block startup on
 // it.

@@ -17,7 +17,7 @@ import { actorForToken } from '../../iam/actor';
 import { loadProjectConfig, listRepoFiles } from '../git';
 import { refreshMirror } from '../git/mirror';
 import { withProjectGitAuth } from './git';
-import { ttlMemo } from '../../shared/ttl-memo';
+import { ttlMemo } from '../../lib/ttl-memo';
 
 /**
  * Load a project's config WITH its repo file list. File-based agents/skills

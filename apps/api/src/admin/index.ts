@@ -13,13 +13,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types/app-env';
 import { supabaseAuth } from '../middleware/auth';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../lib/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';
-import { isUuid } from '../shared/validate';
-import { readJsonObject } from '../shared/http-body';
-import { errorSqlstate } from '../shared/error-cause';
+import { isUuid } from '../lib/validate';
+import { readJsonObject } from '../lib/http-body';
+import { errorSqlstate } from '../lib/error-cause';
 import {
   deleteSessionSandbox,
   findAccountName,
@@ -344,7 +344,7 @@ adminApp.openapi(
     });
 
     try {
-      const { recordAuditEvent } = await import('../shared/audit');
+      const { recordAuditEvent } = await import('../services/audit/audit');
       await recordAuditEvent({
         accountId,
         actorUserId,
@@ -527,7 +527,7 @@ adminApp.openapi(
     const account = await getCreditAccount(accountId);
     const subscriptionId = account?.stripeSubscriptionId ?? null;
     if (!subscriptionId) return c.json({ subscription: null });
-    const { getStripe } = await import('../shared/stripe');
+    const { getStripe } = await import('../billing/stripe');
     const sub = await getStripe().subscriptions.retrieve(subscriptionId, {
       expand: ['items.data.price.product'],
     });
@@ -744,7 +744,7 @@ adminApp.openapi(
     );
 
     try {
-      const { recordAuditEvent } = await import('../shared/audit');
+      const { recordAuditEvent } = await import('../services/audit/audit');
       await recordAuditEvent({
         accountId,
         actorUserId,
@@ -825,7 +825,7 @@ adminApp.openapi(
       // the change immediately; no tier-cache invalidation needed because
       // enterprise_entitled is resolved independently of the cached tier.
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -907,7 +907,7 @@ adminApp.openapi(
       const result = await grantTrial(input);
 
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -959,7 +959,7 @@ adminApp.openapi(
       }
 
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -1030,7 +1030,7 @@ adminApp.openapi(
       );
 
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -1097,7 +1097,7 @@ adminApp.openapi(
       );
 
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -1166,7 +1166,7 @@ adminApp.openapi(
       const after = await setSsoDomainVerified(accountId, body.verified);
       if (!after) return c.json({ error: 'no SSO provider configured' }, 404);
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -1272,12 +1272,12 @@ adminApp.openapi(
 
       // Two caches read these values: the unified billing cache (invalidated by
       // applyAdminOverride) and the legacy per-process limit cache.
-      const { clearAccountLimitCache } = await import('../shared/account-limits');
+      const { clearAccountLimitCache } = await import('../billing/account-limits');
       clearAccountLimitCache();
 
       const stored = (await getCreditAccount(accountId))?.entitlementOverrides ?? {};
       try {
-        const { recordAuditEvent } = await import('../shared/audit');
+        const { recordAuditEvent } = await import('../services/audit/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
@@ -1469,7 +1469,7 @@ adminApp.openapi(
 // "Open this customer's account" for support and debugging. The grant is a ROW
 // (kortix.impersonation_grants), never a token: the client only ever holds an
 // id, and ownership, expiry, revocation and the operator's CURRENT platform
-// role are re-read on every request that presents it (shared/impersonation.ts +
+// role are re-read on every request that presents it (iam/impersonation.ts +
 // middleware/impersonation.ts). Revocation is therefore instant, and demoting
 // an operator kills their live sessions mid-flight.
 //
@@ -1530,7 +1530,7 @@ adminApp.openapi(
       if (!account) return c.json({ error: 'account not found' }, 404);
 
       const { createImpersonationGrant, impersonationExpiryFrom, IMPERSONATION_START_ACTION } =
-        await import('../shared/impersonation');
+        await import('../iam/impersonation');
       const expiresAt = impersonationExpiryFrom(new Date());
       const grant = await createImpersonationGrant({
         adminUserId,
@@ -1542,7 +1542,7 @@ adminApp.openapi(
       // Audited against the TARGET account, not ours: the customer's own audit
       // log (and any audit webhook they have configured) is where "an operator
       // entered your account" has to appear. `actorUserId` is the real admin.
-      const { recordAuditEvent } = await import('../shared/audit');
+      const { recordAuditEvent } = await import('../services/audit/audit');
       await recordAuditEvent({
         accountId,
         actorUserId: adminUserId,
@@ -1598,12 +1598,12 @@ adminApp.openapi(
       const adminUserId = c.get('userId') as string;
       const grantId = c.req.param('grantId');
       const { revokeImpersonationGrant, IMPERSONATION_STOP_ACTION } = await import(
-        '../shared/impersonation'
+        '../iam/impersonation'
       );
       const grant = await revokeImpersonationGrant({ grantId, adminUserId });
       if (!grant) return c.json({ error: 'grant not found' }, 404);
 
-      const { recordAuditEvent } = await import('../shared/audit');
+      const { recordAuditEvent } = await import('../services/audit/audit');
       await recordAuditEvent({
         accountId: grant.targetAccountId,
         actorUserId: adminUserId,
@@ -1653,7 +1653,7 @@ adminApp.openapi(
   async (c: any) => {
     try {
       const adminUserId = c.get('userId') as string;
-      const { listActiveImpersonationGrants } = await import('../shared/impersonation');
+      const { listActiveImpersonationGrants } = await import('../iam/impersonation');
       const grants = await listActiveImpersonationGrants(adminUserId);
       const names = new Map<string, string | null>();
       if (grants.length > 0) {

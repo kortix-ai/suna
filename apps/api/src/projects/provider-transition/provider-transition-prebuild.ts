@@ -13,7 +13,7 @@
  */
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { projectSessions, projects, type Database } from '@kortix/db';
-import { db as appDb } from '../../shared/db';
+import { db as appDb } from '../../lib/db';
 import { logger } from '../../lib/logger';
 import { defaultTransitionDeps, requestPrebuild } from './provider-transition-service';
 import {

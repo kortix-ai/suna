@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { teamsWebhookApp } from './app';
 import { teamsConfigured } from '../teams-auth';
 
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { loadTeamsAppIdForProject } from '../install-store';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
@@ -11,7 +11,7 @@ import { handleAdaptiveCardAction } from './interactivity';
 import { handleOpenInKortixAction } from './message-action';
 import type { TeamsActivity } from './types';
 import { MANAGED_TEAMS_INBOUND, scopeProjectTeamsActivity, type TeamsInbound } from './inbound';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 
 async function processActivity(
   c: Context,

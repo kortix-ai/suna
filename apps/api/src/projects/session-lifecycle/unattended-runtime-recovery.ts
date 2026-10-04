@@ -46,7 +46,7 @@
  */
 import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** `project_sessions.origin` values nobody-is-watching by construction. */
 const UNATTENDED_ORIGINS: ReadonlySet<string> = new Set(['trigger', 'schedule', 'system']);

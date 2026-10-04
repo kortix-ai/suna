@@ -17,7 +17,7 @@ import {
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';

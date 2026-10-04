@@ -18,7 +18,7 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm';
 
 import { type SandboxProviderName, config } from '../../lib/config';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 
 export const PROVIDER_REMOVAL_PENDING_KEY = 'providerRemovalPendingAt';

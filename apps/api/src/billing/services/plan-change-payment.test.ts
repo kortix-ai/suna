@@ -20,7 +20,7 @@ const itemUpdates: Array<{ id: string; params: Record<string, any> }> = [];
 const tierWrites: Array<Record<string, unknown>> = [];
 const grants: GrantInput[] = [];
 
-mock.module('../../shared/stripe', () => ({
+mock.module('../stripe', () => ({
   getStripe: () => ({
     subscriptions: {
       retrieve: async (id: string) => ({
@@ -75,9 +75,9 @@ mock.module('../wallet', () => ({
   },
 }));
 
-mock.module('../../shared/platform-roles', () => ({ isPlatformAdmin: async () => false }));
+mock.module('../../iam/platform-roles', () => ({ isPlatformAdmin: async () => false }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     execute: async () => [{ n: activeMembers }],
   },

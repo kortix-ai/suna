@@ -6,7 +6,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import {

@@ -20,7 +20,7 @@ import {
   computeUnresolvedCeilingMs,
 } from '../../projects/reaper-constants';
 import { runtimeWakeInProgress } from '../../projects/session-lifecycle/runtime-wake-fence';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   type ComputeCloseReason,
   computeCloseWindowEnd,

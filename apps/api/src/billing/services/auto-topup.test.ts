@@ -47,7 +47,7 @@ mock.module('../wallet', () => ({
   },
 }));
 
-mock.module('../../shared/stripe', () => ({
+mock.module('../stripe', () => ({
   getStripe: () => ({
     customers: { retrieve: async () => stripeCustomer },
     paymentMethods: {

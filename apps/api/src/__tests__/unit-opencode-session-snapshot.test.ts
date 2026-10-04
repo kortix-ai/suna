@@ -6,8 +6,8 @@ import type { ProjectSessionRow } from '../projects/lib/serializers';
 // The merge the real write performs is proven on PostgreSQL in
 // `integration-session-title-claim.test.ts`.
 const dbUpdates: Array<Record<string, unknown>> = [];
-const realDb = await import('../shared/db');
-mock.module('../shared/db', () => ({
+const realDb = await import('../lib/db');
+mock.module('../lib/db', () => ({
   ...realDb,
   db: {
     update: () => ({

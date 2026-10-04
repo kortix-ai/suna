@@ -13,8 +13,8 @@ import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-o
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, SANDBOX_VERSION, type SandboxProviderName } from '../lib/config';
 import { logger } from '../lib/logger';
-import { db } from '../shared/db';
-import { runWorkerTick } from '../shared/audit-scope';
+import { db } from '../lib/db';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { auditDeploymentOutcome, type DeploymentAuditRef } from './deployment-audit';
 import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
@@ -27,7 +27,7 @@ import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from 
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
 import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
-import { exponentialBackoffMs } from '../shared/backoff';
+import { exponentialBackoffMs } from '../lib/backoff';
 
 export const APP_RUNTIME_VERSION =
   process.env.KORTIX_APP_RUNTIME_VERSION

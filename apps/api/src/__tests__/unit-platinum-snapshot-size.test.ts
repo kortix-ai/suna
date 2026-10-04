@@ -55,7 +55,7 @@ let lifecycleEvents: string[] = [];
  *  failure never burns more than one BUILD_ATTEMPTS slot. */
 let oversizeAttempts = 0;
 
-mock.module('../shared/platinum', () => ({
+mock.module('../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected default Platinum materialization request');

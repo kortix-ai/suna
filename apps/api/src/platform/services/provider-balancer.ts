@@ -15,7 +15,7 @@ async function loadWeights(): Promise<Record<string, number>> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.weights;
   let weights: Record<string, number> = {};
   try {
-    const { hasDatabase, db } = await import('../../shared/db');
+    const { hasDatabase, db } = await import('../../lib/db');
     if (hasDatabase) {
       const { platformSettings } = await import('@kortix/db');
       const { eq } = await import('drizzle-orm');

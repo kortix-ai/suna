@@ -12,7 +12,7 @@ import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { recordSessionActivity } from '../projects/session-activity';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

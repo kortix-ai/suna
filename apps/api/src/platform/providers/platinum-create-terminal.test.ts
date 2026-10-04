@@ -19,7 +19,7 @@ process.env.DATABASE_URL ??= 'postgres://x';
 let createState = 'running';
 const calls: { path: string; method: string }[] = [];
 
-mock.module('../../shared/platinum', () => ({
+mock.module('../../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected Platinum materialization request');

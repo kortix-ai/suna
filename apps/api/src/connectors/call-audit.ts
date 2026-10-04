@@ -1,4 +1,4 @@
-import type { AuditEventInput, AuditOutcome } from '../shared/audit';
+import type { AuditEventInput, AuditOutcome } from '../services/audit/audit';
 import type { ExecutionRecord } from './gateway';
 import { buildArgsPreview } from './args-preview';
 

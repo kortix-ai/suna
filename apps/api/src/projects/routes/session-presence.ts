@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { sessionPresenceLeases } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';

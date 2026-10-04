@@ -8,7 +8,7 @@ import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { continueSession } from '../session-lifecycle';
 import {
   getOpenQuestion,
@@ -26,7 +26,7 @@ import {
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { notifySessionEvent } from '../../notifications/session-push';
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question

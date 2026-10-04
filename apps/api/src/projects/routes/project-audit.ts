@@ -4,7 +4,7 @@
  */
 
 import { RuntimeAuditBatchSchema } from '@kortix/api-contract/runtime-relay';
-import { auditCredentialNames } from '../../shared/audit-credential-names';
+import { auditCredentialNames } from '../../services/audit/audit-credential-names';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountTokens,
@@ -23,14 +23,14 @@ import { logger as appLogger } from '../../lib/logger';
 import { requestDeadlineMs } from '../../middleware/request-deadline';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
-import { agentAuditInitiator } from '../../shared/agent-audit-attribution';
-import { AUDIT_READ_FLUSH_BARRIER_MS, flushAuditEvents } from '../../shared/audit';
+import { agentAuditInitiator } from '../../services/audit/agent-audit-attribution';
+import { AUDIT_READ_FLUSH_BARRIER_MS, flushAuditEvents } from '../../services/audit/audit';
 import {
   AUDIT_STATEMENT_TIMEOUT_MS,
   auditDb,
   auditErrorSqlstate,
   isAuditContentionError,
-} from '../../shared/audit-db';
+} from '../../services/audit/audit-db';
 import {
   buildAuditCursorCondition,
   parseAuditCursor,
@@ -40,13 +40,13 @@ import {
   parseAuditSessionCursor,
   readSessionAuditEvents,
   serializeAuditEvent,
-} from '../../shared/audit-query';
-import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
-import { currentInboundAuditScope } from '../../shared/audit-scope';
-import { db } from '../../shared/db';
-import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
-import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
-import { isUuid } from '../../shared/validate';
+} from '../../services/audit/audit-query';
+import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../services/audit/audit-schema';
+import { currentInboundAuditScope } from '../../services/audit/audit-scope';
+import { db } from '../../lib/db';
+import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../services/audit/opencode-audit-ingestion';
+import { applyOpenCodeAuditRateLimit } from '../../services/audit/opencode-audit-rate-guard';
+import { isUuid } from '../../lib/validate';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -160,7 +160,7 @@ export async function boundChunkWrite<T>(
  * Milliseconds left before this request's server-processing deadline, or null
  * when the guard is off: the deadline is disabled/exempt, or no inbound audit
  * scope exists (unit tests drive the bare app). The edge
- * (`shared/audit-edge.ts`) stamps `startedAt` before any middleware runs, so
+ * (`services/audit/audit-edge.ts`) stamps `startedAt` before any middleware runs, so
  * the budget covers auth and body parsing too — the time the handler did not
  * spend itself.
  */
@@ -536,7 +536,7 @@ export function registerProjectAuditRoutes(): void {
       if (cursor) {
         conditions.push(buildAuditCursorCondition(cursor, loaded.row.accountId, 'descending'));
       }
-      // Audit writes are buffered off the request path (shared/audit-queue.ts).
+      // Audit writes are buffered off the request path (services/audit/audit-queue.ts).
       // A reader must observe every event already emitted, so drain the queue
       // before querying.
       await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
@@ -610,7 +610,7 @@ export function registerProjectAuditRoutes(): void {
         ? identities.find((identity) => identity.serviceAccountId === scope.createdBy)
         : null;
       // Spec 2026-09-22 §2: the same initiator rule every other agent-session
-      // audit row uses (shared/agent-audit-attribution.ts), plus the human the
+      // audit row uses (services/audit/agent-audit-attribution.ts), plus the human the
       // session acts on behalf of — read from the credential when it is the
       // session token, else from the session's live agent token.
       const onBehalfOfUserId = await ingestionOnBehalfOf(c, sessionId, accountId);
@@ -771,7 +771,7 @@ export function registerProjectAuditRoutes(): void {
       // project-neutral endpoint (`GET /v1/skills`); they still belong to this
       // session's log, so the read filters on `session_id` alone, never on an
       // account or project predicate.
-      // Audit writes are buffered off the request path (shared/audit-queue.ts).
+      // Audit writes are buffered off the request path (services/audit/audit-queue.ts).
       // A reader of EVENTS must observe every event already emitted, so drain
       // the queue before querying them.
       //

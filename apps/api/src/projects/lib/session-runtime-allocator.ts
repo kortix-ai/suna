@@ -5,7 +5,7 @@ import type { SandboxProviderName } from '../../lib/config';
 import { logger } from '../../lib/logger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
 import { transitionSession } from '../session-lifecycle/status-transitions';

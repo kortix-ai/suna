@@ -20,8 +20,8 @@ import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { mcpResourceMetadataUrl, oauthIssuer } from '../oauth/discovery';
 import { OAUTH_SCOPE_KORTIX } from '../oauth/access-token';
-import { db } from '../shared/db';
-import { isUuid } from '../shared/validate';
+import { db } from '../lib/db';
+import { isUuid } from '../lib/validate';
 import {
   JOB_CANCEL,
   JOB_DEFAULT_TIMEOUT_SECONDS,

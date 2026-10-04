@@ -36,7 +36,7 @@ type SandboxRow = {
 };
 let sandboxRows: SandboxRow[] = [];
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: (columns: Record<string, unknown>) => ({

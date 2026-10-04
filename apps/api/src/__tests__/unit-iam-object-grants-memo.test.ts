@@ -18,7 +18,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ttlMemo } from '../shared/ttl-memo';
+import { ttlMemo } from '../lib/ttl-memo';
 
 const source = readFileSync(join(import.meta.dir, '../iam/authorize.ts'), 'utf8');
 const flat = source.replace(/\s+/g, ' ');

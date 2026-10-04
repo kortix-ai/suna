@@ -54,7 +54,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { resolveSessionOpencodeEndpoint, readSessionMessageTip, removeRuntimeMessage } from './runtime-client';

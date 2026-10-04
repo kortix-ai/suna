@@ -16,7 +16,7 @@ let sessionRows: Array<Record<string, unknown>> = [];
 let projectRows: Array<Record<string, unknown>> = [];
 let connectorRows: Array<Record<string, unknown>> = [];
 let connectionRows: Array<Record<string, unknown>> = [];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: {
     select: () => ({
@@ -41,7 +41,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../shared/rate-limit', () => ({
+mock.module('../middleware/rate-limit', () => ({
   TokenBucketRateLimiter: class {},
   enforceRateLimit: async () => null,
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),

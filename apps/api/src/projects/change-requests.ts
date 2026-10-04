@@ -16,7 +16,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 

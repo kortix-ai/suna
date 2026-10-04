@@ -5,8 +5,8 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 /** One project: read, detail, and update. */
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
-import { readJsonObject } from '../../shared/http-body';
+import { db } from '../../lib/db';
+import { readJsonObject } from '../../lib/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
 import { allowStaleMirrorReads } from '../git/mirror';
 import {

@@ -45,7 +45,7 @@ import {
   assertAllowedSourceAddress,
   isAllowedSourceValidationError,
 } from '../marketplace/catalog';
-import { UnsafeEgressError } from '../shared/ssrf-guard';
+import { UnsafeEgressError } from '../lib/ssrf-guard';
 import {
   createConnectorRouter,
   type ConnectorPrincipal,

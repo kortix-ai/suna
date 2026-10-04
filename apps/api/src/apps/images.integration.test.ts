@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, appArtifacts, appDeployments, appRuntimes, apps, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
 import {
   appImageReclaimIo,

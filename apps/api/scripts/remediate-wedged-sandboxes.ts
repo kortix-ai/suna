@@ -33,7 +33,7 @@
 import { sql } from 'drizzle-orm';
 import { type ProviderName, getProvider } from '../src/platform/providers';
 import { applyStoppedState } from '../src/projects/reaping/sandbox-state-sync';
-import { db } from '../src/shared/db';
+import { db } from '../src/lib/db';
 
 interface Row {
   sandbox_id: string;

@@ -57,8 +57,8 @@ import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../lib/config';
 import { currentInstanceId } from '../../projects/instance-scope';
-import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
+import { isOpencodePort } from '../../services/sessions/opencode-ports';
+import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../services/sandboxes/platinum/client';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -122,7 +122,7 @@ interface PlatinumSandbox {
   autoResume?: boolean;
   /** Public region the box was placed in (e.g. 'eu-west', 'us-east'). */
   region?: string | null;
-  /** The control plane that owns this box. shared/platinum.ts learns it from
+  /** The control plane that owns this box. services/sandboxes/platinum/client.ts learns it from
    *  this field (and from `x-pt-served-by`) and sends every later call by id
    *  straight there instead of through `PLATINUM_API_URL`'s forwarding hop. */
   api_url?: string;
@@ -467,7 +467,7 @@ export class PlatinumProvider implements SandboxProvider {
       // goes straight to that region's control plane; otherwise
       // PLATINUM_API_URL forwards it there. The answer names the owner
       // (`api_url`), and every later call by id goes straight to it
-      // (shared/platinum.ts).
+      // (services/sandboxes/platinum/client.ts).
       ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
@@ -1116,7 +1116,7 @@ export class PlatinumProvider implements SandboxProvider {
       // Either half of the opencode pair rewrites to the agent bridge —
       // Platinum cannot expose opencode's port directly. After a verified
       // reload the live half may be the standby, and matching only 4096 would
-      // send it upstream unrewritten (see shared/opencode-ports).
+      // send it upstream unrewritten (see services/sessions/opencode-ports).
       effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
       websocket: ptyWebsocket
         ? {

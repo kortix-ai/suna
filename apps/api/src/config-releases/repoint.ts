@@ -26,8 +26,8 @@ import { and, eq } from 'drizzle-orm';
 import { actorForUser } from '../iam/actor';
 import { filterAccessibleObjects } from '../iam/authorize';
 import { logger } from '../lib/logger';
-import { recordAuditEvent } from '../shared/audit';
-import { db } from '../shared/db';
+import { recordAuditEvent } from '../services/audit/audit';
+import { db } from '../lib/db';
 
 export interface RepointSubject {
   projectId: string;

@@ -25,8 +25,8 @@ import { createCorsMiddleware } from './cors';
 import { requestDeadline } from './request-deadline';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './upstream-timing';
-import { auditApiRequest } from '../shared/audit';
-import { isUuid } from '../shared/validate';
+import { auditApiRequest } from '../services/audit/audit';
+import { isUuid } from '../lib/validate';
 
 // The global middleware chain, in the registration order the request sees it.
 // Every line inside installHttpMiddleware is moved verbatim from the former
@@ -110,7 +110,7 @@ app.use('*', async (c, next) => {
       c.header('traceparent', ctx.traceparent);
     }
   };
-  // The server edge (shared/audit-edge.ts) already opened this request's
+  // The server edge (services/audit/audit-edge.ts) already opened this request's
   // context and its audit scope. Reuse it: a second runWithContext would give
   // the handler a fresh store, and every principal it bound would miss the
   // edge's scope. A test driving `app` directly has no edge, so open one here.
@@ -263,7 +263,7 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
 }
 
 // Every route, not just /v1: `/scim/v2` provisions users and changes group
-// membership, and was never request-audited. See shared/audit-scope.ts.
+// membership, and was never request-audited. See services/audit/audit-scope.ts.
 app.use('*', auditApiRequest);
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s

@@ -34,7 +34,7 @@ import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { mayResolveApproval } from '../projects/lib/approval-authority';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { resolveSetupLink } from './token';
 
 const approvalLinksApp = makeOpenApiApp();

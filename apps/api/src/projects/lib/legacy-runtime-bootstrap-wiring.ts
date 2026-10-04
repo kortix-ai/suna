@@ -14,9 +14,9 @@ import { sql } from 'drizzle-orm';
 import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
 import { mintSessionToken } from '../../platform/services/session-sandbox';
 import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
-import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { db } from '../../lib/db';
+import { OPENCODE_PRIMARY_PORT } from '../../services/sessions/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,

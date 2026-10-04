@@ -1,5 +1,5 @@
 import { config, type SandboxProviderName } from '../lib/config';
-import { escapeHtml } from '../shared/html';
+import { escapeHtml } from '../lib/html';
 
 // The `frame-ancestors` directive for App responses. It decides which origins
 // may embed an App in an iframe — the dashboard's App preview does exactly this.

@@ -9,7 +9,7 @@ import {
   emitsValue,
   resolveSecretDelivery,
 } from '../secrets/strategy';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   filterSecretRowsByAudience,
   NO_SUBJECT,

@@ -2,7 +2,7 @@ import { changeRequests, projectGitConnections, projectGitCredentials, projectSe
 import * as iamAuthorize from '../../iam/authorize';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGitHubRepoUrl, verifyGitHubInstallationAdmin, type GitHubRepo } from '../github';
 import { invalidateProjectMirror } from '../git';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets';

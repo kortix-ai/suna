@@ -1,14 +1,14 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { serviceAccounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
-} from '../../shared/impersonation';
-import { isPlatformAdmin } from '../../shared/platform-roles';
-import { getSupabase } from '../../shared/supabase';
-import { ttlMemo } from '../../shared/ttl-memo';
-import { isUuid } from '../../shared/validate';
+} from '../../iam/impersonation';
+import { isPlatformAdmin } from '../../iam/platform-roles';
+import { getSupabase } from '../../lib/supabase';
+import { ttlMemo } from '../../lib/ttl-memo';
+import { isUuid } from '../../lib/validate';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';

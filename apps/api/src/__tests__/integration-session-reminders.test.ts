@@ -33,7 +33,7 @@ import {
 import { claimDueScheduleSlots } from '../projects/trigger-execution-store';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import type { GitTriggerSpec } from '../projects/triggers';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();

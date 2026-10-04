@@ -29,11 +29,11 @@
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
 import { invalidateDesiredRelease } from './turn-start-convergence';
 import { invalidateProjectMirror } from '../git/mirror';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;
 export const MAX_SESSIONS_PER_BASE_MOVE = 200;

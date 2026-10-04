@@ -8,7 +8,7 @@ import * as realSecrets from '../secrets';
 
 let reads = { session: 0, project: 0, grant: 0, owner: 0 };
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: (table: unknown) => ({

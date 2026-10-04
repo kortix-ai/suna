@@ -37,7 +37,7 @@ import {
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';

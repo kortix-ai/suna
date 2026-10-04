@@ -114,7 +114,7 @@ mock.module('@kortix/db', () => ({
   readStoredAgentGrant: (raw: unknown) => raw ?? null,
 }));
 
-mock.module('../shared/db', () => ({ db: fakeDb }));
+mock.module('../lib/db', () => ({ db: fakeDb }));
 
 mock.module('../billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => state.legacyCustomer,
@@ -163,7 +163,7 @@ mock.module('../billing/services/tiers', () => ({
   },
 }));
 
-mock.module('../shared/stripe', () => ({
+mock.module('../billing/stripe', () => ({
   getStripe: () => ({
     customers: {
       retrieve: async (id: string) => ({ id, deleted: false }),
@@ -179,9 +179,9 @@ mock.module('../shared/stripe', () => ({
   }),
 }));
 
-const { resolveAccountId, resolveScopedAccountId } = await import('../shared/resolve-account');
+const { resolveAccountId, resolveScopedAccountId } = await import('../accounts/resolve-account');
 const { runWithContext } = await import('../lib/request-context');
-const { setImpersonationContext } = await import('../shared/impersonation');
+const { setImpersonationContext } = await import('../iam/impersonation');
 
 beforeEach(() => {
   state.membership = null;

@@ -21,7 +21,7 @@ import { and, eq } from 'drizzle-orm';
 import type { GitHubAppInstallation } from '../projects/github';
 import { dropAccountGitHubInstallation, listAccountGitHubInstallations } from '../projects/lib/git';
 import { upsertAccountGitHubInstallation } from '../projects/routes/github-installations';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { seedAccount } from './helpers/integration-fixtures';
 
 let accountId = '';

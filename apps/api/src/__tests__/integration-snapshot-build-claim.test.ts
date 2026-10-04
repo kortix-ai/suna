@@ -7,7 +7,7 @@
 import { expect, test } from 'bun:test';
 import { workerLeaderLease } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from '../snapshots/build-claim';
 
 const otherReplicaHolds = (key: string, expiresInSeconds: number) =>

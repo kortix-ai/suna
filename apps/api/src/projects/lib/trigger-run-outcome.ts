@@ -2,7 +2,7 @@ import { projectSessions, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
 import { notifySessionEvent } from '../../notifications/session-push';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { resolveProjectAutomationActor } from '../session-lifecycle';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../session-turn-ledger';
 

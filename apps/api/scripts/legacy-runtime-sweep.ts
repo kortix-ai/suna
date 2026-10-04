@@ -10,7 +10,7 @@
  */
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNotNull } from 'drizzle-orm';
-import { db } from '../src/shared/db';
+import { db } from '../src/lib/db';
 import {
   buildLegacyBootstrapDeps,
   runLegacyRuntimeBootstrap,

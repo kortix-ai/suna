@@ -2,7 +2,7 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -14,8 +14,8 @@ import {
   projectsApp,
 } from '../lib/app';
 import { serializeProject } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
-import { isPlainObject } from '../../shared/json';
+import { readJsonObject } from '../../lib/http-body';
+import { isPlainObject } from '../../lib/json';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import { isFeatureFlagKey } from '../../feature-flags/registry';
 import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';

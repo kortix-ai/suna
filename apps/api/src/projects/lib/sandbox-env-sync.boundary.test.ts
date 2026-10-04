@@ -41,7 +41,7 @@ const SESSION_ROW = {
 
 // One fake row satisfies every select on this path: the sandbox lookup, the
 // session lookup and the project lookup.
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:cr
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { config } from '../lib/config';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const envelopeVersion = 'v1';
 

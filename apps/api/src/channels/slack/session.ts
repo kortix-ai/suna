@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { slackFollowUpHeader, slackPlainText } from '@kortix/shared';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { filterAccessibleObjects } from '../../iam';
 import { actorForUser } from '../../iam/actor';

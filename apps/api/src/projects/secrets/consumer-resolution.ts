@@ -1,9 +1,9 @@
 import { projectSecrets, projects } from '@kortix/db';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { SecretConsumer, SecretStrategy } from '../../secrets/strategy';
-import { recordAuditEvent } from '../../shared/audit';
-import { createFirstInWindow } from '../../shared/audit-dedupe';
-import { db } from '../../shared/db';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { createFirstInWindow } from '../../services/audit/audit-dedupe';
+import { db } from '../../lib/db';
 import { filterSecretRowsByAudience, secretAudienceSubject } from '../lib/secret-audience';
 import { decryptProjectSecret } from './envelope';
 import { secretAudienceRank } from './grant-policy';

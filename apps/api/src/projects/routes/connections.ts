@@ -6,8 +6,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { ensureProjectComputer } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
-import { isUniqueViolation } from '../../shared/postgres-errors';
+import { db } from '../../lib/db';
+import { isUniqueViolation } from '../../lib/postgres-errors';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -26,7 +26,7 @@ import { audiencePersonId, loadConnectionAudience } from '../lib/connection-audi
 import { loadConnectionSharing } from '../lib/connection-sharing';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
 import {
   ConnectionViewSchema,

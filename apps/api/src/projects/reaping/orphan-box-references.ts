@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { ProviderName } from '../../platform/providers';
 
 /** Any reference excludes orphan cleanup, even when its status is stale. */

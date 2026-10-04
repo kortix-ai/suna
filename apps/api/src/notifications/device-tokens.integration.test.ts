@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { pushDeviceTokens } from '@kortix/db';
 import { eq, inArray } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { createPushDeviceTokenStore } from './device-tokens';
 
 const confirmed = Boolean(

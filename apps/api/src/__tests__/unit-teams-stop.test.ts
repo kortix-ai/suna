@@ -14,7 +14,7 @@ const CONVERSATION_ID = '19:abc@thread.tacv2';
 
 let participantRow: { status: string } | undefined;
 let participantThrows = false;
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({

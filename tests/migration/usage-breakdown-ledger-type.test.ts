@@ -15,7 +15,7 @@ const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
 
-mock.module('../../apps/api/src/shared/db', () => ({
+mock.module('../../apps/api/src/lib/db', () => ({
   hasDatabase: true,
   db: createDb(url),
 }));

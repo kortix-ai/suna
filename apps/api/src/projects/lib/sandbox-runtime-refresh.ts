@@ -2,7 +2,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /**
  * Poke a live sandbox's daemon so it re-converges on this deploy's runtime

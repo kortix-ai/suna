@@ -8,7 +8,7 @@ import { connectorConnections, connectors, projectSessions, projects } from '@ko
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../lib/config';
-import { bindIntegrationPrincipal } from '../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../services/audit/audit-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { invalidateProjectMirror } from '../projects/git';
 import {
@@ -19,7 +19,7 @@ import {
   canonicalConnectorAlias,
   listEntitledConnectorConnections,
 } from '../projects/lib/session-connector-bindings';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { connectorAttachmentStore } from './attachments';
 import { notifyConnectorSession } from './notify-session';
 import {

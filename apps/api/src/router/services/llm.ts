@@ -7,7 +7,7 @@ import {
   resolveOpenRouterId,
   type ModelConfig,
 } from '../../llm-gateway/models/model-registry';
-import type { ActorContext } from '../../shared/actor-context';
+import type { ActorContext } from '../actor-context';
 import {
   refundLlmReservation,
   settleLlmReservation,

@@ -41,11 +41,11 @@ import {
   roleAssignments,
   serviceAccounts,
 } from '@kortix/db';
-import { db } from '../shared/db';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
-import { retryTransientDatabaseRead } from '../shared/database-errors';
-import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
-import { ttlMemo } from '../shared/ttl-memo';
+import { db } from '../lib/db';
+import { qualifiedColumn } from '../lib/sql-qualified-column';
+import { retryTransientDatabaseRead } from '../lib/database-errors';
+import { isImpersonatingAccount, isImpersonationBlockedAccount } from './impersonation';
+import { ttlMemo } from '../lib/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
 import {

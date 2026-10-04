@@ -199,7 +199,7 @@ const databaseMock = {
   },
 };
 
-mock.module('../shared/db', () => ({ hasDatabase: true, db: databaseMock }));
+mock.module('../lib/db', () => ({ hasDatabase: true, db: databaseMock }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
@@ -234,7 +234,7 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
   },
 }));
 
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   inferAuditSource: (_context: unknown, actorType: string) =>
     actorType === 'service_account' ? 'automation' : 'api',
   recordAuditEvent: async (event: Record<string, unknown>) => {

@@ -1,6 +1,6 @@
 import { connectorCalls, projectSessions, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { and, count, eq, isNull, max } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 
 export interface RuntimeControlState {

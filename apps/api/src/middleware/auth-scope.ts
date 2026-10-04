@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { resolveSandboxProjectId } from '../shared/preview-ownership';
+import { resolveSandboxProjectId } from '../services/sessions/preview-ownership';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 // ─── Internal helpers ────────────────────────────────────────────────────────

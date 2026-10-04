@@ -20,7 +20,7 @@
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { app } from '../index';
 import { createAccountToken, validateAccountToken } from '../repositories/account-tokens';
 

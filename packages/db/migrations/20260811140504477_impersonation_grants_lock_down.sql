@@ -18,7 +18,7 @@ set statement_timeout = '30s';
 -- problem. For THIS table it is a direct contradiction of what the feature
 -- promises, because the row IS the capability: `expires_at` and `revoked_at`
 -- are re-read from it on every impersonated request
--- (apps/api/src/shared/impersonation.ts). A client that can UPDATE the row can
+-- (apps/api/src/iam/impersonation.ts). A client that can UPDATE the row can
 -- push its own expiry past the one-hour ceiling and null out a revocation --
 -- defeating both the time-box and the console's Exit button -- and a client
 -- that can SELECT it learns which operator opened which customer, when, and the

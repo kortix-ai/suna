@@ -18,7 +18,7 @@ mock.module('../lib/config', () => ({
   getToolCost: () => 0,
 }));
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({

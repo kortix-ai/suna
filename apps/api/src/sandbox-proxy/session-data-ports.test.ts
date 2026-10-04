@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { PUBLIC_SHARE_BLOCKED_PORTS } from '../shared/session-public-shares';
+import { PUBLIC_SHARE_BLOCKED_PORTS } from '../services/sessions/session-public-shares';
 import { SESSION_DATA_PORTS, carriesSessionData } from './session-data-ports';
 
 describe('carriesSessionData', () => {
@@ -28,7 +28,7 @@ describe('carriesSessionData', () => {
   });
 
   test('agrees with the public-share block list, which already knew both ports', () => {
-    // shared/session-public-shares.ts blocks 4096 AND 8000 from public shares.
+    // services/sessions/session-public-shares.ts blocks 4096 AND 8000 from public shares.
     // The two lists encode the same judgement; if they ever disagree, one of them
     // is wrong.
     for (const port of SESSION_DATA_PORTS) {

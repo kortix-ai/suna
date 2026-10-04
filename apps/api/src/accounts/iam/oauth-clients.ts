@@ -27,8 +27,8 @@ import {
 import { OAUTH_SCOPES } from '../../oauth/access-token';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
-import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../lib/http-body';
+import { isUuid } from '../../lib/validate';
 
 export const OAuthClientSchema = z
   .object({

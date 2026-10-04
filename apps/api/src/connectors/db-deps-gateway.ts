@@ -25,7 +25,7 @@ import {
   canonicalConnectorAlias,
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { connectorAttachmentStore } from './attachments';
 import { gateChannelRead } from './channel-read-scope';

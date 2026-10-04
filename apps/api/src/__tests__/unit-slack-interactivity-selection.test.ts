@@ -12,7 +12,7 @@ function makeChain(): any {
   return chain;
 }
 const inserts: unknown[] = [];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain(),
     insert: () => ({

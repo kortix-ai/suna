@@ -1,6 +1,6 @@
 import { HTTPException } from 'hono/http-exception';
 import { wallet } from '../../billing/wallet';
-import type { ActorContext } from '../../shared/actor-context';
+import type { ActorContext } from '../actor-context';
 import { dollarsToCents, refundActorSpend, reserveActorSpend } from './member-spend';
 
 /** The account, amount and member share a refund needs; both reservation types satisfy it. */

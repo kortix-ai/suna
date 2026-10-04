@@ -50,7 +50,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** Where the pin lives on `session_sandboxes.metadata`. Stable storage detail. */
 export const EGRESS_IP_KEY = 'egress_ip';

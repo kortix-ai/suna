@@ -10,7 +10,7 @@ import { type SandboxProviderName, config } from '../../lib/config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { isProviderNotFound } from '../../platform/providers/status';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
 import { stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';

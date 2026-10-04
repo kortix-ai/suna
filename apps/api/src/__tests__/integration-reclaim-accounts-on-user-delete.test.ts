@@ -18,8 +18,8 @@ import { inArray, sql } from 'drizzle-orm';
 
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { resolveAccountId } from '../shared/resolve-account';
-import { db } from '../shared/db';
+import { resolveAccountId } from '../accounts/resolve-account';
+import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 const SOLO = crypto.randomUUID(); // user and personal account, sole member

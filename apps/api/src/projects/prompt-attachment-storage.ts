@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { promptAttachments, promptAttachmentReferences } from '@kortix/db';
 import { eq, notExists } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { config } from '../lib/config';
 
 const BUCKET = 'staged-files';

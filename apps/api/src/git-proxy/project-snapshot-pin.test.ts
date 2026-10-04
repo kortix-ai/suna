@@ -21,7 +21,7 @@ describe('session snapshot pin', () => {
     const head = mock(() => new Promise<null>(() => {}));
     const expiresAt = new Date('2026-01-01T01:00:00Z');
     const presign = mock(async (key: string) => ({ url: `https://example.invalid/${key}`, expiresAt }));
-    mock.module('../shared/db', () => ({ db: { select } }));
+    mock.module('../lib/db', () => ({ db: { select } }));
     mock.module('./project-snapshot-store', () => ({
       PROJECT_SNAPSHOT_FORMAT,
       projectSnapshotStorageConfigured: () => Boolean(config.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET.trim()),

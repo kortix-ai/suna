@@ -5,7 +5,7 @@ import { runWithContext, setContextField } from '../lib/request-context';
 
 let auditRows: Array<Record<string, unknown>> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({
       values: (values: Record<string, unknown>) => {
@@ -32,7 +32,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest, recordAuditEvent } = await import('../shared/audit');
+const { auditApiRequest, recordAuditEvent } = await import('../services/audit/audit');
 
 describe('audit event middleware', () => {
   beforeEach(() => {

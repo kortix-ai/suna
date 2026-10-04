@@ -5,8 +5,8 @@ import { HTTPException } from 'hono/http-exception';
 import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { db } from '../../lib/db';
+import { resolveScopedAccountId } from '../../accounts/resolve-account';
 import type { AppEnv } from '../../types/app-env';
 import { mapGatewayLogToGeneration } from './generation-mapper';
 

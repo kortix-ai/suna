@@ -21,7 +21,7 @@ import { accounts, connectionCredentials, connectorConnections, connectors, proj
 import { eq } from 'drizzle-orm';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { encryptProjectSecret } from '../projects/secrets';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

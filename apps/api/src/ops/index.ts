@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import type { AppEnv } from '../types/app-env';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { config } from '../lib/config';

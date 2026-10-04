@@ -9,7 +9,7 @@
  * It REPLACES two caches that used to hold overlapping views of the same row:
  *   - `accountTierCache` in `billing/services/entitlements.ts` (30s) — effective
  *     tier + managed-models entitlement, read on the gateway auth hot path.
- *   - `accountLimitCache` in `shared/account-limits.ts` (60s) — effective tier,
+ *   - `accountLimitCache` in `billing/account-limits.ts` (60s) — effective tier,
  *     read by the project limits.
  * Two caches over one row means two expiry clocks: for up to 60s after an
  * upgrade, downgrade, trial grant, or trial revoke the limit layer and the

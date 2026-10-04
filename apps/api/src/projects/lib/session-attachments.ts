@@ -5,7 +5,7 @@ import {
   sessionAttachmentRef,
   type SessionAttachmentScope,
 } from "@kortix/shared";
-import { getSupabase } from "../../shared/supabase";
+import { getSupabase } from "../../lib/supabase";
 
 const BUCKET = "session-attachments";
 const missing = (error: any) =>

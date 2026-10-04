@@ -1,7 +1,7 @@
 import { HTTPException } from 'hono/http-exception';
 import { wallet } from '../../billing/wallet';
-import { recordUsageEvent } from '../../shared/usage-events';
-import type { ActorContext } from '../../shared/actor-context';
+import { recordUsageEvent } from '../../services/usage/usage-events';
+import type { ActorContext } from '../actor-context';
 import { requireModelPricing, type ModelConfig } from '../../llm-gateway/models/model-registry';
 import { calculateCost } from './llm';
 import { deductLLMCredits } from './billing';

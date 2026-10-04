@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let auditRows: Array<Record<string, unknown>> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({
       values: (values: Record<string, unknown>) => {
@@ -29,8 +29,8 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { recordAuditEvent } = await import('../shared/audit');
-const { runWorkerTick } = await import('../shared/audit-scope');
+const { recordAuditEvent } = await import('../services/audit/audit');
+const { runWorkerTick } = await import('../services/audit/audit-scope');
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
 

@@ -11,7 +11,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { config } from '../lib/config';
 import { verifyParkedRuntimes } from '../projects/reaping/parked-runtime-verification';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 
 let project: SeededProject;

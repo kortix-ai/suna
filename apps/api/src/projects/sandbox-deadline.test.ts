@@ -35,7 +35,7 @@ function render(query: unknown): string {
 const squish = (sql: string) => sql.replace(/\s+/g, ' ');
 
 mock.module('../lib/config', () => mockConfigModule());
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     execute: async (query: unknown) => {
       executed.push(render(query));

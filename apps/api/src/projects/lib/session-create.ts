@@ -38,8 +38,8 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
-import { db } from '../../shared/db';
-import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
+import { db } from '../../lib/db';
+import { notifySessionProvisioningFailed } from '../../services/sessions/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import {
   grantFromLoadedAgents,
@@ -64,8 +64,8 @@ import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
-import { normalizeJsonObject } from '../../shared/json';
-import { isUuid } from '../../shared/validate';
+import { normalizeJsonObject } from '../../lib/json';
+import { isUuid } from '../../lib/validate';
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,

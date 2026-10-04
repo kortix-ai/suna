@@ -1,6 +1,6 @@
 import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';

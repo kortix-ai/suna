@@ -14,7 +14,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { auditEvents, roleAssignments } from '@kortix/db';
-import { db, hasDatabase } from '../shared/db';
+import { db, hasDatabase } from '../lib/db';
 import { authorize, clearAuthorizeCaches } from '../iam/authorize';
 import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from '../iam/assignments';
 import { loadSystemRoles } from '../iam/catalog';

@@ -16,7 +16,7 @@ import {
   resolveProjectUpstream,
 } from '../lib/git';
 import { normalizeString, serializeProject } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerProjectGitRoutes(): void {
   // POST /v1/projects/:projectId/git-token
   // Mint a fresh scoped push token for a *managed* project so the CLI

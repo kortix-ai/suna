@@ -20,7 +20,7 @@
 
 import { eq } from 'drizzle-orm';
 import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
-import * as database from '../shared/db';
+import * as database from '../lib/db';
 const { db } = database;
 
 interface PrincipalScopedMemo {

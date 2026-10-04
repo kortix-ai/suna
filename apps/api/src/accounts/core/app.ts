@@ -3,15 +3,15 @@ import { z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
 import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
-} from '../../shared/impersonation';
+} from '../../iam/impersonation';
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { trustedEmailForUser } from '../../iam/email-trust';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveAccountId } from '../resolve-account';
 import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types/app-env';

@@ -6,7 +6,7 @@
  */
 
 import type Stripe from 'stripe';
-import { getStripe } from '../../shared/stripe';
+import { getStripe } from '../stripe';
 import { config } from '../../lib/config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';

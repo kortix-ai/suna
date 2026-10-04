@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { channelOfSessionMetadata } from './question-release';
 import type { TurnErrorInfo } from './slack/errors';
 import * as slackQuestions from './slack/questions';

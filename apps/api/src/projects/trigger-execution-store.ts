@@ -1,11 +1,11 @@
 import { projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, asc, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
-import { exponentialBackoffMs } from '../shared/backoff';
-import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { exponentialBackoffMs } from '../lib/backoff';
+import { mapWithConcurrency } from '../lib/map-with-concurrency';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 

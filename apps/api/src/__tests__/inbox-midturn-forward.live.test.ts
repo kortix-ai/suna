@@ -21,7 +21,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ENABLED = process.env.KORTIX_REAL_SANDBOX_TESTS === '1';
 const API = process.env.KORTIX_MIDTURN_API_URL ?? 'http://localhost:8008';

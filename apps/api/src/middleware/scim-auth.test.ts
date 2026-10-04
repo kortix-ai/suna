@@ -10,7 +10,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { runWithContext } from '../lib/request-context';
-import { attachInboundAuditScope } from '../shared/audit-scope';
+import { attachInboundAuditScope } from '../services/audit/audit-scope';
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
 const OTHER = '00000000-0000-4000-a000-000000000102';

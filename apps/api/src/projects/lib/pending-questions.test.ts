@@ -24,7 +24,7 @@ let conflictTarget: unknown = null;
 let updateWhereCalls = 0;
 let returnRows: Row[] = [{ id: 'q1' }];
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     insert: () => ({
       values: (v: Row) => {

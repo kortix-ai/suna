@@ -18,9 +18,9 @@ import { getProvider } from '../platform/providers';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
-import { db, hasDatabase } from '../shared/db';
-import { resolveAccountId } from '../shared/resolve-account';
-import { getSupabase } from '../shared/supabase';
+import { db, hasDatabase } from '../lib/db';
+import { resolveAccountId } from '../accounts/resolve-account';
+import { getSupabase } from '../lib/supabase';
 /** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
 type HealthCheck = { ok: boolean; error?: string };

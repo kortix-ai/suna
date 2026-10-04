@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
-import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
-import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
+import { db } from '../../lib/db';
+import { runWorkerTick } from '../../services/audit/audit-scope';
+import { registerSessionFailureNotifier } from '../../services/sessions/session-failure-notifier';
 import { config } from '../../lib/config';
 import { sessionWebUrl } from './util';
 import { markdownToMrkdwn, mrkdwnToRichTextElements, slackMentionsAsText, unlabelledMentionIds } from './mrkdwn';

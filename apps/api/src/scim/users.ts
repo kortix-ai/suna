@@ -17,7 +17,7 @@ import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
 import { onMemberRemoved } from '../billing/services/seat-management';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { buildDirectoryUser, directoryUserById, directoryUserByEmail, saveDirectoryUser, directoryGroupIds, type DirectoryUser } from './directory-users';
 import {
   ScimResource,

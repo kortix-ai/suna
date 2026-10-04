@@ -1,6 +1,6 @@
 import { ingressTargetUrl } from '../../platform/providers/ingress-url';
-import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
-import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../services/sessions/kortix-user-context';
+import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../services/sessions/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
   loadSandbox,

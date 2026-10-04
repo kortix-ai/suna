@@ -6,14 +6,14 @@ import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import {
   draftToSpec,
   fireGitTrigger,

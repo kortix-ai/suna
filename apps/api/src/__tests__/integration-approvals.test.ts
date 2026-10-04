@@ -30,7 +30,7 @@ import { config } from '../lib/config';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const minted: string[] = [];
 const execIds: string[] = [];

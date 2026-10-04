@@ -3,7 +3,7 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectAccessRequests, projects } from '@kortix/db';
@@ -17,7 +17,7 @@ import {
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/user-identity';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {

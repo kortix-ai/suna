@@ -1,7 +1,7 @@
 import { SnapshotStillBuildingError, WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
-import { exponentialBackoffMs } from '../../shared/backoff';
+import { exponentialBackoffMs } from '../../lib/backoff';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
 type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';

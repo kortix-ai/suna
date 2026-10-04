@@ -29,7 +29,7 @@ mock.module('../lib/config', () => ({
     getDefaultProvider: () => 'daytona',
   },
 }));
-mock.module('../shared/db', () => ({ db: {} }));
+mock.module('../lib/db', () => ({ db: {} }));
 mock.module('../platform/providers/compute-rates', () => ({
   getProviderComputeRateCard: () => RATE,
 }));

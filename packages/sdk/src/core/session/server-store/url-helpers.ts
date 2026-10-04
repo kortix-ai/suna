@@ -65,7 +65,7 @@ export function getSandboxUrlForExternalId(externalId: string, port = 8000): str
  * dependency on the active server.
  *
  * The backend blocks the opencode API port (8000) on this route
- * (`PUBLIC_SHARE_BLOCKED_PORTS` in `apps/api/src/shared/session-public-shares.ts`)
+ * (`PUBLIC_SHARE_BLOCKED_PORTS` in `apps/api/src/services/sessions/session-public-shares.ts`)
  * — this only ever reaches a shared preview port or the file share, never a
  * session's opencode `/session`/`/session/:id/message` API.
  */

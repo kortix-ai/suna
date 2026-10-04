@@ -18,13 +18,13 @@
 
 import { configReleaseFailures, configReleases, projectSessions } from '@kortix/db';
 import { META_AGENT_NAME } from '@kortix/shared';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { qualifiedColumn } from '../lib/sql-qualified-column';
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
 import { noteRunningRelease } from './running-release';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 /** Distinct failing sessions that quarantine a release in a project. Spec open decision 2. */
 export const PROJECT_QUARANTINE_SESSIONS = 2;

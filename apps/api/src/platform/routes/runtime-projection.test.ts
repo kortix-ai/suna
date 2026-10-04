@@ -27,7 +27,7 @@ let sandboxRow: Record<string, unknown> | null = null;
 let saved: Array<Record<string, unknown>> = [];
 let saveResult: 'stored' | 'ignored' = 'stored';
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({ where: () => ({ limit: async () => (sandboxRow ? [sandboxRow] : []) }) }),

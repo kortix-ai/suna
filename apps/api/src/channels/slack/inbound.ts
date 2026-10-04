@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { chatInstalls } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { findChatThread } from '../core/threads';
 
 /**

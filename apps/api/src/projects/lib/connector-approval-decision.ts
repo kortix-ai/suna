@@ -8,8 +8,8 @@ import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kort
 import { and, eq, isNull } from 'drizzle-orm';
 import { approvalPreviewReviewable } from '../../connectors/args-preview';
 import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
-import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
 
 export type ApprovalDecision = 'approve' | 'deny';

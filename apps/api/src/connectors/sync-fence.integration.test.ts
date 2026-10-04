@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, connectorProjectPolicies, connectorSyncFences, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   connectorScope,
   openConnectorSyncFence,

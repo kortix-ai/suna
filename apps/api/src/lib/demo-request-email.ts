@@ -6,7 +6,7 @@
 // email.
 import { emailDomain, isWorkEmail } from '../accounts/personal-email';
 import { config } from './config';
-import { escapeHtml } from '../shared/html';
+import { escapeHtml } from './html';
 import { EMAIL_COLORS } from './email/brand-tokens.generated';
 import { BRAND_FOOTER, renderEmail } from './email/template';
 import { isEmailConfigured, sendEmail } from './email/transport';

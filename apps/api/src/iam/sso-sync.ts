@@ -16,7 +16,7 @@
 
 import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountMemberships, accountScimUsers } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { withDirectoryTransaction } from './directory-transaction';
 import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { invalidateIamCacheForUser } from './cache-invalidation';

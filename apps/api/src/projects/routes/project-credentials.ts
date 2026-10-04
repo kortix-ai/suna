@@ -22,7 +22,7 @@ import {
   upsertProjectGitCredential,
 } from '../lib/git';
 import { normalizeString, serializeProjectGitConnection } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerProjectCredentialsRoutes(): void {
   // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
   // These are PATs (`kortix_pat_...`) bound to a single project. The auth

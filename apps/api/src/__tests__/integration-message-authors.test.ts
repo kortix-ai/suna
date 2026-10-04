@@ -17,7 +17,7 @@ import {
 import { eq, sql } from 'drizzle-orm';
 
 import { sessionMessageAuthors } from '../projects/lib/session-message-authors';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 
 const tag = crypto.randomUUID().slice(0, 8);

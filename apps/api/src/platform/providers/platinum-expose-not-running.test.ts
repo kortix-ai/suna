@@ -28,7 +28,7 @@ class PlatinumSandboxNotRunningError extends Error {
   }
 }
 
-mock.module('../../shared/platinum', () => ({
+mock.module('../../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected Platinum materialization request');

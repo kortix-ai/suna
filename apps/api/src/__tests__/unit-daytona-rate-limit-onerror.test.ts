@@ -37,9 +37,9 @@ let isGitOperationError: (err: unknown) => err is { kind: string };
 
 beforeAll(async () => {
   ({ isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } = await import(
-    '../shared/daytona-rate-limit'
+    '../services/sandboxes/daytona/rate-limit'
   ));
-  ({ isPlatinumSandboxNotRunningError } = await import('../shared/platinum'));
+  ({ isPlatinumSandboxNotRunningError } = await import('../services/sandboxes/platinum/client'));
   ({ isGitOperationError } = await import('../projects/git/mirror'));
   await primeDaytonaRateLimitClassifier();
 });
@@ -53,7 +53,7 @@ beforeAll(async () => {
 // try/catch. This test proves the GLOBAL classification in `app.onError`
 // downgrades an unguarded Daytona 429 to a retryable 503 + Retry-After WITHOUT
 // paging Sentry — mirroring the Platinum / git-timeout / request-deadline
-// patterns. See shared/daytona-rate-limit.ts + index.ts onError.
+// patterns. See services/sandboxes/daytona/rate-limit.ts + index.ts onError.
 
 beforeAll(async () => {
   await primeDaytonaRateLimitClassifier();
@@ -191,7 +191,7 @@ describe('app.onError Daytona 429 classification', () => {
     // branch accidentally swallowing a Platinum not-running error.)
     const { app, captured } = makeClassifyingOnError();
     app.get('/v1/probe', async () => {
-      const { PlatinumSandboxNotRunningError } = await import('../shared/platinum');
+      const { PlatinumSandboxNotRunningError } = await import('../services/sandboxes/platinum/client');
       throw new PlatinumSandboxNotRunningError();
     });
     const res = await app.request('/v1/probe');

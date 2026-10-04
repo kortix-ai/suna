@@ -1,5 +1,5 @@
-import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
+import { getStripe } from '../stripe';
+import { db } from '../../lib/db';
 import { eq } from 'drizzle-orm';
 import {
   getCreditAccount,
@@ -12,7 +12,7 @@ import { countActiveMembers } from './seat-management';
 import { wallet } from '../wallet';
 import { applyStripeSync } from './account-write-owner';
 import { grantForPaidProrationInvoice } from './proration-grants';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isPlatformAdmin } from '../../iam/platform-roles';
 import Stripe from 'stripe';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { logger } from '../../lib/logger';

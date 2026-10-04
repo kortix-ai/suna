@@ -10,7 +10,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { authorize, filterAccessibleObjects } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';

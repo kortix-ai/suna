@@ -16,7 +16,7 @@ import {
   gateChannelRead,
 } from '../connectors/channel-read-scope';
 import { type GatewayDeps, handleCall } from '../connectors/gateway';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 
 const RUN = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();

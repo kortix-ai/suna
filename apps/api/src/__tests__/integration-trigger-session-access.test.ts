@@ -14,7 +14,7 @@ import {
   applyTriggerSessionAccess,
   setTriggerSessionAccess,
 } from '../projects/trigger-session-access';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 
 const context = {

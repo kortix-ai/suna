@@ -5,7 +5,7 @@ import type { Context } from 'hono';
 import { config } from '../../lib/config';
 import { combinedAuth } from '../../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { listProjectsForWorkspace, loadTeamsAppIdForProject, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from './auth-resume';
 import { chatUser, completeChatLogin } from '../core/identity';
@@ -14,7 +14,7 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
 import { confirmTeamsConnected } from './identity';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 export const teamsIdentityApp = makeOpenApiApp();
 

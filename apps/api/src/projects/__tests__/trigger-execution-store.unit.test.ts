@@ -9,7 +9,7 @@
 // ladder. Passing `terminal: true` dead-letters on the FIRST failure so the
 // trigger runtime row shows `failed` + the machine-readable reason immediately.
 //
-// Mocks `../../shared/db` via `mock.module` — process-global in bun:test, so run
+// Mocks `../../lib/db` via `mock.module` — process-global in bun:test, so run
 // this file in its own `bun test <file>` invocation (the repo runner's
 // `--isolate` already does).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -18,7 +18,7 @@ import type { TriggerExecutionRow } from '../trigger-execution-store';
 
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({

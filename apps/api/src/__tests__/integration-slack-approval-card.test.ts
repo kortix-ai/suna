@@ -20,7 +20,7 @@ import { eq } from 'drizzle-orm';
 import * as realSlackApi from '../channels/slack-api';
 import * as realDispatch from '../channels/slack/dispatch';
 import * as realInstallStore from '../channels/install-store';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

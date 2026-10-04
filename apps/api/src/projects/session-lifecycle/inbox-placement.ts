@@ -8,7 +8,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   type SessionLifecycleCommandRow,
   withNextDeliveryAttempt,

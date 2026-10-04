@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { stripeWebhookEventsProcessed } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /**
  * Insert-or-skip dedupe marker. Returns `false` when the id was already

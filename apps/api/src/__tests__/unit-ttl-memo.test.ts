@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, setSystemTime } from 'bun:test';
-import { ttlMemo } from '../shared/ttl-memo';
+import { ttlMemo } from '../lib/ttl-memo';
 
 // `bun test` sets NODE_ENV=test, which normally bypasses the memo entirely —
 // every memo here opts back in via enableInTests to test the real behavior.

@@ -66,7 +66,7 @@ mock.module('./compile-agent-config', () => ({
   },
 }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

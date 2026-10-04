@@ -7,7 +7,7 @@ import { projectSessions, sessionPresenceLeases } from '@kortix/db';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { config } from '../lib/config';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { pushDeviceTokenStore, type PushDeviceTokenRow, type PushDeviceTokenStore } from './device-tokens';
 import { sendExpoPushMessages, type ExpoPushMessage, type ExpoPushResult } from './expo-push';
 

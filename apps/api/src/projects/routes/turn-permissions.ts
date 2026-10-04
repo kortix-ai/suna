@@ -5,7 +5,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { permissionPushGate } from '../../notifications/permission-push';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { TurnPermissionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';

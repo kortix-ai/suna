@@ -25,8 +25,8 @@ import { join } from 'node:path';
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger as appLogger } from '../lib/logger';
-import { getDaytona } from '../shared/daytona';
-import { db } from '../shared/db';
+import { getDaytona } from '../services/sandboxes/daytona/client';
+import { db } from '../lib/db';
 import { downloadOpencodeArchive } from './legacy-migration-storage';
 
 export interface LegacyRehydrateSpec {

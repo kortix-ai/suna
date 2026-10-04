@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { PlatinumJsonResponse } from '../../shared/platinum';
+import type { PlatinumJsonResponse } from '../../services/sandboxes/platinum/client';
 import { preparePlatinumTemplateRegion } from './platinum-templates';
 import type { PlatinumClient } from './platinum-templates';
 

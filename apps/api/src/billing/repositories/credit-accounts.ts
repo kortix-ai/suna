@@ -1,6 +1,6 @@
 import { creditAccounts } from '@kortix/db';
 import { and, eq, isNull, lte, ne, or } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export async function getCreditAccount(accountId: string) {
   const [row] = await db

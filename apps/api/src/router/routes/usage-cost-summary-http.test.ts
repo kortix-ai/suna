@@ -57,7 +57,7 @@ mock.module('../../middleware/auth', () => ({
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../accounts/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
 }));
 
@@ -87,7 +87,7 @@ mock.module('../../projects/lib/access', () => ({
 // listCostByProject is mocked alongside getCostSummary purely because both
 // live in the same module usage.ts imports from — this file never exercises
 // the /cost-by-project route.
-mock.module('../../shared/cost-rollups', () => ({
+mock.module('../../services/usage/cost-rollups', () => ({
   getCostSummary: async (input: Record<string, unknown>) => {
     summaryInput = input;
     return summary;
@@ -106,7 +106,7 @@ mock.module('../../shared/cost-rollups', () => ({
 // projects/lib/access's resolveSessionOwnerIdentities, which the mock above
 // does not provide — mock it out too so that unrelated route's module load
 // never runs.
-mock.module('../../shared/session-costs', () => ({
+mock.module('../../services/usage/session-costs', () => ({
   listSessionCosts: async () => {
     throw new Error('listSessionCosts should not be called from cost-summary tests');
   },

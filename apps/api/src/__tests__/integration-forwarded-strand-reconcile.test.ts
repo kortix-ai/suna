@@ -72,7 +72,7 @@ mock.module('../projects/session-lifecycle/drain', () => ({
   },
 }));
 
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 const { reconcileForwardedTurnsAtEnd } = await import(
   '../projects/session-lifecycle/forwarded-strand-reconcile'
 );

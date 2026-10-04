@@ -348,7 +348,7 @@ export const RUNTIME_START_FAILURE_KEYS = [
 
 /** The start call gave up or lost its connection: the provider may still be starting the box. */
 const AMBIGUOUS_START_ERROR_NAMES = new Set([
-  'TimeoutError', // shared/with-timeout, AbortSignal.timeout, Platinum's call budget
+  'TimeoutError', // lib/with-timeout, AbortSignal.timeout, Platinum's call budget
   'AbortError',
   'DaytonaTimeoutError',
   'DaytonaConnectionError',

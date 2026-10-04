@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { extractStep, repoStep, pushStep, dbStep } from '../projects/suna-migration/suna-migration-phases';
 import { latestSunaMigration, type SunaMigrationContext } from '../projects/suna-migration/suna-migration-runner';
 

@@ -5,13 +5,13 @@
  * lazily, as they did inside the handlers, so importing the admin router still
  * loads none of them.
  */
-import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { qualifiedColumn } from '../lib/sql-qualified-column';
 import type { AdminAccountsListQuery } from './accounts-query';
 import type { AdminProjectsListQuery } from './projects-query';
 
 /** One page of `GET /api/accounts` plus the filtered total. Throws the driver error as-is. */
 export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { accounts, creditAccounts } = await import('@kortix/db');
   const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
     await import('drizzle-orm');
@@ -135,7 +135,7 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
 
 /** Members of one account with their auth identity, owners first. */
 export async function listAdminAccountMembers(accountId: string): Promise<unknown[]> {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { sql } = await import('drizzle-orm');
 
   const result: any = await db.execute(sql`
@@ -156,7 +156,7 @@ export async function listAdminAccountMembers(accountId: string): Promise<unknow
 
 /** Every project one account owns, with session counts, newest update first. */
 export async function listAdminAccountProjects(accountId: string) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { projects, projectSessions } = await import('@kortix/db');
   const { eq, desc, sql } = await import('drizzle-orm');
 
@@ -190,7 +190,7 @@ export async function listAdminAccountProjects(accountId: string) {
 
 /** One page of `GET /api/projects` across every account, plus the filtered total. */
 export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { accounts, projects, projectSessions } = await import('@kortix/db');
   const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
   const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
@@ -279,7 +279,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
 
 /** The newest `limit` credit-ledger entries of one account. */
 export async function listAdminCreditLedger(accountId: string, limit: number) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { creditLedger } = await import('@kortix/db');
   const { eq, desc } = await import('drizzle-orm');
   return db
@@ -292,7 +292,7 @@ export async function listAdminCreditLedger(accountId: string, limit: number) {
 
 /** The stored provider split weights, or undefined when none were ever set. */
 export async function readProviderDistribution(): Promise<unknown> {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { platformSettings } = await import('@kortix/db');
   const { eq } = await import('drizzle-orm');
   const { PROVIDER_DISTRIBUTION_KEY } = await import('../platform/services/provider-balancer');
@@ -303,7 +303,7 @@ export async function readProviderDistribution(): Promise<unknown> {
 
 /** Upsert the provider split weights. */
 export async function saveProviderDistribution(weights: Record<string, number>): Promise<void> {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { platformSettings } = await import('@kortix/db');
   const { PROVIDER_DISTRIBUTION_KEY } = await import('../platform/services/provider-balancer');
   await db.insert(platformSettings).values({ key: PROVIDER_DISTRIBUTION_KEY, value: weights, updatedAt: new Date() })
@@ -312,7 +312,7 @@ export async function saveProviderDistribution(weights: Record<string, number>):
 
 /** Upsert the provider failover toggle. */
 export async function saveProviderFallback(value: { enabled: boolean }): Promise<void> {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { platformSettings } = await import('@kortix/db');
   const { PROVIDER_FALLBACK_KEY } = await import('../platform/services/runtime-settings');
   await db.insert(platformSettings).values({ key: PROVIDER_FALLBACK_KEY, value, updatedAt: new Date() })
@@ -325,7 +325,7 @@ export async function listAdminSandboxes(filter: {
   provider: string | undefined;
   status: string | undefined;
 }) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { sessionSandboxes } = await import('@kortix/db');
   const { desc, eq, and, sql } = await import('drizzle-orm');
   const { limit } = filter;
@@ -346,7 +346,7 @@ export async function listAdminSandboxes(filter: {
 
 /** The sandbox row of one session. */
 export async function findSessionSandbox(sessionId: string) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { sessionSandboxes } = await import('@kortix/db');
   const { eq } = await import('drizzle-orm');
   const [sb] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId)).limit(1);
@@ -355,7 +355,7 @@ export async function findSessionSandbox(sessionId: string) {
 
 /** The session row of one session. */
 export async function findProjectSession(sessionId: string) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { projectSessions } = await import('@kortix/db');
   const { eq } = await import('drizzle-orm');
   const [sess] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
@@ -364,7 +364,7 @@ export async function findProjectSession(sessionId: string) {
 
 /** One project row. */
 export async function findProject(projectId: string) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { projects } = await import('@kortix/db');
   const { eq } = await import('drizzle-orm');
   const [proj] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
@@ -373,7 +373,7 @@ export async function findProject(projectId: string) {
 
 /** Delete one session's sandbox row. */
 export async function deleteSessionSandbox(sessionId: string): Promise<void> {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { sessionSandboxes } = await import('@kortix/db');
   const { eq } = await import('drizzle-orm');
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
@@ -381,7 +381,7 @@ export async function deleteSessionSandbox(sessionId: string): Promise<void> {
 
 /** Provider events since `cutoff`, newest first, at most 20,000. */
 export async function listProviderEventsSince(cutoff: Date) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { providerEvents } = await import('@kortix/db');
   const { gte, desc } = await import('drizzle-orm');
   return db.select().from(providerEvents)
@@ -391,7 +391,7 @@ export async function listProviderEventsSince(cutoff: Date) {
 
 /** One account's id and name, or undefined when it does not exist. */
 export async function findAccountName(accountId: string) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { accounts } = await import('@kortix/db');
   const { eq } = await import('drizzle-orm');
   const [account] = await db
@@ -404,7 +404,7 @@ export async function findAccountName(accountId: string) {
 
 /** The id and name of each account in `accountIds`. */
 export async function listAccountNames(accountIds: string[]) {
-  const { db } = await import('../shared/db');
+  const { db } = await import('../lib/db');
   const { accounts } = await import('@kortix/db');
   const { inArray } = await import('drizzle-orm');
   return db

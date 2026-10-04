@@ -5,7 +5,7 @@ import { json, errors, auth } from '../../openapi';
 import { and, asc, eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { groupProjectGrants } from '../../iam/read-models';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import {
@@ -32,7 +32,7 @@ import {
   ProjectGrantSchema,
 } from './app';
 import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 // Groups are an Enterprise-only construct (no free-tier group concept). The
 // `rbac` entitlement gates every route that CREATES or GROWS group state

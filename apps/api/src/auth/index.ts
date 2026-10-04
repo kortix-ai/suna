@@ -13,14 +13,14 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSessionActivity } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { supabaseAuth } from '../middleware/auth';
 import type { AppEnv } from '../types/app-env';
-import { auditLogout } from '../shared/auth-audit';
+import { auditLogout } from '../services/audit/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from './gotrue';
-import { forgetJwtLiveness } from '../shared/jwt-liveness';
-import { readJsonObject } from '../shared/http-body';
+import { forgetJwtLiveness } from './jwt-liveness';
+import { readJsonObject } from '../lib/http-body';
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 

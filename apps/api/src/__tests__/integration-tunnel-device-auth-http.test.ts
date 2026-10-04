@@ -12,8 +12,8 @@ import { eq, inArray, sql } from 'drizzle-orm';
 
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { hashSecretKey } from '../shared/crypto';
-import { db } from '../shared/db';
+import { hashSecretKey } from '../lib/crypto';
+import { db } from '../lib/db';
 import { createDeviceAuthPublicRouter } from '../tunnel/routes/device-auth';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 

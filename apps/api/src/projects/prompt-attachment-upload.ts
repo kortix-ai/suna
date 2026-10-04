@@ -3,8 +3,8 @@ import { promptAttachments, promptAttachmentReferences, sessionLifecycleCommands
 import { MAX_PROMPT_ATTACHMENT_BYTES, MAX_PROMPT_ATTACHMENTS_BYTES, MAX_PROMPT_ATTACHMENT_FILES, PROMPT_ATTACHMENT_TTL_MS, isModelNativeAttachmentMime, sanitizePromptUploadFilename } from '@kortix/shared';
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { db } from '../shared/db';
-import { toPublicStorageUrl } from '../shared/supabase';
+import { db } from '../lib/db';
+import { toPublicStorageUrl } from '../lib/supabase';
 import type { PromptPartWire } from './session-lifecycle/store';
 import { completeChunkedPromptAttachment, processingError } from './prompt-attachment-chunks';
 import { PromptAttachmentError, type BindingRow, type Transaction, type PromptAttachmentScope, type Row, storage, storageUnavailable, chunkedMode, chunkBytes, filePath, metadata, assertOwner, assertUnexpired, selectAttachment, noReferences, COMPLETE_BOUND_MS } from './prompt-attachment-storage';

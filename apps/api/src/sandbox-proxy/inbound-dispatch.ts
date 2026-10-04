@@ -1,9 +1,9 @@
 import { config } from '../lib/config';
 import { getRequestUrl } from '../lib/request-url';
-import { runInboundAudit } from '../shared/audit-edge';
-import { annotateAuditEvent, setInboundAuditEntrypoint } from '../shared/audit-scope';
+import { runInboundAudit } from '../services/audit/audit-edge';
+import { annotateAuditEvent, setInboundAuditEntrypoint } from '../services/audit/audit-scope';
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 import { schemaReady } from '../bootstrap';
 import { handleAppPublicRequest, resolveAppRequest } from '../apps/public-proxy';
 import { prepareAppWsUpgrade } from '../apps/ws-proxy';
@@ -204,7 +204,7 @@ async function handleTunnelAgentUpgrade(req: Request, url: URL, server: any): Pr
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('../tunnel/core/rate-limiter');
-    const { clientKeyFromHeaders } = await import('../shared/client-ip');
+    const { clientKeyFromHeaders } = await import('../lib/client-ip');
     const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {

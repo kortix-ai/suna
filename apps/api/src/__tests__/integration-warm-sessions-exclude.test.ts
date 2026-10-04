@@ -22,7 +22,7 @@ import { eq } from 'drizzle-orm';
 
 import { config } from '../lib/config';
 import { findWarmProjectSession, warmSessionPlacement } from '../projects/routes/warm-sessions';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { WARM_SESSION_LOCATION_KEY } from '../projects/lib/warm-sessions';
 
 const ACCOUNT = crypto.randomUUID();

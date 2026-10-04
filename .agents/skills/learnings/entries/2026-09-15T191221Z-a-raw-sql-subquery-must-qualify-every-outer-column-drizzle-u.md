@@ -11,7 +11,7 @@ placed there. Drizzle renders column references in a single-table selection
 WITHOUT their table, so `${outer.col}` becomes `"col"`, Postgres binds it to the
 INNER table, and the correlation is a tautology that returns the first row of the
 inner table for every outer row. Use a typed `leftJoin`, or wrap every outer column
-in `qualifiedColumn()` (`apps/api/src/shared/sql-qualified-column.ts`). *Incident:*
+in `qualifiedColumn()` (`apps/api/src/lib/sql-qualified-column.ts`). *Incident:*
 prod v0.13.16 and earlier, from ~2026-09-07: `loadSandbox`
 (`sandbox-proxy/backend.ts`) read the session agent this way, so every proxied
 request got another customer's agent (`chief-of-staff`, the first

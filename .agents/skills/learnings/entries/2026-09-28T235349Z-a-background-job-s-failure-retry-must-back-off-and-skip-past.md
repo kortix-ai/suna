@@ -26,6 +26,6 @@ that make 6+ sequential DB round trips answered `200` in 1.2-12.7 s
 50-200 ms — saturation queueing, not a defect in those routes. Fixed by
 PR #7970 (two `CREATE INDEX CONCURRENTLY` migrations plus the bounded retry).
 
-**Enforcement:** `apps/api/src/shared/audit-reconciliation-worker.test.ts`
+**Enforcement:** `apps/api/src/services/audit/audit-reconciliation-worker.test.ts`
 pins the escalating delay (5s → 30s → 120s, capped 300s), the skip after 3
 consecutive failures on one account, and every streak-reset rule.

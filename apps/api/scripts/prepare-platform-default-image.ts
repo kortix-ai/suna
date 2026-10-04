@@ -19,7 +19,7 @@
  * a failure only means the next deploy behaves as it did before this gate.
  */
 import { config } from '../src/lib/config';
-import { platinumUsRegion } from '../src/shared/platinum-region';
+import { platinumUsRegion } from '../src/services/sandboxes/platinum/region';
 import { buildPlatformDefaultImageForRelease } from '../src/snapshots/builder';
 import { preparePlatinumTemplateRegion } from '../src/snapshots/providers/platinum-templates';
 

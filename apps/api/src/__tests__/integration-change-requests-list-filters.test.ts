@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, changeRequests, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { listChangeRequestsForProject } from '../projects/change-requests';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

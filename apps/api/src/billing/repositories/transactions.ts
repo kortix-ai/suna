@@ -1,6 +1,6 @@
 import { eq, desc, sql, and, gte, inArray } from 'drizzle-orm';
 import { creditLedger, creditUsage, creditPurchases } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 // Reads only. Every credit_ledger write goes through billing/wallet.
 

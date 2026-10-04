@@ -13,7 +13,7 @@ import {
 import { ApiError, createKortix } from '@kortix/sdk';
 import { and, eq } from 'drizzle-orm';
 import { createAccountToken } from '../../src/repositories/account-tokens';
-import { db } from '../../src/shared/db';
+import { db } from '../../src/lib/db';
 
 const ROOT = resolve(import.meta.dir, '../../..');
 const CLI_ENTRY = resolve(ROOT, 'apps/cli/src/index.ts');

@@ -19,7 +19,7 @@ function tokenFor(port: number): string {
   return `payload-${port}.signature-${port}`;
 }
 
-mock.module('../../shared/platinum', () => ({
+mock.module('../../services/sandboxes/platinum/client', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
     throw new Error('unexpected Platinum materialization request');

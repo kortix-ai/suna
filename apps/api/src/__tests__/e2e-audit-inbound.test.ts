@@ -16,7 +16,7 @@ let auditRows: Array<Record<string, unknown>> = [];
 /** What the project->account lookup finds. */
 let projectRows: Array<{ accountId: string }> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     insert: () => ({
       values: (values: Record<string, unknown>) => {
@@ -38,11 +38,11 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest } = await import('../shared/audit');
+const { auditApiRequest } = await import('../services/audit/audit');
 const { annotateAuditEvent, attachInboundAuditScope, bindAuditPrincipal } = await import(
-  '../shared/audit-scope'
+  '../services/audit/audit-scope'
 );
-const { __clearProjectAccountLookupForTests } = await import('../shared/project-account-lookup');
+const { __clearProjectAccountLookupForTests } = await import('../accounts/project-account-lookup');
 
 const USER = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
@@ -364,7 +364,7 @@ describe('an explicit audit event inherits the caller its request already proved
   // Domain rows (scim.user.create, a secret rotation, …) used to hand-pass the
   // actor at every call site, and inside a self-authenticating surface most
   // passed nothing: SCIM wrote `actor_user_id: null` with no source at all.
-  const { recordAuditEvent } = require('../shared/audit');
+  const { recordAuditEvent } = require('../services/audit/audit');
   const SCIM_PRINCIPAL = {
     accountId: ACCOUNT,
     actorUserId: null,

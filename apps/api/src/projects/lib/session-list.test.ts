@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { accountGroupMembers, accounts, projectSessions } from '@kortix/db';
-import * as realDb from '../../shared/db';
+import * as realDb from '../../lib/db';
 
 // The sessions list is polled, and every statement is a full round trip. These
 // tests pin WHEN the first row chunk starts: beside the reads that depend only
@@ -43,7 +43,7 @@ function query(table: unknown) {
   return builder;
 }
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   ...realDb,
   db: { select: () => ({ from: (table: unknown) => query(table) }) },
 }));

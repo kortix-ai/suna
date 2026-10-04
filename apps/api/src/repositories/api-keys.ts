@@ -1,8 +1,8 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { kortixApiKeys } from '@kortix/db';
-import { db } from '../shared/db';
-import { createLastUsedTracker } from '../shared/throttled-last-used';
-import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
+import { db } from '../lib/db';
+import { createLastUsedTracker } from './throttled-last-used';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../auth/token-hash';
 import {
   hashSecretKey,
   generateApiKeyPair,
@@ -13,7 +13,7 @@ import {
   isAccountToken,
   isServiceAccountToken,
   isTunnelToken,
-} from '../shared/crypto';
+} from '../lib/crypto';
 import { isOAuthAccessToken, isOAuthRefreshToken } from '../oauth/access-token';
 
 // ─── Types ───────────────────────────────────────────────────────────────────

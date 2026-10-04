@@ -26,17 +26,17 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   return Response.json({ keys: [jwk] });
 }) as typeof fetch;
 
-type Verify = typeof import('../shared/jwt-verify').verifySupabaseJwt;
-type Liveness = typeof import('../shared/jwt-liveness');
-type Outcome = typeof import('../shared/jwt-verify-outcome').isInconclusiveVerifyFailure;
+type Verify = typeof import('../auth/jwt-verify').verifySupabaseJwt;
+type Liveness = typeof import('../auth/jwt-liveness');
+type Outcome = typeof import('../auth/jwt-verify-outcome').isInconclusiveVerifyFailure;
 let verifySupabaseJwt: Verify;
 let liveness: Liveness;
 let isInconclusive: Outcome;
 
 beforeAll(async () => {
-  ({ verifySupabaseJwt } = await import('../shared/jwt-verify'));
-  liveness = await import('../shared/jwt-liveness');
-  ({ isInconclusiveVerifyFailure: isInconclusive } = await import('../shared/jwt-verify-outcome'));
+  ({ verifySupabaseJwt } = await import('../auth/jwt-verify'));
+  liveness = await import('../auth/jwt-liveness');
+  ({ isInconclusiveVerifyFailure: isInconclusive } = await import('../auth/jwt-verify-outcome'));
 });
 
 afterEach(() => liveness.__setJwtLivenessLoaderForTests(null));

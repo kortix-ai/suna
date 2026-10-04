@@ -31,7 +31,7 @@ mock.module('../channels/teams/binding', () => ({
 }));
 
 const updates: Array<Record<string, unknown>> = [];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     update: () => ({
       set: (values: Record<string, unknown>) => ({

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import {
   notifySessionProvisioningFailed,
   registerSessionFailureNotifier,
-} from '../shared/session-failure-notifier';
+} from '../services/sessions/session-failure-notifier';
 
 // Every channel registers its own relay (Slack, Teams) and each acts only on its
 // own turn row. This held ONE notifier ("last wins") until 2026-09-28, and the

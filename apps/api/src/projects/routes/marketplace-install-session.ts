@@ -25,7 +25,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { getCatalogEntry } from '../../marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';

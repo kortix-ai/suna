@@ -26,8 +26,8 @@
 import { eq, desc, and, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { sandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
-import { getStripe } from '../../shared/stripe';
+import { db } from '../../lib/db';
+import { getStripe } from '../stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { listAccountStripeCustomerIds } from '../repositories/customers';
 import { resolveLiveStripeCustomerId } from './subscriptions';

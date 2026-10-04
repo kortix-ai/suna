@@ -608,7 +608,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
@@ -631,7 +631,7 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => null,
 }));
 
-mock.module('../shared/account-limits', () => ({
+mock.module('../billing/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
@@ -645,7 +645,7 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async () => true,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
@@ -717,7 +717,7 @@ function applySandboxUpdates(
   };
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {

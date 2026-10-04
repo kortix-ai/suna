@@ -321,7 +321,7 @@ describe('connectors', () => {
   });
 
   test('indexes every audit-reconciliation source-ledger account_id predicate', () => {
-    // `reconcileAuditEvents` (apps/api/src/shared/audit-reconciliation.ts) runs
+    // `reconcileAuditEvents` (apps/api/src/services/audit/audit-reconciliation.ts) runs
     // its 8-way `candidates` query per account with a bare
     // `WHERE account_id = $1` on each source ledger. Without an index on that
     // column, one branch seq-scans and the whole query times out at the audit

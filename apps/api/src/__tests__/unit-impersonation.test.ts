@@ -27,12 +27,12 @@ const state = {
   auditCountWhenHandlerRan: -1,
 };
 
-mock.module('../shared/platform-roles', () => ({
+mock.module('../iam/platform-roles', () => ({
   isPlatformAdmin: async (userId: string) => state.platformAdmins.has(userId),
   getPlatformRole: async (userId: string) => (state.platformAdmins.has(userId) ? 'admin' : 'user'),
 }));
 
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async (event: Record<string, unknown>) => {
     if (state.auditThrows) throw new Error('audit insert failed');
     state.auditEvents.push(event);
@@ -42,8 +42,8 @@ mock.module('../shared/audit', () => ({
 // Everything except the ONE database read is the real module: the pure
 // decision, the ALS context, the forbidden-path list. Only `loadImpersonationGrant`
 // is replaced, so the middleware test exercises the shipped gate.
-const realImpersonation = await import('../shared/impersonation');
-mock.module('../shared/impersonation', () => ({
+const realImpersonation = await import('../iam/impersonation');
+mock.module('../iam/impersonation', () => ({
   ...realImpersonation,
   loadImpersonationGrant: async (grantId: string) =>
     state.grant && state.grant.id === grantId ? state.grant : null,

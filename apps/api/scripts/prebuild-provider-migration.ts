@@ -34,7 +34,7 @@
  * Policies: recently-active (sessions touched within the window), opted-in
  *   (metadata.prebuild_platinum=true), all-active, selected (explicit ids).
  */
-import { db } from '../src/shared/db';
+import { db } from '../src/lib/db';
 import {
   parsePrebuildConfig,
   prebuildExitCode,

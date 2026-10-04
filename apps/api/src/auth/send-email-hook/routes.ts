@@ -25,7 +25,7 @@ import { errors, json } from '../../openapi';
 import { authEmailHookApp } from './app';
 import { parseSendEmailHookPayload, type SendEmailHookPayload } from './payload';
 import { renderAuthEmail } from './templates';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 
 /** Public Supabase origin for the verification link — see buildVerifyUrl(). */
 export function authVerifyBaseUrl(): string {

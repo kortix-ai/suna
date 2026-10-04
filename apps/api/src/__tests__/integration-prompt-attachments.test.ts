@@ -7,7 +7,7 @@ import {
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { config } from '../lib/config';
 import {
   beginPromptAttachment,
@@ -520,7 +520,7 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
     .from(promptAttachments)
     .where(eq(promptAttachments.attachmentId, id));
   const cleanupAt = new Date(initial.expiresAt.getTime() + 1);
-  // `db` is the request-context Proxy from shared/db-context.ts. Bun's spyOn
+  // `db` is the request-context Proxy from lib/db-context.ts. Bun's spyOn
   // cannot install a spy through a Proxy (it records 0 calls), so spy on the
   // pooled database the Proxy forwards to outside a request.
   const pooled = (globalThis as { __kortixApiDb?: typeof db }).__kortixApiDb!;

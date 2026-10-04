@@ -13,12 +13,12 @@ mock.module('../lib/config', () => ({
 mock.module('./internal-routes', () => ({
   createInternalGatewayRoutes: () => new Hono(),
 }));
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async () => undefined,
 }));
 
 const { mountLlmGateway } = await import('./wire');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 let fetched = 0;
 function stubUpstream(body = '{"models":{}}') {

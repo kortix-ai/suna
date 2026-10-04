@@ -22,7 +22,7 @@ function chain(rows: unknown[]): any {
   return c;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => chain(storedRow ? [storedRow] : []),
     update: () => ({

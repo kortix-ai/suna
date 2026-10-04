@@ -2,8 +2,8 @@ import { auth } from '../../openapi';
 import { config } from '../../lib/config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
-import { isAccountToken, isKortixToken } from '../../shared/crypto';
-import { db } from '../../shared/db';
+import { isAccountToken, isKortixToken } from '../../lib/crypto';
+import { db } from '../../lib/db';
 import { mintInstallationTokenHealing } from './installation-healing';
 import { getBackend, managedGithubInstallId, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
@@ -12,8 +12,8 @@ import {
   encryptProjectSecret,
   getProjectSecretValueForConsumer,
 } from '../secrets';
-import { recordAuditEvent } from '../../shared/audit';
-import { bindAuditPrincipal } from '../../shared/audit-scope';
+import { recordAuditEvent } from '../../services/audit/audit';
+import { bindAuditPrincipal } from '../../services/audit/audit-scope';
 import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { and, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
@@ -28,7 +28,7 @@ import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/actor';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from './serializers';
-import { normalizeJsonObject } from '../../shared/json';
+import { normalizeJsonObject } from '../../lib/json';
 import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
   workspaceMetadataAllowsRepositoryAccess,

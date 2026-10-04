@@ -15,7 +15,7 @@ const THREAD = '10.10';
 
 let participantRow: { status: string } | undefined;
 let participantThrows = false;
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({

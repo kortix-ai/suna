@@ -1,7 +1,7 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';

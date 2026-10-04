@@ -68,7 +68,7 @@ import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db'
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { and, count, eq, sql } from 'drizzle-orm';
 
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything

@@ -14,7 +14,7 @@
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql, eq, inArray } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { connectors, connectionCredentials } from '@kortix/db';
 
 const CONN_SHARED_ALREADY = crypto.randomUUID();

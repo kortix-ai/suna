@@ -17,12 +17,12 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseMonitorIngestBody } from '../lib/monitor-events';
 import { MonitorIngestRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { ingestMonitorEvents, loadMonitorBoxForToken } from '../lib/monitor-ingest';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 const MonitorIngestResultSchema = z.object({
   accepted: z.number(),

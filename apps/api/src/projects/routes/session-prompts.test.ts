@@ -229,7 +229,7 @@ function render(node: unknown): string {
   return '';
 }
 
-mock.module('../../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
+mock.module('../../lib/db', () => ({ db: databaseMock, hasDatabase: true }));
 
 let billingCalls = 0;
 

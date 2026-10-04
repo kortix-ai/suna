@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'bun:test';
 import {
   isDaytonaRateLimitError,
   primeDaytonaRateLimitClassifier,
-} from '../shared/daytona-rate-limit';
+} from '../services/sandboxes/daytona/rate-limit';
 
 // Real SDK class — same shape prod throws. Imported here so the classifier's
 // instanceof path (the strongest signal) is exercised against the genuine class,

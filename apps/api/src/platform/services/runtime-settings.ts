@@ -48,7 +48,7 @@ export async function refreshRuntimeSettings(): Promise<void> {
   const def = envDefaults();
   let fallback = def.fallback;
   try {
-    const { hasDatabase, db } = await import('../../shared/db');
+    const { hasDatabase, db } = await import('../../lib/db');
     if (hasDatabase) {
       const { platformSettings } = await import('@kortix/db');
       const { inArray } = await import('drizzle-orm');

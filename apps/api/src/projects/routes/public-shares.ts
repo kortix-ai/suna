@@ -5,12 +5,12 @@ import {
   createPublicShare,
   listPublicSharesForSession,
   revokePublicShare,
-} from '../../shared/session-public-shares';
+} from '../../services/sessions/session-public-shares';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
-import { isUuid } from '../../shared/validate';
-import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../lib/validate';
+import { readJsonObject } from '../../lib/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 export function registerPublicSharesRoutes(): void {

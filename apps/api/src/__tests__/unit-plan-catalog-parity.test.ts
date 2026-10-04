@@ -4,7 +4,7 @@ import { describe, expect, mock, test } from 'bun:test';
 //
 // The catalog is a SECOND SPELLING of facts that already live in `TIERS`
 // (billing/services/tiers.ts) and the legacy multiplier table
-// (shared/account-limits.ts). It exists so the billing refactor has one typed
+// (billing/account-limits.ts). It exists so the billing refactor has one typed
 // record per plan instead of a dozen ad-hoc derivations — but it is only safe
 // while the two spellings agree exactly. This test is that guarantee: it walks
 // EVERY key in TIERS and asserts the catalog record reproduces what today's
@@ -48,7 +48,7 @@ const {
   tierGrantsAllModels,
 } = await import('../billing/services/tiers');
 const { sessionLlmPolicyForTier } = await import(
-  '../shared/account-limits'
+  '../billing/account-limits'
 );
 const { getPlanRecord, listPlanRecords, PLAN_CATALOG, PLAN_FAMILIES, resolvePlanRecord } =
   await import('../billing/services/plan-catalog');

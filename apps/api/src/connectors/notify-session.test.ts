@@ -13,7 +13,7 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 const enqueued: Array<Record<string, unknown>> = [];
 let sessionRow: Record<string, unknown> | undefined;
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({ where: () => ({ limit: async () => (sessionRow ? [sessionRow] : []) }) }),

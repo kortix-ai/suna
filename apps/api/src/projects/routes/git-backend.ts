@@ -13,7 +13,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
-import { isSelfHostOperator } from '../../shared/platform-roles';
+import { isSelfHostOperator } from '../../iam/platform-roles';
 import { resolveGitBackend } from '../../platform/services/managed-git-backend';
 import { createInstallationToken, listOwnerRepositories } from '../github';
 import { projectsApp } from '../lib/app';

@@ -17,7 +17,7 @@ mock.module('../iam', () => ({
   assertAuthorized: async () => {},
 }));
 
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async () => {},
 }));
 

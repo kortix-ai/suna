@@ -1,5 +1,5 @@
 import { config } from '../lib/config';
-import { KORTIX_SERVICE_CALL_HEADER } from '../shared/kortix-user-context';
+import { KORTIX_SERVICE_CALL_HEADER } from '../services/sessions/kortix-user-context';
 import { previewCorsHeaders } from './preview-hosts';
 import { PREVIEW_STATE_HEADER, type PreviewState, previewStatePage } from './preview-state-page';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER, type ProxyHop } from './proxy-hop';

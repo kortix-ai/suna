@@ -1,5 +1,5 @@
 import { config } from '../lib/config';
-import { runWorkerTick } from '../shared/audit-scope';
+import { runWorkerTick } from '../services/audit/audit-scope';
 import { logger } from '../lib/logger';
 
 // The hourly billing sweeps. bootstrap.ts starts them with the other singleton

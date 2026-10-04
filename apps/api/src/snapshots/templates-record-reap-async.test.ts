@@ -19,7 +19,7 @@ function query(): unknown {
   });
   return chain;
 }
-mock.module('../shared/db', () => ({ db: query() }));
+mock.module('../lib/db', () => ({ db: query() }));
 
 let releaseDelete: () => void = () => {};
 const deleted: string[] = [];

@@ -18,7 +18,7 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { type ProviderName, getProvider } from '../../platform/providers';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { createApiKey } from '../../repositories/api-keys';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { DEFAULT_SANDBOX_SLUG, ensureSandboxImage, resolveTemplate } from '../../snapshots/builder';
 import type { GitBackedProject } from '../git/types';
 import { listProjectSecretsSnapshotForUser } from '../secrets';

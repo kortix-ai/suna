@@ -29,7 +29,7 @@ import {
 } from '@kortix/db';
 import { type SQL, and, eq, inArray, sql } from 'drizzle-orm';
 
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from '../lib/session-status';
 import { stripMetadataKeys } from './sandbox-metadata-sql';
 

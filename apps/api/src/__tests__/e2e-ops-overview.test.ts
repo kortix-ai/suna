@@ -14,7 +14,7 @@ type ResultOrThrow = { rows: unknown[] } | { __throw: Error };
 
 let executeResults: ResultOrThrow[] = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     execute: async () => {
       const next = executeResults.shift();

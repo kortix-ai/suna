@@ -35,7 +35,7 @@
  */
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 export const CONVERSATION_NOT_IN_PROJECT = 'conversation_not_in_project';
 

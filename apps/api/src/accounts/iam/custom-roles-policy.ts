@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { assignRole, revokeAssignment, updateAssignment, type AssignmentRow } from '../../iam/assignments';
@@ -11,7 +11,7 @@ import { customRoleBindings, legacyToCanonicalPrincipal, type CustomRoleBinding 
 import { invalidateIamCacheForPolicyPrincipal } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, requireEntitlement } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { loadSystemRoles } from '../../iam/catalog';
 
 export function systemRoleWireId(scopeType: string, key: string): string {

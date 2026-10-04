@@ -20,8 +20,8 @@ import {
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 
-import { db } from '../../shared/db';
-import { errorSqlstate } from '../../shared/error-cause';
+import { db } from '../../lib/db';
+import { errorSqlstate } from '../../lib/error-cause';
 import {
   readTranscriptPages,
   retryTranscriptCapture,

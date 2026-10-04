@@ -33,7 +33,7 @@
 // export lists, so every IAM collaborator here loads lazily: a static edge to
 // `iam/authorize` alone pulls `iam/actor` into graphs that stub it.
 import { sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /** How a kept value reaches the caller. */
 export type SecretReach = 'person' | 'agent' | 'open';

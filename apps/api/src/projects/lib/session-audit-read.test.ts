@@ -39,7 +39,7 @@ function makeDbMock() {
 // "the connectors table" without depending on drizzle's real table identity.
 const CONNECTOR_CALLS_MARKER = Symbol('connectorCalls');
 
-mock.module('../../shared/db', () => ({ db: makeDbMock() }));
+mock.module('../../lib/db', () => ({ db: makeDbMock() }));
 mock.module('@kortix/db', () => ({
   connectorCalls: CONNECTOR_CALLS_MARKER,
   connectors: { connectorId: 'connectors.connector_id', slug: 'connectors.slug' },

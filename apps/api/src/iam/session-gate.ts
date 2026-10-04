@@ -16,9 +16,9 @@ import { accountSessionActivity, accounts } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { auditSessionFirstSight } from '../shared/auth-audit';
-import { requestClientIp } from '../shared/client-ip';
-import { db } from '../shared/db';
+import { auditSessionFirstSight } from '../services/audit/auth-audit';
+import { requestClientIp } from '../lib/client-ip';
+import { db } from '../lib/db';
 
 /** Skip the update query if last_seen_at was touched more recently than
  *  this. Bounds DB write pressure under chatty clients. */

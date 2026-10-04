@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { PROJECT_ACTIONS } from '../iam';

@@ -45,7 +45,7 @@ let releaseWrite: (() => void) | null = null;
 /** Whether the pending write should reject when released. */
 let rejectWrite = false;
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     update: () => ({

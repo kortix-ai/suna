@@ -4,7 +4,7 @@ import { deadLetterCause } from './dead-letter-cause';
 import { logger } from '../../lib/logger';
 import { extendSandboxDeadline } from '../sandbox-deadline';
 import { promptRetryGraceMs } from '../sandbox-deadline-policy';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import { inboxOrderBy } from './inbox-order';
 import { transitionSession } from './status-transitions';

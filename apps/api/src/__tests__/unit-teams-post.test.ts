@@ -146,7 +146,7 @@ describe('postToTeamsConversation', () => {
   });
 });
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

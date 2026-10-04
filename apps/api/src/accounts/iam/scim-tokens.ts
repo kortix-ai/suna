@@ -15,8 +15,8 @@ import {
 } from '../../repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
 import { auditIam, requireEntitlement } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
-import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../lib/http-body';
+import { isUuid } from '../../lib/validate';
 export function registerIamScimTokensRoutes(): void {
   iamRouter.openapi(
     createRoute({

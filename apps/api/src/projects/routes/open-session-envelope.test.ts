@@ -52,7 +52,7 @@ function statement(queue: unknown[][]): {
   return builder;
 }
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => statement(selectQueue),
     update: () => {

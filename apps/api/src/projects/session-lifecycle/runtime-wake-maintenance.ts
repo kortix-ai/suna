@@ -2,7 +2,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../lib/config';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import {
   RUNTIME_WAKE_CLEANUP_LEASE_MS,

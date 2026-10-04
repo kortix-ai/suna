@@ -3,8 +3,8 @@ import { tunnelAuditLogs } from '@kortix/db';
 import type { TunnelCapability } from 'agent-tunnel';
 import { eq } from 'drizzle-orm';
 import { getRequestContext } from '../../lib/request-context';
-import type { AuditActorType } from '../../shared/audit';
-import { db } from '../../shared/db';
+import type { AuditActorType } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 
 export interface AuditLogEntry {
   tunnelId: string;

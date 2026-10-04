@@ -27,8 +27,8 @@ import {
   deleteDaytonaSnapshotById,
   isDaytonaConfigured,
   listDaytonaSnapshots,
-} from '../shared/daytona';
-import { db } from '../shared/db';
+} from '../services/sandboxes/daytona/client';
+import { db } from '../lib/db';
 import {
   appDeploymentSnapshotName,
   DAYTONA_ORG_SNAPSHOT_LIMIT,

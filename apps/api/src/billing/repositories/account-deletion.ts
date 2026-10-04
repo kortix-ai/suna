@@ -1,6 +1,6 @@
 import { eq, and, lte, ne } from 'drizzle-orm';
 import { accountDeletionRequests } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export async function getActiveDeletionRequest(accountId: string) {
   const [row] = await db

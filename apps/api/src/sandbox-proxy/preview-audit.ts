@@ -14,7 +14,7 @@
  * when the row is written, cached): an attempt on someone's preview belongs
  * in their log, not the caller's.
  */
-import { type AuditPrincipal, annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
+import { type AuditPrincipal, annotateAuditEvent, bindAuditPrincipal } from '../services/audit/audit-scope';
 import type { PreviewPrincipalKind, PreviewSession } from './preview-session';
 
 /** The audit actor for a proven preview principal. Pure; exported for tests. */
@@ -105,7 +105,7 @@ export function bindPreviewResource(sandboxId: string, port: number | null): voi
     lateAttribution: async () => {
       // Imported here, not at module load: preview-origin's suite replaces
       // `../lib/config` wholesale, and this module pulls the database client in.
-      const { resolveSandboxOwner } = await import('../shared/preview-ownership');
+      const { resolveSandboxOwner } = await import('../services/sessions/preview-ownership');
       const owner = await resolveSandboxOwner(sandboxId);
       return owner ? { accountId: owner.accountId, projectId: owner.projectId } : null;
     },

@@ -15,7 +15,7 @@ import { eq, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 

@@ -387,11 +387,11 @@ mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async () => undefined,
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
@@ -439,7 +439,7 @@ const projectDbMock = createProjectsContractDbMock(dbState);
   };
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: projectDbMock,
 }));

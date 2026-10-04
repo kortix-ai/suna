@@ -47,7 +47,7 @@ import {
   sessionRuntimeProjections,
   sessionSandboxes,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /**
  * How old a RUNNING box's projection may be before it is refused.

@@ -29,7 +29,7 @@ import {
   projectPoliciesToTomlEntries,
   projectPolicySettingsToToml,
 } from '../projects/policies';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { upsertCredential, upsertOAuth2Credential } from './credentials';
 import { areValidConditions, isValidMatcher } from './policy';
 import {

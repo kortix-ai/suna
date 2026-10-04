@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { chatChannelBindings, chatThreads, projectSessions } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { bindChatThread, findChatThread } from '../core/threads';
 import { provenSlackWorkspaces } from './inbound';
 

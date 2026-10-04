@@ -1,4 +1,4 @@
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import type { ProjectRole } from '../access';

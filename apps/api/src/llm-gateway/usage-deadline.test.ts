@@ -33,7 +33,7 @@ mock.module('../lib/config', () => ({
   ),
 }));
 
-mock.module('../shared/usage-events', () => ({
+mock.module('../services/usage/usage-events', () => ({
   recordUsageEvent: async () => {
     usageRows += 1;
     return 'usage-1';

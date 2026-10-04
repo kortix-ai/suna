@@ -19,7 +19,7 @@
  */
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 /** The one account a connect created, when the human named it in the dialog. */
 export interface ConnectedAccount {

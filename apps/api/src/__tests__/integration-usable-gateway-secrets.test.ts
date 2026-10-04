@@ -14,7 +14,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, accountSecretGrants, accountSecretResources, accounts, projectMembers } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
   resolveProjectSharedProviderSecrets,

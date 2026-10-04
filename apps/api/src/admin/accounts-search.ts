@@ -1,6 +1,6 @@
 import { accounts } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { qualifiedColumn } from '../lib/sql-qualified-column';
 
 /**
  * The `search` filter of the admin accounts list: the account's name or any

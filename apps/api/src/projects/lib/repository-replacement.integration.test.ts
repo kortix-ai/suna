@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, changeRequests, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
 import type { GitHubRepo } from '../github';
 import { persistProjectRepositoryReplacement, RepositoryChangedError } from './repository-replacement';

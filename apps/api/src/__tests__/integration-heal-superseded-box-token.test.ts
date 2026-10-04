@@ -15,7 +15,7 @@ import { accountMembers } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import * as realShared from '../projects/routes/shared';
 import { createAccountToken } from '../repositories/account-tokens';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 

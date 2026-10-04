@@ -27,7 +27,7 @@ const launchChecks: string[] = [];
 
 // The mock answers by WHICH columns a query selects, so the tests do not depend
 // on the order the module issues its reads in.
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: (columns: Record<string, unknown>) => ({
       from: () => ({

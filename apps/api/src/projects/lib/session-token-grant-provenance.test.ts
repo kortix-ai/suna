@@ -33,7 +33,7 @@ let ancestorCalls: string[][] = [];
 let selectCount = 0;
 let storedForTest: AgentGrant | null = storedGrant;
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

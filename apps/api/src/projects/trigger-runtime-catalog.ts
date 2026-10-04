@@ -1,6 +1,6 @@
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   type TriggerRuntimeCatalogStore,
   reconcileProjectTriggerRuntimeWithStore,

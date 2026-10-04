@@ -6,7 +6,7 @@
 import { accountGroupMembers, accountGroups, accountMembers, roleAssignments } from '@kortix/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { invalidateIamCacheForUser, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 

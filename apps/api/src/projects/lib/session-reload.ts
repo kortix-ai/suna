@@ -31,9 +31,9 @@
 
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { logger } from '../../lib/logger';
-import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { TimeoutError, withTimeout } from '../../lib/with-timeout';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
 import { resolveCommitSha } from '../git/commits';

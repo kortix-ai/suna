@@ -28,8 +28,8 @@ import {
   serviceAccounts,
 } from '@kortix/db';
 import { HTTPException } from 'hono/http-exception';
-import { db } from '../shared/db';
-import { recordAuditEvent } from '../shared/audit';
+import { db } from '../lib/db';
+import { recordAuditEvent } from '../services/audit/audit';
 import { assertAuthorized, type Obj } from './authorize';
 import { loadSystemRoles, loadPermissionCatalog, type ObjectType, type ScopeType } from './catalog';
 import {

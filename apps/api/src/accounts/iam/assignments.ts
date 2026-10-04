@@ -18,7 +18,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../../projects/lib/san
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { iamRoles } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
@@ -32,8 +32,8 @@ import {
 import { loadPermissionCatalog, type ObjectType, type ScopeType } from '../../iam/catalog';
 import { iamRouter, AccountIdParam } from './app';
 import { requireEntitlement } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
-import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../lib/http-body';
+import { isUuid } from '../../lib/validate';
 
 const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending', 'project'] as const;
 const SCOPE_TYPES = ['account', 'project'] as const;

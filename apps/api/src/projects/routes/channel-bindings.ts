@@ -26,7 +26,7 @@ import { teamsThreadTitles } from "../../channels/teams/binding";
 import { backfillTeamsBindingLabel, needsTeamsNameBackfill } from "../../channels/teams/channel-label";
 import { isTeamsChannelThreadId } from "../../channels/teams/util";
 import { requestMemo } from "../../lib/request-context";
-import { withTimeout } from "../../shared/with-timeout";
+import { withTimeout } from "../../lib/with-timeout";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";

@@ -6,7 +6,7 @@ import { emailWebhookApp } from './app';
 import { dispatchAgentMailEvent, resolveProjectForAgentMailInbox } from './session';
 import { verifyAgentMailSignature } from './verify';
 import type { AgentMailMessageReceivedEvent } from './types';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 
 emailWebhookApp.openapi(
   createRoute({

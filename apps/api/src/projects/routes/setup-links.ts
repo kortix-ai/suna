@@ -26,7 +26,7 @@ import { projectsApp } from '../lib/app';
 import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');

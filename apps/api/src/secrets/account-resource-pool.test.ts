@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test';
 
 const update = mock(() => { throw new Error('A passive model check must not rotate the pool'); });
-mock.module('../shared/db', () => ({ db: {
+mock.module('../lib/db', () => ({ db: {
   update,
   select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ secretIds: [], nextIndex: 7 }] }) }) }),
 } }));

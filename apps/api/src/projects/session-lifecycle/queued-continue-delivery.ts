@@ -1,7 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';

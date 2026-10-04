@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { auditEvents } from '@kortix/db';
 import pg from 'pg';
-import { parseAuditSessionCursor, readSessionAuditEvents } from '../shared/audit-query';
-import { db } from '../shared/db';
+import { parseAuditSessionCursor, readSessionAuditEvents } from '../services/audit/audit-query';
+import { db } from '../lib/db';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7200000-0000-4000-a000-000000000001';

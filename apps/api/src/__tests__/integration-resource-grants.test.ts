@@ -15,7 +15,7 @@
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { deleteResourceGrant, upsertResourceGrant } from '../iam/resource-grants';
 import { loadObjectGrants, objectUsable } from '../iam/authorize';
 import { invalidateIamCacheForProjectResources } from '../iam/cache-invalidation';

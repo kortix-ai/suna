@@ -2,7 +2,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, and, eq, isNull } from 'drizzle-orm';
 
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 /**
  * The lease a worker holds on a claimed (`running`) lifecycle command row.

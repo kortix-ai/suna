@@ -7,7 +7,7 @@ import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../../iam';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { loadProjectForUser, projectCapabilityAllowed } from './access';
 import {
   type ConnectionReachabilityActor,

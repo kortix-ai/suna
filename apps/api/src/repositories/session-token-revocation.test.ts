@@ -17,7 +17,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 let lastSet: Record<string, unknown> | null = null;
 let lastWhere: unknown = null;
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     update: () => ({
       set: (values: Record<string, unknown>) => {

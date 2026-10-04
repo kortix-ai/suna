@@ -9,7 +9,7 @@ import { loadProjectForUser } from '../projects/lib/access';
 import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
 import { tokenAgentPrincipalScope } from '../projects/lib/personal-resources';
 import type { ConnectorPrincipal } from './router-contract';

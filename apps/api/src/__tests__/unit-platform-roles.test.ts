@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let mockedRows: Array<{ role: 'user' | 'admin' | 'super_admin' }> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({
@@ -15,7 +15,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { getPlatformRole, isPlatformAdmin } = await import('../shared/platform-roles');
+const { getPlatformRole, isPlatformAdmin } = await import('../iam/platform-roles');
 
 describe('platform roles', () => {
   beforeEach(() => {

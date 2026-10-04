@@ -22,8 +22,8 @@ import { eq, sql } from 'drizzle-orm';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
-import { hashSecretKey } from '../shared/crypto';
-import { db } from '../shared/db';
+import { hashSecretKey } from '../lib/crypto';
+import { db } from '../lib/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 const GONE = crypto.randomUUID();

@@ -10,7 +10,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull, ne } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, projects } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
@@ -18,12 +18,12 @@ import { invalidateIamCacheForRole } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { registerPolicyListRoute, registerPolicyWriteRoutes, systemRoleWireId, isSystemRoleId, systemRoleByWireId, loadCustomRole } from './custom-roles-policy';
 import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFilesCached } from '../../projects/lib/project-resources';
 import { ACTION_CATALOG_WIRE, validateActions } from './role-presets';
 import { mapLimit } from '@kortix/registry';
-import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { TimeoutError, withTimeout } from '../../lib/with-timeout';
 
 // ─── Serializers (match iam-client.ts wire shapes exactly) ──────────────────
 

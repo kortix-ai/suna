@@ -82,8 +82,8 @@ import {
   noteRunningCatalog,
 } from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
-import { ttlMemo } from '../../shared/ttl-memo';
+import { db } from '../../lib/db';
+import { ttlMemo } from '../../lib/ttl-memo';
 import { repositoryAccessFromSessionMetadata } from './session-sandbox-metadata';
 import type { SessionConfigConvergenceOutcome } from './session-config-convergence';
 

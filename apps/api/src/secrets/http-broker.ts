@@ -7,7 +7,7 @@ import type {
 } from '@kortix/api-contract';
 import type { SecretEgressPolicy, SecretInjectionSlot } from '@kortix/db';
 import { BLOCKED_REQUEST_HEADERS } from '@kortix/api-contract/secret-relay';
-import { isPrivateIp } from '../shared/ssrf-guard';
+import { isPrivateIp } from '../lib/ssrf-guard';
 import { matchRule } from './strategy';
 
 const MAX_REQUEST_BYTES = 1_048_576;

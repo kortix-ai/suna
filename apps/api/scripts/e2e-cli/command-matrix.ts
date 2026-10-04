@@ -6,7 +6,7 @@ import {
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
-import { db } from '../../src/shared/db';
+import { db } from '../../src/lib/db';
 import {
   FIXTURE_SLUG,
   PIPEDREAM_SLUG,

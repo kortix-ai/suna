@@ -11,7 +11,7 @@ function chain(): any {
   c.then = (resolve: (r: unknown[]) => unknown) => Promise.resolve(resolve(threadRows));
   return c;
 }
-mock.module('../../shared/db', () => ({ db: { select: () => chain() }, hasDatabase: () => true }));
+mock.module('../../lib/db', () => ({ db: { select: () => chain() }, hasDatabase: () => true }));
 
 let linked: { userId: string } | null = { userId: 'user-1' };
 const memberOf = new Set(['acct-a']);
@@ -26,7 +26,7 @@ mock.module('../../iam', () => ({
   authorize: async (_actor: unknown, _action: string, resource: { id: string }) => ({ allowed: readable.has(resource.id) }),
 }));
 const visibleSessions = new Set(['s-a1', 's-a3', 's-b1']);
-mock.module('../../shared/preview-ownership', () => ({
+mock.module('../../services/sessions/preview-ownership', () => ({
   canAccessSandboxSession: async (input: { sessionId: string; callerSessionId: string | null }) =>
     input.callerSessionId === null && visibleSessions.has(input.sessionId),
 }));

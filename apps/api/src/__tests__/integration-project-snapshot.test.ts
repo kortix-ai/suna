@@ -27,7 +27,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { accounts, projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { seedAccount } from './helpers/integration-fixtures';
 import { config } from '../lib/config';
 import {

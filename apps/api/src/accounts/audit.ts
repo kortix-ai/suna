@@ -22,30 +22,30 @@ import {
   AUDIT_READ_FLUSH_BARRIER_MS,
   flushAuditEvents,
   recordAuditEvent,
-} from '../shared/audit';
-import { auditCredentialNames } from '../shared/audit-credential-names';
-import { requestClientIp } from '../shared/client-ip';
+} from '../services/audit/audit';
+import { auditCredentialNames } from '../services/audit/audit-credential-names';
+import { requestClientIp } from '../lib/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
   replayAuditWebhookDelivery,
-} from '../shared/audit-webhooks';
-import { db } from '../shared/db';
+} from '../services/audit/audit-webhooks';
+import { db } from '../lib/db';
 import {
   buildAuditCursorCondition,
   parseAuditCursor,
   parseAuditInstant,
   parseAuditLimit,
   serializeAuditEvent,
-} from '../shared/audit-query';
-import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
-import { readExportPage } from '../shared/audit-archive/export-page';
-import { auditArchiveStore } from '../shared/audit-archive/store';
-import { reconcileAuditEvents } from '../shared/audit-reconciliation';
+} from '../services/audit/audit-query';
+import { AuditActorTypeSchema, AuditListSchema } from '../services/audit/audit-schema';
+import { readExportPage } from '../services/audit/audit-archive/export-page';
+import { auditArchiveStore } from '../services/audit/audit-archive/store';
+import { reconcileAuditEvents } from '../services/audit/audit-reconciliation';
 import type { AppEnv } from '../types/app-env';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/helpers';
-import { readJsonObject } from '../shared/http-body';
+import { readJsonObject } from '../lib/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
@@ -853,7 +853,7 @@ auditRouter.openapi(
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate: deleting a webhook is cleanup, always allowed — and
-    // delivery itself is entitlement-gated in shared/audit-webhooks.ts, so a
+    // delivery itself is entitlement-gated in services/audit/audit-webhooks.ts, so a
     // leftover row on a downgraded account streams nothing either way.
 
     const rows = await db

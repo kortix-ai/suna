@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
 import { logger as appLogger } from '../lib/logger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import type { ProjectSessionRow } from './lib/serializers';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 import { readRuntimeLeg } from './lib/session-runtime-projection';

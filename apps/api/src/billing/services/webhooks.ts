@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { getStripe } from '../../shared/stripe';
+import { getStripe } from '../stripe';
 import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { config } from '../../lib/config';
 import { WebhookError } from '../errors';
@@ -14,8 +14,8 @@ import { getBillingPeriodByPriceId, getTier, getTierByPriceId, getMonthlyCredits
 import { grantForPaidProrationInvoice } from './proration-grants';
 import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
-import { isUuid } from '../../shared/validate';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
+import { isUuid } from '../../lib/validate';
 import { planKeyFromMetadata, activateSubscriptionForAccount } from './stripe-checkout-webhooks';
 
 function planKeyMetadata(planKey: string): { tier_key: string; plan_key: string } {

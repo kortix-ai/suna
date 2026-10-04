@@ -10,7 +10,7 @@ import { eq, sql } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../lib/config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { withProjectGitAuth } from '../lib/git';
 import { type ProjectRow } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';

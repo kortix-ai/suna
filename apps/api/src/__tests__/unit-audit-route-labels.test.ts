@@ -125,7 +125,7 @@ for (const file of sourceFiles(SRC)) {
 /**
  * Actions database triggers and the reconciliation backfill write in SQL
  * (`packages/db/migrations/*centralized_audit_v2.sql`,
- * `shared/audit-reconciliation.ts`). `session.lifecycle.` is suffixed with a
+ * `services/audit/audit-reconciliation.ts`). `session.lifecycle.` is suffixed with a
  * lifecycle command type.
  */
 const SQL_ACTIONS = ['llm.request', 'llm.usage', 'session.created', 'session.status.changed'];
@@ -152,7 +152,7 @@ describe('audit event labels', () => {
   test('every action the SQL writers record has a title, and is still written there', () => {
     const migrations = join(SRC, '../../../packages/db/migrations');
     const sql = [
-      readFileSync(join(SRC, 'shared/audit-reconciliation.ts'), 'utf8'),
+      readFileSync(join(SRC, 'services/audit/audit-reconciliation.ts'), 'utf8'),
       ...readdirSync(migrations)
         .filter((name) => name.endsWith('.sql'))
         .map((name) => readFileSync(join(migrations, name), 'utf8')),

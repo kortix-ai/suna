@@ -13,8 +13,8 @@ import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../lib/config';
-import { db } from '../shared/db';
-import { inspectDatabaseError } from '../shared/database-errors';
+import { db } from '../lib/db';
+import { inspectDatabaseError } from '../lib/database-errors';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,

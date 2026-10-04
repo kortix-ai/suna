@@ -210,7 +210,7 @@ const reaperConfigModule = mockConfigModule({
 const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
 mock.module('../lib/config', () => reaperConfigModule);
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
       return fn(this);

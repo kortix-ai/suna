@@ -12,7 +12,7 @@ import {
   summarizeHandleRefusals,
 } from '../../secrets/handle-substitution';
 import { authorizeSecretRelay } from '../../secrets/relay-authorize';
-import { recordAuditEvent } from '../../shared/audit';
+import { recordAuditEvent } from '../../services/audit/audit';
 import { intersectSecretGrants } from '../secrets';
 import { config } from '../../lib/config';
 import { loadProjectForUser } from '../lib/access';
@@ -21,7 +21,7 @@ import {
   verifySandboxEgressIp,
 } from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 export function registerSecretBrokerRoutes(): void {
   projectsApp.openapi(
     createRoute({

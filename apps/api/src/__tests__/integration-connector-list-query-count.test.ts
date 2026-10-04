@@ -30,7 +30,7 @@ import { ensureProjectComputer } from '../connectors/sync';
 import { runWithContext } from '../lib/request-context';
 import { stageSnapshot } from '../lib/server-timing';
 import { encryptProjectSecret } from '../projects/secrets';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

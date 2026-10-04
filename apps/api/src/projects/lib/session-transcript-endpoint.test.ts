@@ -33,8 +33,8 @@ mock.module('../../sandbox-proxy/backend', () => ({
   }),
 }));
 
-const realPreviewOwnership = await import('../../shared/preview-ownership');
-mock.module('../../shared/preview-ownership', () => ({
+const realPreviewOwnership = await import('../../services/sessions/preview-ownership');
+mock.module('../../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   resolvePreviewUserContext: async () => null,
 }));

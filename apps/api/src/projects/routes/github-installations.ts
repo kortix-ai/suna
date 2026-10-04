@@ -2,7 +2,7 @@
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   getGitHubAppInstallation,
   resolveGitHubUserLogin,
@@ -30,7 +30,7 @@ import {
   serializeGitHubInstallation,
   serializeGitHubInstallations,
 } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 // GET /v1/projects/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;

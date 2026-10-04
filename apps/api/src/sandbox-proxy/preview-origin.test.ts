@@ -59,12 +59,12 @@ mock.module('./forward', () => ({
 // The real module, so the blocked-port set and the view-only rule are the
 // shipped ones. Only the two database reads are replaced: a share resolves by
 // its exact token, or not at all, so revocation is observable.
-const realPublicShares = await import('../shared/session-public-shares');
+const realPublicShares = await import('../services/sessions/session-public-shares');
 const { PUBLIC_SHARE_BLOCKED_PORTS, publicShareToken } = realPublicShares;
 /** The public token of each synthetic share id below. */
 const FILE_TOKEN = publicShareToken('00000000-0000-4000-a000-00000000f11e');
 const PREVIEW_TOKEN = publicShareToken('00000000-0000-4000-a000-00000000b1e0');
-mock.module('../shared/session-public-shares', () => ({
+mock.module('../services/sessions/session-public-shares', () => ({
   ...realPublicShares,
   resolvePublicShare: async (token: string) => shares[token] ?? { ok: false, status: 404 },
   touchPublicShare: async () => {},
@@ -448,7 +448,7 @@ describe('every preview request is attributed in the audit log', () => {
   // edge, so each must be attributed here — from the cookie — and name the
   // sandbox it reached, so the row lands in the sandbox owner's log.
   const { runWithContext } = require('../lib/request-context');
-  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const { attachInboundAuditScope } = require('../services/audit/audit-scope');
   const USER = '00000000-0000-4000-a000-000000000001';
 
   async function scopeAfter(req: Request, url: URL) {

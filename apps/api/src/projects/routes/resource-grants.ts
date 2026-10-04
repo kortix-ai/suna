@@ -17,7 +17,7 @@ import {
   loadConfigWithFiles,
 } from '../lib/project-resources';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroups, accountMembers, connectors } from '@kortix/db';
 import { and, eq, inArray, or } from 'drizzle-orm';
@@ -25,8 +25,8 @@ import { config } from '../../lib/config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
-import { isUuid } from '../../shared/validate';
-import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../lib/validate';
+import { readJsonObject } from '../../lib/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';

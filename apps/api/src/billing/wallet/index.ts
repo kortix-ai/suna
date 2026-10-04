@@ -58,7 +58,7 @@
 import { creditAccounts, creditLedger } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { InsufficientCreditsError } from '../errors';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { isDuplicateCreditGrantError } from './duplicate-error';
 import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
 

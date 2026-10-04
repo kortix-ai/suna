@@ -38,7 +38,7 @@ import {
   PREVIEW_EDGE_HEADERS,
   edgeSecret,
   verifyEdgeSignedRequest,
-} from '../shared/edge-signature';
+} from '../edge/edge-signature';
 import {
   PREVIEW_SESSION_TTL_SECONDS,
   PREVIEW_SHARE_TTL_SECONDS,
@@ -56,7 +56,7 @@ import {
   publicShareToken as publicShareTokenFor,
   resolvePublicShare,
   touchPublicShare,
-} from '../shared/session-public-shares';
+} from '../services/sessions/session-public-shares';
 
 export { resolvePreviewHost };
 

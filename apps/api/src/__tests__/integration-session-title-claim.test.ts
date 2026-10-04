@@ -20,8 +20,8 @@ import {
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { transitionSession } from '../projects/session-lifecycle/status-transitions';
 import { persistTitle } from '../projects/session-title-generate';
-import { db } from '../shared/db';
-import { getPublicSessionInfo } from '../shared/public-session-share-view';
+import { db } from '../lib/db';
+import { getPublicSessionInfo } from '../services/sessions/public-session-share-view';
 
 const { syncOpencodeSessionSnapshot } = await import('../projects/opencode-session-snapshot');
 

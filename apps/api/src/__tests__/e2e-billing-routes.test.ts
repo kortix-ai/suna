@@ -53,7 +53,7 @@ mock.module('../middleware/auth', () => ({
   combinedAuth: async (c: any, next: any) => { await next(); },
 }));
 
-mock.module('../shared/resolve-account', () => ({
+mock.module('../accounts/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
   resolveScopedAccountId: async () => TEST_USER_ID,
 }));
@@ -156,14 +156,14 @@ mock.module('../billing/services/account-deletion', () => ({
 }));
 
 // Supabase + Stripe mocks (prevent imports from failing)
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     rpc: () => Promise.resolve({ data: null, error: null }),
     auth: { getUser: async () => ({ data: { user: null }, error: 'mocked' }) },
   }),
 }));
 
-mock.module('../shared/stripe', () => ({
+mock.module('../billing/stripe', () => ({
   getStripe: () => ({
     webhooks: { constructEvent: () => ({}) },
     subscriptions: { retrieve: async () => ({}), update: async () => ({}), create: async () => ({}), cancel: async () => ({}) },

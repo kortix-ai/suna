@@ -30,7 +30,7 @@ import {
   recordUnidentifiedTurnCause,
   settleOpenSandboxTurnsQuery,
 } from '../projects/session-turn-ledger';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   type SeededProject,
   localTestDatabaseUrl,

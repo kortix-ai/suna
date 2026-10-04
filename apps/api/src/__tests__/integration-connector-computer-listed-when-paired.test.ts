@@ -21,7 +21,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { ensureProjectComputer } from '../connectors/sync';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

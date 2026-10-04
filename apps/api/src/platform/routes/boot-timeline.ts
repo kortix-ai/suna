@@ -23,7 +23,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { BootTimelineRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { sessionSandboxes } from '@kortix/db';
 import { pinSandboxEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types/app-env';
 import { recordBootTimeline } from '../services/boot-timeline-store';

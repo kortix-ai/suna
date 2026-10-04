@@ -13,7 +13,7 @@ import { projectSessions, serviceAccounts } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { ProjectRow } from '../projects/lib/serializers';
 import { attributeFiredTriggerSession } from '../projects/lib/triggers';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 let ctx: { projectId: string; accountId: string } | null = null;
 const SESSION_ID = `e2e-trigger-attr-${crypto.randomUUID()}`;

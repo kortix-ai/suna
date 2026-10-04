@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projectSessions } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { resolveConversationProject } from './binding';
 import type { TeamsActivity } from './types';
 

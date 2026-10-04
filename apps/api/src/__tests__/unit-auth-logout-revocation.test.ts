@@ -9,8 +9,8 @@ const SECRET = 'synthetic-logout-secret-0123456789';
 process.env.SUPABASE_JWT_SECRET = SECRET;
 process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '0';
 
-mock.module('../shared/db', () => ({ db: {}, hasDatabase: () => false }));
-mock.module('../shared/auth-audit', () => ({
+mock.module('../lib/db', () => ({ db: {}, hasDatabase: () => false }));
+mock.module('../services/audit/auth-audit', () => ({
   auditLoginFail: () => {}, auditLoginSuccess: () => {}, auditLogout: () => {}, auditSessionFirstSight: () => {},
 }));
 mock.module('../middleware/auth-principal', () => ({
@@ -24,7 +24,7 @@ mock.module('../middleware/auth-actor', () => ({ withActor: async (_c: unknown, 
 mock.module('../middleware/impersonation', () => ({ applyImpersonation: async (_c: unknown, next: () => Promise<void>) => next() }));
 
 const { __setGoTrueFetch } = await import('../auth/gotrue');
-const { __setJwtLivenessLoaderForTests } = await import('../shared/jwt-liveness');
+const { __setJwtLivenessLoaderForTests } = await import('../auth/jwt-liveness');
 const { authRouter } = await import('../auth');
 const { supabaseAuth } = await import('../middleware/auth');
 

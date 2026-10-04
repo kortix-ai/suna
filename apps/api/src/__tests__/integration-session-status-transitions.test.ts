@@ -18,7 +18,7 @@ import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import * as realSandboxRuntimeRefresh from '../projects/lib/sandbox-runtime-refresh';
 import * as realSessionAttachments from '../projects/lib/session-attachments';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
 let providerStops = 0;

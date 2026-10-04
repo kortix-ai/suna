@@ -6,7 +6,7 @@ import {
   formatDurationSeconds,
   parseDurationSeconds,
 } from '@kortix/manifest-schema';
-import { isPlainObject } from '../shared/json';
+import { isPlainObject } from '../lib/json';
 import type { GitBackedProject } from './git';
 import { MANIFEST_FILENAME, readManifest } from './manifest-io';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';

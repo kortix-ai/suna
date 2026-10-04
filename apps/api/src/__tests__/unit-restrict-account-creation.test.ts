@@ -37,7 +37,7 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mock.module('../shared/platform-roles', () => ({
+mock.module('../iam/platform-roles', () => ({
   isPlatformAdmin: async () => isPlatformAdminMock,
   getPlatformRole: async () => (isPlatformAdminMock ? 'admin' : 'user'),
 }));
@@ -49,7 +49,7 @@ let insertedAccount: { name: string } | null = null;
 // the creation RESTRICTION, not the grant store, so the write path is bypassed.
 mockIamAssignments();
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   hasDatabase: () => true,
   db: {
     insert: (table: any) => ({

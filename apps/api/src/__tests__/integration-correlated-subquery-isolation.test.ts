@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { loadSandbox } from '../sandbox-proxy/backend';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { removeSeeded, seedProject } from './helpers/integration-fixtures';
 
 const run = crypto.randomUUID().slice(0, 8);

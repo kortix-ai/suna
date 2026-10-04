@@ -34,8 +34,8 @@
 
 import { and, inArray, isNotNull, sql } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
-import { db } from '../shared/db';
-import { getStripe } from '../shared/stripe';
+import { db } from '../lib/db';
+import { getStripe } from '../billing/stripe';
 import { syncSubscription } from '../billing/services/subscriptions';
 
 const LIVE_IN_DB = ['active', 'trialing'];

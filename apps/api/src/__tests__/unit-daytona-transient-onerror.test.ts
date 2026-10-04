@@ -36,12 +36,12 @@ let isGitOperationError: (err: unknown) => err is { kind: string };
 
 beforeAll(async () => {
   ({ isDaytonaTransientProviderError, primeDaytonaTransientClassifier } = await import(
-    '../shared/daytona-transient'
+    '../services/sandboxes/daytona/transient'
   ));
   ({ isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } = await import(
-    '../shared/daytona-rate-limit'
+    '../services/sandboxes/daytona/rate-limit'
   ));
-  ({ isPlatinumSandboxNotRunningError } = await import('../shared/platinum'));
+  ({ isPlatinumSandboxNotRunningError } = await import('../services/sandboxes/platinum/client'));
   ({ isGitOperationError } = await import('../projects/git/mirror'));
   await primeDaytonaTransientClassifier();
   await primeDaytonaRateLimitClassifier();
@@ -59,7 +59,7 @@ beforeAll(async () => {
 // proves the GLOBAL classification in `app.onError` downgrades an unguarded
 // transient Daytona gateway failure to a retryable 503 + Retry-After WITHOUT
 // paging Sentry — mirroring the Platinum / git-timeout / request-deadline
-// patterns. See shared/daytona-transient.ts + index.ts onError.
+// patterns. See services/sandboxes/daytona/transient.ts + index.ts onError.
 
 /**
  * A faithful reproduction of the production `app.onError` classification chain
@@ -188,7 +188,7 @@ describe('app.onError Daytona transient-gateway classification', () => {
 
   it('does NOT swallow a DaytonaRateLimitError (429 — owned by isDaytonaRateLimitError)', async () => {
     // The 429 throttler is owned by the sibling classifier
-    // `isDaytonaRateLimitError` (shared/daytona-rate-limit.ts, PR #5167). It
+    // `isDaytonaRateLimitError` (services/sandboxes/daytona/rate-limit.ts, PR #5167). It
     // is NOT matched by `isDaytonaTransientProviderError` — when #5167 lands,
     // its branch fires first and downgrades the 429 to 503 with its own
     // message. Without #5167, the 429 must fall through to the generic
@@ -239,7 +239,7 @@ describe('app.onError Daytona transient-gateway classification', () => {
     // branch accidentally swallowing a Platinum not-running error.)
     const { app, captured } = makeClassifyingOnError();
     app.get('/v1/probe', async () => {
-      const { PlatinumSandboxNotRunningError } = await import('../shared/platinum');
+      const { PlatinumSandboxNotRunningError } = await import('../services/sandboxes/platinum/client');
       throw new PlatinumSandboxNotRunningError();
     });
     const res = await app.request('/v1/probe');

@@ -35,7 +35,7 @@ import {
 import { legacyRuntimePaths } from './legacy-runtime-rest';
 import { sendQuickQueueControl } from './quick-queue-control';
 import { clearTurnStopRequest, markTurnStopRequested } from '../session-turn-ledger';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { SessionLifecycleCommandRow, PromptOverridesWire, PromptPartWire } from './store';
 import { type PlacementTipMessage, parsePlacementTip } from './forwarded-placement';
 import { newestWireIdTime } from '../wire-message-id';

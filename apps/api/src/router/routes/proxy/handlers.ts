@@ -8,8 +8,8 @@ import {
   extractUsage,
   settleStreamUsage,
 } from '../../services/llm';
-import { resolveActorFromRequest, type ActorContext } from '../../../shared/actor-context';
-import { assertSafeEgressUrl, UnsafeEgressError } from '../../../shared/ssrf-guard';
+import { resolveActorFromRequest, type ActorContext } from '../../actor-context';
+import { assertSafeEgressUrl, UnsafeEgressError } from '../../../lib/ssrf-guard';
 import type { ToolCreditReservation } from './app';
 import {
   refundLlmReservation,

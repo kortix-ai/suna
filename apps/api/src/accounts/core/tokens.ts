@@ -2,9 +2,9 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { accountRolesForUser } from '../../iam/read-models';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveAccountId } from '../resolve-account';
 import {
   PatPolicyError,
   createAccountToken,
@@ -15,7 +15,7 @@ import {
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
@@ -28,7 +28,7 @@ import {
   resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -350,7 +350,7 @@ accountsRouter.openapi(
   const userId = c.get('userId') as string;
   const tokenId = c.req.param('tokenId');
   // A non-UUID id would reach the uuid-typed `account_tokens.token_id` query
-  // and surface as a 500 `22P02` (shared/validate.ts). A client-input error is
+  // and surface as a 500 `22P02` (lib/validate.ts). A client-input error is
   // answered as one, before any account or token lookup runs.
   if (!isUuid(tokenId)) {
     return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);

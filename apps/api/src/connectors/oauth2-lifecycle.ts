@@ -7,7 +7,7 @@ import {
   randomUUID,
 } from 'node:crypto';
 import { CompactSign } from 'jose';
-import { safeEgressFetch } from '../shared/ssrf-guard';
+import { safeEgressFetch } from '../lib/ssrf-guard';
 
 const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';

@@ -28,7 +28,7 @@ let saveCalls: Array<Record<string, unknown>> = [];
 let saveError: Error | null = null;
 let saveResult: 'stored' | 'ignored' = 'stored';
 
-mock.module('../../../shared/db', () => ({
+mock.module('../../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

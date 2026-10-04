@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realCrypto from '../shared/crypto';
+import * as realCrypto from '../lib/crypto';
 import { Hono } from 'hono';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
-import * as realAuthAudit from '../shared/auth-audit';
+import * as realAuthAudit from '../services/audit/auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../iam/sso-sync';
 
 let secretKeyValidations: string[] = [];
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   // Spread the real module: mock.module replaces it WHOLESALE, so every
   // export that a transitively imported module uses must stay present.
   ...realCrypto,
@@ -38,12 +38,12 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => ({ isValid: false, error: 'invalid' }),
 }));
 
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => ({ ok: false }),
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       getUser: async () => ({ data: { user: null }, error: { message: 'invalid' } }),
@@ -54,7 +54,7 @@ mock.module('../shared/supabase', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ accountId }: { accountId?: string }) =>
     accountId === 'acct-1',
@@ -66,7 +66,7 @@ mock.module('../shared/preview-ownership', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/auth-audit', () => ({
+mock.module('../services/audit/auth-audit', () => ({
   ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},

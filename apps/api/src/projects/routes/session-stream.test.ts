@@ -41,7 +41,7 @@ let daemonAttach: () => Promise<
 >;
 let attachCalls: Array<{ since: number | null; epoch: string | null }> = [];
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({

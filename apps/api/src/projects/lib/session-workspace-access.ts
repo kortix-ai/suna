@@ -2,7 +2,7 @@ import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';

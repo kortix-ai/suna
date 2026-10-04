@@ -15,7 +15,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
@@ -29,8 +29,8 @@ import {
   requestAuditContext,
   serializeSession,
 } from '../lib/serializers';
-import { isUuid } from '../../shared/validate';
-import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../lib/validate';
+import { readJsonObject } from '../../lib/http-body';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/sessions';

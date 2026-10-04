@@ -3,7 +3,7 @@ import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveAgentRunAttribution, resolveProjectAutomationActor } from '../session-lifecycle';
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';

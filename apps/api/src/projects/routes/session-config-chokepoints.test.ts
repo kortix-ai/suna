@@ -127,7 +127,7 @@ describe('the reload route still protects a running turn', () => {
     expect(RELOAD).toContain("result.reason === 'session is mid-turn'");
     expect(RELOAD).toContain("result.reason === 'could not confirm the session is idle'");
     expect(RELOAD).toContain("code: 'SESSION_BUSY'");
-    // `readJsonObject` (shared/http-body.ts, main #7650) never returns null,
+    // `readJsonObject` (lib/http-body.ts, main #7650) never returns null,
     // so the route reads `body.force` without the optional chain.
     expect(RELOAD).toContain('force: body.force === true');
   });

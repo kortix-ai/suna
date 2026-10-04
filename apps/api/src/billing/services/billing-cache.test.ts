@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 /**
  * The single account-billing cache (billing-cache.ts). It replaced two caches
  * over the same credit_accounts row — a 30s tier cache in entitlements.ts and a
- * 60s limit cache in shared/account-limits.ts — which is why this file pins the
+ * 60s limit cache in billing/account-limits.ts — which is why this file pins the
  * three properties everything else now depends on:
  *   1. a repeat read inside the TTL does not touch the database;
  *   2. invalidation (per-account and global) makes the next read live;

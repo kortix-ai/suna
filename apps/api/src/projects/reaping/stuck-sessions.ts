@@ -30,10 +30,10 @@
  * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
  */
 
-import { qualifiedColumn } from '../../shared/sql-qualified-column';
+import { qualifiedColumn } from '../../lib/sql-qualified-column';
 import { and, asc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { config } from '../../lib/config';

@@ -15,7 +15,7 @@
 import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, asc, eq, lt } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import type { GitTriggerSpec } from '../triggers';
 import {
   MONITOR_PROMPT_PREAMBLE,

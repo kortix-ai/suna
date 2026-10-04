@@ -1,4 +1,4 @@
-import { resolveScopedAccountId } from '../shared/resolve-account';
+import { resolveScopedAccountId } from '../accounts/resolve-account';
 import { assertAuthorized } from '../iam/authorize';
 import { actorOf } from '../iam/actor';
 import { ACCOUNT_ACTIONS } from '../iam/actions';

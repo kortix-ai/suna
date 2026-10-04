@@ -184,7 +184,7 @@ describe('a sandbox provider delivery names the provider in the request audit', 
   // caller. Only a delivery whose signature verified may be attributed to the
   // provider; a forged one stays anonymous and is recorded as denied.
   const { runWithContext } = require('../../lib/request-context');
-  const { attachInboundAuditScope } = require('../../shared/audit-scope');
+  const { attachInboundAuditScope } = require('../../services/audit/audit-scope');
   const secret = 'whsec_plat';
 
   async function principalAfter(sig: string) {

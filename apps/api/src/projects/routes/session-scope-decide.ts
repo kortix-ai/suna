@@ -15,8 +15,8 @@ import { projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { db } from '../../shared/db';
-import { readJsonObject } from '../../shared/http-body';
+import { db } from '../../lib/db';
+import { readJsonObject } from '../../lib/http-body';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import {
   assertProjectCapability,

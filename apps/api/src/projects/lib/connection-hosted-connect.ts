@@ -9,7 +9,7 @@ import {
 import { connectedAsOf, relabelToIdentity, resolveConnectedAs } from '../../connectors/connection-identity';
 import { composioConnectionMetadata } from '../../connectors/db-deps';
 import { finalizePipedreamConnectionAuthorization, pipedreamConnectUrl } from '../../connectors/pipedream';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 type Connection = NonNullable<Awaited<ReturnType<typeof import('./connection-mutation').loadMutableConnection>>>['connection'];
 

@@ -15,7 +15,7 @@ function makeChain(result: unknown[]): any {
   return chain;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain([tenantRow]),
     insert: () => makeChain([]),

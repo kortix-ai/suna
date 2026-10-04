@@ -13,7 +13,7 @@
 
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { recordAuditEvent } from '../shared/audit';
+import { recordAuditEvent } from '../services/audit/audit';
 import {
   IMPERSONATION_ACTION_ACTION,
   IMPERSONATION_HEADER,
@@ -22,8 +22,8 @@ import {
   loadImpersonationGrant,
   setImpersonationContext,
   type ImpersonationDenialReason,
-} from '../shared/impersonation';
-import { isPlatformAdmin } from '../shared/platform-roles';
+} from '../iam/impersonation';
+import { isPlatformAdmin } from '../iam/platform-roles';
 import { setContextField } from '../lib/request-context';
 
 /**

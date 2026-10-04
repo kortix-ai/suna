@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
-import { exponentialBackoffMs } from '../../shared/backoff';
+import { exponentialBackoffMs } from '../../lib/backoff';
 
 /**
  * The in-box script ships as a sidecar file, not a template literal: bash is

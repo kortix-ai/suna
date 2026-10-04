@@ -23,7 +23,7 @@
  *     the file sets env before importing config, use `const real = await
  *     import('../foo')` placed at the stub instead.
  *   - Not every module is safe to import for real. `../config` calls
- *     process.exit(1) on validation failure and `shared/db` builds a live
+ *     process.exit(1) on validation failure and `lib/db` builds a live
  *     handle, so those need per-site judgment rather than a blanket spread.
  *
  * Usage (from apps/api):  bun scripts/find-stub-export-gaps.ts .

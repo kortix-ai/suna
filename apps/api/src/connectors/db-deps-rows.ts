@@ -13,7 +13,7 @@ import {
   loadTeamsInstall,
 } from '../channels/install-store';
 import { resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   connectionIsEffectiveProjectDefault,
   credentialExists,

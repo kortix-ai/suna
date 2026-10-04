@@ -11,8 +11,8 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { validateSecretKey } from '../../repositories/api-keys';
-import { isKortixToken } from '../../shared/crypto';
-import { getSupabase } from '../../shared/supabase';
+import { isKortixToken } from '../../lib/crypto';
+import { getSupabase } from '../../lib/supabase';
 import { makeOpenApiApp, json, auth, ErrorSchema } from '../../openapi';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';

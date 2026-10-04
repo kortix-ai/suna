@@ -1,6 +1,6 @@
 import { and, eq, gt, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { chatPendingAuthMessages } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { respondViaUrl } from './util';
 import type { SlackEnvelope, SlackEvent } from './types';
 import { logger } from '../../lib/logger';

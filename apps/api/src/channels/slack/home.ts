@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { chatInstalls, chatThreads, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { publishHomeView } from '../slack-api';
 import { config } from '../../lib/config';

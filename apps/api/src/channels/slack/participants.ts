@@ -4,7 +4,7 @@ import {
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { config } from '../../lib/config';
 import { loadSlackTokenForProject } from '../install-store';
 import { postEphemeral } from '../slack-api';

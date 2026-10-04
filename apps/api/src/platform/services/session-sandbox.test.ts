@@ -146,7 +146,7 @@ mock.module('../../lib/config', () => ({
   config: testConfig,
 }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     insert: (table: unknown) => ({
       values: (v: Record<string, unknown>) => {
@@ -387,7 +387,7 @@ mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: (_metadata: unknown) => gatewayFlag,
 }));
 
-mock.module('../../shared/session-failure-notifier', () => ({
+mock.module('../../services/sessions/session-failure-notifier', () => ({
   notifySessionProvisioningFailed: async () => {},
 }));
 

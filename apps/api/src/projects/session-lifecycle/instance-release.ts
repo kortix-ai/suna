@@ -9,7 +9,7 @@
  */
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { type CommandLease, ownedByLease } from './command-lease';
 
 /**

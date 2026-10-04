@@ -17,8 +17,8 @@
  * (JIT membership, group sync); it only stops matching anything outside it.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { isUuid } from '../shared/validate';
+import { db } from '../lib/db';
+import { isUuid } from '../lib/validate';
 
 /**
  * SQL expression: the Supabase `sso_providers` id an Auth user row signed in

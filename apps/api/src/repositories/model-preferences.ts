@@ -1,6 +1,6 @@
 import { accountModelPreferences, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 // Persistent store for account-scoped default model preferences. Drives the
 // server-side resolution of the synthetic `auto` model in the LLM gateway:

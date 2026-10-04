@@ -33,7 +33,7 @@ function makeChain(): any {
   return chain;
 }
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => makeChain(),
     insert: () => makeChain(),

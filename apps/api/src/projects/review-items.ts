@@ -11,7 +11,7 @@
 import { changeRequests, connectorCalls, reviewItems } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { captureException } from '../lib/sentry';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import { changeRequestToReviewItem, connectorCallToReviewItem } from './review-adapters';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;

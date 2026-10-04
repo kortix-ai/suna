@@ -10,7 +10,7 @@ function emptyQuery(): unknown {
   });
   return chain;
 }
-mock.module('../shared/db', () => ({ db: emptyQuery() }));
+mock.module('../lib/db', () => ({ db: emptyQuery() }));
 // The cross-replica claim is its own DB suite (integration-snapshot-build-claim).
 let peerHolds = false;
 let peerFinishes = true;

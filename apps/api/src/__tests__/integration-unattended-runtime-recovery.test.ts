@@ -12,7 +12,7 @@ import {
   RECOVERY_MIN_GAP_MS,
   claimRecoveryAttempt,
 } from '../projects/session-lifecycle/unattended-runtime-recovery';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `unattended-recovery-${SANDBOX_ID}`;

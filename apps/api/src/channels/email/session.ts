@@ -15,7 +15,7 @@ import {
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
 import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';

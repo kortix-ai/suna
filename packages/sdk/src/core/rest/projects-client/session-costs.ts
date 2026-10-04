@@ -116,7 +116,7 @@ export interface SessionCostsPage {
 
 /**
  * Shared half-open [from, to) date window, mirroring `CostWindow` /
- * `parseCostWindow` on the API (`apps/api/src/shared/cost-window.ts`). Both
+ * `parseCostWindow` on the API (`apps/api/src/services/usage/cost-window.ts`). Both
  * bounds are ISO-8601 UTC instants. Omitting both defaults server-side to the
  * trailing 30 days — the client never guesses that default itself.
  */
@@ -201,7 +201,7 @@ export async function getSessionCostRecord(
 
 // ── Project rollup — GET /usage/cost-by-project ────────────────────────────
 // Mirrors `ProjectCostRow` / `ProjectCostPage` in
-// `apps/api/src/shared/cost-rollups.ts` field for field. There is no
+// `apps/api/src/services/usage/cost-rollups.ts` field for field. There is no
 // `unassigned` field on this response — compute/LLM spend the API cannot
 // attribute to any project is folded into the account-wide totals returned
 // by `getCostSummary` below, never surfaced as a synthetic row here.
@@ -255,7 +255,7 @@ export async function listCostByProject(
 
 // ── Spend summary — GET /usage/cost-summary ─────────────────────────────────
 // Mirrors `CostSummaryTotals` / `CostSeriesPoint` / `CostModelRow` /
-// `CostSummary` in `apps/api/src/shared/cost-rollups.ts` field for field.
+// `CostSummary` in `apps/api/src/services/usage/cost-rollups.ts` field for field.
 
 export interface CostSummaryTotals {
   llm_cost: number;
@@ -386,7 +386,7 @@ export function costExportUrl(
 export interface CostExportResult {
   blob: Blob;
   /** Parsed `x-kortix-row-cap` response header — `CSV_ROW_CAP` in
-   *  `apps/api/src/shared/cost-csv.ts` — or `null` when the header is absent
+   *  `apps/api/src/services/usage/cost-csv.ts` — or `null` when the header is absent
    *  or unparseable. Both CSV export routes always set it, but the header is
    *  not part of either route's JSON response schema, so a caller needing to
    *  warn "your finance export was capped at N rows" can only get this

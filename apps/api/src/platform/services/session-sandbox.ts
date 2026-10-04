@@ -16,7 +16,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import {
   patchedSandboxMetadata,
   transitionSandbox,
@@ -24,7 +24,7 @@ import {
 } from '../../projects/session-lifecycle/status-transitions';
 import { signalSessionRuntimeActive } from '../../projects/session-lifecycle/runtime-active-signal';
 import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
-import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
+import { notifySessionProvisioningFailed } from '../../services/sessions/session-failure-notifier';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
@@ -70,7 +70,7 @@ import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
-import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
+import { withTimeout, configuredTimeoutMs } from '../../lib/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';

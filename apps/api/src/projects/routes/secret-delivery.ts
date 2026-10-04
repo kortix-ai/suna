@@ -2,8 +2,8 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
-import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
-import { db } from '../../shared/db';
+import { inferAuditSource, runAuditedTransaction } from '../../services/audit/audit';
+import { db } from '../../lib/db';
 import { isValidIdentifier } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
@@ -21,7 +21,7 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { isSystemProjectSecretName, loadSecretViewsForUser } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
+import { readJsonObject } from '../../lib/http-body';
 import {
   SecretWriteResultSchema,
   type SecretDeliverySync,

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { chatThreadParticipants } from '@kortix/db';
 import { config } from '../../lib/config';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { chatUser, resolveProjectChatActor } from '../core/identity';
 import { claimFinalize, deleteTurn, finalizeTurn, loadTurn } from './turn';

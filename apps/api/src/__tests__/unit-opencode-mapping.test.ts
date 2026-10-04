@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 
 import { projectSessions } from '@kortix/db';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 
 const dbUpdates: Array<Record<string, unknown>> = [];
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({
@@ -29,7 +29,7 @@ mock.module('../sandbox-proxy/backend', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   resolvePreviewUserContext: async () => null,
   // Not exercised by this suite — stub so the real module's shape stays

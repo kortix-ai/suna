@@ -7,7 +7,7 @@
 // continue_session command (drained with retry/backoff, dead-lettered loudly),
 // while a dead/failed session still falls through to the fresh-create path.
 //
-// Mocks `../session-lifecycle`, `../../shared/db`, and `../../lib/config` via
+// Mocks `../session-lifecycle`, `../../lib/db`, and `../../lib/config` via
 // `mock.module` — process-global in bun:test, so run this file in its own
 // `bun test <file>` invocation (as CI does), same caveat as
 // ../sandbox-reaper.test.ts.
@@ -28,7 +28,7 @@ mock.module('../../lib/config', () => ({
   getToolCost: () => 0,
 }));
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: false,
   db: {
     select: () => ({

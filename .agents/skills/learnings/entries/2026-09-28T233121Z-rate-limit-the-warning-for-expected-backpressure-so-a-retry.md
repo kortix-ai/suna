@@ -12,7 +12,7 @@ retry attempt. A retired warning's replacement text is a NEW log pattern, so it
 starts a fresh baseline and reads as a spike even when nothing got worse.
 
 **Trigger surface:** Any change to `AuditQueue.write()`'s contention branch
-(`apps/api/src/shared/audit-queue.ts`), or any retry/backoff loop that calls a
+(`apps/api/src/services/audit/audit-queue.ts`), or any retry/backoff loop that calls a
 warn/error hook per attempt.
 
 **Incident:** 2026-09-28 prod. PR #7805 replaced the throttled
@@ -25,6 +25,6 @@ baseline, and the new pattern was filed as a warn-log spike (KRTX-614). Fixed
 by throttling the contention warning to one line per 60 s, first occurrence
 always reported, `stats().contended` still counting every requeued row.
 
-**Enforcement:** `apps/api/src/shared/audit-queue.test.ts` →
+**Enforcement:** `apps/api/src/services/audit/audit-queue.test.ts` →
 `contention warnings are rate-limited to one per interval, without losing the
 accounting`, which sees five warnings without the throttle and one with it.

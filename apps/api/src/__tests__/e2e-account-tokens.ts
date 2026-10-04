@@ -15,11 +15,11 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 import {
   generateAccountTokenPair,
   hashSecretKey,
-} from '../shared/crypto';
+} from '../lib/crypto';
 
 const API_BASE = process.env.KORTIX_API_URL ?? 'http://localhost:8008';
 

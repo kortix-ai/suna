@@ -8,7 +8,7 @@ let rows: Array<Record<string, unknown>> = [];
 let selects = 0;
 const audits: Array<Record<string, unknown>> = [];
 
-mock.module('../shared/db', () => ({
+mock.module('../lib/db', () => ({
   db: {
     select: () => {
       selects += 1;
@@ -16,7 +16,7 @@ mock.module('../shared/db', () => ({
     },
   },
 }));
-mock.module('../shared/audit', () => ({
+mock.module('../services/audit/audit', () => ({
   recordAuditEvent: async (event: Record<string, unknown>) => {
     audits.push(event);
   },

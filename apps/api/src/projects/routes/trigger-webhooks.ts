@@ -1,5 +1,5 @@
 /** Inbound trigger webhooks: `POST /v1/webhooks/projects/:projectId/:slug` fires a webhook trigger. */
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { getProjectSecretValueForConsumer } from '../secrets';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
@@ -11,7 +11,7 @@ import { errors, json } from '../../openapi';
 import { TriggerFireResultSchema, projectWebhooksApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
-import { isUuid } from '../../shared/validate';
+import { isUuid } from '../../lib/validate';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
@@ -20,8 +20,8 @@ import {
 import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
-} from '../../shared/rate-limit';
-import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+} from '../../middleware/rate-limit';
+import { bindIntegrationPrincipal } from '../../services/audit/audit-scope';
 export function registerTriggerWebhooksRoutes(): void {
   projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
 

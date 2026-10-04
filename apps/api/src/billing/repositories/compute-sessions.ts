@@ -1,6 +1,6 @@
 import { sandboxComputeSessions } from '@kortix/db';
 import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 export interface SandboxSpec {
   cpuCores: number;

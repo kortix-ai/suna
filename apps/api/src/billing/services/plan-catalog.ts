@@ -9,7 +9,7 @@
  * validation). Everything here is static data plus total functions over it.
  *
  * PARITY CONTRACT. Every number below is transcribed from `TIERS` in `tiers.ts`
- * and the legacy multiplier table in `shared/account-limits.ts`. It is a second
+ * and the legacy multiplier table in `billing/account-limits.ts`. It is a second
  * spelling of today's behavior, NOT a redefinition of it.
  * `src/__tests__/unit-plan-catalog-parity.test.ts` asserts the two agree for all
  * 16 keys and fails the build if they ever drift.
@@ -71,7 +71,7 @@ export interface PlanRecord {
   limits: {
     /**
      * LLM router rate multiplier, transcribed from `tierMultiplier` in
-     * `shared/account-limits.ts`. NOTE: free/none are 0, not 1 — a 0 multiplier
+     * `billing/account-limits.ts`. NOTE: free/none are 0, not 1 — a 0 multiplier
      * selects the FREE requests-per-minute budget instead of paid × multiplier.
      */
     llmRateMultiplier: number;

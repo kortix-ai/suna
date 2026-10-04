@@ -10,7 +10,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 
 const SANDBOX_ID = 'sandbox-xyz';
 let allowedAccounts = new Set<string>(['acct-owner']);
@@ -18,8 +18,8 @@ let allowedUsers = new Set<string>(['user-owner', 'sa-owner', 'pat-user-owner', 
 let mockSupabaseUser: { id: string } | null = null;
 let sandboxProjects = new Map<string, string>();
 
-const actualCrypto = await import('../shared/crypto');
-mock.module('../shared/crypto', () => ({
+const actualCrypto = await import('../lib/crypto');
+mock.module('../lib/crypto', () => ({
   ...actualCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
@@ -91,7 +91,7 @@ mock.module('../oauth/access-token', () => ({
   },
 }));
 
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async (t: string) => {
     if (t === 'jwt-owner') return { ok: true, userId: 'user-owner' };
@@ -107,7 +107,7 @@ mock.module('../shared/jwt-verify', () => ({
   },
 }));
 
-mock.module('../shared/supabase', () => ({
+mock.module('../lib/supabase', () => ({
   getSupabase: () => ({
     auth: {
       getUser: async () => ({
@@ -121,7 +121,7 @@ mock.module('../shared/supabase', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ userId, accountId }: { userId?: string; accountId?: string }) => {
     if (accountId && allowedAccounts.has(accountId)) return true;
@@ -315,7 +315,7 @@ describe('a proven preview credential names its caller in the request audit', ()
   // moment a token is proven — BEFORE the sandbox-ownership check, so a caller
   // refused on someone else's sandbox is still attributed.
   const { runWithContext } = require('../lib/request-context');
-  const { attachInboundAuditScope } = require('../shared/audit-scope');
+  const { attachInboundAuditScope } = require('../services/audit/audit-scope');
 
   async function principalAfter(token: string) {
     return runWithContext('GET', '/', async () => {

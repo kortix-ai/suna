@@ -1,14 +1,14 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as crypto from '../shared/crypto';
-import * as ownership from '../shared/preview-ownership';
-import * as audit from '../shared/auth-audit';
+import * as crypto from '../lib/crypto';
+import * as ownership from '../services/sessions/preview-ownership';
+import * as audit from '../services/audit/auth-audit';
 import * as sentry from '../lib/sentry';
 import * as context from '../lib/request-context';
 import * as sso from '../iam/sso-sync';
 
-mock.module('../shared/crypto', () => ({
+mock.module('../lib/crypto', () => ({
   ...crypto,
   isServiceAccountToken: (token: string) => token.startsWith('kortix_sa_'),
   isAccountToken: (token: string) => token.startsWith('kortix_pat_'),
@@ -36,7 +36,7 @@ mock.module('../oauth/access-token', () => ({
     ? { isValid: true, userId: 'user-1', accountId: 'account-1', clientId: 'client-1', scopes: ['kortix'] }
     : { isValid: false, error: 'Invalid OAuth access token' },
 }));
-mock.module('../shared/jwt-verify', () => ({
+mock.module('../auth/jwt-verify', () => ({
   verifySupabaseJwt: async (token: string) => token === 'jwt-valid'
     ? { ok: true, userId: 'user-1', email: 'user@example.test', payload: {} }
     : token === 'jwt-aal2'
@@ -44,8 +44,8 @@ mock.module('../shared/jwt-verify', () => ({
       : { ok: false, reason: 'invalid-signature' },
   decodeSupabaseJwtPayload: () => null,
 }));
-mock.module('../shared/preview-ownership', () => ({ ...ownership, canAccessPreviewSandbox: async () => true }));
-mock.module('../shared/auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+mock.module('../services/sessions/preview-ownership', () => ({ ...ownership, canAccessPreviewSandbox: async () => true }));
+mock.module('../services/audit/auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
 mock.module('../lib/sentry', () => ({ ...sentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...context, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...sso, syncSsoMembership: async () => {} }));

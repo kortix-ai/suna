@@ -16,7 +16,7 @@
  * (`isTurnStartEnvSync`), because compaction carries no prompt and no agent.
  */
 
-import { isOpencodePort } from '../shared/opencode-ports';
+import { isOpencodePort } from '../services/sessions/opencode-ports';
 import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../sandbox-proxy/runtime-request';
 
 export { stripInBoxProxyPrefix };

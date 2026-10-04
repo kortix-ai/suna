@@ -15,7 +15,7 @@ function chain(rows: () => unknown[]): any {
   c.then = (resolve: (r: unknown[]) => unknown) => Promise.resolve(resolve(rows()));
   return c;
 }
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   db: {
     select: () => chain(() => (installed ? [{ id: 'install-1' }] : [])),
     insert: () => ({

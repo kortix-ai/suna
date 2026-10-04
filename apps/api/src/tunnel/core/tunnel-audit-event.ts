@@ -1,5 +1,5 @@
 import type { TunnelCapability } from 'agent-tunnel';
-import type { AuditActorType, AuditEventInput } from '../../shared/audit';
+import type { AuditActorType, AuditEventInput } from '../../services/audit/audit';
 
 interface TunnelCentralAuditInput {
   tunnelId: string;

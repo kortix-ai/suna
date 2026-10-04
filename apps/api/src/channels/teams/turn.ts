@@ -1,8 +1,8 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
-import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
+import { registerSessionFailureNotifier } from '../../services/sessions/session-failure-notifier';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
-import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
+import { db } from '../../lib/db';
+import { runWorkerTick } from '../../services/audit/audit-scope';
 import { config } from '../../lib/config';
 import { classifyTurnError, TEAMS_TURN_ERROR_COMMANDS, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';

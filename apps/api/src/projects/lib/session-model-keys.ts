@@ -22,7 +22,7 @@ import { and, eq } from 'drizzle-orm';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { providerKeyOf, usableProviderKeys } from '../../secrets/provider-key-selection';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { resolveSessionPersonalOwner, type PersonalSessionVisibility } from './personal-resources';
 
 /** Does the session have a selection for the provider? An empty one counts. */

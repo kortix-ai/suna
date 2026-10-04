@@ -8,7 +8,7 @@ import type { SessionStartResult } from '@kortix/api-contract';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { type SandboxStatus } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { ensureOpencodeSessionPin, sandboxOpencodeEndpoint, type EnsureResult } from '../opencode-mapping';
 import { runtimeCapabilities } from '../session-lifecycle/runtime-fetch';
 import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';

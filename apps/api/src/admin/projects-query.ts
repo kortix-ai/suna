@@ -12,7 +12,7 @@
  * dropping it would silently widen "one account" to "every account".
  */
 
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 
 /** Members of the `kortix.project_status` enum (packages/db/src/schema/kortix.ts). */
 export const PROJECT_STATUS_VALUES = ['active', 'archived'] as const;

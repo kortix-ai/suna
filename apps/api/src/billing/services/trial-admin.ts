@@ -8,8 +8,8 @@
 
 import { creditAccounts } from '@kortix/db';
 import { and, eq, gt, lte } from 'drizzle-orm';
-import { db } from '../../shared/db';
-import { clearAccountLimitCache } from '../../shared/account-limits';
+import { db } from '../../lib/db';
+import { clearAccountLimitCache } from '../account-limits';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyAdminOverride } from './account-write-owner';
 import { TRIAL_STATUS } from './effective-tier';

@@ -26,7 +26,7 @@ const previousKey = process.env.COMPOSIO_API_KEY;
 process.env.COMPOSIO_API_KEY = 'test-composio-key';
 const { setComposioRuntimeForTest } = await import('../connectors/composio');
 const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
-const { db } = await import('../shared/db');
+const { db } = await import('../lib/db');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();

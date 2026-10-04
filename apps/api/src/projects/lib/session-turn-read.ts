@@ -18,7 +18,7 @@
 
 import { sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-recovery';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
 import { ABORT_END_ERROR_NAMES, isRequestedStopName } from '../session-turn-ledger';

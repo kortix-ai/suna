@@ -15,8 +15,8 @@
  */
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountGroupMembers, accounts, iamRoles, roleAssignments } from '@kortix/db';
-import { db } from '../shared/db';
-import { ttlMemo } from '../shared/ttl-memo';
+import { db } from '../lib/db';
+import { ttlMemo } from '../lib/ttl-memo';
 
 /** The account roles oversight reaches. Same set as `isImplicitManager`. */
 export const OVERSIGHT_ACCOUNT_ROLES = ['owner', 'admin'] as const;

@@ -16,9 +16,9 @@ import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq, and, desc, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
-import { hashSecretKeyAsync } from '../shared/token-hash';
+import { db } from '../lib/db';
+import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../lib/crypto';
+import { hashSecretKeyAsync } from '../auth/token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../lib/config';
 import {
@@ -33,13 +33,13 @@ import {
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
 import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
-import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { requestClientKey } from '../shared/client-ip';
+import { TokenBucketRateLimiter } from '../middleware/rate-limit';
+import { requestClientKey } from '../lib/client-ip';
 import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../lib/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
-import { resolveAccountId } from '../shared/resolve-account';
+import { resolveAccountId } from '../accounts/resolve-account';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -1122,7 +1122,7 @@ oauthApp.openapi(
     const userId = (c as any).get('oauthUserId') as string;
     const accountId = (c as any).get('oauthAccountId') as string;
 
-    const { getSupabase } = await import('../shared/supabase');
+    const { getSupabase } = await import('../lib/supabase');
     const {
       data: { user },
     } = await getSupabase().auth.admin.getUserById(userId);

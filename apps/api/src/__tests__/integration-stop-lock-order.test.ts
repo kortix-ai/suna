@@ -14,7 +14,7 @@ import { accounts, projects, projectSessions, sessionSandboxes } from '@kortix/d
 import { eq, sql } from 'drizzle-orm';
 import { applyStoppedState } from '../projects/reaping/sandbox-state-sync';
 import { transitionRuntime } from '../projects/session-lifecycle/status-transitions';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();

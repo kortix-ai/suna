@@ -1,4 +1,4 @@
-import { APP_EDGE_HEADERS, edgeSecret as sharedEdgeSecret, edgeSignature, verifyEdgeSignedRequest } from '../shared/edge-signature';
+import { APP_EDGE_HEADERS, edgeSecret as sharedEdgeSecret, edgeSignature, verifyEdgeSignedRequest } from '../edge/edge-signature';
 import { resolveAppHost, type ResolvedAppHost } from './hostnames';
 const EDGE_HOST_HEADER = APP_EDGE_HEADERS.host;
 

@@ -25,8 +25,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'b
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
-import * as realPublicShares from '../../shared/session-public-shares';
+import * as realPreviewOwnership from '../../services/sessions/preview-ownership';
+import * as realPublicShares from '../../services/sessions/session-public-shares';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sbx-uuid-1',
@@ -68,7 +68,7 @@ mock.module('../../lib/request-context', () => ({
 // lists exports by hand silently deletes every other one — and the failure lands
 // in whatever unrelated file imports the missing name next. Overriding only what
 // this file needs keeps new exports working by default.
-mock.module('../../shared/preview-ownership', () => ({
+mock.module('../../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => previewAccessAllowed,
   canAccessSandboxSession: async () => sessionAccessAllowed,
@@ -112,7 +112,7 @@ mock.module('../../projects/routes/shared', () => ({
     return Boolean(externalId);
   },
 }));
-mock.module('../../shared/session-public-shares', () => ({
+mock.module('../../services/sessions/session-public-shares', () => ({
   ...realPublicShares,
   resolvePublicShare: async () =>
     shareRow ? { ok: true as const, row: { ...shareRow } } : { ok: false as const, status: 404, error: 'not found' },
@@ -150,7 +150,7 @@ mock.module('../backend', () => ({
 
 const { forwardToSandbox, resolvePreviewWsUpstream } = await import('./preview');
 const { publicShareApp } = await import('./public-share');
-const { KORTIX_USER_CONTEXT_HEADER } = await import('../../shared/kortix-user-context');
+const { KORTIX_USER_CONTEXT_HEADER } = await import('../../services/sessions/kortix-user-context');
 const { __resetPromptDedupe } = await import('../prompt-dedupe');
 
 const ORIGINAL_FETCH = globalThis.fetch;

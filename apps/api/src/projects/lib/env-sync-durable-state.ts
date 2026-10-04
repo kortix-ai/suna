@@ -23,7 +23,7 @@
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 
 const SIGNATURE_KEY = 'envSyncSignature';
 const APPLIED_AT_KEY = 'envSyncAppliedAtMs';

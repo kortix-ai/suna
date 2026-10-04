@@ -20,7 +20,7 @@ import {
 import { openUpstream } from '../../secrets/relay-transport';
 import type { OutboundRequestShape } from '../../secrets/strategy';
 import { StreamSubstituter } from '../../secrets/stream-substitute';
-import { type AuditEventInput, recordAuditEvent } from '../../shared/audit';
+import { type AuditEventInput, recordAuditEvent } from '../../services/audit/audit';
 import {
   RELAY_CLASSIFY_PREFIX_MAX,
   RELAY_EXACT_LENGTH_MAX,

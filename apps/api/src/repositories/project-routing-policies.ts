@@ -6,7 +6,7 @@ import type {
   ProjectRoutingPolicyInput,
   ProjectRoutingRule,
 } from '../llm-gateway/routing/project-policy';
-import { db } from '../shared/db';
+import { db } from '../lib/db';
 
 export interface StoredProjectRoutingPolicy {
   visionModel: string | null;

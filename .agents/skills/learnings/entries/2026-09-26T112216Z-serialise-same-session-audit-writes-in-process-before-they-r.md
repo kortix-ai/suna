@@ -33,7 +33,7 @@ so the second writer waits in memory and then inserts uncontended.
 **Enforcement:** `apps/api/src/shared/audit-session-serial.test.ts` (same session
 serialises, different sessions do not, a timed-out waiter does not wedge the
 queue, every gate is freed) and the `AuditQueue per-session serialization` block
-in `apps/api/src/shared/audit-queue.test.ts`, which fails if a queue flush opens
+in `apps/api/src/services/audit/audit-queue.test.ts`, which fails if a queue flush opens
 a competing insert while another in-process writer holds the session lock.
 Not yet covered: `runAuditedTransaction`'s synchronous insert, and the
 cross-replica race between two API tasks — the latter still needs the database's

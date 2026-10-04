@@ -12,7 +12,7 @@ import {
   resolveCostExport,
 } from './cost-export-button';
 
-/** Builds a CSV in the exact shape `toCsv` emits (`apps/api/src/shared/cost-csv.ts`):
+/** Builds a CSV in the exact shape `toCsv` emits (`apps/api/src/services/usage/cost-csv.ts`):
  *  one header line, then one line per row, joined with CRLF and with no
  *  trailing newline. */
 function csv(...rows: string[]): string {

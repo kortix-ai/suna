@@ -25,7 +25,7 @@ import { HTTPException } from 'hono/http-exception';
 import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
-import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realPreviewOwnership from '../services/sessions/preview-ownership';
 import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ mock.module('../middleware/auth', () => ({
 // Uses field-aware matching: inspects the `select` fields to determine which
 // mock to return (accountId → sandbox table, accountRole → membership table).
 // This is more resilient to query reordering than the old call-counter approach.
-mock.module('../shared/db', () => {
+mock.module('../lib/db', () => {
   return {
     hasDatabase: true,
     db: {
@@ -231,7 +231,7 @@ mock.module('../iam', () => ({
   authorize: async () => ({ allowed: true, reason: 'role' }),
 }));
 
-mock.module('../shared/preview-ownership', () => ({
+mock.module('../services/sessions/preview-ownership', () => ({
   ...realPreviewOwnership,
   // Mirrors the REAL narrowing (connector/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock
@@ -273,7 +273,7 @@ mock.module('../sandbox-proxy/preview-auth', () => ({
 }));
 
 // Daytona SDK mock
-mock.module('../shared/daytona', () => ({
+mock.module('../services/sandboxes/daytona/client', () => ({
   isDaytonaConfigured: () => true,
   archiveDaytonaSandboxById: async () => ({ ok: true }),
   isDaytonaDiskQuotaError: () => false,
@@ -485,7 +485,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import(
-  '../shared/kortix-user-context'
+  '../services/sessions/kortix-user-context'
 );
 const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 const { invalidateSandbox } = await import('../sandbox-proxy/backend');

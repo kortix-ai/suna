@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { TimeoutError, withTimeout } from '../shared/with-timeout';
+import { TimeoutError, withTimeout } from '../lib/with-timeout';
 
 const never = <T>() => new Promise<T>(() => {});
 

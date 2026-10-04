@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { sessionProviderSecretPools } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { PROJECT_ACTIONS } from '../../iam';

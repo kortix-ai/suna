@@ -5,7 +5,7 @@
 // The DB is a lightweight in-memory fake that just records insert() calls, so
 // this runs fully offline. Run this file in its own `bun test <file>`
 // invocation — `mock.module` is process-global and other suites mock the same
-// `../../shared/db` specifier with a different shape (see the same caveat in
+// `../../lib/db` specifier with a different shape (see the same caveat in
 // managed-github-app.test.ts).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
@@ -13,7 +13,7 @@ let inserted: Array<Record<string, unknown>> = [];
 let insertShouldThrow = false;
 let insertDelayMs = 0;
 
-mock.module('../../shared/db', () => ({
+mock.module('../../lib/db', () => ({
   hasDatabase: true,
   db: {
     insert: () => ({

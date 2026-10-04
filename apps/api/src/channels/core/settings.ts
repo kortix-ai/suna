@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls } from '@kortix/db';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
   type ChannelCtx,

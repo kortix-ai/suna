@@ -1,0 +1,520 @@
+/**
+ * Preview proxy ownership gate + user-context resolver.
+ *
+ * Project-sessions on Daytona model:
+ *   - A sandbox lives in `kortix.session_sandboxes`.
+ *   - A user can hit the sandbox if they're a member of the account that owns
+ *     it (account_members.account_id == session_sandboxes.account_id), or if
+ *     they're a platform admin.
+ *
+ * The legacy sandbox-members / scope / role machinery has been removed along
+ * with the rest of the /instances surface.
+ */
+
+import { db } from '../../lib/db';
+import { isPlatformAdmin } from '../../iam/platform-roles';
+import { resolveAccountId } from '../../accounts/resolve-account';
+import {
+  isProjectSessionVisibleTo,
+  isTriggerRunSession,
+  loadSessionGrants,
+  resolveShareSubject,
+} from '../../connectors/share';
+import { authorize } from '../../iam';
+import { actorForUser } from '../../iam/actor';
+import { hasAccountSessionOversight } from '../../iam/session-oversight';
+import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { and, eq, or, sql } from 'drizzle-orm';
+import type { KortixUserContext } from './kortix-user-context';
+import { isUuid } from '../../lib/validate';
+
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+// ─── Session-visibility gate for the daemon/opencode port ────────────────────
+// canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
+// correct for preview web ports, but the daemon port (8000) reverse-proxies a
+// session's OpenCode conversation + its owner's synced secrets — which is
+// governed by SESSION VISIBILITY (private | project | restricted), enforced on
+// the REST routes via loadVisibleSession but historically NOT on this data
+// path. Without this, a same-account member who once had access to a session
+// (so their client captured the sandbox + opencode ids) could keep reading /
+// posting to it via /v1/p/<ext>/8000/session/... after the owner made it
+// private or revoked their grant. Mirror the REST check here. Short TTL keeps
+// the hot path cheap; revocation lags at most one window (matches the existing
+// membership cache trade-off).
+const SESSION_VISIBILITY_TTL_MS = 10_000;
+const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+/** Verdicts in flight, by the cache key. Per process; gone when the read settles. */
+// replica-local: single-flight dedup of one burst of concurrent reads; the
+// entry dies with its promise, so there is no state to share, and another
+// replica re-reading is one redundant query, never a different verdict.
+const sessionVisibilityInFlight = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether `userId` may reach the SESSION behind a sandbox (daemon-port traffic).
+ * Returns true when there is no project_session row for the sandbox (pool /
+ * builder boxes that aren't user sessions) so non-session proxy use is
+ * unaffected — the account-membership gate still applies to those.
+ */
+export async function canAccessSandboxSession(input: {
+  sessionId: string;
+  projectId: string;
+  accountId: string;
+  userId: string;
+  /** The caller's own session when the credential is bound to one, or null.
+   *  REQUIRED — an omitted binding would fail open. */
+  callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding (`callerKortixSessionId(c)`).
+   *  Only the trigger-session manager override reads it — see share.ts. */
+  boundCredentialSessionId: string | null;
+}): Promise<boolean> {
+  // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
+  // shares one `userId` (the wrapper credential), so without it end-user A and
+  // end-user B collide on one entry for the same target session — and the first
+  // `true` would be served to everyone else for the whole TTL, silently
+  // defeating the isolation check below.
+  // boundCredentialSessionId is in the key for the same reason callerSessionId
+  // is: it changes the verdict (it gates the manager override), so two callers
+  // that differ only in it must not share one entry.
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const cached = sessionVisibilityCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+
+  // The cache expires every 10 s, and a page load fires its daemon-port
+  // requests together: without this each one ran the 3 reads below. Same key
+  // as the cache, so a verdict is shared exactly as the cache shares it. A
+  // rejection is never kept.
+  const joined = sessionVisibilityInFlight.get(key);
+  if (joined) return joined;
+  const pending = readSandboxSessionAccess(input, key).finally(() =>
+    sessionVisibilityInFlight.delete(key),
+  );
+  sessionVisibilityInFlight.set(key, pending);
+  return pending;
+}
+
+async function readSandboxSessionAccess(
+  input: Parameters<typeof canAccessSandboxSession>[0],
+  key: string,
+): Promise<boolean> {
+  // Started with the row read below, not after it: neither depends on it, and
+  // this runs on the prompt path where each round trip is a full one.
+  const subjectRead = resolveShareSubject(input.userId);
+  const grantsRead = loadSessionGrants([input.sessionId]);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
+  const [row] = await db
+    .select({
+      visibility: projectSessions.visibility,
+      createdBy: projectSessions.createdBy,
+      origin: projectSessions.origin,
+      metadata: projectSessions.metadata,
+      initiatorType: projectSessions.initiatorType,
+    })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        eq(projectSessions.projectId, input.projectId),
+        eq(projectSessions.accountId, input.accountId),
+      ),
+    )
+    .limit(1);
+
+  let allowed = true;
+  if (row) {
+    const [subject, grantsBySession, managerVerdict] = await Promise.all([
+      subjectRead,
+      grantsRead,
+      isTriggerRunSession(row)
+        ? authorize(
+            actorForUser(input.userId, input.accountId),
+            'project.members.manage',
+            { type: 'project', id: input.projectId },
+          )
+        : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
+    ]);
+    const grants = grantsBySession.get(input.sessionId) ?? [];
+    lastRefusalContext = {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      visibility: row.visibility,
+      origin: row.origin ?? null,
+      sessionOwnedByCaller: row.createdBy === subject.userId,
+      isTriggerSession: isTriggerRunSession(row),
+      canManageProject: managerVerdict.allowed,
+      managerReason: 'reason' in managerVerdict ? String(managerVerdict.reason) : null,
+      sessionGrants: grants.length,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
+    const ownership = {
+      origin: row.origin ?? null,
+      sessionId: input.sessionId,
+      callerSessionId: input.callerSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    };
+    const visibility = row.visibility as 'private' | 'project' | 'restricted';
+    allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+      metadata: row.metadata,
+      initiatorType: row.initiatorType,
+      canManageProject: managerVerdict.allowed,
+    });
+    // Account session oversight — the same rule `loadVisibleSession` applies,
+    // so an admin who may open a session's transcript may also reach its
+    // runtime. Human credentials only.
+    if (
+      !allowed &&
+      input.boundCredentialSessionId === null &&
+      (await hasAccountSessionOversight(input.userId, input.accountId))
+    ) {
+      allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
+        metadata: row.metadata,
+        initiatorType: row.initiatorType,
+        canManageProject: managerVerdict.allowed,
+        accountSessionOversight: true,
+      });
+    }
+  }
+  sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
+  if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);
+  return allowed;
+}
+
+/**
+ * Why the last refusal for this exact caller/session pair said no.
+ *
+ * `canAccessSandboxSession` answers a bare boolean, and its refusal is thrown
+ * as a constant string — `Not authorized to access this session`. In prod that
+ * string appeared 6,970 times in 48 hours from server-side prompt delivery
+ * (`[session-lifecycle] prompt_async threw (will retry)`) with NOTHING to say
+ * which of six branches refused, and the delivery then retried into the same
+ * wall until it dead-lettered as `delivery outcome: pending`.
+ *
+ * Six branches can produce `false` here — the sibling-session gate, ownership,
+ * `project` visibility, a `restricted` grant miss, the trigger-session manager
+ * override, and the plain private default — and from outside they are
+ * indistinguishable. This records the inputs each verdict was made from so the
+ * refusal can name them once, at the throw site, instead of costing an
+ * investigation.
+ *
+ * Bounded and refusal-only: entries are written just for a denial, read once,
+ * and the map is capped, so it cannot grow with traffic.
+ */
+export interface SessionAccessRefusal {
+  sessionId: string;
+  projectId: string;
+  visibility: string;
+  origin: string | null;
+  sessionOwnedByCaller: boolean;
+  isTriggerSession: boolean;
+  canManageProject: boolean;
+  managerReason: string | null;
+  sessionGrants: number;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+}
+
+let lastRefusalContext: SessionAccessRefusal | null = null;
+const refusalContexts = new Map<string, SessionAccessRefusal>();
+const REFUSAL_CONTEXT_MAX = 500;
+
+export function takeSessionAccessRefusal(input: {
+  sessionId: string;
+  userId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+}): SessionAccessRefusal | null {
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const found = refusalContexts.get(key) ?? null;
+  if (refusalContexts.size > REFUSAL_CONTEXT_MAX) refusalContexts.clear();
+  return found;
+}
+
+type CacheEntry = {
+  allowed: boolean;
+  /** Null when access is denied or the caller is anonymous. */
+  payload: Omit<KortixUserContext, 'iat' | 'exp'> | null;
+  expiresAt: number;
+};
+
+const previewContextCache = new Map<string, CacheEntry>();
+
+function cacheKey(previewSandboxId: string, userId: string): string {
+  return `${previewSandboxId}:${userId}`;
+}
+
+/**
+ * Resolve the real session sandbox uuid + owning account/project from a
+ * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
+ * the Daytona-side externalId string.
+ */
+async function resolveSandboxRef(
+  previewSandboxId: string,
+): Promise<{ sandboxId: string; accountId: string; projectId: string } | null> {
+  const columns = {
+    sandboxId: sessionSandboxes.sandboxId,
+    accountId: sessionSandboxes.accountId,
+    projectId: sessionSandboxes.projectId,
+  };
+
+  const idCondition = isUuid(previewSandboxId)
+    ? or(
+        eq(sessionSandboxes.externalId, previewSandboxId),
+        eq(sessionSandboxes.sandboxId, previewSandboxId),
+      )
+    : eq(sessionSandboxes.externalId, previewSandboxId);
+
+  const [row] = await db.select(columns).from(sessionSandboxes).where(idCondition).limit(1);
+  if (row) return row;
+
+  // Case-insensitive fallback — REQUIRED for subdomain previews.
+  //
+  // `external_id` is an uppercase ULID (`sbx_01KYCZ…`), but the subdomain form
+  // `p{port}-{sandboxId}.{host}` carries it in a HOSTNAME, and hostnames are
+  // case-insensitive: the browser lowercases them before the Host header is
+  // ever sent, so the proxy can only ever see `sbx_01kycz…`. An exact `eq`
+  // therefore never matched and every subdomain preview 401'd with
+  // `{"error":"Unauthorized"}`, while the path-based `/v1/p/{id}/{port}` route
+  // — whose id lives in a case-PRESERVING path segment — worked fine. That
+  // asymmetry is what made this look like a token bug rather than a lookup bug.
+  //
+  // The exact match above stays the indexed fast path; this only runs on a miss,
+  // and the result is cached by `getOrCompute`.
+  const [ciRow] = await db
+    .select(columns)
+    .from(sessionSandboxes)
+    .where(sql`lower(${sessionSandboxes.externalId}) = lower(${previewSandboxId})`)
+    .limit(1);
+
+  return ciRow ?? null;
+}
+
+/**
+ * Resolve the project a sandbox belongs to, given the same `previewSandboxId`
+ * form the proxy path carries (uuid or Daytona externalId). Used by the
+ * project-scoped-PAT gate in middleware/auth.ts to decide whether a project
+ * PAT may reach `/v1/p/{sandboxId}/...` — it may, only for a sandbox whose
+ * `session_sandboxes.project_id` matches the token's own project. One indexed
+ * lookup (sandbox_id is the PK; external_id and project_id are both indexed),
+ * so this is cheap enough for the auth hot path. Returns null when the
+ * sandbox row can't be found — callers must treat that as "deny", not
+ * "unscoped ok".
+ */
+export async function resolveSandboxProjectId(previewSandboxId: string): Promise<string | null> {
+  const ref = await resolveSandboxRef(previewSandboxId);
+  return ref?.projectId ?? null;
+}
+
+export interface SandboxOwner {
+  sandboxId: string;
+  accountId: string;
+  projectId: string;
+}
+
+const OWNER_TTL_MS = 5 * 60 * 1000;
+const ownerCache = new Map<string, { value: SandboxOwner; expiresAt: number }>();
+
+/**
+ * The account and project that own a preview sandbox. For the audit log: a
+ * preview request's row belongs in the OWNER's log, whoever made it. Cached
+ * because a preview page load is hundreds of requests, and a sandbox's owner
+ * never changes. Only a found owner is cached.
+ */
+export async function resolveSandboxOwner(previewSandboxId: string): Promise<SandboxOwner | null> {
+  const key = previewSandboxId.toLowerCase();
+  const now = Date.now();
+  const hit = ownerCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.value;
+  const value = await resolveSandboxRef(previewSandboxId);
+  if (value) {
+    ownerCache.set(key, { value, expiresAt: now + OWNER_TTL_MS });
+    if (ownerCache.size > 10_000) {
+      for (const [k, v] of ownerCache) if (v.expiresAt <= now) ownerCache.delete(k);
+    }
+  }
+  return value;
+}
+
+async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Is `userId` actually an agent service account belonging to this account?
+ *
+ * `project_sessions.created_by` is not always a human. A trigger/automation
+ * run attributes its session to the agent's standing-identity service account
+ * (`resolveAgentRunAttribution` -> `ensureAgentServiceAccount`,
+ * session-lifecycle/actor.ts) — a first-class non-human IAM principal that
+ * lives in `service_accounts`, never in `account_members`. Before this check
+ * existed, `isAccountMember` answered false for every one of those ids
+ * unconditionally, so `resolvePreviewUserContext` returned null, the signed
+ * `X-Kortix-User-Context` header was never attached, and the daemon's
+ * transcript-mirror capture (and every other signed OpenCode proxy call
+ * attributed to that session) 401'd on EVERY turn, forever — PROD 76h window:
+ * 23,380 capture failures across 37 projects, 72% of sessions with no saved
+ * transcript. A disabled SA is refused: a revoked/deleted agent identity must
+ * not keep reading a session's transcript.
+ */
+async function isAccountServiceAccount(userId: string, accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.serviceAccountId, userId),
+        eq(serviceAccounts.accountId, accountId),
+        eq(serviceAccounts.status, 'active'),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+type SandboxRef = { sandboxId: string; accountId: string; projectId: string };
+
+async function computeEntry(
+  previewSandboxId: string,
+  userId: string,
+  known?: SandboxRef,
+): Promise<CacheEntry> {
+  const expiresAt = Date.now() + CACHE_TTL_MS;
+
+  // Two independent chains: the sandbox row needs only the id, the admin
+  // verdict needs only the user. They start together and the membership read
+  // starts as soon as the row names the account, so a cold check is 2 round
+  // trips instead of 4. Awaited in the original order: the same error surfaces
+  // first.
+  // A caller that just read the sandbox row (the proxy) passes it, and the
+  // membership read then starts with the admin read: one round trip, not two.
+  const refRead = known ? Promise.resolve(known) : resolveSandboxRef(previewSandboxId);
+  const adminRead = resolveAccountId(userId).then(isPlatformAdmin);
+  adminRead.catch(() => undefined);
+  const ref = await refRead;
+  const memberRead = ref ? isAccountMember(userId, ref.accountId) : null;
+  memberRead?.catch(() => undefined);
+  const platformAdmin = await adminRead;
+
+  if (!ref) {
+    // No sandbox row found. Allow only platform admins so the lookup-by-name
+    // dev path (local bridge etc.) still works for staff debugging.
+    return {
+      allowed: platformAdmin,
+      payload: platformAdmin
+        ? {
+            userId,
+            sandboxId: previewSandboxId,
+            sandboxRole: 'platform_admin',
+            scopes: ['*'],
+          }
+        : null,
+      expiresAt,
+    };
+  }
+
+  const member =
+    platformAdmin ||
+    (await memberRead) ||
+    (await isAccountServiceAccount(userId, ref.accountId));
+  if (!member) {
+    return { allowed: false, payload: null, expiresAt };
+  }
+
+  return {
+    allowed: true,
+    payload: {
+      userId,
+      sandboxId: ref.sandboxId,
+      sandboxRole: platformAdmin ? 'platform_admin' : 'member',
+      scopes: ['*'],
+    },
+    expiresAt,
+  };
+}
+
+/**
+ * Checks in flight, by the cache key. A page load fires its proxied requests
+ * together, so on a cold cache each one used to run the whole check. An entry
+ * lives only as long as its check: a rejection is never kept.
+ */
+// replica-local: single-flight dedup within one process, same contract as the
+// session-visibility in-flight map above — nothing persists past the promise.
+const previewContextInFlight = new Map<string, Promise<CacheEntry>>();
+
+async function getOrCompute(
+  previewSandboxId: string,
+  userId: string,
+  known?: SandboxRef,
+): Promise<CacheEntry> {
+  const key = cacheKey(previewSandboxId, userId);
+  const cached = previewContextCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+  const joined = previewContextInFlight.get(key);
+  if (joined) return joined;
+  const pending: Promise<CacheEntry> = computeEntry(previewSandboxId, userId, known)
+    .then((fresh) => {
+      // An invalidation during the check removed this entry: the verdict goes
+      // to the callers already waiting on it and is not cached.
+      if (previewContextInFlight.get(key) === pending) previewContextCache.set(key, fresh);
+      return fresh;
+    })
+    .finally(() => {
+      if (previewContextInFlight.get(key) === pending) previewContextInFlight.delete(key);
+    });
+  previewContextInFlight.set(key, pending);
+  return pending;
+}
+
+// ─── Public API ─────────────────────────────────────────────────────────────
+
+export async function canAccessPreviewSandbox(input: {
+  previewSandboxId: string;
+  userId?: string;
+  accountId?: string;
+  /** The sandbox row for `previewSandboxId`, when the caller already read it
+   *  in this request. Saves re-reading it; the verdict is the same. */
+  sandbox?: SandboxRef;
+}): Promise<boolean> {
+  if (!input.userId) {
+    if (!input.accountId) return false;
+    const ref = input.sandbox ?? (await resolveSandboxRef(input.previewSandboxId));
+    return !!ref && ref.accountId === input.accountId;
+  }
+  const entry = await getOrCompute(input.previewSandboxId, input.userId, input.sandbox);
+  return entry.allowed;
+}
+
+/**
+ * Payload ready to sign + forward as `X-Kortix-User-Context`. Null when the
+ * caller isn't authenticated or isn't allowed on this sandbox.
+ */
+export async function resolvePreviewUserContext(
+  previewSandboxId: string,
+  userId: string | undefined,
+): Promise<Omit<KortixUserContext, 'iat' | 'exp'> | null> {
+  if (!userId) return null;
+  const entry = await getOrCompute(previewSandboxId, userId);
+  return entry.payload;
+}
+
+export function clearPreviewOwnershipCache(): void {
+  ownerCache.clear();
+  previewContextCache.clear();
+  previewContextInFlight.clear();
+}
+
+/** Drop every cached entry and every check in flight for a user. */
+export function invalidatePreviewCacheForUser(userId: string): void {
+  const suffix = `:${userId}`;
+  for (const entries of [previewContextCache, previewContextInFlight]) {
+    for (const key of entries.keys()) {
+      if (key.endsWith(suffix)) entries.delete(key);
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { db } from '../../lib/db';
 import { resolveRemoteBranchTip } from '../git/branches';
 import { provenMirrorTip } from '../git/mirror';
 import type { FastBootGitHint } from '../git/commits';
