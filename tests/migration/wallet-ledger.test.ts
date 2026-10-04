@@ -27,7 +27,11 @@ function psql(query: string): string {
 }
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  // Probe the same endpoint runMigrate uses — the published TCP port — not the
+  // in-container unix socket. `docker exec pg_isready` reported ready while the
+  // TCP listener still refused fresh connections (the 6-worker lane saw
+  // 'server closed the connection unexpectedly' right after a ready check).
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
 }
 
 type Buckets = { daily?: number; expiring?: number; nonExpiring?: number };
@@ -112,11 +116,19 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // The loop's own success decides readiness. A separate re-check after the
+    // loop raced: one transient `docker exec` failure right after a successful
+    // one threw 'never became ready' although Postgres was up (observed as
+    // consistent ~2.5 s failures in the 6-worker lane).
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      if (pgReady()) {
+        ready = true;
+        break;
+      }
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
 

@@ -138,11 +138,19 @@ suite('legacy public.credit_ledger created_by FK index (throwaway Postgres)', ()
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // The loop's own success decides readiness. A separate re-check after the
+    // loop raced: one transient `docker exec` failure right after a successful
+    // one threw 'never became ready' although Postgres was up (observed as
+    // consistent ~2.5 s failures in the 6-worker lane).
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      if (pgReady()) {
+        ready = true;
+        break;
+      }
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
 
     // Legacy path: the pre-baseline table exists BEFORE any migration runs.
     psql(LEGACY_TABLE_SQL);
