@@ -1,19 +1,20 @@
 {
-  "source_hash": "9f63179d6a73769a4d7dff2200aa52f2a9d028f991b85f8059ffb7d9fdff044d",
+  "source_hash": "7a743b5953243f82bde6d0ef6828816a58fc208bc88d97362721cde3ba7062a7",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-04T003157Z-a-read-path-that-loads-git-backed-project-resources-bounds-t.md",
     "apps/api/src/__tests__/unit-resource-grants-config-bound.test.ts",
     "apps/api/src/projects/routes/resource-grants-view-stale.test.ts",
-    "apps/api/src/projects/routes/resource-grants.ts"
+    "apps/api/src/projects/routes/resource-grants.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "c834790ca353f64bb588e8af6720b6b1716806d448342d0a47db2ce76d6edd36",
-  "head": "87192b664094a0842ce1fd881ef29d9d835fe10a",
-  "passed": false,
+  "diff_hash": "4260fe5a67ae3c3b475a6f43eb470c676ca770bf4b0cafa5d2dfc577daa56f4c",
+  "head": "ea4d496778a8715cad15d64bb838db3c6df42688",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:19:31.212Z"
+  "at": "2026-10-04T05:35:17.725Z"
 }
