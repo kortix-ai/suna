@@ -11,7 +11,7 @@
  * here and torn down after.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountGroups,
@@ -57,18 +57,6 @@ const jwt = (memberOf: string[]) => ({
     memberOf,
   },
 });
-
-/**
- * Drop the synthetic members before their auth users. The account-reclaim
- * trigger (20261003182500000_reclaim_accounts_on_auth_user_delete) deletes an
- * account whose last live member's auth user is deleted, which would reclaim
- * this suite's seeded account mid-run and fail every test that follows the
- * delete. The suite's other member ids (the SSO identities) have no auth.users
- * rows, so only these per-test teardowns can fire it.
- */
-const dropMembershipsOf = async (userIds: string[]) => {
-  await db.delete(accountMemberships).where(and(eq(accountMemberships.accountId, ACCOUNT), inArray(accountMemberships.userId, userIds)));
-};
 
 const canWrite = async (userId: string) =>
   (await authorize(actorForUser(userId, ACCOUNT), PROJECT_ACTIONS.PROJECT_WRITE, { type: 'project', id: PROJECT })).allowed;
@@ -318,7 +306,6 @@ describe('Azure AD directory-sync → authorization', () => {
       expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(1);
       expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
     } finally {
-      await dropMembershipsOf([oldUser]);
       await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
       await db.update(accountSsoProviders).set({ domainVerifiedAt: new Date() }).where(eq(accountSsoProviders.accountId, ACCOUNT));
     }
@@ -355,7 +342,6 @@ describe('Azure AD directory-sync → authorization', () => {
       expect(superSsoRow?.isSuperAdmin).toBe(false);
     } finally {
       await db.execute(sql`DELETE FROM kortix.role_assignments WHERE account_id=${ACCOUNT}::uuid AND principal_id IN (${owner}::uuid, ${superAdmin}::uuid, ${ownerSso}::uuid, ${superAdminSso}::uuid)`);
-      await dropMembershipsOf([owner, superAdmin]);
       await db.execute(sql`DELETE FROM auth.users WHERE id IN (${owner}::uuid, ${superAdmin}::uuid)`);
     }
   });
@@ -417,7 +403,6 @@ describe('Azure AD directory-sync → authorization', () => {
         ambiguous: false,
       });
     } finally {
-      await dropMembershipsOf([manualUser, ssoUser]);
       await db.execute(sql`DELETE FROM auth.users WHERE id IN (${manualUser}::uuid, ${ssoUser}::uuid)`);
     }
   });
