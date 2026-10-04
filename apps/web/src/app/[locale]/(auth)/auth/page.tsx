@@ -35,6 +35,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { takeSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
@@ -833,6 +834,7 @@ const STALE_SESSION_FALLBACK_MS = 2500;
 
 function AuthContent() {
   const t = useTranslations('auth.unified');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { supabase, user, session, isLoading } = useAuth();
@@ -856,6 +858,17 @@ function AuthContent() {
 
   const [forceForm, setForceForm] = useState(false);
   const trustedUser = !!user && !sessionExpired && !forceForm;
+
+  // A failed sign-out says so, ONCE, on the document it lands on. The
+  // sign-out ends on a document load to `/auth`, so `runSignOut` cannot raise
+  // a toast in the document it is leaving — it stashes the notice instead
+  // (`sign-out-notice.ts`), and this effect reads and clears it. Read-and-
+  // clear keeps every later `/auth` visit in the same tab silent.
+  useEffect(() => {
+    if (takeSignOutNotice()) {
+      errorToast(tI18nComplete.raw('text6c4af31cd4ab'));
+    }
+  }, [tI18nComplete]);
 
   // A web session may already exist when the mobile user returns to this page.
   // Preserve the native handoff instead of routing that browser session to the
