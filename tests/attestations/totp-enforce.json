@@ -1,11 +1,41 @@
 {
-  "source_hash": "a0d019ab2f2fbfc89e5ffa605409897a4ff4e56dd6534d3d5197c334b06ce7d6",
-  "head": "7703291a92e5f65cbbb7efb3424efbf65eb67a32",
-  "passed": false,
+  "source_hash": "0c94f4bbbf1a0b6e325c6db9bf86a511e8140ad20937f30bdb01a716091d98e3",
+  "diff_files": [
+    "apps/web/src/app/(auth)/auth/callback/mfa-challenge.test.ts",
+    "apps/web/src/app/(auth)/auth/callback/route.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/actions.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/mfa-challenge-actions.test.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/mfa/page.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/mfa/page.tsx",
+    "apps/web/src/features/auth/mfa-step-up.test.tsx",
+    "apps/web/src/features/auth/mfa-step-up.tsx",
+    "apps/web/src/features/workspace/settings/tabs/security-tab.tsx",
+    "apps/web/src/hooks/account/use-mfa.ts",
+    "apps/web/src/lib/auth/mfa-challenge.test.ts",
+    "apps/web/src/lib/auth/mfa-challenge.ts",
+    "apps/web/src/lib/auth/sign-out-actions.ts",
+    "apps/web/src/lib/auth/sign-out-clears-mfa-pending.test.ts",
+    "apps/web/src/lib/supabase/middleware-identity.test.ts",
+    "apps/web/src/lib/supabase/middleware-identity.ts",
+    "apps/web/src/middleware-mfa-gate.test.ts",
+    "apps/web/src/middleware.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "7e3d4e6040698cc802f9b67d33d2ab29db216c085a56f873e5dedd945e4bd320",
+  "head": "48cea4107099d5316b7c4f34fab4c7a5c6cbd0bf",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:22:28.636Z"
+  "at": "2026-10-03T23:54:22.491Z"
 }
