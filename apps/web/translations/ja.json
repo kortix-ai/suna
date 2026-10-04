@@ -21019,7 +21019,7 @@
         "resumed": "記録を再開しました",
         "signedOut": "Capture からサインアウトしました"
       },
-      "changeFailed": "Capture を変更できませんでした。もう一度お試しください。"
+      "pausedByProjectHint": "プロジェクトの管理者が記録を一時停止しました。管理者が一時停止を解除すると再開します。"
     }
   }
 }

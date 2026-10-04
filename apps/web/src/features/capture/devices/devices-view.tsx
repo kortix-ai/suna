@@ -221,7 +221,7 @@ export function DevicesView({ projectId }: { projectId: string }) {
       title={t('title')}
       description={t('description')}
       action={
-        canRecordHere ? (
+        canRecordHere && rows.length > 0 ? (
           <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setRecordOpen(true)}>
             <LaptopIcon className="size-4 shrink-0" />
             {t('recordThisComputer')}
@@ -305,7 +305,7 @@ export function DevicesView({ projectId }: { projectId: string }) {
             </TableBody>
           </Table>
         )}
-        <p className="text-muted-foreground text-xs text-pretty">{t('footnote')}</p>
+        {rows.length > 0 ? <p className="text-muted-foreground text-xs text-pretty">{t('footnote')}</p> : null}
       </div>
 
       {canRecordHere ? <CaptureDialog projectId={projectId} open={recordOpen} onOpenChange={setRecordOpen} /> : null}

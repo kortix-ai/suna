@@ -21019,7 +21019,7 @@
         "resumed": "已继续记录",
         "signedOut": "已退出 Capture"
       },
-      "changeFailed": "无法更改 Capture。请重试。"
+      "pausedByProjectHint": "项目管理者暂停了记录。管理者解除暂停后会继续记录。"
     }
   }
 }

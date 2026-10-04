@@ -21019,7 +21019,7 @@
         "resumed": "Gravação retomada",
         "signedOut": "Você saiu do Capture"
       },
-      "changeFailed": "Não foi possível alterar o Capture. Tente de novo."
+      "pausedByProjectHint": "Quem gerencia o projeto pausou a gravação. Ela volta quando a pausa for retirada."
     }
   }
 }

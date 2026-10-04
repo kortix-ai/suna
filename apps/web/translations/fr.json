@@ -21019,7 +21019,7 @@
         "resumed": "Enregistrement repris",
         "signedOut": "Déconnecté de Capture"
       },
-      "changeFailed": "Impossible de modifier Capture. Réessayez."
+      "pausedByProjectHint": "Les personnes qui gèrent le projet ont mis l’enregistrement en pause. Il reprend quand elles lèvent la pause."
     }
   }
 }

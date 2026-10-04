@@ -2,6 +2,8 @@
 
 import { approveCaptureDeviceGrant, revokeCaptureDevice } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { errorToast } from '@/components/ui/toast';
 import { useMemo } from 'react';
 
 import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
@@ -59,10 +61,13 @@ export function useDesktopCaptureActions(projectId: string, { onWaitingOnPage }:
     if (next) queryClient.setQueryData(DESKTOP_CAPTURE_STATUS_KEY, next);
     void queryClient.invalidateQueries({ queryKey: DESKTOP_CAPTURE_STATUS_KEY });
   };
-  const options = { retry: false, onSuccess: settle } as const;
+  // Each action reports its own failure (this replaces the app-wide generic toast).
+  const options = { retry: false, onSuccess: settle, onError: (error: Error) => errorToast(error.message) } as const;
 
   const turnOn = useMutation({
     ...options,
+    // The dialog shows a failed start inline, with "Try again".
+    onError: () => undefined,
     mutationFn: async (view: DesktopCaptureStatus) => {
       // Signed in to this project already: only the switch.
       if (view.signedIn && view.projectId === projectId && !view.signInRequired) return desktopCaptureSet({ on: true });

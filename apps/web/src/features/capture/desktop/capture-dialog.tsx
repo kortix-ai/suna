@@ -203,7 +203,12 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
           <p className="text-muted-foreground text-xs text-pretty">{t('otherProject')}</p>
         ) : null}
 
-        {phase === 'needsPermission' && view ? (
+        {phase === 'paused' && view?.policy?.paused ? (
+          <p className="text-muted-foreground text-sm text-pretty">{t('pausedByProjectHint')}</p>
+        ) : null}
+
+        {/* Stays once shown, so each row turns "Allowed" in place as macOS answers. */}
+        {on && view ? (
           <CapturePermissions view={view} requesting={actions.grants.isPending} onAllow={() => actions.grants.mutate(Boolean(view.layers?.audio))} />
         ) : null}
 
@@ -222,9 +227,7 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
                     <Switch
                       checked={!blocked && Boolean(view.layers?.[layer])}
                       disabled={blocked || actions.set.isPending || phase === 'turningOn'}
-                      onCheckedChange={(value) =>
-                        actions.set.mutate({ [layer]: value }, { onError: (error: Error) => errorToast(error.message || t('changeFailed')) })
-                      }
+                      onCheckedChange={(value) => actions.set.mutate({ [layer]: value })}
                       aria-label={t(`layers.${layer}`)}
                     />
                   </SettingsRow>
@@ -235,9 +238,9 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
         ) : null}
 
         {view?.policy?.notice && (on || phase === 'signInRequired') ? (
-          <section className="space-y-1">
+          <section className="space-y-2">
             <Label>{t('notice', { project: projectName })}</Label>
-            <p className="text-muted-foreground text-sm text-pretty">{view.policy.notice}</p>
+            <p className="text-foreground text-sm text-pretty">{view.policy.notice}</p>
           </section>
         ) : null}
       </ModalBody>
@@ -248,10 +251,7 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
             <MoreMenu
               canStop={on}
               onStop={() =>
-                actions.set.mutate({ on: false }, {
-                  onSuccess: () => successToast(t('toast.stopped')),
-                  onError: (error: Error) => errorToast(error.message || t('changeFailed')),
-                })
+                actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })
               }
               onSignOut={() => setConfirmSignOut(true)}
             />
@@ -294,7 +294,6 @@ function CaptureContent({ projectId, onClose }: { projectId: string; onClose: ()
                 setConfirmSignOut(false);
                 successToast(t('toast.signedOut'));
               },
-              onError: (error: Error) => errorToast(error.message || t('changeFailed')),
             })
           }
         />

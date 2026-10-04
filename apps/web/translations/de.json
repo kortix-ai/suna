@@ -21019,7 +21019,7 @@
         "resumed": "Aufnahme fortgesetzt",
         "signedOut": "Von Capture abgemeldet"
       },
-      "changeFailed": "Capture konnte nicht geändert werden. Versuche es erneut."
+      "pausedByProjectHint": "Die Personen, die das Projekt verwalten, haben die Aufnahme pausiert. Sie läuft weiter, sobald sie die Pause aufheben."
     }
   }
 }

@@ -21019,7 +21019,7 @@
         "resumed": "Recording resumed",
         "signedOut": "Signed out of Capture"
       },
-      "changeFailed": "Could not change Capture. Try again."
+      "pausedByProjectHint": "The people who manage the project paused recording. It resumes when they lift the pause."
     }
   }
 }
