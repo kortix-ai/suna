@@ -1,5 +1,5 @@
 {
-  "source_hash": "abcfeb3c085cf888d2682fdcbf60be93a4369bb0d11c312bba8aa0d2c0e25653",
+  "source_hash": "8e7601f7d9501047a53e202143356f2fc6b1bfbd09216523b030f468389ffa90",
   "diff_files": [
     "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
     "apps/web/src/lib/auth/perform-sign-out.ts",
@@ -17,13 +17,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "297ca3c2060d8b45afe96a6efa59bf6b1a37a4c32b694fef04ecd9e633233099",
-  "head": "a4031c13954cee7bf70c9860a88a3f96b5408a1b",
+  "diff_hash": "c08471f4b3ce33c72bb37c0a89da2c929ea745c237431f6c0f0a2f185308f984",
+  "head": "2d6e63bfb12b66167dddac943373994d884d7b88",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T03:50:50.734Z"
+  "at": "2026-10-04T04:12:22.942Z"
 }

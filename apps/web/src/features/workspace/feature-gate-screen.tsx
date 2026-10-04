@@ -13,7 +13,7 @@ import { FlagIcon } from '@phosphor-icons/react';
  *
  * It never offers to enable the feature. Activation happens in exactly one
  * place — Customize → Settings → Feature flags — so there is a single
- * control, a single permission leaf (`project.customize.write`), and no
+ * control, a single permission leaf (`project.settings.write`), and no
  * per-feature switch to hunt for. The button here just takes you there.
  *
  * The destination has moved twice and the content never has: the legacy
