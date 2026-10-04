@@ -576,6 +576,16 @@ export async function cancelSubscription(accountId: string, feedback?: string) {
     metadata: { cancellation_feedback: feedback ?? '' },
   });
 
+  // Mirror what the customer.subscription.updated webhook will write, so the
+  // account state — and the pending-cancellation control that reads it —
+  // flips on the refetch the client fires right after this call, without
+  // waiting on webhook latency. The webhook later reconciles the same value.
+  await applyStripeSync(
+    accountId,
+    { paymentStatus: 'cancelling' },
+    { mode: 'update', reason: 'cancel-subscription' },
+  );
+
   return {
     success: true,
     cancel_at: subscription.cancel_at,
@@ -588,9 +598,22 @@ export async function reactivateSubscription(accountId: string) {
   if (!account?.stripeSubscriptionId) throw new SubscriptionError('No subscription to reactivate');
 
   const stripe = getStripe();
-  await stripe.subscriptions.update(account.stripeSubscriptionId, {
+  const subscription = await stripe.subscriptions.update(account.stripeSubscriptionId, {
     cancel_at_period_end: false,
   });
+
+  // Same mirror as cancelSubscription, bounded the same way the
+  // customer.subscription.updated webhook writes it: only an ACTIVE status
+  // clears the pending-cancellation flag, so a reactivation on a past-due
+  // subscription cannot mask the failed-payment state (the next webhook
+  // event reconciles it).
+  if (subscription.status === 'active') {
+    await applyStripeSync(
+      accountId,
+      { paymentStatus: 'active' },
+      { mode: 'update', reason: 'reactivate-subscription' },
+    );
+  }
 
   return { success: true, message: 'Subscription reactivated' };
 }

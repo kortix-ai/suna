@@ -13,20 +13,21 @@
  *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
  *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *
- * Both writes assert `project.customize.write`.
+ * Both writes assert `project.model.write`.
  */
 
+import type { ModelDefaultsResponse } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 
 /** One entry of GET /projects/:id/model-picker `models` (GatewayCatalogModel). */
 interface PickerModel {
@@ -44,17 +45,6 @@ interface ModelPicker {
   modelOverrides?: Record<string, boolean>;
   usingDefaults?: boolean;
   defaultModel?: string;
-}
-
-/** GET /projects/:id/model-defaults (routes/models.ts). */
-interface ModelDefaults {
-  platformDefault: string | null;
-  accountDefault: string | null;
-  agentDefaults: Record<string, string>;
-  projectDefault: string | null;
-  resolvedForCaller: string | null;
-  resolvedSource?: string;
-  freeTier?: boolean;
 }
 
 const HELP = help`Usage: kortix models <subcommand> [options]
@@ -98,7 +88,7 @@ Options:
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Writes need the \`project.customize.write\` permission.
+Writes need the \`project.model.write\` permission.
 `;
 
 export async function runModels(argv: string[]): Promise<number> {
@@ -177,7 +167,9 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     if (on) enabledCount += 1;
     const isDefault = id === picker.defaultModel;
     const marker = isDefault ? `${C.green}●${C.reset} ` : '  ';
-    const state = on ? `${C.green}${pad('on', 6)}${C.reset}` : `${C.faded}${pad('off', 6)}${C.reset}`;
+    const state = on
+      ? `${C.green}${pad('on', 6)}${C.reset}`
+      : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
       `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
@@ -199,7 +191,10 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
 }
 
 /** How a model is paid for: a ChatGPT subscription, a provider API key, or Kortix. */
-export function paidVia(id: string, provider: string | undefined): 'ChatGPT' | 'API key' | 'Kortix' {
+export function paidVia(
+  id: string,
+  provider: string | undefined,
+): 'ChatGPT' | 'API key' | 'Kortix' {
   if (id.startsWith('codex/') || provider === 'codex') return 'ChatGPT';
   if (!id.includes('/') || provider === 'kortix') return 'Kortix';
   return 'API key';
@@ -282,7 +277,7 @@ async function modelsDefault(
   }
 
   if (!model) {
-    const d = await client.get<ModelDefaults>(path);
+    const d = await client.get<ModelDefaultsResponse>(path);
     if (opts.json) {
       emitJson(d);
       return 0;
@@ -323,8 +318,4 @@ function row(label: string, value: string | null): void {
   process.stdout.write(
     `  ${C.dim}${pad(label, 9)}${C.reset} ${value ? `${C.cyan}${value}${C.reset}` : `${C.faded}unset${C.reset}`}\n`,
   );
-}
-
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }

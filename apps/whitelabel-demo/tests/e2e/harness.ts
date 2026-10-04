@@ -153,8 +153,11 @@ export async function startApp(
     if (raced === 'exited') {
       throw new Error(`next start exited before printing a URL (code ${proc.exitCode}). Output:\n${log}`);
     }
-    const m = log.match(/Local:\s+(http:\/\/localhost:\d+)/);
-    if (m) baseUrl = m[1];
+    const m = log.match(/Local:\s+http:\/\/localhost:(\d+)/);
+    // Fetch the listener by address: `localhost` does not resolve on a
+    // platform sandbox, where the readiness poll below would time out against
+    // a server that is in fact up.
+    if (m) baseUrl = `http://127.0.0.1:${m[1]}`;
   }
 
   // The URL line can print a beat before the listener actually accepts

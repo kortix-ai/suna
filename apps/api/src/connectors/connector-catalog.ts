@@ -4,12 +4,23 @@ import {
   sectionTitle,
   sortByPicks,
 } from '@kortix/shared/connector-sections';
+import { logger } from '../lib/logger';
 
 const INTEGRATIONS_BASE_URL = 'https://integrations.sh';
 const DEFAULT_TTL_MS = 15 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_PAGE_SIZE = 48;
 const MAX_PAGE_SIZE = 96;
+
+/** A non-2xx from integrations.sh. `status` lets callers separate "no such
+ *  record" (404) from an outage (everything else). */
+class UpstreamStatusError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`integrations.sh returned ${status}`);
+    this.status = status;
+  }
+}
 
 const OFFICIAL_SURFACE_ENRICHMENTS: Record<string, ConnectorSurfaceVariant[]> = {
   'hubspot.com': [
@@ -311,8 +322,16 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         signal: controller.signal,
         headers: { accept: 'application/json' },
       });
-      if (!response.ok) throw new Error(`integrations.sh returned ${response.status}`);
+      if (!response.ok) throw new UpstreamStatusError(response.status);
       return await response.json();
+    } catch (error) {
+      // A catalogue failure reaches the route as a bare 502 body; this warn is
+      // the only server-side record of which upstream call failed and why.
+      logger.warn('[connector-catalog] integrations.sh request failed', {
+        url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -364,6 +383,14 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         return variants;
       } catch (error) {
         if (cached) return cached.value;
+        if (error instanceof UpstreamStatusError && error.status === 404) {
+          // integrations.sh has no surface page for this domain (the apis-guru
+          // feed lists pseudo-domains like `whatsapp.local`). That is an empty
+          // catalogue record, not an outage: serve the item with no surfaces
+          // and cache it, so a detail view neither 502s nor refetches.
+          surfaceCache.set(domain, { value: [], at: now() });
+          return [];
+        }
         throw error;
       } finally {
         surfaceRequests.delete(domain);

@@ -9,9 +9,30 @@ export interface AuditReconciliationResult {
 
 // A pass looks only at source rows newer than the account's last complete pass
 // minus this lookback (late commits, clock skew, rows updated since).
-const LOOKBACK_HOURS = 1;
+const LOOKBACK = sql.raw(`interval '1 hour'`);
 // Every account's whole history is re-verified this often, not on every visit.
 export const FULL_RESCAN_DAYS = 7;
+// A pass covers about this many source rows, over every ledger together.
+// Prod 2026-10-03: an 80-day pass over a heavy account (~300k usage and gateway
+// rows, up to ~85k on one day) outran the audit pool's 10 s statement_timeout on
+// every visit. A cold probe of the partitioned audit table costs ~0.8–1.5 ms.
+export const BATCH_ROWS = 1_000;
+
+// The column each ledger's window starts on (the first column `newer()` reads).
+const BOUNDED_LEDGERS = [
+  { from: 'kortix.connector_calls', account: 'account_id', at: 'created_at' },
+  { from: 'kortix.project_sessions', account: 'account_id', at: 'created_at' },
+  { from: 'kortix.session_lifecycle_commands', account: 'account_id', at: 'created_at' },
+  { from: 'kortix.provider_events', account: 'account_id', at: 'created_at' },
+  { from: 'kortix.usage_events', account: 'account_id', at: 'created_at' },
+  { from: 'kortix.gateway_request_logs', account: 'account_id', at: 'created_at' },
+  { from: 'kortix.tunnel_audit_logs', account: 'account_id', at: 'created_at' },
+  {
+    from: 'kortix.project_trigger_executions x JOIN kortix.projects pr ON pr.project_id = x.project_id',
+    account: 'pr.account_id',
+    at: 'x.created_at',
+  },
+] as const;
 
 /**
  * Project durable source ledgers that predate the canonical triggers.
@@ -21,35 +42,71 @@ export const FULL_RESCAN_DAYS = 7;
  * one old account from holding an API transaction for the full history.
  *
  * Incremental: `kortix.audit_reconciliation_state` holds one high-water mark
- * per account. A pass scans only rows newer than the mark minus
- * `LOOKBACK_HOURS`, except when the account has no mark or its last full scan
- * is `FULL_RESCAN_DAYS` old. The mark advances in the statement that inserts
- * the last page.
+ * per account. A pass scans only rows newer than the mark minus the lookback,
+ * except when the account has no mark or its last full scan is
+ * `FULL_RESCAN_DAYS` old. The mark advances in the statement that inserts the
+ * last page.
+ *
+ * Bounded: a pass ends before the `batchRows + 1`-th source row after its
+ * start, over all ledgers. It sets the mark to that end plus the lookback, so
+ * the next pass starts exactly there, and `complete` stays false until a pass
+ * reaches now. While a full scan is between passes, `full_scan_at` is
+ * `-infinity`.
  */
 export async function reconcileAuditEvents(
   accountId: string,
   limit = 1_000,
+  batchRows = BATCH_ROWS,
 ): Promise<AuditReconciliationResult> {
   // The mark is read first and passed as a bound value so the planner sees the
   // real window and picks index scans (an in-statement subselect it cannot).
   const [mark] = Array.from(
     (await auditDb().execute(sql`
-      SELECT (checked_at - ${sql.raw(`interval '${LOOKBACK_HOURS} hours'`)})::text AS since,
+      SELECT (checked_at - ${LOOKBACK})::text AS since,
+             full_scan_at = '-infinity' AS "inProgress",
              full_scan_at < now() - ${sql.raw(`interval '${FULL_RESCAN_DAYS} days'`)} AS "fullDue"
         FROM kortix.audit_reconciliation_state WHERE account_id = ${accountId}::uuid
-    `)) as unknown as Array<{ since: string; fullDue: boolean }>,
+    `)) as unknown as Array<{ since: string; inProgress: boolean; fullDue: boolean }>,
   );
-  // null = scan the whole history: no mark yet, or the weekly rescan is due.
-  const since = mark && !mark.fullDue ? mark.since : null;
+  // A full pass: no mark yet, the weekly rescan is due, or one is under way.
+  const full = !mark || mark.fullDue;
   // Never reconstruct a row older than the hot window (80 days; retention archives and
   // drops partitions older than 90). After the legacy table and the old partitions are gone,
   // an old source row has no audit row to find, and a full rescan would re-insert it.
+  // A new full scan starts at that floor; a scan under way resumes at its mark.
+  const start = full && !mark?.inProgress ? null : mark.since;
+  const [window] = Array.from(
+    (await auditDb().execute(sql`
+      WITH w AS (
+        SELECT greatest(${start}::timestamptz, now() - interval '80 days') AS "from"
+      )
+      SELECT w."from"::text AS "from",
+             -- Rows sharing one timestamp must not stall the scan in place.
+             CASE WHEN b.at IS NOT NULL THEN greatest(b.at, w."from" + interval '1 millisecond')::text END AS "until"
+        FROM w LEFT JOIN LATERAL (
+          -- The (batchRows + 1)-th source row after "from", over every ledger the
+          -- pass reads, by the column each ledger's window starts on.
+          SELECT at FROM (
+            ${sql.join(
+              BOUNDED_LEDGERS.map(
+                (ledger) => sql`(SELECT ${sql.raw(ledger.at)} AS at FROM ${sql.raw(ledger.from)}
+                   WHERE ${sql.raw(ledger.account)} = ${accountId}::uuid AND ${sql.raw(ledger.at)} >= w."from"
+                   ORDER BY ${sql.raw(ledger.at)} LIMIT ${batchRows + 1})`,
+              ),
+              sql` UNION ALL `,
+            )}
+          ) rows ORDER BY at OFFSET ${batchRows} LIMIT 1
+        ) b ON true
+    `)) as unknown as Array<{ from: string; until: string | null }>,
+  );
+  // null = this pass runs to now and completes the scan.
+  const { from, until } = window;
   const newer = (...columns: string[]) =>
     sql`AND (${sql.join(
       columns.map((column) =>
-        since
-          ? sql`${sql.raw(column)} >= greatest(${since}::timestamptz, now() - interval '80 days')`
-          : sql`${sql.raw(column)} >= now() - interval '80 days'`,
+        until
+          ? sql`(${sql.raw(column)} >= ${from}::timestamptz AND ${sql.raw(column)} < ${until}::timestamptz)`
+          : sql`${sql.raw(column)} >= ${from}::timestamptz`,
       ),
       sql` OR `,
     )})`;
@@ -263,10 +320,15 @@ export async function reconcileAuditEvents(
        LIMIT ${limit}
     ), mark_upd AS (
       -- Advance the mark in the same statement as the page: it commits with the
-      -- last page or not at all, so a crash resumes from the old mark.
+      -- last page or not at all, so a crash resumes from the old mark. A pass that
+      -- stopped at "until" puts the mark there plus the lookback, so the next pass
+      -- starts exactly at "until".
       INSERT INTO kortix.audit_reconciliation_state(account_id, checked_at, full_scan_at)
-      SELECT ${accountId}::uuid, now(),
-             CASE WHEN ${since === null}::boolean THEN now() ELSE (SELECT full_scan_at FROM mark) END
+      SELECT ${accountId}::uuid,
+             ${until ? sql`${until}::timestamptz + ${LOOKBACK}` : sql`now()`},
+             CASE WHEN ${full}::boolean
+                  THEN ${until ? sql`'-infinity'::timestamptz` : sql`now()`}
+                  ELSE (SELECT full_scan_at FROM mark) END
        WHERE (SELECT count(*) FROM missing) <= ${limit}
       ON CONFLICT (account_id) DO UPDATE
         SET checked_at = EXCLUDED.checked_at, full_scan_at = EXCLUDED.full_scan_at
@@ -316,7 +378,7 @@ export async function reconcileAuditEvents(
     bySource[row.sourceLedger] = (bySource[row.sourceLedger] ?? 0) + 1;
   return {
     inserted: insertedRows.length,
-    complete: !hasMore,
+    complete: !hasMore && !until,
     by_source: bySource,
   };
 }

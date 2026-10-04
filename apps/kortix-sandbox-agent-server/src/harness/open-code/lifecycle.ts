@@ -607,7 +607,7 @@ export async function buildOpencodeConfigContent(
       // path that gates opencode's port bind. loadGatewayCatalog is local-only
       // by construction now; a missing file degrades to the minimal set and is
       // repaired in the background (scheduleCatalogWarm), never by blocking boot.
-      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
       // OpenCode answers "Model not found" for an id its provider map lacks,
       // and the map is a snapshot of an image-baked file. The gateway decides
       // whether a model is served, so every model this box is told to use is

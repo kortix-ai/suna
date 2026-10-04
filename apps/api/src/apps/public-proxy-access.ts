@@ -29,7 +29,7 @@ export type AppAccessRow = {
   accessRevision: number;
   createdBy: string | null;
   updatedAt: Date;
-  /** The project's `agent_principal` flag. Absent = off (today's model). */
+  /** Judge a governed agent session as the agent (§2.5). Absent = human decision. */
   agentPrincipal?: boolean;
 };
 
@@ -190,8 +190,7 @@ async function resolveOneCredential(
 ): Promise<AppBearerPrincipal | null> {
   try {
     if (isAppAgentAssertion(token)) {
-      // Minted only by the connector gateway, only for this header, and
-      // honoured only on an `agent_principal` project.
+      // Minted only by the connector gateway, and only for this header.
       if (via !== APP_AUTHORIZATION_HEADER || !app.agentPrincipal) return null;
       const verified = verifyAppAgentAssertion(token, { appId: app.appId, projectId: app.projectId });
       if (!verified) return null;
@@ -234,10 +233,9 @@ async function kortixCredentialUser(
 
 /**
  * True when this principal is judged as an AGENT (spec §2.5) rather than as
- * the human behind the token: a session token carrying an agent grant, on a
- * project with the `agent_principal` flag on. Everything else — flag off, a
- * null grant (ungoverned project), a laptop PAT, a service account — keeps the
- * existing member/group decision.
+ * the human behind the token: a session token carrying an agent grant.
+ * Everything else — a null grant (ungoverned project), a laptop PAT, a service
+ * account — keeps the existing member/group decision.
  */
 function judgedAsAgent(
   app: AppAccessRow,
