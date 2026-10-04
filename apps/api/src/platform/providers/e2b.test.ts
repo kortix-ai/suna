@@ -41,7 +41,9 @@ let killFactory: (sandboxId: string) => boolean | Promise<boolean> = (sandboxId)
 let timeoutRenewalFactory: () => void | Promise<void> = () => {};
 let staticPauseFactory: () => boolean | Promise<boolean> = () => true;
 
-class FakeSandboxNotFoundError extends Error {}
+class FakeSandboxNotFoundError extends Error {
+  override name = 'SandboxNotFoundError';
+}
 
 function fakeSandbox(sandboxId: string, trafficAccessToken = `traffic-${sandboxId}`) {
   const pauses: Array<Record<string, unknown>> = [];

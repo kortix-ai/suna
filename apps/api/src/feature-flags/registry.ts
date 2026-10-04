@@ -233,7 +233,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, and it uses one of your concurrent-session slots until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
     // The surface is small and server-owned, but the cost tradeoff is real and
     // the presence model is new. `beta` says "we intend this on for everyone,
     // and we expect to tune the grant".
@@ -331,34 +331,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
       'no release is built, no archive is stored, and no kortix.config_releases ' +
       'row is written.',
-  },
-  {
-    key: 'agent_principal',
-    name: 'Agents as Principals',
-    description:
-      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
-    stability: 'experimental',
-    available: () => true,
-    // Default ON. An agent's authority is a property of the AGENT, not of
-    // whoever pressed start: the launcher-∩-grant model gave the same agent
-    // different power per person, let an owner-launched agent ignore its own
-    // grant entirely (super-admin short-circuit), and ran every unattended
-    // trigger as the account owner. Switching a project OFF restores that old
-    // model as an escape hatch for one release; the switch is then deleted.
-    platformDefault: () => true,
-    // Not listed in Settings → Feature flags. An agent acting as itself is how
-    // Kortix works, not a choice we offer, so presenting a switch would invite
-    // a project to turn the governance model off. Support can still put ONE
-    // project back with `PATCH /projects/:id/features {agent_principal:false}`
-    // while it migrates. Delete the flag — and this line — in the release after
-    // the one that shipped the default (spec §5).
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read by the authorization engine for every agent-session credential ' +
-      '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
-      'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
-      'the change-request merge governance guard.',
   },
   {
     key: 'us_region',

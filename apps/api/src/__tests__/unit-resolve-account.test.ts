@@ -103,8 +103,7 @@ mock.module('@kortix/db', () => ({
   accountTokens: {},
   objectPolicies: {},
   permissions: {},
-  // iam/agent-principal.ts (imported by iam/actor.ts) reads the project's
-  // `agent_principal` flag from this table.
+  // Read by modules on the auth import graph.
   projects: {},
   // projects/lib/on-behalf-of.ts (reached through the auth graph) reads the
   // session row to resolve the human an agent session acts for.

@@ -39,7 +39,7 @@ export function useConfigureThread(projectId: string): ConfigureThread {
   const start = useCallback(
     (prompt: string) => {
       // Guard re-entry: ignore extra clicks while a session is being minted so
-      // we don't fire two creates (and blow the concurrent-session limit).
+      // we don't fire two creates (two billed sessions for one click).
       if (pending) return;
       setPending(true);
       // Optimistic, identical to the project-home composer: mint the session,

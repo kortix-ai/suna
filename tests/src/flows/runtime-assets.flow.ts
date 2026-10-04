@@ -689,9 +689,12 @@ flow(
 
     await ctx.step('and it APPLIED nothing: the box runs the same bytes it started with', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(before)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const beforeIdentity = identityOf(before);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(beforeIdentity)) {
         throw new Error(
-          `a current box must not be changed by sending prompts: ${JSON.stringify(before)} → ${JSON.stringify(after)}`,
+          `a current box must not be changed by sending prompts: ${JSON.stringify(beforeIdentity)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });
