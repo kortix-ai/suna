@@ -34,6 +34,7 @@ interface LocalTestPlan {
     | 'target-api-full'
     | 'target-browser-full'
     | 'latency'
+    | 'agentic'
     | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
@@ -106,6 +107,7 @@ const MODE_FLAGS: { flag: string; mode: LocalTestPlan['mode'] }[] = [
   { flag: '--target-api-full', mode: 'target-api-full' },
   { flag: '--target-browser-full', mode: 'target-browser-full' },
   { flag: '--latency', mode: 'latency' },
+  { flag: '--agentic-only', mode: 'agentic' },
 ];
 
 const MODE_FLAG_SET = new Set(MODE_FLAGS.map((row) => row.flag));
@@ -114,9 +116,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   // One mode per run. A flow filter (--domain/--id/--tag/--smoke) is the flows
-  // mode without its flag.
+  // mode without its flag — unless it rides --agentic-only, whose lane takes
+  // the filter arguments itself.
   const selected = MODE_FLAGS.filter((row) => args.includes(row.flag)).map((row) => row.mode);
-  if (hasFlowFilter(args) && !selected.includes('flows')) selected.push('flows');
+  if (hasFlowFilter(args) && !selected.includes('agentic') && !selected.includes('flows')) {
+    selected.push('flows');
+  }
   if (selected.length > 1) {
     const flags = MODE_FLAGS.map((row) => row.flag);
     throw new Error(
@@ -266,9 +271,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     },
   };
 
-  // The eight single-lane modes share one dispatch — the mode's one lane, one
+  // The nine single-lane modes share one dispatch — the mode's one lane, one
   // stage. Only the composed modes below keep real branches.
+  const agentic: LocalTestLane = {
+    name: 'agentic',
+    command: ['bun', 'tests/bin/agentic.ts', ...args.filter((arg) => arg !== '--agentic-only' && arg !== '--')],
+  };
   const singleLane: Partial<Record<LocalTestPlan['mode'], LocalTestLane>> = {
+    agentic,
     flows,
     sdk,
     db: dbSuites,

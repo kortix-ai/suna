@@ -164,8 +164,17 @@ function CodeBody({ artifact }: { artifact: Extract<RoleArtifact, { kind: 'code'
   );
 }
 
+/** The artifact body alone, for surfaces that frame it themselves (the home
+ *  page work carousel). */
+export function RoleArtifactBody({ artifact }: { artifact: RoleArtifact }): ReactNode {
+  if (artifact.kind === 'diff') return <DiffBody artifact={artifact} />;
+  if (artifact.kind === 'table') return <TableBody artifact={artifact} />;
+  if (artifact.kind === 'doc') return <DocBody artifact={artifact} />;
+  return <CodeBody artifact={artifact} />;
+}
+
 /** The badge in the chrome names the object, so the shape is never a mystery. */
-const KIND_LABEL: Record<RoleArtifact['kind'], string> = {
+export const KIND_LABEL: Record<RoleArtifact['kind'], string> = {
   diff: 'patch',
   table: 'table',
   doc: 'document',
@@ -228,10 +237,7 @@ export function RoleHeroVisual({ role }: { role: RoleContent }): ReactNode {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: LEAD + 0.12, ease: EASE_OUT }}
           >
-            {artifact.kind === 'diff' ? <DiffBody artifact={artifact} /> : null}
-            {artifact.kind === 'table' ? <TableBody artifact={artifact} /> : null}
-            {artifact.kind === 'doc' ? <DocBody artifact={artifact} /> : null}
-            {artifact.kind === 'code' ? <CodeBody artifact={artifact} /> : null}
+            <RoleArtifactBody artifact={artifact} />
           </m.div>
         </m.div>
 
