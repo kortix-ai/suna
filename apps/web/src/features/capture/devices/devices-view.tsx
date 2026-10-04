@@ -2,13 +2,7 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices, useRevokeCaptureDevice, useSyncCaptureDevice } from '@kortix/sdk/react';
-import {
-  ArrowsClockwiseIcon,
-  CircleIcon,
-  DotsThreeIcon,
-  PlusIcon,
-  ProhibitIcon,
-} from '@phosphor-icons/react';
+import { ArrowsClockwiseIcon, CircleIcon, DotsThreeIcon, LaptopIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -34,14 +28,19 @@ import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs'
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  COMPUTER_SETUP_EVENT,
+  ComputerConnectModal,
+  computerDisplayName,
+} from '@/features/tunnel/computer-connect';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { useTunnelConnections, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { relativeTime } from '../capture-time';
-import { DesktopCaptureModal, useDesktopCaptureStatus } from '../desktop-capture-modal';
+import { useDesktopCaptureStatus } from '../computer-capture-section';
 import { useCaptureMembers, useCaptureViewer } from '../use-capture-viewer';
-import { ConnectDeviceModal } from './connect-device-modal';
-import { deviceStatus, type DeviceStatusView } from './device-status';
+import { computerForDevice, deviceStatus, type DeviceStatusView } from './device-status';
 
 const TONE_BADGE = { green: 'success', orange: 'warning', none: 'muted' } as const;
 
@@ -80,14 +79,22 @@ function StatusCell({ view }: { view: DeviceStatusView }) {
   );
 }
 
+/** A device's name: the person's computer it runs on (Your computers), else the name the device reports. */
+function deviceName(device: CaptureDevice, computers: readonly TunnelConnection[] | undefined): string | null {
+  const computer = computerForDevice(device, computers);
+  return (computer && computerDisplayName(computer.name, computer.machineInfo)) || device.name;
+}
+
 function DeviceRow({
   projectId,
   device,
+  name,
   owner,
   onRevoke,
 }: {
   projectId: string;
   device: CaptureDevice;
+  name: string | null;
   owner: string | null;
   onRevoke: (device: CaptureDevice) => void;
 }) {
@@ -98,7 +105,7 @@ function DeviceRow({
     <TableRow>
       <TableCell className="align-middle">
         <p className="text-foreground text-sm font-medium whitespace-normal">
-          {device.name ?? t('unnamed')}
+          {name ?? t('unnamed')}
         </p>
         <p className="text-muted-foreground text-xs">
           {[[device.os, device.os_version].filter(Boolean).join(' '), device.app_version]
@@ -126,7 +133,7 @@ function DeviceRow({
         {view.lastFrameMs ? relativeTime(view.lastFrameMs, locale) : t('never')}
       </TableCell>
       <TableCell className="align-middle">
-        <DeviceActions projectId={projectId} device={device} onRevoke={onRevoke} />
+        <DeviceActions projectId={projectId} device={device} name={name ?? t('unnamed')} onRevoke={onRevoke} />
       </TableCell>
     </TableRow>
   );
@@ -135,15 +142,16 @@ function DeviceRow({
 function DeviceActions({
   projectId,
   device,
+  name,
   onRevoke,
 }: {
   projectId: string;
   device: CaptureDevice;
+  name: string;
   onRevoke: (device: CaptureDevice) => void;
 }) {
   const t = useTranslations('capture.devices');
   const sync = useSyncCaptureDevice(projectId);
-  const name = device.name ?? t('unnamed');
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -186,9 +194,9 @@ export function DevicesView({ projectId }: { projectId: string }) {
   const revoke = useRevokeCaptureDevice(projectId);
   const [revoking, setRevoking] = useState<CaptureDevice | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
-  // Inside the Kortix desktop app with its bundled engine: sign this computer in without a browser trip.
+  // In the Kortix desktop app with Capture: this computer turns on in Your computer.
   const desktopCapture = useDesktopCaptureStatus();
-  const [thisComputerOpen, setThisComputerOpen] = useState(false);
+  const computers = useTunnelConnections();
 
   const rows = (devices.data?.devices ?? []).filter((device) => !device.revoked_at);
   const ownerOf = (device: CaptureDevice) =>
@@ -211,17 +219,6 @@ export function DevicesView({ projectId }: { projectId: string }) {
     <CapabilityPageShell
       title={t('title')}
       description={t('description')}
-      action={
-        <Button
-          size="sm"
-          variant="secondary"
-          className="gap-1.5"
-          onClick={() => setConnectOpen(true)}
-        >
-          <PlusIcon className="size-4" />
-          {t('connect')}
-        </Button>
-      }
       filters={
         viewer.isManager ? (
           <Tabs value={scope} onValueChange={(value) => setScope(value as 'mine' | 'project')}>
@@ -251,7 +248,22 @@ export function DevicesView({ projectId }: { projectId: string }) {
             }
           />
         ) : rows.length === 0 ? (
-          <EmptyState size="sm" title={t('empty')} />
+          <EmptyState
+            size="sm"
+            title={t('empty')}
+            action={
+              desktopCapture.data?.available ? (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => window.dispatchEvent(new Event(COMPUTER_SETUP_EVENT))}>
+                  <LaptopIcon className="size-4 shrink-0" />
+                  {t('turnOnThisComputer')}
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setConnectOpen(true)}>
+                  {t('openKortixOnComputer')}
+                </Button>
+              )
+            }
+          />
         ) : (
           <Table className="overflow-hidden rounded-md">
             <TableHeader>
@@ -273,6 +285,7 @@ export function DevicesView({ projectId }: { projectId: string }) {
                   key={device.device_id}
                   projectId={projectId}
                   device={device}
+                  name={deviceName(device, computers.data)}
                   owner={projectScope ? ownerOf(device) : null}
                   onRevoke={setRevoking}
                 />
@@ -283,23 +296,12 @@ export function DevicesView({ projectId }: { projectId: string }) {
         <p className="text-muted-foreground text-xs text-pretty">{t('footnote')}</p>
       </div>
 
-      {desktopCapture.data?.available ? (
-        <DesktopCaptureModal
-          projectId={projectId}
-          open={thisComputerOpen}
-          onOpenChange={setThisComputerOpen}
-        />
-      ) : null}
-      <ConnectDeviceModal
-        open={connectOpen}
-        onOpenChange={setConnectOpen}
-        projectName={viewer.projectName}
-      />
+      <ComputerConnectModal projectId={projectId} open={connectOpen} onOpenChange={setConnectOpen} />
       <ConfirmDialog
         open={!!revoking}
         onOpenChange={(open) => (open ? null : setRevoking(null))}
         title={t('revokeTitle')}
-        description={t('revokeDescription', { name: revoking?.name ?? t('unnamed') })}
+        description={t('revokeDescription', { name: (revoking && deviceName(revoking, computers.data)) ?? t('unnamed') })}
         confirmLabel={t('revoke')}
         confirmVariant="destructive"
         isPending={revoke.isPending}

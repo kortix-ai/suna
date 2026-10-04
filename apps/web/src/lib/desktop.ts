@@ -425,7 +425,6 @@ export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
    return null in a browser and on a desktop build without Capture. */
 
 export type DesktopCaptureLayer = 'screen' | 'actions' | 'audio';
-export type DesktopCapturePermission = 'screen' | 'accessibility' | 'microphone' | 'inputMonitoring';
 
 export interface DesktopCaptureStatus {
   /** False when this build has no engine or it cannot run here; `error` says why. */
@@ -450,6 +449,8 @@ export interface DesktopCaptureStatus {
   /** macOS grants Kortix holds for Capture; null elsewhere. */
   permissions?: Record<'screen' | 'accessibility' | 'microphone', boolean> | null;
   sync?: { state: string; pending: number; lastUploadMs: number | null; error: string | null };
+  /** This computer's id as the computer agent reports it; sent on approval to join the device to it. */
+  machineId?: string | null;
 }
 
 export interface DesktopCaptureSignIn {
@@ -474,15 +475,12 @@ export const desktopCaptureSignInCancel = () => desktopAction<null>('capture_sig
 /** Rejects with the desktop app's message. */
 export const desktopCaptureSet = (input: { on?: boolean } & Partial<Record<DesktopCaptureLayer, boolean>>) =>
   desktopAction<DesktopCaptureStatus>('capture_set', input);
-export const desktopCapturePause = (minutes = 60) => desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
-export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
-export const desktopCaptureSignOut = () => desktopAction<DesktopCaptureStatus>('capture_sign_out');
+/** "Allow all": asks macOS for Screen Recording, Accessibility, and the Microphone when `audio`, for Kortix. */
+export const desktopCaptureRequestGrants = (input: { audio: boolean }) =>
+  desktopAction<DesktopCaptureStatus>('capture_grants_request', input);
 export const desktopCaptureOpenTimeline = () => desktopAction<null>('capture_open_timeline');
-export const desktopCaptureOpenPermission = (permission: DesktopCapturePermission) =>
-  desktopAction<null>('capture_open_permission', { permission });
-export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_logs');
 
-/** The desktop app's tray asks the page to open Capture settings. */
+/** The desktop app's tray asks the page to open "Your computer" (Capture lives there). */
 export const DESKTOP_CAPTURE_SETTINGS_COMMAND = 'capture-settings';
 
 /**

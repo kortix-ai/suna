@@ -184,7 +184,7 @@ test.describe("38 — Capture UI", () => {
         "Timeline",
         "Ask",
         "Ranges",
-        "Devices",
+        "Computers",
         "People",
         "Settings",
       ]) {
@@ -239,8 +239,8 @@ test.describe("38 — Capture UI", () => {
       for (const tab of ["Steps", "Transcript", "Summary"])
         await expect(page.getByRole("tab", { name: tab })).toBeVisible();
 
-      // Devices: one row, live.
-      await page.getByRole("tab", { name: "Devices", exact: true }).click();
+      // Computers: one row, live.
+      await page.getByRole("tab", { name: "Computers", exact: true }).click();
       const row = page.getByRole("row", { name: /Fixture Computer/ });
       await expect(row).toBeVisible();
       await expect(row).toContainText("Recording");

@@ -20604,6 +20604,46 @@
       "removeAll": "全部移除",
       "confirmTitle": "移除所有旧连接？",
       "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
+    },
+    "capture": {
+      "title": "Capture",
+      "record": "为 {project} 记录这台电脑",
+      "offHint": "已关闭。开启后会将这台电脑记录到该项目。",
+      "signingIn": "正在登录…",
+      "state": {
+        "recording": "正在记录",
+        "paused": "已暂停",
+        "permission_missing": "需要权限",
+        "not_recording": "未在记录",
+        "starting": "正在启动…",
+        "crashed": "已停止"
+      },
+      "layers": {
+        "screen": "屏幕",
+        "screenDescription": "大约每 2 秒一张截图及其文字。",
+        "actions": "操作",
+        "actionsDescription": "点击、按键和输入的文字，附带截图。",
+        "audio": "音频",
+        "audioDescription": "你的麦克风和这台电脑播放的声音。"
+      },
+      "layerOffByPolicy": "此项目已关闭。由项目管理者决定。",
+      "otherProject": "这台电脑正在记录到另一个项目。在这里开启会把它切换到此项目。",
+      "waitingOnPage": "请在浏览器中打开的页面上批准登录。",
+      "signInRequired": "这台电脑在此项目中已失去 Capture 访问权限。请重新开启以记录。",
+      "policyNotice": "来自此项目的管理者",
+      "setupHint": "Capture 只需为 Kortix 授权一次。如果系统设置打开，请在列表中开启 Kortix。",
+      "grants": {
+        "screen": "屏幕录制",
+        "screenDescription": "查看并记录屏幕上的内容",
+        "accessibility": "辅助功能",
+        "accessibilityDescription": "记录你的点击和按键",
+        "microphone": "麦克风",
+        "microphoneDescription": "记录说话内容，仅在开启音频时"
+      },
+      "openTimeline": "打开时间线",
+      "changeFailed": "无法更改 Capture。请重试。",
+      "signInCancelled": "已取消登录",
+      "signInFailed": "无法登录 Capture。请重试。"
     }
   },
   "messageFrom": {
@@ -20642,71 +20682,6 @@
       "continue": "继续",
       "codePlaceholder": "ABCD-1234"
     },
-    "desktop": {
-      "menu": "Capture",
-      "title": "Kortix Capture",
-      "state": {
-        "recording": "正在记录",
-        "paused": "已暂停",
-        "permission_missing": "需要权限",
-        "not_recording": "未在记录",
-        "starting": "正在启动…",
-        "crashed": "已停止",
-        "off": "关闭",
-        "signInRequired": "重新登录",
-        "signedOut": "未设置"
-      },
-      "unavailableTitle": "不可用",
-      "unavailable": "此桌面应用不包含 Kortix Capture。请将 Kortix 更新到最新版本。",
-      "changeFailed": "无法更改 Capture。请重试。",
-      "signedOut": "已退出 Capture",
-      "signOutFailed": "无法退出 Capture。请重试。",
-      "crashed": "Capture 多次崩溃后已停止。Kortix 会继续尝试。",
-      "policyNotice": "来自此项目的管理者",
-      "record": "记录",
-      "recordDescription": "Capture 在后台记录，即使 Kortix 应用已关闭，并在登录时启动。",
-      "layersTitle": "Capture 记录的内容",
-      "layers": {
-        "screen": "屏幕",
-        "screenDescription": "大约每 2 秒一张截图及其文字。",
-        "actions": "操作",
-        "actionsDescription": "点击、按键和输入的文字，附带截图。",
-        "audio": "音频",
-        "audioDescription": "你的麦克风和这台电脑播放的声音。"
-      },
-      "layerOffByPolicy": "此项目已关闭。由项目管理者决定。",
-      "recordsInto": "记录到 {project}。",
-      "recordsIntoUnknown": "记录到一个你在此处无法打开的项目。",
-      "syncError": "上传失败：{error}",
-      "lastUpload": "上次上传 {time}，{pending} 个等待中。",
-      "noUploadYet": "尚未上传任何内容。",
-      "changeProject": "更换项目",
-      "openTimeline": "打开时间线",
-      "showLogs": "显示日志",
-      "signOutEllipsis": "退出…",
-      "signOutTitle": "退出 Capture？",
-      "signOutDescription": "Capture 会在这台电脑上停止，这台电脑会失去对项目的访问。记录会保留在项目中。要再次记录，请重新登录。",
-      "signOut": "退出",
-      "permissionsTitle": "macOS 权限",
-      "permissions": {
-        "screen": "屏幕录制",
-        "accessibility": "辅助功能",
-        "microphone": "麦克风"
-      },
-      "permissionGranted": "已允许 Kortix",
-      "permissionMissing": "尚未允许",
-      "openSystemSettings": "打开系统设置",
-      "permissionsHint": "macOS 会为 Kortix 请求这些权限。你允许后，Capture 会自动重启。",
-      "signInCancelled": "已取消登录",
-      "signInFailed": "无法登录 Capture。请重试。",
-      "signedIn": "Capture 已开启",
-      "signInRequiredHint": "这台电脑失去了对其项目的访问。可能是项目关闭了 Capture，或有人移除了这台电脑。请重新登录以继续记录。",
-      "intro": "Capture 会把这台电脑记录到已开启 Capture 的项目中，让你和你的智能体可以搜索你做过的事。Kortix 用你的账户登录 Capture。",
-      "waitingOnPage": "请在浏览器中打开的页面上批准登录。",
-      "signingIn": "正在登录…",
-      "turnOn": "开启 Capture",
-      "cancel": "取消"
-    },
     "duration": {
       "hoursMinutes": "{hours} 小时 {minutes} 分钟",
       "minutes": "{minutes} 分钟"
@@ -20717,7 +20692,7 @@
         "timeline": "时间线",
         "ask": "提问",
         "ranges": "片段",
-        "devices": "设备",
+        "devices": "电脑",
         "people": "成员",
         "settings": "设置"
       }
@@ -20850,15 +20825,13 @@
       "notFoundHint": "链接可能有误，或该片段属于其他人。"
     },
     "devices": {
-      "title": "设备",
-      "description": "向此项目录制的每台电脑及其实时状态。设备超过 120 秒没有状态即视为离线。",
-      "connect": "连接设备",
-      "connectThisComputer": "连接这台电脑",
-      "scopeLabel": "谁的设备",
-      "scopeMine": "我的设备",
+      "title": "电脑",
+      "description": "记录到此项目的每台电脑及其实时状态。超过 120 秒没有状态即视为离线。",
+      "scopeLabel": "谁的电脑",
+      "scopeMine": "我的电脑",
       "scopeProject": "整个项目",
       "column": {
-        "device": "设备",
+        "device": "电脑",
         "owner": "所有者",
         "status": "状态",
         "layers": "图层",
@@ -20896,41 +20869,24 @@
         "unknown": "未知"
       },
       "never": "暂无",
-      "unnamed": "未命名设备",
+      "unnamed": "未命名的电脑",
       "you": "你",
       "member": "一位成员",
       "actionsFor": "{name} 的操作",
       "syncNow": "立即同步",
       "synced": "{count, plural, =0 {设备已同步，没有新内容} other {设备已同步，# 项排队中}}",
       "syncFailed": "无法同步设备",
-      "revoke": "撤销设备",
-      "revokeTitle": "撤销此设备？",
-      "revokeDescription": "{name} 会立即停止上传。要再次录制，请在应用中重新登录。",
-      "revoked": "设备已撤销",
-      "revokeFailed": "无法撤销设备",
-      "loadFailed": "无法加载设备。",
+      "revoke": "撤销电脑",
+      "revokeTitle": "撤销这台电脑？",
+      "revokeDescription": "{name} 会立即停止记录到此项目。要再次记录，请在“你的电脑”中开启 Capture。",
+      "revoked": "电脑已撤销",
+      "revokeFailed": "无法撤销这台电脑",
+      "loadFailed": "无法加载电脑。",
       "tryAgain": "重试",
-      "empty": "你连接的设备会显示在这里",
-      "footnote": "每台电脑一行。重新安装或更新应用会保留同一行。"
-    },
-    "connect": {
-      "title": "连接设备",
-      "description": "安装一个用于录制的应用，然后登录到此项目。",
-      "desktopTitle": "Kortix 桌面应用",
-      "desktopHint": "桌面应用包含 Kortix Capture。",
-      "os": {
-        "macos": "macOS",
-        "windows": "Windows",
-        "linux": "Linux"
-      },
-      "engineTitle": "Kortix Capture 引擎",
-      "engineHint": "单独的录制器，适用于没有桌面应用的电脑。",
-      "engineLink": "打开发布页",
-      "stepsTitle": "登录",
-      "step1": "打开应用，选择使用 Kortix 登录。浏览器会打开。",
-      "step2": "检查浏览器中的代码与应用中的代码一致。",
-      "step3": "选择 {project}。一分钟内，设备会以你的名字显示在这里。",
-      "close": "关闭"
+      "empty": "你记录的电脑会显示在这里",
+      "footnote": "每台电脑一行，名称与“你的电脑”中相同。",
+      "turnOnThisComputer": "为这台电脑开启 Capture",
+      "openKortixOnComputer": "在你的电脑上打开 Kortix"
     },
     "people": {
       "title": "成员",

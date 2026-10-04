@@ -72,7 +72,6 @@ import {
   yourComputerMenu,
 } from '@/features/tunnel/computer-connect';
 import { LocalComputerModal, YourComputersModal } from '@/features/tunnel/local-computer-modal';
-import { DesktopCaptureMenuItem, DesktopCaptureModal } from '@/features/capture/desktop-capture-modal';
 import { DESKTOP_CAPTURE_SETTINGS_COMMAND } from '@/lib/desktop';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
@@ -128,11 +127,10 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
   const [computerDialog, setComputerDialog] = useState<ComputerDialog | null>(null);
-  const [captureOpen, setCaptureOpen] = useState(false);
-  // The desktop tray's "Capture Settings…" opens the Capture dialog here.
+  // The desktop tray's "Your Computer…" opens this computer's dialog, where Capture lives.
   useEffect(() => {
     const onCommand = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === DESKTOP_CAPTURE_SETTINGS_COMMAND) setCaptureOpen(true);
+      if ((event as CustomEvent<string>).detail === DESKTOP_CAPTURE_SETTINGS_COMMAND) setComputerDialog('this');
     };
     window.addEventListener('kortix-desktop-command', onCommand);
     return () => window.removeEventListener('kortix-desktop-command', onCommand);
@@ -345,7 +343,6 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 onSelect={(dialog) => deferAfterClose(() => setComputerDialog(dialog))}
               />
 
-              <DesktopCaptureMenuItem onSelect={() => deferAfterClose(() => setCaptureOpen(true))} />
 
               <ThemeSubmenu />
 
@@ -380,7 +377,6 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
         onOpenChange={(open) => setComputerDialog(open ? 'mine' : null)}
         onConnectAnother={() => setComputerDialog('connect')}
       />
-      <DesktopCaptureModal projectId={projectId} open={captureOpen} onOpenChange={setCaptureOpen} />
       <ComputerConnectModal
         projectId={projectId}
         open={computerDialog === 'connect'}

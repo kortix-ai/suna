@@ -60,6 +60,7 @@ import {
   desktopComputerRequestGrants,
   desktopComputerResume,
 } from '@/lib/desktop';
+import { ComputerCaptureSection } from '@/features/capture/computer-capture-section';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import {
@@ -204,10 +205,11 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
     return (
       <>
         <ComputerHeader name={t('localComputerTitle')} status={t('notConnected')} />
-        <ModalBody>
+        <ModalBody className="space-y-5">
           <p className="text-muted-foreground text-sm text-pretty">
             {status?.error || t('desktopUnavailable')}
           </p>
+          <ComputerCaptureSection projectId={projectId} />
         </ModalBody>
       </>
     );
@@ -242,6 +244,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
                 ? t('connectAgain')
                 : t('connectThisComputer')}
           </Button>
+          <ComputerCaptureSection projectId={projectId} />
         </ModalBody>
       </>
     );
@@ -307,6 +310,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
             </SettingsRow>
           ) : null}
         </SettingsRowGroup>
+        <ComputerCaptureSection projectId={projectId} />
         {user?.email ? (
           <p className="text-muted-foreground text-xs">{t('pairedWith', { email: user.email })}</p>
         ) : null}

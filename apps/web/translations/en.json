@@ -20604,6 +20604,46 @@
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
+    },
+    "capture": {
+      "title": "Capture",
+      "record": "Record this computer for {project}",
+      "offHint": "Off. Turn it on to record this computer into the project.",
+      "signingIn": "Signing in…",
+      "state": {
+        "recording": "Recording",
+        "paused": "Paused",
+        "permission_missing": "Needs permission",
+        "not_recording": "Not recording",
+        "starting": "Starting…",
+        "crashed": "Stopped"
+      },
+      "layers": {
+        "screen": "Screen",
+        "screenDescription": "A screenshot about every 2 seconds, with its text.",
+        "actions": "Actions",
+        "actionsDescription": "Clicks, keys, and typed text, with screenshots.",
+        "audio": "Audio",
+        "audioDescription": "Your microphone and what this computer plays."
+      },
+      "layerOffByPolicy": "Off for this project. The people who manage it decide.",
+      "otherProject": "This computer records into another project now. Turning it on here moves it to this one.",
+      "waitingOnPage": "Approve the sign-in on the page that opened in your browser.",
+      "signInRequired": "This computer lost access to Capture in this project. Turn it on again to record.",
+      "policyNotice": "From the people who manage this project",
+      "setupHint": "Capture needs these once, for Kortix. Turn on Kortix in the list if System Settings opens.",
+      "grants": {
+        "screen": "Screen Recording",
+        "screenDescription": "See and record what is on the screen",
+        "accessibility": "Accessibility",
+        "accessibilityDescription": "Record your clicks and keys",
+        "microphone": "Microphone",
+        "microphoneDescription": "Record what is said, only while Audio is on"
+      },
+      "openTimeline": "Open timeline",
+      "changeFailed": "Could not change Capture. Try again.",
+      "signInCancelled": "Sign-in cancelled",
+      "signInFailed": "Could not sign in Capture. Try again."
     }
   },
   "messageFrom": {
@@ -20642,71 +20682,6 @@
       "continue": "Continue",
       "codePlaceholder": "ABCD-1234"
     },
-    "desktop": {
-      "menu": "Capture",
-      "title": "Kortix Capture",
-      "state": {
-        "recording": "Recording",
-        "paused": "Paused",
-        "permission_missing": "Needs permission",
-        "not_recording": "Not recording",
-        "starting": "Starting…",
-        "crashed": "Stopped",
-        "off": "Off",
-        "signInRequired": "Sign in again",
-        "signedOut": "Not set up"
-      },
-      "unavailableTitle": "Not available",
-      "unavailable": "This desktop app has no Kortix Capture. Update Kortix to the newest version.",
-      "changeFailed": "Could not change Capture. Try again.",
-      "signedOut": "Capture signed out",
-      "signOutFailed": "Could not sign out of Capture. Try again.",
-      "crashed": "Capture stopped after repeated crashes. Kortix keeps trying.",
-      "policyNotice": "From the people who manage this project",
-      "record": "Record",
-      "recordDescription": "Capture records in the background, also while the Kortix app is closed, and starts at login.",
-      "layersTitle": "What Capture records",
-      "layers": {
-        "screen": "Screen",
-        "screenDescription": "A screenshot about every 2 seconds, with its text.",
-        "actions": "Actions",
-        "actionsDescription": "Clicks, keys, and typed text, with screenshots.",
-        "audio": "Audio",
-        "audioDescription": "Your microphone and what this computer plays."
-      },
-      "layerOffByPolicy": "Off for this project. The people who manage it decide.",
-      "recordsInto": "Records into {project}.",
-      "recordsIntoUnknown": "Records into a project you cannot open here.",
-      "syncError": "Upload failed: {error}",
-      "lastUpload": "Last upload {time}, {pending} waiting.",
-      "noUploadYet": "Nothing uploaded yet.",
-      "changeProject": "Change project",
-      "openTimeline": "Open timeline",
-      "showLogs": "Show logs",
-      "signOutEllipsis": "Sign out…",
-      "signOutTitle": "Sign out of Capture?",
-      "signOutDescription": "Capture stops on this computer, and this computer loses access to the project. Recordings stay in the project. To record again, you sign in again.",
-      "signOut": "Sign out",
-      "permissionsTitle": "macOS permissions",
-      "permissions": {
-        "screen": "Screen Recording",
-        "accessibility": "Accessibility",
-        "microphone": "Microphone"
-      },
-      "permissionGranted": "Allowed for Kortix",
-      "permissionMissing": "Not allowed yet",
-      "openSystemSettings": "Open System Settings",
-      "permissionsHint": "macOS asks for these for Kortix. Capture restarts on its own after you allow one.",
-      "signInCancelled": "Sign-in cancelled",
-      "signInFailed": "Could not sign in Capture. Try again.",
-      "signedIn": "Capture turned on",
-      "signInRequiredHint": "This computer lost access to its project. Capture may be off for the project, or someone removed this computer. Sign in again to record.",
-      "intro": "Capture records this computer into a project with Capture on, so you and your agents can search what you did. Kortix signs Capture in with your account.",
-      "waitingOnPage": "Approve the sign-in on the page that opened in your browser.",
-      "signingIn": "Signing in…",
-      "turnOn": "Turn on Capture",
-      "cancel": "Cancel"
-    },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} m",
       "minutes": "{minutes} m"
@@ -20717,7 +20692,7 @@
         "timeline": "Timeline",
         "ask": "Ask",
         "ranges": "Ranges",
-        "devices": "Devices",
+        "devices": "Computers",
         "people": "People",
         "settings": "Settings"
       }
@@ -20850,15 +20825,13 @@
       "notFoundHint": "The link may be wrong, or the range belongs to another person."
     },
     "devices": {
-      "title": "Devices",
-      "description": "Every computer that records into this project, with its live status. A device counts as offline after 120 seconds without a status.",
-      "connect": "Connect a device",
-      "connectThisComputer": "Connect this computer",
-      "scopeLabel": "Whose devices",
-      "scopeMine": "My devices",
+      "title": "Computers",
+      "description": "Every computer that records into this project, with its live status. A computer counts as offline after 120 seconds without a status.",
+      "scopeLabel": "Whose computers",
+      "scopeMine": "My computers",
       "scopeProject": "Whole project",
       "column": {
-        "device": "Device",
+        "device": "Computer",
         "owner": "Owner",
         "status": "Status",
         "layers": "Layers",
@@ -20896,41 +20869,24 @@
         "unknown": "Unknown"
       },
       "never": "None yet",
-      "unnamed": "Unnamed device",
+      "unnamed": "Unnamed computer",
       "you": "You",
       "member": "A member",
       "actionsFor": "Actions for {name}",
       "syncNow": "Sync now",
       "synced": "{count, plural, =0 {Device synced, nothing new} one {Device synced, # item queued} other {Device synced, # items queued}}",
       "syncFailed": "Could not sync the device",
-      "revoke": "Revoke device",
-      "revokeTitle": "Revoke this device?",
-      "revokeDescription": "{name} stops uploading at once. To record again, sign it in from the app again.",
-      "revoked": "Device revoked",
-      "revokeFailed": "Could not revoke the device",
-      "loadFailed": "Could not load the devices.",
+      "revoke": "Revoke computer",
+      "revokeTitle": "Revoke this computer?",
+      "revokeDescription": "{name} stops recording into this project at once. To record again, turn on Capture in Your computer.",
+      "revoked": "Computer revoked",
+      "revokeFailed": "Could not revoke the computer",
+      "loadFailed": "Could not load the computers.",
       "tryAgain": "Try again",
-      "empty": "Devices you connect will show up here",
-      "footnote": "One row per computer. Reinstalling or updating the app keeps the same row."
-    },
-    "connect": {
-      "title": "Connect a device",
-      "description": "Install an app that records, then sign it in to this project.",
-      "desktopTitle": "Kortix desktop app",
-      "desktopHint": "The desktop app includes Kortix Capture.",
-      "os": {
-        "macos": "macOS",
-        "windows": "Windows",
-        "linux": "Linux"
-      },
-      "engineTitle": "Kortix Capture engine",
-      "engineHint": "The recorder on its own, for a computer without the desktop app.",
-      "engineLink": "Open the releases",
-      "stepsTitle": "Sign in",
-      "step1": "Open the app and choose Sign in with Kortix. Your browser opens.",
-      "step2": "Check that the code in the browser matches the code in the app.",
-      "step3": "Choose {project}. The device shows up here under your name within a minute.",
-      "close": "Close"
+      "empty": "Computers you record will show up here",
+      "footnote": "One row per computer, with the same name as in Your computers.",
+      "turnOnThisComputer": "Turn on Capture for this computer",
+      "openKortixOnComputer": "Open Kortix on your computer"
     },
     "people": {
       "title": "People",

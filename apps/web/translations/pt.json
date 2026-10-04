@@ -20604,6 +20604,46 @@
       "removeAll": "Remover todas",
       "confirmTitle": "Remover todas as conexões antigas?",
       "confirmDescription": "O Kortix as remove com suas contas de todos os projetos. Um computador que ainda use uma pode se conectar de novo."
+    },
+    "capture": {
+      "title": "Capture",
+      "record": "Gravar este computador para {project}",
+      "offHint": "Desativado. Ative para gravar este computador no projeto.",
+      "signingIn": "Entrando…",
+      "state": {
+        "recording": "Gravando",
+        "paused": "Em pausa",
+        "permission_missing": "Precisa de permissão",
+        "not_recording": "Não está gravando",
+        "starting": "Iniciando…",
+        "crashed": "Parado"
+      },
+      "layers": {
+        "screen": "Tela",
+        "screenDescription": "Uma captura de tela a cada 2 segundos, aproximadamente, com o texto.",
+        "actions": "Ações",
+        "actionsDescription": "Cliques, teclas e texto digitado, com capturas de tela.",
+        "audio": "Áudio",
+        "audioDescription": "Seu microfone e o que este computador reproduz."
+      },
+      "layerOffByPolicy": "Desativado neste projeto. Quem gerencia o projeto decide.",
+      "otherProject": "Este computador grava em outro projeto agora. Ativar aqui o move para este.",
+      "waitingOnPage": "Aprove o login na página que abriu no seu navegador.",
+      "signInRequired": "Este computador perdeu o acesso ao Capture neste projeto. Ative de novo para gravar.",
+      "policyNotice": "De quem gerencia este projeto",
+      "setupHint": "O Capture precisa disso uma vez, para o Kortix. Ative o Kortix na lista se os Ajustes do Sistema abrirem.",
+      "grants": {
+        "screen": "Gravação de Tela",
+        "screenDescription": "Ver e gravar o que está na tela",
+        "accessibility": "Acessibilidade",
+        "accessibilityDescription": "Gravar seus cliques e teclas",
+        "microphone": "Microfone",
+        "microphoneDescription": "Gravar o que é dito, só com o Áudio ativado"
+      },
+      "openTimeline": "Abrir linha do tempo",
+      "changeFailed": "Não foi possível alterar o Capture. Tente de novo.",
+      "signInCancelled": "Login cancelado",
+      "signInFailed": "Não foi possível conectar o Capture. Tente de novo."
     }
   },
   "messageFrom": {
@@ -20642,71 +20682,6 @@
       "continue": "Continuar",
       "codePlaceholder": "ABCD-1234"
     },
-    "desktop": {
-      "menu": "Capture",
-      "title": "Kortix Capture",
-      "state": {
-        "recording": "Gravando",
-        "paused": "Em pausa",
-        "permission_missing": "Precisa de permissão",
-        "not_recording": "Não está gravando",
-        "starting": "Iniciando…",
-        "crashed": "Parado",
-        "off": "Desativado",
-        "signInRequired": "Entre de novo",
-        "signedOut": "Não configurado"
-      },
-      "unavailableTitle": "Indisponível",
-      "unavailable": "Este app de desktop não inclui o Kortix Capture. Atualize o Kortix para a versão mais recente.",
-      "changeFailed": "Não foi possível alterar o Capture. Tente de novo.",
-      "signedOut": "Sessão do Capture encerrada",
-      "signOutFailed": "Não foi possível sair do Capture. Tente de novo.",
-      "crashed": "O Capture parou após falhas repetidas. O Kortix continua tentando.",
-      "policyNotice": "De quem gerencia este projeto",
-      "record": "Gravar",
-      "recordDescription": "O Capture grava em segundo plano, mesmo com o app Kortix fechado, e inicia ao entrar na sessão.",
-      "layersTitle": "O que o Capture grava",
-      "layers": {
-        "screen": "Tela",
-        "screenDescription": "Uma captura de tela a cada 2 segundos, aproximadamente, com o texto.",
-        "actions": "Ações",
-        "actionsDescription": "Cliques, teclas e texto digitado, com capturas de tela.",
-        "audio": "Áudio",
-        "audioDescription": "Seu microfone e o que este computador reproduz."
-      },
-      "layerOffByPolicy": "Desativado neste projeto. Quem gerencia o projeto decide.",
-      "recordsInto": "Grava em {project}.",
-      "recordsIntoUnknown": "Grava em um projeto que você não pode abrir aqui.",
-      "syncError": "Falha no envio: {error}",
-      "lastUpload": "Último envio {time}, {pending} na fila.",
-      "noUploadYet": "Nada enviado ainda.",
-      "changeProject": "Trocar de projeto",
-      "openTimeline": "Abrir linha do tempo",
-      "showLogs": "Mostrar logs",
-      "signOutEllipsis": "Sair…",
-      "signOutTitle": "Sair do Capture?",
-      "signOutDescription": "O Capture para neste computador, e este computador perde o acesso ao projeto. As gravações ficam no projeto. Para gravar de novo, você entra de novo.",
-      "signOut": "Sair",
-      "permissionsTitle": "Permissões do macOS",
-      "permissions": {
-        "screen": "Gravação de Tela",
-        "accessibility": "Acessibilidade",
-        "microphone": "Microfone"
-      },
-      "permissionGranted": "Permitido para o Kortix",
-      "permissionMissing": "Ainda não permitido",
-      "openSystemSettings": "Abrir Ajustes do Sistema",
-      "permissionsHint": "O macOS pede isso para o Kortix. O Capture reinicia sozinho depois que você permite uma.",
-      "signInCancelled": "Login cancelado",
-      "signInFailed": "Não foi possível conectar o Capture. Tente de novo.",
-      "signedIn": "Capture ativado",
-      "signInRequiredHint": "Este computador perdeu o acesso ao projeto. O Capture pode estar desativado no projeto, ou alguém removeu este computador. Entre de novo para gravar.",
-      "intro": "O Capture grava este computador em um projeto com o Capture ativado, para que você e seus agentes possam pesquisar o que você fez. O Kortix conecta o Capture com a sua conta.",
-      "waitingOnPage": "Aprove o login na página que abriu no seu navegador.",
-      "signingIn": "Entrando…",
-      "turnOn": "Ativar o Capture",
-      "cancel": "Cancelar"
-    },
     "duration": {
       "hoursMinutes": "{hours} h {minutes} min",
       "minutes": "{minutes} min"
@@ -20717,7 +20692,7 @@
         "timeline": "Linha do tempo",
         "ask": "Perguntar",
         "ranges": "Intervalos",
-        "devices": "Dispositivos",
+        "devices": "Computadores",
         "people": "Pessoas",
         "settings": "Configurações"
       }
@@ -20850,15 +20825,13 @@
       "notFoundHint": "O link pode estar errado, ou o intervalo pertence a outra pessoa."
     },
     "devices": {
-      "title": "Dispositivos",
-      "description": "Cada computador que grava neste projeto, com seu status ao vivo. Um dispositivo conta como offline após 120 segundos sem status.",
-      "connect": "Conectar um dispositivo",
-      "connectThisComputer": "Conectar este computador",
-      "scopeLabel": "Dispositivos de quem",
-      "scopeMine": "Meus dispositivos",
+      "title": "Computadores",
+      "description": "Cada computador que grava neste projeto, com seu status ao vivo. Um computador fica offline após 120 segundos sem status.",
+      "scopeLabel": "De quem",
+      "scopeMine": "Meus computadores",
       "scopeProject": "Projeto inteiro",
       "column": {
-        "device": "Dispositivo",
+        "device": "Computador",
         "owner": "Proprietário",
         "status": "Status",
         "layers": "Camadas",
@@ -20896,41 +20869,24 @@
         "unknown": "Desconhecido"
       },
       "never": "Ainda nenhum",
-      "unnamed": "Dispositivo sem nome",
+      "unnamed": "Computador sem nome",
       "you": "Você",
       "member": "Um membro",
       "actionsFor": "Ações para {name}",
       "syncNow": "Sincronizar agora",
       "synced": "{count, plural, =0 {Dispositivo sincronizado, nada novo} one {Dispositivo sincronizado, # item na fila} other {Dispositivo sincronizado, # itens na fila}}",
       "syncFailed": "Não foi possível sincronizar o dispositivo",
-      "revoke": "Revogar dispositivo",
-      "revokeTitle": "Revogar este dispositivo?",
-      "revokeDescription": "{name} para de enviar dados na hora. Para gravar de novo, entre novamente pelo app.",
-      "revoked": "Dispositivo revogado",
-      "revokeFailed": "Não foi possível revogar o dispositivo",
-      "loadFailed": "Não foi possível carregar os dispositivos.",
+      "revoke": "Revogar computador",
+      "revokeTitle": "Revogar este computador?",
+      "revokeDescription": "{name} para de gravar neste projeto na hora. Para gravar de novo, ative o Capture em Seu computador.",
+      "revoked": "Computador revogado",
+      "revokeFailed": "Não foi possível revogar o computador",
+      "loadFailed": "Não foi possível carregar os computadores.",
       "tryAgain": "Tentar novamente",
-      "empty": "Os dispositivos que você conectar vão aparecer aqui",
-      "footnote": "Uma linha por computador. Reinstalar ou atualizar o app mantém a mesma linha."
-    },
-    "connect": {
-      "title": "Conectar um dispositivo",
-      "description": "Instale um app que grava e depois entre com ele neste projeto.",
-      "desktopTitle": "App desktop do Kortix",
-      "desktopHint": "O app desktop inclui o Kortix Capture.",
-      "os": {
-        "macos": "macOS",
-        "windows": "Windows",
-        "linux": "Linux"
-      },
-      "engineTitle": "Engine do Kortix Capture",
-      "engineHint": "O gravador sozinho, para um computador sem o app desktop.",
-      "engineLink": "Abrir as releases",
-      "stepsTitle": "Entrar",
-      "step1": "Abra o app e escolha Entrar com o Kortix. Seu navegador abre.",
-      "step2": "Confira se o código no navegador é o mesmo do app.",
-      "step3": "Escolha {project}. O dispositivo aparece aqui com o seu nome em até um minuto.",
-      "close": "Fechar"
+      "empty": "Os computadores que você gravar aparecem aqui",
+      "footnote": "Uma linha por computador, com o mesmo nome de Seus computadores.",
+      "turnOnThisComputer": "Ativar o Capture neste computador",
+      "openKortixOnComputer": "Abrir o Kortix no seu computador"
     },
     "people": {
       "title": "Pessoas",
