@@ -1,11 +1,11 @@
 'use client';
 
-import { PackageIcon as PackageSearch } from '@phosphor-icons/react';
-import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { useTranslations } from '@/i18n/use-translations';
+import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { ReactNode, RefObject } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useInfiniteMarketplaceItems } from '@/hooks/marketplace';
@@ -51,6 +51,7 @@ export function MarketplacePagedGrid({
   emptyDescription,
   emptyAction,
   header,
+  loadMore = 'scroll',
 }: {
   query?: string;
   type?: string;
@@ -68,6 +69,10 @@ export function MarketplacePagedGrid({
   emptyDescription?: ReactNode;
   emptyAction?: ReactNode;
   header?: (info: { total: number; count: number }) => ReactNode;
+  /** How the next page loads on a window-scrolled page: an infinite-scroll
+   *  sentinel, or an explicit "Show more" button under the grid. The in-panel
+   *  (`scrollContainerRef`) grid always scrolls. */
+  loadMore?: 'scroll' | 'button';
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const itemsQuery = useInfiniteMarketplaceItems(
@@ -102,7 +107,6 @@ export function MarketplacePagedGrid({
   if (itemsQuery.isError) {
     return (
       <EmptyState
-        icon={PackageSearch}
         title={tI18nComplete.raw('text2c1cff23cb89')}
         description={(itemsQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')}
       />
@@ -110,14 +114,7 @@ export function MarketplacePagedGrid({
   }
 
   if (items.length === 0) {
-    return (
-      <EmptyState
-        icon={PackageSearch}
-        title={emptyTitle}
-        description={emptyDescription}
-        action={emptyAction}
-      />
-    );
+    return <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} />;
   }
 
   const grid = scrollContainerRef ? (
@@ -137,19 +134,33 @@ export function MarketplacePagedGrid({
       windowed={shouldVirtualizeMarketplacePagedGrid(pageCount)}
       gridClassName={gridClassName}
       showSource={showSource}
-      hasNextPage={hasNextPage}
+      hasNextPage={loadMore === 'scroll' && hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
       fetchNextPage={fetchNextPage}
     />
   );
+  const showMoreButton = !scrollContainerRef && loadMore === 'button' && hasNextPage;
 
   return (
     <div className="space-y-3">
       {header?.({ total, count: items.length })}
       {grid}
-      {isFetchingNextPage && (
-        <div className="text-muted-foreground/70 flex items-center justify-center gap-2 py-2 text-xs">
-          <Loading className="size-3.5 animate-spin" />
+      {showMoreButton ? (
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            aria-busy={isFetchingNextPage || undefined}
+          >
+            {tI18nComplete.raw('textf5c9bd131486')}
+          </Button>
+        </div>
+      ) : null}
+      {isFetchingNextPage && !showMoreButton && (
+        <div className="text-muted-foreground flex items-center justify-center gap-2 py-2 text-xs">
+          <Loading className="size-3.5" />
           {tI18nComplete.raw('text964e5f88d036')}
         </div>
       )}

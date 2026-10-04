@@ -148,7 +148,6 @@ export function ComposerChatInput({
     setVariant(restoredOptions.variant ?? undefined);
   }, [restoredOptions, setAgent, setModel, setVariant]);
 
-  const lockedAgentName = boundAgentName?.trim() || null;
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -167,10 +166,10 @@ export function ComposerChatInput({
     defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
-  const selectedAgentName = lockedAgentName ?? agentResolution.selected;
-  // A locked meta session runs its own bound agent, so an empty project roster
-  // does not refuse it.
-  const noAccessibleAgents = !lockedAgentName && agentResolution.disabled;
+  const selectedAgentName = agentResolution.selected;
+  // An empty project roster refuses an unbound composer; the resolver answers
+  // `disabled` for exactly that case.
+  const noAccessibleAgents = agentResolution.disabled;
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
@@ -267,11 +266,7 @@ export function ComposerChatInput({
       agents={local.agent.list}
       selectedAgent={selectedAgentName}
       noAccessibleAgents={noAccessibleAgents}
-      onAgentChange={
-        // The selectedAgentName effect above notifies the parent; no inline call.
-        lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)
-      }
-      agentSelectorLocked={!!lockedAgentName}
+      onAgentChange={(name) => local.agent.set(name ?? undefined)}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}

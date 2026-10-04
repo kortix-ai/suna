@@ -72,11 +72,9 @@ export type Credential =
       agentGrant: AgentGrant | null;
       serviceAccountId: string;
       activated: boolean;
-      /** The project flag `agent_principal` is on and the grant is governed:
-       *  the session
-       *  authorizes AS the agent, capped by its ceiling, never as the
-       *  launcher. Optional so a literal built by an older caller reads as
-       *  the legacy model. */
+      /** The grant is governed: the session authorizes AS the agent, capped
+       *  by its ceiling, never as the launcher. Optional so a literal built
+       *  by an older caller reads as ungoverned. */
       agentPrincipal?: boolean;
       /** The human this session acts on behalf of, or null for an unattended
        *  run or once another human prompted it (spec §2.3). Decides personal
@@ -163,7 +161,7 @@ export function credentialProjectId(actor: Actor): string | null {
 
 /**
  * True when this request authorizes under the agent-principal model: an agent
- * session whose project has `agent_principal` on and whose grant is governed.
+ * session whose grant is governed.
  */
 export function isAgentPrincipalActor(actor: Actor): boolean {
   return actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal === true;
@@ -172,9 +170,8 @@ export function isAgentPrincipalActor(actor: Actor): boolean {
 /**
  * The human an agent session acts on behalf of (spec §2.3), or null: an
  * unattended run, a session another human prompted, or any non-agent
- * credential. Read from the token binding (15 s memo); a clear busts the
- * memo on the writing replica. For the per-request fresh value read the
- * `onBehalfOfUserId` context field set by the auth middleware.
+ * credential. The value the auth middleware read for this request; null for
+ * an actor built out of band, whose reader must read the token row itself.
  */
 export function credentialOnBehalfOf(actor: Actor): string | null {
   return actor.credential.kind === 'agent_session' ? (actor.credential.onBehalfOfUserId ?? null) : null;
@@ -196,7 +193,10 @@ interface TokenBinding {
   projectId: string | null;
   agentGrant: AgentGrant | null;
   serviceAccountId: string | null;
-  onBehalfOfUserId: string | null;
+  /** Only on the binding the auth middleware read this request. The memo below
+   *  never carries it: every turn rewrites it (`bindSessionTurnIdentity`), and a
+   *  15 s copy on another replica would name the previous prompter. */
+  onBehalfOfUserId?: string | null;
 }
 
 /**
@@ -220,7 +220,6 @@ const loadTokenBinding = ttlMemo({
         projectId: accountTokens.projectId,
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
-        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
       })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
@@ -230,7 +229,6 @@ const loadTokenBinding = ttlMemo({
           projectId: row.projectId,
           agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
-          onBehalfOfUserId: row.onBehalfOfUserId ?? null,
         }
       : null;
   },
@@ -378,7 +376,9 @@ async function tokenCredential(
       serviceAccountId,
       activated,
       agentPrincipal,
-      onBehalfOfUserId: binding?.onBehalfOfUserId ?? null,
+      // Fresh from this request's auth read; null out of band, where readers
+      // that need it read the token row themselves (git-proxy/audit.ts).
+      onBehalfOfUserId: known?.onBehalfOfUserId ?? null,
     };
   }
   // A null binding for a PAT means the token row is gone (revoked). Keeping

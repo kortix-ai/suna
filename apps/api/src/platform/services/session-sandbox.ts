@@ -81,6 +81,7 @@ import {
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
+import { logger } from '../../lib/logger';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -214,7 +215,7 @@ export async function mintSessionToken(opts: {
   ]);
   if (agentPrincipal && !serviceAccountId) {
     throw new Error(
-      `agent_principal is on for project ${opts.projectId}, but agent "${opts.agentName}" has no service account; ` +
+      `project ${opts.projectId}: governed agent "${opts.agentName}" has no service account; ` +
         'refusing to mint a session credential that would authorize as the launcher',
     );
   }
@@ -1013,7 +1014,14 @@ export async function provisionSessionSandbox(opts: {
       // clobbered back to 'running' by a provisioning attempt finishing late.
       await transitionSession('provisioned', sandbox.sandboxId, {
         sandboxUrl: result.baseUrl || null,
-      }).catch(() => {});
+      }).catch((sessionErr) =>
+        // No sweep repairs this: stuck-sessions skips a session whose sandbox
+        // row is active. Log it so it is at least visible.
+        logger.error(
+          `[session-sandbox] ${sandbox.sandboxId} is active but its session row was not marked provisioned:`,
+          { error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr) },
+        ),
+      );
 
       tl.mark('row-active');
       // A first prompt waiting for this box re-opens the session now.
@@ -1095,6 +1103,7 @@ export async function provisionSessionSandbox(opts: {
           current: providerName,
           allowed: config.ALLOWED_SANDBOX_PROVIDERS,
         }) as ProviderName | null;
+        let switched = false;
         if (next) {
           fallbackAttempted = true;
           console.warn(
@@ -1108,9 +1117,33 @@ export async function provisionSessionSandbox(opts: {
             sessionId: sandbox.sandboxId, accountId,
           });
           if (bgExternalId) {
-            await provider.remove(bgExternalId).catch(() => {});
+            const failedBox = bgExternalId;
+            await provider.remove(failedBox).catch((removeErr) =>
+              logger.error(
+                `[session-sandbox] failover could not remove ${providerName} box ${failedBox} for ${sandbox.sandboxId}; the orphan sweep stops it:`,
+                { error: removeErr instanceof Error ? removeErr.message : String(removeErr) },
+              ),
+            );
             bgExternalId = null;
           }
+          // The row must name the new provider BEFORE its box exists: a box
+          // on `next` under a row that still says `providerName` is unknown to
+          // the orphan sweep, which stops it. If the switch does not land,
+          // fail this session instead of failing over.
+          switched = await transitionSandbox('reprovision', sandbox.sandboxId, {
+            columns: { provider: next },
+          }).then(
+            () => true,
+            (switchErr) => {
+              logger.error(
+                `[session-sandbox] failover to ${next} aborted for ${sandbox.sandboxId}: the provider switch was not written:`,
+                { error: switchErr instanceof Error ? switchErr.message : String(switchErr) },
+              );
+              return false;
+            },
+          );
+        }
+        if (next && switched) {
           providerName = next;
           provider = getProvider(next);
           providerCreateInput.snapshot = undefined;
@@ -1124,9 +1157,6 @@ export async function provisionSessionSandbox(opts: {
           // correct if `next` is Platinum).
           platinumCreateAttempt += 1;
           providerCreateInput.createAttempt = platinumCreateAttempt;
-          await transitionSandbox('reprovision', sandbox.sandboxId, {
-            columns: { provider: next },
-          }).catch(() => {});
           tl.mark(`failover:${next}`);
           continue provisioning;
         }
@@ -1175,7 +1205,12 @@ export async function provisionSessionSandbox(opts: {
             ...(failureCategory ? { failureCategory } : {}),
           }),
         });
-        await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch(() => {});
+        await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch((sessionErr) =>
+          logger.error(
+            `[session-sandbox] ${sandbox.sandboxId} failed but its session row was not marked failed (stuck-sessions stops it after its TTL):`,
+            { error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr) },
+          ),
+        );
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }

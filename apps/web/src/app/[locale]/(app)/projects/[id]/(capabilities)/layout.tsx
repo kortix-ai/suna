@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
+import { CapabilityAccessGate } from '@/features/workspace/capabilities/shared/capability-access-gate';
 import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 
 /**
@@ -43,6 +44,10 @@ import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capabil
  * makes an element a scroll container, sticky resolves against the nearest
  * ancestor scroll container, and there are five of those between the bar and
  * the viewport — it would have pinned to a box that never scrolls.
+ *
+ * **Permissions gate the body, never the bar.** `CapabilityTabs` paints every
+ * tab on the first frame; `CapabilityAccessGate` swaps only `{children}` for a
+ * no-access state, and only on a denial the engine returned.
  */
 export default function CapabilitiesLayout({ children }: { children: React.ReactNode }) {
   const { id: projectId } = useParams<{ id: string }>();
@@ -50,7 +55,7 @@ export default function CapabilitiesLayout({ children }: { children: React.React
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <CapabilityTabs projectId={projectId} />
-      {children}
+      <CapabilityAccessGate projectId={projectId}>{children}</CapabilityAccessGate>
     </div>
   );
 }

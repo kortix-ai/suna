@@ -1,16 +1,15 @@
 import { Reveal } from '@/components/home/reveal';
-import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { ChangeRequest } from '@/features/marketing/company-as-code/change-request';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
 import { getLocalizedCompanyAsCodeContent } from '@/features/marketing/company-as-code/content';
 import { CompanyAsCodeHeroVisual } from '@/features/marketing/company-as-code/hero-visual';
 import { RepoTree } from '@/features/marketing/company-as-code/repo-tree';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
 import { getTranslations } from '@/i18n/get-translations';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-
 
 /**
  * `/company-as-code` — the argument no competitor can copy: one `kortix.yaml`
@@ -38,7 +37,11 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
         ctaPrimaryHref={hero.ctaPrimaryHref}
         ctaSecondary={hero.ctaSecondary}
         ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<CompanyAsCodeHeroVisual />}
+        visual={
+          <div className="dark bg-background text-foreground border-border w-full rounded-xl border p-6 sm:p-10">
+            <CompanyAsCodeHeroVisual />
+          </div>
+        }
       />
 
       {/* ── 1 · the two files that define the company ───────────────────── */}
@@ -78,7 +81,7 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
               {/* Absorbs whatever height the manifest column has left, so the
                   two columns end on the same line at `lg` and the code panels
                   never sit above a void. */}
-              <ul className="border-border bg-card flex flex-1 flex-col justify-center gap-6 rounded-sm border p-6 sm:p-7">
+              <ul className="border-border bg-card flex flex-1 flex-col justify-center gap-6 rounded-xl border p-6 sm:p-7">
                 {definition.notes.map((note) => (
                   <li
                     key={note.id}
@@ -108,7 +111,7 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
           </Reveal>
 
           <Reveal delay={0.1} className="min-w-0 lg:col-span-5">
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
+            <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8">
               <h3 className="text-foreground text-base leading-tight font-medium">
                 {repo.outsideTitle}
               </h3>
@@ -148,7 +151,7 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
               {grep.cards.map((card) => (
                 <div
                   key={card.id}
-                  className="border-border bg-card flex flex-col justify-center rounded-sm border p-6"
+                  className="border-border bg-card flex flex-col justify-center rounded-xl border p-6"
                 >
                   <h3 className="text-foreground text-base leading-tight font-medium">
                     {card.title}
@@ -179,7 +182,7 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
               {change.points.map((point) => (
                 <div
                   key={point.id}
-                  className="border-border bg-card flex h-full flex-col justify-center rounded-sm border p-6 sm:p-7"
+                  className="border-border bg-card flex h-full flex-col justify-center rounded-xl border p-6 sm:p-7"
                 >
                   <h3 className="text-foreground text-base leading-tight font-medium">
                     {point.title}
@@ -213,7 +216,7 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
           </Reveal>
 
           <Reveal delay={0.1} className="min-w-0 lg:col-span-7">
-            <ol className="border-border grid h-full overflow-hidden rounded-sm border sm:grid-cols-2">
+            <ol className="border-border grid h-full overflow-hidden rounded-xl border sm:grid-cols-2">
               {selfImprove.steps.map((step, i) => (
                 <li
                   key={step.n}
@@ -254,7 +257,7 @@ export default async function CompanyAsCodePage(): Promise<ReactNode> {
           </Reveal>
 
           <Reveal delay={0.1} className="min-w-0 lg:col-span-7">
-            <dl className="border-border bg-card h-full overflow-hidden rounded-sm border">
+            <dl className="border-border bg-card h-full overflow-hidden rounded-xl border">
               {portable.rows.map((row, i) => (
                 <div
                   key={row.id}

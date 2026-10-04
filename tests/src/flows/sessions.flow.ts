@@ -1249,6 +1249,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     let warmSessionId = '';
     let replacementId = '';
+    let replacementInsertedAt = '';
 
     await ctx.step('warming creates an ordinary session marked unused', async () => {
       const r = await owner.post(
@@ -1344,6 +1345,7 @@ flow(
       );
       r.status(200).body().has('$.reused', false);
       replacementId = r.json<any>().session.session_id;
+      replacementInsertedAt = r.json<any>().session.created_at;
       if (replacementId === warmSessionId) {
         throw new Error('The replacement reused the used session id');
       }
@@ -1377,21 +1379,24 @@ flow(
       if (typeof (row.metadata ?? {}).last_activity_at !== 'string') {
         throw new Error('Adoption did not stamp last_activity_at — the session sorts at create time');
       }
-      // Adoption writes last_activity_at and updated_at in the same statement.
-      // Later lifecycle writes can advance updated_at before this read-back.
-      // Require monotonic ordering on this row instead of exact equality.
-      const updatedAtMs = Date.parse(row.updated_at);
+      // Adoption is the user-visible creation (#8953): one UPDATE stamps
+      // created_at and last_activity_at with the same moment, after the warm
+      // row's insert. updated_at is not asserted here: a concurrent lifecycle
+      // writer can land a timestamp it took before adoption (seen on staging,
+      // 1.85 s earlier). integration-warm-session-adopt.test.ts pins
+      // adoption's own updated_at write.
       const lastActivityAtMs = Date.parse(row.metadata.last_activity_at);
       const createdAtMs = Date.parse(row.created_at);
+      const insertedAtMs = Date.parse(replacementInsertedAt);
       if (
-        !Number.isFinite(updatedAtMs) ||
         !Number.isFinite(lastActivityAtMs) ||
-        lastActivityAtMs <= createdAtMs ||
-        updatedAtMs < lastActivityAtMs
+        !Number.isFinite(insertedAtMs) ||
+        createdAtMs !== lastActivityAtMs ||
+        lastActivityAtMs <= insertedAtMs
       ) {
         throw new Error(
-          `Adoption did not advance last_activity_at and updated_at monotonically ` +
-            `(created_at=${row.created_at}, updated_at=${row.updated_at}, ` +
+          `Adoption did not move created_at to the adoption moment ` +
+            `(inserted=${replacementInsertedAt}, created_at=${row.created_at}, ` +
             `last_activity_at=${row.metadata.last_activity_at})`,
         );
       }

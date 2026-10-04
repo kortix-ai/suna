@@ -21,6 +21,7 @@ import { ownerMayUseAgent } from '../../config-releases/repoint';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
+import { LATEST_ETAG_BUDGET_MS } from '../lib/session-reload';
 import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import {
   combineConfigStaleness,
@@ -31,6 +32,8 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
+import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { logger } from '../../lib/logger';
 import { timeConfigStage } from '../lib/config-stage-timing';
 import { computeDesiredRuntime } from '../../runtime-convergence/desired';
 import { diffRuntime } from '../../runtime-convergence/diff';
@@ -51,6 +54,36 @@ async function runtimeBlockFor(releaseId: string | null, running: SandboxConfigS
   const desired = await computeDesiredRuntime({ releaseId });
   return toRuntimeBlockWire(diffRuntime(desired, running.runtimeTruth));
 }
+
+/**
+ * One mirror-work budget, spent across the stages of ONE GET /config request
+ * that can block on the project mirror's network ops (`latest_etag`,
+ * `desired_release`, `config_dir`). A mirror fetch has a 30s per-op timeout and
+ * retries 3 times, so an unbounded stage outran the 25s request deadline and
+ * turned every poll against a slow mirror into a 5xx (KRTX-818: `git;dur`
+ * pinned at 24.4–25.0s on every deadline 503). Each stage races what is left
+ * of the budget; on timeout it answers its own "could not tell" value instead
+ * of a 503, and the fetch the caller abandoned keeps running so the next poll
+ * finds the mirror warm.
+ */
+function budgetLeft(spendFrom: number): number {
+  return Math.max(1_000, LATEST_ETAG_BUDGET_MS - (Date.now() - spendFrom));
+}
+
+/** Degrade one bounded stage to `null` on its budget timeout, loudly once. */
+async function boundedStage<T>(promise: Promise<T>, label: string, budgetMs: number): Promise<T | null> {
+  try {
+    return await withTimeout(promise, budgetMs, label);
+  } catch (error) {
+    if (error instanceof TimeoutError) {
+      logger.warn(`[session-config] ${label} stage unresolved within its budget; answering unknown`, {
+        budget_ms: budgetMs,
+      });
+      return null;
+    }
+    throw error;
+  }
+}
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -64,6 +97,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
+    // The mirror-work budget is spent across this whole request: the later
+    // stages get only what the earlier ones left (see `budgetLeft`).
+    const configReadStart = Date.now();
     const binding = await timeConfigStage('project_access', () =>
       resolveSessionBinding(c, projectId, sessionId, 'session'),
     );
@@ -101,12 +137,17 @@ projectsApp.openapi(
     const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
     const [running, latest] = await Promise.all([
       timeConfigStage('sandbox_state', () => readSandboxConfigState({ sessionId })),
-      timeConfigStage('latest_etag', () => latestAgentConfigEtag({
-        projectId,
-        accountId: loaded.row.accountId,
-        sessionId,
-        baseRef,
-      })),
+      timeConfigStage('latest_etag', () =>
+        latestAgentConfigEtag(
+          {
+            projectId,
+            accountId: loaded.row.accountId,
+            sessionId,
+            baseRef,
+          },
+          { budgetMs: budgetLeft(configReadStart) },
+        ),
+      ),
     ]);
     // The managed-model catalog's freshness, in the SAME place a config
     // fallback is already visible — not gated on `releasesEnabled`, for the
@@ -134,16 +175,23 @@ projectsApp.openapi(
         sessionId,
         ownerUserId: visible.row.createdBy ?? null,
       };
-      const desired = await timeConfigStage('desired_release', () => resolveDesiredRelease({
-        project,
-        baseRef,
-        sessionAgent: visible.row.agentName ?? null,
-        repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
-        ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
-        // The etag compile above already fetched this mirror in THIS request;
-        // a second invalidate paid a second `git fetch` per read (KRTX-629).
-        refreshProjectMirror: false,
-      })).catch(() => null);
+      const desired = await timeConfigStage('desired_release', () =>
+        boundedStage(
+          resolveDesiredRelease({
+            project,
+            baseRef,
+            sessionAgent: visible.row.agentName ?? null,
+            repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+            ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+            // The etag stage above already refreshed this mirror in THIS
+            // request (ref-scoped tip proof or fetch); a second invalidate
+            // paid a second `git fetch` per read (KRTX-629).
+            refreshProjectMirror: false,
+          }),
+          'desired_release',
+          budgetLeft(configReadStart),
+        ),
+      ).catch(() => null);
       const release = toSessionConfigRelease(
         running.release,
         desired ? desired.descriptor.release_id : undefined,
@@ -177,12 +225,18 @@ projectsApp.openapi(
     // so offering "update available" for them would promise a reload that
     // cannot deliver. `stale` is then exactly the pre-release expression.
     const filesStale = releasesEnabled && running.reachable
-      ? await timeConfigStage('config_dir', () => isSessionConfigDirStale({
-          project,
-          baseRef,
-          configDirSha: running.configDirSha,
-          commitSha: running.commitSha,
-        }))
+      ? await timeConfigStage('config_dir', () =>
+          boundedStage(
+            isSessionConfigDirStale({
+              project,
+              baseRef,
+              configDirSha: running.configDirSha,
+              commitSha: running.commitSha,
+            }),
+            'config_dir',
+            budgetLeft(configReadStart),
+          ),
+        )
       : null;
     return c.json({
       base_ref: baseRef,

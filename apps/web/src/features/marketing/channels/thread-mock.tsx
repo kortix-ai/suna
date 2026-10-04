@@ -2,8 +2,8 @@
 
 import { Kortix } from '@/features/icon/icons/kortix';
 import { Slack } from '@/features/icon/icons/slack';
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { getLocalizedChannelsContent } from './content';
 
@@ -50,7 +50,7 @@ export function ThreadMock(): ReactNode {
   const { mock } = getLocalizedChannelsContent(tI18nComplete).thread;
 
   return (
-    <figure className="border-border bg-card flex h-full flex-col overflow-hidden rounded-sm border">
+    <figure className="border-border bg-card flex h-full flex-col overflow-hidden rounded-xl border">
       {/* channel header */}
       <div className="border-border flex items-center gap-3 border-b px-5 py-3.5 sm:px-6">
         <Slack className="size-4 shrink-0" />
@@ -95,7 +95,7 @@ export function ThreadMock(): ReactNode {
         </div>
 
         {/* the decision, back in the thread */}
-        <div className="border-border bg-background rounded-sm border p-4 sm:p-5">
+        <div className="border-border bg-background rounded-xl border p-4 sm:p-5">
           <p className="text-foreground text-sm font-medium">{mock.review.title}</p>
           <p className="text-muted-foreground/70 mt-1.5 font-mono text-xs">{mock.review.body}</p>
           <div className="mt-4 flex flex-wrap gap-2">

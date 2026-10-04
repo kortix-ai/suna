@@ -42,6 +42,49 @@ function classOf(markup: string): string {
 }
 
 describe('SettingsRow alignment', () => {
+  /**
+   * KRTX-1313: on a 390px phone the horizontal row kept its control at full
+   * width (`shrink-0`, fixed `w-56` inputs, `truncate` email values), so the
+   * help text was squeezed into a 15px column — 1-2 characters per line.
+   * The fix stacks the row below `sm`; these assertions pin the classes that
+   * do it. apps/web has no DOM harness (no jsdom — see the header), so the
+   * pixel result is not asserted here; what is provable in-suite is that the
+   * row emits the stacking rule and that nothing desktop-side changed. The
+   * narrow-width behaviour itself follows the design system's canonical
+   * responsive recipe (`flex-col` below `sm`, `kortix-design-system` →
+   * Layout & responsiveness), the same shape every settings header uses.
+   */
+  test('stacks below sm: label above, control below, full-width content', () => {
+    const html = renderToStaticMarkup(
+      <SettingsRow label="Email" description="Used to sign in — cannot be changed here.">
+        control
+      </SettingsRow>,
+    );
+    // The row becomes a column on a phone and its content may take the full
+    // row width — that is what keeps the help text a readable column.
+    expect(classOf(html)).toContain('max-sm:!flex-col');
+    expect(classOf(html)).toContain('max-sm:!items-stretch');
+    const content = html.match(/data-slot="field-content" class="([^"]*)"/)?.[1] ?? '';
+    expect(content).toContain('min-w-0');
+    // The control wrapper stops hugging the right edge and takes the row so
+    // a fixed-width control cannot squeeze anything beside it.
+    const control = html.match(/max-sm:w-full[^"]*"/)?.[0] ?? '';
+    expect(control).toContain('max-sm:w-full');
+    expect(control).toContain('max-sm:justify-start');
+  });
+
+  test('the stacking rule is scoped below sm — desktop rows are untouched', () => {
+    const html = renderToStaticMarkup(
+      <SettingsRow label="Email" description="Used to sign in.">
+        control
+      </SettingsRow>,
+    );
+    expect(classOf(html)).not.toMatch(/(^|\s)sm:!flex-col(\s|$)/);
+    expect(classOf(html)).not.toMatch(/(^|\s)sm:!items-stretch(\s|$)/);
+    // The unscoped row classes keep their desktop behaviour.
+    expect(classOf(html)).toContain('flex-row');
+  });
+
   test('a row with no description centres its control, beating Field’s has-[] rule', () => {
     const html = renderToStaticMarkup(<SettingsRow label="Full name">control</SettingsRow>);
     // The important flag is the whole point — a plain `items-center` loses to

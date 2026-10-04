@@ -7,6 +7,7 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
+import { locales } from './src/i18n/catalog.mjs';
 import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import {
   enforcedContentSecurityPolicy,
@@ -20,8 +21,8 @@ import { writeDevCatalogs, writePublicCatalogs } from './scripts/i18n-public-cat
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
 // content record so recency-aware answer-engine retrievers can prefer fresh
-// content. Blog posts and use-cases carry an explicit `date` frontmatter
-// value that public-content.ts reads directly, but docs MDX files and
+// content. Use-cases carry an explicit `date` frontmatter value that
+// public-content.ts reads directly, but docs MDX files and
 // code-rendered marketing pages do not — their lastModified was `null`,
 // deprioritizing 42% of the public index. scripts/build-content-timestamps.mjs
 // (imported above) derives a timestamp for each from the most recent git
@@ -241,6 +242,9 @@ function resolveTurbopackFileSystemCacheForDev(): boolean {
 // to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
 // (next start never reads .next/standalone) and skip ESLint.
 const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
+
+// Origin of the blog deployment that /blog is served from (see rewrites()).
+const BLOG_ORIGIN = process.env.KORTIX_BLOG_ORIGIN?.replace(/\/+$/, '');
 
 // --- Cross-origin dev / preview access -----------------------------------
 // The app is frequently reached through a proxy whose hostname differs from the
@@ -598,6 +602,25 @@ const nextConfig = (): NextConfig => ({
         destination: '/',
         permanent: true,
       },
+      // The blog is its own app now (see the /blog rewrite below) and is
+      // English-only, so the localized copies this app used to serve
+      // (/de/blog, /ja/blog/<slug>, …) and the old Markdown mirrors
+      // (/markdown/blog/<slug>.md) land on the one canonical post.
+      {
+        source: `/:locale(${locales.join('|')})/blog`,
+        destination: '/blog',
+        permanent: true,
+      },
+      {
+        source: `/:locale(${locales.join('|')})/blog/:path*`,
+        destination: '/blog/:path*',
+        permanent: true,
+      },
+      {
+        source: '/markdown/blog/:slug.md',
+        destination: '/blog/:slug.md',
+        permanent: true,
+      },
     ];
   },
 
@@ -679,6 +702,18 @@ const nextConfig = (): NextConfig => ({
         source: '/docs/:path*',
         destination: '/docs/:path*/index.html',
       },
+      // /blog is a separate Next.js app (kortix-ai/marketing, basePath /blog)
+      // so posts ship on a push to that repo, without a release of this one.
+      // Every page, asset, feed and Markdown twin lives under /blog there, so
+      // these two rules carry all of it. The middleware lets /blog through
+      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). Unset, as in local dev
+      // and self-hosted deployments, /blog is simply not served.
+      ...(BLOG_ORIGIN
+        ? [
+            { source: '/blog', destination: `${BLOG_ORIGIN}/blog` },
+            { source: '/blog/:path*', destination: `${BLOG_ORIGIN}/blog/:path*` },
+          ]
+        : []),
     ];
     return { beforeFiles, afterFiles, fallback: [] };
   },
