@@ -102,7 +102,7 @@ export function RootHead({
             '@context': 'https://schema.org',
             '@type': 'Organization',
             name: siteMetadata.name,
-            alternateName: ['Kortix', 'Kortix AI', 'Kortix – The open-source AI Management System'],
+            alternateName: ['Kortix', 'Kortix AI', 'Kortix – The open-source AI Operating System'],
             url: siteMetadata.url,
             logo: `${siteMetadata.url}/favicon.svg`,
             description: siteMetadata.description,

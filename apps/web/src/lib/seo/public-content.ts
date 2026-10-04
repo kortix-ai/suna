@@ -54,6 +54,7 @@ export const STATIC_PUBLIC_CONTENT_ROUTES = [
   '/about',
   '/agent-computer',
   '/agents-and-skills',
+  '/ai-os',
   '/automations',
   '/careers',
   '/changelog',
@@ -193,6 +194,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.',
     htmlPath: '/agent-computer',
     markdownPath: '/markdown/agent-computer.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'ai-os',
+    title: 'The AI Operating System',
+    description:
+      'One open-source operating system for your agents, people and tools: agents, skills, memory, connectors and computers in one git repo you own.',
+    htmlPath: '/ai-os',
   },
   {
     kind: 'marketing',

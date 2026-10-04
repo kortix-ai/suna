@@ -52,10 +52,10 @@ type Agent = ProjectConfigSummary['agents'][number];
  */
 export function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  // Pinning an agent's model is a customize write, which is what the route
-  // asserts — not "is this person a manager".
+  // Pinning an agent's model writes the gateway model defaults, so it is
+  // project.model.write — what the route asserts, not "is this a manager".
   const canManage =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE).allowed === true;
   // Per-agent model pins live in the GATEWAY model-defaults chain. A native
   // project (llm_gateway off) has no such chain — the agent's model comes
   // from its own frontmatter/manifest and OpenCode resolves it in the
@@ -183,10 +183,10 @@ function AgentScopeCard({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  // `PUT /projects/:id/agents/:name/scope` asserts `project.customize.write`
+  // `PUT /projects/:id/agents/:name/scope` asserts `project.agent.write`
   // (docs/sdk/reference: "the route answers 403 otherwise"). Ask for that.
   const canManage =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
 
   const [env, setEnv] = useState<AgentGrantSet>(scope.env);
   const [connectors, setConnectors] = useState<AgentGrantSet>(scope.connectors);

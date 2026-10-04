@@ -37,6 +37,7 @@ const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 const MARKETING_ROUTES = [
   '/',
   '/about',
+  '/ai-os',
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
@@ -67,6 +68,7 @@ const MARKETING_ROUTES = [
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
+  '/ai-os',
   '/launch',
   '/agent-computer',
   '/agents-and-skills',
@@ -106,6 +108,7 @@ const PUBLIC_ROUTES = [
   '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
+  '/ai-os', // marketing page should be public
   '/agent-computer', // Agent computer marketing page should be public
   '/agents-and-skills', // marketing page should be public
   '/automations', // marketing page should be public

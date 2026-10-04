@@ -211,7 +211,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
  *
  * `manage` KEEPS mapping to project.write on purpose: all 31 remaining `manage`
  * call sites stack their own explicit leaf assert immediately after
- * (project.customize.write, project.connector.write, project.secret.write, …),
+ * (project.settings.write, project.connector.write, project.secret.write, …),
  * so the coarse gate is the membership-tier question and the leaf gate is the
  * capability question. The two sites where that stack was MISSING are the ones
  * routes.md §5.2 named — `POST|DELETE /projects/:id/cli-token` — and they now

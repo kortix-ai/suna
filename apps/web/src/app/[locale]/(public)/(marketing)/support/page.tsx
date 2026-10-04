@@ -93,47 +93,44 @@ function SupportPageContent() {
 
   return (
     <main className="bg-background min-h-screen">
-      {/* Container and header rhythm match /legal, /changelog and /blog: the
-          navbar in (public)/layout is fixed, so the page reserves its own
-          top space. */}
+      {/* The dark band reserves the space under the fixed navbar. */}
+      <SupportHeader title={t('title')} lead={t('lead')}>
+        {/* Four doors, above the fold. The page this replaced offered one
+            mailto inside a paragraph. */}
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <ChannelCard
+            icon={EnvelopeIcon}
+            title={t('channelEmailTitle')}
+            detail={SUPPORT_EMAIL}
+            note={t('channelEmailNote')}
+            href={`mailto:${SUPPORT_EMAIL}`}
+          />
+          <ChannelCard
+            icon={DiscordLogoIcon}
+            title={t('channelDiscordTitle')}
+            detail={t('channelDiscordDetail')}
+            note={t('channelDiscordNote')}
+            href={DISCORD_URL}
+            external
+          />
+          <ChannelCard
+            icon={BookOpenIcon}
+            title={t('channelDocsTitle')}
+            detail={t('channelDocsDetail')}
+            note={t('channelDocsNote')}
+            href="/docs"
+          />
+          <ChannelCard
+            icon={PulseIcon}
+            title={t('channelStatusTitle')}
+            detail="status.kortix.com"
+            note={t('channelStatusNote')}
+            href={STATUS_URL}
+            external
+          />
+        </div>
+      </SupportHeader>
       <div className={cn(SUPPORT_CONTAINER, 'pb-24 sm:pb-32')}>
-        <SupportHeader title={t('title')} lead={t('lead')}>
-          {/* Four doors, above the fold. The page this replaced offered one
-              mailto inside a paragraph. */}
-          <div className="mt-9 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <ChannelCard
-              icon={EnvelopeIcon}
-              title={t('channelEmailTitle')}
-              detail={SUPPORT_EMAIL}
-              note={t('channelEmailNote')}
-              href={`mailto:${SUPPORT_EMAIL}`}
-            />
-            <ChannelCard
-              icon={DiscordLogoIcon}
-              title={t('channelDiscordTitle')}
-              detail={t('channelDiscordDetail')}
-              note={t('channelDiscordNote')}
-              href={DISCORD_URL}
-              external
-            />
-            <ChannelCard
-              icon={BookOpenIcon}
-              title={t('channelDocsTitle')}
-              detail={t('channelDocsDetail')}
-              note={t('channelDocsNote')}
-              href="/docs"
-            />
-            <ChannelCard
-              icon={PulseIcon}
-              title={t('channelStatusTitle')}
-              detail="status.kortix.com"
-              note={t('channelStatusNote')}
-              href={STATUS_URL}
-              external
-            />
-          </div>
-        </SupportHeader>
-
         <Separator />
 
         <SupportDocGrid sections={sections}>
@@ -285,9 +282,7 @@ function SupportPageFallback() {
   const t = useTranslations('support.hub');
   return (
     <main className="bg-background min-h-screen">
-      <div className={SUPPORT_CONTAINER}>
-        <SupportHeader title={t('title')} lead={t('lead')} />
-      </div>
+      <SupportHeader title={t('title')} lead={t('lead')} />
     </main>
   );
 }

@@ -67,7 +67,7 @@ function triggerList(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function startServer(): string {
+function startServer(timezone = 'UTC'): string {
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -93,7 +93,7 @@ function startServer(): string {
         return Response.json(triggerList({ slug: String(draft.slug) }), { status: 201 });
       }
       if (url.pathname === `${base}/digest` && req.method === 'PATCH') {
-        return Response.json(triggerList());
+        return Response.json(triggerList({ timezone }));
       }
       if (url.pathname === `${base}/digest` && req.method === 'DELETE') {
         return Response.json({ triggers: [], triggers_paused: false, errors: [] });
@@ -278,15 +278,38 @@ describe('kortix triggers — the live (--apply) path', () => {
   });
 
   test('set --cron nulls run_at, and set --run-at nulls cron', async () => {
-    const config = writeConfig(startServer());
+    const config = writeConfig(startServer('Europe/Berlin'));
     const toCron = await runCli(['triggers', 'set', 'digest', '--cron', '0 0 7 * * *', '--project', PROJECT], config);
     expect(toCron.code).toBe(0);
-    expect(calls[0].body).toEqual({ cron: '0 0 7 * * *', run_at: null, timezone: 'UTC' });
+    expect(calls[0].body).toEqual({ cron: '0 0 7 * * *', run_at: null });
 
     calls = [];
     const toOnce = await runCli(['triggers', 'set', 'digest', '--run-at', '2026-03-01T09:00:00Z', '--timezone', 'Europe/Berlin', '--project', PROJECT], config);
     expect(toOnce.code).toBe(0);
     expect(calls[0].body).toEqual({ run_at: '2026-03-01T09:00:00Z', cron: null, timezone: 'Europe/Berlin' });
+  });
+
+  test.each([
+    ['--cron', '0 0 7 * * *', { cron: '0 0 7 * * *', run_at: null }],
+    ['--run-at', '2026-03-01T09:00:00Z', { run_at: '2026-03-01T09:00:00Z', cron: null }],
+  ])('set %s preserves an omitted timezone and accepts an explicit timezone', async (flag, schedule, body) => {
+    const config = writeConfig(startServer('Europe/Berlin'));
+    const omitted = await runCli(['triggers', 'set', 'digest', flag, schedule, '--project', PROJECT], config);
+    expect(omitted.code).toBe(0);
+    expect(omitted.stderr).not.toContain('error:');
+    expect(calls[0].body).toEqual(body);
+
+    calls = [];
+    const explicit = await runCli(['triggers', 'set', 'digest', flag, schedule, '--timezone', 'Europe/Berlin', '--project', PROJECT], config);
+    expect(explicit.code).toBe(0);
+    expect(calls[0].body).toEqual({ ...body, timezone: 'Europe/Berlin' });
+  });
+
+  test('set --timezone updates only the timezone, including explicit UTC', async () => {
+    const config = writeConfig(startServer('Europe/Berlin'));
+    const r = await runCli(['triggers', 'set', 'digest', '--timezone', 'UTC', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls[0].body).toEqual({ timezone: 'UTC' });
   });
 
   test('set --enabled maps to a boolean and rejects anything else', async () => {
