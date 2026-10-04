@@ -126,7 +126,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
 const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = recordingFetch();
 
-const { pushSessionScopeToSandbox } = await import('./sandbox-env-sync');
+const { pushSessionScopeToSandbox, pushSessionModelToSandbox } = await import('./sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -239,6 +239,49 @@ describe('pushSessionScopeToSandbox', () => {
 // 'no active sandbox' that no caller logged, so the session silently received
 // no secret, model or scope push for HOURS. The only visible symptom was an
 // agent that could not read a secret the UI said it had.
+describe('pushSessionModelToSandbox — guard order (characterization, KRTX-1497)', () => {
+  // pushSessionModelToSandbox had no direct test: its guards were exercised
+  // only through module mocks of its callers. These pin the exact order and
+  // reason strings so the shared push-target prelude cannot reorder them.
+  const MODEL_INPUT = { projectId: 'proj-1', sessionId: 'sess-1', model: 'kortix/glm-5.2' };
+
+  test('no sandbox row is a no-op with the bare reason', async () => {
+    activeSandbox = null;
+    const result = await pushSessionModelToSandbox(MODEL_INPUT);
+    expect(result).toEqual({ applied: false, reason: 'no active sandbox' });
+    expect(posted).toEqual([]);
+  });
+
+  test('a non-active row is named, not swallowed', async () => {
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'stopped' };
+    const result = await pushSessionModelToSandbox(MODEL_INPUT);
+    expect(result).toEqual({ applied: false, reason: "sandbox row is 'stopped', not active" });
+    expect(posted).toEqual([]);
+  });
+
+  test('a sandbox with no service key is refused rather than pushed unauthenticated', async () => {
+    activeSandbox = { externalId: 'ext-1', provider: 'daytona', config: {} };
+    const result = await pushSessionModelToSandbox(MODEL_INPUT);
+    expect(result).toEqual({ applied: false, reason: 'sandbox has no service key' });
+    expect(posted).toEqual([]);
+  });
+
+  test('an unresolvable env snapshot is a no-op, not an error', async () => {
+    SESSION_ROW.createdBy = '';
+    const result = await pushSessionModelToSandbox(MODEL_INPUT);
+    expect(result).toEqual({ applied: false, reason: 'no env snapshot' });
+    expect(posted).toEqual([]);
+  });
+
+  test('a live box gets the model under both env names and the opencode restart', async () => {
+    const result = await pushSessionModelToSandbox(MODEL_INPUT);
+    expect(result).toEqual({ applied: true });
+    expect(posted).toHaveLength(1);
+    expect(posted[0].opencodeEnv).toEqual({ KORTIX_MODEL: 'kortix/glm-5.2', KORTIX_OPENCODE_MODEL: 'kortix/glm-5.2' });
+    expect(posted[0].refreshModels).toBe(true);
+  });
+});
+
 describe('a live box behind a non-active row is named, not swallowed', () => {
   test('the skip reason carries the actual status', async () => {
     activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'stopped' };

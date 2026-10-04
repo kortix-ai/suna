@@ -6,6 +6,7 @@ import {
   LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
   LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
   LEGACY_BOOTSTRAP_METADATA_KEY,
+  LEGACY_BOOTSTRAP_STALE_RUNNING_MS,
   LEGACY_CHECK_METADATA_KEY,
   LEGACY_CHECK_TTL_MS,
   REQUIRED_RUNTIME_CAPABILITIES,
@@ -681,5 +682,30 @@ describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {
     expect(calls.execs).toHaveLength(2);
     expect(calls.execs[1]![0]).toBe('bash');
     expect(calls.execs[1]!.join(' ')).not.toContain(LOOPBACK);
+  });
+});
+
+describe('describeLegacyBootstrapRetry', () => {
+  test("a 'running' stamp older than the stale window still reports 'running' — the metadata summary never ages an attempt out; only the repair gate does", () => {
+    // Characterization (KRTX-1497): bootstrapLegacyRuntime treats a running
+    // stamp older than LEGACY_BOOTSTRAP_STALE_RUNNING_MS as a crashed attempt
+    // and repairs past it, while describeLegacyBootstrapRetry — read by the
+    // operator sweep and the session-open guarantee — keeps answering
+    // `running` for the same record. Pin both halves so the retry-state
+    // dedupe cannot silently change either.
+    const t = Date.parse('2026-09-01T12:00:00Z');
+    const meta = {
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: {
+        state: 'running',
+        attempts: 2,
+        manifestBuild: 1788044234,
+        lastAttemptAt: new Date(t - LEGACY_BOOTSTRAP_STALE_RUNNING_MS - 60_000).toISOString(),
+      },
+    };
+    expect(describeLegacyBootstrapRetry(meta, 1788044234, t)).toMatchObject({
+      status: 'running',
+      attempts: 2,
+      nextRetryAt: null,
+    });
   });
 });
