@@ -1,5 +1,5 @@
 {
-  "source_hash": "eebbacd4c3210a57ce7b78679c809a1367b709b6e4a87d474e6098956f22bc74",
+  "source_hash": "d7e0fe8842c2015eef7535d6085cec4a717c38b0897e4bcaa1e7f9cdb5107151",
   "diff_files": [
     "tests/src/core/catalog.ts",
     "tests/src/core/ci-shared.ts",
@@ -51,13 +51,13 @@
     "tests/unit/provisioning-perf.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "3ab1747a7e790492884bbb7fd5960367fd4977f04962e0cb78cf400ed44cbc86",
-  "head": "fef3cdcea0ff668946b65350ce08f7cbfc4cddcc",
-  "passed": false,
+  "diff_hash": "15a21347af72401c8788bb15887a22c27dcc118e0283aae30dbb22b22bb78143",
+  "head": "cf71ff82464f369316d8ff2fe3c76ef4a5780e9d",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:11:34.946Z"
+  "at": "2026-10-04T17:47:50.030Z"
 }
