@@ -1,5 +1,5 @@
 {
-  "source_hash": "526adbd3ffee5ea1844726b6fc5c27b8896361dec7ff7e9aa8b0306fa75bccd2",
+  "source_hash": "66c82e4db4cf37abdf6e87fbc9d63eed5a14b042812bfe15f1880df3f924b86d",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-04T055323Z-regenerate-a-git-derived-manifest-only-after-the-merge-commi.md",
@@ -24,13 +24,13 @@
     "packages/db/src/schema/kortix.ts",
     "tests/unit/vitest.config.ts"
   ],
-  "diff_hash": "121d556e99cf460c39cff639132c763dbb7e691e0551a0dafc1d5d0ce74d0476",
-  "head": "0c7fa7e2b1153dc0576c9dc78b170c3647372dc3",
+  "diff_hash": "3b5d6eefd90320a6740908b55852861e9dacbef041356dc5a3ef6f97dd866210",
+  "head": "1930e752fb55320001f2b26a8dca274991ea2589",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T06:54:00.243Z"
+  "at": "2026-10-04T08:22:14.067Z"
 }
