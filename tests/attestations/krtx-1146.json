@@ -1,16 +1,16 @@
 {
-  "source_hash": "f076108cd443639885def035c028610851ff411c3a2a4d95b2f3089fa9cec7b4",
+  "source_hash": "3ac627b2646edabcbe243d5b833e957c844924e7b046d119c401a7feceabe29f",
   "diff_files": [
     "packages/db/migrations/20261004034445727_renewal_processing_rls_initplan.sql",
     "packages/db/scripts/renewal-processing-rls-initplan.integration.test.ts"
   ],
   "diff_hash": "bd5c1ee65eabeed9cb83751e475434ce40d953679f9bb789ed6d0111ba653481",
-  "head": "9f2a8df4cdf78c4d4c0929d5fec3e88dc051f75b",
+  "head": "3ee5a024c44770c5a730e5c2961e281c23f70b6f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T05:03:17.006Z"
+  "at": "2026-10-04T17:43:50.347Z"
 }
