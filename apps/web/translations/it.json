@@ -1108,7 +1108,7 @@
       "noMatches": "Nessun risultato per {query}.",
       "emptyTitle": "Nessuna funzionalità sperimentale",
       "emptyDescription": "Questa installazione non espone funzionalità attivabili per progetto.",
-      "permission": "Per modificare una funzionalità serve l’autorizzazione a modificare la personalizzazione del progetto.",
+      "permission": "Ti serve il permesso per le impostazioni del progetto per modificare un feature flag.",
       "updateFailed": "Impossibile aggiornare {key}",
       "flags": {
         "marketplace": {
@@ -9605,7 +9605,7 @@
       "text062b7c4143e2": "Il proprio branch, creato per sessione",
       "text062bccfdad1c": "Nessun sandbox corrisponde a questa ricerca",
       "text062dddbbb151": "Una frontiera senza ecosistema non è stabile",
-      "text06346e4d9c35": "Per modificare un flag di funzionalità è necessaria l'autorizzazione di personalizzazione-scrittura del progetto.",
+      "text6d484ed8c1a0": "Ti serve il permesso per le impostazioni del progetto per modificare un feature flag.",
       "text06475633ed3e": "Ultima attività",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Cambia cosa può fare {value0} {value1} in {value2}.",

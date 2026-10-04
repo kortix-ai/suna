@@ -837,8 +837,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Will request browser permission when enabled': 'textc39018a68e1f',
   'Work on this locally': 'text17635feb9ad5',
   'You are… Goal: … Steps: 1. …': 'text1436469ad07f',
-  'You need the project&apos;s customize-write permission to change a feature flag.':
-    'text06346e4d9c35',
+  'You need the project&apos;s settings permission to change a feature flag.':
+    'text6d484ed8c1a0',
   'Your browser does not support notifications.': 'text51464281894d',
   'Your subscription, team seats, and billing for this account.': 'text46470f35d5d8',
   Attach: 'textd406ade2958c',

@@ -1108,7 +1108,7 @@
       "noMatches": "Keine Treffer für {query}.",
       "emptyTitle": "Keine experimentellen Funktionen",
       "emptyDescription": "Diese Installation bietet keine projektbezogenen Funktionsschalter.",
-      "permission": "Zum Ändern einer Funktion benötigen Sie die Berechtigung zum Bearbeiten der Projektanpassung.",
+      "permission": "Sie benötigen die Einstellungsberechtigung des Projekts, um ein Feature-Flag zu ändern.",
       "updateFailed": "{key} konnte nicht aktualisiert werden",
       "flags": {
         "marketplace": {
@@ -9605,7 +9605,7 @@
       "text062b7c4143e2": "Seinem eigenen, pro Sitzung erstellten Branch",
       "text062bccfdad1c": "Zu dieser Suche passen keine Sandboxen",
       "text062dddbbb151": "Eine Frontier ohne Ökosystem ist nicht stabil",
-      "text06346e4d9c35": "Sie benötigen die Berechtigung „Anpassen/Schreiben“ des Projekts, um ein Feature-Flag zu ändern.",
+      "text6d484ed8c1a0": "Sie benötigen die Einstellungsberechtigung des Projekts, um ein Feature-Flag zu ändern.",
       "text06475633ed3e": "Letzte Aktivität",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Ändern Sie, was {value0} {value1} in {value2} tun kann.",

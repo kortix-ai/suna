@@ -37,7 +37,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * here rather than dropped: the three-arm `STABILITY_BADGE` (a `stable` flag
  * used to render as "Experimental"), the per-row origin line
  * (`originLabel`), the shared `EmptyState`, the canonical
- * `updateFeatureFlag` route, and the `project.customize.write` gate — see
+ * `updateFeatureFlag` route, and the `project.settings.write` gate — see
  * `ExperimentalTab` for why that gate replaced manager-OR-project.write.
  * NOT carried across: `main`'s copy of `SandboxProviderRow` (this branch had
  * already moved that out — first to `general-tab.tsx`, and since 2026-08-17 to
@@ -116,7 +116,7 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   noMatches: (query) => `No matches for ${query}.`,
   emptyTitle: 'No experimental features',
   emptyDescription: 'This deployment exposes no per-project feature flags.',
-  permission: "You need the project's customize-write permission to change a feature flag.",
+  permission: "You need the project's settings permission to change a feature flag.",
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
@@ -229,7 +229,7 @@ export interface ExperimentalTabViewProps {
    */
   query?: string;
   onQueryChange?: (next: string) => void;
-  /** Renders the "you need customize-write" line. Separate from `canManage`
+  /** Renders the "you need the settings permission" line. Separate from `canManage`
    *  because the two differ while the IAM probe is still in flight: the
    *  switches are already disabled (fail-closed) but the reason is not yet
    *  known, and asserting a denial there would be a guess. Ported from
@@ -360,21 +360,21 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
   });
 
   const project = projectQuery.data;
-  // `project.customize.write`, NOT the old manager-OR-project.write gate this
+  // `project.settings.write`, NOT the old manager-OR-project.write gate this
   // tab inherited from `settings-view.tsx`'s `ExperimentalCard`. Ported from
   // `main`'s `feature-flags-view.tsx` (#6279), and verified against the route
   // rather than taken on trust: `PATCH /projects/:id/features` and its
   // deprecated `/experimental` alias run the SAME handler
   // (`apps/api/src/projects/routes/project-settings.ts`), which asserts
-  // `PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE`. The old gate was wrong in both
-  // directions — a manager without customize.write saw a switch the server
-  // rejects, and a custom role holding customize.write but not project.write
+  // `PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE`. The old gate was wrong in both
+  // directions — a manager without settings.write saw a switch the server
+  // rejects, and a custom role holding settings.write but not project.write
   // saw it disabled.
   //
   // FAIL-CLOSED while the probe is in flight: `isLoading` is checked
   // explicitly, so a slow probe renders read-only rather than briefly offering
   // a toggle the server would reject.
-  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;
 
   // Show the intended position while a toggle's request is in flight — same

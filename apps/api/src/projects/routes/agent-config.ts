@@ -24,7 +24,7 @@
 // hint instead of ever calling PUT here). GET still works on a v1 project — it
 // reports schemaVersion:1 + a null block so the UI can branch.
 //
-// Manager-gated on project.customize.write (same leaf the model/scope editors
+// Manager-gated on project.agent.write (same leaf the scope editor
 // and every other customize mutation use), threaded through
 // assertProjectCapability so the agent-grant fold fires.
 
@@ -309,7 +309,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
     );
 
     const parsed = DefaultAgentBodySchema.safeParse(await c.req.json().catch(() => null));
@@ -413,7 +413,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
     );
 
     const parsed = AgentBlockSchema.safeParse(await c.req.json().catch(() => null));
