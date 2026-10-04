@@ -7,12 +7,12 @@
     "tests/unit/test-runner-contract.test.ts"
   ],
   "diff_hash": "98a842809b9dd21ce07270c0bb2bdefbf34b4e26f2c5d980d152f5a948be408c",
-  "head": "8b46b827178273b2c955257bf7292e501d167e9d",
+  "head": "3cce76e30569d76084135d2905de5266e962a727",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T22:30:34.495Z"
+  "at": "2026-10-04T02:00:53.973Z"
 }
