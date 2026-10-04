@@ -1,5 +1,5 @@
 {
-  "source_hash": "3d08f0fb4f9d9784e76e6019a17e8429a5f6e03741a517cde43934df7c3bdfe4",
+  "source_hash": "1365c05db2b07a1c3298fa731e41edd8093be966a11d11f7a2e9e84c75b62a55",
   "diff_files": [
     "apps/web/src/features/workspace/settings/tabs/security-tab.test.tsx",
     "apps/web/src/features/workspace/settings/tabs/security-tab.tsx",
@@ -13,13 +13,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "13c40080c66544f4e11e85c0310ba6b78c356c111eb9c4c4181fb28b46df6541",
-  "head": "6588e6f81b8cc198c1135132e8f1cc81c1a9f37c",
+  "diff_hash": "4b561d8c1447e043317efc7ac339e6779fd72ba391168832a8b6c8af01dac991",
+  "head": "ee0daa33db696fb2e3b195b49b1199ec0545a580",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T21:06:30.471Z"
+  "at": "2026-10-04T01:05:18.944Z"
 }
