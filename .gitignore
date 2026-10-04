@@ -170,3 +170,19 @@ botkube-comm-real.yaml
 
 # Local agent evidence (screenshots, logs). May hold customer data — never commit.
 /output/
+.e2e/artifacts/
+.e2e/cache/
+.e2e/sessions/
+.e2e/report.json
+.e2e/ai-trace.json
+.e2e/junit.xml
+.e2e/summary.md
+.e2e/failures/
+.e2e/logs/
+.e2e/videos/
+
+# Crash dumps carry the whole process environment. Never commit one.
+# Not bare `core`: packages/sdk/src/core is source.
+/core
+core.[0-9]*
+*.core

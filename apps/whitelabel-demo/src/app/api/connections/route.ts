@@ -1,3 +1,4 @@
+import { getRequestSession } from '@/server/auth';
 /**
  * Connections this wrapper may bind to a new session, grouped by connector
  * alias.
@@ -14,31 +15,21 @@
  * asks for all of them.
  */
 import { selectConnectorBindingChoices } from '@/server/bindable-connections';
-import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
+import { upstreamBase } from '@/server/upstream-path';
 import { isOwner, isValidProjectId } from '@/server/users';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
-
-function upstreamBase(): string {
-  return (
-    process.env.KORTIX_UPSTREAM ??
-    process.env.KORTIX_API_URL ??
-    'https://api.kortix.com/v1'
-  ).replace(/\/+$/, '');
-}
 
 export async function GET(req: NextRequest) {
   const apiKey = process.env.KORTIX_API_KEY;
   if (!apiKey) return Response.json({ connectors: [] });
 
   const session = getRequestSession(req);
-  if (!session)
-    return Response.json({ error: 'Not authenticated' }, { status: 401 });
+  if (!session) return Response.json({ error: 'Not authenticated' }, { status: 401 });
 
   const limited = consumeRateLimit(session.userId);
-  if (!limited.ok)
-    return Response.json({ error: 'Rate limited' }, { status: 429 });
+  if (!limited.ok) return Response.json({ error: 'Rate limited' }, { status: 429 });
 
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') ?? '';
@@ -51,18 +42,12 @@ export async function GET(req: NextRequest) {
   }
 
   const kortix = createScopedKortix({
-    // KORTIX_UPSTREAM first, like the proxy and every other server route: a
-    // deployment that only sets it (the documented setup) was silently sending
-    // this lookup to the PUBLIC api, whose failure this route swallows as "no
-    // connections" — an empty picker with no error anywhere.
     backendUrl: upstreamBase(),
     getToken: async () => apiKey,
   });
 
   try {
-    const result = await kortix
-      .project(projectId)
-      .connectors.connections.list();
+    const result = await kortix.project(projectId).connectors.connections.list();
     const connectors = selectConnectorBindingChoices(result.connections).filter(
       (choice) => !connector || choice.alias === connector,
     );

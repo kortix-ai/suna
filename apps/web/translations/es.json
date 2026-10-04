@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Elige las claves compartidas que puede usar esta sesión.",
     "sessionKeyPool": "Grupo de claves de sesión",
     "sharedSessionKeys": "Esta sesión está compartida con el proyecto, así que aquí solo funcionan las claves compartidas con todo el proyecto. Las claves que te concedieron funcionan en tus sesiones privadas.",
+    "promptedSessionKeys": "Otro miembro ha escrito en esta sesión, así que ya no actúa por su propietario. Aquí solo funcionan las claves compartidas con todo el proyecto.",
+    "noPersonSessionKeys": "Esta sesión no actúa por ninguna persona: empezó antes de que existieran las claves personales o sin supervisión. Aquí solo funcionan las claves compartidas con todo el proyecto. Inicia una sesión nueva para usar tus propias claves.",
     "projectDefaultShort": "Valor predeterminado del proyecto",
     "rateLimitDescription": "La pasarela alterna entre las claves seleccionadas cuando un proveedor indica un límite de solicitudes.",
     "enableGateway": "Activa la pasarela LLM en la configuración del proyecto para usar grupos de claves.",
@@ -577,7 +579,7 @@
       "keepMyAccount": "Mantener mi cuenta",
       "deleteDialogTitle": "¿Eliminar tu cuenta?",
       "immediateWarning": "Esto elimina su cuenta de inmediato. No hay período de gracia ni forma de deshacerlo.",
-      "gracePeriodWarning": "Su cuenta está programada para ser eliminada después de un período de gracia de 30 días, durante el cual puede cancelar.",
+      "gracePeriodWarning": "Su cuenta se programará para ser eliminada después de un período de gracia de 30 días, durante el cual puede cancelar.",
       "whenDeleted": "Cuando se elimina su cuenta:",
       "agentsDeleted": "Todos los agentes que posees se eliminan",
       "threadsDeleted": "Se eliminan todas las sesiones y mensajes",
@@ -638,7 +640,13 @@
       "verified": "Verificado",
       "unverified": "No verificado",
       "signedOutOtherDevices": "Cerró sesión en sus otros dispositivos",
-      "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos"
+      "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos",
+      "currentDevice": "Este navegador",
+      "deviceSignedInAt": "Conectado el {date}",
+      "deviceActive": "Activo",
+      "noDevices": "No hay dispositivos conectados",
+      "noDevicesDescription": "No tienes sesión iniciada en ningún dispositivo en este momento.",
+      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados"
     },
     "appearance": {
       "theme": "Tema",
@@ -1108,7 +1116,7 @@
       "noMatches": "No hay resultados para {query}.",
       "emptyTitle": "No hay funciones experimentales",
       "emptyDescription": "Esta instalación no ofrece indicadores de función por proyecto.",
-      "permission": "Necesitas permiso para editar la personalización del proyecto para cambiar una función.",
+      "permission": "Necesitas el permiso de configuración del proyecto para cambiar un indicador de función.",
       "updateFailed": "No se pudo actualizar {key}",
       "flags": {
         "marketplace": {
@@ -1972,7 +1980,11 @@
       "topupWalletHint": "Recarga el saldo para que tus agentes sigan funcionando.",
       "addCredits": "Añadir créditos",
       "billingPortal": "Portal de facturación",
-      "portalDescription": "Gestiona tu suscripción, métodos de pago y facturas."
+      "portalDescription": "Gestiona tu suscripción, métodos de pago y facturas.",
+      "cancelSubscription": "Cancelar suscripción",
+      "cancelSubscriptionDescription": "Tu plan permanece activo hasta el final del periodo de facturación actual y luego finaliza. Puedes reactivarlo hasta entonces.",
+      "reactivateSubscription": "Reactivar suscripción",
+      "commitmentCancelHint": "Tu compromiso dura hasta el {date}. Podrás cancelar después."
     },
     "topup": {
       "minimum": "La recarga mínima es de {amount}.",
@@ -9605,7 +9617,7 @@
       "text062b7c4143e2": "Su propia rama, creada por sesión",
       "text062bccfdad1c": "No hay sandboxes que coincidan con esta búsqueda",
       "text062dddbbb151": "Una frontera sin ecosistema no es estable",
-      "text06346e4d9c35": "Necesita el permiso de personalización y escritura del proyecto para cambiar un indicador de función.",
+      "text6d484ed8c1a0": "Necesitas el permiso de configuración del proyecto para cambiar un indicador de función.",
       "text06475633ed3e": "Última actividad",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Cambiar lo que {value0} {value1} puede hacer en {value2}.",
@@ -19191,8 +19203,11 @@
       "text4af0b7d8bfb1": "Cada sesión se ejecuta en su propio entorno aislado, en su propia rama de git. Nada se comparte entre ejecuciones.",
       "text39207bf34111": "Habilidades relacionadas",
       "text73112526c03a": "El turno del agente falló. No se informó ningún motivo.",
+      "text0e5f7f6732e0": "Bifurcar conversación",
+      "text32ad3abe4479": "Error al bifurcar la conversación",
       "text85b7a59cdbd5": "Agente de la plataforma",
-      "textd9c0c74b514b": "Meta es un agente de la plataforma que coordina tu trabajo. Su configuración es fija: puedes iniciar una sesión con él, pero no se puede configurar aquí."
+      "textd9c0c74b514b": "Meta es un agente de la plataforma que coordina tu trabajo. Su configuración es fija: puedes iniciar una sesión con él, pero no se puede configurar aquí.",
+      "text6c4af31cd4ab": "Has cerrado sesión en este dispositivo, pero el servidor no pudo confirmar el cierre de sesión."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

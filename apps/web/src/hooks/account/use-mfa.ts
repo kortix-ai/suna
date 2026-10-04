@@ -29,7 +29,7 @@ import { useState } from 'react';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import { createClient } from '@/lib/supabase/client';
-import { supabaseMFAService } from '@/lib/supabase/mfa';
+import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
 
 export const MFA_FACTORS_QUERY_KEY = ['mfa-factors'] as const;
 export const MFA_AAL_QUERY_KEY = ['mfa-aal'] as const;
@@ -126,6 +126,11 @@ export function useMfa() {
     factorsError: factorsQuery.isError,
     onRetryFactors: () => factorsQuery.refetch(),
     sessionVerified: aalQuery.data?.current_level === 'aal2',
+    /** This session still owes a TOTP challenge before sensitive actions
+     *  (KRTX-1386): a verified TOTP factor is enrolled and the session is aal1.
+     *  `requestMfaStepUp` (mfa-step-up.tsx) turns it into "ask for the code
+     *  first". */
+    challengeRequired: mfaChallengeRequired(aalQuery.data),
 
     enrolling,
     enrollCode,

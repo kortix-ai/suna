@@ -152,11 +152,7 @@ interface RoutingPolicyDoc {
   capabilities: { write: boolean };
 }
 
-export async function gatewayRouting(
-  rest: string[],
-  opts: CtxOpts,
-  json: boolean,
-): Promise<number> {
+async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'get');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -279,7 +275,7 @@ function renderRouting(doc: RoutingPolicyDoc): number {
 
 // ── Budgets ─────────────────────────────────────────────────────────────────
 
-export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -351,7 +347,7 @@ export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean
 
 // ── External gateway API keys ───────────────────────────────────────────────
 
-export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -406,7 +402,7 @@ export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean):
 
 // ── Usage / analytics ───────────────────────────────────────────────────────
 
-export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   let days: string | undefined;
@@ -442,7 +438,7 @@ export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean)
   }
 }
 
-export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   // Pull flags off FIRST so a flag VALUE (e.g. the `3` in `--limit 3`) is never
   // mistaken for a positional logId.
   let limit: string | undefined;
@@ -494,7 +490,7 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
 
 // ── Playground (test a model end-to-end through the gateway) ─────────────────
 
-export async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   let prompt: string | undefined;
   try {
     prompt = takeFlagValue(rest, ['--prompt', '-p']);

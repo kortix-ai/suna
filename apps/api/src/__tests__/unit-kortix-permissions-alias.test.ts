@@ -15,6 +15,27 @@ const v1 = (block: string) =>
   parseManifestString(`kortix_version = 1\n[[agents]]\nname = "w"\n${block}`, 'toml', 'kortix.toml');
 
 describe('kortix_permissions / kortix_cli parse to the same grant', () => {
+  // project.customize.* was split into one leaf per topic. A manifest that
+  // still names the old leaf keeps its exact capability: the enforced grant
+  // carries every leaf it covered, and nothing else.
+  test('v2: a retired project.customize.write expands to the topic leaves it covered', () => {
+    const loaded = extractAgents(v2('    kortix_permissions: [project.read, project.customize.write]\n'));
+    expect(loaded.errors).toEqual([]);
+    expect([...(grantFromLoadedAgents('w', loaded)?.permissions as string[])].sort()).toEqual([
+      'project.agent.write',
+      'project.model.read',
+      'project.model.write',
+      'project.read',
+      'project.sandbox.write',
+      'project.settings.write',
+    ]);
+  });
+
+  test('v2: a retired project.customize.read expands to project.model.read', () => {
+    const loaded = extractAgents(v2('    kortix_permissions: [project.customize.read]\n'));
+    expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.model.read']);
+  });
+
   test('v2: kortix_permissions and kortix_cli resolve identically', () => {
     const canonical = grantFromLoadedAgents('w', extractAgents(v2('    kortix_permissions: [project.read]\n')));
     const legacy = grantFromLoadedAgents('w', extractAgents(v2('    kortix_cli: [project.read]\n')));

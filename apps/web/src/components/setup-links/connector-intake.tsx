@@ -3,24 +3,15 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import {
-  finalizeConnectorSetupLink,
-  startConnectorSetupLink,
-  type ConnectorSetupLinkInfo,
-} from '@kortix/sdk';
+import { useConnectorSetup } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
   PlugIcon as Plug,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useEffect, useState } from 'react';
-import { loadConnectorLinkInfo, peekConnectorLinkInfo } from './connector-link-info';
-import { nextConnectorPollDelay } from './connector-poll';
-import { resolveConnectorStart } from './connector-start';
-import { setupLinkApiBase } from './util';
-
-type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
+import { useEffect } from 'react';
+import { browserLinkInfoStorage, setupLinkApiBase } from './util';
 
 /**
  * Renders 1-click authorization for an agent-minted connect link.
@@ -38,128 +29,23 @@ type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected'
  * and notifies the session that asked for the connector. The Pipedream connect
  * webhook does the same thing server-side, but only as redundancy; this poll is
  * what tells THIS window it worked. Shared by the public /connect/[token] page
- * and the in-chat modal.
- */
-/**
- * The connect flow for one link: load what it names, open the provider's
- * hosted page, poll until the connection lands. Shared by the public
- * `/connect/[token]` page (`ConnectorIntake`) and the in-chat modal
- * (`ConnectorConnectModal`), so both run the same start/poll/finalize rules.
+ * and the in-chat modal, so both run the same start/poll/finalize rules.
+ *
+ * The lifecycle itself — the link-info cache, the start outcome and the bounded
+ * finalize poll — lives in `@kortix/sdk` (`useConnectorSetup`, KRTX-1012). This
+ * module keeps the presentation and the host adapters: the API base, the
+ * browser's storage and the popup window itself.
  */
 export function useConnectorIntake(
   token: string,
   { onOpened }: { onOpened?: () => void } = {},
 ) {
-  const base = setupLinkApiBase();
-  // Seeded from the link-info cache the chat card already filled (or storage,
-  // after a hard refresh), so the dialog opens `ready` with the app's logo on
-  // its first frame instead of a loading state.
-  const [seed] = useState(() => peekConnectorLinkInfo(token));
-  const [phase, setPhase] = useState<Phase>(seed ? 'ready' : 'loading');
-  const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(seed ?? null);
-  const [error, setError] = useState<string | null>(null);
-  // Bumped every time the popup is opened, so reopening restarts the poll
-  // window instead of inheriting an already-expired one.
-  const [openedAt, setOpenedAt] = useState(0);
-  // Who the account was authorized as, from finalize. Shown on success so a
-  // login used by mistake (a personal account on a shared slot) is visible
-  // the moment it lands, not months later.
-  const [connectedAs, setConnectedAs] = useState<string | null>(null);
-  // True when /start found the slot already holding an active account. The
-  // provider reuses it instead of re-authorizing, so there was no popup.
-  const [alreadyConnected, setAlreadyConnected] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const body = await loadConnectorLinkInfo(token);
-        if (cancelled) return;
-        setInfo(body);
-        setPhase((current) => (current === 'loading' ? 'ready' : current));
-      } catch (cause) {
-        // A seeded dialog already shows the link; a failed refresh is not an error.
-        if (!cancelled && !seed) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : 'Could not reach Kortix. Check your connection and try again.',
-          );
-          setPhase('error');
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [base, token, seed]);
-
-  // Ask the API whether the connection landed, until it says yes or the poll
-  // window closes. One request is in flight at a time by construction: the next
-  // timer is only armed after the current one settles. A failed poll is not
-  // fatal — the popup may still be open — so it just schedules the next one.
-  useEffect(() => {
-    if (phase !== 'opened') return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const startedAt = Date.now();
-    let attempt = 0;
-
-    const schedule = () => {
-      const delay = nextConnectorPollDelay(attempt, Date.now() - startedAt);
-      if (delay === null) return;
-      attempt += 1;
-      timer = setTimeout(poll, delay);
-    };
-
-    const poll = async () => {
-      try {
-        const body = await finalizeConnectorSetupLink(token, { backendUrl: base });
-        if (cancelled) return;
-        if (body.connected) {
-          setConnectedAs(body.connected_as ?? null);
-          setPhase('connected');
-          return;
-        }
-      } catch {
-        // Transient (offline, rate limit, a 502 from the provider) — keep asking.
-      }
-      if (cancelled) return;
-      schedule();
-    };
-
-    schedule();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [phase, openedAt, token, base]);
-
-  async function connect() {
-    setPhase('starting');
-    setError(null);
-    const outcome = await resolveConnectorStart({
-      start: () => startConnectorSetupLink(token, { backendUrl: base }),
-      finalize: () => finalizeConnectorSetupLink(token, { backendUrl: base }),
-    });
-    if (outcome.kind === 'error') {
-      setError(outcome.message);
-      setPhase('ready');
-      return;
-    }
-    if (outcome.kind === 'connected') {
-      setAlreadyConnected(outcome.alreadyConnected);
-      setConnectedAs(outcome.connectedAs);
-      setPhase('connected');
-      return;
-    }
-    window.open(outcome.url, '_blank', 'noopener,noreferrer,width=520,height=720');
-    setOpenedAt(Date.now());
-    setPhase('opened');
-    onOpened?.();
-  }
-
-  return { phase, info, error, connectedAs, alreadyConnected, connect };
+  return useConnectorSetup(token, {
+    backendUrl: setupLinkApiBase(),
+    storage: browserLinkInfoStorage(),
+    openPopup: (url) => window.open(url, '_blank', 'noopener,noreferrer,width=520,height=720'),
+    onOpened,
+  });
 }
 
 export function ConnectorIntake({

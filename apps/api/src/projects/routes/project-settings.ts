@@ -229,14 +229,13 @@ const patchFeatureFlagHandler = async (c: any) => {
   }
   const feature = body.feature;
   const enabled = body.enabled;
-  // Floor 'read' (membership); project.customize.write is the human gate below
-  // (was 'manage' → project.write, so unchecking customize.write did nothing).
+  // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Per-agent gate: toggling feature flags is project config. A scoped agent
-  // token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // token must hold project.settings.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
   }
@@ -304,7 +303,7 @@ for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as con
 // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
 // (follow the platform default/distribution). Bypasses the distribution weights by
 // design — pin a project to platinum even when platinum's weight is 0. Same auth as
-// the experimental toggle (project 'manage' + project.customize.write for agents).
+// the experimental toggle (project 'manage' + project.settings.write for agents).
 projectsApp.openapi(
   createRoute({
     method: 'patch',
@@ -328,12 +327,11 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const raw = body.provider ?? body.sandbox_provider;
-    // Floor 'read'; project.customize.write is the human gate below (was
-    // 'manage' → project.write, so unchecking customize.write did nothing here).
+    // Floor 'read'; project.settings.write is the gate below.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
     // Route the change through the durable prepare→verify→activate workflow.
     // Switching to a safe target (null clear, the platform-default provider, or

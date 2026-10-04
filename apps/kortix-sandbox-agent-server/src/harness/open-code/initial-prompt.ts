@@ -1,9 +1,5 @@
-import { relayTurnAccepted } from '../shared/turn-relay'
-import { logger } from '@/lib/log/logger'
+import { relayTurnAbandoned, relayTurnAccepted } from '../shared/turn-relay'
 import { hasKortixLlmGateway, type Opencode } from './lifecycle'
-import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
-import type { InitialTurnClaim } from '@/types/control-plane'
-import { getClaimedInitialTurn, setClaimedInitialTurn } from './initial-turn-claim'
 import { observeOpencodeDelivery } from './opencode-turn-state'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -43,93 +39,6 @@ export async function deliverInitialOpenCodePrompt(
   }
 }
 
-/**
- * Promote only the initial-turn authority that apps/api created before the
- * sandbox existed. The daemon cannot mint a token, create a lifecycle record,
- * or revive a record removed by terminal evidence.
- */
-export async function relayInitialTurnAcceptedToApi(
-  opencodeSessionId: string,
-  messageId: string,
-  turnToken: string,
-): Promise<boolean> {
-  return relayTurnAccepted(opencodeSessionId, messageId, turnToken)
-}
-
-/** Claim the pending first turn through the session-bound Kortix credential. */
-export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null> {
-  if (getClaimedInitialTurn()) return getClaimedInitialTurn()
-  const ctx = sandboxRelayContext()
-  if (!ctx) return null
-  const { projectId, sessionId, token, apiRoot } = ctx
-  let response: Response | null = null
-  let lastError: unknown = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ session_id: sessionId, kind: 'initial_turn_claim' }),
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (response.ok || response.status < 500) break
-      lastError = new Error(`initial turn claim returned ${response.status}`)
-    } catch (error) {
-      lastError = error
-    }
-    if (attempt < 2) await Bun.sleep(250 * 2 ** attempt)
-  }
-  if (!response) {
-    throw new Error(`initial turn claim failed after 3 attempts: ${String(lastError)}`)
-  }
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn claim rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json()) as {
-    initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
-  }
-  const turn = body.initial_turn
-  if (
-    !turn ||
-    typeof turn.prompt !== 'string' ||
-    typeof turn.turn_token !== 'string' ||
-    typeof turn.message_id !== 'string'
-  ) return null
-  setClaimedInitialTurn({
-    prompt: turn.prompt,
-    turnToken: turn.turn_token,
-    messageId: turn.message_id,
-  })
-  return getClaimedInitialTurn()
-}
-
-/** Remove only a pre-created initial-turn record that OpenCode never accepted. */
-export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) throw new Error('initial turn abandonment relay context is unavailable')
-  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
-  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sandboxToken}`,
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_abandoned',
-      turn_token: turnToken,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn abandonment rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
-  return body.ok === true
-}
-
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
 
 /**
@@ -164,7 +73,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
   )
   if (observation.inFlight === null) return 'unknown'
   if (observation.inFlight) {
-    await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+    await relayTurnAccepted(opencodeSessionId, messageId, turnToken)
     return 'accepted'
   }
   // THIS boot just delivered the prompt, and OpenCode has not picked it up
@@ -174,7 +83,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
   ) {
     return 'unknown'
   }
-  await relayInitialTurnAbandonedToApi(turnToken)
+  await relayTurnAbandoned(turnToken)
   return 'inactive'
 }
 

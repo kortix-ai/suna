@@ -6,7 +6,9 @@ import { invalidateProjectMirror } from '../git';
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
-import { projectWebhooksApp } from '../lib/app';
+import { createRoute, z } from '@hono/zod-openapi';
+import { errors, json } from '../../openapi';
+import { TriggerFireResultSchema, projectWebhooksApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
@@ -23,7 +25,21 @@ import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
 
-projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
+projectWebhooksApp.openapi(createRoute({
+  method: 'post',
+  path: '/projects/{projectId}/{slug}',
+  tags: ['triggers'],
+  summary: 'Fire a webhook trigger',
+  description:
+    'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC of the raw body), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. The JSON body is the payload the prompt template renders.',
+  // No body schema: the handler HMACs the raw bytes, so nothing may parse them first.
+  request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
+  responses: {
+    200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
+    202: json(TriggerFireResultSchema, 'Queued or fired'),
+    ...errors(400, 401, 404, 409, 500),
+  },
+}), async (c) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   if (!isUuid(projectId)) return c.json({ error: 'Invalid project id' }, 400);
@@ -132,7 +148,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // webhooks (acknowledged, not fired) so a repo deployed to two control planes
   // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
   if (triggersPausedForProject(project.metadata)) {
-    return c.json({ status: 'skipped', reason: 'triggers are paused server-side for this project' }, 200);
+    return c.json({ status: 'skipped' as const, reason: 'triggers are paused server-side for this project' }, 200);
   }
 
   // Payload guard. A non-matching delivery is a successful no-op, NOT an error:
@@ -140,7 +156,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // canonical use is loop-breaking — a source that reports both directions of a
   // conversation would otherwise re-fire the agent with the agent's own reply.
   if (!triggerFilterMatches(spec, payload)) {
-    return c.json({ status: 'skipped', reason: 'delivery did not match the trigger filter' }, 200);
+    return c.json({ status: 'skipped' as const, reason: 'delivery did not match the trigger filter' }, 200);
   }
 
   const result = await fireGitTrigger({
@@ -156,7 +172,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   if (result.status === 'queued') {
     await markGitTriggerFired(project.projectId, spec.slug, new Date());
     return c.json({
-      status: 'queued',
+      status: 'queued' as const,
       command_id: result.commandId ?? null,
       session_id: result.sessionId ?? null,
       reason: result.reason ?? null,
@@ -170,7 +186,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // cron-fire path even when the webhook is the actual source.
   await markGitTriggerFired(project.projectId, spec.slug, new Date());
   return c.json({
-    status: result.deduped ? 'deduped' : 'fired',
+    status: result.deduped ? ('deduped' as const) : ('fired' as const),
     command_id: result.commandId ?? null,
     session_id: result.sessionId ?? null,
     deduped: result.deduped ?? false,

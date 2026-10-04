@@ -820,6 +820,20 @@
       "when": 1791039264700,
       "tag": "20261003145424_drop_duplicate_account_memberships_index_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1791051577945,
+      "tag": "20261003181937_krtx1307_parked_verify_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791081225637,
+      "tag": "20261004023345_chat_pending_auth_messages_project_index",
+      "breakpoints": true
     }
   ]
 }

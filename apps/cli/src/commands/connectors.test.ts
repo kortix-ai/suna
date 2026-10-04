@@ -1,6 +1,26 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectorSecretBindingInput, oauth2AuthorizeSteps } from './connectors.ts';
+import { connectorSecretBindingInput, oauth2AuthorizeSteps, parsePolicyConditions } from './connectors.ts';
+
+describe('parsePolicyConditions', () => {
+  test('preserves operators inside equality and negated matcher values', () => {
+    expect(parsePolicyConditions(['to=a!=b', 'to!=a', 'to!=a!=b', ' to = a=b!=c '])).toEqual({
+      conditions: [
+        { arg: 'to', match: 'a!=b' },
+        { arg: 'to', match: 'a', negate: true },
+        { arg: 'to', match: 'a!=b', negate: true },
+        { arg: 'to', match: 'a=b!=c' },
+      ],
+    });
+  });
+
+  test('accepts no conditions and rejects missing paths, separators and values', () => {
+    expect(parsePolicyConditions([])).toEqual({ conditions: [] });
+    for (const entry of ['to', '=value', '!=value', ' =value', 'to=', 'to!=']) {
+      expect(parsePolicyConditions([entry])).toHaveProperty('error');
+    }
+  });
+});
 
 describe('connectorSecretBindingInput', () => {
   test('binds an identifier to a connector slug', () => {

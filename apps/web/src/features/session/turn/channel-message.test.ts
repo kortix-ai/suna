@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import { within } from '@kortix/shared/tool-output/testing';
+
 import { parseChannelMessage, slackChannelNames, slackConversationName } from './channel-message';
 
 /**
@@ -392,13 +395,6 @@ describe('parseChannelMessage returns exactly what the regex version returned', 
 });
 
 describe('no channel message can freeze the tab that parses it', () => {
-  const within = (label: string, run: () => unknown) =>
-    test(label, () => {
-      const started = performance.now();
-      run();
-      expect(performance.now() - started).toBeLessThan(100);
-    });
-
   // Each took ~1.4 s at 60k characters with Bun, and quadrupled per doubling.
   within('a legacy header whose context holds 240k spaces', () => parseChannelMessage(`[Slack·a${' '.repeat(240_000)}x`));
   within('a legacy header whose sender holds 240k spaces', () =>
