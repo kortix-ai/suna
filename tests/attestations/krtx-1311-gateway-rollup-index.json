@@ -1,5 +1,5 @@
 {
-  "source_hash": "30855b7a1fd60854b82ac7b7d05b135c821688a26af2c267d128b55571619aba",
+  "source_hash": "94c447a1b71de63c59dd5c78b8b92e8c462249561aec39489bee46d698af169a",
   "diff_files": [
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/drizzle/meta/20261003182953_snapshot.json",
@@ -8,13 +8,13 @@
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-session-rollup-index.test.ts"
   ],
-  "diff_hash": "da289eecc4bf10646e668e7242d0bc83fc9af3a291cbaef089ebb19405b6c6c6",
-  "head": "939c3f6400ff3fb02927f87508f1ce2f3558736c",
+  "diff_hash": "91d5cca4bbaac3b22af30ca02cbc2680b00014b9dafa90af2698ab132852e206",
+  "head": "774dbbffca367f5aa3836032d5b4364f65d97072",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T04:08:38.769Z"
+  "at": "2026-10-04T05:22:32.174Z"
 }
