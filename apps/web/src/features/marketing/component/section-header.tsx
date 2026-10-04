@@ -7,9 +7,11 @@ type Props = {
   description?: string;
   /** Overrides the title's type; the default is the landing-page size. */
   titleClassName?: string;
+  /** `h1` when this header opens the page. */
+  as?: 'h1' | 'h2';
 };
 
-const SectionHeader = ({ eyebrow, title, description, titleClassName }: Props) => {
+const SectionHeader = ({ eyebrow, title, description, titleClassName, as: Heading = 'h2' }: Props) => {
   return (
     <Reveal>
       <div className="flex w-full flex-col gap-4 select-none">
@@ -21,7 +23,7 @@ const SectionHeader = ({ eyebrow, title, description, titleClassName }: Props) =
             {eyebrow}
           </span>
         )}
-        <h2
+        <Heading
           data-heading="true"
           className={cn(
             'text-foreground max-w-2xl font-sans text-2xl font-medium text-balance sm:text-3xl',
@@ -29,7 +31,7 @@ const SectionHeader = ({ eyebrow, title, description, titleClassName }: Props) =
           )}
         >
           {title}
-        </h2>
+        </Heading>
       </div>
 
       <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
