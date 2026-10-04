@@ -221,9 +221,14 @@ suite('public.credit_usage policy roles migration — real PostgreSQL', () => {
   });
 
   test('the seeded legacy shape reproduces the advisor finding (red before the fix)', () => {
+    // anon and authenticated are RLS-evaluated roles in every Supabase image,
+    // so their rows are the stable red signal; the lint's own predicate drops
+    // rolbypassrls roles and current Supabase images mark service_role
+    // BYPASSRLS, so a service_role row would be an image property, not part
+    // of the lint contract. The post-fix policy shape pins the service_role
+    // scoping instead.
     expect(beforeFindings).toContain('anon/SELECT');
     expect(beforeFindings).toContain('authenticated/SELECT');
-    expect(beforeFindings).toContain('service_role/SELECT');
   });
 
   test('the legacy shape already shows every role its post-migration rows (matrix is meaningful)', () => {
