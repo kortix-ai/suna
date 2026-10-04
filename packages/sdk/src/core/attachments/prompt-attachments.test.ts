@@ -379,7 +379,11 @@ test('an expired upload reports attachment_expired, from Retry and from the read
   });
   stale.dispose();
 
-  const expiresAt = new Date(Date.now() + 30).toISOString();
+  // A 30 ms window lost to event-loop stalls under a loaded suite (the ready
+  // upload flipped to attachment_expired before settle() observed it). 300 ms
+  // keeps the same semantics — ready lands first, the timer still fires —
+  // without racing the scheduler.
+  const expiresAt = new Date(Date.now() + 300).toISOString();
   configureKortix({
     backendUrl: 'https://api.test',
     getToken: async () => 'token',
@@ -394,7 +398,7 @@ test('an expired upload reports attachment_expired, from Retry and from the read
   ready.add(new File(['abc'], 'a.txt'));
   await settle();
   expect(ready.getSnapshot().attachments[0]?.status).toBe('ready');
-  await new Promise((resolve) => setTimeout(resolve, 60));
+  await new Promise((resolve) => setTimeout(resolve, 400));
   expect(ready.getSnapshot().attachments[0]).toMatchObject({
     status: 'error',
     error: { code: 'attachment_expired' },
