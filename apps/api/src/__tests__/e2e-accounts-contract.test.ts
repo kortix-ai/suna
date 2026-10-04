@@ -365,7 +365,6 @@ mock.module('../accounts/email', () => ({
 mock.module('../shared/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
-  consumeProjectSessionCreateBudget: () => ({ allowed: true, limit: 100, remaining: 99, resetMs: 1000 }),
 }));
 
 mock.module('../shared/resolve-account', () => ({

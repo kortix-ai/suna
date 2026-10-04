@@ -8,6 +8,7 @@ import {
   removeHost,
   upsertHost,
 } from './config.ts';
+import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 // Backward-compatible auth surface — every existing command imports
 // `Auth`, `loadAuth`, `saveAuthForHost`, `clearAuth`, `authFileLocation` from
@@ -41,6 +42,10 @@ function hostToAuth(host: Host): Auth {
   };
 }
 
+export function sameApiBase(left: string, right: string): boolean {
+  return sdkBackendUrl(left) === sdkBackendUrl(right);
+}
+
 /**
  * Build the Host record to persist for a login. Spreads `previous` first so
  * fields the `Auth` shape doesn't carry — `dashboard_url`, `account_slug`,
@@ -56,6 +61,7 @@ function hostToAuth(host: Host): Auth {
 function authToHost(auth: Auth, previous?: Host | null): Host {
   return {
     ...previous,
+    dashboard_url: previous && sameApiBase(auth.api_base, previous.url) ? previous.dashboard_url : undefined,
     url: auth.api_base,
     token: auth.token,
     user_id: auth.user_id,

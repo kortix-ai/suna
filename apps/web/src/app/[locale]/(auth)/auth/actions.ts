@@ -1,9 +1,7 @@
 'use server';
 
-import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
-  isInviteReturnUrl,
   resolveNewAccountReturnUrl,
   sanitizeAuthReturnUrl,
   shouldDemoteReturnUrl,
@@ -19,7 +17,7 @@ import {
 import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
-import { checkAccessEmail, fetchAccountStateWithToken, submitAccessRequest } from '@kortix/sdk';
+import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';
 import { getTranslations } from '@/i18n/get-translations';
 import type { UiTranslator } from '@/i18n/translator';
 import { cookies, headers } from 'next/headers';
@@ -535,119 +533,6 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       state: mobileState,
       accessToken: signInData.session?.access_token,
       refreshToken: signInData.session?.refresh_token,
-    }),
-  };
-}
-
-// `signOut()` used to live here. It moved to `lib/auth/sign-out-actions.ts` as
-// `finalizeServerSignOut()`, which every logout control now reaches through
-// `performSignOut()`. Two behaviours changed on the way, both deliberate:
-//
-//  - the server-side revoke + audit ran on ONE of six controls; it runs on all
-//    six now;
-//  - it no longer deletes `kortix_last_project`. That cookie is owner-bound, so
-//    the next account cannot follow it, and the middleware reads its owner half
-//    to attribute a bounce once identity resolution has returned `user: null` —
-//    which is what happens after a logout. Deleting it un-attributed every
-//    post-logout bounce.
-
-export async function verifyOtp(prevState: any, formData: FormData) {
-  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
-  const email = formData.get('email') as string;
-  const token = formData.get('token') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
-  const origin = formData.get('origin') as string;
-  const mobileState = mobileCallbackState(formData);
-
-  if (!email || !email.includes('@')) {
-    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
-  }
-
-  if (!token || token.length !== 6) {
-    return { message: tI18nComplete.raw('textdf9658428180') };
-  }
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.auth.verifyOtp({
-    email: email.trim().toLowerCase(),
-    token: token.trim(),
-    type: 'magiclink',
-  });
-
-  if (error) {
-    return authFailure(error, 'Invalid or expired code', tI18nComplete);
-  }
-
-  // Determine if new user (for analytics)
-  const isNewUser = data.user && Date.now() - new Date(data.user.created_at).getTime() < 60000;
-  const authEvent = isNewUser ? 'signup' : 'login';
-
-  // For new cloud users with no plan yet, land in account management. The
-  // repo-first app surface starts from /projects; the old plan route is not v1.
-  const runtimeEnv = getServerPublicEnv();
-  const billingEnabled = runtimeEnv.BILLING_ENABLED;
-  // `sendEmailCode` already applied this rule when the API could tell us the
-  // address was new. Re-applying it here covers the case where it could not
-  // (a fail-open 'unknown' flow mode), so a fresh account never rides a
-  // pre-signup return URL into a project it cannot open. This is also the one
-  // place the bounce owner CAN be matched against a real identity: the code was
-  // entered in the same browser that was bounced, and the account is now known.
-  let finalDestination = shouldDemoteReturnUrl({
-    bouncedOwnerId: await readBouncedOwnerId(),
-    signedInUserId: data.user?.id ?? null,
-    isNewUser,
-  })
-    ? resolveNewAccountReturnUrl(returnUrl)
-    : returnUrl;
-  await clearAuthBounceCookie();
-
-  // Invited users (returnUrl → /invites/:id) must land on the accept/decline
-  // dialog verbatim — skip the billing-aware landing (account page or a freshly
-  // provisioned first project), which would otherwise skip the dialog.
-  if (billingEnabled && isNewUser && !isInviteReturnUrl(returnUrl) && data.session?.access_token) {
-    try {
-      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
-        /\/v1\/?$/,
-        '',
-      );
-      if (backendUrl) {
-        const accountState = await fetchAccountStateWithToken({
-          backendUrl,
-          accessToken: data.session.access_token,
-          timeoutMs: 5000,
-        });
-        // Entitlement is the only reason to override the destination here.
-        // First-project provisioning used to run on this path too and blocked
-        // the OTP form for the length of a managed git repo create plus a full
-        // starter push; PROJECT_LANDING_PATH now absorbs that behind the UI.
-        // Same destination, same reason as the OAuth/magic-link path in
-        // `auth/callback/route.ts` — see the comment there.
-        if (accountState && !accountHasAppAccess(accountState)) {
-          finalDestination = '/settings/billing';
-        }
-      }
-    } catch {
-      // If check fails, fall through to default destination
-    }
-  }
-
-  return {
-    success: true,
-    authEvent,
-    authMethod: 'email_otp',
-    redirectTo: finalDestination,
-    // Hand the session back so the client can establish it synchronously
-    // (supabase.auth.setSession) before navigating. Without this the client
-    // only picks up the session on a later background token refresh, which
-    // bounces the user back to /auth for ~15s until the session lands.
-    accessToken: data.session?.access_token ?? null,
-    refreshToken: data.session?.refresh_token ?? null,
-    mobileHandoffUrl: buildMobileSessionHandoffUrl({
-      origin: trustedWebOrigin(origin),
-      state: mobileState,
-      accessToken: data.session?.access_token,
-      refreshToken: data.session?.refresh_token,
     }),
   };
 }

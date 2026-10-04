@@ -21,10 +21,10 @@ const READS = [
 ];
 
 describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () => {
-  test('a read-only role (read leaves, NO customize.write) STILL SEES the sections (the bug fix)', () => {
-    // The old rule required project.customize.write for every section → a
+  test('a read-only role (read leaves, NO write leaf) STILL SEES the sections (the bug fix)', () => {
+    // The old rule required a write leaf for every section → a
     // read-only / granular role saw a blank panel. Now the read leaf is enough.
-    const can = canFrom(READS); // deliberately no customize.write
+    const can = canFrom(READS); // deliberately no write leaf
     // No `agents` here — it graduated to /projects/<id>/agent and is not a
     // customize section anymore. `commands` came back into the overlay.
     expect(isCustomizeSectionVisible('commands', can)).toBe(true);
@@ -36,10 +36,9 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     expect(isCustomizeSectionVisible('settings', can)).toBe(true);
   });
 
-  test('the reported role (customize.read + secret.read) sees the sections it can read', () => {
+  test('the reported role (project.read + secret.read) sees the sections it can read', () => {
     const can = canFrom([
       PROJECT_ACTIONS.PROJECT_READ,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
     ]);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(true); // has secret.read
@@ -67,8 +66,9 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     expect(isCustomizeSectionVisible('settings', can)).toBe(false);
   });
 
-  test('the probe list is READ leaves only (no customize.write) + deduped', () => {
-    expect(CUSTOMIZE_SECTION_GATE_ACTIONS).not.toContain(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  test('the probe list is READ leaves only (no write leaf) + deduped', () => {
+    expect(CUSTOMIZE_SECTION_GATE_ACTIONS).not.toContain(PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+    expect(CUSTOMIZE_SECTION_GATE_ACTIONS).not.toContain(PROJECT_ACTIONS.PROJECT_MODEL_WRITE);
     expect(new Set(CUSTOMIZE_SECTION_GATE_ACTIONS).size).toBe(
       CUSTOMIZE_SECTION_GATE_ACTIONS.length,
     );

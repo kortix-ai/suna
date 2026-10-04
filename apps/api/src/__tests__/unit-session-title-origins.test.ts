@@ -52,7 +52,7 @@ describe('session-title origins — create-time title source', () => {
       'Triage the new Sentry issue and open a change request',
     );
 
-    const source = createBody('projects/lib/trigger-fire.ts', 'enforceAccountCap: false');
+    const source = createBody('projects/lib/trigger-fire.ts', "requestingPrincipalType: 'human'");
     expect(source).toContain('initial_prompt: renderedPrompt');
     expect(source).not.toContain('title_source');
   });

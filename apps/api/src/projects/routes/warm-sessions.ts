@@ -35,8 +35,8 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  * Warming is SPECULATIVE. The browser fires it on every project view and
  * ignores every failure, falling through to the ordinary create path, which
  * re-evaluates every gate and surfaces the real error to the user. So there is
- * exactly one failure response here, whatever went wrong: billing, the
- * concurrent-session cap, a missing connector connection, an unreadable repo.
+ * exactly one failure response here, whatever went wrong: billing, a missing
+ * connector connection, an unreadable repo.
  *
  * 409 rather than 5xx because none of those are server faults, and a 5xx on
  * every page view of a repo-less project is both wrong and noisy enough to fail
@@ -168,8 +168,8 @@ export async function findWarmProjectSession(scope: {
 }
 
 /**
- * Drop `metadata.warm` and stamp `last_activity_at` for one session — one
- * UPDATE, one moment.
+ * Drop `metadata.warm` and stamp `last_activity_at`, `updated_at`, and
+ * `created_at` for one session — one UPDATE, one moment.
  *
  * Called from POST /start (routes/session-runtime.ts), the earliest server signal a user
  * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
@@ -192,6 +192,11 @@ export async function findWarmProjectSession(scope: {
  * "latest session" for the adoption-to-first-prompt window. Both stamps
  * mirror `recordSessionActivity` exactly.
  *
+ * `created_at` moves to adoption too. The warm row is inserted while the user
+ * dwells on the project home, possibly hours before the send, so its insert
+ * time is pool bookkeeping. The web session list's hover card and mobile row
+ * read `created_at` and showed "4h" for a session started minutes ago.
+ *
  * A no-op (0 rows touched) when the session was never warm: `WARM_SESSION_MARKER`
  * in the WHERE clause makes this safe to call unconditionally and concurrently
  * — a second call (a retried `/start`, a race) finds nothing left to drop and
@@ -213,6 +218,7 @@ export async function dropWarmSessionMarkerOnAdopt(
           [SESSION_LAST_ACTIVITY_KEY]: adoptedAt.toISOString(),
         })}) - ${WARM_SESSION_METADATA_KEY}::text`,
         updatedAt: adoptedAt,
+        createdAt: adoptedAt,
       })
       .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER));
   } catch (err) {
@@ -326,9 +332,6 @@ projectsApp.openapi(
         // session" click with no overrides. Nothing to keep in sync.
         body: {},
         metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true },
-        // A warm box is real, billed compute holding a concurrent-session slot.
-        // It must never take the LAST one and 429 the next genuine start.
-        reserveConcurrentSlots: 1,
         authType: c.get('authType') as string | undefined,
         apiKeyType: c.get('apiKeyType') as string | undefined,
         inSession: isProjectSessionPrincipal(c),

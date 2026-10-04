@@ -1,8 +1,8 @@
 /**
  * One pure function that answers "what is this account's billing situation?"
  * from a single credit_accounts row: the plan it behaves as (trial overlay,
- * per-seat self-heal), its entitlements after the account-level overrides, its
- * session cap, and its compute price. Entitlements, limits, and account state
+ * per-seat self-heal), its entitlements after the account-level overrides, and
+ * its compute price. Entitlements, limits, and account state
  * all read it through the cache in `billing-cache.ts`, so no surface
  * re-derives part of the answer and skews from the others.
  *
@@ -41,7 +41,6 @@ export interface BillingRow {
   enterpriseEntitled?: boolean | null;
   demoEnterprise?: boolean | null;
   managedModelsOverride?: boolean | null;
-  maxConcurrentSessions?: number | null;
   /**
    * `credit_accounts.entitlement_overrides` — the JSONB override map, each
    * entry optionally expiring. `unknown` because it is operator-written data
@@ -61,7 +60,6 @@ export interface ResolvedBilling {
   source: BillingPlanSource;
   /** Plan entitlements with the account-level overrides applied. */
   entitlements: PlanRecord['entitlements'];
-  limits: { concurrentSessions: { value: number; source: BillingLimitSource } };
   /**
    * Compute pricing for this account. `rateMultiplier` scales the provider
    * rate card in `compute-metering.ts`: 1.0 is list price (every account
@@ -152,8 +150,7 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  *
  * `managed_models_override` is tri-state (`loadTierSnapshot`,
  * entitlements.ts:31-42): a boolean wins in both directions, NULL defers to the
- * plan. `max_concurrent_sessions` overrides the plan cap in both directions
- * (`resolveAccountSessionLimit`, shared/account-limits.ts:151-160).
+ * plan.
  *
  * Source precedence for every override (see `entitlement-overrides.ts`):
  *   1. `entitlement_overrides.<key>` — if present AND unexpired at `nowMs`
@@ -175,9 +172,6 @@ export function resolveBillingFromRow(
       plan,
       source: 'no_account',
       entitlements: { ...plan.entitlements },
-      limits: {
-        concurrentSessions: { value: plan.limits.concurrentSessions, source: 'plan' },
-      },
       compute: { rateMultiplier: plan.compute.rateMultiplier, source: 'plan' },
       display: displayFor(plan),
     };
@@ -201,7 +195,7 @@ export function resolveBillingFromRow(
   // OVERRIDE PRECEDENCE, per key: the JSONB entry (when present and unexpired)
   // wins over the legacy column of the same name; an absent key falls back to
   // the column. Per KEY, not per row — an account can carry an expiring
-  // `maxConcurrentSessions` in the JSONB and a permanent `enterprise_entitled`
+  // `managedModelsOverride` in the JSONB and a permanent `enterprise_entitled`
   // in its column at the same time, and each resolves from its own source.
   const enterpriseEntitled =
     readOverride(ov, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
@@ -236,10 +230,6 @@ export function resolveBillingFromRow(
     if (value !== undefined) entitlements[entKey] = value;
   }
 
-  const sessionOverride =
-    positiveOverride(readOverride(ov, 'maxConcurrentSessions', nowMs)) ??
-    positiveOverride(row.maxConcurrentSessions);
-
   // Custom compute pricing. No legacy column to fall back to — this override
   // has only ever existed in the JSONB — so the plan record's own multiplier
   // (1.0 everywhere today) is the floor.
@@ -249,12 +239,6 @@ export function resolveBillingFromRow(
     plan,
     source,
     entitlements,
-    limits: {
-      concurrentSessions:
-        sessionOverride !== null
-          ? { value: sessionOverride, source: 'account_override' }
-          : { value: plan.limits.concurrentSessions, source: 'plan' },
-    },
     compute:
       rateOverride !== undefined
         ? { rateMultiplier: clampComputeRateMultiplier(rateOverride), source: 'account_override' }

@@ -442,10 +442,10 @@ export function validateGrantList(
   if (typeof value === 'string') {
     // Runtime parseGrantSet treats "" the same as "none" (default-deny).
     const v = value.trim().toLowerCase();
-    if (v !== '' && v !== 'all' && v !== 'none') {
+    if (v !== '' && v !== 'all' && v !== '*' && v !== 'none') {
       issues.push({
         path: where,
-        message: `${label} string must be "all" or "none" (or an array of names).`,
+        message: `${label} string must be "all", "*" or "none" (or an array of names).`,
         severity: 'error',
       });
     }
@@ -480,7 +480,7 @@ export function validateGrantList(
         // every capability it holds rather than the one line that is outdated.
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" was renamed to "${renamedTo}" — the grant still applies, but update the manifest.`,
+          message: `"${s}" was renamed to "${renamedTo.join('", "')}" — the grant still applies, but update the manifest.`,
           severity: 'warning',
         });
       } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {

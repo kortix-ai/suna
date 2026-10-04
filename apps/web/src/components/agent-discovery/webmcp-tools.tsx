@@ -25,7 +25,7 @@ declare global {
   }
 }
 
-const KIND_VALUES = ['marketing', 'blog', 'docs', 'use-case'] as const;
+const KIND_VALUES = ['marketing', 'docs', 'use-case'] as const;
 
 export function registerWebMcpTools(
   modelContext: ModelContext,
