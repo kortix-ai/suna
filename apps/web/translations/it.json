@@ -1978,7 +1978,11 @@
       "topupWalletHint": "Ricarica il saldo per mantenere attivi gli agenti.",
       "addCredits": "Aggiungi crediti",
       "billingPortal": "Portale di fatturazione",
-      "portalDescription": "Gestisci abbonamento, metodi di pagamento e fatture."
+      "portalDescription": "Gestisci abbonamento, metodi di pagamento e fatture.",
+      "cancelSubscription": "Annulla abbonamento",
+      "cancelSubscriptionDescription": "Il tuo piano resta attivo fino alla fine del periodo di fatturazione corrente, poi termina. Puoi riattivarlo fino ad allora.",
+      "reactivateSubscription": "Riattiva abbonamento",
+      "commitmentCancelHint": "Il tuo impegno dura fino al {date}. Potrai annullare dopo."
     },
     "topup": {
       "minimum": "La ricarica minima è {amount}.",
