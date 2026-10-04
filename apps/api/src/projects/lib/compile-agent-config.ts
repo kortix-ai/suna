@@ -619,44 +619,25 @@ export function manifestPiPackageLists(raw: unknown): unknown[][] {
   return [...lists.values()];
 }
 
-/**
- * The one manifest read every resolver shares: candidate paths → git read at
- * `ref` → parse by the found file's format. Null when the repo has no
- * manifest there. `forceRefresh` proves the ref against the remote instead of
- * trusting the 60s mirror TTL (see CompileReadOptions).
- */
+/** One manifest read every resolver shares: candidate paths → git read at `ref` → parse. Null when the repo has no manifest there. */
 async function readParsedManifest(
   project: GitBackedProject,
   ref: string,
   forceRefresh?: MirrorRefresh,
 ): Promise<{ raw: Record<string, unknown>; format: ManifestFormat } | null> {
   const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-  const found = await readManifestFromRepo(
-    project,
-    candidates,
-    ref,
-    forceRefresh === undefined ? undefined : { forceRefresh },
-  );
+  const found = await readManifestFromRepo(project, candidates, ref, { forceRefresh });
   if (!found) return null;
   const format = manifestFormatForPath(found.path);
   return { raw: parseManifestText(found.content, format), format };
 }
 
-/**
- * A v3 manifest must validate before anything compiles from it (v2 predates
- * the validator). Error-class issues only — warnings still compile.
- */
+/** A v3 manifest must validate before anything compiles from it (v2 predates the validator); error-class issues throw. */
 function validateV3OrThrow(raw: Record<string, unknown>, format: ManifestFormat): void {
   if (manifestSchemaVersion(raw) !== 3) return;
   const validation = validateManifest(raw, format);
-  if (!validation.valid) {
-    throw new CompileAgentConfigError(
-      validation.issues
-        .filter((issue) => issue.severity === 'error')
-        .map((issue) => `${issue.path}: ${issue.message}`)
-        .join('; '),
-    );
-  }
+  if (validation.valid) return;
+  throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
 }
 
 /** The parsed v2 manifest at `baseRef` (default branch when absent); null for v1, none, or a read failure. */
