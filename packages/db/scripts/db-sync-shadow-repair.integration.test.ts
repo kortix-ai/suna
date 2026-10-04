@@ -25,7 +25,18 @@ test('shadow repair exports session sandboxes without a sort and preserves keyed
   source.pathname = `/${name}_source`;
   target.pathname = `/${name}_target`;
   try {
-    sql(databaseUrl, `CREATE DATABASE ${name}_source; CREATE DATABASE ${name}_target;`);
+    // Pin the byte order the assertions below assume. The throwaway databases
+    // otherwise inherit the lane database's locale, and the local Supabase
+    // postgres defaults the locale provider to ICU, where LC_COLLATE 'C' is
+    // still tailored (é sorts beside 'e', not after 'z') — datcollate reads
+    // 'C' and the order still differs from the C byte order this test was
+    // written against. LOCALE_PROVIDER libc makes 'C' the actual byte order,
+    // on every image; the test is about the export mechanics, not locale.
+    sql(
+      databaseUrl,
+      `CREATE DATABASE ${name}_source LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0;`
+        + ` CREATE DATABASE ${name}_target LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0;`,
+    );
     const schema = `
       CREATE SCHEMA kortix;
       CREATE TABLE kortix.api_keys (key_id uuid PRIMARY KEY, last_used_at timestamptz);
@@ -109,7 +120,7 @@ process.exit(result.status ?? 1);
     execute();
     const rows = sql(
       target.href,
-      'SELECT json_agg(t ORDER BY session_id) FROM kortix.session_sandboxes t;',
+      'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;',
     );
     expect(JSON.parse(rows)).toEqual([
       { session_id: 'A-session', last_used_at: null, metadata: null, updated_at: null },
@@ -134,12 +145,12 @@ process.exit(result.status ?? 1);
     ]);
     execute();
     expect(
-      sql(target.href, 'SELECT json_agg(t ORDER BY session_id) FROM kortix.session_sandboxes t;'),
+      sql(target.href, 'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;'),
     ).toBe(rows);
     sql(source.href, 'TRUNCATE kortix.session_sandboxes;');
     execute();
     expect(
-      sql(target.href, 'SELECT json_agg(t ORDER BY session_id) FROM kortix.session_sandboxes t;'),
+      sql(target.href, 'SELECT json_agg(t ORDER BY session_id COLLATE "C") FROM kortix.session_sandboxes t;'),
     ).toBe(rows);
     expect(
       sql(
