@@ -22,6 +22,7 @@ import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
 } from './runtime-fingerprint';
+import { KORTIXD_SHARED_SOURCES } from '@kortix/api-contract/sandbox-layout';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -206,8 +207,9 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // download plus a ~210 MB re-hash to get there.
 const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
 
-// The runtime layer bakes source artifacts into every template's rootfs. Exactly
-// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// The runtime layer bakes source artifacts into every template's rootfs. The
+// first set is the kortix-agent binary (its source, package.json and the shared
+// files it bundles); the rest (entrypoint, in-sandbox CLI surface,
 // slack-cli, SDK-backed Connector client) are the non-agent runtime. The
 // agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
@@ -215,6 +217,8 @@ const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+  // The contract and SDK files the daemon bundles: a change there changes the binary.
+  ...KORTIXD_SHARED_SOURCES.map((path) => ({ label: `kortix-agent-shared:${path}`, path: resolve(REPO_ROOT, path) })),
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },

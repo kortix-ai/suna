@@ -40,10 +40,10 @@ export function registerAccountRoutes(): void {
       ...auth,
       responses: {
         200: json(z.array(AccountSummarySchema), 'Accounts the user belongs to'),
-        ...errors(401),
+        ...errors(401, 500),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const userEmail = c.get('userEmail') as string;
 
@@ -214,7 +214,7 @@ export function registerAccountRoutes(): void {
         ...errors(400, 401, 403),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get("userId") as string;
 
       // Self-host account-creation restriction: gate the creation of
@@ -286,7 +286,7 @@ export function registerAccountRoutes(): void {
         ...errors(401, 403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
 
@@ -372,7 +372,7 @@ export function registerAccountRoutes(): void {
         ...errors(400, 401, 403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
 

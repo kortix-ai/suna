@@ -9,7 +9,12 @@ import { promptModelOverride } from '../lib/prompt-model';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { projectsApp } from '../lib/app';
+import {
+  CreateSessionPromptResultSchema,
+  SessionPromptListSchema,
+  SessionPromptSchema,
+  projectsApp,
+} from '../lib/app';
 import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
 import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
@@ -65,25 +70,6 @@ const PROMPT_LIST_LIMIT = 200;
 /** A POST that arrives within this long of its Enter did not wait on the
  *  client. Longer, and an older send of the same burst may still be in flight. */
 const LONE_SEND_MAX_AGE_MS = 1_000;
-
-const SessionPromptSchema = z.object({
-  placement: z.enum(['transcript', 'composer']).optional(),
-  prompt_id: z.string(),
-  client_message_id: z.string(),
-  message_id: z.string(),
-  wire_message_id: z.string(),
-  client_sent_at_ms: z.number().nullable(),
-  state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
-  reason: z.string().nullable(),
-  text: z.string(),
-  full_text: z.string().optional(),
-  attempts: z.number(),
-  last_error: z.string().nullable(),
-  attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
-  no_reply: z.boolean(),
-  created_at: z.string(),
-  available_at: z.string(),
-});
 
 /** Everything `POST .../prompts` needs to re-create ONE removed prompt byte for
  *  byte. Not a subset of `SessionPromptSchema`: that one carries a truncated
@@ -149,12 +135,12 @@ projectsApp.openapi(
         }) } }, required: true },
     },
     responses: {
-      200: json(z.any(), 'Already queued (same client_message_id)'),
-      202: json(z.any(), 'Prompt queued'),
+      200: json(CreateSessionPromptResultSchema, 'Already queued (same client_message_id)'),
+      202: json(CreateSessionPromptResultSchema, 'Prompt queued'),
       ...errors(400, 402, 403, 404, 409, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const receivedAtMs = Date.now();
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
@@ -413,14 +399,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(
-        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
-        'Pending prompts',
-      ),
+      200: json(SessionPromptListSchema, 'Pending prompts'),
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -468,7 +451,7 @@ projectsApp.openapi(
       ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
@@ -574,7 +557,7 @@ projectsApp.openapi(
       ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
@@ -633,7 +616,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
@@ -701,7 +684,7 @@ projectsApp.openapi(
   // clears turn authority — exactly the message the user pressed Stop to get
   // ahead of. A hold is released by an action (any new send, or "send now" on a
   // row), never by a timer.
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);

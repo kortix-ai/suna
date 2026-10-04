@@ -85,6 +85,9 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
+              - 'packages/api-contract/src/**'
+              - 'packages/sdk/src/core/session/wire-message-id.ts'
             sandbox_image:
               - '.github/workflows/ci.yml'
               - 'apps/sandbox/Dockerfile'
