@@ -196,6 +196,18 @@ export function ensureLanguage(language: string): Promise<boolean> {
     .then(async (core) => {
       const grammar = await LANGUAGE_LOADERS[lang]();
       await core.loadLanguage(grammar.default);
+      // Compile the grammar now, outside any real line's time budget: shiki
+      // builds the Grammar object (compiling every pattern to a RegExp)
+      // inside the first tokenize call, whose per-line 500 ms limit
+      // (`tokenizeTimeLimit` in @shikijs/primitive) then pays for the compile.
+      // A compile that crosses the limit leaves the rest of its line base
+      // colour and the truncated run lands in the token cache — on a phone,
+      // the first visible block. A one-character line absorbs both.
+      core.codeToTokensBase('x', {
+        lang,
+        theme: codeThemeFor('light'),
+        tokenizeMaxLineLength: MAX_LINE_LENGTH,
+      });
       loadedLangs.add(lang);
       return true;
     })

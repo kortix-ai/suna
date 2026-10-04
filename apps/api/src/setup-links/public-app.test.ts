@@ -45,7 +45,6 @@ mock.module('../shared/rate-limit', () => ({
   TokenBucketRateLimiter: class {},
   enforceRateLimit: async () => null,
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
-  consumeProjectSessionCreateBudget: () => ({ allowed: true, limit: 100, remaining: 99, resetMs: 1000 }),
 }));
 
 const propagated: string[] = [];

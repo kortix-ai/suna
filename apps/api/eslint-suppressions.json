@@ -144,11 +144,6 @@
       "count": 7
     }
   },
-  "src/admin/account-session-limit.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/admin/analytics.ts": {
     "no-console": {
       "count": 2
@@ -159,7 +154,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 28
+      "count": 27
     }
   },
   "src/app.ts": {
@@ -889,11 +884,6 @@
       "count": 1
     }
   },
-  "src/iam/agent-principal.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/iam/assignments.ts": {
     "no-console": {
       "count": 2
@@ -1325,11 +1315,6 @@
       "count": 2
     }
   },
-  "src/projects/change-request-governance.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/projects/disk-quota-guard.ts": {
     "no-console": {
       "count": 3
@@ -1508,11 +1493,6 @@
   "src/projects/lib/sandbox-session-push.ts": {
     "no-console": {
       "count": 4
-    }
-  },
-  "src/projects/lib/session-caps.ts": {
-    "no-console": {
-      "count": 3
     }
   },
   "src/projects/lib/session-control-reconciler.ts": {

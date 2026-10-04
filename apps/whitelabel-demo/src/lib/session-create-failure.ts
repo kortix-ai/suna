@@ -24,13 +24,6 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
   const serverText = typeof body?.error === 'string' ? body.error : null;
 
   switch (code) {
-    case 'concurrent_session_limit':
-      // Account-wide — an end-user can do nothing about it themselves.
-      return {
-        title: 'The service is at capacity',
-        detail: serverText ?? 'Please try again in a moment.',
-        retryable: true,
-      };
     case 'subscription_required':
     case 'insufficient_credits':
       return {
