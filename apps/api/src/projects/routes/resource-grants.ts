@@ -93,9 +93,7 @@ projectsApp.openapi(
     stages.capability = Math.round(performance.now() - started);
 
     // A page view: serve the warm git mirror, refresh it behind the response.
-    // Without this the config load pays the mirror's GitHub fetch (or an
-    // evicted-mirror cold clone) inline whenever the refresh interval has
-    // elapsed — the measured config stage behind this route's slow tail.
+    // Without this the config load pays the mirror's refresh inline (KRTX-821).
     allowStaleMirrorReads();
 
     // Enumerate grantable resources from the project config (best-effort: a repo
