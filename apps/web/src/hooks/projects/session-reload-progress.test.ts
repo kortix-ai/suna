@@ -26,9 +26,9 @@ describe('session reload progress', () => {
     expect(reloadProgressPosition('compiling-config', 'applying-config')).toBe('pending');
   });
 
-  test('does not mark workspace refresh complete when the no-repo flow skips it', () => {
-    expect(reloadProgressPosition('compiling-config', 'refreshing-workspace', false)).toBe(
-      'skipped',
-    );
+  test('treats the workspace refresh like any other step', () => {
+    expect(reloadProgressPosition(null, 'refreshing-workspace')).toBe('pending');
+    expect(reloadProgressPosition('refreshing-workspace', 'refreshing-workspace')).toBe('current');
+    expect(reloadProgressPosition('compiling-config', 'refreshing-workspace')).toBe('complete');
   });
 });

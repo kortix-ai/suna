@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { chatChannelBindings, chatThreads, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { bindChatThread, findChatThread } from '../core/threads';
-import { loadSlackTeamIdForProject } from '../install-store';
+import { provenSlackWorkspaces } from './inbound';
 
 /**
  * Resolve the Slack workspace/team id for a channel from its project binding
@@ -50,9 +50,13 @@ export type SlackThreadBinding =
  * same project created by the same user: taking over another person's thread
  * would route their replies (a DM with the bot, say) into your session.
  *
- * The workspace comes from the channel's project binding or, for a DM or a
- * channel never bound to the project, from the project's Slack install — the
- * bot that posted the message is that install's bot.
+ * The workspace is one the project's install proved (`chat_installs`): the
+ * caller's `workspaceId` only when it is one of them, else the channel's
+ * binding, else the newest install. Never the `SLACK_TEAM_ID` secret, which
+ * the generic secrets API lets a project manager overwrite: a thread row in
+ * another workspace would route that workspace's replies into this project.
+ * Where a thread may be bound is decided before this runs
+ * (connectors/channel-write-scope.ts).
  */
 export async function bindSlackThreadToSession(input: {
   projectId: string;
@@ -63,10 +67,9 @@ export async function bindSlackThreadToSession(input: {
   force?: boolean;
 }): Promise<SlackThreadBinding> {
   const { projectId, sessionId, channel, threadTs } = input;
-  const workspaceId =
-    input.workspaceId ||
-    (await resolveWorkspaceIdForChannel(projectId, channel)) ||
-    (await loadSlackTeamIdForProject(projectId));
+  const proven = await provenSlackWorkspaces(projectId);
+  const wanted = input.workspaceId || (await resolveWorkspaceIdForChannel(projectId, channel)) || proven[0];
+  const workspaceId = wanted && proven.includes(wanted) ? wanted : null;
   if (!workspaceId) return { bound: false, thread_ts: threadTs, reason: 'workspace_unknown' };
   const key = { platform: 'slack', workspaceId, threadId: threadTs };
   const owner = await bindChatThread({ ...key, projectId, sessionId });

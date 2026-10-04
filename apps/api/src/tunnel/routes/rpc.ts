@@ -34,7 +34,7 @@ export function createRpcRouter() {
       responses: {
         // Opaque agent RPC result — shape depends on the relayed method.
         200: json(z.object({ result: z.any() }), 'The relayed RPC result'),
-        // 403 here carries a permission-required envelope (requestId), not a plain error.
+        // 403 = the capability was not approved at pairing (re-pair to allow it).
         ...errors(400, 401, 403, 404, 429, 500, 502, 504),
       },
     }),
@@ -70,12 +70,12 @@ export function createRpcRouter() {
         return c.json({ result: outcome.result });
       }
       switch (outcome.kind) {
-        case 'permission_required':
+        case 'capability_not_approved':
           return c.json(
             {
-              error: 'Permission required',
+              error: 'computer_capability_not_approved',
               code: TunnelErrorCode.PERMISSION_DENIED,
-              requestId: outcome.requestId,
+              capability: outcome.capability,
               message: outcome.message,
             },
             403,

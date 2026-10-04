@@ -2,16 +2,16 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { Separator } from '@/components/ui/separator';
+import Link from '@/components/site-link';
 import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/doc-rail';
+import { PageHero } from '@/features/marketing/component/page-hero';
 import { cn } from '@/lib/utils';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { m } from 'motion/react';
-import Link from '@/components/site-link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useState, type ReactNode } from 'react';
 
-const LEGAL_LAST_UPDATED = 'April 8, 2026';
+const LEGAL_LAST_UPDATED = 'September 29, 2026';
 
 type LegalTab = 'privacy' | 'imprint';
 
@@ -29,7 +29,7 @@ function isLegalTab(value: string | null): value is LegalTab {
  * constants are the same solution `changelog/page.tsx` uses (`RELEASE_PROSE`):
  * one named scale, applied by the local atoms below.
  */
-const PROSE = 'text-muted-foreground text-[15px] leading-7 text-pretty';
+const PROSE = 'text-muted-foreground text-base leading-7 text-pretty';
 
 const LINK =
   'text-foreground decoration-foreground/25 hover:decoration-foreground/60 wrap-break-word underline underline-offset-4 transition-colors';
@@ -68,7 +68,7 @@ function Bullets({ children }: { children: ReactNode }) {
 function Clause({ lead, intro, children }: { lead: string; intro?: string; children?: ReactNode }) {
   return (
     <div className="space-y-2">
-      <p className="text-foreground text-[15px] leading-7 font-medium text-pretty">{lead}</p>
+      <p className="text-foreground text-base leading-7 font-medium text-pretty">{lead}</p>
       {intro ? <p className={PROSE}>{intro}</p> : null}
       {children}
     </div>
@@ -165,124 +165,214 @@ function Imprint() {
   );
 }
 
-function PrivacyPolicy() {
-  const t = useTranslations('hardcodedUi');
+/**
+ * The privacy policy is English only, like the Terms of Service: a legal text
+ * has one authoritative version. It states GDPR Articles 13 and 14 facts that
+ * the Data Processing Addendum and the retention summary also state; change
+ * them together.
+ */
+const PRIVACY_EMAIL = 'privacy@kortix.com';
 
+function MailLink({ address }: { address: string }) {
   return (
-    <div className="space-y-12">
-      <Section id="privacy" title={t.raw('i18nComplete.text54a57c3147c4')}>
-        <P>{t.raw('appLegalPage.line1541JsxTextOurCommitmentToPrivacyAndDataProtectionIs')}</P>
-        <P>{t.raw('appLegalPage.line1551JsxTextReferencesToOurServicesAtKortixInThis')}</P>
+    <a href={`mailto:${address}`} className={LINK}>
+      {address}
+    </a>
+  );
+}
+
+function PrivacyPolicy() {
+  return (
+    <div className="space-y-10">
+      <Section id="privacy" title="Who we are">
         <P>
-          {t.raw(
-            'appLegalPage.line1560JsxTextKortixDoesNotCollectBiometricOrIdentifyingInformation',
-          )}
+          Kortix AI Corp, a Delaware corporation at 701 Tillery Street Unit 12-2521, Austin, Texas
+          78702, United States (&quot;Kortix&quot;, &quot;we&quot;), is the controller of the
+          personal information described in this policy. It applies to our websites, apps, APIs, and
+          the other services that link to it (the &quot;Services&quot;).
+        </P>
+        <P>
+          Our Data Protection Officer is reachable at <MailLink address={PRIVACY_EMAIL} />.
+        </P>
+        <P>
+          When a customer uses the Services to process personal information (for example, the files,
+          prompts, and connected data in a customer workspace), the customer is the controller and
+          Kortix processes that information on the customer&apos;s behalf under our Data Processing
+          Addendum. If your information is in a customer&apos;s workspace, send requests about it to
+          that customer.
         </P>
       </Section>
 
-      <Section
-        id="information-gathering"
-        title={t.raw('appLegalPage.line1566JsxTextInformationGathering')}
-      >
-        <P>{t.raw('appLegalPage.line1569JsxTextWeLearnInformationAboutYouWhen')}</P>
-
-        <Clause
-          lead={t.raw('appLegalPage.line1573JsxTextYouDirectlyProvideItToUs')}
-          intro={t.raw('appLegalPage.line1576JsxTextForExampleWeCollect')}
-        >
+      <Section id="information-gathering" title="Information we collect">
+        <Clause lead="Information you give us">
           <Bullets>
+            <li>Account and contact details: name, email address, organization, and role.</li>
             <li>
-              {t.raw('appLegalPage.line1580JsxTextNameAndContactInformationWeCollectDetailsSuch')}
+              Billing details. Stripe processes card payments; we receive the billing contact, plan,
+              and payment status, not full card numbers.
             </li>
-            <li>{t.raw('appLegalPage.line1584JsxTextPaymentInformationIfYouMakeAPurchaseWe')}</li>
-            <li>{t.raw('appLegalPage.line1589JsxTextContentAndFilesWeCollectAndRetainThe')}</li>
+            <li>
+              Content: the prompts, files, messages, code, and other material you submit, and the
+              outputs the Services generate.
+            </li>
+            <li>
+              Connected accounts: the credentials and tokens you give us to connect other services.
+              We store them encrypted and use them only to act on your instructions.
+            </li>
+            <li>Support and sales conversations.</li>
           </Bullets>
         </Clause>
-
-        <Clause
-          lead={t.raw('appLegalPage.line1597JsxTextWeCollectItAutomaticallyThroughOurProductsAnd')}
-          intro={t.raw('appLegalPage.line1601JsxTextForInstanceWeCollect')}
-        >
+        <Clause lead="Information we collect automatically">
           <Bullets>
             <li>
-              {t.raw('appLegalPage.line1605JsxTextIdentifiersAndDeviceInformationWhenYouVisitOur')}
+              Device and log data: IP address, browser, operating system, device identifiers, and
+              request logs.
             </li>
-            <li>
-              {t.raw('appLegalPage.line1613JsxTextGeolocationDataDependingOnYourDeviceAndApp')}
-            </li>
-            <li>{t.raw('appLegalPage.line1618JsxTextUsageDataWeLogYourActivityOnOur')}</li>
+            <li>Approximate location, derived from your IP address.</li>
+            <li>Usage data: pages viewed, features used, and actions taken in the Services.</li>
+            <li>Cookies and similar technologies, described below.</li>
           </Bullets>
         </Clause>
-
-        <Clause
-          lead={t.raw('appLegalPage.line1631JsxTextSomeoneElseTellsUsInformationAboutYou')}
-          intro={t.raw('appLegalPage.line1634JsxTextThirdPartySourcesIncludeForExample')}
-        >
+        <Clause lead="Information from others">
           <Bullets>
-            <li>
-              {t.raw(
-                'appLegalPage.line1638JsxTextThirdPartyPartnersThirdPartyApplicationsAndServices',
-              )}
-            </li>
-            <li>
-              {t.raw(
-                'appLegalPage.line1643JsxTextServiceProvidersThirdPartiesThatCollectOrProvide',
-              )}
-            </li>
+            <li>Sign-in providers you choose, such as Google or GitHub.</li>
+            <li>Services you connect, which send us the data you ask the Services to use.</li>
+            <li>Your organization, when it invites you to a workspace.</li>
           </Bullets>
-        </Clause>
-
-        <Clause lead={t.raw('appLegalPage.line1651JsxTextWhenWeTryAndUnderstandMoreAboutYou')}>
-          <P>{t.raw('appLegalPage.line1655JsxTextWeInferNewInformationFromOtherDataWe')}</P>
         </Clause>
       </Section>
 
-      <Section id="information-use" title={t.raw('appLegalPage.line1663JsxTextInformationUse')}>
-        <P>{t.raw('appLegalPage.line1666JsxTextWeUseEachCategoryOfPersonalInformationAbout')}</P>
+      <Section id="information-use" title="How we use it and our legal bases">
         <Bullets>
-          <li>{t.raw('appLegalPage.line1669JsxTextToProvideYouWithOurServices')}</li>
-          <li>{t.raw('appLegalPage.line1670JsxTextToImproveAndDevelopOurServices')}</li>
-          <li>{t.raw('appLegalPage.line1671JsxTextToCommunicateWithYou')}</li>
-          <li>{t.raw('appLegalPage.line1672JsxTextToProvideCustomerSupport')}</li>
-        </Bullets>
-      </Section>
-
-      <Section
-        id="information-sharing"
-        title={t.raw('appLegalPage.line1676JsxTextInformationSharing')}
-      >
-        <P>{t.raw('appLegalPage.line1679JsxTextWeShareInformationAboutYou')}</P>
-        <Bullets>
-          <li>{t.raw('appLegalPage.line1683JsxTextWhenWeVeAskedReceivedYourConsentTo')}</li>
           <li>
-            {t.raw('appLegalPage.line1686JsxTextAsNeededIncludingToThirdPartyServiceProviders')}
+            To provide the Services, including running agents on your instructions, and to support
+            you. Legal basis: performance of our contract with you.
           </li>
-          <li>{t.raw('appLegalPage.line1693JsxTextToComplyWithLawsOrToRespondTo')}</li>
-          <li>{t.raw('appLegalPage.line1700JsxTextOnlyIfWeReasonablyBelieveItSNecessary')}</li>
-          <li>{t.raw('appLegalPage.line1705JsxTextInTheEventOfACorporateRestructuringOr')}</li>
+          <li>
+            To secure the Services and to detect fraud and abuse. Legal basis: our legitimate
+            interest in a safe service.
+          </li>
+          <li>
+            To understand how the Services are used and to improve them. Legal basis: our legitimate
+            interests, or your consent where cookie law requires it.
+          </li>
+          <li>
+            To send service messages and, if you agree, product news. You can unsubscribe from
+            marketing email at any time. Legal basis: contract for service messages; consent or
+            legitimate interest for marketing.
+          </li>
+          <li>
+            To bill you and to meet tax, accounting, and other legal duties. Legal basis: legal
+            obligation.
+          </li>
         </Bullets>
-        <P>{t.raw('appLegalPage.line1712JsxTextPleaseNoteThatSomeOfOurServicesInclude')}</P>
-        <P>{t.raw('appLegalPage.line1721JsxTextFinallyWeMayShareNonPersonalInformationIn')}</P>
-      </Section>
-
-      <Section
-        id="information-protection"
-        title={t.raw('appLegalPage.line1726JsxTextInformationProtection')}
-      >
         <P>
-          {t.raw(
-            'appLegalPage.line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures',
-          )}
+          We do not use customer content or outputs to train general-purpose AI models unless the
+          customer gives us express permission. We do not make decisions that have legal or
+          similarly significant effects on you based solely on automated processing.
         </P>
       </Section>
 
-      <Section id="privacy-contact" title={t.raw('appLegalPage.line1739JsxTextContactUs')}>
+      <Section id="cookies" title="Cookies and analytics">
         <P>
-          {t.raw('appLegalPage.line1742JsxTextYouCanGetInTouchByEmailingUs')}{' '}
-          <a href="mailto:info@kortix.com" className={LINK}>
-            {t.raw('appLegalPage.line1747JsxTextInfoKortixCom')}
-          </a>
-          .
+          We use cookies that the Services need to work, such as the sign-in session. On our
+          marketing website we also use analytics (PostHog, Vercel Analytics) and, through Google
+          Tag Manager, advertising and measurement tags. A cookie banner asks for your consent
+          before we set non-essential cookies where the law requires consent, and you can change
+          your choice there at any time. We do not load advertising tags on signed-in pages of the
+          Services.
+        </P>
+      </Section>
+
+      <Section id="information-sharing" title="Who we share it with">
+        <Bullets>
+          <li>
+            Service providers that process data for us, listed on our{' '}
+            <Link href="/legal/subprocessors" className={LINK}>
+              subprocessors page
+            </Link>
+            .
+          </li>
+          <li>Third-party services you connect or instruct an agent to use, on your behalf.</li>
+          <li>Our affiliates, which support and operate the Services.</li>
+          <li>Authorities, when the law requires it or to protect people and the Services.</li>
+          <li>
+            A buyer or successor, if Kortix is part of a merger, acquisition, or reorganization.
+          </li>
+        </Bullets>
+        <P>We do not sell personal information.</P>
+      </Section>
+
+      <Section id="international-transfers" title="International transfers">
+        <P>
+          We host the Services mainly in the United Kingdom and the European Union. We and our
+          service providers also process personal information in the United States and other
+          countries. When we transfer personal information from the European Economic Area, the
+          United Kingdom, or Switzerland to a country without an adequacy decision, we use the
+          European Commission&apos;s Standard Contractual Clauses, with the UK Addendum and Swiss
+          amendments where they apply.
+        </P>
+      </Section>
+
+      <Section id="retention" title="How long we keep it">
+        <Bullets>
+          <li>Account information: while your account exists.</li>
+          <li>
+            Customer content: for the subscription, then deleted within 90 days after it ends,
+            unless the customer asks for earlier deletion or the law requires us to keep it.
+          </li>
+          <li>Backups: removed on a rolling cycle of about 35 days.</li>
+          <li>Application logs: up to 365 days.</li>
+          <li>Billing records: as long as tax and accounting law requires.</li>
+        </Bullets>
+        <P>
+          After an account deletion request, a 14-day grace period applies before deletion starts.
+        </P>
+      </Section>
+
+      <Section id="information-protection" title="How we protect it">
+        <P>
+          We encrypt data in transit with TLS and at rest, restrict access to people who need it,
+          require multi-factor authentication for administrative access, run agents in isolated
+          sandboxes, and monitor our systems for security events. No method of transmission or
+          storage is completely secure.
+        </P>
+      </Section>
+
+      <Section id="your-rights" title="Your rights">
+        <P>
+          Depending on where you live, you can ask to access, correct, delete, restrict, or receive
+          a copy of your personal information, object to our processing, and withdraw consent at any
+          time without affecting earlier processing. Email <MailLink address={PRIVACY_EMAIL} />. We
+          answer within one month and may ask you to verify your identity.
+        </P>
+        <P>
+          If you are in the EEA, the United Kingdom, or Switzerland, you can also complain to the
+          data protection authority where you live or work. Residents of US states with privacy laws
+          have the rights those laws give them, and we will not discriminate against you for using
+          them.
+        </P>
+      </Section>
+
+      <Section id="children" title="Children">
+        <P>
+          The Services are not directed to children under 16, and we do not knowingly collect their
+          personal information.
+        </P>
+      </Section>
+
+      <Section id="changes" title="Changes to this policy">
+        <P>
+          We post changes on this page and update the date above. We notify you by email or in the
+          Services before a material change takes effect.
+        </P>
+      </Section>
+
+      <Section id="privacy-contact" title="Contact">
+        <P>
+          Privacy questions and requests, including for our Data Protection Officer:{' '}
+          <MailLink address={PRIVACY_EMAIL} />. Post: Kortix AI Corp, Attn: Data Protection Officer,
+          701 Tillery Street Unit 12-2521, Austin, Texas 78702, United States.
         </P>
       </Section>
     </div>
@@ -330,21 +420,17 @@ function LegalContent() {
 
   return (
     <main className="bg-background min-h-screen">
-      {/* Same container and header rhythm as /changelog and /blog: max-w-6xl,
-          px-6, and top padding that clears the fixed navbar in (seo)/layout. */}
-      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
-        <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-          <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-            {t.raw('appLegalPage.line48JsxTextLegalInformation')}
-          </h1>
-          <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty">
+      <PageHero size="band"
+        title={t.raw('appLegalPage.line48JsxTextLegalInformation')}
+        sub={
+          <>
             {t.raw('appLegalPage.line93JsxTextInformationAccordingToLegalRequirements')}
             {' — '}
             {t.raw('i18nComplete.text5f7ba416b298')}
-          </p>
-        </header>
-
-        <Separator />
+          </>
+        }
+      />
+      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
 
         <div className={DOC_GRID}>
           {/* Same rail component /support uses — horizontal scroller below
@@ -381,7 +467,7 @@ function LegalContent() {
             className={DOC_BODY}
           >
             <div className="mb-8">
-              <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+              <h2 className="text-foreground text-2xl font-normal tracking-tight text-balance">
                 {activeTab === 'imprint'
                   ? 'Imprint'
                   : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
@@ -411,13 +497,7 @@ export default function LegalPage() {
     <Suspense
       fallback={
         <main className="bg-background min-h-screen">
-          <div className="mx-auto max-w-6xl px-6">
-            <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-              <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                {tI18nComplete.raw('textcad20810fc2d')}
-              </h1>
-            </header>
-          </div>
+          <PageHero size="band" title={tI18nComplete.raw('textcad20810fc2d')} />
         </main>
       }
     >

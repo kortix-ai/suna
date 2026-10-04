@@ -12,25 +12,31 @@
  *   1. exactly which paths are exempted, and that the SSE route is not one of
  *      them (a gzip stream buffers, and a buffered event stream is broken);
  *   2. the runtime behaviour that decides what the response side must do —
- *      measured against a real socket, because it is the reason "return
- *      Content-Encoding untouched" is the WRONG instruction for a `fetch`-based
- *      proxy.
+ *      measured against a real socket WITH THE PROXY'S OWN fetch options
+ *      (`decompress: false`): the body arrives as the raw compressed bytes, so
+ *      "return Content-Encoding untouched" is exactly right. A default `fetch`
+ *      decodes instead, which is what this file measured before, and why the
+ *      proxy used to strip the header from a body it had not decoded.
  */
 import { describe, expect, test } from 'bun:test';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 const { forwardsClientEncoding } = await import('./routes/preview');
 
 describe('forwardsClientEncoding', () => {
   test('the daemon runtime namespace on port 8000 forwards the client negotiation', () => {
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/state')).toBe(true);
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/messages/ses_abc')).toBe(true);
+    // The same namespace on a daemon built before W3.
     expect(forwardsClientEncoding(8000, '/kortix/opencode/state')).toBe(true);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/messages/ses_abc')).toBe(true);
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/turn/msg_1')).toBe(true);
   });
 
   test('the SSE route is NEVER exempted, even inside the namespace', () => {
     // A gzip stream buffers until a deflate block fills. That is the same
     // defect as buffering the proxy itself, wearing a compression hat.
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/events')).toBe(false);
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/events?since=41')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/events')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/events?since=41')).toBe(false);
   });
@@ -55,8 +61,8 @@ describe('forwardsClientEncoding', () => {
   });
 });
 
-describe('what a gzipped daemon response actually does to `fetch` (measured)', () => {
-  test('the WIRE carries the compressed bytes; `fetch` hands back DECODED ones', async () => {
+describe('what a gzipped daemon response does to the proxy\'s `fetch` (measured)', () => {
+  test('with `decompress: false` the proxy holds the RAW compressed bytes, labelled as such', async () => {
     // A stand-in daemon that behaves like `kortix-http.ts`: gzip when asked,
     // plain otherwise.
     const raw = JSON.stringify({ agents: { known: true, value: Array.from({ length: 200 }, (_, i) => ({ name: `agent-${i}`, description: 'a projected agent row' })) } });
@@ -82,11 +88,14 @@ describe('what a gzipped daemon response actually does to `fetch` (measured)', (
     });
 
     try {
-      const url = `http://127.0.0.1:${server.port}/kortix/opencode/state`;
+      const url = `http://127.0.0.1:${server.port}/kortix/runtime/state`;
+      // The options `routes/preview.ts` passes to its upstream fetch.
+      const proxyFetch = (acceptEncoding: string) =>
+        fetch(url, { headers: { 'accept-encoding': acceptEncoding }, redirect: 'manual', decompress: false, duplex: 'half' } as RequestInit);
 
-      const compressed = await fetch(url, { headers: { 'accept-encoding': 'gzip' } });
+      const compressed = await proxyFetch('gzip');
       const compressedBody = new Uint8Array(await compressed.arrayBuffer());
-      const plain = await fetch(url, { headers: { 'accept-encoding': 'identity' } });
+      const plain = await proxyFetch('identity');
       const plainBody = new Uint8Array(await plain.arrayBuffer());
 
       // (1) The saving is real, and it is the whole reason for the exemption:
@@ -94,22 +103,18 @@ describe('what a gzipped daemon response actually does to `fetch` (measured)', (
       expect(gz.byteLength).toBeLessThan(raw.length / 5);
       expect(compressed.headers.get('content-length')).toBe(String(gz.byteLength));
 
-      // (2) And this is the trap. `fetch` DECODES a `Content-Encoding` body per
-      // the WHATWG spec, while leaving the header and the COMPRESSED
-      // `Content-Length` on the response object. So "return Content-Encoding
-      // untouched" would ship a decoded body labelled gzip with a length that
-      // describes different bytes — unreadable by every client.
+      // (2) The body is NOT decoded: the proxy holds the gzip bytes, and the
+      // headers still describe them. Stripping `content-encoding` here would
+      // hand the client gzip bytes labelled as JSON, which no client can read.
       expect(compressed.headers.get('content-encoding')).toBe('gzip');
-      expect(compressedBody.byteLength).toBe(plainBody.byteLength);
-      expect(compressedBody[0]).not.toBe(0x1f); // not a gzip magic byte
-      expect(new TextDecoder().decode(compressedBody)).toBe(raw);
+      expect(compressedBody.byteLength).toBe(gz.byteLength);
+      expect([compressedBody[0], compressedBody[1]]).toEqual([0x1f, 0x8b]); // gzip magic
+      expect(new TextDecoder().decode(gunzipSync(compressedBody))).toBe(raw);
+      expect(new TextDecoder().decode(plainBody)).toBe(raw);
 
-      // Hence `routes/preview.ts` strips `content-encoding` + `content-length`
-      // on the forwarded path and re-advertises the upstream encoding as
-      // `x-kortix-upstream-encoding`. The API's own compress middleware then
-      // negotiates the API->client hop independently.
-      // Both negotiations reached the stand-in daemon verbatim — which is
-      // exactly what the proxy exemption forwards.
+      // Hence `routes/preview.ts` forwards `content-encoding` and
+      // `content-length` untouched on this namespace, and the API's compress
+      // middleware leaves an already-encoded body alone.
       expect(seenAcceptEncoding).toEqual(['gzip', 'identity']);
     } finally {
       server.stop(true);

@@ -168,7 +168,7 @@ export function InlineCode({
                 flexDirection: 'row',
                 alignItems: 'flex-end',
                 backgroundColor: palette.inlineCodeBg,
-                borderColor: palette.border,
+                borderColor: palette.inlineCodeBorder,
                 borderTopWidth: INLINE_CODE.borderWidth,
                 borderBottomWidth: INLINE_CODE.borderWidth,
                 borderLeftWidth: isFirst ? INLINE_CODE.borderWidth : 0,

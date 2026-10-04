@@ -78,6 +78,9 @@ export interface ReviewApprovalAction {
   reviewComplete?: boolean;
   /** False when this viewer may not see connector arguments at all. */
   previewAuthorized?: boolean;
+  /** The agent's own description of the call's effect. Unverified: the
+   *  arguments remain the evidence. */
+  approvalContext?: string;
   connectorRisk?: string | null;
   policySource: string;
   decided?: 'approved' | 'denied';
@@ -338,6 +341,7 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
         // The API omits `args_preview` for a viewer without argument visibility.
         // That is indistinguishable from "the row recorded none" without this flag.
         previewAuthorized: detail.args_preview_authorized !== false,
+        approvalContext: asString(detail.approval_context),
         connectorRisk: asString(detail.risk) ?? null,
         policySource: 'Requires approval',
       },

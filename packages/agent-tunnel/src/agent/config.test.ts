@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 
 import { loadConfig } from './config';
+import { agentTunnelHome } from './service-paths';
 
 const ENV_KEYS = ['TUNNEL_API_URL', 'TUNNEL_WS_PATH'] as const;
 
@@ -42,6 +43,10 @@ describe('loadConfig', () => {
     expect(loadConfig({ apiUrl: 'http://127.0.0.1:8008/v1/tunnel' }).apiUrl).toBe(
       'http://127.0.0.1:8008/v1/tunnel',
     );
+  });
+
+  it('always blocks the agent home, whatever config.json says', () => {
+    expect(loadConfig({ blockedPaths: [] }).blockedPaths).toContain(agentTunnelHome());
   });
 
   it('requires the websocket path to be an absolute path', () => {

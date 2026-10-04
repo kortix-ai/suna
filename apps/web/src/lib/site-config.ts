@@ -24,6 +24,8 @@ export type NavMenuColumn = {
  */
 export type NavMenu = {
   columns: NavMenuColumn[];
+  /** One featured card on the right of the panel. */
+  feature?: { title: string; description: string; href: string; image: string };
 };
 
 export type NavLink =
@@ -39,6 +41,18 @@ export const productMenu: NavMenu = {
       title: 'Platform',
       links: [
         {
+          name: 'AI OS overview',
+          href: '/ai-os',
+          description: 'One operating system for agents and people',
+          icon: 'stack',
+        },
+        {
+          name: 'Agents & Skills',
+          href: '/agents-and-skills',
+          description: 'A workforce that compounds what it learns',
+          icon: 'users',
+        },
+        {
           name: 'Agent Computer',
           href: '/agent-computer',
           description: 'An isolated cloud computer for every session',
@@ -49,26 +63,6 @@ export const productMenu: NavMenu = {
           href: '/company-as-code',
           description: 'Agents, skills and memory as git files you own',
           icon: 'git-branch',
-        },
-        {
-          name: 'Self-hosted',
-          href: '/self-hosted',
-          // ACCURACY: never "air-gapped" — `self-host start` pulls images from
-          // docker.io, so a fully disconnected install is not shipped.
-          description: 'Your own VPC or your own on-prem network',
-          icon: 'hard-drives',
-        },
-        {
-          name: 'Security',
-          href: '/security',
-          description: 'Isolation, credentials, permissions and audit',
-          icon: 'shield',
-        },
-        {
-          name: 'Enterprise',
-          href: '/enterprise',
-          description: 'SSO, RBAC, audit trails and approval gates',
-          icon: 'buildings',
         },
       ],
     },
@@ -94,14 +88,45 @@ export const productMenu: NavMenu = {
           icon: 'chats',
         },
         {
-          name: 'Agents & Skills',
-          href: '/agents-and-skills',
-          description: 'A workforce that compounds what it learns',
-          icon: 'users',
+          name: 'Download',
+          href: '/download',
+          description: 'Desktop app and CLI',
+          icon: 'download',
+        },
+      ],
+    },
+    {
+      title: 'Trust',
+      links: [
+        {
+          name: 'Security',
+          href: '/security',
+          description: 'Isolation, credentials, permissions and audit',
+          icon: 'shield',
+        },
+        {
+          name: 'Enterprise',
+          href: '/enterprise',
+          description: 'SSO, RBAC, audit trails and approval gates',
+          icon: 'buildings',
+        },
+        {
+          name: 'Self-hosted',
+          href: '/self-hosted',
+          // ACCURACY: never "air-gapped" — `self-host start` pulls images from
+          // docker.io, so a fully disconnected install is not shipped.
+          description: 'Your own VPC or your own on-prem network',
+          icon: 'hard-drives',
         },
       ],
     },
   ],
+  feature: {
+    title: 'Kortix in 64 seconds',
+    description: 'The launch film: one repo, a computer per session, change requests you approve.',
+    href: '/launch',
+    image: '/media/showcase/kortix-showcase-dark-poster-1280.jpg',
+  },
 };
 
 /**
@@ -175,6 +200,32 @@ export const solutionsMenu: NavMenu = {
  * than as a grid of explained cards, and a narrow panel stops the menu from
  * spanning half the viewport for five links.
  */
+export const developersMenu: NavMenu = {
+  columns: [
+    {
+      title: 'Build',
+      links: [
+        { name: 'Documentation', href: '/docs', description: 'Guides and the API reference' },
+        { name: 'CLI', href: '/docs/cli', description: 'kortix init, then kortix ship' },
+        { name: 'SDK', href: '/docs/sdk', description: 'One typed client for the Kortix API' },
+        { name: 'For developers', href: '/developers', description: 'A managed cloud for your coding agents' },
+      ],
+    },
+    {
+      title: 'Open source',
+      links: [
+        { name: 'GitHub', href: 'https://github.com/kortix-ai/suna', external: true, description: 'Read it, fork it, audit it' },
+        { name: 'Self-hosted', href: '/self-hosted', description: 'Run it on your own infrastructure' },
+        { name: 'Changelog', href: '/changelog', description: 'What shipped, and when' },
+      ],
+    },
+  ],
+};
+
+/**
+ * One column, no descriptions — short destinations read faster as a list than
+ * as a grid of explained cards.
+ */
 export const companyMenu: NavMenu = {
   columns: [
     {
@@ -183,6 +234,7 @@ export const companyMenu: NavMenu = {
         { name: 'About', href: '/about' },
         { name: 'Careers', href: '/careers' },
         { name: 'Blog', href: '/blog' },
+        { name: 'Contact', href: '/contact' },
         { name: 'X', href: 'https://x.com/kortix', external: true },
         { name: 'LinkedIn', href: 'https://linkedin.com/company/kortix', external: true },
       ],
@@ -195,16 +247,14 @@ export const siteConfig = {
   nav: {
     links: [
       { id: 1, name: 'Product', menu: productMenu },
-      // Solutions is deliberately NOT in the top bar. Eight role pages is a
-      // wide menu beside Product and Company; the roles live in the footer,
-      // and the home-page use-case cards are the in-page entry point.
-      { id: 3, name: 'Company', menu: companyMenu },
-      { id: 4, name: 'Pricing', href: '/pricing' },
-      { id: 6, name: 'Docs', href: '/docs' },
+      { id: 2, name: 'Solutions', menu: solutionsMenu },
+      { id: 3, name: 'Developers', menu: developersMenu },
+      { id: 4, name: 'Company', menu: companyMenu },
+      { id: 5, name: 'Pricing', href: '/pricing' },
     ] as NavLink[],
   },
   hero: {
-    description: 'Kortix – the open AI command center for your company.',
+    description: 'Kortix – the open-source AI Operating System.',
   },
   footerLinks: [
     {

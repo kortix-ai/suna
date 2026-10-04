@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { SandboxExecResult } from '../../platform/providers';
 import {
+  FIRST_CONVERGENCE_GRACE_S,
   LEGACY_BOOTSTRAP_COOLDOWN_MS,
   LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
   LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
@@ -11,6 +12,9 @@ import {
   bootstrapExecCommand,
   bootstrapLegacyRuntime,
   classifyDaemonHealth,
+  DEAD_DAEMON_REPAIR_BUDGET_MS,
+  DEAD_DAEMON_REPAIR_REQUESTED_KEY,
+  decideDeadDaemonOnOpen,
   describeLegacyBootstrapRetry,
   legacyBootstrapCooldownMs,
   parseScriptReport,
@@ -144,6 +148,70 @@ describe('classifyDaemonHealth', () => {
     expect(c.detail[0]).toContain('cli_sha256');
   });
 
+  // Dev 2026-10-02, template kortix-default-6bacca9b52cc (the agent-swap fast
+  // path): what a fresh box answered 3 s after boot, before its first pass.
+  // The record is the predecessor image's bake (agent efd19aa3…, cli 9ba28976…)
+  // while the box already ran the manifest's agent. Open relaunched it: +17 s.
+  const SWAPPED_FIRST_BOOT = {
+    daemon: 'ok',
+    status: 'ok',
+    runtimeReady: false,
+    opencode: 'starting',
+    uptime_s: 3,
+    capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
+    runtime: {
+      build: null,
+      at: null,
+      components: {},
+      agentSwapPending: false,
+      pinned: false,
+      running: {
+        cli_sha256: 'baked-predecessor-cli',
+        managed_skills_hash: MANIFEST.managed_skills_hash,
+        agent_sha256: 'baked-predecessor-agent',
+        agent_path: '/usr/local/bin/kortix-agent',
+        staged_agent_sha256: null,
+        build: null,
+      },
+    },
+  };
+
+  test('a fresh box still answering with its image bake record is awaiting its first pass, not stale', () => {
+    const c = classifyDaemonHealth(SWAPPED_FIRST_BOOT, MANIFEST);
+    expect(c.klass).toBe('current');
+    expect(c.staleReasons).toEqual([]);
+    expect(c.runtimeBuild).toBeNull(); // bootstrapLegacyRuntime reads this as "convergence pending"
+    expect(c.detail[0]).toContain('awaiting the first convergence pass');
+  });
+
+  test('once the first pass has run, the same mismatch is stale again', () => {
+    const afterPass = {
+      ...SWAPPED_FIRST_BOOT,
+      runtime: { ...SWAPPED_FIRST_BOOT.runtime, build: 1790968504, running: { ...SWAPPED_FIRST_BOOT.runtime.running, build: 1790968504 } },
+    };
+    expect(classifyDaemonHealth(afterPass, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+    // A relaunch keeps the persisted build: the in-process pass resets, the record does not.
+    const relaunched = {
+      ...SWAPPED_FIRST_BOOT,
+      runtime: { ...SWAPPED_FIRST_BOOT.runtime, running: { ...SWAPPED_FIRST_BOOT.runtime.running, build: 1790968504 } },
+    };
+    expect(classifyDaemonHealth(relaunched, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+  });
+
+  test('the bake record stops excusing a mismatch once the grace has passed, so a stuck first pass cannot hide a stale agent', () => {
+    const late = { ...SWAPPED_FIRST_BOOT, uptime_s: FIRST_CONVERGENCE_GRACE_S };
+    expect(classifyDaemonHealth(late, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+    const unknownUptime = { ...SWAPPED_FIRST_BOOT, uptime_s: undefined };
+    expect(classifyDaemonHealth(unknownUptime, MANIFEST).staleReasons).toEqual(['running_assets_stale']);
+  });
+
+  test('every other stale reason still applies during the grace', () => {
+    const swapPending = { ...SWAPPED_FIRST_BOOT, runtime: { ...SWAPPED_FIRST_BOOT.runtime, agentSwapPending: true } };
+    expect(classifyDaemonHealth(swapPending, MANIFEST).staleReasons).toEqual(['agent_swap_pending']);
+    const noCapability = { ...SWAPPED_FIRST_BOOT, capabilities: [] };
+    expect(classifyDaemonHealth(noCapability, MANIFEST).staleReasons).toEqual(['missing_capability']);
+  });
+
   test('without an expected manifest passed in, the sha compare is skipped but `running` absence still catches it', () => {
     // No second argument: the wiring layer always passes one in production;
     // a caller without the manifest handy still gets the rule-1 signal.
@@ -158,6 +226,26 @@ describe('classifyDaemonHealth', () => {
     const c = classifyDaemonHealth(health, MANIFEST);
     expect(c.klass).toBe('stale');
     expect(c.staleReasons).toEqual(['missing_capability']);
+  });
+
+  test('a pi box is not stale for lacking config.release.v1: pi has no config releases', () => {
+    // Only the OpenCode runtime advertises the capability. Requiring it of pi
+    // relaunched every idle pi box on each session open, and the relaunch could
+    // never converge, so /start answered `starting` until the retries ran out.
+    const pi = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: 'pi', capabilities: ['file.import', 'file.append'] }, MANIFEST);
+    expect(pi.klass).toBe('current');
+    expect(pi.staleReasons).toEqual([]);
+    const opencode = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: 'opencode', capabilities: [] }, MANIFEST);
+    expect(opencode.staleReasons).toEqual(['missing_capability']);
+  });
+
+  test('a W3 daemon names its harness in the closed block; the classifier reads id and state from it', () => {
+    const block = (id: string) => ({ id, version: null, state: 'ok', ready: true, error: null, session: { id: null, required: false }, turn: null, details: {} });
+    const pi = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: block('pi'), opencode: undefined, capabilities: ['file.import'] }, MANIFEST);
+    expect(pi.klass).toBe('current');
+    expect(pi.opencode).toBe('ok');
+    const opencode = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: block('opencode'), capabilities: [] }, MANIFEST);
+    expect(opencode.staleReasons).toEqual(['missing_capability']);
   });
 
   test('agentSwapPending: true is stale immediately — no grace window; a running box has no natural self-promotion path', () => {
@@ -196,6 +284,42 @@ describe('relaunchStrategyFor', () => {
   });
 });
 
+describe('decideDeadDaemonOnOpen', () => {
+  const since = Date.parse('2026-09-29T14:08:18Z');
+  const now = since + 40_000;
+  const at = (ms: number) => new Date(ms).toISOString();
+
+  test('a dead daemon on Platinum asks for a relaunch instead of parking', () => {
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('request');
+  });
+
+  test('a request from an earlier unreachable spell does not count', () => {
+    const metadata = { [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(since - 1) };
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('request');
+  });
+
+  test('an asked-for relaunch holds the open until its budget runs out, then parks', () => {
+    const metadata = { [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(since + 30_000) };
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('wait');
+    expect(
+      decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: since + 30_000 + DEAD_DAEMON_REPAIR_BUDGET_MS }),
+    ).toBe('park');
+  });
+
+  test('a relaunch that failed after it was asked for parks at once', () => {
+    const metadata = {
+      [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(since + 30_000),
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: { state: 'failed', attempts: 1, manifestBuild: 1, lastAttemptAt: at(since + 31_000), finishedAt: at(since + 35_000) },
+    };
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('park');
+  });
+
+  test('providers that relaunch on their own start keep parking', () => {
+    expect(decideDeadDaemonOnOpen({ provider: 'daytona', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
+    expect(decideDeadDaemonOnOpen({ provider: 'e2b', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
+  });
+});
+
 describe('renderLegacyBootstrapScript', () => {
   test('carries no secret, verifies every download, keeps the baked binary, restores on failure', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
@@ -212,6 +336,14 @@ describe('renderLegacyBootstrapScript', () => {
     expect(s).toContain('global-bin-dir=');
     expect(s).toContain('npm install -g "pnpm@$want"');
     expect(s).toContain("RELAUNCH='pt-app'");
+  });
+  test('pt-app re-checks OpenCode idle after the download, before the token swap and the kill', () => {
+    const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
+    const guard = s.indexOf('"stage\\":\\"deferred_busy');
+    expect(guard).toBeGreaterThan(s.indexOf('download "$AGENT_PATH"'));
+    expect(guard).toBeLessThan(s.indexOf('if [ -n "$NEW_KORTIX_TOKEN" ]'));
+    expect(guard).toBeLessThan(s.indexOf('\nstop_runtime_chain\n'));
+    expect(s).toContain('http://127.0.0.1:4096/session/status');
   });
   test('next-start strategy stages only', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'next-start' });
@@ -343,6 +475,31 @@ describe('bootstrapLegacyRuntime', () => {
     expect(unreachable.outcome).toBe('skipped-busy');
   });
 
+  test('a turn that starts during the repair defers the relaunch and spends no attempt', async () => {
+    // dev 2026-09-29: the idle gate passed, the ~110 MB agent download ran,
+    // the user's first prompt landed, and the relaunch killed it.
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const prior = { state: 'converged', attempts: 1, manifestBuild: 1, lastAttemptAt: '2026-09-28T00:00:00.000Z', reason: 'reaper', to: { runtimeBuild: 1 } };
+    const deps = makeDeps(
+      {
+        exec: async (cmd) => {
+          calls.execs.push(cmd);
+          return { exitCode: 0, stdout: '{"ok":true,"stage":"deferred_busy","token_rotated":false}\n', stderr: '' };
+        },
+      },
+      calls,
+    );
+    const r = await bootstrapLegacyRuntime(input({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior }), deps);
+    expect(r.outcome).toBe('skipped-busy');
+    expect(calls.execs).toHaveLength(1);
+    expect(calls.patches.at(-1)).toEqual({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior });
+    expect(calls.audits).toHaveLength(0);
+
+    const fresh: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(input(), makeDeps({ exec: deps.exec }, fresh));
+    expect(fresh.patches.at(-1)).toEqual({ [LEGACY_BOOTSTRAP_METADATA_KEY]: null });
+  });
+
   test('failed attempt: cooldown, then budget exhausted on the same build, fresh budget on a new build', async () => {
     const clock = { t: Date.parse('2026-09-01T12:00:00Z') };
     const failedRecord = (attempts: number, build: number, ageMs: number) => ({
@@ -468,5 +625,61 @@ describe('bootstrapLegacyRuntime', () => {
     const forced = await bootstrapLegacyRuntime({ ...input(), force: true }, makeDeps({ health: [pinned] }, calls));
     expect(forced.outcome).toBe('skipped-blocked');
     expect(calls.execs).toHaveLength(0);
+  });
+});
+
+describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {
+  const LOOPBACK = 'http://127.0.0.1:8000/kortix/health';
+
+  test('a daemon alive on the box loopback ends the pass before any record, token or script', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    let minted = 0;
+    const r = await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null],
+          providerRunning: async () => true,
+          rotateKortixToken: async () => {
+            minted++;
+            return 'kortix_pat_x';
+          },
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return { exitCode: 0, stdout: '', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(r.outcome).toBe('not-legacy');
+    expect(calls.execs).toHaveLength(1);
+    expect(calls.execs[0]!.join(' ')).toContain(LOOPBACK);
+    expect(calls.patches).toHaveLength(0);
+    expect(calls.audits).toHaveLength(0);
+    expect(minted).toBe(0);
+  });
+
+  test('a daemon silent on the loopback too is relaunched', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null, CURRENT_HEALTH],
+          providerRunning: async () => true,
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return cmd.join(' ').includes(LOOPBACK)
+              ? { exitCode: 7, stdout: '', stderr: 'connection refused' }
+              : { exitCode: 0, stdout: '{"ok":true,"stage":"relaunched","agent_sha256":"a","entrypoint_sha256":"e"}\n', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(calls.execs).toHaveLength(2);
+    expect(calls.execs[1]![0]).toBe('bash');
+    expect(calls.execs[1]!.join(' ')).not.toContain(LOOPBACK);
   });
 });

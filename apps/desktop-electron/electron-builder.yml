@@ -29,6 +29,17 @@ files:
   - assets/**/*
   - package.json
 
+# The computer agent (@kortix/agent-tunnel), outside the asar so the OS service
+# can run it with this app's binary (ELECTRON_RUN_AS_NODE=1). Build it first:
+# `pnpm --filter @kortix/agent-tunnel build` (scripts/ensure-runtime.js does).
+extraResources:
+  - from: ../../packages/agent-tunnel/dist/agent-cli.js
+    to: agent-tunnel/agent-cli.js
+  # Beside the bundle: the agent reads its version from it, and it marks the
+  # bundle as an ES module.
+  - from: ../../packages/agent-tunnel/package.json
+    to: agent-tunnel/package.json
+
 # Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
 protocols:
   - name: Kortix
@@ -57,7 +68,15 @@ mac:
         - universal
   # macOS ATS exceptions so HTTP localhost / *.localhost sandbox previews load
   # inside the in-app browser (same rationale as the Tauri Info.plist).
+  # Computer Use: the agent runs this driver embedded, so the macOS grants
+  # belong to Kortix (scripts/fetch-cua-driver.js). It is already a universal
+  # binary: x64ArchFiles lets the universal merge keep the one file.
+  extraResources:
+    - from: vendor/cua-driver/cua-driver
+      to: cua-driver/cua-driver
+  x64ArchFiles: Contents/Resources/cua-driver/cua-driver
   extendInfo:
+    NSAppleEventsUsageDescription: Kortix agents use this to work with the apps on this computer when you allow Computer Use.
     NSAppTransportSecurity:
       NSAllowsArbitraryLoads: true
       NSAllowsArbitraryLoadsInWebContent: true

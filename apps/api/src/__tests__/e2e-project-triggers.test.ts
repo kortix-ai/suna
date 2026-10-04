@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { createHmac, randomUUID } from 'node:crypto';
+import { SQL, is } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -224,7 +225,14 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: 'kortix-org',
     repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'trigger-project',
@@ -300,8 +308,8 @@ mock.module('../projects/lib/git', () => ({
 
 mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
+    lastProvisionEnv = await input.extraEnvVars;
     sandboxProvisionCalls += 1;
-    lastProvisionEnv = input.extraEnvVars;
   },
 }));
 
@@ -405,10 +413,13 @@ const triggerDbMock: any = {
               // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
               limit: (limit: number) => {
                 const limited = rows.slice(0, limit);
-                return {
+                const chain = {
                   offset: async (offset: number) => limited.slice(offset),
+                  // The lifecycle claim locks its picks: `.limit(n).for('update', …)`.
+                  for: () => chain,
                   then: (resolve: (rows: any[]) => unknown) => resolve(limited),
                 };
+                return chain;
               },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
@@ -468,7 +479,7 @@ const triggerDbMock: any = {
               sandboxProvider: values.sandboxProvider,
               sandboxId: values.sandboxId ?? null,
               sandboxUrl: null,
-              opencodeSessionId: null,
+              runtimeSessionId: null,
               agentName: values.agentName ?? 'default',
               status: values.status ?? 'provisioning',
               error: null,
@@ -476,10 +487,14 @@ const triggerDbMock: any = {
               visibility: values.visibility ?? 'private',
               origin: values.origin ?? 'user',
               originRef: values.originRef ?? null,
+              parentSessionId: values.parentSessionId ?? null,
+              initiatorType: values.initiatorType ?? null,
+              initiatorId: values.initiatorId ?? null,
               secretsAllowlist: values.secretsAllowlist ?? null,
               requiredConnectors: null,
               connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
               connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
+              labels: values.labels ?? [],
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
@@ -556,10 +571,19 @@ const triggerDbMock: any = {
                 (r) => r.projectId === values.projectId && r.slug === values.slug,
               );
               const existing = idx >= 0 ? runtimeRows[idx] : undefined;
+              // keepRunFailure sends CASE fragments that Postgres evaluates
+              // against the existing row: a failed run keeps its status and
+              // reason; any other row takes the written values.
+              const plainSet = Object.fromEntries(Object.entries(set).filter(([, v]) => !is(v, SQL)));
+              const keptFailure =
+                existing?.runFailingSince != null
+                  ? { lastStatus: existing.lastStatus, lastError: existing.lastError }
+                  : {};
               const next = {
                 ...existing,
                 ...values,
-                ...set,
+                ...plainSet,
+                ...keptFailure,
                 projectId: values.projectId,
                 slug: values.slug,
                 lastFiredAt: (set.lastFiredAt ??
@@ -587,7 +611,14 @@ const triggerDbMock: any = {
         where: () => ({
           returning: async () => {
             if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              // The claim sets `attempts` and `result` with SQL expressions that
+              // Postgres evaluates against the row; apply the plain values.
+              const plain = Object.fromEntries(Object.entries(setValues).filter(([, v]) => !is(v, SQL)));
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({
+                ...row,
+                ...plain,
+                ...(is(setValues.attempts, SQL) ? { attempts: row.attempts + 1 } : {}),
+              }));
               return lifecycleCommandRows;
             }
             return [];
@@ -627,7 +658,12 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realTriggerExecutionStore = await import('../projects/trigger-execution-store');
 mock.module('../projects/trigger-execution-store', () => ({
+  ...realTriggerExecutionStore,
   claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
     const due = runtimeRows
       .filter(
@@ -1505,6 +1541,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     // Pre-seed a reusable session so the fire path finds it and enqueues (rather
     // than creating a fresh session, which would return `fired`).
     sessionRows.push({
+      labels: [],
       sessionId: 'sess-reuse',
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
@@ -1513,7 +1550,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       sandboxProvider: 'daytona',
       sandboxId: null,
       sandboxUrl: null,
-      opencodeSessionId: null,
+      runtimeSessionId: null,
       agentName: 'default',
       status: 'stopped',
       error: null,
@@ -1521,6 +1558,9 @@ describe('git-backed triggers — runtime fire paths', () => {
       visibility: 'private',
       origin: 'system',
       originRef: null,
+      parentSessionId: null,
+      initiatorType: null,
+      initiatorId: null,
       secretsAllowlist: null,
       requiredConnectors: null,
       connectorBindingsInheritUnbound: false,

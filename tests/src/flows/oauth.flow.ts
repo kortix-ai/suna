@@ -8,6 +8,7 @@
  * behavior) rather than a full happy-path token exchange. Maps to spec OAU-*.
  */
 import { flow } from "../core/flow";
+import { CliSandbox } from "../fixtures/cli";
 
 // ── OAU-1: GET /authorize ────────────────────────────────────────────────────
 flow("OAU-1", { domain: "oauth", routes: ["GET /v1/oauth/authorize"] }, async (ctx) => {
@@ -201,6 +202,7 @@ flow(
     routes: [
       "GET /.well-known/oauth-authorization-server",
       "GET /v1/oauth/.well-known/oauth-authorization-server",
+      "GET /.well-known/openid-configuration",
     ],
   },
   async (ctx) => {
@@ -211,10 +213,18 @@ flow(
       if (!body.authorization_endpoint.endsWith("/v1/oauth/authorize")) throw new Error(`authorization_endpoint: ${body.authorization_endpoint}`);
       if (!body.code_challenge_methods_supported.includes("S256")) throw new Error("S256 missing");
       if (!body.scopes_supported.includes("kortix")) throw new Error("kortix scope missing");
+      // The docs live on the web host (FRONTEND_URL), never a string edit of the API issuer.
+      if (!new URL(body.service_documentation).pathname.endsWith("/docs/sdk/sign-in")) throw new Error(`service_documentation: ${body.service_documentation}`);
     });
     await ctx.step("the /v1/oauth mirror serves the same document", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/.well-known/oauth-authorization-server");
       r.status(200).body().exists("$.issuer");
+    });
+    await ctx.step("/.well-known/openid-configuration serves the same document", async () => {
+      const a = await ctx.client.as(ctx.P.ANON).get("/.well-known/oauth-authorization-server");
+      const r = await ctx.client.as(ctx.P.ANON).get("/.well-known/openid-configuration");
+      r.status(200);
+      if (JSON.stringify(r.json()) !== JSON.stringify(a.json())) throw new Error("openid-configuration differs from the AS document");
     });
   },
 );
@@ -225,6 +235,7 @@ flow(
   {
     domain: "oauth",
     routes: [
+      "GET /v1/accounts/:accountId/iam/scim/tokens",
       "GET /v1/accounts/:accountId/iam/oauth-clients",
       "POST /v1/accounts/:accountId/iam/oauth-clients",
       "GET /v1/accounts/:accountId/iam/oauth-clients/:clientId",
@@ -286,6 +297,10 @@ flow(
       rot.status(200).body().exists("$.client_secret");
       if (rot.json<any>().client_secret === secret) throw new Error("rotate returned the same secret");
     });
+    await ctx.step("a malformed account id on the SCIM tokens list → 404, not a 500", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/iam/scim/tokens", { params: { accountId: "not-a-uuid" } });
+      r.status(404);
+    });
     await ctx.step("NONMEMBER → 403 on list and delete", async () => {
       const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/accounts/:accountId/iam/oauth-clients", { params: { accountId: team.id } });
       list.status(403);
@@ -306,6 +321,7 @@ flow(
   "OAU-7",
   {
     domain: "oauth",
+    timeoutMs: 180_000,
     routes: [
       "GET /v1/oauth/authorize",
       "GET /v1/oauth/authorize/consent/:requestId",
@@ -378,6 +394,18 @@ flow(
         form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: "wrong" }),
       );
       bad.status(400).body().has("$.error", "invalid_grant");
+      // A wrong verifier spends the code: the right verifier no longer redeems it.
+      const spent = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/oauth/token",
+        form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
+      );
+      spent.status(400).body().has("$.error", "invalid_grant");
+      const again = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      const rid = new URL(again.header("location")!).searchParams.get("request_id")!;
+      const approved = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
+      code = new URL(approved.json<any>().redirect_uri).searchParams.get("code")!;
       const r = await ctx.client.as(ctx.P.ANON).post(
         "/v1/oauth/token",
         form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
@@ -395,18 +423,79 @@ flow(
       info.status(200).body().exists("$.sub").exists("$.email");
     });
 
-    await ctx.step("refresh rotates: the old refresh token dies, the new access token works", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: refreshToken }));
+    let rotatedRefresh = "";
+    const refresh = (token: string) =>
+      ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: token }));
+    const me = (token: string) => ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${token}` } });
+    const mintPair = async () => {
+      const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      const rid = new URL(auth.header("location")!).searchParams.get("request_id")!;
+      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
+      const pairCode = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+      const redeem = () =>
+        ctx.client.as(ctx.P.ANON).post(
+          "/v1/oauth/token",
+          form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code: pairCode, redirect_uri: redirectUri, code_verifier: verifier }),
+        );
+      const r = await redeem();
       r.status(200);
-      const next = r.json<any>();
-      const reuse = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: refreshToken }));
-      reuse.status(400);
-      const old = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
-      old.status(401);
-      accessToken = next.access_token;
-      refreshToken = next.refresh_token;
-      const fresh = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
-      fresh.status(200);
+      return { access: r.json<any>().access_token as string, refresh: r.json<any>().refresh_token as string, redeem };
+    };
+
+    await ctx.step("refresh rotates: two refreshes inside the grace window both succeed (shared credential store) and every issued access token works", async () => {
+      rotatedRefresh = refreshToken; // rotated by the first call below; replayed after the window
+      const first = await refresh(refreshToken);
+      first.status(200);
+      const second = await refresh(refreshToken); // the racing second process, same old refresh token
+      second.status(200);
+      const a = first.json<any>();
+      const b = second.json<any>();
+      if (a.refresh_token === b.refresh_token || a.access_token === b.access_token) throw new Error("grace refresh must issue a fresh pair");
+      (await me(a.access_token)).status(200);
+      (await me(b.access_token)).status(200);
+      // Old access token stays valid until its own expiry (it is not revoked by rotation).
+      (await me(accessToken)).status(200);
+      // Both new refresh tokens are live: the family survives.
+      const c = await refresh(b.refresh_token);
+      c.status(200);
+      accessToken = c.json<any>().access_token;
+      refreshToken = c.json<any>().refresh_token;
+    });
+
+    await ctx.step("replaying a rotated refresh token after the grace window → invalid_grant AND the whole family for that client+user is revoked", async () => {
+      // The local profile sets KORTIX_OAUTH_REFRESH_GRACE_MS=2000. A deployed API keeps the
+      // 30 s default (the flow cannot set server env), so wait past that.
+      await new Promise((r) => setTimeout(r, ctx.env.target === "local" ? 2_500 : 31_000));
+      const live = await refresh(refreshToken); // still live, not yet rotated
+      live.status(200);
+      const liveNext = live.json<any>();
+      const rotated = await refresh(rotatedRefresh);
+      rotated.status(400).body().has("$.error", "invalid_grant");
+      (await refresh(liveNext.refresh_token)).status(400); // family revoked, including the newest refresh token
+      (await me(liveNext.access_token)).status(401); // ... and its access token
+      (await me(accessToken)).status(401);
+      accessToken = "";
+      refreshToken = "";
+    });
+
+    await ctx.step("re-authorize after a family revocation: a fresh pair works and the old refresh chain stays dead", async () => {
+      const fresh = await mintPair();
+      accessToken = fresh.access;
+      refreshToken = fresh.refresh;
+      (await me(accessToken)).status(200);
+    });
+
+    await ctx.step("authorization-code reuse revokes the tokens issued from that code; tokens issued earlier survive", async () => {
+      const bystander = await mintPair();
+      const victim = await mintPair();
+      (await me(victim.access)).status(200);
+      const replay = await victim.redeem();
+      replay.status(400).body().has("$.error", "invalid_grant");
+      (await me(victim.access)).status(401);
+      (await refresh(victim.refresh)).status(400);
+      (await me(bystander.access)).status(200);
     });
 
     await ctx.step("revoke the refresh token → its access token is dead too; unknown token still 200", async () => {
@@ -497,3 +586,173 @@ flow("OAU-8", { domain: "oauth", routes: ["POST /v1/oauth/token", "GET /v1/oauth
     del.status(200);
   });
 });
+
+/** Register a public PKCE client (as an MCP client does), approve it as OWNER, and exchange the code. */
+async function approveConnectedApp(ctx: Parameters<Parameters<typeof flow>[2]>[0], name: string, redirectUri: string) {
+  const reg = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { client_name: name, redirect_uris: [redirectUri] });
+  reg.status(201);
+  const clientId: string = reg.json<any>().client_id;
+  const { verifier, challenge } = await pkcePair();
+  const authz = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+    query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "kortix", state: "s", code_challenge: challenge, code_challenge_method: "S256" },
+  });
+  authz.status(302);
+  const requestId = new URL(authz.header("location")!).searchParams.get("request_id")!;
+  const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: requestId, approved: true });
+  ok.status(200);
+  const code = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+  const tok = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "authorization_code", client_id: clientId, code, redirect_uri: redirectUri, code_verifier: verifier }));
+  tok.status(200);
+  return { clientId, access: tok.json<any>().access_token as string, refresh: tok.json<any>().refresh_token as string };
+}
+
+// ── OAU-9: connected apps — list and revoke the apps you approved ───────────
+// The consent screen says "You can revoke access at any time in your account
+// settings". This is that surface: the same rule as personal tokens (a browser
+// session or an unscoped PAT manages them; an app's own kortix_oat_ cannot),
+// and a revoke kills the app's live tokens on their next request.
+flow(
+  "OAU-9",
+  {
+    domain: "oauth",
+    routes: [
+      "POST /v1/accounts/:accountId/iam/scim/tokens",
+      "POST /v1/accounts/:accountId/iam/oauth-clients",
+      "POST /v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret",
+      "POST /v1/oauth/register",
+      "GET /v1/oauth/authorize",
+      "POST /v1/oauth/authorize/consent",
+      "POST /v1/oauth/token",
+      "GET /v1/oauth/grants",
+      "DELETE /v1/oauth/grants/:clientId",
+      "POST /v1/accounts/tokens",
+      "POST /v1/projects/:projectId/cli-token",
+      "POST /v1/accounts/:accountId/iam/service-accounts",
+      "POST /v1/projects/:projectId/gateway/keys",
+      "GET /v1/accounts/me",
+      "GET /v1/oauth/authorize/consent/:requestId",
+    ],
+  },
+  async (ctx) => {
+    const redirectUri = "http://127.0.0.1:33420/callback";
+    const name = ctx.fixtures.name("connected-app");
+    let clientId = "";
+    let access = "";
+    let refresh = "";
+
+    await ctx.step("a self-registered public client (an MCP client) is approved and gets tokens", async () => {
+      ({ clientId, access, refresh } = await approveConnectedApp(ctx, name, redirectUri));
+    });
+
+    await ctx.step("GET /oauth/grants lists it: its name, self_registered, the loopback host, the kortix scope, active", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/grants");
+      r.status(200);
+      const grant = r.json<{ grants: any[] }>().grants.find((g) => g.client_id === clientId);
+      if (!grant) throw new Error(`not listed: ${r.text().slice(0, 300)}`);
+      if (grant.name !== name || grant.self_registered !== true || grant.active !== true || !grant.scopes.includes("kortix") || !grant.redirect_hosts.includes("127.0.0.1:33420") || !grant.last_active_at || !grant.granted_at) {
+        throw new Error(`grant: ${JSON.stringify(grant)}`);
+      }
+    });
+
+    await ctx.step("another user never sees it, and cannot revoke it (404: nothing of theirs)", async () => {
+      const other = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/oauth/grants");
+      other.status(200);
+      if (other.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("another user sees the grant");
+      (await ctx.client.as(ctx.P.NONMEMBER).del("/v1/oauth/grants/:clientId", { params: { clientId } })).status(404);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } })).status(200);
+    });
+
+    await ctx.step("the app's own kortix_oat_ token cannot list or revoke connected apps (403)", async () => {
+      const headers = { Authorization: `Bearer ${access}` };
+      (await ctx.client.as(ctx.P.ANON).get("/v1/oauth/grants", { headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).del("/v1/oauth/grants/:clientId", { params: { clientId }, headers })).status(403);
+    });
+
+    await ctx.step("the app's kortix_oat_ cannot mint a durable credential either: PAT, CLI token, SCIM token, OAuth client, service account, gateway key → 403, so a revoke ends its access", async () => {
+      const headers = { Authorization: `Bearer ${access}` };
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/tokens", { name: "OAU-9-oat" }, { headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/cli-token", {}, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
+      const params = { accountId: ctx.P.accountId };
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/scim/tokens", { name: "OAU-9-oat" }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients", { name: "OAU-9-oat", redirect_uris: ["https://app.example.test/cb"] }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret", {}, { params: { ...params, clientId }, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/service-accounts", { name: "OAU-9-oat" }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/gateway/keys", { name: "OAU-9-oat" }, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
+    });
+
+    await ctx.step("DELETE /oauth/grants/<not-a-uuid> → 404, not a 500", async () => {
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId: "not-a-uuid" } })).status(404);
+    });
+
+    await ctx.step("an unscoped personal access token lists them, like the browser", async () => {
+      const pat = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: "OAU-9" });
+      pat.status(201);
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/grants", { headers: { Authorization: `Bearer ${pat.json<any>().secret_key}` } });
+      r.status(200);
+      if (!r.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("PAT list misses the grant");
+    });
+
+    await ctx.step("revoke → both tokens die on their next use, the grant is gone, a second revoke is 404", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId } });
+      r.status(200).body().has("$.ok", true);
+      if (r.json<any>().revoked_tokens !== 2) throw new Error(`revoked_tokens: ${r.text()}`);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } })).status(401);
+      const refreshed = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, refresh_token: refresh }));
+      refreshed.status(400).body().has("$.error", "invalid_grant");
+      const after = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/grants");
+      if (after.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("revoked grant still listed");
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId } })).status(404);
+    });
+
+    await ctx.step("the app must ask again: the consent is no longer remembered", async () => {
+      const { challenge } = await pkcePair();
+      const authz = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "kortix", state: "s2", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      authz.status(302);
+      const requestId = new URL(authz.header("location")!).searchParams.get("request_id")!;
+      const meta = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/authorize/consent/:requestId", { params: { requestId } });
+      meta.status(200).body().has("$.remembered", false);
+    });
+  },
+);
+
+// ── OAU-10: the same connected apps through the real `kortix` CLI process ────
+flow(
+  "OAU-10",
+  {
+    domain: "oauth",
+    routes: ["GET /v1/oauth/grants", "DELETE /v1/oauth/grants/:clientId", "GET /v1/accounts/me"],
+  },
+  async (ctx) => {
+    const name = ctx.fixtures.name("cli-connected-app");
+    const app = await approveConnectedApp(ctx, name, "http://127.0.0.1:33421/callback");
+    const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("oau10") });
+    const sb = new CliSandbox("oau10");
+    ctx.track("cli-sandbox", sb.cwd);
+    try {
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+      if (login.exitCode !== 0) throw new Error(`login: ${login.all.slice(0, 300)}`);
+
+      await ctx.step("`kortix tokens apps ls --json` lists the app, marked self-registered", async () => {
+        const r = await sb.run(["tokens", "apps", "ls", "--json"]);
+        if (r.exitCode !== 0) throw new Error(`exit ${r.exitCode}: ${r.all.slice(0, 300)}`);
+        const row = (JSON.parse(r.stdout) as any[]).find((g) => g.client_id === app.clientId);
+        if (row?.name !== name || row.self_registered !== true) throw new Error(`row: ${JSON.stringify(row)}`);
+        const table = await sb.run(["tokens", "apps", "ls"]);
+        if (!table.stdout.includes(name) || !table.stdout.includes("(unverified)")) throw new Error(`table: ${table.stdout.slice(0, 400)}`);
+      });
+
+      await ctx.step("`kortix tokens apps rm <id> -y --json` revokes it; its access token answers 401", async () => {
+        const r = await sb.run(["tokens", "apps", "rm", app.clientId, "-y", "--json"]);
+        if (r.exitCode !== 0) throw new Error(`exit ${r.exitCode}: ${r.all.slice(0, 300)}`);
+        if (JSON.parse(r.stdout).revoked_tokens !== 2) throw new Error(`rm: ${r.stdout}`);
+        (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${app.access}` } })).status(401);
+        const again = await sb.run(["tokens", "apps", "rm", app.clientId, "-y"]);
+        if (again.exitCode === 0) throw new Error("a second rm of the same app succeeded");
+      });
+    } finally {
+      sb.dispose();
+    }
+  },
+);

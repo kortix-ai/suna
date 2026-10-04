@@ -52,7 +52,7 @@ export {
 export { teamsWebhookApp } from "./teams-webhook";
 export { teamsIdentityApp } from "./teams/identity-routes";
 export { teamsOauthApp } from "./teams-oauth";
-export { startTeamsBotTokenRefresh, prewarmTeamsBotToken } from "./teams-auth";
+export { prewarmTeamsBotToken } from "./teams-auth";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,

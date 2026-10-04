@@ -1,0 +1,17 @@
+{
+  "source_hash": "f8133f97d1ba56e15d126b61bc4cc3d087192f5f25d7deeda87ab81ef01ef13d",
+  "diff_files": [
+    "packages/db/migrations/20261004031600000_agent_workflows_backup_id_index.concurrent.ts",
+    "packages/db/migrations/20261004031600100_agent_workflows_backup_primary_key.sql",
+    "packages/db/scripts/agent-workflows-backup-primary-key.integration.test.ts"
+  ],
+  "diff_hash": "43cb90051b92863a5088bed06f7091e98425f384d2760c188036700c8e4c322b",
+  "head": "4d94f2562c718747ba1ed31c0694e19f6e15d360",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T04:19:48.797Z"
+}

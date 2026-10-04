@@ -2,10 +2,12 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
-import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon, XIcon } from '@phosphor-icons/react';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
+import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
+import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
 const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
@@ -28,6 +30,9 @@ export interface ApprovalRequestData {
    *  read-only members). Changes only the wording — the call is unreviewable
    *  either way, but "nothing was recorded" would be a lie here. */
   previewAuthorized?: boolean;
+  /** The agent's own description of the call's effect (`--reason`). Shown as
+   *  unverified: the parameters stay the evidence. */
+  approvalContext?: string | null;
   resolution?: ApprovalDecisionValue | null;
   pending: boolean;
   status?: string | null;
@@ -35,6 +40,10 @@ export interface ApprovalRequestData {
 }
 
 export type ApprovalDecisionValue = 'approve' | 'deny';
+
+/** `note` is the approver's optional message; it reaches the agent with the
+ *  decision, so a deny can say what to do instead. */
+export type ApprovalDecisionHandler = (decision: ApprovalDecisionValue, note?: string) => void;
 
 /**
  * Can a human actually judge this call from what we recorded?
@@ -66,10 +75,13 @@ export function approvalReviewable(
 
 interface ApprovalRequestProps {
   request: ApprovalRequestData;
-  onDecision?: (decision: ApprovalDecisionValue) => void;
+  onDecision?: ApprovalDecisionHandler;
   busyDecision?: ApprovalDecisionValue | null;
   outcome?: ApprovalDecisionValue | null;
   error?: string | null;
+  /** The host renders Approve / Deny itself (the Review Center puts them in
+   *  the page header). The card then shows only the call. */
+  hideDecision?: boolean;
   className?: string;
 }
 
@@ -98,6 +110,53 @@ function orderedArgEntries(preview: Record<string, unknown>): Array<[string, unk
   return Object.entries(preview).sort((left, right) => rank(left[0]) - rank(right[0]));
 }
 
+/**
+ * A parameter value held to a fixed height. A long value (a file list, a
+ * document body) would otherwise push the rest of the call off the page. It
+ * fades at the cut and expands in place, so nothing is hidden from review.
+ */
+function ClampedValue({ children, className }: { children: React.ReactNode; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    // Expanded, the box has no cut to measure; keep the last answer.
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [expanded]);
+  const clamped = overflows && !expanded;
+  return (
+    <div className="min-w-0">
+      <div
+        ref={ref}
+        className={cn(
+          !expanded && 'max-h-48 overflow-hidden',
+          clamped && '[mask-image:linear-gradient(to_bottom,black_65%,transparent)]',
+          className,
+        )}
+      >
+        {children}
+      </div>
+      {overflows ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          className="text-muted-foreground hover:text-foreground mt-1 text-xs underline-offset-2 hover:underline"
+        >
+          {expanded ? tI18nComplete.raw('text94ea9b1d33a0') : tI18nComplete.raw('textf5c9bd131486')}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function renderArgValue(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return value.map(renderArgValue).join(', ');
@@ -105,7 +164,10 @@ function renderArgValue(value: unknown): string {
   return String(value);
 }
 
-function resolvedLabel(request: ApprovalRequestData, outcome?: ApprovalDecisionValue | null) {
+export function resolvedLabel(
+  request: Pick<ApprovalRequestData, 'resolution' | 'status'>,
+  outcome?: ApprovalDecisionValue | null,
+) {
   const decision = outcome ?? request.resolution;
   if (decision === 'approve') return 'Approved';
   if (decision === 'deny') return 'Denied';
@@ -115,7 +177,7 @@ function resolvedLabel(request: ApprovalRequestData, outcome?: ApprovalDecisionV
   return 'Completed';
 }
 
-function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
+export function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
   if (label === 'Approved' || label === 'Allowed') return 'success';
   if (label === 'Denied' || label === 'Failed') return 'destructive';
   return 'muted';
@@ -125,15 +187,20 @@ function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
  * The redacted parameters the connector would receive — the whole reason an
  * approval is decidable rather than a guess. Shared by the standalone page, the
  * Audit panel, and the in-session notice so all three show the same values.
+ *
+ * `channelNames`: a value that is a bound Slack conversation id shows its name
+ * beside it. The id stays, because it is the exact parameter.
  */
 export function ApprovalParameters({
   argsPreview,
   reviewComplete = true,
   dense = false,
+  channelNames,
   className,
 }: DenseProp & {
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
+  channelNames?: ReadonlyMap<string, string>;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -175,28 +242,72 @@ export function ApprovalParameters({
                 'border-border grid gap-1 border-b last:border-b-0 sm:gap-3',
                 dense
                   ? 'px-3 py-2 sm:grid-cols-[6rem_minmax(0,1fr)]'
-                  : 'px-4 py-3 sm:grid-cols-[8rem_minmax(0,1fr)]',
+                  : 'px-4 py-2 sm:grid-cols-[8rem_minmax(0,1fr)]',
               )}
             >
-              <dt className="text-muted-foreground font-mono text-xs break-all">{key}</dt>
-              <dd
-                className={cn(
-                  'text-foreground min-w-0 wrap-break-word whitespace-pre-wrap',
-                  dense ? 'text-xs' : 'text-sm',
-                )}
-              >
-                {value === '[redacted]' ? (
-                  <span className="text-muted-foreground italic">
-                    {tI18nComplete.raw('text1c57f31d6315')}
-                  </span>
-                ) : (
-                  renderArgValue(value)
-                )}
+              <dt className="text-muted-foreground font-mono text-xs tracking-normal break-all">
+                {key}
+              </dt>
+              <dd className="min-w-0">
+                <ClampedValue
+                  className={cn(
+                    'text-foreground wrap-break-word whitespace-pre-wrap',
+                    dense ? 'text-xs' : 'text-sm',
+                  )}
+                >
+                  {value === '[redacted]' ? (
+                    <span className="text-muted-foreground italic">
+                      {tI18nComplete.raw('text1c57f31d6315')}
+                    </span>
+                  ) : (
+                    <>
+                      {renderArgValue(value)}
+                      {typeof value === 'string' && channelNames?.has(value) ? (
+                        <span className="text-muted-foreground"> · {channelNames.get(value)}</span>
+                      ) : null}
+                    </>
+                  )}
+                </ClampedValue>
               </dd>
             </div>
           ))}
         </dl>
       )}
+    </div>
+  );
+}
+
+/**
+ * What the agent says the call does. Reference arguments (`{draft_id}`) name a
+ * target without showing it, so the agent describes the effect. It is the
+ * agent's claim, labelled as such; the parameters below remain the evidence.
+ */
+export function ApprovalAgentContext({
+  context,
+  dense = false,
+  className,
+}: DenseProp & { context: string | null | undefined; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  if (!context) return null;
+  return (
+    <div
+      className={cn(
+        dense ? 'border-border rounded-sm border px-3 py-2' : 'border-border border-t px-4 py-3',
+        className,
+      )}
+    >
+      <p className="text-foreground text-xs font-medium">{tI18nComplete.raw('text9dcde51d9ff2')}</p>
+      <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+        {tI18nComplete.raw('textfa0db737cb09')}
+      </p>
+      <p
+        className={cn(
+          'text-foreground mt-2 wrap-break-word whitespace-pre-wrap',
+          dense ? 'text-xs' : 'text-sm',
+        )}
+      >
+        {context}
+      </p>
     </div>
   );
 }
@@ -240,9 +351,17 @@ export function ApprovalDecisionActions({
   busyDecision = null,
   approvable = true,
   dense = false,
+  stretch = false,
+  sessionId,
   className,
 }: DenseProp & {
-  onDecision: (decision: ApprovalDecisionValue) => void;
+  /** Picks the session's own busy mark, the one its busy indicator shows.
+   *  Without it the default mark is used. */
+  sessionId?: string | null;
+  /** The two decisions share the row in equal halves (the standalone page's
+   *  narrow column), instead of sitting at its trailing edge. */
+  stretch?: boolean;
+  onDecision: ApprovalDecisionHandler;
   busyDecision?: ApprovalDecisionValue | null;
   /** False only when the call shows nothing to review — Approve is then not
    *  offered at all, instead of rendered as a control that can never fire. */
@@ -250,45 +369,53 @@ export function ApprovalDecisionActions({
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [note, setNote] = useState('');
   const size = dense ? 'sm' : 'default';
+  const decide = (decision: ApprovalDecisionValue) =>
+    onDecision(decision, note.trim() || undefined);
 
   return (
-    <div
-      className={cn(
-        'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
-        dense ? '' : 'border-border border-t px-4 py-3',
-        className,
-      )}
-    >
-      <Button
-        type="button"
-        size={size}
-        variant="outline"
+    <div className={cn('space-y-2', dense ? '' : 'border-border border-t px-4 py-3', className)}>
+      <Textarea
+        aria-label={tI18nComplete.raw('text2edf70730233')}
+        placeholder={tI18nComplete.raw('text2edf70730233')}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
         disabled={busyDecision !== null}
-        onClick={() => onDecision('deny')}
-      >
-        {busyDecision === 'deny' ? (
-          <Loading className="size-4 shrink-0" />
-        ) : (
-          <XIcon className="size-4 shrink-0" />
+        minHeight={36}
+        maxHeight={160}
+        className={cn('font-normal', dense ? 'text-xs' : 'text-sm')}
+      />
+      <div
+        className={cn(
+          'flex gap-2',
+          stretch ? '[&>button]:flex-1' : 'flex-col-reverse sm:flex-row sm:justify-end',
         )}
-        {tI18nComplete.raw('text05a2d7332eb9')}
-      </Button>
-      {approvable ? (
+      >
         <Button
           type="button"
           size={size}
+          variant="outline"
           disabled={busyDecision !== null}
-          onClick={() => onDecision('approve')}
+          onClick={() => decide('deny')}
         >
-          {busyDecision === 'approve' ? (
-            <Loading className="size-4 shrink-0" />
-          ) : (
-            <CheckCircleIcon className="size-4 shrink-0" />
-          )}
-          {tI18nComplete.raw('texta1982c442ca3')}
+          {busyDecision === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+          {tI18nComplete.raw('text05a2d7332eb9')}
         </Button>
-      ) : null}
+        {approvable ? (
+          <Button
+            type="button"
+            size={size}
+            disabled={busyDecision !== null}
+            onClick={() => decide('approve')}
+          >
+            {busyDecision === 'approve' ? (
+              <SessionDotMatrix size={14} className="shrink-0" />
+            ) : null}
+            {tI18nComplete.raw('texta1982c442ca3')}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -299,6 +426,7 @@ export function ApprovalRequest({
   busyDecision = null,
   outcome = null,
   error = null,
+  hideDecision = false,
   className,
 }: ApprovalRequestProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -362,6 +490,8 @@ export function ApprovalRequest({
         ) : null}
       </header>
 
+      <ApprovalAgentContext context={request.approvalContext} />
+
       <ApprovalParameters argsPreview={request.argsPreview} reviewComplete={reviewComplete} />
 
       {error ? (
@@ -372,7 +502,7 @@ export function ApprovalRequest({
         <ApprovalUnreviewableNotice previewAuthorized={request.previewAuthorized !== false} />
       ) : null}
 
-      {actionable ? (
+      {actionable && !hideDecision ? (
         <ApprovalDecisionActions
           onDecision={actionable}
           busyDecision={busyDecision}

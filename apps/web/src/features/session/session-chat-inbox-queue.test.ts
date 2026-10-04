@@ -16,6 +16,10 @@ const shell = readFileSync(
   fileURLToPath(new URL('./instant-session-shell.tsx', import.meta.url)),
   'utf8',
 );
+const shellSend = readFileSync(
+  fileURLToPath(new URL('./use-instant-session-send.ts', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -39,14 +43,16 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // Every turn, not only the first: the selection (`sentAttachmentsForTurn`, tested in
     // `sent-attachment-previews.test.ts`) keeps the list through a re-minted echo, and falls
     // back to the queued row's names for a turn this tab did not send.
-    const turn = flat(between(chat, '<SessionTurn', 'sessionWorking={lastTurnWorking}'));
+    // The row is `TranscriptTurnRow` since the turn rendering moved to its own
+    // module (KRTX-355); the shell still passes the turn's props here.
+    const turn = flat(between(chat, '<TranscriptTurnRow', 'sessionWorking={lastTurnWorking}'));
     expect(turn).toContain(
       'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.userMessage.info.id, originId: optimisticOriginOf(sessionId, turn.userMessage.info.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.userMessage.info.id, )?.attachments, })}',
     );
     // The first prompt's identities outlive its handover, in the chat and in the boot shell.
-    expect(flat(shell)).toContain(
-      'attachments: localFiles.length > 0 ? [] : (firstPromptAttachments(sessionId) ?? pendingRowSubmission?.attachments ?? []),',
-    );
+    expect(shell).toContain('useInstantSessionSend({');
+    expect(flat(shellSend)).toContain('rememberedAttachments: firstPromptAttachments(sessionId),');
+    expect(flat(shellSend)).toContain('localFiles.length > 0 ? [] : (rememberedAttachments ?? pendingRowSubmission?.attachments ?? []),');
   });
 
   test('queued rows draw their files, a session unmount releases previews, and nothing says "Upload failed"', () => {
@@ -59,10 +65,11 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     expect(chat).toContain('sentAttachmentsOf(firstPromptSource.files)');
     expect(chat).not.toContain("'Upload failed'");
     expect(shell).not.toContain("'Upload failed'");
+    expect(shellSend).not.toContain("'Upload failed'");
     // The shell projects every durable row after the first, plus the sends it
     // has made that no row carries yet, through the same queue projection.
     expect(shell).toContain('projectQueueRows({');
-    expect(shell).toContain('attachments: sentAttachmentsOf(files ?? []),');
+    expect(shellSend).toContain('attachments: sentAttachmentsOf(files ?? []),');
   });
 });
 
@@ -146,54 +153,53 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
   });
 
   test('the boot shell paints the first prompt before its held POST and keeps it, marked failed, when a send with uploads fails', () => {
-    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
-    const paint = send.indexOf('setSubmission({ text, files: files ?? [] });');
-    const held = send.indexOf('void postWhenUploaded(');
-    expect(paint).toBeGreaterThan(-1);
-    expect(held).toBeGreaterThan(paint);
+    const plan = between(shellSend, 'function planSend(', 'function useSendMemory(');
+    const paint = between(shellSend, 'function paintSend(', 'function buildPost(');
+    const detachedSend = between(shellSend, 'function deliverDetached(', 'async function deliverInChain(');
+    const chainSend = between(shellSend, 'async function deliverInChain(', 'interface FirstPromptSourcesProps');
+    const post = between(shellSend, 'function buildPost(', 'function deliverDetached(');
+    const send = between(shellSend, 'const handleSend = useCallback(', 'return { submitted, effectiveSubmission, extraSends, handleSend };');
+    expect(paint).toContain('setSubmission({ text, files: files ?? [] });');
+    expect(send).toContain('paintSend(send, env);');
+    expect(send).toContain('deliverDetached(send, env, post);');
+    expect(detachedSend).toContain('void postWhenUploaded(');
     // A first send that is not detached paints and mounts the real chat only once its
     // POST is accepted. Until then the hero composer that sent it stays mounted, so a
     // refusal leaves the draft there, mention chips included. A send with uploads is
     // never taken back, so it paints and mounts the chat at once.
     const flat = (source: string) => source.replace(/\s+/g, ' ');
-    expect(send).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
+    expect(plan).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
     const inline = 'await deliverInOrder(sessionId, () => post([]));';
-    const textOnly = send.slice(send.indexOf(inline));
-    expect(send.indexOf(inline)).toBeGreaterThan(-1);
+    const textOnly = chainSend.slice(chainSend.indexOf(inline));
+    expect(chainSend.indexOf(inline)).toBeGreaterThan(-1);
     const refused = between(textOnly, '} catch (error) {', 'throw error;');
     expect(refused).not.toContain('setSubmission(');
     expect(refused).not.toContain('setPrefill(');
-    expect(flat(textOnly.slice(textOnly.indexOf('throw error;')))).toContain(
-      "if (first) { // Only now does the page mount the real chat: the server holds the prompt. playSound('send'); setSubmission({ text, files: files ?? [] }); onSubmit?.(); }",
-    );
-    expect(send.slice(0, send.indexOf(inline)).match(/onSubmit\?\.\(\)/g)).toHaveLength(1);
+    expect(flat(textOnly.slice(textOnly.indexOf('throw error;')))).toContain('playSound(\'send\'); setSubmission({ text, files: files ?? [] }); onSubmit?.();');
+    expect(chainSend.slice(0, chainSend.indexOf(inline))).not.toContain('onSubmit?.();');
     // A send with uploads, or one behind an earlier send of this session, is
     // delivered detached; the ordering itself is tested in
     // `instant-session-shell-delivery.test.tsx`.
     expect(
-      between(send, 'if (attachments && detached) {', 'void postWhenUploaded('),
+      between(detachedSend, 'if (first) {', 'void postWhenUploaded('),
     ).toContain('onSubmit?.();');
-    expect(send.replace(/\s+/g, ' ').match(/void postWhenUploaded\( sessionId, attachments,/g)).toHaveLength(2);
+    expect(detachedSend.replace(/\s+/g, ' ').match(/void postWhenUploaded\( sessionId, attachments,/g)).toHaveLength(2);
     // A later send with uploads keeps its bubble, marked failed, instead of vanishing.
-    expect(send.replace(/\s+/g, ' ')).toContain(
+    expect(detachedSend.replace(/\s+/g, ' ')).toContain(
       'prev.map((extra) => (extra.id === clientMessageId ? { ...extra, uploadStatus } : extra))',
     );
     // Send time, not POST time: a message sent while the uploads run is
     // ordered after this one.
-    const stamp = send.indexOf('const sentAtMs = Date.now();');
-    expect(stamp).toBeGreaterThan(-1);
-    expect(stamp).toBeLessThan(held);
-    expect(
-      between(send, 'const post = async', 'if (attachments && detached) {'),
-    ).toContain('clientSentAtMs: sentAtMs,');
+    expect(plan).toContain('const sentAtMs = Date.now();');
+    expect(send.indexOf('paintSend(send, env);')).toBeLessThan(send.indexOf('deliverDetached(send, env, post);'));
+    expect(post).toContain('clientSentAtMs: sentAtMs,');
+    expect(send.indexOf('const send = planSend({')).toBeLessThan(send.indexOf('paintSend(send, env);'));
     // The failed status lives in the first-prompt preview, which SessionChat
     // also draws, so it survives the crossfade that unmounts this shell.
-    expect(send).toMatch(
+    expect(detachedSend).toMatch(
       /useFirstPromptPreviewStore\s*\.getState\(\)\s*\.setFirstPromptPreview\(sessionId, text, files \?\? \[\], uploadStatus\)/,
     );
-    expect(shell).toContain(
-      'uploadStatus: previewSubmission?.uploadStatus ?? pendingRowSubmission?.uploadStatus,',
-    );
+    expect(shellSend).toContain('uploadStatus: previewSubmission?.uploadStatus ?? pendingRowSubmission?.uploadStatus,');
     expect(chat.replace(/\s+/g, ' ')).toContain(
       'uploadStatus={firstPromptSource.uploadStatus ?? firstPromptUploadStatus}',
     );
@@ -433,23 +439,29 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 });
 
-describe('Up takes the queue back into the composer', () => {
-  test('only what the server actually removed comes back, in queue order, above the draft', () => {
+describe('Up and the pencil edit a queued entry in place', () => {
+  test('opening an edit sends no request: the row stays queued, the words arrive at once', () => {
     const takeBack = between(
       chat,
       'const handleTakeBackQueue = useCallback(',
-      '// ---- Triple-ESC to stop ----',
+      'const handleCancelQueueEdit = useCallback(',
     );
     expect(takeBack).toContain('row.takeBackEligible');
-    // Drafts are read BEFORE the removals: removing a row prunes its draft.
-    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
-      takeBack.indexOf('promptInbox.remove(row.id)'),
+    expect(takeBack).toContain(".setPrefill(sessionId, target.editText, undefined, 'replace')");
+    expect(takeBack).not.toContain('promptInbox.');
+    expect(takeBack).not.toContain('await ');
+  });
+
+  test('Submit while editing saves into the same row and never sends', () => {
+    const save = between(
+      chat,
+      'const handleSaveQueueEdit = useCallback(',
+      '// ---- Triple-ESC to stop ----',
     );
-    expect(takeBack).toContain('Promise.allSettled(');
-    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
-    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
-    // Anything that cannot come back losslessly goes back to the queue.
-    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+    expect(save).toContain('promptInbox.edit(edit.promptId, next)');
+    expect(save).not.toContain('promptInbox.enqueue');
+    expect(save).not.toContain('handleSend(');
+    expect(chat).toContain('await handleSaveQueueEdit(edit, text);');
   });
 
   test('the composer gets the key handler and the hint', () => {
@@ -537,10 +549,10 @@ describe('the boot shell never swallows what the user typed', () => {
     // second message simply POSTs. AWAITED and thrown on failure, so the
     // composer's own recovery restores the draft for a message the server
     // never got.
-    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
+    const send = between(shellSend, 'function buildPost(', 'function deliverDetached(');
     expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
     expect(send).toContain('promptFileParts(files, attachmentParts)');
-    expect(send).toContain('throw error;');
+    expect(shellSend).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
     expect(shell).not.toContain('carryDraft(');
     expect(shell).not.toContain('Still starting this session');
@@ -553,7 +565,7 @@ describe('the boot shell never swallows what the user typed', () => {
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {
-    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
+    const send = between(shellSend, 'function paintSend(', 'function buildPost(');
     expect(send).toContain("prompt: ''");
     // And the shell paints the durable rows, so the bubble survives a reload.
     expect(shell).toContain('useSessionPrompts(projectId, sessionId');

@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { STEPS, activeStep } from './session-starting-loader';
 
@@ -31,5 +33,50 @@ describe('activeStep', () => {
     expect(activeStep('starting', 4_999)).toBe(1);
     expect(activeStep('starting', 5_000)).toBe(2);
     expect(activeStep('starting', 60_000)).toBe(2);
+  });
+});
+
+/**
+ * `apps/web` has no jsdom/`@testing-library/react` (see
+ * `hooks/projects/use-restart-project-session.test.ts` for the split), so the
+ * restart click itself cannot be driven here. The scan pins the WIRING both
+ * boot surfaces must keep: each one takes the canonical
+ * `useRestartProjectSession` hook — the optimistic `/start` seed, its rollback
+ * on rejection, and the runtime-guard / `['opencode']` / sidebar invalidations
+ * live there — and no surface re-rolls its own `useMutation` again. What the
+ * hook DOES is proven against a real QueryClient in that hook's test file.
+ */
+describe('restart wiring — the source the components actually render', () => {
+  const source = readFileSync(join(import.meta.dir, 'session-starting-loader.tsx'), 'utf8');
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  const loaderBody = code.slice(
+    code.indexOf('export function SessionStartingLoader('),
+    code.indexOf('export function SessionConnectingBanner('),
+  );
+  const bannerBody = code.slice(code.indexOf('export function SessionConnectingBanner('));
+
+  test('neither surface hand-rolls a restart mutation anymore', () => {
+    expect(code).not.toContain('useMutation');
+    expect(code).not.toContain('useQueryClient');
+    expect(code).not.toContain('restartProjectSession');
+    expect(code).not.toContain('sessionStartKey');
+  });
+
+  test('both surfaces take the canonical restart hook', () => {
+    expect(loaderBody).toContain('useRestartProjectSession(');
+    expect(bannerBody).toContain('useRestartProjectSession(');
+  });
+
+  test('both surfaces wire the canonical restart and pending state to their control', () => {
+    expect(loaderBody).toContain('onRestart={restart.restart}');
+    expect(loaderBody).toContain('pending={restart.isPending}');
+    expect(bannerBody).toContain('disabled={restart.isPending}');
+    expect(bannerBody).toContain('onClick={restart.restart}');
+  });
+
+  test('both surfaces reset their boot clock only when a restart settles without an error', () => {
+    expect(loaderBody).toContain('useRestartedBootClock(restart)');
+    expect(bannerBody).toContain('useRestartedBootClock(restart)');
   });
 });

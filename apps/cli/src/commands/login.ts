@@ -5,6 +5,7 @@ import {
   authFileLocation,
   loadAuthForHost,
   saveAuthForHost,
+  sameApiBase,
 } from '../api/auth.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
@@ -21,7 +22,7 @@ import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
-import { webDashboardUrl } from '../web-url.ts';
+import { deriveFrontendFromApiBase } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
 
 const HELP = help`Usage: kortix login [options]
@@ -78,7 +79,7 @@ export async function runLogin(argv: string[]): Promise<number> {
   });
 }
 
-export interface PerformLoginOptions {
+interface PerformLoginOptions {
   /** The host name to authenticate (already resolved by the caller). */
   hostName: string;
   /** Skip the browser flow and authenticate directly with this PAT. */
@@ -108,9 +109,14 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   }
 
   // Pick the API base URL with this priority:
-  //   --api flag → existing host's URL → KORTIX_API_URL env → default
+  //   --api flag → KORTIX_API_URL env (active host only, as `activeHost()`
+  //   does) → existing host's URL → default. Built-in hosts always exist, so
+  //   an existing host's URL must not outrank the env override: the token
+  //   would go to the default API instead of the one the caller named.
   const existing = getHost(hostName);
-  const apiBase = opts.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+  const envApiBase =
+    hostName === (activeHostName() ?? DEFAULT_HOST_NAME) ? process.env.KORTIX_API_URL : undefined;
+  const apiBase = opts.api ?? envApiBase ?? existing?.url ?? DEFAULT_API_BASE;
 
   // If this host already has a working token + caller didn't pass
   // --token or --api, treat that as a no-op login.
@@ -124,7 +130,8 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     return 0;
   }
 
-  const token = opts.token ?? (await browserLogin(apiBase, existing?.dashboard_url));
+  const dashboardUrl = existing && sameApiBase(apiBase, existing.url) ? existing.dashboard_url : undefined;
+  const token = opts.token ?? (await browserLogin(apiBase, dashboardUrl));
   if (!token) return 1;
 
   if (!token.startsWith('kortix_pat_')) {
@@ -270,7 +277,8 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
     return null;
   }
 
-  const dashUrl = webDashboardUrl(apiBase, dashboardUrl);
+  // Login targets the selected host, not the deployment running this shell.
+  const dashUrl = dashboardUrl?.trim().replace(/\/+$/, '') || deriveFrontendFromApiBase(apiBase);
   const deviceLabel = encodeURIComponent(safeHostname());
   const url =
     `${dashUrl}/cli/authorize` +

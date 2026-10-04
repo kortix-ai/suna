@@ -30,7 +30,7 @@ export const CONFIG_STATE_FILE = 'harness/open-code/config-release.ts'
 export const LIFECYCLE_FILE = 'harness/open-code/lifecycle.ts'
 export const DIAGNOSTICS_FILE = 'harness/open-code/diagnostics.ts'
 /** Defines `pointBootLink`, so its own definition is not a second caller. */
-export const STORE_FILE = 'boot-config.ts'
+export const STORE_FILE = 'services/config-release/boot-config.ts'
 
 /** Every production `.ts` file under `root`, parsed. Tests are excluded. */
 export async function productionSources(root: string): Promise<ScannedFile[]> {
@@ -199,12 +199,12 @@ export function readinessDependsOnProof(source: ts.SourceFile | undefined): { ok
 // ── T4 ───────────────────────────────────────────────────────────────────────
 
 /** `<enclosing function>:<assignment target>` for every write of `running`. */
-export function runningWriters(source: ts.SourceFile): string[] {
+export function runningWriters(source: ts.SourceFile, variable = 'running'): string[] {
   const writers: string[] = []
   walk(source, (node) => {
     if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return
     const left = node.left.getText()
-    if (left === 'running' || left.startsWith('running.')) writers.push(`${enclosingFunction(node)}:${left}`)
+    if (left === variable || left.startsWith(`${variable}.`)) writers.push(`${enclosingFunction(node)}:${left}`)
   })
   return writers
 }

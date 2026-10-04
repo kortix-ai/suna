@@ -75,23 +75,19 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
-  test('agent_principal is ON by default and a project may still switch it off (spec 2026-09-22 §5)', () => {
-    // An agent's authority belongs to the AGENT, so it is the default. The
-    // explicit `false` is the one-release escape hatch back to the old
-    // launcher-∩-grant model.
-    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { agent_principal: true } }, 'agent_principal')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { agent_principal: false } }, 'agent_principal')).toBe(false);
+  test('agent_principal graduated: no flag, and a stored override is inert', () => {
+    // A governed agent always authorizes as itself (spec 2026-09-22 §5): the
+    // one-release escape hatch back to the launcher model is gone.
+    expect(isFeatureFlagKey('agent_principal')).toBe(false);
+    const metadata = { experimental: { agent_principal: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agent_principal');
   });
 
-  test('agent_tunnel respects an explicit choice but stays AND-gated on availability', () => {
-    const available = findCatalogFlag('agent_tunnel').available;
-    expect(resolveFeatureFlag({ experimental: { agent_tunnel: true } }, 'agent_tunnel')).toBe(
-      available,
-    );
-    expect(resolveFeatureFlag({ experimental: { agent_tunnel: false } }, 'agent_tunnel')).toBe(
-      false,
-    );
+  test('agent_tunnel graduated: computers need no flag and a stored override is inert', () => {
+    expect(isFeatureFlagKey('agent_tunnel')).toBe(false);
+    const metadata = { experimental: { agent_tunnel: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agent_tunnel');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
   test('agentmail_email is explicit opt-in', () => {
@@ -135,23 +131,33 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
   });
 
+  test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
+    // Saved history is how web, mobile and the CLI show a session while its
+    // computer is off. Projects that stored `false` keep theirs too.
+    expect(isFeatureFlagKey('session_transcript_history')).toBe(false);
+    const metadata = { experimental: { session_transcript_history: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('session_transcript_history');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(
+      'session_transcript_history',
+    );
+  });
+
   test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {
     expect(resolveFeatureFlag({}, 'marketplace')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { marketplace: false } }, 'marketplace')).toBe(false);
   });
 
-  test('teams is explicit opt-in and needs no operator env var', () => {
-    expect(resolveFeatureFlag({}, 'teams')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { teams: true } }, 'teams')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { teams: false } }, 'teams')).toBe(false);
-    // The channel is always listable — server bot credentials only decide
-    // whether the MANAGED install path is offered, never whether a project may
-    // hold an opinion (bring-your-own works without them).
-    expect(findCatalogFlag('teams').available).toBe(true);
+  test('teams graduated: every project can connect Teams and a stored override is inert', () => {
+    // Projects that turned Teams on or off while it was a flag keep the value
+    // in metadata. It must not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('teams')).toBe(false);
+    const metadata = { experimental: { teams: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('teams');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('teams');
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover is explicit opt-in', () => {
+  test('connectors_api_discover requires explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
       resolveFeatureFlag(
@@ -226,7 +232,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
       expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'agent_tunnel')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'agentmail_email')).toBe('boolean');
     }
   });
 });
@@ -265,16 +271,12 @@ describe('buildFeatureFlagCatalog', () => {
     expect(metaAgent.overridden).toBe(true);
     expect(typeof metaAgent.available).toBe('boolean');
 
-    const teams = catalog.find((f) => f.key === 'teams');
-    if (!teams) throw new Error('Missing Microsoft Teams flag');
-    expect(teams.name).toBe('Microsoft Teams');
-    expect(teams.stability).toBe('experimental');
-    expect(teams.enabled).toBe(false);
-    expect(teams.overridden).toBe(false);
-
-    const tunnel = catalog.find((f) => f.key === 'agent_tunnel');
-    if (!tunnel) throw new Error('Missing Agent Computer Tunnel flag');
-    expect(tunnel.overridden).toBe(false);
+    const email = catalog.find((f) => f.key === 'agentmail_email');
+    if (!email) throw new Error('Missing AgentMail Email flag');
+    expect(email.name).toBe('AgentMail Email');
+    expect(email.stability).toBe('experimental');
+    expect(email.enabled).toBe(false);
+    expect(email.overridden).toBe(false);
   });
 
   test('an unavailable flag is never enabled', () => {
@@ -294,8 +296,8 @@ describe('buildFeatureFlagCatalog', () => {
  * the support escape hatch with it.
  */
 describe('catalogHidden', () => {
-  test('agent_principal is the hidden flag this release', () => {
-    expect(HIDDEN_KEYS).toEqual(['agent_principal']);
+  test('no flag is hidden this release (agent_principal graduated)', () => {
+    expect(HIDDEN_KEYS).toEqual([]);
   });
 
   for (const key of HIDDEN_KEYS) {

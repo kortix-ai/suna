@@ -5,13 +5,13 @@
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, or } from 'drizzle-orm';
 import { config } from '../../config';
-import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
@@ -21,6 +21,7 @@ import { ownerMayUseAgent } from '../../config-releases/repoint';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
+import { LATEST_ETAG_BUDGET_MS } from '../lib/session-reload';
 import { repositoryAccessFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import {
   combineConfigStaleness,
@@ -31,6 +32,9 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
+import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { logger } from '../../lib/logger';
+import { timeConfigStage } from '../lib/config-stage-timing';
 import { computeDesiredRuntime } from '../../runtime-convergence/desired';
 import { diffRuntime } from '../../runtime-convergence/diff';
 import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
@@ -50,6 +54,36 @@ async function runtimeBlockFor(releaseId: string | null, running: SandboxConfigS
   const desired = await computeDesiredRuntime({ releaseId });
   return toRuntimeBlockWire(diffRuntime(desired, running.runtimeTruth));
 }
+
+/**
+ * One mirror-work budget, spent across the stages of ONE GET /config request
+ * that can block on the project mirror's network ops (`latest_etag`,
+ * `desired_release`, `config_dir`). A mirror fetch has a 30s per-op timeout and
+ * retries 3 times, so an unbounded stage outran the 25s request deadline and
+ * turned every poll against a slow mirror into a 5xx (KRTX-818: `git;dur`
+ * pinned at 24.4–25.0s on every deadline 503). Each stage races what is left
+ * of the budget; on timeout it answers its own "could not tell" value instead
+ * of a 503, and the fetch the caller abandoned keeps running so the next poll
+ * finds the mirror warm.
+ */
+function budgetLeft(spendFrom: number): number {
+  return Math.max(1_000, LATEST_ETAG_BUDGET_MS - (Date.now() - spendFrom));
+}
+
+/** Degrade one bounded stage to `null` on its budget timeout, loudly once. */
+async function boundedStage<T>(promise: Promise<T>, label: string, budgetMs: number): Promise<T | null> {
+  try {
+    return await withTimeout(promise, budgetMs, label);
+  } catch (error) {
+    if (error instanceof TimeoutError) {
+      logger.warn(`[session-config] ${label} stage unresolved within its budget; answering unknown`, {
+        budget_ms: budgetMs,
+      });
+      return null;
+    }
+    throw error;
+  }
+}
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -63,10 +97,14 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // The mirror-work budget is spent across this whole request: the later
+    // stages get only what the earlier ones left (see `budgetLeft`).
+    const configReadStart = Date.now();
+    const binding = await timeConfigStage('project_access', () =>
+      resolveSessionBinding(c, projectId, sessionId, 'session'),
+    );
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     // `loadProjectForUser(..., 'session')` is the coarse access level, not a
     // read grant. Without this an agent-scoped or read-restricted token could
     // read a session's commit sha and config hash — small, but it is session
@@ -78,7 +116,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    const visible = await timeConfigStage('session_access', () =>
+      loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c)),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
@@ -96,13 +136,18 @@ projectsApp.openapi(
     // pre-release text when `release` is absent.
     const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
     const [running, latest] = await Promise.all([
-      readSandboxConfigState({ sessionId }),
-      latestAgentConfigEtag({
-        projectId,
-        accountId: loaded.row.accountId,
-        sessionId,
-        baseRef,
-      }),
+      timeConfigStage('sandbox_state', () => readSandboxConfigState({ sessionId })),
+      timeConfigStage('latest_etag', () =>
+        latestAgentConfigEtag(
+          {
+            projectId,
+            accountId: loaded.row.accountId,
+            sessionId,
+            baseRef,
+          },
+          { budgetMs: budgetLeft(configReadStart) },
+        ),
+      ),
     ]);
     // The managed-model catalog's freshness, in the SAME place a config
     // fallback is already visible — not gated on `releasesEnabled`, for the
@@ -130,13 +175,23 @@ projectsApp.openapi(
         sessionId,
         ownerUserId: visible.row.createdBy ?? null,
       };
-      const desired = await resolveDesiredRelease({
-        project,
-        baseRef,
-        sessionAgent: visible.row.agentName ?? null,
-        repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
-        ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
-      }).catch(() => null);
+      const desired = await timeConfigStage('desired_release', () =>
+        boundedStage(
+          resolveDesiredRelease({
+            project,
+            baseRef,
+            sessionAgent: visible.row.agentName ?? null,
+            repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+            ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+            // The etag stage above already refreshed this mirror in THIS
+            // request (ref-scoped tip proof or fetch); a second invalidate
+            // paid a second `git fetch` per read (KRTX-629).
+            refreshProjectMirror: false,
+          }),
+          'desired_release',
+          budgetLeft(configReadStart),
+        ),
+      ).catch(() => null);
       const release = toSessionConfigRelease(
         running.release,
         desired ? desired.descriptor.release_id : undefined,
@@ -156,7 +211,8 @@ projectsApp.openapi(
         // say why a session lost its agent, instead of showing a healthy box
         // that answers nothing.
         ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
-        runtime: await runtimeBlockFor(desired?.descriptor.release_id ?? null, running),
+        runtime: await timeConfigStage('runtime_block', () =>
+          runtimeBlockFor(desired?.descriptor.release_id ?? null, running)),
       });
     }
 
@@ -169,12 +225,18 @@ projectsApp.openapi(
     // so offering "update available" for them would promise a reload that
     // cannot deliver. `stale` is then exactly the pre-release expression.
     const filesStale = releasesEnabled && running.reachable
-      ? await isSessionConfigDirStale({
-          project,
-          baseRef,
-          configDirSha: running.configDirSha,
-          commitSha: running.commitSha,
-        })
+      ? await timeConfigStage('config_dir', () =>
+          boundedStage(
+            isSessionConfigDirStale({
+              project,
+              baseRef,
+              configDirSha: running.configDirSha,
+              commitSha: running.commitSha,
+            }),
+            'config_dir',
+            budgetLeft(configReadStart),
+          ),
+        )
       : null;
     return c.json({
       base_ref: baseRef,
@@ -186,7 +248,7 @@ projectsApp.openapi(
       // the truth is "did not ask".
       stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
-      runtime: await runtimeBlockFor(null, running),
+      runtime: await timeConfigStage('runtime_block', () => runtimeBlockFor(null, running)),
       managed_catalog: managedCatalog,
     });
   },
@@ -210,10 +272,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -296,10 +357,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     await assertProjectCapability(
       c,
       loaded.userId,

@@ -35,6 +35,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
+  ApiError,
   createProjectSession,
   getProjectSession,
   getProjectSessionScope,
@@ -57,8 +58,8 @@ import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sd
  * session ready that fits this send (`use-warm-project-session.ts`) this takes
  * it and the SERVER owns the id. Otherwise the id is minted client-side and
  * created as before. `takeWarmSessionEntry` returns null whenever nothing
- * suitable is held, so the create path below remains the authority on billing,
- * the session cap and connector requirements — the user sees the same outcome
+ * suitable is held, so the create path below remains the authority on billing
+ * and connector requirements — the user sees the same outcome
  * either way. When it DOES fit, `onReady` also seeds the sessions-list cache
  * with the entry's server row (JAY-599/T21, `warm-session-seed.ts`), so the
  * sidebar shows the session the instant this tab sends — it does not wait for
@@ -107,6 +108,90 @@ export type NewProjectSessionOpts = {
     inherit_unbound?: boolean;
   };
 };
+
+function makeTakeOrCreateSession(
+  projectId: string,
+  opts: NewProjectSessionOpts,
+  router: ReturnType<typeof useRouter>,
+  queryClient: ReturnType<typeof useQueryClient>,
+  onAdopt: (session: ProjectSession) => void,
+) {
+      // Use the project's warm session when there is one that fits, else create
+      // one exactly as before. The warm session already exists — it is an
+      // ordinary session created a few seconds ago — so this is a synchronous,
+      // network-free hand-off that skips the sandbox boot the user would
+      // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
+      // null whenever there is nothing suitable, so the create path below stays
+      // the authority on billing and connector requirements.
+      async function takeOrCreateSession() {
+        const warm = takeWarmSessionEntry(projectId, {
+          create: opts?.create,
+          // Replenish after /start, not beside the claim and /start requests.
+          replenish: false,
+        });
+        if (warm) {
+          // The first prompt is a DURABLE inbox row, never a client-side
+          // replay (the start stash carries picks only — see the producers).
+          // The ordinary path gets that row from `create.pending_prompt` in
+          // the create transaction; an adopted warm session was created
+          // seconds ago with an EMPTY body, so its prompt has to land now,
+          // through the server's claim (`primeTakenWarmSession`): one
+          // transaction that inserts the row, drops the warm marker, and kicks
+          // the drain. Without this the local take navigated into a session
+          // that had never heard the prompt — the "my first message
+          // disappears" bug, on the warm path.
+          //
+          // A refused claim (another tab took it, marker already gone) is not
+          // an error the user should see: fall through to the ordinary create,
+          // which carries the same prompt.
+          const pending = opts?.create?.pending_prompt;
+          const primed = pending
+            ? await primeTakenWarmSession(projectId, warm, {
+                pending_prompt: pending,
+                ...(opts?.create?.agent_name ? { agent_name: opts.create.agent_name } : {}),
+                ...(opts?.create?.sandbox_slug ? { sandbox_slug: opts.create.sandbox_slug } : {}),
+              })
+            : true;
+          if (primed) {
+            onAdopt(warm.session);
+            router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
+            return warm.sessionId;
+          }
+        }
+
+        const sessionId = crypto.randomUUID();
+        markSessionFresh(sessionId);
+        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        let created: ProjectSession | undefined;
+        try {
+          created = await createProjectSession(projectId, {
+            session_id: sessionId,
+            ...opts?.create,
+          });
+        } catch (error) {
+          // A timeout is not a refusal: the server keeps running the create and
+          // commits the session WITH its first prompt. Rejecting here left the
+          // user on the page they sent from, composer unlocked with a prompt the
+          // agent was already answering. The id is ours, so ask for it.
+          const committed =
+            isAmbiguousCreateFailure(errorCode(error)) &&
+            (await confirmCommitted(async () =>
+              Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
+            ));
+          if (!committed) throw error;
+        }
+        // Into every cached list the moment the server has the row, so the
+        // sidebar shows it before the navigation and the reconciling refetch.
+        // A 202 ("accepted, poll the session") carries no row and inserts
+        // nothing; neither does the timeout path above.
+        if (created?.project_id === projectId) {
+          upsertCachedProjectSession(queryClient, projectId, created);
+        }
+        return sessionId;
+      }
+
+  return takeOrCreateSession;
+}
 
 export function useNewProjectSession(projectId: string | undefined) {
   const t = useTranslations('threads');
@@ -210,79 +295,9 @@ export function useNewProjectSession(projectId: string | undefined) {
       // call's row into another's `onReady`.
       let adoptedWarmSession: ProjectSession | null = null;
 
-      // Use the project's warm session when there is one that fits, else create
-      // one exactly as before. The warm session already exists — it is an
-      // ordinary session created a few seconds ago — so this is a synchronous,
-      // network-free hand-off that skips the sandbox boot the user would
-      // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
-      // null whenever there is nothing suitable, so the create path below stays
-      // the authority on billing, the session cap and connector requirements.
-      const takeOrCreateSession = async () => {
-        const warm = takeWarmSessionEntry(projectId, {
-          create: opts?.create,
-          // Replenish after /start, not beside the claim and /start requests.
-          replenish: false,
-        });
-        if (warm) {
-          // The first prompt is a DURABLE inbox row, never a client-side
-          // replay (the start stash carries picks only — see the producers).
-          // The ordinary path gets that row from `create.pending_prompt` in
-          // the create transaction; an adopted warm session was created
-          // seconds ago with an EMPTY body, so its prompt has to land now,
-          // through the server's claim (`primeTakenWarmSession`): one
-          // transaction that inserts the row, drops the warm marker, and kicks
-          // the drain. Without this the local take navigated into a session
-          // that had never heard the prompt — the "my first message
-          // disappears" bug, on the warm path.
-          //
-          // A refused claim (another tab took it, marker already gone) is not
-          // an error the user should see: fall through to the ordinary create,
-          // which carries the same prompt.
-          const pending = opts?.create?.pending_prompt;
-          const primed = pending
-            ? await primeTakenWarmSession(projectId, warm, {
-                pending_prompt: pending,
-                ...(opts?.create?.agent_name ? { agent_name: opts.create.agent_name } : {}),
-                ...(opts?.create?.sandbox_slug ? { sandbox_slug: opts.create.sandbox_slug } : {}),
-              })
-            : true;
-          if (primed) {
-            adoptedWarmSession = warm.session;
-            router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
-            return warm.sessionId;
-          }
-        }
-
-        const sessionId = crypto.randomUUID();
-        markSessionFresh(sessionId);
-        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
-        let created: ProjectSession | undefined;
-        try {
-          created = await createProjectSession(projectId, {
-            session_id: sessionId,
-            ...opts?.create,
-          });
-        } catch (error) {
-          // A timeout is not a refusal: the server keeps running the create and
-          // commits the session WITH its first prompt. Rejecting here left the
-          // user on the page they sent from, composer unlocked with a prompt the
-          // agent was already answering. The id is ours, so ask for it.
-          const committed =
-            isAmbiguousCreateFailure(errorCode(error)) &&
-            (await confirmCommitted(async () =>
-              Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
-            ));
-          if (!committed) throw error;
-        }
-        // Into every cached list the moment the server has the row, so the
-        // sidebar shows it before the navigation and the reconciling refetch.
-        // A 202 ("accepted, poll the session") carries no row and inserts
-        // nothing; neither does the timeout path above.
-        if (created?.project_id === projectId) {
-          upsertCachedProjectSession(queryClient, projectId, created);
-        }
-        return sessionId;
-      };
+      const takeOrCreateSession = makeTakeOrCreateSession(projectId, opts, router, queryClient, (session) => {
+        adoptedWarmSession = session;
+      });
 
       const createSession = () =>
         // `threads.*`, not `hardcodedUi.i18nComplete.*`. The two
@@ -353,7 +368,7 @@ export function useNewProjectSession(projectId: string | undefined) {
         },
       }).catch((err) => {
         const code = (err as { code?: string })?.code;
-        const action = resolveCreateFailure(code);
+        const action = resolveCreateFailure(code, err instanceof ApiError);
         if (action === 'upgrade') {
           openUpgradeDialog({ reason: 'subscription_required', accountId });
         } else if (action === 'connect') {
@@ -372,7 +387,6 @@ export function useNewProjectSession(projectId: string | undefined) {
         } else if (action === 'toast') {
           errorToast(err instanceof Error ? err.message : t('failedToStartSession'));
         }
-        // 'silent': the global 429 handler already surfaced the session cap.
         // No navigation happened, so release the claim now — the user stays
         // where they are and must be able to try again immediately.
         release();

@@ -30,6 +30,8 @@ let preserveCalls: Array<{ sandboxId: string; reason: string; stopReason: string
 let inTransaction = false;
 /** When set, every `db.update(...).where(...)` fails with this message. */
 let updateThrows: string | null = null;
+/** When set, every `db.update(...).where(...)` resolves to no rows — the CAS matched nothing. */
+let updateMatchesNothing = false;
 
 mock.module('../../config', () => mockConfigModule());
 
@@ -41,7 +43,9 @@ const updater = (table: unknown) => ({
       updateCalls.push({ table, updates, predicate, inTransaction });
       const result = updateThrows
         ? Promise.reject(new Error(updateThrows))
-        : Promise.resolve([{ sandboxId: 'moved', sessionId: 'moved' }]);
+        : Promise.resolve(
+          updateMatchesNothing ? [] : [{ sandboxId: 'moved', sessionId: 'moved' }],
+        );
       return Object.assign(result, { returning: () => result });
     },
   }),
@@ -195,6 +199,7 @@ beforeEach(() => {
   preserveCalls = [];
   inTransaction = false;
   updateThrows = null;
+  updateMatchesNothing = false;
   unattendedOutcome = 'skipped_attended';
   unattendedCalls = [];
   drainCalls = 0;
@@ -330,12 +335,14 @@ describe('applyStoppedState — unattended recovery after runtime_gone', () => {
         accountId: 'acc-2',
         projectId: 'proj-2',
         metadata: {
-          activeTurn: {
-            token: 'tok-1',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_1',
-            startedAtMs: NOW.getTime() - 5_000,
+          activeTurns: {
+            'tok-1': {
+              token: 'tok-1',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_1',
+              startedAtMs: NOW.getTime() - 5_000,
+            },
           },
         },
       },
@@ -503,6 +510,39 @@ describe('reconcileSandboxStoppedByExternalId', () => {
     expect(sessionUpdate()?.updates.status).toBe('stopped');
   });
 
+  // One stop episode is one incident, not one warn per poll. The reaper passes
+  // every 20 s and the session access path polls ~1/s, so a warn every
+  // await_confirmation pass multiplies an episode's line count by the window —
+  // the 2026-09-26 prod spike was 3 warn lines per episode from the reaper
+  // alone. Only the call that ARMS a fresh marker may warn.
+  test('an unchanged episode inside the confirmation window warns once', async () => {
+    const warn = console.warn;
+    const warnings: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    try {
+      // First observed stop: arms the marker and warns once.
+      selectedRows = midTurnRow();
+      expect(
+        await reconcileSandboxStoppedByExternalId('ext-1', NOW, { confirmMidTurnStop: true }),
+      ).toBe(false);
+      expect(warnings).toHaveLength(1);
+
+      // A repeated observed stop inside the window: the CAS matches nothing,
+      // so no second line — and still no park.
+      selectedRows = midTurnRow({ pendingStopObservedAtMs: NOW.getTime() - 5_000 });
+      updateMatchesNothing = true;
+      expect(
+        await reconcileSandboxStoppedByExternalId('ext-1', NOW, { confirmMidTurnStop: true }),
+      ).toBe(false);
+      expect(warnings).toHaveLength(1);
+      expect(events).not.toContain('pause:sb-1');
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   // Account deletion, the orphan-box sweep, and the access path in
   // projects/routes/shared.ts all call this AFTER stopping the box themselves.
   // Making those wait for a second observation would leave the row `active`
@@ -655,12 +695,21 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
 // The marker writes themselves (instant, CAS, provisioning rows, clear) are
 // proven on real rows in __tests__/integration-sandbox-turn-lifecycle.test.ts.
 describe('the pending stop marker', () => {
+  test('reports whether the CAS armed a fresh marker', async () => {
+    // A readable marker already on the row makes the CAS match nothing.
+    updateMatchesNothing = true;
+    await expect(markPendingStopObservation('sb-1')).resolves.toBe(false);
+
+    updateMatchesNothing = false;
+    await expect(markPendingStopObservation('sb-1')).resolves.toBe(true);
+  });
+
   test('a failed marker write never fails the pass', async () => {
     updateThrows = 'db down';
     const warn = console.warn;
     console.warn = () => {};
     try {
-      await expect(markPendingStopObservation('sb-1')).resolves.toBeUndefined();
+      await expect(markPendingStopObservation('sb-1')).resolves.toBe(false);
       await expect(clearPendingStopObservation('sb-1')).resolves.toBeUndefined();
     } finally {
       console.warn = warn;

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
-import { codexModelIds } from './codex-models';
+import { CODEX_SEED_MODEL_IDS } from './codex-models';
 import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
@@ -16,6 +16,20 @@ import { SERVED_MANAGED_MODELS } from './served-managed-models';
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
+  // OpenCode (provider.ts) reads image support ONLY from `modalities.input`
+  // and replaces image parts with "ERROR: Cannot read image" when it is
+  // missing; the thinking control is built ONLY from effort values. DeepSeek
+  // V4.1 Flash and GLM 5.3 Flash have no models.dev record, so both fields
+  // must come from the curated lineup.
+  test('every served vision model advertises image input and a thinking control', () => {
+    for (const managed of SERVED_MANAGED_MODELS.filter((m) => m.vision)) {
+      const served = full[managed.id]!;
+      expect(served.modalities?.input, managed.id).toContain('image');
+      const effort = served.reasoning_options?.find((o) => o.type === 'effort');
+      expect(effort?.values?.length ?? 0, managed.id).toBeGreaterThan(0);
+    }
+  });
+
   test('serves managed DeepSeek V4.1 with vision, tools, and a context limit', () => {
     expect(full['deepseek-v4.1-flash']).toMatchObject({
       name: 'DeepSeek V4.1 Flash',
@@ -23,7 +37,7 @@ describe('gatewayModelCatalog — served catalog', () => {
       attachment: true,
       tool_call: true,
       temperature: true,
-      limit: { context: 1_048_576, output: 16_384 },
+      limit: { context: 1_000_000, output: 65_536 },
       cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
     });
   });
@@ -134,7 +148,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 // served shape (PR #5010 review), and a `budget_tokens`-only reasoning entry
 // (mainline Claude) used to vanish.
 describe('served catalog field passthrough', () => {
-  const [codexId] = codexModelIds();
+  const [codexId] = CODEX_SEED_MODEL_IDS;
   const enriched = {
     released: '2026-01-02',
     family: 'synthetic',
@@ -175,6 +189,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/enriched']).toEqual({
       name: 'Enriched',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released,
       release_date: released,
       family,
@@ -186,6 +201,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released: undefined,
       release_date: undefined,
       family: undefined,

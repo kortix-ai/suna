@@ -14,8 +14,9 @@ import {
 const PROJECT = 'p-1';
 
 const ALL: CustomizePrefetchGates = {
-  customizeRead: true,
-  customizeWrite: true,
+  agentRead: true,
+  sandboxWrite: true,
+  modelRead: true,
   connectorRead: true,
   triggerRead: true,
   secretRead: true,
@@ -99,11 +100,11 @@ describe('prefetchCustomize', () => {
     expect(entry?.gcTime).toBe(CUSTOMIZE_PREFETCH_GC_MS);
   });
 
-  test('reads nothing without project.customize.read', async () => {
+  test('reads nothing without project.agent.read (the landing tab)', async () => {
     const client = new QueryClient();
     const calls: string[] = [];
 
-    await prefetchCustomize(client, PROJECT, { ...ALL, customizeRead: false }, fakeApi(calls));
+    await prefetchCustomize(client, PROJECT, { ...ALL, agentRead: false }, fakeApi(calls));
 
     expect(calls).toEqual([]);
   });
@@ -117,7 +118,8 @@ describe('prefetchCustomize', () => {
       PROJECT,
       {
         ...ALL,
-        customizeWrite: false,
+        sandboxWrite: false,
+        modelRead: false,
         connectorRead: false,
         secretRead: false,
         reviewRead: false,
@@ -143,13 +145,13 @@ describe('prefetchCustomize', () => {
     expect(second.filter((name) => name !== 'listReviewItems')).toEqual([]);
   });
 
-  test('uses the Discover catalogue when the project flag selects it', async () => {
+  test('prefetches managed discovery even when direct discovery is enabled', async () => {
     const client = new QueryClient();
     const calls: string[] = [];
 
     await prefetchCustomize(client, PROJECT, { ...ALL, discoverEnabled: true }, fakeApi(calls));
 
-    expect(calls).toContain('sections:discover');
-    expect(calls).not.toContain('getConnectStatus');
+    expect(calls).not.toContain('sections:discover');
+    expect(calls).toContain('getConnectStatus');
   });
 });

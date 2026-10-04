@@ -1,7 +1,10 @@
 # Preview environments (per-PR)
 
-The `preview` label gives a pull request its own complete Kortix deployment. Use it to share,
-review, and record work without merging. The workflow is `.github/workflows/deploy-preview.yml`.
+The `preview` label gives a pull request its own complete Kortix deployment on Platinum.
+**It is not part of the development flow.** Test, preview, and record a change on your
+worktree's local stack (`AGENTS.md` → "Default delivery"). Add the label only when someone
+asks for a hosted environment of a branch; it gates nothing and no step of the PR loop
+waits on it. The workflow is `.github/workflows/deploy-preview.yml`.
 The deploy logic is `tests/bin/sandbox-preview.ts`, `tests/src/core/sandbox-preview.ts`, and
 `tests/src/core/preview-stack.ts`.
 
@@ -40,7 +43,7 @@ appears in the sticky PR comment that starts with `<!-- preview-status -->`. Tha
 also gives the test state:
 
 - `live and tested`: `--target-full` passed on this commit.
-- `live; NOT tested`: a label or push deploy. The suite did not run.
+- `live; NOT tested`: a label deploy (it runs no suite), or a dispatch whose suite has not finished yet.
 - `live; tests failed`: the environment is up. Read `/_tests/` and the run log.
 - `deployment failed`: no origin was published. Read the run log. The environment can still
   be up: when `--target-full` hits the 90-minute worker cap (`Platinum worker exceeded
@@ -69,7 +72,7 @@ also gives the test state:
 | Event | Result |
 | --- | --- |
 | `preview` label added | Build and deploy (~7 min). No suite. |
-| Push to a labelled PR | Redeploy in place (~7 min). The database is kept. No suite. |
+| Push to a labelled PR | Nothing. The environment keeps serving its last deployed commit. Re-add the label to deploy the new head. |
 | `gh workflow run deploy-preview.yml -f pr_number=<N>` | Redeploy, then run `pnpm test -- --target-full` (40–80 min). A push during the suite stops it within ~1 min. |
 | Label removed | Environment torn down. |
 | Branch deleted (including auto-delete on merge) | Environment torn down. |

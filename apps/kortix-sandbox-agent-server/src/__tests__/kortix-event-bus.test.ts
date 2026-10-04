@@ -1,4 +1,4 @@
-import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '../harness/open-code/event-bus'
+import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '@/harness/open-code/event-bus'
 /**
  * The sequencer — the property the whole stream design rests on.
  *
@@ -10,7 +10,7 @@ import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '../harness/open-c
  */
 import { describe, expect, test } from 'bun:test'
 
-import { KortixEventBus, type KortixEvent } from '../kortix-event-bus'
+import { KortixEventBus, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
 
 function collect(): { events: KortixEvent[]; listener: (e: KortixEvent) => void } {
   const events: KortixEvent[] = []
@@ -99,7 +99,7 @@ describe('resync — the daemon says so instead of pretending', () => {
       head_seq: 20,
       requested_since: 2,
     })
-    expect(sub.resync!.recover).toContain('GET /kortix/opencode/state')
+    expect(sub.resync!.recover).toContain('GET /kortix/runtime/state')
   })
 
   test('the OLDEST replayable cursor still replays exactly — the boundary is inclusive', () => {

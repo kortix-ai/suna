@@ -1,8 +1,8 @@
 name: Deploy Dev
 
-# DEV pipeline. `main` is the dev branch: every push auto-deploys the surfaces
-# that changed vs what dev currently runs. Deploys QUEUE: an in-flight deploy
-# always finishes, and only the newest waiting push runs after it (see the
+# DEV pipeline. `main` is the dev branch. A deliberate `workflow_dispatch`
+# deploys the surfaces that changed vs what dev currently runs. Deploys QUEUE: an
+# in-flight deploy always finishes, and only the newest waiting run follows (see the
 # `on:` and `concurrency:` blocks). Every merged pull request gets one "Live on
 # dev" comment once /health serves its commit (the `announce-live` job). A manual
 # `workflow_dispatch` can force all/frontend on demand. Builds are versioned
@@ -23,21 +23,18 @@ name: Deploy Dev
 #
 # Desktop is intentionally NOT here — it's an Electron shell that changes
 # rarely and needs slow signed macOS/Windows runners, so it lives in its own
-# workflow (desktop.yml: only on apps/desktop-electron/** changes or manual
+# workflow (desktop.yml: only on manual
 # dispatch) and never blocks the CLI/API/frontend dev deploy.
 #
 # Promotion to production is a separate, manual workflow (promote.yml), which cuts
 # the single unified vX.Y.Z release bundling API + frontend + CLI + desktop.
 
 on:
-  # DEV auto-deploys the LATEST main commit on every push, building only the
-  # surfaces that actually changed vs what dev is currently running (detect-
-  # changes below diffs against dev-api's live SHA). A push that lands while a
-  # deploy runs waits for it; see `concurrency:` for why it no longer cancels.
-  push:
-    branches: [main]
-  # Manual override: force a full or frontend-only redeploy, or re-deploy on
-  # demand. `changed` (default) matches the push path — only stale surfaces.
+  # DEV deploys only on an explicit dispatch (since 2026-10-03: Actions minutes).
+  # A push to `main` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
+  # surface=changed` (or `all`) to deploy main HEAD. `changed` diffs against
+  # dev-api's live SHA, so one dispatch ships every merge since the last deploy.
+  # A dispatch that lands while a deploy runs waits for it; see `concurrency:`.
   workflow_dispatch:
     inputs:
       surface:
@@ -123,10 +120,9 @@ jobs:
           echo "Latest release: ${LATEST:-none} → dev ${NEXT}-dev.${GITHUB_SHA::8}"
       - name: Resolve deploy base (what dev is actually running)
         id: base
-        # Runs for the change-diffing paths: an ordinary push, and an explicit
-        # dispatch with surface=changed. surface=all / surface=frontend force
+        # Runs for the change-diffing path: a dispatch with surface=changed. surface=all / surface=frontend force
         # their own set below and skip this.
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.surface == 'changed')
+        if: inputs.surface == 'changed'
         run: |
           # THE FLAKY-SKIP FIX. The old filter diffed `github.event.before..sha`
           # — the commits in THIS push only. But a superseded/cancelled deploy
@@ -156,7 +152,7 @@ jobs:
         uses: dorny/paths-filter@v4
         id: filter
         with:
-          # For a push, compare against what dev runs (empty = action's default).
+          # For `changed`, compare against what dev runs (empty = action's default).
           base: ${{ steps.base.outputs.base }}
           filters: |
             api:
@@ -605,7 +601,7 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","AUDIT_ARCHIVE_BUCKET":"kortix-dev-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -613,6 +609,75 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      # Release gate: build the Platinum platform default image THIS API version
+      # computes, and make it resident in KORTIX_PLATINUM_US_REGION, before the
+      # roll. Without it the new tasks start on a missing image: sessions boot
+      # the previous one and repair its runtime in place, and the first US
+      # session waits while Platinum copies the image from the EU (150-255 s on
+      # 2026-10-02). The new image is built UNPUBLISHED, so the version still
+      # serving keeps its template row and snapshot until the roll.
+      #
+      # The container gets exactly the environment the roll below registers:
+      # `ecs-deploy.sh --dry-run` renders it (running revision + overrides +
+      # version stamp) and the secret blob is passed as KORTIX_ENV_JSON, the
+      # way ECS passes it. The image identity depends on that environment.
+      #
+      # Never blocks the roll. continue-on-error covers every failure mode in
+      # one place (secret read, image pull, build, copy, timeout); the script's
+      # own exit code still marks the step failed with a ::warning:: naming the
+      # cause, and the next sessions then behave exactly as before this gate.
+      - name: Build the next default sandbox image and make it resident in US
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          API_IMAGE: ${{ needs.build-api.outputs.image }}
+          KORTIX_VERSION_STAMP: ${{ needs.detect-changes.outputs.version }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d)"
+          container="release-gate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
+          ECS_DEPLOY_RENDERED_ENV_FILE="$work/task-env.json" \
+            bash infra/scripts/ecs-deploy.sh dev "$API_IMAGE" --version "$KORTIX_VERSION_STAMP" --dry-run >/dev/null
+          if [ ! -s "$work/task-env.json" ]; then
+            echo "::warning title=Dev release gate::the dev ECS service is not active; skipping"
+            exit 0
+          fi
+          export GATE_WORK="$work"
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          work = pathlib.Path(os.environ["GATE_WORK"])
+          blob = json.loads(subprocess.run([
+              "aws", "secretsmanager", "get-secret-value",
+              "--region", os.environ["AWS_REGION"],
+              "--secret-id", "kortix-dev-env",
+              "--query", "SecretString", "--output", "text",
+          ], check=True, capture_output=True, text=True).stdout)
+          if not isinstance(blob, dict) or not all(isinstance(v, str) for v in blob.values()):
+              raise SystemExit("kortix-dev-env must be a JSON object of strings")
+          for value in blob.values():
+              if value:
+                  escaped = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                  print(f"::add-mask::{escaped}", flush=True)
+          lines = []
+          for entry in json.loads((work / "task-env.json").read_text()):
+              name, value = entry["name"], entry["value"]
+              if "\n" in value or "\r" in value:
+                  raise SystemExit(f"task environment value {name} is multi-line; docker --env-file cannot carry it")
+              lines.append(f"{name}={value}")
+          # ECS hands the blob over as one secret; the API hydrates it at
+          # startup and lets explicit task values win, exactly as here.
+          lines.append("KORTIX_ENV_JSON=" + json.dumps(blob, separators=(",", ":"), ensure_ascii=True))
+          (work / "container.env").write_text("\n".join(lines) + "\n")
+          PY
+          docker run --rm --pull always --platform linux/amd64 \
+            --name "$container" --env-file "$work/container.env" \
+            "$API_IMAGE" bun scripts/prepare-platform-default-image.ts
       # --version stamps KORTIX_VERSION into the task-def so /v1/health reports
       # the computed dev version even if the image's baked string ever diverges
       # (retags, rebuilds) — same parity rule as staging/prod.

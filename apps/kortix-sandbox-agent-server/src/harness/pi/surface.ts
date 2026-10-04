@@ -12,9 +12,9 @@
  * Auth is the host's: the daemon verifies the signed user context before this
  * catch-all runs, so the surface never sees an unauthenticated request.
  */
-import { kortixEventBus } from '../../kortix-event-bus'
-import { stripInlineAttachmentBytes } from '../../inline-attachments'
-import type { HarnessForwardInput, HarnessForwardResult } from '../proxy'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
+import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
 import { PromptRejected, parsePromptBody, type PiRuntime } from './runtime'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): HarnessForwardResult => ({
@@ -251,14 +251,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
 
       // ── catalog reads ────────────────────────────────────────────────────
       if (method === 'GET') {
-        if (path === '/config' || path === '/global/config') return json(200, rt.configObject())
-        if (path === '/agent') return json(200, [rt.agentObject()])
-        if (path === '/provider') return json(200, rt.providerList())
-        if (path === '/config/providers') {
-          const list = rt.providerList() as { all: unknown[]; default: Record<string, string> }
-          return json(200, { providers: list.all, default: list.default })
-        }
-        if (path === '/command') return json(200, [])
         if (path === '/skill') {
           return json(
             200,

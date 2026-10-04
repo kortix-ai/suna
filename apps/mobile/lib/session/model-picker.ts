@@ -1,24 +1,27 @@
 /**
- * model-picker — which models the composer's model sheet lists, in which
- * groups and order. The rules are web's session model selector
- * (`apps/web/src/features/session/model-selector.tsx`, `model-grouping.ts`,
- * `model-tags.ts`), so a project shows the same list on web, on the mobile
- * project home, and in a mobile thread.
- *
- * One source per project, the same on home and in a thread:
- * - LLM gateway on: the project's `/model-picker` catalog. Every model is served
- *   through the one `kortix` provider; `enabled !== false` is the server's
- *   answer to "does this project offer it".
- * - LLM gateway off (no catalog): the sandbox's own providers, without `kortix`.
+ * model-picker — the composer's model sheet rows: which provider group, which
+ * order, and which rows the empty-search view shows. The list itself is
+ * `@kortix/sdk`'s (`useComposerModels`: `pickerProviderList` →
+ * `flattenModels`), the same list web's session model selector renders.
  *
  * Groups are the REAL upstream provider (`provider`, else the wire id prefix),
  * never the raw provider name: under the gateway that name is always "Kortix".
+ * The groups, labels, and row names are web's `model-grouping.ts` and
+ * `model-tags.ts`, which live in `apps/web`, not the SDK.
  *
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
+import {
+  createModelVisibility,
+  flattenModels,
+  modelInDefaultView,
+  pickerProviderList,
+  type FlatModel,
+  type PickerProviderListInput,
+} from '@kortix/sdk';
 import type { PickerOption } from './composer-config';
 
-/** The model fields the picker reads. Mobile's `FlatModel` satisfies it. */
+/** The model fields the groups read. The SDK's `FlatModel` satisfies it. */
 export interface PickerModel {
   providerID: string;
   providerName: string;
@@ -29,24 +32,23 @@ export interface PickerModel {
   variants?: Record<string, Record<string, unknown>>;
 }
 
-/** The `/model-picker` fields read here (`GatewayCatalogModel` in @kortix/sdk). */
-export interface PickerCatalogModel {
-  name?: string;
-  provider?: string;
-  enabled?: boolean;
-  reasoning?: boolean;
-  variants?: Record<string, Record<string, unknown>>;
-  /** models.dev's tunable reasoning knobs. The catalog's thinking levels come from here. */
-  reasoning_options?: Array<{ type: string; values?: Array<string | null>; min?: number; max?: number }>;
-  limit?: { context?: number };
-  family?: string;
-  release_date?: string;
-}
-export type PickerCatalog = Record<string, PickerCatalogModel>;
-
 const GATEWAY_PROVIDER_ID = 'kortix';
-/** The gateway's routing alias. It is not a model a user picks. */
-const AUTO_MODEL_IDS = new Set(['auto', 'kortix/auto']);
+
+/**
+ * The composer's model list for one set of sources (`useComposerModels`):
+ * `@kortix/sdk` builds it, `pickerProviderList` → `flattenModels`, in the
+ * provider mode web's `modelProviderMode` reads off the same list.
+ */
+export function composerModelList(input: PickerProviderListInput): FlatModel[] {
+  return flattenModels(pickerProviderList(input), {
+    providerMode: input.gatewayEnabled ? 'gateway' : 'native',
+  });
+}
+
+/** Models the project offers (`enabled !== false`): zero means "Connect model" (KRTX-251). */
+export function offeredModelCount(models: FlatModel[]): number {
+  return models.filter((m) => m.enabled !== false).length;
+}
 
 /**
  * Group order, then unknown providers by label. A copy of
@@ -127,91 +129,24 @@ export function pickerModelName(model: PickerModel): string {
   return model.modelName.replace(/\s*\(ChatGPT\)\s*$/, '').trim() || model.modelName;
 }
 
-/** A `budget_tokens` knob has no discrete values: the standard tiers stand in (@kortix/llm-catalog). */
-const BUDGET_TOKENS_LEVELS = ['low', 'medium', 'high'];
-
-/**
- * The thinking levels a catalog model offers. `/model-picker` sends an empty
- * `variants` map; the levels are in `reasoning_options`. Web's rule
- * (`projectLlmCatalogToProviderList` → `generationControlCapabilities`): an
- * explicit `variants` map wins, else the `effort` knob's published values,
- * else low/medium/high for a `budget_tokens` knob, else none (a `toggle` is
- * not a level). `model-picker.test.ts` pins this against the package.
- */
-export function catalogThinkingLevels(entry: PickerCatalogModel): string[] {
-  const explicit = Object.keys(entry.variants ?? {});
-  if (explicit.length > 0) return explicit;
-  const options = entry.reasoning_options ?? [];
-  const effort = options.find((option) => option.type === 'effort');
-  const values = (effort?.values ?? []).filter((value): value is string => typeof value === 'string');
-  if (values.length > 0) return values;
-  return options.some((option) => option.type === 'budget_tokens') ? [...BUDGET_TOKENS_LEVELS] : [];
-}
-
-function levelsAsVariants(levels: string[]): PickerModel['variants'] {
-  return levels.length > 0 ? Object.fromEntries(levels.map((level) => [level, {}])) : undefined;
-}
-
 /**
  * The picks project home sends with the first message (`pending_prompt` on
  * session create, web's channel). Null when there is no level to carry: the
- * model alone already travels as `opencode_model`. A level the active model
+ * model alone already travels as the session `model`. A level the active model
  * does not offer (picked for another model) is not sent.
  */
 export function firstPromptPicks(
-  modelID: string | null,
+  model: { providerID: string; modelID: string } | null,
   variant: string | null,
   levels: string[],
 ): { model: { providerID: string; modelID: string }; variant: string } | null {
-  if (!modelID || !variant || !levels.includes(variant)) return null;
-  return { model: { providerID: GATEWAY_PROVIDER_ID, modelID }, variant };
+  if (!model || !variant || !levels.includes(variant)) return null;
+  return { model: { providerID: model.providerID, modelID: model.modelID }, variant };
 }
 
-/** The models a gateway project offers, in catalog order. Empty without a catalog. */
-export function catalogPickerModels(catalog: PickerCatalog | undefined): PickerModel[] {
-  return Object.entries(catalog ?? {})
-    .filter(([modelID, entry]) => entry.enabled !== false && !AUTO_MODEL_IDS.has(modelID))
-    .map(([modelID, entry]) => ({
-      providerID: GATEWAY_PROVIDER_ID,
-      providerName: PICKER_PROVIDER_LABELS[GATEWAY_PROVIDER_ID],
-      modelID,
-      modelName: entry.name || modelID,
-      provider: entry.provider,
-      variants: levelsAsVariants(catalogThinkingLevels(entry)),
-    }));
-}
-
-/**
- * The models a thread can run on.
- *
- * Gateway project: the catalog is the list (what web and project home show).
- * The sandbox's copy of a model wins when it exists, because it carries the
- * thinking levels the sandbox accepts; it gains the catalog's `provider`, and
- * the catalog's levels when it has none of its own.
- * No catalog: the sandbox's own providers; its `kortix` provider is dropped,
- * because the project does not route through the gateway.
- */
-export function offeredSessionModels<T extends PickerModel>(
-  sandboxModels: T[],
-  catalog: PickerCatalog | undefined,
-  fromCatalog: (model: PickerModel, entry: PickerCatalogModel) => T = (model) => model as T,
-): T[] {
-  if (!catalog) {
-    return sandboxModels.filter(
-      (m) => m.providerID !== GATEWAY_PROVIDER_ID && !AUTO_MODEL_IDS.has(m.modelID),
-    );
-  }
-  const inSandbox = new Map(
-    sandboxModels.filter((m) => m.providerID === GATEWAY_PROVIDER_ID).map((m) => [m.modelID, m]),
-  );
-  return catalogPickerModels(catalog).map((model) => {
-    const live = inSandbox.get(model.modelID);
-    if (!live) return fromCatalog(model, catalog[model.modelID]);
-    // The sandbox's levels are what it accepts. A sandbox copy with none takes
-    // the catalog's, so the thread offers the levels project home offered.
-    const hasLevels = Object.keys(live.variants ?? {}).length > 0;
-    return { ...live, provider: model.provider ?? live.provider, variants: hasLevels ? live.variants : model.variants };
-  });
+/** A sheet row's id. A model id can contain "/", so callers look the key up, never split it. */
+export function modelOptionKey(model: { providerID: string; modelID: string }): string {
+  return `${model.providerID}/${model.modelID}`;
 }
 
 function groupRank(groupID: string): number {
@@ -221,11 +156,21 @@ function groupRank(groupID: string): number {
 
 /**
  * Sheet rows in display order: groups by `PICKER_PROVIDER_ORDER`, unknown
- * providers after them by title; rows by name inside a group. `keyOf` is the
- * row id the caller selects by.
+ * providers after them by title; rows by name inside a group.
+ *
+ * Web's model selector rules: models the project turned off (`enabled:
+ * false`) are not rows; a row the empty-search view hides
+ * (`modelInDefaultView` over `createModelVisibility`: newest per family for
+ * native providers, every gateway model) is `searchOnly`. `selected` always
+ * shows. Mobile has no "Manage models" pins, so none are passed.
  */
-export function modelPickerOptions<T extends PickerModel>(models: T[], keyOf: (model: T) => string): PickerOption[] {
+export function modelPickerOptions(
+  models: FlatModel[],
+  selected: { providerID: string; modelID: string } | null,
+): PickerOption[] {
+  const isStoreVisible = createModelVisibility({ catalogModels: models });
   return models
+    .filter((model) => model.enabled !== false)
     .map((model) => {
       const groupID = pickerGroupId(model);
       return { model, groupID, group: pickerGroupLabel(groupID, model), label: pickerModelName(model) };
@@ -237,9 +182,10 @@ export function modelPickerOptions<T extends PickerModel>(models: T[], keyOf: (m
         a.label.localeCompare(b.label),
     )
     .map(({ model, group, label }) => ({
-      key: keyOf(model),
+      key: modelOptionKey(model),
       label,
       group,
       keywords: `${model.modelName} ${model.modelID}`,
+      searchOnly: !modelInDefaultView(model, { search: '', isStoreVisible, selected }),
     }));
 }

@@ -1,29 +1,33 @@
 /** Session prompt queue: enqueue, list, remove, retry, and hold. */
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
+import { promptModelOverride } from '../lib/prompt-model';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
+import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
+import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import {
   deleteInboxPrompt,
+  editInboxPrompt,
   drainSessionLifecycleQueue,
   enqueueContinueSessionCommand,
+  enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
-  releaseInboxHold,
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
-import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -58,6 +62,9 @@ import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 // live turn holds later prompts until its terminal event releases the next row.
 
 const PROMPT_LIST_LIMIT = 200;
+/** A POST that arrives within this long of its Enter did not wait on the
+ *  client. Longer, and an older send of the same burst may still be in flight. */
+const LONE_SEND_MAX_AGE_MS = 1_000;
 
 const SessionPromptSchema = z.object({
   placement: z.enum(['transcript', 'composer']).optional(),
@@ -73,6 +80,7 @@ const SessionPromptSchema = z.object({
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  no_reply: z.boolean(),
   created_at: z.string(),
   available_at: z.string(),
 });
@@ -124,11 +132,21 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts',
+    summary: 'Send a prompt (message) to a session',
+    description:
+      'Send a message to a session. The prompt queues and delivers in order.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: lenientBody({
+          client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
+          message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
+          parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
+          placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
+          overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
+          remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
+          client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),
+        }) } }, required: true },
     },
     responses: {
       200: json(z.any(), 'Already queued (same client_message_id)'),
@@ -137,6 +155,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
+    const receivedAtMs = Date.now();
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -169,13 +188,47 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    // The session whose agent sends this, when it is not the target itself.
+    // From the credential, never the body: it becomes the message's author.
+    const callerSessionId = callerKortixSessionId(c);
+    const authorSessionId =
+      isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
+    // The reads below use the session id alone and none consumes another's
+    // result. They start together and are awaited in the original order, so
+    // every refusal comes from the same place. They ran one after another: one
+    // database round trip each, before the prompt was even durable.
+    const visibleRead = loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // A failed read is "no hold" (as before) and "may be a burst" (the safe side).
+    const sendState = inboxSendState(sessionId).catch(() => ({ held: false, pending: true }));
+    const thisInstance = currentInstanceId();
+    const boxRead = thisInstance ? loadSandboxMetadataForSessions([sessionId]) : null;
+    boxRead?.catch(() => undefined);
+    const visible = await visibleRead;
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
     const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
     if (typeof metadata.deletedAt === 'string') {
       return c.json({ error: 'Session is deleted' }, 409);
+    }
+    // Shared local DB (projects/instance-scope.ts). The drain never claims a
+    // command for a sandbox another API instance provisioned, so a prompt
+    // accepted here would stay `queued` for ever when that instance is down.
+    // Refuse it while the sender can still read why. The lookup runs only when
+    // `KORTIX_INSTANCE_ID` is set.
+    if (thisInstance && boxRead) {
+      const box = (await boxRead).get(sessionId);
+      if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
+        const owner = sandboxInstanceId(box);
+        const message =
+          `This session's computer belongs to the local API instance "${owner}". ` +
+          `This instance ("${thisInstance}") cannot deliver prompts to it. ` +
+          'Send from that stack, or start a new session.';
+        return c.json(
+          { error: message, message, code: 'SESSION_OWNED_BY_OTHER_INSTANCE', owner_instance: owner },
+          409,
+        );
+      }
     }
 
     const body = await readJsonObject(c);
@@ -207,12 +260,12 @@ projectsApp.openapi(
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
     const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
+    // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
+    // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
+    // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
     const overrides = {
       agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
-      model:
-        model && typeof model.providerID === 'string' && typeof model.modelID === 'string'
-          ? { providerID: model.providerID, modelID: model.modelID }
-          : null,
+      model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
       variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
       directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
     };
@@ -223,19 +276,6 @@ projectsApp.openapi(
     // agent and every one after it as any other agent in the manifest. Falls
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
-
-    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
-    // the session's `on_behalf_of` clears it permanently. The agent keeps its
-    // own authority; it loses the creator's personal resources, so the person
-    // prompting never acts through another person's accounts. An agent-session
-    // credential is not a human prompter and clears nothing.
-    if (!isProjectSessionPrincipal(c)) {
-      await clearSessionOnBehalfOfForPrompt({
-        accountId: loaded.row.accountId,
-        sessionId,
-        prompterUserId: loaded.userId,
-      });
-    }
 
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
@@ -270,12 +310,23 @@ projectsApp.openapi(
     // clientMessageId = same row" contract — enforced by the database, not by a
     // cache that a second pod would not share.
     const idempotencyKey = `prompt:${sessionId}:${clientMessageId}`;
-    const enqueued = await enqueueContinueSessionCommand({
+    // Sending anything NEW lifts a hold the stop button left on this session's
+    // queue — the same rule the browser-local queue always had, and the reason
+    // stop cannot wedge a session: everything typed afterwards would otherwise
+    // land behind rows that are, by construction, never due. The send joins
+    // the released batch; `enqueueReleasingHold` enqueues it held and releases
+    // them together, so no drain can claim it alone in between (KRTX-683).
+    const send: Parameters<typeof enqueueContinueSessionCommand>[0] = {
       source: 'ui',
       projectId,
       accountId: loaded.row.accountId,
       sessionId,
       actorUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3 (closes V6): the session token acts as the person
+      // who sent this prompt, from the moment its turn is delivered — not now,
+      // while it may still wait behind another member's turn. An agent-session
+      // credential is not a person and never changes the token's identity.
+      bindTurnIdentity: !isProjectSessionPrincipal(c),
       text,
       idempotencyKey,
       clientMessageId,
@@ -304,7 +355,14 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
-    });
+      authorSessionId,
+    };
+    const enqueued = await enqueueReleasingHold(
+      sessionId,
+      (hold) => enqueueContinueSessionCommand({ ...send, ...hold }),
+      undefined,
+      sendState.then((state) => state.held),
+    );
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
     const response = {
@@ -325,16 +383,21 @@ projectsApp.openapi(
     };
     if (enqueued.deduped) return c.json(response, 200);
 
-    // Sending anything NEW lifts a hold the stop button left on this session's
-    // queue — the same rule the browser-local queue always had, and the reason
-    // stop cannot wedge a session: everything typed afterwards would otherwise
-    // land behind rows that are, by construction, never due.
-    await releaseInboxHold(sessionId).catch(() => undefined);
-
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
     // claims by idempotency key so this row does not wait behind older work.
-    void drainSessionLifecycleQueue({ idempotencyKey }).catch(() => undefined);
+    //
+    // A LONE send is claimed at once. The drain's burst wait (250 ms, see
+    // `drainSessionLifecycleQueue`) exists for sends whose POSTs race, and ran
+    // on every prompt. It is kept where a race is possible: another prompt of
+    // this session is queued or in delivery, or this POST waited after Enter
+    // (uploads, an offline queue, a slow link), so an older send may still be
+    // on its way. A caller that sends no `client_sent_at_ms` keeps the wait.
+    const burst =
+      (await sendState).pending ||
+      typeof body.client_sent_at_ms !== 'number' ||
+      receivedAtMs - body.client_sent_at_ms > LONE_SEND_MAX_AGE_MS;
+    void drainSessionLifecycleQueue({ idempotencyKey, burst }).catch(() => undefined);
     return c.json(response, 202);
   },
 );
@@ -344,7 +407,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/prompts',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/prompts',
+    summary: 'List queued prompts of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -391,7 +454,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId/prompts/:promptId',
+    summary: 'Cancel a queued prompt',
     ...auth,
     request: {
       params: z.object({
@@ -489,10 +552,74 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'patch',
+    path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
+    tags: ['sessions'],
+    summary: 'Edit a queued prompt',
+    description:
+      'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent.',
+    ...auth,
+    request: {
+      params: z.object({
+        projectId: z.string(),
+        sessionId: z.string(),
+        promptId: z.string(),
+      }),
+      body: { content: { 'application/json': { schema: lenientBody({
+          text: z.string().openapi({ description: 'The new text of the prompt.' }),
+        }) } }, required: true },
+    },
+    responses: {
+      200: json(SessionPromptSchema, 'Prompt edited'),
+      ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    const promptId = c.req.param('promptId');
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+
+    // Floor 'session' — see the POST /prompts gate comment. Editing your own
+    // queued message is running the session, not editing the project.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readJsonObject(c);
+    // The same limits a sent text part meets.
+    const sanitized = sanitizeInboxPromptParts([{ type: 'text', text: body.text }]);
+    if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
+    const text = flattenPromptText(sanitized.parts);
+    if (!text.trim()) return c.json({ error: 'text is required' }, 400);
+
+    // No drain kick and no hold release: an edit changes a waiting message,
+    // it does not send one. `POST /prompts` would do both.
+    const outcome = await editInboxPrompt(sessionId, promptId, text);
+    if (outcome.outcome === 'edited') return c.json(serializePrompt(outcome.row), 200);
+    if (outcome.outcome === 'delivering') {
+      return c.json({ error: 'Prompt is already with the agent' }, 409);
+    }
+    return c.json({ error: 'Not found' }, 404);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}/retry',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts/:promptId/retry',
+    summary: 'Retry a failed prompt',
     ...auth,
     request: {
       params: z.object({
@@ -530,9 +657,10 @@ projectsApp.openapi(
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
     // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
-    // the ordering gate, releases the session's hold, and keeps the wire
-    // `message_id` unchanged so the proxy still absorbs a retry of a delivery
-    // that actually landed.
+    // the ordering gate and releases the session's hold, and the drain re-mints
+    // its wire id. When the release frees OTHER held rows, "send now" is a
+    // Stop release: the row joins that batch, is NOT promoted, and the batch is
+    // answered in one turn in queue order (KRTX-683).
     const requeued = await retryInboxPrompt(sessionId, promptId);
     if (!requeued) return c.json({ error: 'Not found' }, 404);
 
@@ -548,11 +676,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/hold',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts/hold',
+    summary: 'Hold or release the prompt queue of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: lenientBody({
+          held: z.boolean().openapi({ description: 'true holds the prompt queue; false releases it.' }),
+        }) } }, required: true },
     },
     responses: {
       200: json(
@@ -608,7 +738,7 @@ projectsApp.openapi(
     // the proxy stamp. The write never throws.
     if (body.held) {
       await markTurnStopRequested(sessionId, 'UserStop', {
-        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+        opencodeSessionId: visible.row.runtimeSessionId ?? null,
       });
     }
     await holdInboxPrompts(sessionId, body.held);

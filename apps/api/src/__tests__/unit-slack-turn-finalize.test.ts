@@ -28,6 +28,9 @@ mock.module('../channels/slack-api', () => ({
   appendStream: rec('appendStream'),
   stopStream: rec('stopStream'),
   updateBlocks: rec('updateBlocks'),
+  // The step relay names people through the label module, which reads these.
+  describeSlackConversation: async () => ({ name: null, type: null, unavailable: false }),
+  getSlackUserDisplayName: async () => null,
 }));
 
 const { finalizeTurn } = await import('../channels/slack/turn');

@@ -1,9 +1,11 @@
 ---
 name: kortix-presentation
-description: Build, edit, present, and record Kortix decks. A Kortix presentation is a Next.js route under /presentations in apps/web — never a file. Load WHENEVER the user asks for a deck, slides, a presentation, a walkthrough, a talk track, a guided demo, presenter notes, or wants to record a product video; and whenever editing anything under apps/web/src/app/presentations.
+description: "Recipe: build, edit, present or record a Kortix deck or film (a Next.js route under /presentations in apps/web, never a file). Load kortix-brand first. This skill covers the slide engine, builds, presenter notes, films and QA. Load WHENEVER the user asks for a deck, slides, a presentation, a walkthrough, a talk track, a guided demo, presenter notes, or a product video; and whenever editing anything under apps/web/src/app/[locale]/presentations."
 ---
 
 # Kortix Presentations
+
+**Load [`kortix-brand`](../kortix-brand/SKILL.md) first.** It owns color, type, layout (deck column), motion, voice and claims. This file owns the slide engine and the procedure.
 
 **A Kortix deck is a Next.js route.** Every presentation lives at
 `/presentations/<slug>` in `apps/web`, styled like the marketing site, driven by
@@ -19,7 +21,7 @@ do.
 ## Where everything is
 
 ```
-apps/web/src/app/presentations/
+apps/web/src/app/[locale]/presentations/
   layout.tsx        full-bleed shell, noindex
   page.tsx          the index — every deck, one card each
   index-client.tsx  the index UI (client: reads each deck's slides for counts)
@@ -60,6 +62,26 @@ stage, so the recording stays clean. Prefer light theme on decks that embed
 product screenshots, since the screenshots are light. Reload before you record:
 after a hot reload in dev, accumulated keydown listeners make one press jump
 several steps.
+
+## Films — launch and product videos
+
+A video is not a screen recording of a deck. It is a **film**: a route at
+`/presentations/film/<slug>` where every frame is a pure function of the frame
+number. The same React tree plays live (it is the hero of `/launch`) and renders
+to MP4 through headless Chrome and ffmpeg, with a synthesized score and sound
+effects locked to the bar grid (60 fps, 120 BPM, one bar = 120 frames).
+
+```bash
+open http://localhost:<web>/presentations/film/launch           # live, scrubbable
+open "http://localhost:<web>/presentations/film/launch?frame=1800"  # one frame
+bun apps/web/scripts/film/render.ts launch --url http://localhost:<web>        # 1080p60 MP4
+bun apps/web/scripts/film/render.ts launch --url http://localhost:<web> --audio-only
+```
+
+The MP4 lands in the gitignored `output/film/<slug>/`. Never edit a film file
+while a render runs: hot reload reaches the render pages. The engine, the
+storyboard, the motion rules, the sound pipeline and the verification bar:
+**`references/films.md`**. Read it before touching a film.
 
 ## Adding a deck — two edits
 
@@ -197,34 +219,28 @@ carry accuracy gates in their headers: the claims verified against shipped code,
 and the corrections that must not be "restored". A deck that retypes a claim is a
 deck still saying it a year after the product stopped doing it.
 
-Standing traps, all of which a security reviewer will test:
+The standing traps (microVM, secret scope, "the key never sits in the sandbox",
+who can merge, certifications, license names) now live in
+[`claims.md`](../kortix-brand/references/verbal/claims.md), section 3, with the
+code each one cites. Read it before you write on-slide text. A claim that is not
+in that file is not a claim you may make.
 
-- **Never** blanket "microVM" — true for Platinum (Cloud Hypervisor) only, not
-  the default provider. Say "sandbox" / "cloud computer". Never "container".
-- **Never** "secrets scoped to a person or a group" — that model was retired.
-  Scoping is per project, per agent grant, and connector-scoped.
-- **Never** "the key never sits in the sandbox" as a blanket claim. True of
-  connector credentials; false of a granted runtime secret, which is a real
-  environment value in the session. Say the narrow version.
-- **Never** "only a human can merge" — merge is default-deny for agents and needs
-  an explicit `project.cr.merge` grant. That is the stronger claim anyway.
-- **Never** claim a certification. SOC 2 is *in progress*; there is no ISO or
-  HIPAA. **Never** name a licence — "open source" and stop.
-
-Read [`../comms/SKILL.md`](../comms/SKILL.md) for voice and banned phrases, and
-[`../brand-guidelines/SKILL.md`](../brand-guidelines/SKILL.md) for visual
-identity, before writing on-slide text.
+Read [`voice-and-tone.md`](../kortix-brand/references/verbal/voice-and-tone.md)
+(section 5.8, deck notes) for voice and the banned phrases.
 
 ## Visual language
 
-Compose from `engine/parts.tsx` before inventing chrome. The vocabulary mirrors
-the marketing homepage: mono-uppercase eyebrows, `text-3xl/4xl font-medium
-tracking-tight` titles, `rounded-sm` thin-border panels on `bg-card`,
-`KortixAsterisk` bullets, real product screenshots in `Shot`.
+Values, type, color and the deck column live in
+[`layout.md`](../kortix-brand/references/visual/layout.md),
+[`typography.md`](../kortix-brand/references/visual/typography.md) and
+[`color.md`](../kortix-brand/references/visual/color.md). Do not restate them
+here. Compose from `engine/parts.tsx` before you invent chrome: `SectionHead`,
+`Panel`, `RowList`, `KortixAsterisk` bullets and real product screenshots in
+`Shot`. A deck may set a mono-uppercase eyebrow (decision D4e in
+[`decisions.md`](../kortix-brand/references/decisions.md)). App chrome may not.
 
-Theme-following always — semantic tokens (`text-foreground`, `bg-card`,
-`border-border`) and `kortix-*` accents, never a forced palette and never a
-`dark:` hack.
+Theme-following always: semantic tokens and `kortix-*` accents, never a forced
+palette and never a `dark:` hack.
 
 A slide is one viewport and must never scroll. Cap screenshots in `vh`:
 
@@ -239,8 +255,8 @@ empty bottom rather than letterboxing it.
 
 ```bash
 cd apps/web
-npx tsc --noEmit                    # must be clean in src/app/presentations
-npx eslint src/app/presentations    # 0 errors
+npx tsc --noEmit                    # must be clean in src/app/[locale]/presentations
+npx eslint src/app/[locale]/presentations    # 0 errors
 ```
 
 `tsc --noEmit` reports ~15 pre-existing `@types/bun` `test.each` errors elsewhere

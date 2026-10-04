@@ -54,7 +54,7 @@ describe('audit event middleware', () => {
       '/v1/projects/00000000-0000-4000-a000-000000000201/sessions/session-1/messages',
       {
         method: 'POST',
-        headers: { 'User-Agent': 'kortix-cli/dev', 'X-Kortix-Client': 'cli' },
+        headers: { 'User-Agent': 'kortix-cli/dev' },
         body: '{}',
       },
     );
@@ -78,55 +78,52 @@ describe('audit event middleware', () => {
     expect(auditRows[0]?.durationMs).toBeNumber();
   });
 
-  test('keeps client-reported CLI provenance separate from authoritative provenance', async () => {
+  test('records the authenticated credential and ignores a spoofed X-Kortix-Client', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
     app.patch('/v1/projects/:projectId/secrets/:identifier/strategy', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'pat');
+      (c as any).set('iamTokenId', 'token-id-1');
       return c.json({ ok: true });
     });
 
     const res = await app.request(
       '/v1/projects/00000000-0000-4000-a000-000000000201/secrets/demo/strategy',
-      { method: 'PATCH', headers: { 'X-Kortix-Client': 'cli' }, body: '{}' },
+      { method: 'PATCH', headers: { 'X-Kortix-Client': 'web' }, body: '{}' },
     );
 
     expect(res.status).toBe(200);
     expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).not.toHaveProperty('clientReportedSource');
     expect(auditRows[0]).toMatchObject({
       actorType: 'human',
       source: 'api',
       authoritativeSource: 'api',
-      clientReportedSource: 'cli',
+      credentialKind: 'personal_access_token',
+      credentialId: 'token-id-1',
       outcome: 'success',
     });
   });
 
-  test('does not accept an unknown client source label', async () => {
+  test('records an OAuth app credential by its client id', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
     app.get('/v1/projects/:projectId/detail', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
-      (c as any).set('authType', 'pat');
+      (c as any).set('authType', 'oauth');
+      (c as any).set('oauthClientId', 'client-1');
       return c.json({ ok: true });
     });
 
-    const res = await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
-      headers: { 'X-Kortix-Client': 'forged-source' },
-    });
+    await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail');
 
-    expect(res.status).toBe(200);
-    expect(auditRows[0]).toMatchObject({
-      source: 'api',
-      authoritativeSource: 'api',
-      clientReportedSource: 'forged-source',
-    });
+    expect(auditRows[0]).toMatchObject({ credentialKind: 'oauth_app', credentialId: 'client-1' });
   });
 
-  test('rejects credential-shaped client source labels', async () => {
+  test('never copies the self-reported client version into the audit row', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
     app.get('/v1/projects/:projectId/detail', async (c) => {
@@ -136,12 +133,11 @@ describe('audit event middleware', () => {
       return c.json({ ok: true });
     });
 
-    const res = await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
-      headers: { 'X-Kortix-Client': 'kortix_pat_private-credential' },
+    await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
+      headers: { 'X-Kortix-Client-Version': 'cli/0.13.42' },
     });
 
-    expect(res.status).toBe(200);
-    expect(auditRows[0]?.clientReportedSource).toBeNull();
+    expect(JSON.stringify(auditRows[0])).not.toContain('0.13.42');
   });
 
   test('records failed mutations with a failure outcome', async () => {
@@ -336,7 +332,6 @@ describe('audit event middleware', () => {
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
       headers: {
-        'X-Kortix-Client': 'cli',
         'X-Correlation-Id': 'project-create-1',
       },
       body: '{}',
@@ -351,7 +346,6 @@ describe('audit event middleware', () => {
       actorType: 'human',
       source: 'api',
       authoritativeSource: 'api',
-      clientReportedSource: 'cli',
       outcome: 'success',
       httpStatus: 201,
       correlationId: 'project-create-1',

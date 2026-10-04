@@ -1,8 +1,8 @@
 import type { OpenCodeConfig as Config } from './config'
-import { kortixEventBus } from '../../kortix-event-bus'
-import { logger } from '../../logger'
-import { relayMemoryGuardTurnEnd } from '../../memory-guard-relay'
-import { startResourceMonitor, type ResourceMonitor } from '../../resources'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { logger } from '@/lib/log/logger'
+import { relayMemoryGuardTurnEnd } from '../shared/turn-relay'
+import { startResourceMonitor, type ResourceMonitor } from '@/services/resources/resources'
 import type { Opencode } from './lifecycle'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { OPENCODE_HOME } from './paths'
@@ -116,6 +116,7 @@ export function startOpenCodeBackground(
   const monitor = startResourceMonitor({
     runtimePid: () => opencode.getPid(),
     discoverRuntimePids: findOpencodePids,
+    runtimeProcessNames: ['opencode', 'opencode.exe', 'opencode-kortix'],
     pressure: evaluateOpenCodePressure,
     formatSnapshot: projectOpenCodeResourceSnapshot,
     formatState: formatOpenCodeResourceState,
@@ -155,8 +156,8 @@ export function startOpenCodeBackground(
         await relayMemoryGuardTurnEnd({
           reason,
           aborted,
-          opencodeRssMb: snapshot.runtime?.rssMb ?? null,
-          opencodeSessionId: guardedSessionId,
+          runtimeRssMb: snapshot.runtime?.rssMb ?? null,
+          runtimeSessionId: guardedSessionId,
           turnMessageId: guardedTurnMessageId,
         })
         void runOffloadIfIdle('memory-guard')

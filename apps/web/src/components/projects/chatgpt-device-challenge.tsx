@@ -6,7 +6,12 @@ import Hint from '@/components/ui/hint';
 import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 
-export function ChatGptDeviceChallenge({ url, code }: { url: string; code: string | null }) {
+export function ChatGptDeviceChallenge({ url, code, description }: {
+  url: string;
+  code: string | null;
+  /** Replaces the ChatGPT instruction for another provider's device flow. */
+  description?: string;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-3">
@@ -15,7 +20,7 @@ export function ChatGptDeviceChallenge({ url, code }: { url: string; code: strin
           {tI18nComplete.raw('text3d927b930ba7')}
         </p>
         <p className="text-muted-foreground text-xs leading-5 text-pretty">
-          {tI18nComplete.raw('text5ecf97e61ad9')}
+          {description ?? tI18nComplete.raw('text5ecf97e61ad9')}
         </p>
       </div>
 

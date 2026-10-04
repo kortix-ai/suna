@@ -6,7 +6,7 @@
  *   (`text-muted-foreground/40`); open, the row drops the command (the card
  *   shows it). Live → "Running command" + the command shimmering (duration 1s,
  *   spread 2); open, the shimmer moves to the label. An input-less call from a
- *   finished turn shimmers "Working...". `text-xs` spans; `text-sm
+ *   finished turn is still muted "Working..." text (a stale call never animates). `text-xs` spans; `text-sm
  *   leading-[1.5]` inside a chain, as web's `activity-step` forces;
  * - card (`CommandBlock`): the frame (`border bg-popover rounded-md`, inline
  *   only); command pane `bg-muted/40` `max-h-64`, Shiki bash, mono `text-xs
@@ -17,20 +17,14 @@
  *   exit code strip in kortix-red, mono `tabular-nums`, `py-2`.
  *
  * Every decision lives in `@/lib/session/tools/files-bash` (tested).
- *
- * `ShellExpandedContent` / `HighlightedBashCommand` below are the previous
- * mobile renderer, still imported by `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useContext, useMemo } from 'react';
 import { View } from 'react-native';
-import { stripAnsi } from '@kortix/sdk';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
 import { TerminalIcon } from '@/lib/icons';
-import type { ToolPart } from '@/lib/opencode/types';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import { tokenizeBash, type BashToken } from '@/lib/session/highlight-tokens';
 import {
   BASH_PANE,
   BASH_TEXT,
@@ -64,11 +58,9 @@ import {
   useToolOpen,
   useToolRowVariant,
 } from '../shared/infrastructure';
-import { OutputSection } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { InlineSessionMessagesList, SessionMetadataList } from '../shared/session-helpers';
 import { TURN_SPACE, TURN_TYPE, fg, monoFont, muted, useTurnPalette } from '../shared/styles';
-import { getToolInput } from '../shared/tool-part';
 import type { ToolProps } from '../shared/types';
 import { ToolScroll } from '../shared/surface';
 
@@ -176,7 +168,7 @@ function CommandBlock({
  * The words on the trigger row. Its own component because `useToolOpen()`
  * only answers truthfully inside `BasicTool`'s provider.
  */
-function BashTrigger(props: {
+export function BashTrigger(props: {
   command: string;
   running: boolean;
   status: string;
@@ -204,9 +196,14 @@ function BashTrigger(props: {
   if (content.kind === 'stale') {
     return (
       <View style={rowStyle}>
-        <TextShimmer duration={1} spread={2} style={chain ? TURN_TYPE.rowSm : TURN_TYPE.sm} numberOfLines={1}>
+        {/* The turn is over: this call will never finish, so it must not animate. */}
+        <Text
+          variant="muted"
+          numberOfLines={1}
+          style={[chain ? TURN_TYPE.rowSm : TURN_TYPE.sm, { color: palette.mutedForeground }]}
+        >
           {content.label}
-        </TextShimmer>
+        </Text>
       </View>
     );
   }
@@ -323,66 +320,3 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('bash', BashTool);
-
-// ─── Legacy (tool-part-renderer.tsx switch) ──────────────────────────────────
-
-export function HighlightedBashCommand({ command, isDark }: { command: string; isDark: boolean }) {
-  const tokens = useMemo(() => tokenizeBash(command), [command]);
-
-  const colors: Record<BashToken['type'], string> = {
-    prompt: muted(isDark),
-    command: THEME.accent.purple, // purple
-    flag: THEME.accent.blue,     // blue
-    string: THEME.accent.green,   // green
-    operator: THEME.accent.red, // red
-    redirect: THEME.accent.red, // red
-    path: fg(isDark),     // slate (near-white/dark)
-    plain: fg(isDark),
-  };
-
-  const fs = 11;
-  const lh = 17;
-
-  return (
-    <Text style={{ fontSize: fs, fontFamily: monoFont, lineHeight: lh }}>
-      {tokens.map((token, i) => (
-        <Text key={i} style={{ color: colors[token.type], fontSize: fs, fontFamily: monoFont, lineHeight: lh }}>
-          {token.text}
-        </Text>
-      ))}
-    </Text>
-  );
-}
-
-export function ShellExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const input = getToolInput(tool);
-  const metadata = (tool.state as any)?.metadata || {};
-  const command = input.command || metadata.command || '';
-  const output = useMemo(() => {
-    if (tool.state.status === 'completed' && 'output' in tool.state && tool.state.output) {
-      // Strip bash_metadata XML tags if present
-      let raw = tool.state.output;
-      raw = raw.replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '');
-      return stripAnsi(raw).trim();
-    }
-    if (tool.state.status === 'error' && 'error' in tool.state) {
-      return tool.state.error;
-    }
-    return undefined;
-  }, [tool.state]);
-
-  return (
-    <View>
-      {/* Command */}
-      {!!command && (
-        <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
-          <HighlightedBashCommand command={command} isDark={isDark} />
-        </View>
-      )}
-      {/* Output */}
-      {!!output && (
-        <OutputSection output={output} isDark={isDark} isError={tool.state.status === 'error'} />
-      )}
-    </View>
-  );
-}

@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   EMPTY_LIST,
   selectAccessFilters,
+  selectLabelFilters,
   selectOwnerFilters,
   selectCollapsedSections,
   selectGroupMode,
@@ -35,6 +36,7 @@ beforeEach(() => {
     collapsedSectionsByProject: {},
     ownerFiltersByProject: {},
     accessFiltersByProject: {},
+    labelFiltersByProject: {},
   });
 });
 
@@ -170,8 +172,39 @@ describe('owner and access facets', () => {
     expect(read(selectAccessFilters(P, 'page'))).toEqual([]);
   });
 
+  test('the label facet toggles per surface and Reset clears it', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleLabelFilter(P, 'bug', 'page');
+    s.toggleLabelFilter(P, 'customer: eu', 'page');
+    expect(read(selectLabelFilters(P, 'page'))).toEqual(['bug', 'customer: eu']);
+    useSessionFilterStore.getState().resetFilters(P, 'page');
+    expect(read(selectLabelFilters(P, 'page'))).toEqual([]);
+  });
+
   test('the unset owner filter is the stable empty list', () => {
     expect(read(selectOwnerFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
     expect(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
+  });
+});
+
+describe('scoped selector and toggle matrix', () => {
+  test('every list inherits, toggles from inherited state, and preserves its stored reference', () => {
+    const facets = [
+      [selectStatusFilters, 'toggleStatusFilter', 'failed'],
+      [selectSourceFilters, 'toggleSourceFilter', 'slack'],
+      [selectOwnerFilters, 'toggleOwnerFilter', 'owner-1'],
+      [selectAccessFilters, 'toggleAccessFilter', 'private'],
+      [selectLabelFilters, 'toggleLabelFilter', 'bug'],
+      [selectHiddenSections, 'toggleSectionHidden', 'older'],
+    ] as const;
+    for (const [selector, action, value] of facets) {
+      const state = useSessionFilterStore.getState();
+      (state[action] as (id: string, value: string, surface: 'sidebar' | 'page') => void)(P, value, 'sidebar');
+      expect(read(selector(P, 'page'))).toBe(read(selector(P, 'sidebar')));
+      (state[action] as (id: string, value: string, surface: 'sidebar' | 'page') => void)(P, value, 'page');
+      expect(read(selector(P, 'page'))).toBe(read(selector(P, 'page')));
+      expect(read(selector(P, 'page'))).toEqual([]);
+      expect(read(selector(P, 'sidebar'))).toEqual([value]);
+    }
   });
 });

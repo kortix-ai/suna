@@ -176,6 +176,11 @@ describe('autoLinkUrls', () => {
     });
   });
 
+  test('a bare domain whose label ends in a hyphen is not a host', () => {
+    expect(autoLinkUrls('see foo-.com now')).toBe('see foo-.com now');
+    expect(autoLinkUrls('see my-site.com now')).toBe('see [my-site.com](https://my-site.com) now');
+  });
+
   test('adversarial (ReDoS-shaped) input stays fast and correct', () => {
     // Before the quantifiers were bounded, these repetitive strings drove the
     // email / markdown-link / angle-link regexes into polynomial backtracking

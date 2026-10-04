@@ -38,7 +38,10 @@ const messages = {
   },
 };
 
-function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): string {
+function render(props?: {
+  noAccessibleAgents?: boolean;
+  agents?: Agent[];
+}): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
@@ -53,7 +56,6 @@ function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): str
             onAttachClick={noop}
             agents={props?.agents ?? []}
             selectedAgent={props?.agents?.[0]?.name ?? null}
-            agentSelectorLocked={false}
             noAccessibleAgents={props?.noAccessibleAgents}
             messages={[]}
             models={[]}
@@ -239,6 +241,39 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
     const html = render({ noAccessibleAgents: true });
     expect(html).toContain('>Agent</span>');
     expect(html).not.toContain('>No agents available to you');
+  });
+});
+
+/** The full markup of the <button> whose accessible name starts with `name`. */
+function buttonMarkup(html: string, name: string): string {
+  const at = html.indexOf(`aria-label="${name}`);
+  expect(at).toBeGreaterThan(-1);
+  const start = html.lastIndexOf('<button', at);
+  return html.slice(start, html.indexOf('</button>', at));
+}
+
+/**
+ * A started session keeps agent switching (KRTX-1290). The picker must read as
+ * a live dropdown even when the session already has an agent — the pre-2026-09
+ * lock (`agentSelectorLocked`) used to render this trigger inert with a
+ * "you can't switch" tooltip, which is the exact restriction this issue
+ * removes. A populated roster renders the enabled trigger, caret included.
+ */
+describe('ComposerUnderbar — the session picker stays switchable', () => {
+  const KORTIX = [{ name: 'kortix', mode: 'primary' } as unknown as Agent];
+
+  test('the trigger for a populated roster is enabled and carries the caret', () => {
+    const inner = buttonMarkup(render({ agents: KORTIX }), 'Select agent');
+    expect(inner).toContain('<svg');
+    expect(inner).not.toMatch(/\sdisabled=""/);
+    expect(inner).toContain('Kortix');
+  });
+
+  test('no locked-session tooltip exists anywhere in the row', () => {
+    // The lock used to speak through a hover hint naming started sessions.
+    // Its words must not survive the lock anywhere on this rail.
+    const html = render({ agents: KORTIX });
+    expect(html).not.toContain('switch agents in an already started session');
   });
 });
 

@@ -71,7 +71,7 @@ Give an assignment an `expires_at` and it stops granting at that instant. The en
 
 A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix permissions its manifest declares in `kortix.yaml` under `agents.<name>.kortix_permissions`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; Kortix permissions are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
 
-The role that counts for an agent session is the role bound to the agent's own service account — its **ceiling** — or the default agent ceiling when none is bound. The role of the person who started the session does not apply. Three permissions (`project.members.manage`, `project.delete`, `project.credentials.issue`) are human-only and never reach an agent. Admins pick an agent as the principal of a project role in the Access hub, under **Agents**. See [Agent permissions](/docs/project/permissions).
+The role that counts for an agent session is the role bound to the agent's own service account — its **ceiling** — or the default agent ceiling when none is bound. The role of the person who started the session does not apply. One permission, `project.credentials.issue`, is human-only and never reaches an agent. An agent grants only what it holds. Admins pick an agent as the principal of a project role in the Access hub, under **Agents**. See [Agent permissions](/docs/project/permissions).
 
 ## Custom roles
 
@@ -111,7 +111,7 @@ Some features carry their own visibility setting on top of the role model:
 | [App access mode](/docs/feature-flags/apps#access-modes) | Who can open one deployed App |
 | [Trigger session access](/docs/connect/triggers#session-access) | Who can open the sessions one trigger creates |
 | [Slack channel policy](/docs/connect/slack) | Who can start a session from one channel |
-| [Computer Tunnel capability grants](/docs/connect/computers#grant-access) | Which filesystem, shell, and desktop calls a machine accepts |
+| [Computer capabilities](/docs/connect/computers#what-the-computer-allows) | Which filesystem, shell, and desktop calls a connected computer accepts |
 
 Each one narrows access to one resource. None of them grants a permission the role verdict denies.
 
@@ -172,7 +172,35 @@ Each row names the caller that the request proved:
 | `system` | An account API key, a SCIM directory token, an integration webhook with a verified signature, or a Kortix background job (`source: worker`). |
 | `anonymous` | A request with no credential, or with an invalid or forged one. |
 
+Each row also records the credential the API authenticated, in `credential_kind` and `credential_id`. The id names the credential, never the secret. The web app shows it as **Via**, with the token or app name where one exists.
+
+| `credential_kind` | Credential | `credential_id` |
+| --- | --- | --- |
+| `browser_session` | A Supabase sign-in (the web app, or any client holding a sign-in JWT). | The sign-in session id. |
+| `personal_access_token` | A personal access token, such as the CLI's. | The token id. |
+| `oauth_app` | A connected app's `kortix_oat_` token, such as an MCP client. | The OAuth client id. |
+| `session_token` | An agent session's own token. | The session id. |
+| `api_key` | An account API key. | The key id. |
+| `service_account` | A service account token. | The service account id. |
+| `scim_token` | A SCIM directory token. | The token id. |
+
+The API never reads `X-Kortix-Client`. The CLI, the MCP server, and the web app all call the same API, and any client can send any header value, so the log records what the API can prove. Rows written before 2026-09-30 may carry a self-reported `client_reported_source`. New rows leave it empty. Filter by credential with `?credential_kind=oauth_app` on `GET /v1/accounts/:accountId/audit`, or `kortix audit ls --credential-kind oauth_app`.
+
+Rows written before 2026-10 carry `session_sequence`, `integrity_previous_hash`, and `integrity_hash`: a per-session counter and a hash chain. New rows leave all three empty, and the fields are deprecated. Nothing verified the chain, and maintaining it serialized every write of a session. A session's log is ordered by creation time: rows with a `session_sequence` come first, in that order, then newer rows in the order the API created them.
+
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
+
+### Retention
+
+| Age of an event | Where it lives | How you read it |
+| --- | --- | --- |
+| 0 to 90 days | PostgreSQL, one partition per week | The audit log in the web app, `GET /v1/accounts/:accountId/audit`, `kortix audit ls`, audit webhooks, and export |
+| 90 to 365 days | An S3 archive with Object Lock (compliance mode) | Export only: `GET /v1/accounts/:accountId/audit/export` or `kortix audit export` |
+| More than 365 days | Deleted | Not available |
+
+Weeks run Monday 00:00 UTC to Monday 00:00 UTC. A week moves to the archive once its last instant is 90 days old, so an event becomes export-only between 90 and 97 days after it happened. The archive keeps an event until 365 days after the end of its week, so an event is kept 365 to 372 days in total, and the retention lock means nobody, including Kortix staff, can shorten or delete it before then. The privacy policy states the same limit: application logs are kept up to 365 days.
+
+Export returns the archive and PostgreSQL as one list, oldest first, with the same filters, the same fields, and the same `X-Audit-Next-Cursor` paging. Both read paths need the `auditAccess` entitlement. Archived events carry the same fields as live ones; `session_sequence` and the integrity hashes are empty on events written since 2026-10 (see above).
 
 ### Actions
 
@@ -189,7 +217,7 @@ Each API route has exactly one action. A request's row keeps the route template 
 
 Filter by an action prefix: `?action=iam.` on `GET /v1/accounts/:accountId/audit`, `kortix audit ls --action iam.`, or an audit webhook's `--action-prefix`. [Audit log actions](/docs/audit-actions) lists every action and its title. Rows written before 2026-09-24 carry `METHOD /template` as their action and show the same titles.
 
-Kortix background jobs act without a request: they expire grants and tunnel permissions, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
+Kortix background jobs act without a request: they expire grants, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
 
 An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.
 

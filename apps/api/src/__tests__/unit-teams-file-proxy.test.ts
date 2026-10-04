@@ -45,6 +45,25 @@ mock.module('../channels/teams/inbound', () => ({
   provenTeamsTenants: async () => provenTenants,
 }));
 
+// How teams/post.ts `resolveTeamsProjectConversation` answers: the server's own
+// address for a conversation bound to the project. The upload never uses a
+// service URL from the caller.
+let bound = true;
+let storedServiceUrl = 'https://smba.trafficmanager.net/teams/';
+let storedType: string | null = null;
+let resolveCalls: Array<{ projectId: string; conversationId: string }> = [];
+mock.module('../channels/teams/post', () => ({
+  resolveTeamsProjectConversation: async (projectId: string, conversationId: string) => {
+    resolveCalls.push({ projectId, conversationId });
+    if (!bound) return { ok: false, error: 'This project has no such Teams conversation.', status: 404 };
+    return {
+      ok: true,
+      ref: { serviceUrl: storedServiceUrl, conversationId, tenantId: 'tenant-1', projectId },
+      conversationType: storedType,
+    };
+  },
+}));
+
 let dbResults: unknown[][] = [];
 let dbWrites: Array<{ op: string; payload?: unknown }> = [];
 
@@ -90,6 +109,10 @@ let nextFetchOk = true;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   apiCalls = [];
+  bound = true;
+  storedServiceUrl = 'https://smba.trafficmanager.net/teams/';
+  storedType = null;
+  resolveCalls = [];
   refuseInlineImages = false;
   dbWrites = [];
   dbResults = [];
@@ -153,21 +176,52 @@ describe('downloadTeamsFile', () => {
 
 describe('initiateTeamsUpload', () => {
   const base = {
-    serviceUrl: 'https://smba.trafficmanager.net/teams/',
     conversationId: 'conv-1',
     filename: 'r.pdf',
   };
 
-  test('rejects a non-Microsoft serviceUrl before touching the DB (F-7)', async () => {
+  // F-7: the route took `service_url` from the request body, and the service
+  // allowlist accepted `*.azurewebsites.net`, a namespace any Azure customer
+  // can register — so a caller with connector-write could have the bot's
+  // token sent to a host of their own, and post into any conversation the bot
+  // reaches. The address is now the server's alone.
+  test('the conversation is addressed at the service URL the server stored', async () => {
+    const r = await initiateTeamsUpload('proj-1', { ...base, contentBase64: Buffer.from('hello').toString('base64') });
+    expect(r.ok).toBe(true);
+    expect(resolveCalls).toEqual([{ projectId: 'proj-1', conversationId: 'conv-1' }]);
+    const ref = apiCalls[0]?.args[0] as { serviceUrl: string; tenantId?: string };
+    expect(ref.serviceUrl).toBe('https://smba.trafficmanager.net/teams/');
+    expect(ref.tenantId).toBe('tenant-1');
+    const stashed = dbWrites.find((w) => w.op === 'insert.values')?.payload as { serviceUrl: string };
+    expect(stashed.serviceUrl).toBe('https://smba.trafficmanager.net/teams/');
+  });
+
+  test('a conversation not bound to the project is refused 404 — nothing stored, nothing sent', async () => {
+    bound = false;
+    const r = await initiateTeamsUpload('proj-1', { ...base, contentBase64: Buffer.from('hello').toString('base64') });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(404);
+    expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(false);
+    expect(apiCalls).toEqual([]);
+  });
+
+  test('a stored service URL outside the Bot Framework hosts is refused 409, never tokened', async () => {
+    storedServiceUrl = 'https://attacker.azurewebsites.net/';
+    const r = await initiateTeamsUpload('proj-1', { ...base, contentBase64: Buffer.from('hello').toString('base64') });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(409);
+    expect(apiCalls).toEqual([]);
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test('the binding decides where the file goes, not the caller', async () => {
+    storedType = 'personal';
     const r = await initiateTeamsUpload('proj-1', {
       ...base,
-      serviceUrl: 'https://attacker.example.com/v3/conversations/x/activities',
+      conversationType: 'channel',
       contentBase64: Buffer.from('hello').toString('base64'),
     });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.status).toBe(400);
-    expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(false);
-    expect(apiCalls.map((c) => c.fn)).toEqual([]);
+    expect(r).toMatchObject({ ok: true, delivered: 'consent_card' });
   });
 
   test('rejects an oversize file before touching the DB', async () => {
@@ -190,45 +244,63 @@ describe('initiateTeamsUpload', () => {
 });
 
 describe('handleFileConsentInvoke', () => {
+  const MANAGED = { kind: 'managed' } as const;
+  const UPLOAD_URL = 'https://example-my.sharepoint.com/personal/upload/slot';
+  const pendingRow = (over: Record<string, unknown> = {}) => ({
+    uploadId: 'u1',
+    projectId: 'proj-1',
+    filename: 'r.pdf',
+    contentBase64: Buffer.from('hi').toString('base64'),
+    conversationId: 'conv-1',
+    ...over,
+  });
+  const accept = (over: { conversationId?: string; uploadUrl?: string } = {}) =>
+    ({
+      type: 'invoke',
+      conversation: { id: over.conversationId ?? 'conv-1' },
+      value: {
+        action: 'accept',
+        context: { uploadId: 'u1' },
+        uploadInfo: { uploadUrl: over.uploadUrl ?? UPLOAD_URL, contentUrl: 'https://sp/r.pdf', name: 'r.pdf' },
+      },
+    }) as TeamsActivity;
+
   test('decline deletes the pending upload, no PUT', async () => {
     await handleFileConsentInvoke({
       type: 'invoke',
       value: { action: 'decline', context: { uploadId: 'u1' } },
-    } as TeamsActivity);
+    } as TeamsActivity, MANAGED);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
     expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
   });
 
   test('accept loads the row, PUTs the bytes, posts a file-info card, deletes the row', async () => {
-    dbResults = [
-      [
-        {
-          uploadId: 'u1',
-          filename: 'r.pdf',
-          contentBase64: Buffer.from('hi').toString('base64'),
-          serviceUrl: 'https://smba.trafficmanager.net/teams/',
-          conversationId: 'conv-1',
-        },
-      ],
-    ];
-    await handleFileConsentInvoke({
-      type: 'invoke',
-      serviceUrl: 'https://smba.trafficmanager.net/teams/',
-      conversation: { id: 'conv-1' },
-      value: {
-        action: 'accept',
-        context: { uploadId: 'u1' },
-        uploadInfo: {
-          uploadUrl: 'https://upload/slot',
-          contentUrl: 'https://sp/r.pdf',
-          name: 'r.pdf',
-        },
-      },
-    } as TeamsActivity);
-    expect(fetchCalls.some((f) => f.method === 'PUT' && f.url === 'https://upload/slot')).toBe(
-      true,
-    );
+    dbResults = [[pendingRow()]];
+    await handleFileConsentInvoke(accept(), MANAGED);
+    expect(fetchCalls.some((f) => f.method === 'PUT' && f.url === UPLOAD_URL)).toBe(true);
     expect(apiCalls.map((c) => c.fn)).toEqual(['sendActivity']);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
+  });
+
+  test('an answer from another conversation leaves the upload alone', async () => {
+    dbResults = [[pendingRow()]];
+    await handleFileConsentInvoke(accept({ conversationId: 'conv-other' }), MANAGED);
+    expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+    expect(apiCalls).toEqual([]);
+  });
+
+  test("a bring-your-own bot cannot answer another project's upload", async () => {
+    dbResults = [[pendingRow({ projectId: 'proj-other' })]];
+    await handleFileConsentInvoke(accept(), { kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' });
+    expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+  });
+
+  test('the file is PUT only to a Microsoft 365 upload URL', async () => {
+    dbResults = [[pendingRow()]];
+    await handleFileConsentInvoke(accept({ uploadUrl: 'https://collector.example.test/slot' }), MANAGED);
+    expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
   });
 });
@@ -241,7 +313,6 @@ describe('handleFileConsentInvoke', () => {
  */
 describe('initiateTeamsUpload outside a personal chat', () => {
   const channel = {
-    serviceUrl: 'https://smba.trafficmanager.net/emea/',
     conversationId: '19:chan@thread.tacv2;messageid=1',
     conversationType: 'channel' as const,
   };
@@ -343,7 +414,6 @@ describe('file proxy — token and drive authorization', () => {
   test('uploading to a team that does not own the conversation is refused 403, with no write', async () => {
     channelOwnershipOk = false;
     const r = await initiateTeamsUpload('proj-1', {
-      serviceUrl: 'https://smba.trafficmanager.net/emea/',
       conversationId: '19:chan@thread.tacv2;messageid=1',
       conversationType: 'channel',
       teamGroupId: 'someone-elses-group',
@@ -360,7 +430,6 @@ describe('file proxy — token and drive authorization', () => {
 
   test('the ownership check asks Graph for the channel under that team, stripping the messageid suffix', async () => {
     await initiateTeamsUpload('proj-1', {
-      serviceUrl: 'https://smba.trafficmanager.net/emea/',
       conversationId: '19:chan@thread.tacv2;messageid=1',
       conversationType: 'channel',
       teamGroupId: 'group-1',
@@ -375,8 +444,7 @@ describe('file proxy — token and drive authorization', () => {
 
   test('a non-channel conversation id can never select a drive', async () => {
     const r = await initiateTeamsUpload('proj-1', {
-      serviceUrl: 'https://smba.trafficmanager.net/emea/',
-      conversationId: 'a:1FQyR2jW1pEUK',
+      conversationId: 'a:1SyntheticPersonalChat_00000000000',
       conversationType: 'channel',
       teamGroupId: 'group-1',
       filename: 'report.pdf',
@@ -395,7 +463,6 @@ describe('file proxy — token and drive authorization', () => {
 describe('initiateTeamsUpload — an image is shown inline first, in every scope', () => {
   const png = Buffer.from('fake-png-bytes').toString('base64');
   const base = {
-    serviceUrl: 'https://smba.trafficmanager.net/teams/',
     conversationId: 'conv-1',
     filename: 'chart.png',
     contentBase64: png,

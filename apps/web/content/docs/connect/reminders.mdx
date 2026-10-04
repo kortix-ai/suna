@@ -1,0 +1,105 @@
+---
+title: Reminders
+description: A reminder re-prompts one session later, once or on repeat, until you remove it.
+---
+
+A reminder sends a prompt into one existing [session](/docs/work/sessions) at a time you set. It fires once, or it repeats until someone removes it. An agent uses a reminder to check back on its own work: "in 24 hours, check whether the vendor replied", "every hour, check whether the deploy is green".
+
+A reminder is a [trigger](/docs/connect/triggers) scoped to one session. The differences:
+
+| | Trigger | Reminder |
+| --- | --- | --- |
+| Stored in | `kortix.yaml`, committed to the default branch | The database. No manifest edit, no commit. |
+| A fire | Usually starts a new session | Prompts its one session. It never starts a session. |
+| Lifetime | Until someone removes it from the manifest | Until someone removes it. It pauses itself when its session is deleted or failed. |
+| Who can create it | Project managers (`project.trigger.create`) | Anyone who can prompt the session. An agent can create one only on its own session. |
+| Listed by | `kortix triggers ls`, the Triggers page | `kortix reminders ls`, per session |
+
+Use a trigger for project work anyone should see, such as a daily digest. Use a reminder for a follow-up that belongs to one task.
+
+## Turn reminders on
+
+Reminders are a per-project [feature flag](/docs/feature-flags), `reminders`, off by default. Turn it on in **Settings → Feature flags**, or:
+
+```sh
+kortix projects features enable reminders
+```
+
+While the flag is off, every reminder route answers `403` with `code: "feature_disabled"`, the Reminders page shows how to turn it on, and existing reminders do not fire. Turning the flag back on fires a slot missed while it was off once, then the schedule continues.
+
+## Set a reminder
+
+Inside a session, the CLI targets the current session. Outside one, pass `--session <id>`.
+
+```sh
+# Fire once, 24 hours from now.
+kortix remind "Check whether the vendor replied to the contract email." --in 24h
+
+# First fire in 24 hours, then every hour until removed.
+kortix remind "Did the vendor reply? If yes, summarize it and remove this reminder." --in 24h --every 1h
+
+# Fire at an exact instant.
+kortix remind "Post the launch checklist to #launch." --at 2026-10-01T09:00:00Z
+
+# Repeat on a cron expression in a time zone.
+kortix reminders add "Post the standup summary." --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
+```
+
+The command prints the reminder id, for example `reminder.3f9a1c2e7b04`, and its next fire time.
+
+## Schedule rules
+
+- `--in <duration>` or `--at <ISO-8601>` sets the first fire. Alone, the reminder fires once.
+- `--every <duration>` repeats. The minimum period is `5m`. Each period starts when the previous fire is claimed.
+- `--cron "<expr>"` repeats on a 6-field cron expression (seconds first). `--timezone` sets its zone; the default is `UTC`. A cron reminder must fire at most once every 5 minutes. It does not take `--in` or `--at`.
+- Durations are `30m`, `24h`, `2d`, or whole seconds.
+- `--in`, `--at`, and `--every` accept at most 366 days.
+- A session holds at most 20 active reminders. A project holds at most 200. Either limit returns `409`.
+
+## What a fire does
+
+Each fire queues the reminder text into the session as a prompt that starts with a header:
+
+```text
+[REMINDER reminder.3f9a1c2e7b04 — recurring scheduled check-in on this session, not a new user message. When it is no longer needed, run `kortix reminders rm reminder.3f9a1c2e7b04`.]
+
+Did the vendor reply? If yes, summarize it and remove this reminder.
+```
+
+- A parked session wakes up. The agent has the session's full conversation and workspace.
+- A fire never starts a new session. If the session is deleted or failed, the fire pauses the reminder and records the reason in `last_error`.
+- A fire keeps the session's personal connections, such as a member's own Gmail. Setting a reminder on a session you are not acting for clears them, the same as sending that session a prompt.
+- The project-wide trigger pause (`kortix triggers pause`) also stops reminders.
+
+Every fire is a model turn. Remove a recurring reminder as soon as its condition is met.
+
+## Manage reminders
+
+| Command | Effect |
+| --- | --- |
+| `kortix reminders ls [--json]` | List the session's reminders: id, state, schedule, next fire, text. |
+| `kortix reminders pause <id>` | Stop firing. Keep the reminder. |
+| `kortix reminders resume <id>` | Fire again, re-armed from now. A one-shot reminder that already fired stays `done`. |
+| `kortix reminders rm <id>` | Delete the reminder. Aliases: `stop`, `delete`. |
+
+A reminder is `active` (scheduled), `paused` (off), or `done` (a one-shot reminder that fired).
+
+## API and SDK
+
+The routes are session-scoped:
+
+| Route | Effect |
+| --- | --- |
+| `GET /v1/projects/:projectId/sessions/:sessionId/reminders` | List reminders. |
+| `POST /v1/projects/:projectId/sessions/:sessionId/reminders` | Create one. Body: `prompt`, optional `name`, and `every`, `cron` + `timezone`, `at`, or `in`. Returns `201`. |
+| `PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` | Body `{ "enabled": false }` pauses, `{ "enabled": true }` resumes. |
+| `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` | Delete one. |
+
+An invalid schedule returns `400` with the reason. A deleted session returns `409`. An agent credential that names another session returns `403`.
+
+```ts
+const reminders = kortix.session(projectId, sessionId).reminders;
+const reminder = await reminders.create({ prompt: 'Did the vendor reply?', in: '24h', every: '1h' });
+await reminders.update(reminder.id, { enabled: false });
+await reminders.remove(reminder.id);
+```

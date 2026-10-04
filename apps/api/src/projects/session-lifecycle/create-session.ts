@@ -11,7 +11,7 @@ import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import { runtimeContextConflicts } from './idempotency-conflicts';
+import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { resolveProjectAutomationActor } from './actor';
@@ -42,7 +42,7 @@ export async function createSession(
   const backpressure =
     queuePolicy === 'never'
       ? null
-      : await sessionBackpressureState(command.project.accountId, command.project.projectId);
+      : await sessionBackpressureState(command.project.projectId);
   const shouldQueue =
     queuePolicy === 'always' || (queuePolicy === 'on_backpressure' && backpressure?.shouldQueue);
   const reason = shouldQueue ? (backpressure?.reason ?? 'queued by policy') : null;
@@ -90,63 +90,19 @@ export async function createSession(
       existingPayload.body && typeof existingPayload.body === 'object'
         ? (existingPayload.body as Record<string, unknown>)
         : {};
-    if (
-      connectorBindingPayloadConflicts(
-        existingBody.connector_bindings,
-        command.body.connector_bindings,
-      )
-    ) {
-      return {
-        status: 'failed',
-        commandId: claimed.row.commandId,
-        retryable: false,
-        error: {
-          status: 409,
-          body: {
-            error: 'Idempotency key was already used with different connector bindings',
-            code: 'IDEMPOTENCY_BINDING_CONFLICT',
-          },
-        },
-      };
-    }
-    if (JSON.stringify(existingBody.provider_secret_pools ?? null) !== JSON.stringify(command.body.provider_secret_pools ?? null)) {
-      return {
-        status: 'failed', commandId: claimed.row.commandId, retryable: false,
-        error: { status: 409, body: { error: 'Idempotency key was already used with different provider secret pools', code: 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT' } },
-      };
-    }
-    if (
-      secretsAllowlistPayloadConflicts(
-        existingBody.secrets as string[] | null | undefined,
-        command.body.secrets as string[] | null | undefined,
-      )
-    ) {
-      return {
-        status: 'failed',
-        commandId: claimed.row.commandId,
-        retryable: false,
-        error: {
-          status: 409,
-          body: {
-            error: 'Idempotency key was already used with a different secrets allowlist',
-            code: 'IDEMPOTENCY_SECRETS_CONFLICT',
-          },
-        },
-      };
-    }
-    if (runtimeContextConflicts(existingBody.runtime_context, command.body.runtime_context)) {
-      return {
-        status: 'failed',
-        commandId: claimed.row.commandId,
-        retryable: false,
-        error: {
-          status: 409,
-          body: {
-            error: 'Idempotency key was already used with a different runtime_context',
-            code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
-          },
-        },
-      };
+    const conflicts = [
+      [() => connectorBindingPayloadConflicts(existingBody.connector_bindings, command.body.connector_bindings), 'IDEMPOTENCY_BINDING_CONFLICT', 'different connector bindings'],
+      [() => providerPoolConflicts(existingBody.provider_secret_pools, command.body.provider_secret_pools), 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT', 'different provider secret pools'],
+      [() => secretsAllowlistPayloadConflicts(existingBody.secrets as string[] | null | undefined, command.body.secrets as string[] | null | undefined), 'IDEMPOTENCY_SECRETS_CONFLICT', 'a different secrets allowlist'],
+      [() => runtimeContextConflicts(existingBody.runtime_context, command.body.runtime_context), 'IDEMPOTENCY_CONTEXT_CONFLICT', 'a different runtime_context'],
+    ] as const;
+    for (const [hasConflict, code, suffix] of conflicts) {
+      if (hasConflict()) {
+        return {
+          status: 'failed', commandId: claimed.row.commandId, retryable: false,
+          error: { status: 409, body: { error: `Idempotency key was already used with ${suffix}`, code } },
+        };
+      }
     }
     const existingResult = resultFromExistingCommand(claimed.row);
     if (existingResult.sessionId) {
@@ -362,7 +318,6 @@ export async function executeQueuedCreate(
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
     mayManageSystemConnections: payload.mayManageSystemConnections,
-    enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
     // Replay the origin-derivation signals captured at enqueue time so a
@@ -388,7 +343,6 @@ async function executeCreateSession(
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
     body: command.body,
-    enforceAccountCap: command.enforceAccountCap,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
@@ -404,7 +358,6 @@ async function executeCreateSession(
     return {
       status: 'failed',
       error: result.error,
-      headers: result.headers,
       retryable: isRetryableCreateError(result.error.status),
     };
   }
@@ -422,7 +375,6 @@ async function executeCreateSession(
     status: 'created',
     sessionId: result.row!.sessionId,
     row: result.row,
-    headers: result.headers,
     retryable: true,
   };
 }

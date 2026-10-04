@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type * as GlideDataGrid from '@glideapps/glide-data-grid';
 import type {
   DataEditorRef,
@@ -11,7 +12,6 @@ import type {
   Theme,
 } from '@glideapps/glide-data-grid';
 import { CompactSelection, emptyGridSelection } from '@glideapps/glide-data-grid';
-import { useTranslations } from '@/i18n/use-translations';
 import * as React from 'react';
 
 import '@glideapps/glide-data-grid/dist/index.css';
@@ -37,14 +37,17 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { gridSelectionToTsv } from '@/features/file-renderers/csv/csv-copy';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { useViewerSearch } from '@/features/file-renderers/shared/use-viewer-search';
+import { ViewerCopyMenu } from '@/features/file-renderers/shared/viewer-copy-menu';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 
 const ZOOM_OPTIONS = [0.75, 1, 1.25, 1.5, 2] as const;
 const CSV_SEARCH_BATCH_ROW_COUNT = 500;
-const CSV_SEARCH_DEBOUNCE_MS = 300;
 
 type GlideDataGridModule = typeof GlideDataGrid;
 type CsvViewerProps = {
@@ -261,13 +264,26 @@ function CsvSearchPopover({
   onGridSelectionChange: (selection: GridSelection) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [searchDraft, setSearchDraft] = React.useState('');
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [searchResults, setSearchResults] = React.useState<CsvSearchResult[]>([]);
-  const [activeResultIndex, setActiveResultIndex] = React.useState(0);
-  const [isSearching, setIsSearching] = React.useState(false);
-  const searchRequestIdRef = React.useRef(0);
-  const appliedResultKeyRef = React.useRef('');
+  const findResults = React.useCallback(
+    (query: string) => findCsvSearchResults(headers, rows, query),
+    [headers, rows],
+  );
+  const clearSelection = React.useCallback(
+    () => onGridSelectionChange(emptyGridSelection),
+    [onGridSelectionChange],
+  );
+  const {
+    searchDraft,
+    setSearchDraft,
+    searchQuery,
+    searchResults,
+    activeResultIndex,
+    isSearching,
+    appliedResultKeyRef,
+    runSearch,
+    clearSearch,
+    goToRelativeResult,
+  } = useViewerSearch(findResults, dataIdentity, clearSelection, clearSelection);
   const activeResult = searchResults[activeResultIndex] ?? null;
   const activeResultKey = activeResult ? `${activeResult.row}:${activeResult.col}` : '';
   const hasActiveQuery = Boolean(searchQuery.trim());
@@ -278,88 +294,6 @@ function CsvSearchPopover({
       : searchResults.length
         ? `${activeResultIndex + 1} / ${searchResults.length}`
         : 'No results';
-
-  const runSearch = React.useCallback(
-    (rawQuery: string) => {
-      const nextQuery = rawQuery.trim();
-      const requestId = searchRequestIdRef.current + 1;
-      searchRequestIdRef.current = requestId;
-      appliedResultKeyRef.current = '';
-      setSearchQuery(nextQuery);
-      setActiveResultIndex(0);
-
-      if (!nextQuery) {
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
-
-      setIsSearching(true);
-      void findCsvSearchResults(headers, rows, nextQuery)
-        .then((nextResults) => {
-          if (searchRequestIdRef.current !== requestId) return;
-          setSearchResults(nextResults);
-        })
-        .catch(() => {
-          if (searchRequestIdRef.current !== requestId) return;
-          setSearchResults([]);
-        })
-        .finally(() => {
-          if (searchRequestIdRef.current !== requestId) return;
-          setIsSearching(false);
-        });
-    },
-    [headers, rows],
-  );
-
-  React.useEffect(() => {
-    const trimmedDraft = searchDraft.trim();
-
-    if (!trimmedDraft) {
-      runSearch('');
-      return;
-    }
-
-    setIsSearching(true);
-    const timeoutId = window.setTimeout(() => {
-      runSearch(searchDraft);
-    }, CSV_SEARCH_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [runSearch, searchDraft]);
-
-  const clearSearch = React.useCallback(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft('');
-    setSearchQuery('');
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = '';
-    onGridSelectionChange(emptyGridSelection);
-  }, [onGridSelectionChange]);
-
-  const goToRelativeResult = React.useCallback(
-    (direction: 1 | -1) => {
-      if (!searchResults.length) return;
-
-      setActiveResultIndex((currentIndex) => {
-        return (currentIndex + direction + searchResults.length) % searchResults.length;
-      });
-    },
-    [searchResults.length],
-  );
-
-  React.useEffect(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft('');
-    setSearchQuery('');
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = '';
-    onGridSelectionChange(emptyGridSelection);
-  }, [dataIdentity, onGridSelectionChange]);
 
   React.useEffect(() => {
     if (!activeResult) return;
@@ -378,7 +312,7 @@ function CsvSearchPopover({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [activeResult, activeResultKey, gridRef, onGridSelectionChange]);
+  }, [activeResult, activeResultKey, appliedResultKeyRef, gridRef, onGridSelectionChange]);
 
   return (
     <Popover>
@@ -559,6 +493,28 @@ export function CsvViewer({
   }, []);
 
   const columnCount = Math.max(1, parsed.headers.length);
+  const gridContainerRef = React.useRef<HTMLDivElement>(null);
+  const selectionText = React.useCallback(
+    () => gridSelectionToTsv(gridSelection, parsed.rows, columnCount),
+    [columnCount, gridSelection, parsed.rows],
+  );
+
+  // Glide copies from a window listener and also writes an HTML table. This
+  // capture listener runs first, writes plain tab-separated text only, and
+  // stops Glide's. Focus in the cell overlay (outside this box) copies natively.
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!gridContainerRef.current?.contains(document.activeElement)) return;
+      const text = selectionText();
+      if (text === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.clipboardData) event.clipboardData.setData('text/plain', text);
+      else void copyToClipboard(text);
+    };
+    document.addEventListener('copy', handleCopy, true);
+    return () => document.removeEventListener('copy', handleCopy, true);
+  }, [selectionText]);
   const scale = React.useCallback((value: number) => Math.round(value * zoom), [zoom]);
   const searchDisabled = Boolean(parsed.error) || parsed.rows.length === 0;
 
@@ -740,27 +696,36 @@ export function CsvViewer({
             <Spinner className="size-4" />
           </div>
         ) : (
-          <glide.DataEditor
-            ref={search ? gridRef : undefined}
-            key={zoom}
-            columns={columns}
-            rows={parsed.rows.length}
-            getCellContent={getCellContent}
-            rowMarkers="number"
-            rowSelectionMode="multi"
-            gridSelection={search ? gridSelection : undefined}
-            onGridSelectionChange={search ? handleGridSelectionChange : undefined}
-            scrollToActiveCell={search}
-            keybindings={{ search: true }}
-            smoothScrollX
-            smoothScrollY
-            getCellsForSelection
-            width="100%"
-            height="100%"
-            theme={theme}
-            rowHeight={scale(34)}
-            headerHeight={scale(36)}
-          />
+          <ViewerCopyMenu
+            onCopy={() => {
+              const text = selectionText();
+              if (text !== null) void copyToClipboard(text);
+            }}
+          >
+            <div ref={gridContainerRef} className="h-full">
+              <glide.DataEditor
+                ref={search ? gridRef : undefined}
+                key={zoom}
+                columns={columns}
+                rows={parsed.rows.length}
+                getCellContent={getCellContent}
+                rowMarkers="number"
+                rowSelectionMode="multi"
+                gridSelection={gridSelection}
+                onGridSelectionChange={handleGridSelectionChange}
+                scrollToActiveCell={search}
+                keybindings={{ search: true }}
+                smoothScrollX
+                smoothScrollY
+                getCellsForSelection
+                width="100%"
+                height="100%"
+                theme={theme}
+                rowHeight={scale(34)}
+                headerHeight={scale(36)}
+              />
+            </div>
+          </ViewerCopyMenu>
         )}
       </div>
     </div>

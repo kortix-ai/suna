@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { Block } from '@/components/blog/blog-content';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { ROLES } from '@/features/marketing/solutions/registry';
-import { BLOG_POSTS } from '@/lib/blog-posts';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
-export type PublicContentKind = 'marketing' | 'blog' | 'docs' | 'use-case';
+// The blog is not listed here: it is its own app (kortix-ai/marketing), served
+// at /blog through a next.config.ts rewrite, with its own sitemap, llms.txt and
+// Markdown twins under /blog. robots.txt and llms.txt point at them.
+export type PublicContentKind = 'marketing' | 'docs' | 'use-case';
 
 export type PublicContentRecord = {
   kind: PublicContentKind;
@@ -53,8 +54,8 @@ export const STATIC_PUBLIC_ROUTES = [
   '/about',
   '/agent-computer',
   '/agents-and-skills',
+  '/ai-os',
   '/automations',
-  '/blog',
   '/careers',
   '/changelog',
   '/channels',
@@ -96,7 +97,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'about',
     title: 'About Kortix',
     description:
-      'We build self-driving companies. Humans verify, steer, and govern while agent teams do work across engineering, product, operations, finance, support, and growth.',
+      'Our mission: take a company from human to AGI, and let it keep every byte of itself on the way there.',
     htmlPath: '/about',
     markdownPath: '/markdown/about.md',
   },
@@ -139,14 +140,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description:
       'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
     htmlPath: '/changelog',
-  },
-  {
-    kind: 'marketing',
-    slug: 'blog',
-    title: 'Kortix Blog',
-    description:
-      'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix command center.',
-    htmlPath: '/blog',
   },
   {
     kind: 'marketing',
@@ -201,6 +194,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.',
     htmlPath: '/agent-computer',
     markdownPath: '/markdown/agent-computer.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'ai-os',
+    title: 'The AI Operating System',
+    description:
+      'One open-source operating system for your agents, people and tools: agents, skills, memory, connectors and computers in one git repo you own.',
+    htmlPath: '/ai-os',
   },
   {
     kind: 'marketing',
@@ -610,23 +611,6 @@ function sourceDocuments(kind: 'docs' | 'use-case'): SourceDocument[] {
   });
 }
 
-function blogRecords(): PublicContentRecord[] {
-  const records: (PublicContentRecord & { lastModified: string })[] = [];
-  for (const post of BLOG_POSTS) {
-    if (process.env.NODE_ENV === 'production' && post.draft) continue;
-    records.push({
-      kind: 'blog' as const,
-      slug: post.slug,
-      title: post.title,
-      description: post.description,
-      htmlPath: `/blog/${post.slug}`,
-      markdownPath: `/markdown/blog/${post.slug}.md`,
-      lastModified: `${post.date}T00:00:00.000Z`,
-    });
-  }
-  return records.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
-}
-
 export function areUseCasesPublic(): boolean {
   return process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
 }
@@ -637,52 +621,9 @@ export function getPublicContentRecords(
   const includeUseCases = options.includeUseCases ?? areUseCasesPublic();
   return [
     ...marketingRecordsWithTimestamps(),
-    ...blogRecords(),
     ...sourceDocuments('docs'),
     ...(includeUseCases ? sourceDocuments('use-case') : []),
   ];
-}
-
-function blocksToMarkdown(blocks: Block[]): string {
-  return blocks
-    .map((block) => {
-      switch (block.type) {
-        case 'lead':
-        case 'p':
-          return block.text;
-        case 'h2':
-          return `## ${block.text}`;
-        case 'ul':
-          return block.items.map((item) => `- ${item}`).join('\n');
-        case 'code':
-          return `\`\`\`\n${block.code}\n\`\`\``;
-        case 'callout':
-          return block.text
-            .split('\n')
-            .map((line) => `> ${line}`)
-            .join('\n');
-        case 'logos':
-          return `${block.label ? `${block.label}\n\n` : ''}${block.items
-            .map((item) => `- ${item.name} (${item.domain})`)
-            .join('\n')}`;
-        case 'verdict':
-          return `### Choose ${block.themLabel} if\n\n${block.them}\n\n### Choose Kortix if\n\n${block.kortix}`;
-        case 'compare': {
-          const escapeCell = (value: string) => value.replaceAll('|', '\\|').replaceAll('\n', ' ');
-          return [
-            `| Dimension | ${escapeCell(block.them)} | Kortix |`,
-            '| --- | --- | --- |',
-            ...block.rows.map(
-              (row) =>
-                `| ${escapeCell(row.dimension)} | ${escapeCell(row.them)} | ${escapeCell(row.kortix)} |`,
-            ),
-          ].join('\n');
-        }
-        case 'cta':
-          return `## ${block.title}${block.body ? `\n\n${block.body}` : ''}`;
-      }
-    })
-    .join('\n\n');
 }
 
 function documentHeader(record: PublicContentRecord): string {
@@ -733,20 +674,6 @@ export function resolvePublicMarkdown(pathSegments: string[]): {
 
   if (record.kind === 'marketing') {
     return { record, markdown: `${renderMarketingMarkdown(record)}\n` };
-  }
-
-  if (record.kind === 'blog') {
-    const post = BLOG_POSTS.find((item) => item.slug === record.slug);
-    if (!post) return null;
-    const byline = [
-      `Published: ${post.date}`,
-      `Author: ${post.author}`,
-      `Tags: ${post.tags.join(', ')}`,
-    ];
-    return {
-      record,
-      markdown: `${documentHeader(record)}\n\n${byline.join('\n')}\n\n${blocksToMarkdown(post.blocks)}\n`,
-    };
   }
 
   const source = sourceDocuments(record.kind).find((item) => item.markdownPath === markdownPath);

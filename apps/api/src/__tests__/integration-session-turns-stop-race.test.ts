@@ -1,67 +1,53 @@
 /**
- * Integration test (real local PostgreSQL): the gap between a turn writer's TWO
- * database round trips, and the stop that can commit inside it.
+ * Integration test (real local PostgreSQL): a turn writer racing a stop.
  *
- * `beginSandboxTurn` and `acceptSandboxTurn` write lifecycle authority first and
- * their ledger row second. A stop landing between those two statements erases
- * the authority the ledger row would be settled against — every token-scoped
- * settle CASes on the `activeTurns` entry the stop just deleted, and the stop's
- * own sandbox-scoped settle has already run. A row created after that instant is
- * open for ever on a box that is parked, which is precisely the permanent
- * phantom-busy state this table exists to end.
+ * `beginSandboxTurn` and `acceptSandboxTurn` write lifecycle authority and
+ * their ledger row. A stop erases `activeTurns` and settles the sandbox's open
+ * ledger rows in one transaction. A ledger row created AFTER that transaction
+ * commits is open for ever on a box that is parked: every token-scoped settle
+ * CASes on the `activeTurns` entry the stop deleted, and the stop's own
+ * sandbox-scoped settle has already run. That is the permanent phantom-busy
+ * state this table exists to end.
  *
- * These tests drive the SHIPPED functions and commit a REAL stop in that exact
- * gap, so the interleaving is executed rather than argued about.
+ * The two writes were two round trips, and a stop could commit between them.
+ * They are now ONE statement: the ledger row is written from the rows the
+ * authority write itself returned. These tests run the SHIPPED functions
+ * against a REAL stop in both orders and concurrently.
  */
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import * as realDbModule from '../shared/db';
 
+import {
+  type SeededProject,
+  removeSeeded,
+  seedProject,
+} from './helpers/integration-fixtures';
+
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `turn-stop-race-${SANDBOX_ID}`;
-const ACCOUNT_ID = crypto.randomUUID();
-const PROJECT_ID = crypto.randomUUID();
-const t = (name: string) => `${name}-${SANDBOX_ID}`;
-
-/**
- * Run one action in the gap AFTER the module under test's next `skip` database
- * round trips and BEFORE the one after them. Single-threaded interception is
- * the only way to place a committed transaction between two statements of a
- * function that exposes no seam between them.
- */
-let gate: { skip: number; action: () => Promise<void> } | null = null;
-function runBeforeRoundTrip(skip: number, action: () => Promise<void>) {
-  gate = { skip, action };
-}
-
-const db = new Proxy(realDbModule.db, {
-  get(target, prop, receiver) {
-    if (prop !== 'execute') return Reflect.get(target, prop, receiver);
-    return async (query: unknown) => {
-      if (gate) {
-        if (gate.skip > 0) gate.skip -= 1;
-        else {
-          // Cleared BEFORE the action runs: the action is itself a database
-          // writer and must not intercept its own round trips.
-          const { action } = gate;
-          gate = null;
-          await action();
-        }
-      }
-      return target.execute(query as never);
-    };
-  },
+let ACCOUNT_ID: string;
+let PROJECT_ID: string;
+let project: SeededProject;
+beforeAll(async () => {
+  project = await seedProject('turn-stop-race');
+  ACCOUNT_ID = project.account_id;
+  PROJECT_ID = project.project_id;
+  await realDbModule.db.execute(sql`INSERT INTO kortix.project_sessions
+    (session_id, account_id, project_id, branch_name, agent_name, status)
+    VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${SESSION_ID}, 'default', 'running')`);
 });
-
-mock.module('../shared/db', () => ({ ...realDbModule, db }));
+const t = (name: string) => `${name}-${SANDBOX_ID}`;
 
 const {
   acceptSandboxTurn,
   beginSandboxTurn,
+} = await import('../projects/sandbox-turn-lifecycle');
+const {
   settleOpenSandboxTurns,
   settleOrphanedSandboxTurns,
   settleOrphanedSandboxTurnsQuery,
-} = await import('../projects/sandbox-turn-lifecycle');
+} = await import('../projects/session-turn-ledger');
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
 
 const rows = (result: unknown) =>
@@ -96,7 +82,7 @@ async function openRows(): Promise<number> {
 }
 
 beforeEach(async () => {
-  gate = null;
+  await realDbModule.db.execute(sql`UPDATE kortix.project_sessions SET status = 'running', error = NULL WHERE session_id = ${SESSION_ID}`);
   await realDbModule.db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, status, metadata)
@@ -118,65 +104,106 @@ afterAll(async () => {
   await realDbModule.db
     .execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`)
     .catch(() => undefined);
+  await realDbModule.db.execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${SESSION_ID}`);
+  await removeSeeded([project]);
 });
 
-describe("a stop committed between a turn writer's two round trips", () => {
-  test('beginSandboxTurn writes no ledger row once the stop has erased its authority', async () => {
-    // 1 round trip through: the authority UPDATE. The stop then commits, and
-    // the delayed ledger INSERT arrives at a sandbox that is already parked.
-    runBeforeRoundTrip(1, stopTheBox);
-
-    expect(
-      await beginSandboxTurn(
-        { sandboxId: SANDBOX_ID },
-        { token: t('race-begin'), opencodeSessionId: 'ses_root', messageId: 'msg_race_begin' },
-        60_000,
-      ),
-    ).toBe('granted');
-
-    // Nothing could ever close such a row: clearSandboxTurn requires
-    // `status = 'active'`, completeSandboxTurn requires active/provisioning,
-    // abandonSandboxTurn needs the erased metadata entry, and the stop's
-    // sandbox-scoped settle already ran. So it must never be created.
-    expect(await readTurn(t('race-begin'))).toBeUndefined();
-    expect(await openRows()).toBe(0);
-  });
-
-  test('acceptSandboxTurn writes no ledger row for a boot turn the stop already erased', async () => {
+describe('a turn writer racing a stop', () => {
+  async function seedBootTurn(token: string) {
     // A boot turn goes straight into metadata (initialSandboxTurnMetadata) and
     // never passes through beginSandboxTurn, so acceptance is its FIRST ledger
-    // write — an INSERT of a row in state 'active', with the same window.
+    // write: an INSERT of a row in state 'active'.
     await realDbModule.db.execute(sql`
       UPDATE kortix.session_sandboxes
          SET metadata = jsonb_build_object('activeTurns', jsonb_build_object(
-               ${t('race-boot')}::text, jsonb_build_object(
-                 'token', ${t('race-boot')}::text,
+               ${token}::text, jsonb_build_object(
+                 'token', ${token}::text,
                  'state', 'delivering',
                  'opencodeSessionId', 'ses_root',
                  'messageId', 'msg_race_boot',
                  'startedAtMs', 1)))
        WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+  }
 
-    runBeforeRoundTrip(1, stopTheBox);
+  test('beginSandboxTurn after a stop grants nothing and writes no ledger row', async () => {
+    await stopTheBox();
+
+    expect(
+      await beginSandboxTurn(
+        { sandboxId: SANDBOX_ID },
+        { token: t('race-begin'), runtimeSessionId: 'ses_root', messageId: 'msg_race_begin' },
+        60_000,
+      ),
+    ).toBe('no_box');
+
+    expect(await readTurn(t('race-begin'))).toBeUndefined();
+    expect(await openRows()).toBe(0);
+  });
+
+  test('acceptSandboxTurn after a stop accepts nothing and writes no ledger row for a boot turn', async () => {
+    await seedBootTurn(t('race-boot'));
+    await stopTheBox();
 
     expect(
       await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('race-boot'), {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_race_boot',
       }),
-    ).toBe(true);
+    ).toBe(false);
 
     expect(await readTurn(t('race-boot'))).toBeUndefined();
     expect(await openRows()).toBe(0);
   });
 
+  test('a boot turn accepted before the stop is settled by it', async () => {
+    await seedBootTurn(t('race-boot-first'));
+    expect(
+      await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('race-boot-first'), {
+        runtimeSessionId: 'ses_root',
+        messageId: 'msg_race_boot',
+      }),
+    ).toBe(true);
+    expect(await readTurn(t('race-boot-first'))).toMatchObject({ state: 'active' });
+
+    await stopTheBox();
+
+    expect(await readTurn(t('race-boot-first'))).toMatchObject({ state: 'ended', end_reason: 'runtime_gone' });
+    expect(await openRows()).toBe(0);
+  });
+
+  test('a begin and a stop issued together never leave an open ledger row', async () => {
+    // Either order is legal. Both end with no open row: the begin lands first
+    // and the stop settles its row, or the stop lands first and the begin
+    // matches no box. The old two-round-trip writer could lose this race.
+    for (let round = 0; round < 12; round += 1) {
+      await realDbModule.db.execute(sql`
+        UPDATE kortix.session_sandboxes
+           SET status = 'active', metadata = '{}'::jsonb, deadline_at = now() + interval '10 minutes'
+         WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+      const token = t(`race-concurrent-${round}`);
+      const [begun] = await Promise.all([
+        beginSandboxTurn(
+          { sandboxId: SANDBOX_ID },
+          { token, runtimeSessionId: 'ses_root', messageId: `msg_race_${round}` },
+          60_000,
+        ),
+        stopTheBox(),
+      ]);
+
+      const turn = await readTurn(token);
+      if (begun === 'granted') expect(turn).toMatchObject({ state: 'ended', end_reason: 'runtime_gone' });
+      else expect(turn).toBeUndefined();
+      expect(await openRows()).toBe(0);
+    }
+  });
+
   test('a turn whose ledger row already exists is settled by the stop, not lost', async () => {
-    // The ordinary ordering, as the control: both round trips land, then the
-    // stop settles the row it can see.
+    // The ordinary ordering, as the control: the grant and its row land, then
+    // the stop settles the row it can see.
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('race-settled'), opencodeSessionId: 'ses_root', messageId: 'msg_race_settled' },
+        { token: t('race-settled'), runtimeSessionId: 'ses_root', messageId: 'msg_race_settled' },
         60_000,
       ),
     ).toBe('granted');

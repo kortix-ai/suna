@@ -26,7 +26,6 @@ interface PickerCatalogState {
   revision: number;
   catalog: Catalog;
   modelById: Map<string, CatalogModel>;
-  providerModelIds: Map<string, Set<string>>;
 }
 
 let cachedState: PickerCatalogState | null = null;
@@ -36,45 +35,22 @@ function catalogState(): PickerCatalogState {
   if (cachedState?.revision === revision) return cachedState;
   const catalog = runtimeModelCatalog.snapshot();
   const modelById = new Map<string, CatalogModel>();
-  const providerModelIds = new Map<string, Set<string>>();
   for (const provider of catalog.providers) {
-    const ids = new Set<string>();
     for (const model of provider.models) {
       modelById.set(`${provider.id}/${model.id}`, model);
-      ids.add(model.id);
     }
-    providerModelIds.set(provider.id, ids);
   }
-  cachedState = { revision, catalog, modelById, providerModelIds };
+  cachedState = { revision, catalog, modelById };
   return cachedState;
 }
-
-// Curated flagship candidates per provider, in priority order. Every candidate is
-// VERIFIED against the catalog before use, and there's a data-driven fallback
-// (most recently released), so a wrong/renamed guess is dropped rather than
-// offered — the list can never drift into a lie.
-const FLAGSHIP_CANDIDATES: Record<string, string[]> = {
-  anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6'],
-  openai: ['gpt-5.5', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
-  google: ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'],
-  'x-ai': ['grok-4', 'grok-3'],
-  xai: ['grok-4', 'grok-3'],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-  mistral: ['mistral-large-latest', 'mistral-large'],
-  groq: ['llama-3.3-70b-versatile'],
-  perplexity: ['sonar-pro', 'sonar'],
-};
 
 /** The flagship BYOK model id (bare, no provider prefix) for a provider, or null. */
 export function providerFlagship(providerId: string): string | null {
   const state = catalogState();
-  const ids = state.providerModelIds.get(providerId);
-  if (!ids || ids.size === 0) return null;
-  for (const candidate of FLAGSHIP_CANDIDATES[providerId] ?? []) {
-    if (ids.has(candidate)) return candidate;
-  }
-  // Fallback: the newest AUTO-SELECTABLE model the catalog carries for this
-  // provider (deterministic, real). Released dates sort lexically
+  // The newest AUTO-SELECTABLE model the live catalog carries for this
+  // provider — no curated per-provider list: one went stale within a week of
+  // every launch (gpt-5.5 / claude-opus-4-8 after gpt-6.1-sol and claude-sonnet-5-5
+  // shipped). `autoSeedDefaultModel` skips deprecated/beta. Released dates sort lexically
   // (YYYY-MM-DD); `autoSeedDefaultModel` additionally drops the bare Bedrock
   // ids whenever the provider serves inference profiles. A tie-break alone was
   // not enough: `xai.grok-4.6` is the NEWEST Bedrock model and has no

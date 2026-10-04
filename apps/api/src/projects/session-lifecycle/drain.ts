@@ -53,6 +53,10 @@ async function drainSessionLifecycleQueueTick(
     idempotencyKey?: string;
     /** Completion wakes target rows already in the inbox; they need no burst delay. */
     coalesce?: boolean;
+    /** `false`: the enqueuer saw no other prompt of this session and the POST
+     *  did not wait on the client, so no straggler can exist: no burst delay
+     *  and no sibling sweep. The prompt route decides it. */
+    burst?: boolean;
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
@@ -65,7 +69,8 @@ async function drainSessionLifecycleQueueTick(
   // the rest of the burst was even durable (measured: one of four boot sends
   // delivered a step behind, out of order). A quarter second collects the
   // stragglers and is invisible next to the ~1.3 s delivery itself.
-  if (input.idempotencyKey && input.coalesce !== false) {
+  const burst = input.burst !== false;
+  if (input.idempotencyKey && burst && input.coalesce !== false) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const rows = await claimDueLifecycleCommands({
@@ -79,7 +84,7 @@ async function drainSessionLifecycleQueueTick(
   // leaving them to their own kicks is what delivered a burst of sends one
   // ~1.5 s round-trip at a time (and let a step boundary split the answers).
   // Sweep them in so the lane batches them below.
-  if (input.idempotencyKey && rows.length > 0) {
+  if (input.idempotencyKey && burst && rows.length > 0) {
     const sessions = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
     for (const sessionId of sessions) {
       const siblings = await claimDueSessionInboxSiblings({ workerId, sessionId });
@@ -245,6 +250,8 @@ async function drainSessionLifecycleQueueTick(
       // both rows reported delivered while the first answer rendered under
       // the second prompt. Remaining claimed siblings are returned to the
       // queue. Accepted delivery makes the next one due immediately.
+      // A released Stop batch still goes one POST at a time through this
+      // lane; `executeQueuedContinue` decides which of its rows go `noReply`.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];

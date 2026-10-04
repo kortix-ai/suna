@@ -3,13 +3,28 @@
 // limits per IP, and the PKCE social flow keeps the verifier on the client.
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
-mock.module('../config', () => ({
-  config: { SUPABASE_URL: 'http://supabase.internal:8000', SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt', FRONTEND_URL: 'https://app.example' },
-}));
+const testConfig: Record<string, unknown> = {
+  SUPABASE_URL: 'http://supabase.internal:8000',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt',
+  FRONTEND_URL: 'https://app.example',
+};
+mock.module('../config', () => ({ config: testConfig }));
+const claims = new Set<string>();
+mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
+  const rendered = new PgDialect().sqlToQuery(query);
+  const digest = rendered.params[0];
+  if (typeof digest !== 'string') throw new Error('missing token digest');
+  if (rendered.sql.startsWith('DELETE')) { claims.delete(digest); return []; }
+  if (claims.has(digest)) return [];
+  claims.add(digest);
+  return [{ token_hash: digest }];
+} } }));
 mock.module('../shared/auth-audit', () => ({
   auditLoginFail: () => {},
   auditLoginSuccess: () => {},
@@ -52,6 +67,7 @@ const post = (path: string, body: unknown, ip = '203.0.113.7') =>
 
 beforeEach(() => {
   seen = [];
+  claims.clear();
   respond = () => Response.json(SESSION);
 });
 
@@ -75,6 +91,23 @@ describe('/v1/auth headless routes', () => {
     respond = () => Response.json({ error: 'invalid_grant', error_description: 'Refresh Token Not Found' }, { status: 400 });
     const r2 = await post('/refresh', { refresh_token: 'dead' });
     expect(await r2.json()).toEqual({ error: 'invalid_grant', error_description: 'Refresh Token Not Found' });
+  });
+
+  test('the same refresh token is accepted at most once even if GoTrue allows reuse', async () => {
+    respond = () => Response.json({ ...SESSION, refresh_token: 'rotated' });
+    const first = await post('/refresh', { refresh_token: 'synthetic-refresh' });
+    const replay = await post('/refresh', { refresh_token: 'synthetic-refresh' });
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(400);
+    expect(seen.length).toBe(1);
+  });
+
+  test('an ambiguous upstream failure retains the claim even if GoTrue rotated before losing its response', async () => {
+    respond = () => Response.json({ error: 'unavailable' }, { status: 502 });
+    expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(502);
+    respond = () => Response.json(SESSION);
+    expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(400);
+    expect(seen).toHaveLength(1);
   });
 
   test('signup reports requires_email_confirmation when GoTrue returns a bare user', async () => {
@@ -184,5 +217,93 @@ describe('POST /v1/auth/sign-in/sso', () => {
     });
     expect(response.status).toBe(404);
     expect((await response.json()).error).toBe('sso_provider_not_found');
+  });
+});
+
+describe('bodyless POSTs are a 400, never a 500 TypeError', () => {
+  // @hono/zod-openapi skips validation without content-type unless the body is required.
+  const BODY_ROUTES = [
+    '/signup',
+    '/sign-in/password',
+    '/sign-in/magic-link',
+    '/verify-otp',
+    '/sign-in/oauth',
+    '/oauth/exchange',
+    '/refresh',
+    '/sign-in/sso',
+    '/password/reset',
+  ];
+
+  test('no body and no content-type → 400 validation failure on every body route, upstream never called', async () => {
+    for (const path of BODY_ROUTES) {
+      const res = await app().request(`/v1/auth${path}`, {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '198.51.100.77' },
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: true, message: 'Validation failed' });
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  test('empty JSON body and malformed JSON are also a 400, not a 500', async () => {
+    const empty = await app().request('/v1/auth/sign-in/password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.78' },
+      body: '{}',
+    });
+    expect(empty.status).toBe(400);
+    const malformed = await app().request('/v1/auth/sign-in/password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.78' },
+      body: '',
+    });
+    expect(malformed.status).toBe(400);
+    expect(seen).toHaveLength(0);
+  });
+});
+
+describe('GET /v1/auth/client-config', () => {
+  const get = () =>
+    app().request('/v1/auth/client-config', { headers: { 'x-forwarded-for': '192.0.2.44' } });
+
+  test('returns the public sign-in config: public Supabase URL, anon key, web URL, auth lists; never the service role key', async () => {
+    Object.assign(testConfig, {
+      SUPABASE_PUBLIC_URL: 'https://auth.example',
+      SUPABASE_ANON_KEY: 'anon-jwt',
+      KORTIX_PUBLIC_AUTH_METHODS: 'password, magic',
+      KORTIX_PUBLIC_AUTH_PROVIDERS: '',
+    });
+    const res = await get();
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({
+      supabase_url: 'https://auth.example',
+      supabase_anon_key: 'anon-jwt',
+      frontend_url: 'https://app.example',
+      auth_methods: ['password', 'magic'],
+      auth_providers: [],
+    });
+    expect(text).not.toContain('service-role-jwt');
+    expect(seen).toHaveLength(0);
+  });
+
+  test('unset values are null; without a public URL the Supabase URL is SUPABASE_URL', async () => {
+    Object.assign(testConfig, {
+      SUPABASE_PUBLIC_URL: undefined,
+      SUPABASE_ANON_KEY: '',
+      FRONTEND_URL: '',
+      KORTIX_PUBLIC_AUTH_METHODS: undefined,
+      KORTIX_PUBLIC_AUTH_PROVIDERS: undefined,
+    });
+    const res = await get();
+    expect(await res.json()).toEqual({
+      supabase_url: 'http://supabase.internal:8000',
+      supabase_anon_key: null,
+      frontend_url: null,
+      auth_methods: null,
+      auth_providers: null,
+    });
+    testConfig.FRONTEND_URL = 'https://app.example';
   });
 });

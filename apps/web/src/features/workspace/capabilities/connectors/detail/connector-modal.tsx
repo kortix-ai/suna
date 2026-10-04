@@ -201,7 +201,7 @@ function ConnectorModalBody({
     queryKey: ['connections', projectId],
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
-    enabled: !isChannel && !isComputer,
+    enabled: !isChannel,
   });
   // Every account this caller can reach on the connector: the project's shared
   // rows plus the caller's own private ones. A connector is not an account —
@@ -288,8 +288,16 @@ function ConnectorModalBody({
   //             Accounts tab (the CTA takes you there);
   //   replace — connected with exactly one account: re-authorize / replace THAT
   //             credential. Two or more accounts have their own row menus.
-  const headerCta: 'connect' | 'finish' | 'replace' | null =
-    !canWrite || isChannel || isComputer || !(isManagedProvider || Boolean(connector.authSecret))
+  //
+  // A computer is different: every member pairs their OWN machine, so the CTA
+  // needs no write access and shows until the caller can use a computer here
+  // (their own or a project-shared one; `accounts` holds only those).
+  const hasComputer = accounts.some((account) => Boolean(account.tunnel_id));
+  const headerCta: 'connect' | 'finish' | 'replace' | null = isComputer
+    ? hasComputer
+      ? null
+      : 'connect'
+    : !canWrite || isChannel || !(isManagedProvider || Boolean(connector.authSecret))
       ? null
       : !connected
         ? accounts.length === 0
@@ -352,7 +360,7 @@ function ConnectorModalBody({
                 ) : (
                   <PlusIcon className="size-4 shrink-0" weight="bold" />
                 )}
-                {isManagedProvider
+                {isManagedProvider || isComputer
                   ? tI18nComplete.raw('text1a2303ede074')
                   : tI18nComplete.raw('text2dcccf29ebf4')}
               </Button>

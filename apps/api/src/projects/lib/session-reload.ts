@@ -32,6 +32,8 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
+import { TimeoutError, withTimeout } from '../../shared/with-timeout';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
 import { resolveCommitSha } from '../git/commits';
@@ -549,69 +551,115 @@ export async function readSandboxConfigState(
 }
 
 /**
- * "Latest" has to mean latest — drop the mirror's TTL before compiling.
- *
- * The git mirror is TTL-cached (60s by default) and every read through
- * `readRepoFile` / `resolveCommitSha` takes the warm hit. On an ordinary
- * endpoint that is right. On THIS one it is self-defeating: the whole feature is
- * "I merged a change, get it into my session", and the merge is by definition
- * seconds old. Reloading inside the window recompiled the PRE-merge manifest,
- * produced an unchanged etag, and answered "already up to date" — the exact
- * confusion the reload exists to end, moved one layer up.
- *
- * Invalidating rather than force-fetching keeps it to a single network op: the
- * compile's own first read does the fetch and re-stamps `lastRefreshAt`, so the
- * reads after it in the same request are warm again.
+ * Wall-clock budget for one `latestAgentConfigEtag` resolution, and for the
+ * other mirror-reading stages of the same GET /config request. The mirror fetch
+ * it can block on has a 30s per-op timeout and retries 3 times, so an unbounded
+ * wait outran the 25s request deadline on every poll against a slow mirror
+ * (KRTX-818). The budget must stay comfortably under that deadline; GET /config
+ * spends it across its stages, so a slow fetch degrades to `stale: null`
+ * ("could not tell") instead of a 503.
  */
+export const LATEST_ETAG_BUDGET_MS = 20_000;
+
 /**
  * The etag this session WOULD get if it were reloaded right now.
  *
  * Recompiles from the session's own ref; delivers nothing.
+ *
+ * "Latest" has to mean latest. The git mirror is TTL-cached (60s by default)
+ * and every read through `readRepoFile` / `resolveCommitSha` takes the warm
+ * hit. On an ordinary endpoint that is right. On THIS one it is self-defeating:
+ * the whole feature is "I merged a change, get it into my session", and the
+ * merge is by definition seconds old. A TTL-served read recompiled the
+ * PRE-merge manifest and answered "already up to date" — the exact confusion
+ * the reload exists to end, moved one layer up.
+ *
+ * So the compile reads force a REF-scoped refresh
+ * (`CompileReadOptions.forceRefresh`): `readManifestFromRepo` proves the
+ * session's ref against the remote with one `git ls-remote` (~1s) and only runs
+ * the whole-mirror fetch when the branch actually moved. That is exact
+ * freshness for every read this request makes (they all read the session's base
+ * ref) at a fraction of the old cost, which paid a full `git fetch --prune` on
+ * every poll.
+ *
+ * The whole resolution is bounded (`LATEST_ETAG_BUDGET_MS`): on a mirror whose
+ * fetch is slow the old unbounded wait outran the request deadline and 503'd
+ * the poll; the bounded wait answers `null` and `stale` reads null ("could not
+ * tell") — the state every client of this route already handles.
  */
-export async function latestAgentConfigEtag(input: {
-  projectId: string;
-  accountId: string;
-  sessionId?: string;
-  baseRef?: string | null;
-}): Promise<string | null> {
-  const [[project], [session]] = await Promise.all([
-    db
-      .select({
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
-      })
-      .from(projects)
-      .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
-      .limit(1),
-    input.sessionId
-      ? db
+export async function latestAgentConfigEtag(
+  input: {
+    projectId: string;
+    accountId: string;
+    sessionId?: string;
+    baseRef?: string | null;
+  },
+  /**
+   * Wall-clock budget for the whole resolution. Callers that coordinate several
+   * mirror-reading stages under one request deadline (GET /config) pass the
+   * budget that is left; everyone else takes the default.
+   */
+  opts?: { budgetMs?: number },
+): Promise<string | null> {
+  // The ref-scoped force replaces the old `invalidateProjectMirror` here:
+  // invalidating dropped the mirror's freshness stamp, which made the LATER
+  // unforced reads in the same request (agent files, the config-dir compare,
+  // the desired release) pay their own full fetch. The proof keeps the stamp
+  // intact, so one request does at most one network op.
+  // The WHOLE resolution — the row reads and the compile — races the budget:
+  // a slow database or a slow mirror both mean "cannot be told", and either
+  // one unbounded is a 503 on the next poll.
+  const compiled = await withTimeout(
+    (async () => {
+      const [[project], [session]] = await Promise.all([
+        db
           .select({
-            agentName: projectSessions.agentName,
-            metadata: projectSessions.metadata,
+            repoUrl: projects.repoUrl,
+            defaultBranch: projects.defaultBranch,
+            manifestPath: projects.manifestPath,
           })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, input.sessionId))
-          .limit(1)
-      : Promise.resolve([]),
-  ]);
-  if (!project?.defaultBranch) return null;
-  const gitProject: GitBackedProject = {
-    projectId: input.projectId,
-    repoUrl: project.repoUrl,
-    defaultBranch: project.defaultBranch,
-    manifestPath: project.manifestPath ?? 'kortix.yaml',
-    gitAuthToken: null,
-  };
-  // Without this, `stale: false` is answerable from a cache that predates the
-  // very commit the caller is asking about.
-  invalidateProjectMirror(input.projectId);
-  const compiled = await (
-    !repositoryAccessFromSessionMetadata(session?.metadata) &&
-    session?.agentName
-      ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
-      : resolveCompiledAgentConfigForSession(gitProject, input.baseRef)
-  ).catch(() => null);
+          .from(projects)
+          .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
+          .limit(1),
+        input.sessionId
+          ? db
+              .select({
+                agentName: projectSessions.agentName,
+                metadata: projectSessions.metadata,
+              })
+              .from(projectSessions)
+              .where(eq(projectSessions.sessionId, input.sessionId))
+              .limit(1)
+          : Promise.resolve([]),
+      ]);
+      if (!project?.defaultBranch) return null;
+      const gitProject: GitBackedProject = {
+        projectId: input.projectId,
+        repoUrl: project.repoUrl,
+        defaultBranch: project.defaultBranch,
+        manifestPath: project.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      };
+      return (
+        !repositoryAccessFromSessionMetadata(session?.metadata) && session?.agentName
+          ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef, {
+              forceRefresh: true,
+            })
+          : resolveCompiledAgentConfigForSession(gitProject, input.baseRef, { forceRefresh: true })
+      ).catch(() => null);
+    })(),
+    opts?.budgetMs ?? LATEST_ETAG_BUDGET_MS,
+    'latest agent-config etag',
+  ).catch((error) => {
+    if (error instanceof TimeoutError) {
+      logger.warn(
+        '[session-config] latest etag unresolved within its budget; answering unknown',
+        { budget_ms: opts?.budgetMs ?? LATEST_ETAG_BUDGET_MS },
+      );
+      return null;
+    }
+    throw error;
+  });
   return agentConfigEtag(compiled);
 }
 
@@ -830,8 +878,10 @@ export async function reloadSessionConfig(input: {
           ),
         );
     }
-    // Read the etag the box runs now: the release carried the governance.
-    const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
+    // Read the etag the box runs now: the release carried the governance. pi
+    // applies a release in place, so `applied` arrives with no `reload`.
+    const after =
+      converged.outcome === 'applied' ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
     return {
       ...convergeToReloadResult(converged, { previousEtag: before.etag, etagAfter: after?.etag ?? null }),
       repo_refreshed: repoRefreshed,
@@ -842,11 +892,12 @@ export async function reloadSessionConfig(input: {
 
   // ── The pre-release path ────────────────────────────────────────────────
   // Reached two ways: a daemon without `config.release.v1`, and a project
-  // whose `config_releases` flag is OFF (spec, "Feature flag"). Only the plain
-  // refresh plus the governance push — what a reload did before releases.
-  // Never `config_dir=1`: the old handler writes into `/workspace`.
+  // whose `config_releases` flag is OFF (spec, "Feature flag"). OpenCode reads
+  // the agent files in the session's checkout here, so the refresh also brings
+  // the base branch's config dir into it (`base_config=1`). Without that, a fix
+  // merged to base never reached a live session (prod 2026-09-30).
   input.onPhase?.('refreshing-workspace');
-  const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo }, deps);
+  const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo, baseConfig: pullRepo }, deps);
   repoRefreshed = pullRepo && refreshed.ok;
   checkout = classifyWorkspaceCheckout({
     requested: pullRepo,
@@ -856,9 +907,12 @@ export async function reloadSessionConfig(input: {
   });
   commitSha = refreshed.commitSha ?? commitSha;
 
-  // An old daemon cannot report its agent files: the files converge after its
-  // self-update, on the convergence scheduler's 6- and 7-minute attempts.
-  const agentFiles: ReloadAgentFiles = 'unknown';
+  // A daemon built before `base_config` answers without `config_dir`: 'unknown'.
+  const agentFiles = classifyAgentFiles({
+    requested: pullRepo,
+    synced: refreshed.configDirSynced,
+    reason: refreshed.configDirReason,
+  });
   if (input.onlyIfStale) {
     const latestEtag = await deps.latestEtag({
       projectId: input.projectId,
@@ -900,25 +954,31 @@ export async function reloadSessionConfig(input: {
     baseRef: input.baseRef,
   });
 
+  // The daemon reloads the OpenCode config itself when it brought agent files
+  // forward (dispose-first, so milliseconds). On a project without releases
+  // the push above runs as well and disposes again; both are cheap.
+  const daemonReload = agentFiles === 'updated' ? (refreshed.configReload?.how ?? null) : null;
+  const applied = push.applied || daemonReload === 'disposed' || daemonReload === 'restarted';
+  const opencodeReload = push.opencodeReload ?? daemonReload;
   return {
-    applied: push.applied,
+    applied,
     previous_etag: before.etag,
     // On a refusal the box still runs what it ran; do not report the new hash as
     // though it had landed.
-    etag: push.applied ? latest : before.etag,
+    etag: applied ? latest : before.etag,
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
     agent_files: agentFiles,
-    opencode_reload: push.opencodeReload ?? null,
-    turn_ended: push.opencodeTurnEnded ?? null,
-    ...(push.applied
-      ? push.opencodeReload === 'kept-old'
+    opencode_reload: opencodeReload ?? null,
+    turn_ended: push.opencodeTurnEnded ?? (daemonReload ? (refreshed.configReload?.turnEnded ?? null) : null),
+    ...(applied || daemonReload === 'kept-old'
+      ? opencodeReload === 'kept-old'
         ? {
             reason:
               'the new opencode did not start, so the session kept the config it was already running',
           }
         : {}
-      : { reason: push.reason ?? 'agent config unchanged' }),
+      : { reason: agentFiles === 'already-current' ? 'already current' : (push.reason ?? 'agent config unchanged') }),
     ...releaseFields(null, null),
   };
 }
@@ -934,7 +994,8 @@ export function convergeToReloadResult(
   const reloaded = converged.reload !== null;
   const common = {
     previous_etag: etags.previousEtag,
-    etag: reloaded ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    etag: converged.outcome === 'applied' ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    // Null for a runtime that applies a release in place (pi): nothing restarted.
     opencode_reload: reloaded ? ('restarted' as const) : null,
     turn_ended: converged.reload?.turn_ended ?? null,
   };
@@ -1038,15 +1099,30 @@ async function convergeSandboxConfig(
  * `/workspace`; on a capable daemon it is an alias for converge, which the
  * reload sends explicitly.
  *
+ * `baseConfig` sends `base_config=1`: the daemon brings the base branch's
+ * changes to the OpenCode config dir into the checkout (`syncConfigDirToBase` —
+ * file by file, keeping the session's own edits and commits, never moving a
+ * ref), and reloads the OpenCode config when files changed, despite
+ * `restart=0` (answered as `config_dir.reload`). The pre-release path needs it
+ * because OpenCode reads its agent files from this checkout.
+ *
  * `restart=0`: the config push right after restarts opencode anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
  */
 async function refreshSandboxWorkspace(
   sessionId: string,
-  opts: { pullRepo: boolean },
+  opts: { pullRepo: boolean; baseConfig?: boolean },
   deps: SessionReloadDeps,
-): Promise<{ ok: boolean; commitSha: string | null }> {
-  const unreachable = { ok: false, commitSha: null };
+): Promise<{
+  ok: boolean;
+  commitSha: string | null;
+  /** `null` = the box did not say (a daemon built before `base_config`). */
+  configDirSynced: boolean | null;
+  configDirReason?: string;
+  /** The config reload the daemon ran because it brought files forward. */
+  configReload?: { how: 'disposed' | 'restarted' | 'kept-old'; turnEnded: boolean | null };
+}> {
+  const unreachable = { ok: false, commitSha: null, configDirSynced: null };
   try {
     const endpoint = await deps.endpoint(sessionId);
     if (!endpoint) return unreachable;
@@ -1060,11 +1136,14 @@ async function refreshSandboxWorkspace(
       // `repo=0` when the caller did not ask for the session branch to be
       // pulled. The refresh still stages runtime assets, which is how an old
       // daemon receives its replacement.
-      res = await deps.fetch(`${endpoint.baseUrl}/kortix/refresh?restart=0${opts.pullRepo ? '' : '&repo=0'}`, {
-        method: 'POST',
-        headers: endpoint.headers,
-        signal: AbortSignal.timeout(120_000),
-      });
+      res = await deps.fetch(
+        `${endpoint.baseUrl}/kortix/refresh?restart=0${opts.pullRepo ? '' : '&repo=0'}${opts.baseConfig ? '&base_config=1' : ''}`,
+        {
+          method: 'POST',
+          headers: endpoint.headers,
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
       if (res.status !== 409 || attempt >= REFRESH_BUSY_RETRIES) break;
       await deps.sleep(REFRESH_BUSY_DELAY_MS);
     }
@@ -1072,9 +1151,22 @@ async function refreshSandboxWorkspace(
     // The daemon answers `{repo: {before, after}}` — there is no `repo.commit`,
     // so the old read was always undefined and `commit_sha` always reported the
     // PRE-reload value, making a successful pull look like a no-op.
-    const body = (await res.json()) as { repo?: { after?: { commit?: unknown } } };
+    const body = (await res.json()) as {
+      repo?: { after?: { commit?: unknown } };
+      config_dir?: { synced?: unknown; skipped?: unknown; reload?: unknown; turn_ended?: unknown };
+    };
     const commit = body.repo?.after?.commit;
-    return { ok: true, commitSha: typeof commit === 'string' ? commit : null };
+    const dir = body.config_dir;
+    const how = dir?.reload;
+    return {
+      ok: true,
+      commitSha: typeof commit === 'string' ? commit : null,
+      configDirSynced: typeof dir?.synced === 'boolean' ? dir.synced : null,
+      ...(typeof dir?.skipped === 'string' ? { configDirReason: dir.skipped } : {}),
+      ...(how === 'disposed' || how === 'restarted' || how === 'kept-old'
+        ? { configReload: { how, turnEnded: typeof dir?.turn_ended === 'boolean' ? dir.turn_ended : null } }
+        : {}),
+    };
   } catch {
     // A failed pull is not a failed reload: the config recompiles from the git
     // MIRROR, not the sandbox's working tree, so the agent still updates.

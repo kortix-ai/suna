@@ -27,7 +27,6 @@ import {
   createPerSeatCheckout,
   createPortalSession,
   getAccountState,
-  getBillingUsageHistory,
   purchaseCredits,
   reactivateSubscription,
   scheduleDowngrade,
@@ -79,7 +78,6 @@ export const accountStateKeys = {
   // multi-account users don't see the same wallet/limits across all pages.
   state: (accountId?: string) =>
     [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
-  usageHistory: (days?: number) => [...accountStateKeys.all, 'usage-history', { days }] as const,
   transactions: (limit?: number, offset?: number) =>
     [...accountStateKeys.all, 'transactions', { limit, offset }] as const,
 };
@@ -223,38 +221,6 @@ export function useAccountState(options?: UseAccountStateOptions) {
           return failureCount < 2;
         }
       : false,
-  });
-}
-
-// =============================================================================
-// STREAMING VARIANT - For use during agent runs
-// =============================================================================
-
-/**
- * Account state with periodic refresh during streaming.
- * Use this in components that display credits during agent runs.
- */
-export function useAccountStateWithStreaming(isStreaming: boolean = false) {
-  // Inherit the BillingAccountProvider if one is wrapping us — keeps the
-  // streaming variant aligned with the static one on /accounts/[id].
-  const accountId = useBillingAccountId();
-  const contextResolved = useBillingAccountResolved();
-  return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(accountId),
-    queryFn: () => getAccountState({ accountId }),
-    // Same wait as useAccountState — never fetch under a provisional account.
-    enabled: shouldQueryAccountState({
-      enabled: true,
-      hasExplicitAccountId: false,
-      contextResolved,
-    }),
-    staleTime: 1000 * 60 * 5, // 5 minutes during streaming
-    gcTime: 1000 * 60 * 15,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    // Slower refresh during streaming - credits update via backend cache invalidation
-    refetchInterval: isStreaming ? 2 * 60 * 1000 : false, // 2 minutes if streaming
-    refetchIntervalInBackground: false,
   });
 }
 
@@ -405,47 +371,39 @@ export function useCreatePortalSession() {
   });
 }
 
-export function useCancelSubscription() {
+function useBillingAction<TRequest, TResponse extends { success: boolean; message: string }>(
+  mutationFn: (accountId: string | undefined, request: TRequest) => Promise<TResponse>,
+  errorKey: string,
+  options: { successKey?: string; refetch?: boolean } = {},
+) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
   return useMutation({
-    mutationFn: (request?: CancelSubscriptionRequest) =>
-      cancelSubscription(request?.feedback, accountId),
+    mutationFn: (request: TRequest) => mutationFn(accountId, request),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
+      invalidateAccountState(queryClient, options.refetch ?? true, false, accountId); // Refetch to show updated state
+      if (options.successKey) {
+        successToast(tI18nComplete.raw(options.successKey));
+      } else if (response.success) {
         successToast(response.message);
       } else {
         errorToast(response.message);
       }
     },
     onError: (error: any) => {
-      errorToast(error.message || tI18nComplete.raw('text2b41749fceaa'));
+      errorToast(error.message || tI18nComplete.raw(errorKey));
     },
   });
 }
 
-export function useReactivateSubscription() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
+export function useCancelSubscription() {
+  return useBillingAction((accountId, request?: CancelSubscriptionRequest) => cancelSubscription(request?.feedback, accountId), 'text2b41749fceaa');
+}
 
-  return useMutation({
-    mutationFn: () => reactivateSubscription(accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || tI18nComplete.raw('text5051e9e23edf'));
-    },
-  });
+export function useReactivateSubscription() {
+  return useBillingAction((accountId) => reactivateSubscription(accountId), 'text5051e9e23edf');
 }
 
 export function usePurchaseCredits() {
@@ -470,75 +428,15 @@ export function usePurchaseCredits() {
 }
 
 export function useScheduleDowngrade() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request: ScheduleDowngradeRequest) =>
-      scheduleDowngrade(request.target_tier_key, request.commitment_type, accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show scheduled change
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || tI18nComplete.raw('text645418722dbb'));
-    },
-  });
+  return useBillingAction((accountId, request: ScheduleDowngradeRequest) => scheduleDowngrade(request.target_tier_key, request.commitment_type, accountId), 'text645418722dbb');
 }
 
 export function useCancelScheduledChange() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => cancelScheduledChange(accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        successToast(response.message);
-      } else {
-        errorToast(response.message);
-      }
-    },
-    onError: (error: any) => {
-      errorToast(error.message || tI18nComplete.raw('text9118f944fba6'));
-    },
-  });
+  return useBillingAction((accountId) => cancelScheduledChange(accountId), 'text9118f944fba6');
 }
 
 export function useSyncSubscription() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => syncSubscription(accountId),
-    onSuccess: () => {
-      invalidateAccountState(queryClient, false, false, accountId);
-      successToast(tI18nComplete.raw('text24db9f4eb779'));
-    },
-    onError: (error: any) => {
-      errorToast(error.message || tI18nComplete.raw('textf3d331b82d30'));
-    },
-  });
-}
-
-// =============================================================================
-// USAGE HISTORY & TRANSACTIONS - Separate queries for analytics
-// =============================================================================
-
-export function useUsageHistory(days = 30) {
-  return useQuery({
-    queryKey: accountStateKeys.usageHistory(days),
-    queryFn: () => getBillingUsageHistory(days),
-    staleTime: 1000 * 60 * 10, // 10 minutes
-  });
+  return useBillingAction((accountId) => syncSubscription(accountId), 'textf3d331b82d30', { successKey: 'text24db9f4eb779', refetch: false });
 }
 
 // `useTransactions` (rich variant with typeFilter) lives in `./use-transactions`
@@ -552,63 +450,10 @@ export function useUsageHistory(days = 30) {
 // =============================================================================
 
 export const accountStateSelectors = {
-  /** Check if user can run agents (has credits) */
-  canRun: (state: AccountState | undefined) => state?.credits?.can_run ?? false,
-
   /** Get total credits (converted from dollars to credits using 1$ = 100 credits) */
   totalCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.total ?? 0),
-
-  /** Get daily credits (converted from dollars to credits using 1$ = 100 credits) */
-  dailyCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.daily ?? 0),
-
-  /** Get monthly credits (converted from dollars to credits using 1$ = 100 credits) */
-  monthlyCredits: (state: AccountState | undefined) =>
-    dollarsToCredits(state?.credits?.monthly ?? 0),
-
-  /** Get extra/non-expiring credits (converted from dollars to credits using 1$ = 100 credits) */
-  extraCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.extra ?? 0),
-
-  /** Get tier monthly credits limit (converted from dollars to credits using 1$ = 100 credits) */
-  tierMonthlyCredits: (state: AccountState | undefined) =>
-    dollarsToCredits(state?.tier?.monthly_credits ?? 0),
 
   /** Get tier key */
   tierKey: (state: AccountState | undefined) => state?.subscription?.tier_key ?? 'none',
 
-  /** Get tier display name */
-  tierDisplayName: (state: AccountState | undefined) =>
-    state?.subscription?.tier_display_name ?? 'No Plan',
-
-  // REMOVED: `planName`. It was a third frontend tier catalog — a hand-written
-  // tier_key -> display-name map that only knew 'pro' and called every other
-  // paid plan 'Basic', so a per-seat Team account read as Basic. It had no
-  // callers. Use `resolvedPlan(state).label` (@kortix/sdk), which reads the
-  // server's plan block.
-
-  /** Check if subscription is cancelled */
-  isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,
-
-  /** Get scheduled change info */
-  scheduledChange: (state: AccountState | undefined) => state?.subscription?.scheduled_change,
-
-  /** Check if has scheduled change */
-  hasScheduledChange: (state: AccountState | undefined) =>
-    state?.subscription?.has_scheduled_change ?? false,
-
-  /** Get commitment info */
-  commitment: (state: AccountState | undefined) => state?.subscription?.commitment,
-
-  /** Check if can purchase credits */
-  canPurchaseCredits: (state: AccountState | undefined) =>
-    state?.subscription?.can_purchase_credits ?? false,
-
-  /** Get daily credits info (with converted daily_amount) */
-  dailyCreditsInfo: (state: AccountState | undefined) => {
-    const dailyRefresh = state?.credits?.daily_refresh;
-    if (!dailyRefresh) return null;
-    return {
-      ...dailyRefresh,
-      daily_amount: dollarsToCredits(dailyRefresh.daily_amount),
-    };
-  },
 };

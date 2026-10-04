@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS. The Kortix Runtime API (`/kortix/opencode/*`) answers
  * transcript and session reads from OpenCode's storage instead of proxying
- * OpenCode's HTTP. Measured on box `ib31dg1elkycjulm0eeq1` (154 messages /
+ * OpenCode's HTTP. Measured on one box (154 messages /
  * 573 parts / 1.60 MB of transcript JSON, WS-V, 2026-08-26):
  *
  *   | operation                                     | median |
@@ -51,7 +51,7 @@
  *    change in a future OpenCode therefore degrades to "slower", never "wrong".
  */
 import { Database } from 'bun:sqlite'
-import { logger } from '../../logger'
+import { logger } from '@/lib/log/logger'
 
 /** Tiny retry for `SQLITE_BUSY` past `busy_timeout` — a checkpoint window. */
 export const DB_BUSY_RETRIES = 3

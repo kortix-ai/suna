@@ -24,21 +24,59 @@ import { cn } from '@/lib/utils';
 export type MenuRowSize = 'sm' | 'md' | 'lg';
 export type MenuRowTone = 'default' | 'destructive';
 
-/** Padding and type per step. Radius and gap stay fixed so columns line up. */
+/**
+ * Row geometry — the one grid every row in every menu sits on.
+ *
+ *   | px-2 | slot (size-4) | gap-2 | label …            | slot | px-2 |
+ *
+ * Only HEIGHT changes between sizes. Padding, gap, type and the icon slot are
+ * fixed, so a label starts on the same x in every row type and every size: a
+ * plain row with a leading icon, an `inset` row, a checkbox row, a left-radio
+ * row. `min-h` (not a fixed `h`) sets the height so a row with a description
+ * still grows; `py` only matters once content outgrows it.
+ *
+ *   sm  min-h-8   ≈ 29px   menus (default)
+ *   md  min-h-9   ≈ 33px   one step roomier — matches the `sm` Input height
+ *   lg  min-h-10  ≈ 37px   touch-first lists
+ */
 const MENU_ROW_SIZE: Record<MenuRowSize, string> = {
-  sm: 'px-2.5 py-[5px] text-sm',
-  md: 'px-3 py-2.5 text-sm',
-  lg: 'px-3.5 py-2 text-base',
+  sm: 'min-h-8 py-1',
+  md: 'min-h-9 py-1.5',
+  lg: 'min-h-10 py-2',
 };
+
+/** Leading/trailing slot for an icon or a check. Same width as a row icon. */
+export const MENU_INDICATOR = 'flex size-4 shrink-0 items-center justify-center';
+
+/** The check glyph inside `MENU_INDICATOR` — a notch lighter than an icon. */
+export const MENU_INDICATOR_ICON = 'text-muted-foreground size-3.5';
+
+/** `px-2` + slot + `gap-2`: where a label starts when a slot precedes it. */
+export const MENU_INSET = 'pl-8';
+
+/** The same offset on the trailing side, for a row with a trailing check. */
+export const MENU_INSET_END = 'pr-8';
 
 /**
  * `transition-colors`, not `transition-all`: a hover highlight only needs its
  * background and text to move, and 150ms keeps the highlight under the cursor
  * rather than trailing it.
  */
+/**
+ * `rounded-sm` (6px) is concentric with the panel: `rounded-lg` (10px) minus
+ * its `p-1` inset. `[&_svg:not([class*='size-'])]` defaults a bare icon to the
+ * slot size without overriding an explicit one — the old `[&_svg]:size-4`
+ * out-ranked every `size-3.5` check and caret, so they all rendered at 16px
+ * inside 14px boxes.
+ */
 const MENU_ROW_BASE =
-  'relative flex w-full cursor-default items-center gap-2 rounded-[calc(var(--radius)-3px)] font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0';
+  "relative flex w-full items-center gap-2 rounded-sm px-2 text-sm font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
 
+/**
+ * Keyboard focus and pointer hover resolve to the same treatment on purpose —
+ * Radix marks the keyboard-focused row `data-highlighted`, and a row you
+ * arrowed onto should look exactly like a row you hovered.
+ */
 /**
  * Keyboard focus and pointer hover resolve to the same treatment on purpose —
  * Radix marks the keyboard-focused row `data-highlighted`, and a row you
@@ -108,7 +146,7 @@ export function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string
  * away from the cursor.
  */
 export const FLOATING_PANEL_SURFACE =
-  'bg-popover text-popover-foreground border-border rounded-[10px] border shadow-md';
+  'bg-popover text-popover-foreground border-border rounded-lg border shadow-md';
 
 /** Enter/exit for panels that appear away from the pointer's path. */
 export const FLOATING_PANEL_MOTION =
@@ -128,9 +166,9 @@ export const MENU_PANEL = cn(FLOATING_PANEL, 'p-1');
  */
 export const MENU_PANEL_STATIC = cn(FLOATING_PANEL_SURFACE, 'p-1');
 
-/** Group label: `px-2.5` matches the sm row, so labels and rows share a left edge. */
-export const MENU_LABEL = 'text-muted-foreground px-2.5 py-1 text-xs font-medium tracking-normal';
+/** Group label: `px-2` matches every row, so labels and rows share a left edge. */
+export const MENU_LABEL = 'text-muted-foreground px-2 py-1 text-xs font-medium tracking-normal';
 
-export const MENU_SEPARATOR = 'bg-foreground/10 -mx-1 my-1 h-px';
+export const MENU_SEPARATOR = 'bg-border -mx-1.5 my-1.5 h-px';
 
 export const MENU_SHORTCUT = 'ml-auto text-xs tracking-widest opacity-60';

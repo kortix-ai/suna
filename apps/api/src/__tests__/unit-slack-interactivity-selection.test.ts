@@ -26,11 +26,13 @@ mock.module('../shared/db', () => ({
 }));
 
 const actualDispatch = await import('../channels/slack/dispatch');
+const spawned: Array<{ projectId: string; event: Record<string, unknown> }> = [];
 mock.module('../channels/slack/dispatch', () => ({
   ...actualDispatch,
   dispatchSlackEvent: async () => {},
-  pendingPickers: new Map(),
-  spawnAgentTurn: async () => {},
+  spawnAgentTurn: async (projectId: string, _envelope: unknown, event: Record<string, unknown>) => {
+    spawned.push({ projectId, event });
+  },
 }));
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
@@ -118,6 +120,7 @@ beforeEach(() => {
   inserts.length = 0;
   posts.length = 0;
   modelChoices.length = 0;
+  spawned.length = 0;
   globalThis.fetch = (async (url: string, init?: any) => {
     posts.push({ url, body: JSON.parse(init?.body ?? '{}') });
     return { ok: true } as any;
@@ -324,5 +327,43 @@ describe('settings buttons need a linked project manager', () => {
     });
     expect(inserts).toEqual([{ platform: 'slack', workspaceId: 'T1', channelId: 'C1', projectId: 'proj-2', pickerTs: null }]);
     expect(posts.at(-1)?.body.text).toContain('Switched this channel to');
+  });
+});
+
+// An agent can post any button through the bot, including a look-alike
+// "Connect" whose value names a URL of its choosing. Kortix used to present
+// that URL as its own sign-in page. The link is now built for the clicker.
+describe('the Connect button', () => {
+  test('never presents a URL taken from the button value', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'slack_login_connect', value: JSON.stringify({ url: 'https://phish.example.test/login', pendingId: 'pending-1' }) }],
+    });
+    const body = JSON.stringify(posts[0]?.body);
+    expect(body).not.toContain('phish.example.test');
+    expect(body).toMatch(/\/(slack\/login|v1\/channels\/slack\/identity\/login)\/[^"]+/);
+  });
+});
+
+// A click turn carried its own `Workspace: T0…` / `Channel: C0…` / `User: U0…`
+// lines and a second copy of the working instructions (2026-10-02). The
+// follow-up header around it already names the channel and the person and
+// carries the instructions; the session card showed the bare ids as the
+// message. The click text now carries the click alone.
+describe('agent button clicks', () => {
+  test('a click turn carries the click alone; the follow-up header names the channel and the person', async () => {
+    dbResults = [[{ sessionId: 'sess-1', projectId: 'proj-1' }]];
+    await handleBlockAction({
+      ...basePayload,
+      message: { ts: '10.1', thread_ts: '10.0' },
+      actions: [{ action_id: 'deploy_now', value: 'v1.2', text: { type: 'plain_text', text: 'Deploy' } }],
+    });
+
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]?.projectId).toBe('proj-1');
+    expect(spawned[0]?.event).toMatchObject({ user: 'U1', channel: 'C1', thread_ts: '10.0', ts: '10.1', team: 'T1' });
+    expect(spawned[0]?.event.text).toBe(
+      '[Button click] The user clicked *Deploy*.\naction_id: `deploy_now`\nvalue: `v1.2`\n\nContinue the turn based on this choice.',
+    );
   });
 });

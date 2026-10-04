@@ -11,15 +11,19 @@ const DAEMON_PORT = 8000;
 /**
  * The most bytes one request to the box may carry.
  *
- * NOT a guess. Measured 2026-09-04 against a live Platinum box by sweeping a
- * single attachment's size through the real route: a ~104 KB body arrives,
- * ~115 KB does not, and the drop is SILENT — the edge discards the body and
- * its retry answers `200` for a request the runtime never saw. 64 KiB leaves
- * room for the multipart envelope and headers on top of the payload, and keeps
- * a comfortable margin under a ceiling that lives outside this repo and can
- * therefore move without warning.
+ * Was 64 KiB. Measured 2026-09-04 against a live Platinum box: a ~104 KB body
+ * arrived, ~115 KB did not, and the drop was SILENT. Platinum then fixed the
+ * edge (#923 drains the request body across backpressure, #1077 streams proxy
+ * and edge bodies with bounded admission), and the 64 KiB ceiling turned into
+ * pure latency: one proxied round trip (~0.9-1.3 s on Dev) per 64 KiB.
+ *
+ * Re-measured 2026-10-02 through the real route in eu-west and us-east: single
+ * bodies of 1, 4, 8 and 16 MiB landed byte-exact. 8 MiB keeps a 2x margin under
+ * the largest size proven. The ceiling lives outside this repo, so both paths
+ * still check what landed: every append's cumulative size, and the whole-file
+ * upload's reported size, against the bytes sent.
  */
-export const RUNTIME_PROMPT_CHUNK_BYTES = 64 * 1024;
+export const RUNTIME_PROMPT_CHUNK_BYTES = 8 * 1024 * 1024;
 
 export class RuntimeRouteUnsupportedError extends Error {
   readonly method: string;
@@ -56,7 +60,9 @@ async function forwarded(
       kind: 'principal',
       userId: input.userId,
       callerSessionId: input.sessionId,
-      boundCredentialSessionId: input.sessionId,
+      // Internal delivery uses the account principal, not a session-bound agent token.
+      // Keep the trigger-session manager override available, as postPrompt does.
+      boundCredentialSessionId: null,
       sandboxAuthored: false,
     },
     method,
@@ -210,11 +216,27 @@ async function uploadWhole(
   });
   const temporaryPath = rows[0]?.path;
   if (!temporaryPath) throw new Error('runtime upload returned no file path');
+  // Only a SHORT landing is a cut body: an empty attachment lands 0 of 0, and
+  // a daemon that reports no size is not checked.
+  const landed = rows[0]?.size;
+  if (typeof landed === 'number' && landed < fileBytes.byteLength) {
+    // A cut body still wrote a short temp file; remove it before failing.
+    const deleteBody = new TextEncoder().encode(JSON.stringify({ path: temporaryPath }));
+    await forwarded(
+      input,
+      forward,
+      'DELETE',
+      '/file',
+      new Headers({ 'Content-Type': 'application/json' }),
+      deleteBody.buffer as ArrayBuffer,
+    ).catch(() => undefined);
+    throw new Error(`runtime upload landed ${landed} of ${fileBytes.byteLength} bytes`);
+  }
   return temporaryPath;
 }
 
 /**
- * Send a file the edge would otherwise drop, one bounded chunk at a time.
+ * Send a file larger than one request may carry, one bounded chunk at a time.
  *
  * The FIRST chunk truncates so a retry can never append onto a half-written
  * attempt; the rest extend. The daemon answers each chunk with the file's

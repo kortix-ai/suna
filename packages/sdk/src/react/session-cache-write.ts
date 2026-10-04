@@ -20,7 +20,7 @@
  */
 
 import type { Query, QueryClient } from '@tanstack/react-query';
-import type { ProjectSession } from '../core/rest/projects-client/sessions';
+import { sessionParentId, type ProjectSession } from '../core/rest/projects-client/sessions';
 import { qk } from './query-keys';
 
 /**
@@ -34,13 +34,40 @@ import { qk } from './query-keys';
  * still in memory threw on render and could not send (prod, 2026-09-22).
  *
  * Keys, relative to the prefix: `['list', scope]`, `['list-paged', scope]`,
- * and `[sessionId]`. Anything longer or different is not a session.
+ * `['list-paged', scope, filters]`, `['list-children', parentId, q]`, and
+ * `[sessionId]`. Anything longer or different is not a session.
  */
 function isSessionCacheKey(projectId: string, query: Query): boolean {
   const prefix = qk.project.sessionsScope(projectId);
   const rest = query.queryKey.slice(prefix.length);
-  if (rest.length === 2) return rest[0] === 'list' || rest[0] === 'list-paged';
+  if (rest[0] === 'list') return rest.length === 2;
+  if (rest[0] === 'list-paged') return rest.length === 2 || rest.length === 3;
+  if (rest[0] === 'list-children') return rest.length === 3;
   return rest.length === 1 && typeof rest[0] === 'string';
+}
+
+type ListFilters = { parent: string | null; startedBy: string | null; q: string | null };
+
+/**
+ * May a NEW session appear in this cached list? Unfiltered lists take every
+ * session. A searched list is never seeded (whether the row matches is the
+ * server's call). A root list takes top-level sessions whose starter matches;
+ * a children list takes only that parent's children. The viewer id is not known
+ * here, so "mine" is `is_owner !== false` on a member-started row.
+ */
+function sessionBelongsInList(projectId: string, query: Query, session: ProjectSession): boolean {
+  const rest = query.queryKey.slice(qk.project.sessionsScope(projectId).length);
+  const parentId = sessionParentId(session);
+  if (rest[0] === 'list-children') return !rest[2] && parentId === rest[1];
+  const filters = rest[0] === 'list-paged' ? (rest[2] as ListFilters | undefined) : undefined;
+  if (!filters) return true;
+  if (filters.q) return false;
+  if (filters.parent === 'root' && parentId !== null) return false;
+  if (filters.parent && filters.parent !== 'root') return parentId === filters.parent;
+  if (!filters.startedBy) return true;
+  const isMember = (session.initiator?.type ?? 'member') === 'member';
+  if (filters.startedBy === 'automated') return !isMember;
+  return isMember && (filters.startedBy === 'me') === (session.is_owner !== false);
 }
 
 export type ProjectSessionsUpdater = (sessions: ProjectSession[]) => ProjectSession[];
@@ -212,7 +239,8 @@ export function upsertCachedProjectSession(
   queryClient.setQueriesData(
     {
       queryKey: qk.project.sessionsScope(projectId),
-      predicate: (query) => isSessionCacheKey(projectId, query),
+      predicate: (query) =>
+        isSessionCacheKey(projectId, query) && sessionBelongsInList(projectId, query, session),
     },
     (cached: unknown) => upsertIntoCachedSessionShape(cached, session),
   );

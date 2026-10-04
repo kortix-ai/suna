@@ -22,14 +22,13 @@ const mobileNodeModules = path.resolve(projectRoot, 'node_modules');
 // This prevents duplicate React instances when bundling shared packages
 const forcedModules = ['react', 'react-native', 'react/jsx-runtime', 'react/jsx-dev-runtime'];
 
-// Node.js built-ins that leak into the bundle graph via third-party packages
-// but have no React Native equivalent and are never exercised at runtime.
-// `readline` is pulled in by expensify-common's CLI helper (referenced through
-// @expensify/react-native-live-markdown). Metro cannot resolve it, so we stub
-// it to an empty module. Without this the EAS "Bundle JavaScript" phase fails
-// with "Unable to resolve module readline".
-const emptyModulePath = path.resolve(projectRoot, 'metro-empty-module.js');
-const stubbedNodeBuiltins = new Set(['readline']);
+// `@kortix/sdk/react` is bundled from `packages/sdk`, which has its own copies of
+// these in `packages/sdk/node_modules`. A second React Query never sees this
+// app's `QueryClientProvider`, so they resolve exactly as an import written in
+// this app does (same file, same instance). Mirrored for `bun test` in
+// `lib/testing/sdk-single-instance.ts`.
+const appSingletons = new Set(['@tanstack/react-query', 'zustand', 'zustand/middleware']);
+const appOrigin = path.join(projectRoot, 'package.json');
 
 // MathJax 4 (`lib/math/tex-to-svg.ts`) imports its default font through the
 // package `imports` map (`#default-font/*` -> @mathjax/mathjax-newcm-font).
@@ -59,13 +58,6 @@ config.resolver = {
   // Custom resolver to force React resolution from mobile's node_modules
   // This is critical for monorepo setups where shared packages use React hooks
   resolveRequest: (context, moduleName, platform) => {
-    // Stub Node.js built-ins that have no React Native equivalent.
-    if (stubbedNodeBuiltins.has(moduleName)) {
-      return {
-        filePath: emptyModulePath,
-        type: 'sourceFile',
-      };
-    }
     if (moduleName.startsWith(DEFAULT_FONT_PREFIX)) {
       return {
         filePath: path.join(mathjaxTexFontDir, moduleName.slice(DEFAULT_FONT_PREFIX.length)),
@@ -79,16 +71,8 @@ config.resolver = {
         type: 'sourceFile',
       };
     }
-    // Deterministic mapping for the SDK turns subpath — does not depend on
-    // Metro's package-exports support. Points at the SDK's `./turns` export
-    // target (a framework-free re-export of `core/turns`). The v2 SDK moved
-    // the old `src/turns/index.ts` here; keep this in sync with the `exports`
-    // map in packages/sdk/package.json.
-    if (moduleName === '@kortix/sdk/turns') {
-      return {
-        filePath: path.resolve(monorepoRoot, 'packages/sdk/src/deprecated/turns.ts'),
-        type: 'sourceFile',
-      };
+    if (appSingletons.has(moduleName) && context.originModulePath !== appOrigin) {
+      return context.resolveRequest({ ...context, originModulePath: appOrigin }, moduleName, platform);
     }
     // Fall back to default resolution
     return context.resolveRequest(context, moduleName, platform);

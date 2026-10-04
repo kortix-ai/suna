@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyTurnError, parseBalance } from '../channels/slack/errors';
+import { classifyTurnError, parseBalance, TEAMS_TURN_ERROR_COMMANDS } from '../channels/slack/errors';
 
 describe('classifyTurnError', () => {
   test('out of credits — 402 status', () => {
@@ -112,10 +112,47 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('context window');
   });
 
+  // OpenCode compacts on overflow by itself; this error reaches a thread only
+  // when its compaction failed, and a summary request would fail the same way.
+  test('OpenCode`s ContextOverflowError → "Conversation too long", never "ask me to summarize"', () => {
+    const r = classifyTurnError({
+      name: 'ContextOverflowError',
+      message: 'Conversation history too large to compact - exceeds model context limit',
+    });
+    expect(r.title).toBe('Conversation too long');
+    expect(r.text).toContain('Start a new thread');
+    expect(r.text.toLowerCase()).not.toContain('summarize');
+  });
+
   test('model-not-found (404) → "Model unavailable" with a config next step', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
     expect(r.title).toBe('Model unavailable');
     expect(r.text.toLowerCase()).toContain('model');
+  });
+
+  // Prod 2026-09-30: OpenCode's own wording. "The selected model" sent people
+  // to the web picker, which showed a different, working model.
+  test('OpenCode`s "Model not found" names the model and the Slack command', () => {
+    const r = classifyTurnError({
+      name: 'UnknownError',
+      message: 'Model not found: codex/gpt-6-sol. Did you mean: gpt-6-sol-mini?',
+    });
+    expect(r.title).toBe('Model unavailable');
+    expect(r.text).toBe(
+      ":warning: *The model `codex/gpt-6-sol` isn't available.* Pick another model with `/kortix models`, then start a new thread.",
+    );
+  });
+
+  test('Teams gets its own model command', () => {
+    const r = classifyTurnError({ message: 'Model not found: codex/gpt-6-sol.' }, TEAMS_TURN_ERROR_COMMANDS);
+    expect(r.text).toBe(
+      ":warning: *The model `codex/gpt-6-sol` isn't available.* Pick another model with `/models`, then send your message again.",
+    );
+  });
+
+  test('a model error that names no ref keeps the generic subject', () => {
+    const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
+    expect(r.text).toStartWith(":warning: *The selected model isn't available.*");
   });
 
   test('agent-not-found → "Agent unavailable" routing to /kortix agents', () => {
@@ -141,6 +178,21 @@ describe('classifyTurnError', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 401, message: 'Unauthorized' });
     expect(r.title).toBe('Provider rejected the request');
     expect(r.text.toLowerCase()).toContain('api key');
+  });
+
+  // A Teams turn on dev (2026-09-29) failed with ChatGPT's own 401. The generic
+  // copy sent the user to "a workspace admin" about "its API key": neither
+  // exists for a ChatGPT login. Only whoever connected the login can fix it.
+  test('a refused ChatGPT login says who reconnects it, not "check the API key"', () => {
+    const body = JSON.stringify({ error: { message: 'Could not parse your authentication token. Please try signing in again.', code: 'unauthorized_unknown' }, status: 401 });
+    for (const message of [body, 'Could not parse your authentication token. Please try signing in again.']) {
+      const r = classifyTurnError({ name: 'APIError', statusCode: 401, providerID: 'kortix', message });
+      expect(r.title).toBe('ChatGPT login needs reconnection');
+      expect(r.text).toContain('ChatGPT accounts');
+      expect(r.text.toLowerCase()).not.toContain('api key');
+    }
+    // Any other 401 keeps the provider-config copy.
+    expect(classifyTurnError({ name: 'APIError', statusCode: 401, message: 'Unauthorized' }).title).toBe('Provider rejected the request');
   });
 
   test('ProviderAuthError names the provider when providerID is present', () => {
@@ -218,6 +270,33 @@ describe('classifyTurnError', () => {
     const r = classifyTurnError({ statusCode: 402, message: 'Insufficient credits' });
     expect(r.title).toBe('Out of credits');
     expect(r.aborted).toBe(false);
+  });
+});
+
+describe('classifyTurnError — the daemon code decides (W5 E11)', () => {
+  test.each([
+    ['credits', 'Out of credits'],
+    ['rate_limit', 'Usage limit reached'],
+    ['auth', 'Provider rejected the request'],
+    ['context_length', 'Conversation too long'],
+    ['output_length', 'Response too long'],
+    ['aborted', 'Run stopped'],
+  ] as const)('code %s with no name, status or matching text', (code, title) => {
+    expect(classifyTurnError({ name: 'UnknownError', message: 'upstream said no', code }).title).toBe(title);
+  });
+
+  test('a specific code beats text that names another bucket', () => {
+    expect(classifyTurnError({ message: 'rate limit exceeded', code: 'auth' }).title).toBe('Provider rejected the request');
+  });
+
+  test('code unknown falls back to the name, status and text checks', () => {
+    expect(classifyTurnError({ message: 'Insufficient credits. Balance: $-0.06', code: 'unknown' }).title).toBe('Out of credits');
+    expect(classifyTurnError({ name: 'TimeoutError', message: 'The session made no progress.', code: 'unknown' }).title).toBe('Run failed');
+  });
+
+  test('a ChatGPT login refusal still wins over an auth code', () => {
+    const r = classifyTurnError({ statusCode: 401, message: 'Could not parse your authentication token.', code: 'auth' });
+    expect(r.title).toBe('ChatGPT login needs reconnection');
   });
 });
 

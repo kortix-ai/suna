@@ -129,7 +129,4 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
     </BasicTool>
   );
 }
-ToolRegistry.register('session_read', SessionReadTool);
 ToolRegistry.register('session-read', SessionReadTool);
-ToolRegistry.register('oc-session_read', SessionReadTool);
-ToolRegistry.register('oc-session-read', SessionReadTool);

@@ -1,9 +1,7 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { buildDenialError } from '../../iam/denial-message';
-import { invalidateIamCacheForProjectResources } from '../../iam/cache-invalidation';
-import { auth, errors, json } from '../../openapi';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
@@ -35,6 +33,8 @@ import {
 // is already exposed by serializeProject. Project-wide state (not per-user).
 
 const ONBOARDING_USE_CASES = new Set([
+  'founder',
+  'product_design',
   'sales',
   'support',
   'marketing',
@@ -70,6 +70,11 @@ function pickOnboardingProfile(input: unknown): Record<string, string> | null {
     const domain = raw.company_domain.trim().toLowerCase().slice(0, 253);
     if (domain) out.company_domain = domain;
   }
+  if (typeof raw.use_case_note === 'string') {
+    // The "Something else" answer, typed free-form. 120 matches the input cap.
+    const note = raw.use_case_note.trim().slice(0, 120);
+    if (note) out.use_case_note = note;
+  }
 
   return Object.keys(out).length > 0 ? out : null;
 }
@@ -79,11 +84,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/onboarding',
     tags: ['projects'],
-    summary: 'PATCH /:projectId/onboarding',
+    summary: 'Update project onboarding state',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            completed: z.boolean().optional().openapi({ description: 'true marks onboarding complete; false clears it.' }),
+            profile: z.record(z.string(), z.any()).optional().openapi({ description: 'Onboarding answers to merge.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -149,7 +157,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}',
     tags: ['projects'],
-    summary: 'DELETE /:projectId',
+    summary: 'Delete a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -221,29 +229,18 @@ const patchFeatureFlagHandler = async (c: any) => {
   }
   const feature = body.feature;
   const enabled = body.enabled;
-  // Floor 'read' (membership); project.customize.write is the human gate below
-  // (was 'manage' → project.write, so unchecking customize.write did nothing).
+  // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Per-agent gate: toggling feature flags is project config. A scoped agent
-  // token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // token must hold project.settings.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
   }
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
-  }
-  // The agent-principal switch decides which authority model an agent session
-  // runs under. An agent must not pick its own model: turning it off would put
-  // an owner-launched session back on the owner's super-admin bypass.
-  if (feature === 'agent_principal' && isProjectSessionPrincipal(c)) {
-    throw buildDenialError(
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-      'agent_human_only_action',
-      'Only a human can change the agent_principal feature flag.',
-    );
   }
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
@@ -265,10 +262,6 @@ const patchFeatureFlagHandler = async (c: any) => {
     .where(eq(projects.projectId, projectId))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
-  // The IAM engine memoizes `agent_principal` per project for 15 s
-  // (iam/agent-principal.ts). Bust it on this replica so the switch applies to
-  // the next request; other replicas converge within one TTL.
-  if (feature === 'agent_principal') invalidateIamCacheForProjectResources(projectId);
   // Convergence work (connector materialization, sandbox env fan-out) runs
   // behind the response; runFeatureFlagToggleEffects retries once and logs
   // failures at error level. See feature-flags/toggle-effects.ts.
@@ -310,7 +303,7 @@ for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as con
 // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
 // (follow the platform default/distribution). Bypasses the distribution weights by
 // design — pin a project to platinum even when platinum's weight is 0. Same auth as
-// the experimental toggle (project 'manage' + project.customize.write for agents).
+// the experimental toggle (project 'manage' + project.settings.write for agents).
 projectsApp.openapi(
   createRoute({
     method: 'patch',
@@ -334,12 +327,11 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const raw = body.provider ?? body.sandbox_provider;
-    // Floor 'read'; project.customize.write is the human gate below (was
-    // 'manage' → project.write, so unchecking customize.write did nothing here).
+    // Floor 'read'; project.settings.write is the gate below.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
     // Route the change through the durable prepare→verify→activate workflow.
     // Switching to a safe target (null clear, the platform-default provider, or

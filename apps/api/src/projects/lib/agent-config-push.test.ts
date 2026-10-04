@@ -333,7 +333,7 @@ describe('capability gate on the compiled-governance push', () => {
   // The gate must read the box's STATE, not the binary's capability. With
   // `config_releases` off the box runs its workspace config dir and owns no
   // release, so the pre-release governance push is exactly what has to happen.
-  // Verified on a real Platinum box 2026-09-24 (session 423fe876, flag off):
+  // Verified on a real Platinum box 2026-09-24 (one session, flag off):
   // health.config = {release_id: null, source: 'workspace'}, capabilities
   // still list config.release.v1, and `kortix sessions reload` answered
   // "Nothing to apply: the daemon receives compiled governance in its config

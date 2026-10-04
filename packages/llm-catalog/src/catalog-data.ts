@@ -1,6 +1,6 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
-import type { Catalog, CatalogModel } from './index';
-import { getManagedModel, pricingRefLookupCandidates } from './index';
+import type { Catalog, CatalogModel } from './lite';
+import { getManagedModel, pricingRefLookupCandidates } from './lite';
 
 /**
  * The bundled models.dev snapshot. Kept out of `index.ts` so consumers that
@@ -66,6 +66,9 @@ export function catalogModelForWireModel(
       reasoning: true,
       tool_call: true,
       temperature: true,
+      attachment: managed.vision,
+      modalities: { input: managed.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+      ...(managed.reasoningOptions ? { reasoning_options: managed.reasoningOptions } : {}),
       limit: managed.limit,
     };
   }

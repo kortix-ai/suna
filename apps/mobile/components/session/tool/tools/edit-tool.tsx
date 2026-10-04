@@ -9,20 +9,13 @@
  *   `ToolResultCard`; a Morph `code_edit` → its instructions (`text-xs italic
  *   text-muted-foreground`, `mb-1.5`, indented) over a `ToolCodeCard`; a
  *   stale pending part → "No content received"; then LSP diagnostics.
- *
- * `WriteEditExpandedContent` below is the previous mobile renderer, still
- * imported by `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useContext, useMemo } from 'react';
-import { View } from 'react-native';
-import { getFilename, isErrorOutput } from '@kortix/sdk';
+import { getFilename, isErrorOutput, toToolView } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { PencilSimpleIcon } from '@/lib/icons';
-import { generateLineDiff } from '@/lib/opencode/diff-utils';
-import type { ToolPart } from '@/lib/opencode/types';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import { getExtFromPath, stripCodeFences } from '@/lib/session/highlight-tokens';
 import {
   FILE_BODY_TEXT,
   editBodyKind,
@@ -32,16 +25,12 @@ import {
   isStalePendingFile,
 } from '@/lib/session/tools/files-write-edit';
 import { webSpace } from '@/lib/session/user-message';
-import { THEME, withAlpha } from '@/lib/utils/theme';
-import { DiffCodeLine } from '../shared/diff-code-line';
-import { HighlightedCode as LegacyHighlightedCode } from '../shared/highlighted-code';
 import {
   BasicTool,
   DiagnosticsDisplay,
   getToolDiagnostics,
   InlineDiffView,
   partInput,
-  partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
@@ -52,11 +41,10 @@ import {
   useToolIndent,
   useToolNavigation,
 } from '../shared/infrastructure';
+import { RawPatchDiffView } from '../shared/patch-helpers';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, muted, useTurnPalette } from '../shared/styles';
-import { getToolInput } from '../shared/tool-part';
 import type { ToolProps } from '../shared/types';
-import { ToolScroll } from '../shared/surface';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
@@ -65,12 +53,12 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const { openFile } = useToolNavigation();
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
   const status = partStatus(part);
-  const { filePath, before, after, codeEdit, morphInstructions, hasDiff } = editSources(
+  const file = useMemo(() => toToolView(part).files?.[0], [part]);
+  const { filePath, before, after, patch, patchStat, codeEdit, morphInstructions, hasDiff } = editSources(
     input,
     streamingInput,
-    metadata,
+    file,
   );
   const { filename, ext } = useMemo(() => {
     const name = getFilename(filePath) || '';
@@ -80,8 +68,11 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const isStalePending = isStalePendingFile({ running, filename, status });
   const output = partOutput(part);
   const isError = status === 'completed' && isErrorOutput(output);
-  const diffCounts = useMemo(() => editStat({ status, hasDiff, before, after }), [status, hasDiff, before, after]);
-  const kind = editBodyKind({ isError, hasDiff, codeEdit, isStalePending });
+  const diffCounts = useMemo(
+    () => editStat({ status, hasDiff, before, after, patchStat }),
+    [status, hasDiff, before, after, patchStat],
+  );
+  const kind = editBodyKind({ isError, hasDiff, patch, codeEdit, isStalePending });
 
   return (
     <BasicTool
@@ -102,6 +93,10 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       ) : kind === 'diff' ? (
         <ToolResultCard>
           <InlineDiffView oldValue={before} newValue={after} filename={filename} />
+        </ToolResultCard>
+      ) : kind === 'patch' ? (
+        <ToolResultCard>
+          <RawPatchDiffView patch={patch} filename={filename} />
         </ToolResultCard>
       ) : kind === 'morph' ? (
         <>
@@ -137,76 +132,3 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 }
 ToolRegistry.register('edit', EditTool);
 ToolRegistry.register('morph_edit', EditTool);
-
-// ─── Legacy (tool-part-renderer.tsx switch) ──────────────────────────────────
-
-export function WriteEditExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const input = getToolInput(tool);
-  const content = input.content || input.newString || '';
-  const filePath = input.filePath || '';
-  const ext = getExtFromPath(filePath);
-
-  // For edit, show unified diff
-  const oldString = input.oldString;
-  const newString = input.newString;
-  const isEdit = tool.tool === 'edit' || tool.tool === 'morph_edit';
-
-  const lineDiff = useMemo(() => {
-    if (isEdit && oldString && newString) {
-      return generateLineDiff(oldString, newString);
-    }
-    return null;
-  }, [isEdit, oldString, newString]);
-
-  const fs = 10.5;
-  const lh = 16;
-
-  return (
-    <View>
-      {lineDiff ? (
-        <ToolScroll maxHeight={300} showsVerticalScrollIndicator>
-          <View style={{ paddingVertical: 4 }}>
-            {lineDiff.slice(0, 40).map((line, i) => {
-              const isRemoved = line.type === 'removed';
-              const isAdded = line.type === 'added';
-
-              return (
-                <View
-                  key={i}
-                  style={{
-                    backgroundColor: isRemoved
-                      ? withAlpha(THEME.accent.red, isDark ? 0.06 : 0.05)
-                      : isAdded
-                        ? withAlpha(THEME.accent.green, isDark ? 0.06 : 0.05)
-                        : 'transparent',
-                  }}
-                >
-                  <DiffCodeLine text={line.text} lineType={line.type} ext={ext} isDark={isDark} fs={fs} lh={lh} />
-                </View>
-              );
-            })}
-          </View>
-          {lineDiff.length > 40 && (
-            <View style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
-              <Text style={{ fontSize: 10, fontFamily: monoFont, color: muted(isDark) }}>
-                ... {lineDiff.length - 40} more lines
-              </Text>
-            </View>
-          )}
-        </ToolScroll>
-      ) : content ? (
-        <ToolScroll maxHeight={250} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }} showsVerticalScrollIndicator>
-          <LegacyHighlightedCode
-            content={(() => {
-              const cleaned = stripCodeFences(content);
-              return cleaned.length > 3000 ? cleaned.slice(0, 3000) : cleaned;
-            })()}
-            filePath={filePath}
-            isDark={isDark}
-            maxLines={40}
-          />
-        </ToolScroll>
-      ) : null}
-    </View>
-  );
-}

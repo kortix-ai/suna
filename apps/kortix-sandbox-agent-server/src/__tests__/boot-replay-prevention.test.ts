@@ -28,7 +28,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { resolveExistingRoot, reusedRootAlreadyDelivered } from '../harness/open-code/boot'
+import { resolveExistingRoot, reusedRootAlreadyDelivered } from '@/harness/open-code/boot'
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 
@@ -155,6 +155,22 @@ describe('resolveExistingRoot — waitForRootList timeout (hole 2)', () => {
 
     const result = await resolveExistingRoot(baseUrl, '/workspace', null, 300)
     expect(result.status).toBe('create')
+  })
+
+  // Prod 2026-09-23: the conversation root is older than an empty root a
+  // prior boot created. The pin (local, or the control plane's when the
+  // local file is gone) must win over recency.
+  test('a pinned older root wins over a newer empty root', async () => {
+    const { port } = rootServer({
+      roots: [
+        { id: 'ses_conversation', created: 1, updated: 2 },
+        { id: 'ses_empty_newer', created: 10, updated: 10 },
+      ],
+    })
+    const result = await resolveExistingRoot(`http://127.0.0.1:${port}`, '/workspace', 'ses_conversation', 300)
+    expect(result.status).toBe('found')
+    if (result.status !== 'found') return
+    expect(result.root.id).toBe('ses_conversation')
   })
 
   test('reachable but genuinely empty: still safe to create, not deferred', async () => {

@@ -1,6 +1,4 @@
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { Button } from '@/components/ui/button';
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
 import {
   isGitMirrorUnavailableNoiseMessage,
@@ -8,16 +6,11 @@ import {
 } from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
-import {
-  accountSettingsTarget,
-  useAccountSettingsModalStore,
-} from '@/stores/account-settings-modal-store';
+import { openAccountSettings } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import type { BillingState } from '@kortix/sdk';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 import * as Sentry from '@sentry/nextjs';
-
-const MANAGE_PLAN_LABEL = 'Manage plan';
 
 export interface ApiError extends Error {
   status?: number;
@@ -308,31 +301,6 @@ export const handleApiError = (
     return;
   }
 
-  // Concurrent session limit — single clean toast with usage + an Open Settings
-  // action. The dedup key (status, message) suppresses any duplicate the call
-  // site might also emit with the same body.
-  if (v2Status === 429 && v2Code === 'concurrent_session_limit') {
-    const limit = typeof v2Detail?.limit === 'number' ? v2Detail.limit : undefined;
-    const active =
-      typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
-    const title =
-      limit !== undefined
-        ? `You've reached your plan's concurrent-session limit (${active ?? limit}/${limit})`
-        : 'Concurrent-session limit reached';
-    if (!shouldSuppressDuplicate(v2Status, title)) {
-      warningToast(title, {
-        description: tI18nComplete.raw('text655a03fa2bea'),
-        duration: 6000,
-        button: (
-          <Button size="sm" asChild>
-            <HubLink to={accountSettingsTarget({ tab: 'billing' })}>{MANAGE_PLAN_LABEL}</HubLink>
-          </Button>
-        ),
-      });
-    }
-    return;
-  }
-
   if (!shouldShowError(error, context)) {
     return;
   }
@@ -349,7 +317,7 @@ export const handleApiError = (
     const isCreditsExhausted = errorUI.alertTitle === 'You ran out of credits';
 
     if (isCreditsExhausted) {
-      useAccountSettingsModalStore.getState().openAccountSettings({
+      openAccountSettings({
         tab: 'billing',
         highlight: 'credits',
       });
@@ -393,27 +361,6 @@ export const handleApiError = (
       duration: 5000,
     });
   }
-};
-
-export const handleApiSuccess = (message: string, description?: string): void => {
-  successToast(message, {
-    description,
-    duration: 3000,
-  });
-};
-
-export const handleApiWarning = (message: string, description?: string): void => {
-  warningToast(message, {
-    description,
-    duration: 4000,
-  });
-};
-
-export const handleApiInfo = (message: string, description?: string): void => {
-  infoToast(message, {
-    description,
-    duration: 3000,
-  });
 };
 
 /**

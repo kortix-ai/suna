@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
@@ -75,12 +75,16 @@ function envelope(saved: boolean) {
   };
 }
 
-function bundle(pin: string | null, saved: boolean) {
+function bundle(
+  pin: string | null,
+  saved: boolean,
+  legs: { turn?: Record<string, unknown>; queue?: Record<string, unknown> } = {},
+) {
   return {
     observed_at: '2026-09-25T00:00:00Z',
     session: row(pin),
-    turn: { known: false, reason: 'test' },
-    queue: { known: false, reason: 'test' },
+    turn: legs.turn ?? { known: false, reason: 'test' },
+    queue: legs.queue ?? { known: false, reason: 'test' },
     transcript: { known: true, requested: true, ...envelope(saved) },
     config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
     models: { known: false, reason: 'test' },
@@ -91,9 +95,9 @@ function bundle(pin: string | null, saved: boolean) {
 function serve(routes: {
   snapshot?: () => Promise<Response>;
   history?: () => Promise<Response>;
-  historyFlag?: boolean;
-  /** The project detail (it carries the flag) never answers. */
-  flagUnknown?: boolean;
+  /** The project's stored `experimental` map. Omitted: the project detail
+   *  never answers, which saved history must not wait for. */
+  experimental?: Record<string, boolean>;
 }) {
   const never = () => new Promise<Response>(() => {});
   globalThis.fetch = mock(async (input: unknown) => {
@@ -102,12 +106,9 @@ function serve(routes: {
     if (url.includes('/transcript?') && url.includes('history=true'))
       return (routes.history ?? never)();
     if (url.includes(`/projects/${PROJECT_ID}/detail`)) {
-      if (routes.flagUnknown) return never();
+      if (!routes.experimental) return never();
       return Response.json({
-        project: {
-          project_id: PROJECT_ID,
-          experimental: { session_transcript_history: routes.historyFlag === true },
-        },
+        project: { project_id: PROJECT_ID, experimental: routes.experimental },
         config: {},
       });
     }
@@ -196,20 +197,7 @@ test('a saved copy on its way is loading, and shown once it paints', async () =>
 });
 
 test('a session whose server holds no saved copy is none', async () => {
-  serve({ snapshot: async () => Response.json(bundle(ROOT, false)) });
-  await mount({ enabled: true });
-  expect(current().savedTranscript).toBe('none');
-});
-
-test('a session with no root anywhere but the runtime is none', async () => {
-  serve({ snapshot: async () => Response.json(bundle(null, false)) });
-  await mount({ enabled: true });
-  expect(current().savedTranscript).toBe('none');
-});
-
-test('with saved history on, a history read that finds nothing is none', async () => {
   serve({
-    historyFlag: true,
     snapshot: async () => Response.json(bundle(ROOT, false)),
     history: async () => Response.json(envelope(false)),
   });
@@ -217,9 +205,28 @@ test('with saved history on, a history read that finds nothing is none', async (
   expect(current().savedTranscript).toBe('none');
 });
 
-test('with saved history on, the history read paints the copy', async () => {
+test('a session with no root anywhere but the runtime is none', async () => {
   serve({
-    historyFlag: true,
+    snapshot: async () => Response.json(bundle(null, false)),
+    history: async () => Response.json(envelope(false)),
+  });
+  await mount({ enabled: true });
+  expect(current().savedTranscript).toBe('none');
+});
+
+test('a history read that finds nothing is none', async () => {
+  serve({
+    snapshot: async () => Response.json(bundle(ROOT, false)),
+    history: async () => Response.json(envelope(false)),
+  });
+  await mount({ enabled: true });
+  expect(current().savedTranscript).toBe('none');
+});
+
+test('the history read paints the copy without waiting for the project detail', async () => {
+  // Saved history has no project flag any more, so nothing it needs sits
+  // behind the project detail read.
+  serve({
     snapshot: () => new Promise<Response>(() => {}),
     history: async () => Response.json(envelope(true)),
   });
@@ -228,10 +235,63 @@ test('with saved history on, the history read paints the copy', async () => {
   expect(current().messages).toHaveLength(1);
 });
 
-test('while the saved-history flag is unknown, a copy is not ruled out', async () => {
-  // Deciding `none` from the flag-off path and then re-deciding once the flag
-  // answers would flip the host from its boot screen back to placeholder rows.
-  serve({ flagUnknown: true, snapshot: async () => Response.json(bundle(ROOT, false)) });
+test('a project that stored the old off override still paints its saved history', async () => {
+  serve({
+    experimental: { session_transcript_history: false },
+    snapshot: () => new Promise<Response>(() => {}),
+    history: async () => Response.json(envelope(true)),
+  });
   await mount({ enabled: true });
-  expect(current().savedTranscript).toBe('loading');
+  expect(current().savedTranscript).toBe('shown');
+  expect(current().messages).toHaveLength(1);
+});
+
+describe('an empty conversation', () => {
+  // The server's saved copy proves the conversation empty: a complete read of
+  // the runtime found no messages. With no turn ever and nothing queued there
+  // is nothing to wait for, so a host opens it on its composer.
+  const neverRan = { turn: { known: true, turns: [] }, queue: { known: true, prompts: [], held: false } };
+  const provenEmpty = () =>
+    Response.json({ ...envelope(true), message_count: 0, total: 0, messages: [] });
+
+  test('a saved copy that proves it empty, no turn ever and nothing queued is an empty conversation', async () => {
+    serve({ snapshot: async () => Response.json(bundle(ROOT, false, neverRan)), history: async () => provenEmpty() });
+    await mount({ enabled: true });
+    expect(current().savedTranscript).toBe('none');
+    expect(current().conversationEmpty).toBe(true);
+  });
+
+  test('no saved copy is not an empty conversation, even with no turn on record', async () => {
+    // What an older session with history looks like before its first wake:
+    // its turns may predate the turn record.
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, false, neverRan)),
+      history: async () => Response.json(envelope(false)),
+    });
+    await mount({ enabled: true });
+    expect(current().savedTranscript).toBe('none');
+    expect(current().conversationEmpty).toBe(false);
+  });
+
+  test('a turn that ended outranks an empty saved copy', async () => {
+    const ended = {
+      ...neverRan,
+      turn: {
+        known: true,
+        turns: [],
+        last_ended: { turn_token: 'tok_1', message_id: null, end_reason: 'completed', ended_at: '2026-09-25T00:00:00Z' },
+      },
+    };
+    serve({ snapshot: async () => Response.json(bundle(ROOT, false, ended)), history: async () => provenEmpty() });
+    await mount({ enabled: true });
+    expect(current().conversationEmpty).toBe(false);
+  });
+
+  test('an unanswered turn record is an unknown, never an empty, and never the boot screen', async () => {
+    serve({ snapshot: async () => Response.json(bundle(ROOT, false)), history: async () => provenEmpty() });
+    await mount({ enabled: true });
+    expect(current().conversationEmpty).toBe(false);
+    // The composer may be one read away: placeholder rows, not a boot screen.
+    expect(current().savedTranscript).toBe('loading');
+  });
 });

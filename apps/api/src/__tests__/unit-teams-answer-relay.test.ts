@@ -37,6 +37,8 @@ mock.module('../channels/teams/binding', () => ({
   teamsChannelCtx: () => ({ platform: 'teams', teamId: TENANT, channelId: CONVO }),
 }));
 
+mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
+
 const relayed: Array<{ text?: string; id?: string }> = [];
 mock.module('../channels/teams/session', () => ({
   createOrJoinTeamsConversationSession: async (input: { activity: { text?: string; id?: string } }) => {

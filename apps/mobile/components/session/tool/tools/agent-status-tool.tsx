@@ -109,7 +109,5 @@ export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('agent_status', AgentStatusTool);
 ToolRegistry.register('agent-status', AgentStatusTool);
-ToolRegistry.register('agent_task_list', AgentStatusTool);
 ToolRegistry.register('agent-task-list', AgentStatusTool);

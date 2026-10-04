@@ -6,15 +6,11 @@
  * card shows the memory itself — an observation's title and narrative, an LTM
  * entry's caption and content — while its provenance (request, facts,
  * concepts, files read, tags) folds.
- *
- * `GetMemExpandedContent` is the previous mobile body, still imported by
- * `tool-part-renderer.tsx`'s legacy path; it goes when that path is removed.
  */
 
 import { useContext, useMemo, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import type { ToolPart } from '@/lib/opencode/types';
 import { BrainIcon, CalendarDotsIcon, FingerprintIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { isToolStreaming } from '@/lib/session/tools/projects-connectors';
@@ -240,23 +236,4 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     </BasicTool>
   );
 }
-ToolRegistry.register('get_mem', GetMemTool);
 ToolRegistry.register('get-mem', GetMemTool);
-ToolRegistry.register('oc-get_mem', GetMemTool);
-ToolRegistry.register('oc-get-mem', GetMemTool);
-
-// ─── Legacy body (tool-part-renderer.tsx generic path) ───────────────────────
-
-/** @deprecated Previous mobile body; `GetMemTool` replaces it. Raw output only. */
-export function GetMemExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const output =
-    tool.state.status === 'completed' && 'output' in tool.state && tool.state.output ? tool.state.output.trim() : '';
-  if (!output) return null;
-  return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 10, maxHeight: 250 }}>
-      <MonoBlock isDark={isDark} maxLines={30}>
-        {output.slice(0, 3000)}
-      </MonoBlock>
-    </View>
-  );
-}

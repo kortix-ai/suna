@@ -139,8 +139,9 @@ export function AccountPicker({
         size="md"
       >
         {selectedByValue ? (
-          <span className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-sm">
-            {selectedByValue.name}
+          <span className="flex min-w-0 items-center gap-2">
+            <EntityAvatar label={selectedByValue.name} size="xs" />
+            <span className="truncate text-sm">{selectedByValue.name}</span>
           </span>
         ) : (
           <span className="text-muted-foreground truncate text-sm">{t('account.choose')}</span>
@@ -148,7 +149,7 @@ export function AccountPicker({
       </SelectTrigger>
       <SelectContent align="start">
         {accounts.map((account) => (
-          <SelectItem key={account.account_id} size="sm" value={account.account_id}>
+          <SelectItem key={account.account_id} size="md" value={account.account_id}>
             <span className="flex min-w-0 items-center gap-2">
               <EntityAvatar label={account.name} size="xs" />
               <span className="truncate">{account.name}</span>

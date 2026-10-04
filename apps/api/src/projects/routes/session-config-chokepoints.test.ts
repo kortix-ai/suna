@@ -25,7 +25,7 @@ const RELOAD = handlerSource('post', '/{projectId}/sessions/{sessionId}/reload')
 
 describe('GET /config authorizes before it reads session state', () => {
   test('it asserts the session-read leaf, not only the coarse access level', () => {
-    const load = CONFIG.indexOf("loadProjectForUser(c, projectId, 'session')");
+    const load = CONFIG.indexOf("resolveSessionBinding(c, projectId, sessionId, 'session')");
     const leaf = CONFIG.indexOf('PROJECT_ACTIONS.PROJECT_SESSION_READ');
     const read = CONFIG.indexOf('readSandboxConfigState(');
     expect(load).toBeGreaterThan(-1);
@@ -37,6 +37,28 @@ describe('GET /config authorizes before it reads session state', () => {
     expect(CONFIG).toContain('const releasesEnabled = configReleasesEnabled(loaded.row.metadata)');
     expect(CONFIG.indexOf('const releasesEnabled')).toBeLessThan(CONFIG.indexOf('resolveDesiredRelease('));
     expect(CONFIG).toContain('if (releasesEnabled && running.configReleases && running.release)');
+  });
+
+  test('the release resolve never refreshes the mirror a second time (KRTX-629)', () => {
+    // The etag stage above it already refreshed the mirror in THIS request
+    // (ref-scoped tip proof or fetch). `resolveDesiredRelease` must not drop
+    // the stamp again: that made every read of this polled route pay a second
+    // `git fetch`.
+    expect(CONFIG).toContain('refreshProjectMirror: false');
+  });
+
+  test('every mirror-reading stage races one shared budget (KRTX-818)', () => {
+    // The mirror fetch behind these stages has a 30s per-op timeout and
+    // retries 3 times. Unbounded, a slow fetch outran the 25s request deadline
+    // and 503'd every poll against a slow mirror (`git;dur` 24.4–25.0s on every
+    // deadline 503). Each stage now races what is left of one 20s budget and
+    // answers its own "could not tell" value on timeout.
+    expect(CONFIG).toContain('const configReadStart = Date.now()');
+    expect(CONFIG).toContain('budgetLeft(configReadStart)');
+    expect(CONFIG).toContain("boundedStage(");
+    for (const stage of ['latest_etag', 'desired_release', 'config_dir']) {
+      expect(CONFIG).toContain(`'${stage}'`);
+    }
   });
 });
 
@@ -56,7 +78,7 @@ describe('every session is compared the same way', () => {
   test('the compiled etag is read for every session', () => {
     // It used to be skipped for a "frozen" session, which forced `latest_etag`
     // to null and made the pre-release compare unusable for it.
-    expect(CONFIG).toContain('latestAgentConfigEtag({');
+    expect(CONFIG).toContain('latestAgentConfigEtag(');
     expect(CONFIG).not.toContain('Promise.resolve(null)');
   });
 });
@@ -115,5 +137,13 @@ describe('the reload route still protects a running turn', () => {
     const reload = RELOAD.indexOf('reloadSessionConfig({');
     expect(gate).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(reload);
+  });
+});
+
+describe('GET /config deadline attribution', () => {
+  test('records pending stages without identity', () => {
+    for (const stage of ['project_access', 'session_access', 'sandbox_state', 'latest_etag', 'desired_release', 'runtime_block']) {
+      expect(CONFIG).toContain(`timeConfigStage('${stage}'`);
+    }
   });
 });

@@ -29,9 +29,12 @@ import {
 } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from '../dockerfile-lint.ts';
+import { lintWiring } from '../wiring-lint.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { resolveLocalManifest } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 
 const HELP = help`Usage: kortix validate [options]
 
@@ -46,27 +49,6 @@ Options:
   --scopes               Print the full grantable kortix_permissions enum and exit.
   -h, --help             Show this help.
 `;
-
-interface Flags {
-  file?: string;
-  json: boolean;
-  help: boolean;
-  scopes: boolean;
-  dockerfileLint: boolean;
-}
-
-function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { json: false, help: false, scopes: false, dockerfileLint: true };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === '--file' && argv[i + 1]) flags.file = argv[++i];
-    else if (arg === '--json') flags.json = true;
-    else if (arg === '--scopes') flags.scopes = true;
-    else if (arg === '--no-dockerfile-lint') flags.dockerfileLint = false;
-    else if (arg === '-h' || arg === '--help') flags.help = true;
-  }
-  return flags;
-}
 
 /**
  * Lint each `sandbox.templates[].dockerfile` that exists on disk, resolved
@@ -119,11 +101,13 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
 }
 
 export function runValidate(argv: string[]): number {
-  const flags = parseFlags(argv);
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(argv, HELP, (rest) => ({
+    file: takeFlagValue(rest, ['--file']),
+    json: takeFlagBool(rest, ['--json']),
+    scopes: takeFlagBool(rest, ['--scopes']),
+    dockerfileLint: !takeFlagBool(rest, ['--no-dockerfile-lint']),
+  }));
+  if (typeof flags === 'number') return flags;
   if (flags.scopes) {
     process.stdout.write(
       `${C.dim}Grantable kortix_permissions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
@@ -138,7 +122,7 @@ export function runValidate(argv: string[]): number {
         `\n${C.dim}Renamed — still accepted, but write the new name:${C.reset}\n`,
       );
       for (const [was, now] of renamed) {
-        process.stdout.write(`  ${was}${C.dim} → ${now}${C.reset}\n`);
+        process.stdout.write(`  ${was}${C.dim} → ${now.join(', ')}${C.reset}\n`);
       }
     }
     return 0;
@@ -202,6 +186,7 @@ export function runValidate(argv: string[]): number {
   const issues = [
     ...result.issues,
     ...(flags.dockerfileLint ? lintSandboxDockerfiles(result.parsed, filePath) : []),
+    ...lintWiring(result.parsed, dirname(filePath)),
   ];
   const valid = !issues.some((i) => i.severity === 'error');
 

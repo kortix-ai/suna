@@ -33,6 +33,8 @@ const concurrently = (migration: string) =>
 export const SQL_ONLY: SqlOnlyList = {
   tables: {
     warm_pool_presence: 'Baseline table with no reader or writer. Drop candidate.',
+    audit_events_legacy:
+      'The pre-partitioning audit_events (migration 20261001225732973). Read through audit_events_all; the archive job exports it in weekly chunks and drops it once every row is older than 90 days.',
     account_group_members: COMPAT_VIEW,
     iam_role_actions: COMPAT_VIEW,
     iam_roles: COMPAT_VIEW,

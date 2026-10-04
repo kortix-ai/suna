@@ -13,7 +13,9 @@ platform offers it — check or toggle it in Settings → Experimental (operator
 can default a whole deployment off with `LLM_GATEWAY_DEFAULT_ENABLED=false`).
 
 Turning the flag off is a fully supported path. The project then runs
-**native OpenCode model management**:
+**native OpenCode model management**. Every session of that project runs the
+OpenCode [harness](/docs/work/harnesses): pi calls models only through the
+gateway.
 
 - Your provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `OPENROUTER_API_KEY`, …) are injected into the sandbox as ordinary env
@@ -46,6 +48,33 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+Each provider reads its own key. Some providers share one env var on
+models.dev, for example OpenCode Zen (`opencode`) and OpenCode Go
+(`opencode-go`) both list `OPENCODE_API_KEY`. The provider that owns the name
+keeps it. Every other provider reads `<PROVIDER_ID>_API_KEY`: OpenCode Go reads
+`OPENCODE_GO_API_KEY`, Z.ai Coding Plan reads `ZAI_CODING_PLAN_API_KEY`, and
+Moonshot China reads `MOONSHOTAI_CN_API_KEY`. A Zen key therefore never lists
+Go models. The connect form and `kortix providers set` use the right name.
+
+### OpenCode Zen and Go (sign in with OpenCode)
+
+Connect OpenCode Zen or OpenCode Go with an API key, or sign in with your
+OpenCode Console account instead:
+
+1. Open **Customize → Models → Providers** and find **OpenCode Go**.
+2. Choose **Sign in with OpenCode**. Copy the code, choose **Open auth page**,
+   and approve the device in your OpenCode workspace.
+3. The key field shows the provider as connected. Remove the key to sign out.
+
+From the CLI: `kortix providers login opencode-go`, or `kortix providers
+login opencode` for Zen. Zen models are used by id, for example
+`opencode/glm-5.3-flash`; the picker does not list them. Zen and Go
+each hold their own login, so signing in to one never connects the other. The
+login lasts 30 days, and Kortix renews it before it expires. When OpenCode
+refuses a login, Kortix renews it once and retries the request. When the
+renewal fails too, the request returns `provider_reauth_required`: sign in
+again.
+
 ### Kortix-managed models
 
 The picker lists these under **Kortix**, with their token rates. Every one
@@ -59,10 +88,15 @@ data retention, and never falls back to another provider.
 | GLM 5.3 Flash | `glm-5.3-flash` |
 
 Kortix does not offer OpenAI or Anthropic models as managed models. Use them
-through a BYOK key or a ChatGPT plan. A ChatGPT plan adds `codex/gpt-6-astra`,
-`codex/gpt-6-sol`, and `codex/gpt-6-luna` (plus the GPT-5.x models). A BYOK
-key offers its provider's whole catalog, for example
-`anthropic/claude-opus-5-5` with an Anthropic key. The picker shows the newest model of each family by default.
+through a BYOK key or a ChatGPT plan. A BYOK key offers its provider's whole
+catalog, for example `anthropic/claude-opus-5-5` with an Anthropic key. A
+ChatGPT plan offers every model Codex offers a ChatGPT account, for example
+`codex/gpt-6.1-sol`. The picker shows the newest model of each family by default.
+
+Both lists update automatically. The API reads [models.dev](https://models.dev)
+and the Codex CLI's published model list every hour, so a new release appears
+within an hour of its listing, without a Kortix release. When you connect a
+provider, its newest stable model with tool calling becomes the default.
 
 ## Disable providers or models
 
@@ -97,8 +131,8 @@ control. `Auto` clears the variant.
 - The sandbox learns the project's servable model set from the API at every
   boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
   picker), so a model the picker offers always resolves in the runtime.
-- A project default per model lives in Customize → Gateway → Routing →
-  **Generation defaults** (`model_generation_config`). It fills only a field
+- A project default per model lives in Customize → Models → Routing →
+  Advanced → **Generation defaults** (`model_generation_config`). It fills only a field
   the request left unset, so a session's variant always wins.
 
 ## How auto picks a model
@@ -124,9 +158,13 @@ Two costs are easy to miss on a paid cloud account:
 
 - **Platform fee.** Kortix adds a 10% fee, billed as credits, on top of what
   your own provider charges. Free-tier and self-hosted accounts are exempt.
-- **Silent failover.** If your BYOK key hits a rate limit or billing error
-  mid-turn, Kortix retries on a managed model and bills your credits instead
-  of failing the session.
+- **Fallback chains.** If your BYOK key or ChatGPT plan fails, for example on
+  its usage limit, Kortix runs the fallback chain you set in **Customize →
+  Models → Routing**. The chain also runs when every key or ChatGPT account the
+  request may use is paused after a rate limit. With **Retry on: Any error**, it
+  also runs when they need reconnection. A Kortix model in that chain bills your
+  credits, and runs only when your account can pay for it. The platform's own
+  fallback never moves a BYOK or ChatGPT request onto credits.
 
 If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.
@@ -204,9 +242,11 @@ the session to another model, then share it.
 The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
 runs only on pooled keys, the session gets every key its creator may use for
 that provider, up to ten, so they rotate. The agent must be allowed the key's
-name in its `secrets`. Changing a running session to such a model does the
-same when the session has no selection for that provider. A selection made on
-purpose, an empty one included, is left alone.
+name in its `secrets`. Otherwise the turn fails with `agent_grant_excludes`:
+add the name, for example `CODEX_AUTH_JSON` for ChatGPT, to the agent's
+`secrets`, or choose another agent. Changing a running session to such a model
+does the same when the session has no selection for that provider. A selection
+made on purpose, an empty one included, is left alone.
 
 Your own keys and ChatGPT connections count only in a session that is private
 to you and acts on your behalf. In a shared session only keys shared with the
@@ -241,9 +281,34 @@ again. Reconnecting keeps the account's name, access, and session selections.
 Only the member who connected an account can reconnect it. Account owners and
 admins can delete any account.
 
+When an account's login stops working, the account shows **Needs
+reconnection**. This happens when ChatGPT rejects the renewal of the login, or
+when the stored login cannot be read. ChatGPT can also refuse a login before
+it expires. Kortix then renews the login once and retries the request. If the
+renewal is refused too, the account needs reconnection, and the request moves
+to the next selected account when there is one. A brief outage at ChatGPT does
+not mark an account. The member who connected the account sees **Reconnect** beside it.
+**Session overrides → Provider keys** shows the same mark. A turn that fails
+names the accounts that need reconnection. The account stays selected, and
+reconnecting it or a successful renewal clears the mark.
+
+A turn that fails for this reason also shows the fix beside its error:
+
+- `provider_reauth_required` shows **Reconnect ChatGPT**. It appears in your
+  own private session, and in a shared session that selects ChatGPT accounts.
+- `provider_not_connected` shows **Connect ChatGPT**. It appears only in your
+  own private session without a ChatGPT selection. A session with a selection
+  is fixed in **Session overrides → Provider keys** instead.
+
+Both open your ChatGPT accounts. After you connect or reconnect, send your
+message again. In Slack and Microsoft Teams the same failure reads **ChatGPT
+login needs reconnection**.
+
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is
-the default in their own private session. A session shared with the project
+the default in their own private session. A connection marked **Needs
+reconnection** is the default only when all of the member's connections are
+marked. A session shared with the project
 never uses a member's own connection: select a connection shared with the whole
 project for it. Scheduled sessions cannot use an **Only you** account either.
 Another member's shared connection requires an explicit selection. The legacy

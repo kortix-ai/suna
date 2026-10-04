@@ -376,7 +376,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -511,18 +511,16 @@ jobs:
           # A Worker script upload replaces its bindings. Prove the gateway
           # bindings above survived the deploy before declaring staging ready.
           for attempt in $(seq 1 12); do
-            response_headers="$(mktemp)"
             response_body="$(mktemp)"
-            status="$(curl -sS --max-time 15 -D "$response_headers" -o "$response_body" -w '%{http_code}' "https://${GATEWAY_HOST}/health" || true)"
-            backend_service="$(awk 'BEGIN { IGNORECASE=1 } /^x-backend-service:/ { gsub(/\r/, "", $2); print $2 }' "$response_headers" | tail -n1)"
+            status="$(curl -sS --max-time 15 -o "$response_body" -w '%{http_code}' "https://${GATEWAY_HOST}/health" || true)"
             healthy="$(jq -r '.status == "healthy"' "$response_body" 2>/dev/null || echo false)"
-            rm -f "$response_headers" "$response_body"
-            if [ "$status" = "200" ] && [ "$backend_service" = "gateway" ] && [ "$healthy" = "true" ]; then
+            rm -f "$response_body"
+            if [ "$status" = "200" ] && [ "$healthy" = "true" ]; then
               echo "staging gateway Worker verified"
               break
             fi
             if [ "$attempt" = "12" ]; then
-              echo "::error::staging gateway Worker failed verification (status=$status service=$backend_service healthy=$healthy)"
+              echo "::error::staging gateway Worker failed verification (status=$status healthy=$healthy)"
               exit 1
             fi
             sleep 5

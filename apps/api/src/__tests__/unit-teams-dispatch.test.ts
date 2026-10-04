@@ -8,7 +8,7 @@ import { parseTeamsCommand as realParse } from '../channels/teams/util';
  */
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
-const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
+const TENANT_ID = '5a1e0c09-0000-4000-8000-000000000009';
 const BOT = '28:bot';
 
 let threadHasSession = false;
@@ -33,12 +33,23 @@ mock.module('../shared/db', () => ({
 }));
 mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
 mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
-mock.module('../channels/teams-api', () => ({ sendCard: async () => 'card-1' }));
+const cards: string[] = [];
+mock.module('../channels/teams-api', () => ({
+  sendCard: async (_ref: unknown, card: unknown) => {
+    cards.push(JSON.stringify(card));
+    return 'card-1';
+  },
+}));
+let conversationProject: string | null = PROJECT_ID;
 mock.module('../channels/teams/binding', () => ({
-  resolveConversationProject: async () => PROJECT_ID,
+  listTenantProjects: async () => [{ projectId: PROJECT_ID, name: 'Demo', repoUrl: null }],
+  resolveConversationProject: async () => conversationProject,
   resolveConversationProjectDetailed: async () => ({ kind: 'project', projectId: PROJECT_ID }),
 }));
 mock.module('../channels/teams/auth-resume', () => ({ createPendingTeamsPickerMessage: async () => null }));
+mock.module('../channels/teams/home', () => ({
+  buildTeamsHomeCard: async (tenantId: string) => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: `HOME ${tenantId}` }] }),
+}));
 mock.module('../channels/teams/commands', () => ({
   parseTeamsCommand: realParse,
   handleTeamsCommand: async (input: { command: { verb: string } }) => {
@@ -76,6 +87,8 @@ beforeEach(() => {
   threadHasSession = false;
   started.length = 0;
   commands.length = 0;
+  cards.length = 0;
+  conversationProject = PROJECT_ID;
 });
 
 afterAll(() => mock.restore());
@@ -122,5 +135,31 @@ describe('mentioned and personal messages are unchanged', () => {
       activity({ conversation: { id: 'a:personal', conversationType: 'personal', tenantId: TENANT_ID } }) as never,
     );
     expect(started).toEqual(['a:personal']);
+  });
+});
+
+// Slack's App Home, as a card: someone who adds the app for themselves gets the
+// organization's projects and what to try; a team or chat gets the intro.
+describe('the card an install posts', () => {
+  const install = (conversationType: string, conversationId: string) => ({
+    type: 'installationUpdate',
+    action: 'add',
+    id: `install-${conversationId}`,
+    serviceUrl: 'https://smba.trafficmanager.net/emea/',
+    recipient: { id: BOT },
+    from: { id: '29:ivan' },
+    conversation: { id: conversationId, conversationType, tenantId: TENANT_ID },
+  });
+
+  test('a personal install gets the home card, even before the chat has a project', async () => {
+    conversationProject = null;
+    await handleTeamsActivity(install('personal', 'a:home-1') as never);
+    expect(cards).toEqual([expect.stringContaining(`HOME ${TENANT_ID}`)]);
+  });
+
+  test('a team install gets the channel intro', async () => {
+    await handleTeamsActivity(install('channel', '19:team-general@thread.tacv2') as never);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toContain('Kortix is connected here');
   });
 });

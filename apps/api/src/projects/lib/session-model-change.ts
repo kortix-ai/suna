@@ -10,6 +10,7 @@
  *
  * This module holds the pure parts so both paths agree on what a legal change is.
  */
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 
 /** Terminal states — there is no live agent to re-point, and a cold boot would
  *  re-read the row anyway, so a change here is meaningless rather than harmful. */
@@ -95,12 +96,15 @@ export function modelChangeNeedsLivePush(input: {
   next: string;
   status: string;
 }): boolean {
-  if (input.current === input.next) return false;
+  // `kortix/<id>` and `<id>` name one gateway model; a restart would only cost the turn.
+  if (input.current !== null && toWireModel(input.current) === toWireModel(input.next)) return false;
   return input.status === 'running';
 }
 
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
+  model: string;
+  /** @deprecated The pre-W4 name of `model`. Same value. */
   opencode_model: string;
   /** True only when a live sandbox took the new model NOW. */
   applied_live: boolean;
@@ -138,6 +142,7 @@ export function modelChangeResult(input: {
 }): ModelChangeResult {
   if (!input.needsPush) {
     return {
+      model: input.model,
       opencode_model: input.model,
       applied_live: false,
       detail:
@@ -147,9 +152,10 @@ export function modelChangeResult(input: {
     };
   }
   if (input.push?.applied) {
-    return { opencode_model: input.model, applied_live: true };
+    return { model: input.model, opencode_model: input.model, applied_live: true };
   }
   return {
+    model: input.model,
     opencode_model: input.model,
     applied_live: false,
     push_failed: true,

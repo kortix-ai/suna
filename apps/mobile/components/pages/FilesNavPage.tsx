@@ -27,10 +27,9 @@
  * (`sheet-push`) and a checkpoint pushes its diff in after it.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItem } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import Animated from 'react-native-reanimated';
@@ -57,8 +56,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { FileGlyph } from '@/components/files/file-icons';
 import { downloadFailureMessage } from '@/lib/files/download-status';
+import { saveFileToDevice, type SaveToDeviceResult } from '@/lib/files/save-to-device';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
-import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
+import { indexChildren, searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
 import { haptics } from '@/lib/haptics';
 import {
@@ -119,28 +119,18 @@ const EMPTY_ITEMS: FilesListItem<FileRow>[] = [];
 const BAR_CONTROL_HEIGHT = 40;
 const SHEET_SNAP_POINTS = ['100%'];
 
-/** Immediate children of `dir` derived from the flat file list. */
-function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[]; files: ProjectFileEntry[] } {
-  const prefix = dir ? `${dir}/` : '';
-  const dirSet = new Set<string>();
-  const files: ProjectFileEntry[] = [];
-  for (const e of entries) {
-    if (dir && !e.path.startsWith(prefix)) continue;
-    const rest = e.path.slice(prefix.length);
-    if (!rest) continue;
-    const slash = rest.indexOf('/');
-    if (slash === -1) files.push(e);
-    else dirSet.add(rest.slice(0, slash));
-  }
-  return { dirs: [...dirSet], files };
-}
+/** Stable while the files query loads: a new `[]` each render re-runs every memo below. */
+const NO_ENTRIES: ProjectFileEntry[] = [];
+/** A folder with no children (`indexChildren` has no key for it). */
+const NO_CHILDREN: { dirs: string[]; files: ProjectFileEntry[] } = { dirs: [], files: [] };
 
 /**
  * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
- * to be shared as `name.zip` (COR-155). A non-2xx status deletes the temp
- * file and throws the message; the caller toasts it.
+ * to be saved as `name.zip` (COR-155). A non-2xx status deletes the temp
+ * file and throws the message; the caller toasts it. A good body is saved on
+ * the device (`saveFileToDevice`), never shared.
  */
-async function downloadAndShare(url: string, filename: string, withAuth: boolean) {
+async function downloadAndSave(url: string, filename: string, withAuth: boolean): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   let status: number | undefined;
   try {
@@ -159,13 +149,13 @@ async function downloadAndShare(url: string, filename: string, withAuth: boolean
     await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
     throw new Error(failure);
   }
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
+  return saveFileToDevice(target, filename);
 }
 
-async function saveTextAndShare(content: string, filename: string) {
+async function saveTextToDevice(content: string, filename: string): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   await FileSystem.writeAsStringAsync(target, content);
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
+  return saveFileToDevice(target, filename);
 }
 
 /**
@@ -290,7 +280,11 @@ function FileSheetBody({
     haptics.tap();
     setDownloading(true);
     try {
-      await saveTextAndShare(content.data?.content ?? '', basename(file.name));
+      const result = await saveTextToDevice(content.data?.content ?? '', basename(file.name));
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch (e: any) {
       haptics.warning();
       toast.error(e?.message || 'Unable to download the file. Try again.');
@@ -368,7 +362,7 @@ function FileSheetBody({
       <FilePreviewBottomInsetContext.Provider value={contentInset}>
         {content.isLoading ? (
           <View className="flex-1 items-center justify-center" style={{ paddingBottom: contentInset }}>
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
           </View>
         ) : content.isError ? (
           <View className="flex-1 items-center justify-center gap-3 px-8" style={{ paddingBottom: contentInset }}>
@@ -383,7 +377,12 @@ function FileSheetBody({
 
       {/* The project drawer's pinned bar: Download · History, over a fade. */}
       <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-        <Button variant="secondary" className="flex-1 rounded-full" onPress={download} disabled={downloading || content.isLoading}>
+        {/* Download saves the file on the device, as it is (no PDF on mobile). */}
+        <Button
+          variant="secondary"
+          className="flex-1 rounded-full"
+          onPress={() => void download()}
+          disabled={downloading || content.isLoading}>
           <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
           <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
         </Button>
@@ -488,10 +487,12 @@ export function FilesNavPage({
   }, [defaultBranch, ref_]);
 
   const filesQuery = useProjectFiles(projectId, ref_);
-  const entries = filesQuery.data ?? [];
+  const entries = filesQuery.data ?? NO_ENTRIES;
+  // Every folder's children in one pass per file list, so a folder tap is a lookup.
+  const childrenByDir = useMemo(() => indexChildren(entries), [entries]);
 
   const rows = useMemo<SandboxFile[]>(() => {
-    const { dirs, files } = childrenOf(entries, path);
+    const { dirs, files } = childrenByDir.get(path) ?? NO_CHILDREN;
     const cmp = (a: string, b: string) => {
       if (sortBy === 'type') {
         const t = ext(a).localeCompare(ext(b));
@@ -514,21 +515,26 @@ export function FilesNavPage({
       ...otherDirs.map((d) => mk(d, path ? `${path}/${d}` : d, 'directory')),
       ...fileNodes.map((f) => mk(basename(f.path), f.path, 'file', f.size)),
     ];
-  }, [entries, path, sortBy, sortOrder]);
+  }, [childrenByDir, path, sortBy, sortOrder]);
 
   // Search covers the whole tree, not only this folder (COR-155): the files
   // query already holds every path. A result shows its folder.
-  const searching = search.trim().length > 0;
+  // The list follows the typed text at deferred priority, so a keystroke
+  // updates the field first. Cleared text applies at once: a folder tap and
+  // Go up clear the search, and must not show the old results for a render.
+  const deferredSearch = useDeferredValue(search);
+  const query = search ? deferredSearch : '';
+  const searching = query.trim().length > 0;
   const visible = useMemo<FileRow[]>(() => {
     if (!searching) return rows;
-    return searchFileTree(entries, search).map((r) => ({
+    return searchFileTree(entries, query).map((r) => ({
       name: r.name,
       path: r.path,
       type: r.type,
       size: r.size,
       parent: r.parent,
     }));
-  }, [entries, rows, search, searching]);
+  }, [entries, rows, query, searching]);
   const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
   const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
   const listItems = useMemo(() => buildFilesListItems(folders, files, viewMode), [folders, files, viewMode]);
@@ -630,7 +636,11 @@ export function FilesNavPage({
     setDownloadingDir(true);
     try {
       const name = (path ? basename(path) : 'workspace') || 'workspace';
-      await downloadAndShare(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      const result = await downloadAndSave(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch (e: any) {
       haptics.warning();
       toast.error(e?.message || 'Unable to download the folder. Try again.');
@@ -650,7 +660,7 @@ export function FilesNavPage({
     : filesQuery.isError
       ? ((filesQuery.error as Error)?.message ?? 'Unable to load the files')
       : visible.length === 0
-        ? search
+        ? query
           ? 'No matching files'
           : path
             ? 'This folder is empty'

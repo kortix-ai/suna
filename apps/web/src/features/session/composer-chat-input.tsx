@@ -14,7 +14,6 @@ import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
-import { isMetaAgentName } from '@kortix/shared';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
 
@@ -51,6 +50,7 @@ export function ComposerChatInput({
   placeholder,
   prefill,
   onPrefillApplied,
+  aboveSlot,
   inputSlot,
   toolbarSlot,
   underbarPlacement,
@@ -100,8 +100,10 @@ export function ComposerChatInput({
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
     options?: SessionPromptOverrides | null;
+    submit?: boolean;
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
+  aboveSlot?: ReactNode;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -133,7 +135,7 @@ export function ComposerChatInput({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
   const restoredOptions = prefill?.options;
   const setAgent = local.agent.set;
@@ -146,9 +148,6 @@ export function ComposerChatInput({
     setVariant(restoredOptions.variant ?? undefined);
   }, [restoredOptions, setAgent, setModel, setVariant]);
 
-  // The meta agent is the only thing that pins the picker: a meta session must
-  // keep running its own agent. Every other session is freely switchable.
-  const lockedAgentName = isMetaAgentName(boundAgentName) ? boundAgentName?.trim() || null : null;
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -164,13 +163,13 @@ export function ComposerChatInput({
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
-  const selectedAgentName = lockedAgentName ?? agentResolution.selected;
-  // A locked meta session runs its own bound agent, so an empty project roster
-  // does not refuse it.
-  const noAccessibleAgents = !lockedAgentName && agentResolution.disabled;
+  const selectedAgentName = agentResolution.selected;
+  // An empty project roster refuses an unbound composer; the resolver answers
+  // `disabled` for exactly that case.
+  const noAccessibleAgents = agentResolution.disabled;
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
@@ -254,6 +253,7 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       onPrefillApplied={onPrefillApplied}
+      aboveSlot={aboveSlot}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}
@@ -266,11 +266,7 @@ export function ComposerChatInput({
       agents={local.agent.list}
       selectedAgent={selectedAgentName}
       noAccessibleAgents={noAccessibleAgents}
-      onAgentChange={
-        // The selectedAgentName effect above notifies the parent; no inline call.
-        lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)
-      }
-      agentSelectorLocked={!!lockedAgentName}
+      onAgentChange={(name) => local.agent.set(name ?? undefined)}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}

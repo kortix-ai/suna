@@ -2,6 +2,7 @@ import type {
   Project,
   ProjectSession,
   Secret,
+  SecretConsumer,
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
@@ -15,7 +16,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { normalizeAuditClientSource } from '../../shared/audit-client-source';
+import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
@@ -36,7 +37,6 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { proxyGitUrl } from './sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -53,7 +53,6 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
-  clientReportedSource?: string | null;
 };
 
 // Session-status constants live in a dependency-free module so lean callers (the
@@ -120,6 +119,10 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** The owner's profile photo, for the starter mark. */
+    ownerAvatarUrl?: string | null;
+    /** Display name of a member/service-account initiator that is not the owner. */
+    initiatorName?: string | null;
     /** Whether created_by identifies a human, service account, or stale principal. */
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
@@ -164,7 +167,7 @@ export function serializeSession(
   // snapshot above is [] when canAccess is false). It outranks the generated
   // auto title so list reads resolve the SAME string the session header shows
   // live, but never a user rename.
-  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -174,9 +177,11 @@ export function serializeSession(
     sandbox_provider: row.sandboxProvider,
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.runtimeSessionId,
+    opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
+    labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
@@ -188,14 +193,30 @@ export function serializeSession(
         ? trimSessionMetadataForList(row.metadata ?? {})
         : (row.metadata ?? {})
       : {},
+    runtime_sessions: opencodeSessions,
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
+    owner_avatar_url: ctx?.ownerAvatarUrl ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,
+    parent_session_id: row.parentSessionId ?? null,
+    initiator: row.initiatorType
+      ? {
+          type: row.initiatorType,
+          id: row.initiatorId,
+          label: sessionInitiatorLabel(
+            { type: row.initiatorType, id: row.initiatorId },
+            ctx?.initiatorName ??
+              (row.initiatorId && row.initiatorId === row.createdBy
+                ? (ctx?.ownerName ?? ctx?.ownerEmail ?? null)
+                : null),
+          ),
+        }
+      : null,
     secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
     sharing: visibilityToIntent(
       row.visibility as 'private' | 'project' | 'restricted',
@@ -365,7 +386,6 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
-    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
@@ -434,6 +454,46 @@ export function secretDeliveryBlockedReason(
   return granted ? null : 'no_agent_grant';
 }
 
+function secretConsumerFor(
+  row: SecretRow | undefined,
+  strategy: SecretDeliveryStrategy,
+): SecretConsumer | null {
+  if (strategy === 'denied') return null;
+  if (row?.scope === 'connector') return 'connector';
+  if (row?.consumer != null) return row.consumer;
+  if (strategy === 'runtime') return 'sandbox';
+  if (strategy === 'egress') return 'network';
+  switch (row?.egressPolicy?.backend) {
+    case 'llm_gateway':
+    case 'connector':
+    case 'git_proxy':
+      return row.egressPolicy.backend;
+    case 'kortix_fetch':
+      return 'http_broker';
+    default:
+      return null;
+  }
+}
+
+function secretDeliveryAvailable(
+  strategy: SecretDeliveryStrategy,
+  consumer: SecretConsumer | null,
+  backend: NonNullable<SecretRow['egressPolicy']>['backend'] | undefined,
+): boolean {
+  if (consumer === 'connector') return true;
+  switch (strategy) {
+    case 'runtime':
+      return consumer === 'sandbox';
+    case 'egress':
+      return consumer === 'network';
+    case 'broker':
+      return consumer === 'llm_gateway' || consumer === 'git_proxy' ||
+        (consumer === 'http_broker' && backend === 'kortix_fetch');
+    default:
+      return false;
+  }
+}
+
 /**
  * The view of one project secret (one IDENTIFIER): the shared/project row
  * merged with the requesting member's own private override (used today only by
@@ -465,30 +525,7 @@ export function buildSecretView(input: {
   const requiresRotation =
     strategy !== 'runtime' &&
     (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
-  const backend = deliveryRow?.egressPolicy?.backend;
-  const legacyConsumer =
-    strategy === 'runtime'
-      ? 'sandbox'
-      : strategy === 'denied'
-        ? null
-        : strategy === 'egress'
-          ? 'network'
-          : backend === 'llm_gateway'
-            ? 'llm_gateway'
-            : backend === 'connector'
-              ? 'connector'
-              : backend === 'git_proxy'
-                ? 'git_proxy'
-                : backend === 'kortix_fetch'
-                  ? 'http_broker'
-                  : null;
-  const storedConsumer =
-    strategy === 'denied'
-      ? null
-      : deliveryRow?.scope === 'connector'
-        ? 'connector'
-        : (deliveryRow?.consumer ?? legacyConsumer);
-  const consumer = storedConsumer;
+  const consumer = secretConsumerFor(deliveryRow, strategy);
   return {
     identifier,
     name,
@@ -514,17 +551,11 @@ export function buildSecretView(input: {
     can_manage_shared: canManageShared && !system,
     strategy,
     consumer,
-    delivery_status:
-      (strategy === 'runtime' && consumer === 'sandbox') ||
-      (strategy === 'broker' && consumer === 'llm_gateway') ||
-      (strategy === 'broker' && consumer === 'git_proxy') ||
-      (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' && consumer === 'network') ||
-      consumer === 'connector'
-        ? 'available'
-        : strategy === 'denied'
-          ? 'disabled'
-          : 'unavailable',
+    delivery_status: secretDeliveryAvailable(strategy, consumer, deliveryRow?.egressPolicy?.backend)
+      ? 'available'
+      : strategy === 'denied'
+        ? 'disabled'
+        : 'unavailable',
     // Two axes, deliberately not folded together. `delivery_status` answers
     // "does this deployment support the mode" and stays 'available' on a missing
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
@@ -596,6 +627,15 @@ export async function loadSecretViewsForUser(input: {
 
 export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
+}
+
+/**
+ * Written only by the Microsoft Teams connection (channels/install-store.ts):
+ * the tenant, bot credentials and service URL. Connecting or disconnecting
+ * Teams changes them; the generic secrets API does not.
+ */
+export function isTeamsInstallSecretName(name: string): boolean {
+  return name.toUpperCase().startsWith('MS_TEAMS_');
 }
 
 export function serializeSessionSandboxConfig(
@@ -690,6 +730,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
     .replace(/\/+$/, '')
     .replace(/\/v1\/router$/, '')
     .replace(/\/v1$/, '');
+}
+
+/**
+ * The Kortix git-proxy origin for a project — the UNIVERSAL client-facing git
+ * URL. Clients clone/push this with a Kortix token; the API resolves the real
+ * upstream + mints the host credential server-side.
+ */
+export function proxyGitUrl(projectId: string): string {
+  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
 }
 
 // Display cap for user-supplied project names. Well under the projects.name

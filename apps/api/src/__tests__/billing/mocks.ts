@@ -38,7 +38,6 @@ export const mockRegistry = {
   recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
   isWebhookEventProcessed: null as ((eventId: string) => Promise<boolean>) | null,
 
-  provisionSandboxFromCheckout: null as ((...args: any[]) => Promise<any>) | null,
   resolveAccountId: null as ((userId: string) => Promise<string>) | null,
 
   getActiveDeletionRequest: null as ((id: string) => Promise<any>) | null,
@@ -142,11 +141,6 @@ export function registerGlobalMocks() {
   // test moves credit call registerWalletMock() and read `fakeWallet.calls`.
 
 
-  mock.module('../../platform/services/sandbox-provisioner', () => ({
-    provisionSandboxFromCheckout: async (...args: any[]) =>
-      mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
-  }));
-
   // account-deletion.ts's stopAccountSandboxes reads active sandboxes and stops
   // them via the provider before tearing down the account. None of the
   // deletion-flow tests in this directory exercise sandbox-stopping, so the
@@ -156,21 +150,30 @@ export function registerGlobalMocks() {
   // A module mock REPLACES the whole module, so every export the code under
   // test imports has to appear here — a missing one is not a silent undefined,
   // it is a hard `SyntaxError: Export named 'x' not found` that kills the file.
-  mock.module('../../shared/db', () => ({
-    db: {
+  mock.module('../../shared/db', () => {
+    const db = {
       select: () => ({
         from: () => ({
           where: async () => [],
         }),
       }),
-    },
+      // The account-deletion sweep issues DELETEs inside one transaction. The
+      // billing suites drive the no-DB path, so both are no-ops here.
+      delete: () => ({
+        where: async () => ({ rowCount: 0 }),
+      }),
+      transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
+    };
+    return {
+      db,
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only
     // `select().from().where()`. Flipping this to true sends the code down real
     // persistence branches this mock cannot serve (8 createCheckoutSession
     // tests fail with "Stripe API error" — verified).
-    hasDatabase: false,
-  }));
+      hasDatabase: false,
+    };
+  });
 
   // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
   // lists exports by hand deletes every export it omits — the failure surfaces in

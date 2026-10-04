@@ -16,8 +16,8 @@
  * title row (`titleTrailing`). Bottom: the project drawer's pinned bar
  * (`PinnedBar`) — two equal cells, default size, floating over a fade of the
  * surface while the document scrolls under them: Download (fetches the file,
- * then the device opens it: Quick Look on iOS, the file type's app on Android;
- * a toast when no app can) · "Add to chat",
+ * then saves it in a folder the user picks: remembered on Android, the Files
+ * picker every time on iOS; `lib/files/save-to-device`) · "Add to chat",
  * which closes both sheets and picks the file. A failed load says why — a
  * stopped sandbox keeps its transcript but serves no file — with Try again.
  * Closing the preview returns to the list, search text kept.
@@ -39,7 +39,7 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { THEME } from '@/lib/utils/theme';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSessionRows } from '@/lib/session/session-store';
 import {
   deriveSessionFiles,
   filterSessionFiles,
@@ -48,7 +48,7 @@ import {
   sessionFileKindLabel,
   type SessionFile,
 } from '@/lib/session/session-files';
-import { showFileTypeIcon } from './tool/shared/show-helpers';
+import { showFileTypeIcon } from './tool/shared/tool-icons';
 
 const SNAP_POINTS = ['100%'];
 /** How long Copy shows its check. */
@@ -61,7 +61,8 @@ export interface SessionFilesSheetProps {
   onSelect: (file: SessionFile) => void;
 }
 
-export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetProps>(
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const SessionFilesSheet = React.memo(React.forwardRef<SheetRef, SessionFilesSheetProps>(
   ({ sessionId, sandboxUrl, onSelect }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const previewSheetRef = React.useRef<SheetRef>(null);
@@ -122,7 +123,7 @@ export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetPro
       </>
     );
   }
-);
+));
 SessionFilesSheet.displayName = 'SessionFilesSheet';
 
 function SessionFilesBody({
@@ -133,7 +134,7 @@ function SessionFilesBody({
   onPreview: (file: SessionFile) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const messages = useSyncStore((s) => s.messages[sessionId]);
+  const messages = useSessionRows(sessionId);
   const [query, setQuery] = React.useState('');
 
   const files = React.useMemo(() => deriveSessionFiles(messages), [messages]);

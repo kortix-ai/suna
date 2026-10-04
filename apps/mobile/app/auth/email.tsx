@@ -8,11 +8,14 @@
  *
  * Email methods come from env (lib/auth/auth-config): a one-time code and/or a
  * password. The code step replaces the form in place; back returns to the form.
+ *
+ * `?method=sso` (the welcome screen's "Continue with SSO", self-hosted instances):
+ * the email alone, then the domain's identity provider in the browser.
  */
 
 import * as React from 'react';
 import { BackHandler, View, type TextInput } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,6 +43,14 @@ const friendlySignInError = (msg?: string): string => {
   return msg;
 };
 
+const friendlySsoError = (email: string, msg?: string): string | null => {
+  if (msg && /cancel/i.test(msg)) return null;
+  if (!msg || /not found|no sso provider|sso_provider_not_found|saml/i.test(msg)) {
+    return `Single sign-on is not set up for ${email.split('@')[1] ?? 'this domain'}.`;
+  }
+  return msg;
+};
+
 const friendlyCodeError = (msg?: string): string => {
   if (!msg) return 'Could not send a code.';
   if (/signups? not allowed|not allowed for otp|user not found|no user/i.test(msg)) {
@@ -52,7 +63,8 @@ export default function EmailAuthScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
-  const { signIn, signUp, signInWithMagicLink, resetPassword } = useAuthContext();
+  const { signIn, signUp, signInWithMagicLink, signInWithSSO, resetPassword } = useAuthContext();
+  const ssoOnly = useLocalSearchParams<{ method?: string }>().method === 'sso';
 
   const [mode, setMode] = React.useState<'signin' | 'signup'>('signin');
   const [method, setMethod] = React.useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
@@ -69,10 +81,10 @@ export default function EmailAuthScreen() {
   // Set when the user switches to a password, so the new field takes focus.
   const focusPasswordOnMount = React.useRef(false);
 
-  const isSignup = mode === 'signup';
+  const isSignup = !ssoOnly && mode === 'signup';
   // Creating an account always takes a password; signing in may use a code.
-  const showPasswordField = isSignup || method === 'password';
-  const canSwitchMethod = !isSignup && magicLinkEnabled && passwordEnabled;
+  const showPasswordField = !ssoOnly && (isSignup || method === 'password');
+  const canSwitchMethod = !ssoOnly && !isSignup && magicLinkEnabled && passwordEnabled;
   const awaitingCode = !isSignup && method === 'magic' && !!sentEmail;
   const busy = loading || verifying;
 
@@ -159,7 +171,25 @@ export default function EmailAuthScreen() {
     }
   }, [email, emailValid, password, signUp, clearMessages, router]);
 
-  const submit = isSignup ? handleSignUp : handleSignIn;
+  // ── SSO: the email's domain → its identity provider in the browser ───────
+  const handleSso = React.useCallback(async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!emailValid) {
+      setErrorMessage('Enter your work email address.');
+      return;
+    }
+    setLoading(true);
+    clearMessages();
+    try {
+      const res = await signInWithSSO(trimmedEmail);
+      // Success is routed away by the auth layout.
+      if (!res?.success) setErrorMessage(friendlySsoError(trimmedEmail, res?.error?.message));
+    } finally {
+      setLoading(false);
+    }
+  }, [email, emailValid, signInWithSSO, clearMessages]);
+
+  const submit = ssoOnly ? handleSso : isSignup ? handleSignUp : handleSignIn;
 
   // ── Verify the emailed code ───────────────────────────────────────────────
   // `codeArg` lets the field submit the digits it just received, before the
@@ -270,11 +300,17 @@ export default function EmailAuthScreen() {
 
   const title = awaitingCode
     ? 'Check your email'
-    : isSignup
+    : ssoOnly
+      ? 'Sign in with SSO'
+      : isSignup
       ? 'Create your account'
       : 'Sign in to your account';
 
-  const primaryLabel = isSignup
+  const primaryLabel = ssoOnly
+    ? loading
+      ? 'Opening sign-in…'
+      : 'Continue with SSO'
+    : isSignup
     ? loading
       ? 'Creating account…'
       : 'Create account'
@@ -382,7 +418,7 @@ export default function EmailAuthScreen() {
                     setEmail(value);
                     clearMessages();
                   }}
-                  placeholder="Email address"
+                  placeholder={ssoOnly ? 'Work email' : 'Email address'}
                   accessibilityLabel="Email address"
                   keyboardType="email-address"
                   textContentType="emailAddress"
@@ -449,7 +485,7 @@ export default function EmailAuthScreen() {
               method switch. */}
           <View className="flex-1" />
           <View className="pt-8">
-            {!awaitingCode && (
+            {!awaitingCode && !ssoOnly && (
               <Button size="lg" className="rounded-full" disabled={busy} onPress={toggleMode}>
                 <Text>{isSignup ? 'Sign in' : 'Create account'}</Text>
               </Button>

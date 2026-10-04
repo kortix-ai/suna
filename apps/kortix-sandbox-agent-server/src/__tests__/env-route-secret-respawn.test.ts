@@ -19,18 +19,18 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { createProjectEnvStore } from '../project-env'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { Hono } from 'hono'
-import { createEnvRouter } from '../routes/env'
-import { createOpenCodeControlService } from '../harness/open-code/control'
-import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
-import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
+import { createEnvRouter } from '@/routes/kortix/env'
+import { createOpenCodeControlService } from '@/harness/open-code/control'
+import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
+import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
 import {
   __resetRuntimeProjectionRelayForTests,
-  __setRuntimeProjectionStateReaderForTests,
-} from '../harness/open-code/runtime-projection-relay'
+  registerRuntimeStateReader,
+} from '@/harness/shared/projection-relay'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))
@@ -424,7 +424,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     })
     try {
       __resetRuntimeProjectionRelayForTests()
-      __setRuntimeProjectionStateReaderForTests(async () => ({ doc: { built_at: 'now' } as never, etag: 'etag-env' }))
+      registerRuntimeStateReader(async () => ({ doc: { built_at: 'now' } as never, etag: 'etag-env' }))
       process.env.KORTIX_SESSION_ID = 'sess-1'
       process.env.KORTIX_TOKEN = 'sandbox-token'
       process.env.KORTIX_API_URL = `http://127.0.0.1:${api.port}/v1`

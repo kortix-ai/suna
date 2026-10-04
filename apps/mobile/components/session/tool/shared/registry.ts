@@ -1,13 +1,14 @@
+import { toolKind } from '@kortix/sdk';
+import { resolveRegisteredKey, toolRegistryCandidates } from '@kortix/shared/tools';
 import type { ToolComponent } from './types';
 
 /**
- * Tool name → renderer. Mirrors apps/web/src/features/session/tool/shared/registry.ts:
- * the same lookup order, so a tool name resolves to the same renderer on both
- * surfaces. Renderers register themselves at module load; the imports live in
+ * Tool name → renderer. The shared lookup keeps the same lookup order on both
+ * surfaces, so a tool name resolves to the same renderer. Renderers register
+ * themselves at module load; the imports live in
  * `tool/tools/register.ts`.
  */
 const registry = new Map<string, ToolComponent>();
-
 export const ToolRegistry = {
   register(name: string, component: ToolComponent) {
     registry.set(name, component);
@@ -15,46 +16,9 @@ export const ToolRegistry = {
   keys(): string[] {
     return Array.from(registry.keys());
   },
+  /** The renderer registered for a tool name, else the one registered for its kind (`toolKind`). */
   get(name: string): ToolComponent | undefined {
-    const candidates = new Set<string>();
-    const add = (value?: string | null) => {
-      if (!value) return;
-      const cleaned = value.trim();
-      if (!cleaned) return;
-      candidates.add(cleaned);
-      candidates.add(cleaned.toLowerCase());
-    };
-
-    add(name);
-    add(name.replace(/_/g, '-'));
-    add(name.replace(/-/g, '_'));
-
-    const slashIdx = name.lastIndexOf('/');
-    if (slashIdx > 0) {
-      const short = name.slice(slashIdx + 1);
-      add(short);
-      add(short.replace(/_/g, '-'));
-      add(short.replace(/-/g, '_'));
-    }
-
-    for (const key of candidates) {
-      const component = registry.get(key);
-      if (component) return component;
-    }
-
-    const allRegistered = Array.from(registry.keys());
-    for (const candidate of candidates) {
-      for (const key of allRegistered) {
-        if (
-          candidate.endsWith(`/${key}`) ||
-          candidate.endsWith(`-${key}`) ||
-          candidate.endsWith(`_${key}`)
-        ) {
-          return registry.get(key);
-        }
-      }
-    }
-
-    return undefined;
+    const key = resolveRegisteredKey(toolRegistryCandidates(name), registry.keys());
+    return key === undefined ? registry.get(toolKind(name)) : registry.get(key);
   },
 };

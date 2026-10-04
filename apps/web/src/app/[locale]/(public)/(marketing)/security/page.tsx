@@ -1,5 +1,5 @@
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
+import { RowList, SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { BoundaryDiagram } from '@/features/marketing/security-page/boundary-diagram';
@@ -24,39 +24,7 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
-/** A labelled list of key/value rows — the page's workhorse block. */
-function RowList({
-  rows,
-}: {
-  rows: readonly { readonly id: string; readonly k: string; readonly v: string }[];
-}): ReactNode {
-  return (
-    <dl className="border-border bg-card overflow-hidden rounded-sm border">
-      {rows.map((row, i) => (
-        <div
-          key={row.id}
-          className={cn(
-            'border-border grid gap-2 px-6 py-6 sm:grid-cols-12 sm:gap-8 sm:px-8 sm:py-7',
-            i > 0 && 'border-t',
-          )}
-        >
-          <dt className="text-foreground font-mono text-[11px] tracking-widest uppercase sm:col-span-4">
-            {row.k}
-          </dt>
-          <dd className="text-muted-foreground text-sm leading-relaxed sm:col-span-8">{row.v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 /**
  * `/security` — the page a security reviewer reads before they will let anyone
@@ -64,7 +32,7 @@ function RowList({
  *
  * Copy lives in `features/marketing/security-page/content.ts` and every claim on
  * it is traced to code in that file's header, including the seven places where
- * a neighbouring page or the `comms` skill says more than the code supports.
+ * a neighbouring page or the `kortix-brand` skill says more than the code supports.
  * Read that header before editing a single line here.
  */
 export default function SecurityPage(): ReactNode {
@@ -146,7 +114,7 @@ export default function SecurityPage(): ReactNode {
 
         <Reveal delay={0.1}>
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
+            <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8">
               <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
                 {identity.presets.label}
               </p>
@@ -174,7 +142,7 @@ export default function SecurityPage(): ReactNode {
               </div>
             </div>
 
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
+            <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8">
               <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
                 {identity.enterprise.label}
               </p>
@@ -198,7 +166,7 @@ export default function SecurityPage(): ReactNode {
             {[identity.agents, identity.scoping].map((card) => (
               <div
                 key={card.title}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
                 <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
@@ -223,7 +191,7 @@ export default function SecurityPage(): ReactNode {
               {control.notes.map((note) => (
                 <li
                   key={note.id}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6"
+                  className="border-border bg-card flex h-full flex-col rounded-xl border p-6"
                 >
                   <p className="text-foreground font-mono text-[11px] tracking-widest uppercase">
                     {note.k}
@@ -243,7 +211,7 @@ export default function SecurityPage(): ReactNode {
         <SectionHeader eyebrow={landing.eyebrow} title={landing.title} description={landing.sub} />
 
         <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
+          <ol className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
             {landing.steps.map((step, i) => (
               <li
                 key={step.n}
@@ -286,7 +254,7 @@ export default function SecurityPage(): ReactNode {
             {posture.deployments.map((item) => (
               <div
                 key={item.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-8"
               >
                 <h3 className="text-foreground text-lg leading-tight font-medium">{item.k}</h3>
                 <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{item.v}</p>
@@ -297,7 +265,7 @@ export default function SecurityPage(): ReactNode {
 
         {/* The honest half. Nothing here moves without a report in hand. */}
         <Reveal delay={0.1}>
-          <div className="border-border bg-card mt-4 rounded-sm border p-6 sm:p-8">
+          <div className="border-border bg-card mt-4 rounded-xl border p-6 sm:p-8">
             <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
               {posture.compliance.label}
             </p>
@@ -332,7 +300,7 @@ export default function SecurityPage(): ReactNode {
         />
 
         <Reveal delay={0.06}>
-          <div className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border lg:grid-cols-12">
+          <div className="border-border bg-card mt-10 grid overflow-hidden rounded-xl border lg:grid-cols-12">
             <div className="border-border flex flex-col justify-center p-6 sm:p-8 lg:col-span-5 lg:border-r">
               <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
                 {tI18nComplete.raw('text43c1eff02d17')}

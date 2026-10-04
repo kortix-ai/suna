@@ -1,44 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
-import ts from 'typescript'
-import { loadConfig } from '../config'
-import { resolveHarness, type HarnessService } from '../harness/harness'
-import { buildDaemonApp } from '../proxy'
-import { createRuntimeProxyRouter } from '../routes/runtime-proxy'
-import type { HarnessQueryService } from '../harness/queries'
+import { loadConfig, resolveHarness, type HarnessService } from '@/harness/harness'
+import { buildDaemonApp } from '@/app/server'
+import { createRuntimeProxyRouter } from '@/routes/proxy/runtime-proxy'
+import type { HarnessQueryService } from '@/harness/contract/queries'
 
-const sourceRoot = resolve(import.meta.dir, '..')
-/** Every concrete adapter folder. Host code imports none of them; adapters import none of each other. */
-const adapterRoots = ['harness/open-code', 'harness/pi'].map((dir) => resolve(sourceRoot, dir))
-
+// Which imports are allowed between host, harness and adapters is the lint's job
+// (eslint.config.mjs, run by architecture-boundaries.test.ts). This file owns the
+// runtime half: selection, and controllers that keep an adapter's native features.
 describe('harness ownership boundary', () => {
-  test('only the resolver can import a concrete adapter from host production code', async () => {
-    const leaks: string[] = []
-    for await (const name of new Bun.Glob('**/*.ts').scan(sourceRoot)) {
-      if (name.includes('__tests__/') || name.endsWith('.test.ts')) continue
-      if (name === 'harness/harness.ts') continue
-      const ownRoot = adapterRoots.find((root) => resolve(sourceRoot, name).startsWith(root + '/'))
-      const file = resolve(sourceRoot, name)
-      const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
-      const inspect = (node: ts.Node) => {
-        let specifier: ts.Expression | undefined
-        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) specifier = node.moduleSpecifier
-        if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) specifier = node.arguments[0]
-        if (specifier && ts.isStringLiteralLike(specifier) && specifier.text.startsWith('.')) {
-          const target = resolve(dirname(file), specifier.text)
-          for (const root of adapterRoots) {
-            if (root === ownRoot) continue
-            if (target === root || target.startsWith(root + '/')) leaks.push(`${name} -> ${relative(sourceRoot, target)}`)
-          }
-        }
-        ts.forEachChild(node, inspect)
-      }
-      inspect(source)
-    }
-    expect(leaks).toEqual([])
-  })
-
   test('KORTIX_HARNESS selects the adapter (default opencode); the selected adapter loads its own environment', () => {
     expect(resolveHarness().id).toBe('opencode')
     expect(resolveHarness(loadConfig())).toBe(resolveHarness())
@@ -53,37 +22,11 @@ describe('harness ownership boundary', () => {
     expect(() => loadConfig({ KORTIX_HARNESS: 'codex' })).toThrow('Unsupported harness: codex')
   })
 
-  test('harness modules cannot import the HTTP framework or host controllers', async () => {
-    const leaks: string[] = []
-    for await (const name of new Bun.Glob('harness/**/*.ts').scan(sourceRoot)) {
-      const file = resolve(sourceRoot, name)
-      const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
-      const inspect = (node: ts.Node) => {
-        let specifier: ts.Expression | undefined
-        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) specifier = node.moduleSpecifier
-        if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) specifier = node.arguments[0]
-        if (specifier && ts.isStringLiteralLike(specifier)) {
-          const target = resolve(dirname(file), specifier.text)
-          if (specifier.text === 'hono' || specifier.text.startsWith('hono/') ||
-              target.startsWith(resolve(sourceRoot, 'routes') + '/')) leaks.push(`${name} -> ${specifier.text}`)
-        }
-        ts.forEachChild(node, inspect)
-      }
-      inspect(source)
-    }
-    expect(leaks).toEqual([])
-  })
-
   test('host controllers call a different resolved service and retain its extra fields and native features', async () => {
     const cfg = loadConfig({ KORTIX_PROJECT_AUTO_CLONE: '0' })
     const unexpected = (): never => { throw new Error('unused operation must not run') }
     const queries: HarnessQueryService = {
-      readState: unexpected, readMessages: unexpected, readVcsDiff: unexpected,
-      readCurrentProject: unexpected, readConfiguration: unexpected,
-      readSession: unexpected, readTodo: unexpected, pinnedSessionId: unexpected,
-      replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected,
-      stopSession: unexpected, revertSession: unexpected, unrevertSession: unexpected,
-      observeTurn: unexpected,
+      readState: unexpected, readMessages: unexpected,
       events: { epoch: 'test', headSeq: 0, firstSeq: 0, subscribe: unexpected },
       attachments: { read: unexpected },
     }
@@ -107,20 +50,41 @@ describe('harness ownership boundary', () => {
         }),
       },
       diagnostics: {
-        health: async () => ({ daemon: 'ok', status: 'ok', runtimeReady: true, uptime_s: 1, exclusiveFeature: 'preserved' }),
+        capabilities: ['session.subagents'],
+        health: async () => ({
+          harness: {
+            id: 'test-only-adapter', version: '1.0.0', state: 'ok', ready: true, error: null,
+            session: { id: 'ses_root', required: true }, turn: null, details: { exclusiveFeature: 'preserved' },
+          },
+        }),
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
+      turns: { prompt: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
       background: { start: unexpected },
       assets: {
-        componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
+        harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
         reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     }
     const app = buildDaemonApp(cfg, service, 0)
     const response = await app.request('/kortix/health')
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ daemon: 'ok', capabilities: ['file.import', 'file.append'], status: 'ok', runtimeReady: true, uptime_s: 1, exclusiveFeature: 'preserved' })
+    // The route composes the host facts, the closed harness block (adapter
+    // facts ride in `details`) and one readiness verdict (E19).
+    expect(await response.json()).toMatchObject({
+      daemon: 'ok',
+      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'session.subagents'],
+      status: 'ok',
+      runtimeReady: true,
+      boot_error: null,
+      workload: 'session',
+      harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
+      // The pre-W3 flat names, composed from the block for an older API.
+      opencode: 'ok',
+      opencode_session_id: 'ses_root',
+      opencode_session_required: true,
+    })
     expect((await app.request('/session/native-command')).status).toBe(503)
 
     // The transport controller preserves features that are not common methods.
@@ -129,5 +93,14 @@ describe('harness ownership boundary', () => {
     const native = await transport.request('/exclusive-feature', { method: 'POST', body: 'native input' })
     expect(native.status).toBe(201)
     expect(await native.json()).toEqual({ nativeFeature: '/exclusive-feature', input: 'native input' })
+
+    // A runtime that cannot take a request answers one machine code beside the adapter's own details.
+    const booting = createRuntimeProxyRouter(
+      { cfg, bootState: { repoMaterializationError: null, timeline: [] } },
+      { ...service.proxy, readiness: async () => ({ ready: false, phase: 'boot', details: { error: 'adapter wording' } }) },
+    )
+    const refused = await booting.request('/exclusive-feature')
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toEqual({ code: 'runtime_not_ready', error: 'adapter wording', phase: 'boot' })
   })
 })

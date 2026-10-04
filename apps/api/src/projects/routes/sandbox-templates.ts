@@ -1,6 +1,6 @@
 /** Project sandbox templates: list, create, update, delete, and build. */
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   DEFAULT_SANDBOX_SLUG,
   deleteSandboxImage,
@@ -16,7 +16,7 @@ import {
 } from '../../snapshots/templates';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
-import { AnyObject, SandboxTemplateSchema, projectsApp } from '../lib/app';
+import { SandboxTemplateSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { serializeTemplate } from '../lib/serializers';
@@ -35,7 +35,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sandbox-templates',
     tags: ['sandboxes'],
-    summary: 'GET /:projectId/sandbox-templates',
+    summary: 'List sandbox templates',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -75,11 +75,20 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sandbox-templates',
     tags: ['sandboxes'],
-    summary: 'POST /:projectId/sandbox-templates',
+    summary: 'Create a sandbox template',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            slug: z.string().openapi({ description: 'Template slug.' }),
+            name: z.string().optional().openapi({ description: 'Display name.' }),
+            image: z.string().optional().openapi({ description: 'Container image.' }),
+            dockerfile_path: z.string().optional().openapi({ description: 'Dockerfile path in the repository.' }),
+            entrypoint: z.string().optional().openapi({ description: 'Entrypoint command.' }),
+            cpu: z.number().optional().openapi({ description: 'CPU cores.' }),
+            memory_gb: z.number().optional().openapi({ description: 'Memory in GB.' }),
+            disk_gb: z.number().optional().openapi({ description: 'Disk in GB.' }),
+          }) } } },
       },
     responses: {
         201: json(SandboxTemplateSchema, 'The created sandbox template'),
@@ -91,9 +100,9 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
+  // project.sandbox.write so a custom role can withhold it (humans) AND the
   // agent-grant fold applies (agent sessions). Managers hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
 
   const body = await readJsonObject(c);
 
@@ -162,11 +171,19 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/sandbox-templates/{templateId}',
     tags: ['sandboxes'],
-    summary: 'PATCH /:projectId/sandbox-templates/:templateId',
+    summary: 'Update a sandbox template',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), templateId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'Display name.' }),
+            image: z.string().optional().openapi({ description: 'Container image.' }),
+            dockerfile_path: z.string().optional().openapi({ description: 'Dockerfile path in the repository.' }),
+            entrypoint: z.string().optional().openapi({ description: 'Entrypoint command.' }),
+            cpu: z.number().optional().openapi({ description: 'CPU cores.' }),
+            memory_gb: z.number().optional().openapi({ description: 'Memory in GB.' }),
+            disk_gb: z.number().optional().openapi({ description: 'Disk in GB.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -179,9 +196,9 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
+  // project.sandbox.write so a custom role can withhold it (humans) AND the
   // agent-grant fold applies (agent sessions). Managers hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
 
   const body = await readJsonObject(c);
 
@@ -243,7 +260,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sandbox-templates/{templateId}',
     tags: ['sandboxes'],
-    summary: 'DELETE /:projectId/sandbox-templates/:templateId',
+    summary: 'Delete a sandbox template',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), templateId: z.string() }),
@@ -259,9 +276,9 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
+  // project.sandbox.write so a custom role can withhold it (humans) AND the
   // agent-grant fold applies (agent sessions). Managers hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -293,7 +310,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sandbox-templates/{templateId}/build',
     tags: ['sandboxes'],
-    summary: 'POST /:projectId/sandbox-templates/:templateId/build',
+    summary: 'Build a sandbox template',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), templateId: z.string() }),
@@ -309,9 +326,9 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: building a sandbox template provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
+  // project.sandbox.write so a custom role can withhold it (humans) AND the
   // agent-grant fold applies (agent sessions). Managers hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);

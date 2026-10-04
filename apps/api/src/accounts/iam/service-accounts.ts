@@ -68,6 +68,7 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
+  if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot create service accounts.' }, 403);
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);

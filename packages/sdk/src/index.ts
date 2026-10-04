@@ -127,7 +127,8 @@ export {
  * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
-export type { SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export { runtimeSupports } from './core/session/health';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox
@@ -169,16 +170,17 @@ export type {
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
  * heartbeat watchdog, and event coalescing, with ZERO react/react-query
- * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
+ * imports. `@kortix/sdk/react`'s `useRuntimeEventStream` is a thin wrapper
  * around this for the React host; any other host (worker, CLI, non-React UI)
  * can call it directly.
  */
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from './core/stream/event-stream';
 
@@ -246,7 +248,7 @@ export {
 } from './core/turns';
 
 /**
- * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
+ * The curated chat-event union — narrows the full `RuntimeEvent` wire union
  * down to the ~12 events a product chat UI needs (message/part updates,
  * session status/idle/error, question asked/answered, permission
  * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
@@ -480,7 +482,7 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ambiguity pins for names reachable both from our modules and from the
-// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// vendor type star (`export type * from './core/runtime/runtime-types'` inside
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
@@ -499,7 +501,7 @@ export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
 export * from './core/http/impersonation';
 export * from './core/http/instance-routes';
-export * from './core/http/opencode-errors';
+export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/cache/persisted-query-cache';
@@ -514,21 +516,19 @@ export {
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
 export * from './core/session-sync/saved-copy-store';
+export {
+  type EmptyConversationInput,
+  isEmptyConversation,
+  savedCopyEmptyRoot,
+} from './core/session-sync/saved-transcript';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
 
-// Runtime-neutral compatibility names for host applications. The original
-// OpenCode-named exports remain public for backward compatibility.
-export { formatOpenCodeRuntimeError as formatRuntimeError } from './core/http/opencode-errors';
-export type {
-  ProjectOpenCodeSession as ProjectRuntimeSession,
-} from './core/rest/projects-client/sessions';
-export type {
-  OpencodeAgentConfig as RuntimeAgentConfig,
-} from './core/rest/projects-client/agent-config';
+// Runtime-neutral names are the declarations; each pre-W4 OpenCode name is a
+// separate `@deprecated` binding beside it, public until the next major.
 
 /**
  * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
@@ -543,3 +543,40 @@ export {
   type KortixAppViewerSession,
   type KortixAppViewerOptions,
 } from './core/auth/app-viewer';
+
+/**
+ * The session composer's agent and model lists — framework-free, so web
+ * (through the `./react` hooks) and mobile build the pickers and resolve what
+ * to send with the same functions.
+ *
+ * Agents: `projectConfigAgentsToRuntimeAgents` (project detail → roster,
+ * default first) → `composerSelectableAgents` (picker list) →
+ * `resolveComposerAgent` (what runs, and whether send is allowed).
+ * Models: `pickerProviderList` (raw sources → provider list) →
+ * `flattenModels` → `createModelVisibility` + `modelInDefaultView` (default
+ * view) → `resolveModelDefault` + `resolveComposerModel` (what runs).
+ */
+export {
+  composerSelectableAgents,
+  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
+  resolveComposerAgent,
+  type ComposerAgentReason,
+  type ComposerAgentResolution,
+} from './core/agents/composer-agents';
+export { flattenModels, isOfferedModel, type FlatModel, type ModelOption } from './core/models/model-flatten';
+export { modelRefToKey, type ModelKey } from './core/models/model-key';
+export {
+  createModelVisibility,
+  modelInDefaultView,
+  type ModelVisibilityPin,
+} from './core/models/model-visibility';
+export {
+  pickerProviderList,
+  type PickerProviderListInput,
+} from './core/models/provider-selection';
+export {
+  resolveComposerModel,
+  resolveModelDefault,
+  type ComposerModelResolution,
+} from './core/models/composer-model';

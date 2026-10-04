@@ -208,9 +208,29 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
   };
 }
 
+// OpenCode Zen serves the managed ids unchanged and sends no usage.cost, so
+// the managed price table bills it. The caller adds `x-opencode-session`.
+function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.OPENCODE_ZEN_MANAGED_MODELS?.includes(managed.id) || !config.OPENCODE_ZEN_API_KEY) return null;
+  return {
+    provider: 'opencode',
+    kind: 'openai-compat',
+    baseUrl: config.OPENCODE_ZEN_API_URL,
+    apiKey: config.OPENCODE_ZEN_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    resolvedModel: managed.id,
+    pricing: managedPricing(managed),
+    strictChatSchema: true,
+    failover: true,
+    publicProvider: 'kortix',
+  };
+}
+
 /**
  * MORPH_MANAGED_MODELS selects direct Morph candidates per managed model.
  * OpenRouter fallback stays inside the verified US endpoint pool.
+ * OPENCODE_ZEN_MANAGED_MODELS puts OpenCode Zen first; the others become its fallback.
  */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
@@ -221,7 +241,8 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   const morph = morphManagedDescriptor(managed);
   const openrouter = openRouterManagedDescriptor(managed);
-  return [morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
+  const zen = zenManagedDescriptor(managed);
+  return [zen, morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {

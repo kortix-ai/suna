@@ -103,13 +103,15 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // count below cannot tell which element carries the treatment.
     expect(region).toContain('text-muted-foreground hover:text-foreground');
 
-    // Three users of the ONE treatment in this file: `Back to projects`
-    // (top-left exit, 2026-09-17), `Log out` and `Try again`. The onboarding
-    // escape link (`Go to workspace`) moved into `workspace-handoff.tsx` with
-    // the rest of the waiting state, and carries the same treatment there
+    // One user of the treatment left in this file: `Try again`. `Back to
+    // projects` moved into the shared `AccountTopBar` with the rest of the top
+    // row and carries the same treatment there; Log out moved into that bar's
+    // account menu. The onboarding escape link lives in `workspace-handoff.tsx`
     // (asserted in `workspace-handoff.test.tsx`).
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
-    expect(treatmentMatches).toHaveLength(3);
+    expect(treatmentMatches).toHaveLength(1);
+    const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
+    expect(bar).toContain('text-muted-foreground hover:text-foreground');
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {

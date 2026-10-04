@@ -12,16 +12,17 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pointBootLink, readBootLinkTarget } from '../boot-config'
-import type { Config } from '../config'
-import type { HarnessConfigConvergeResult, HarnessControlOperations } from '../harness/control'
-import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
-import { ConvergeBusyError, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
-import { MAX_SWAP_DELAY_MS } from '../harness/control'
-import { createOpenCodeControlService } from '../harness/open-code/control'
-import type { Opencode, VerifiedReloadResult } from '../harness/open-code/lifecycle'
-import { createConfigRouter } from '../routes/config'
-import { createRefreshRouter } from '../routes/refresh'
+import { pointBootLink, readBootLinkTarget } from '@/services/config-release/boot-config'
+import type { Config } from '@/lib/config/config'
+import type { HarnessConfigConvergeResult, HarnessControlOperations } from '@/harness/contract/control'
+import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
+import { ConvergeBusyError } from '@/services/config-release/release'
+import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
+import { MAX_SWAP_DELAY_MS } from '@/harness/contract/control'
+import { createOpenCodeControlService } from '@/harness/open-code/control'
+import type { Opencode, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
+import { createConfigRouter } from '@/routes/kortix/config'
+import { createRefreshRouter } from '@/routes/kortix/refresh'
 import {
   buildRelease,
   commitAll,
@@ -61,7 +62,7 @@ function fakeControl(over: Partial<HarnessControlOperations> = {}) {
     },
     refresh: async () => {
       calls.refresh++
-      return { ok: true, repo: {} as never, opencode: 'ok', opencode_pid: 1 }
+      return { ok: true, repo: {} as never, runtime: 'ok', runtime_pid: 1 }
     },
     abort: async () => {
       throw new Error('unexpected abort')

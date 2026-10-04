@@ -29,6 +29,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Dark Theme': 'text6f2a09157622',
   Dashboard: 'text67b696468610',
   Desktop: 'text9bd88f2485ac',
+  Drives: 'text729fe0e7b138',
   Files: 'textabc7e9892806',
   Home: 'text3a78695388b3',
   'Internal Browser': 'text875c0e464942',

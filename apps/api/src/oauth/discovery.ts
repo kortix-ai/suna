@@ -35,41 +35,37 @@ export function oauthAuthorizationServerMetadata(fallbackOrigin?: string) {
     token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
     revocation_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
     code_challenge_methods_supported: ['S256'],
-    service_documentation: `${issuer.replace(/api\./, '')}/docs/sdk/sign-in`,
+    service_documentation: `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/docs/sdk/sign-in`,
   } as const;
 }
 
 // ─── MCP (RFC 9728 protected resource) ──────────────────────────────────────
 
-const MCP_PATH = /^\/v1\/projects\/([0-9a-f-]{36})\/mcp$/i;
-
-/** The canonical URL of a project's MCP endpoint — the OAuth `resource`. */
-export function mcpResourceUrl(projectId: string, fallbackOrigin?: string): string {
-  return `${oauthIssuer(fallbackOrigin)}/v1/projects/${projectId}/mcp`;
+/** The canonical URL of the MCP endpoint — the OAuth `resource`. One per issuer. */
+export function mcpResourceUrl(fallbackOrigin?: string): string {
+  return `${oauthIssuer(fallbackOrigin)}/v1/mcp`;
 }
 
-/** Where the RFC 9728 metadata for a project's MCP endpoint lives. */
-export function mcpResourceMetadataUrl(projectId: string, fallbackOrigin?: string): string {
-  return `${oauthIssuer(fallbackOrigin)}/.well-known/oauth-protected-resource/v1/projects/${projectId}/mcp`;
+/** Where the RFC 9728 metadata for the MCP endpoint lives. */
+export function mcpResourceMetadataUrl(fallbackOrigin?: string): string {
+  return `${oauthIssuer(fallbackOrigin)}/.well-known/oauth-protected-resource/v1/mcp`;
 }
 
-/** True when `resource` names a Kortix project MCP endpoint on this issuer. */
+/** True when `resource` names the Kortix MCP endpoint on this issuer. */
 export function isMcpResource(resource: string, fallbackOrigin?: string): boolean {
   try {
-    const url = new URL(resource);
-    return url.origin === new URL(oauthIssuer(fallbackOrigin)).origin && MCP_PATH.test(url.pathname);
+    return new URL(resource).href.replace(/\/+$/, '') === mcpResourceUrl(fallbackOrigin);
   } catch {
     return false;
   }
 }
 
-export function mcpProtectedResourceMetadata(projectId: string, fallbackOrigin?: string) {
+export function mcpProtectedResourceMetadata(fallbackOrigin?: string) {
   return {
-    resource: mcpResourceUrl(projectId, fallbackOrigin),
+    resource: mcpResourceUrl(fallbackOrigin),
     authorization_servers: [oauthIssuer(fallbackOrigin)],
     scopes_supported: [OAUTH_SCOPE_KORTIX],
     bearer_methods_supported: ['header'],
     resource_name: 'Kortix',
   } as const;
 }
-

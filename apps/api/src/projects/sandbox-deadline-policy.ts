@@ -94,11 +94,42 @@ export function turnAbsoluteMaxMs(): number {
 }
 
 /**
+ * The wall-clock ceiling on an `active` turn record that has NO `messageId`.
+ *
+ * `messageId` is set by `relayTurnBeginToApi` (the daemon's boot.ts) within
+ * seconds of OpenCode accepting a prompt — it is the earliest thing a healthy
+ * turn establishes. A record still missing it after this ceiling did not lose
+ * a race; it lost its runtime before that relay ever ran.
+ *
+ * THIS BOUND EXISTS BECAUSE `turnAbsoluteMaxMs` CANNOT CATCH IT, and neither
+ * can ordinary observation. `observeSandboxTurn` asks the daemon a ROOT-scoped
+ * question when no `messageId` exists to scope it by, and the daemon's own
+ * turn-in-flight oracle (`opencode-turn-state.ts`'s `inspectOpencodeRoot`)
+ * deliberately reads an incomplete assistant message as "still in flight" even
+ * when `/session/status` reports the box idle — a rule that exists to protect
+ * a genuine husk recovery, but that means a turn severed by a daemon-level
+ * restart (2026-09-29 incident: an env-driven OpenCode respawn SIGTERMed a
+ * process 200ms after the API accepted its turn) reads `observation: 'active'`
+ * FOREVER: the reaper's per-pass branches below never see it as `terminal`,
+ * so it renews the record's deadline on every pass and only `kortix sessions
+ * stop` ever clears it. This ceiling settles the record on age + missing
+ * identity alone, independent of that ambiguous signal — the one thing this
+ * incident's daemon-side fix (relaying its own turn-end by identity) is
+ * itself supposed to make unnecessary, and the backstop for when it doesn't.
+ *
+ * Default 30 minutes: comfortably above the seconds a healthy turn takes to
+ * relay its begin, comfortably below `turnAbsoluteMaxMs`'s 24h.
+ */
+export function turnNoBeginRelayMaxMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_NO_MESSAGE_ID_MAX_MINUTES', 30) * 60_000;
+}
+
+/**
  * Granted when a provider-RUNNING box holds a recent control-plane-minted turn
  * record and its daemon ANSWERS the probe without saying anything about that
  * turn.
  *
- * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box's
+ * Incident 2026-08-17T20:40:03Z (a prod session on Daytona): the box's
  * `deadlineGrant` never left `boot_floor`. The daemon on that warm snapshot
  * answered the turn probe with neither `true` nor `false`, so
  * `observeSandboxTurn` returned `unknown` on every pass,
@@ -346,21 +377,9 @@ export function isTerminalTurnEnd(
   return error?.isRetryable !== true;
 }
 
-/**
- * Is this sandbox row an unclaimed WARM-POOL box?
- *
- * The warm marker is written onto `project_sessions.metadata.warm_session` by
- * the warm coordinator and forwarded verbatim into the sandbox row's own
- * metadata at provision (projects/lib/sessions.ts passes `input.metadata`
- * through to provisionSessionSandbox), so this needs no join. It is a SNAPSHOT
- * of the state at bake time and is never updated on claim — which is fine and
- * deliberate: a claimed box is extended by its first real turn, and the warm
- * grant it was born with is only ever a floor.
- */
+/** A speculative session carries the same marker into its sandbox at provision. */
 export function isWarmPoolBox(metadata: Record<string, unknown> | null | undefined): boolean {
-  const warm = metadata?.warm_session;
-  if (!warm || typeof warm !== 'object' || Array.isArray(warm)) return false;
-  return (warm as { state?: unknown }).state === 'available';
+  return metadata?.warm === true;
 }
 
 /**

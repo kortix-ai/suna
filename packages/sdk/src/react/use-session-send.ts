@@ -8,7 +8,7 @@
  * `handleSend`. Both paths:
  *
  *   1. Add an optimistic user message to the sync store (`beginOptimisticSend`).
- *   2. Send via `promptOpenCodeMessage` (which already owns network retry —
+ *   2. Send via `promptRuntimeMessage` (which already owns network retry —
  *      this module never re-wraps that).
  *   3. On failure, classify the error, release the send receipt, and either keep the
  *      optimistic message and rehydrate real messages from the server (some
@@ -34,7 +34,7 @@
  *    pure functions directly instead, as apps/web's `session-chat.tsx` does.
  */
 
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../core/runtime/runtime-types';
 import { useCallback, useState } from 'react';
 import { getClient } from '../core/runtime/client';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
@@ -42,8 +42,8 @@ import { SESSION_SYNC_PAGE_SIZE } from '../core/session-sync/session-sync-contro
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { classifySendError, type KortixSendError } from './use-session';
 import {
-  promptOpenCodeMessage,
-  useAbortOpenCodeSession,
+  promptRuntimeMessage,
+  useAbortRuntimeSession,
   type AbortSettlement,
   type PromptPart,
   type SendMessageOptions,
@@ -151,7 +151,7 @@ export function markOptimisticSendInboxBacked(sessionId: string, messageId: stri
 
 /**
  * A send that never reached the network at all (e.g. building the outgoing
- * parts — file uploads — threw before `promptOpenCodeMessage` was even
+ * parts — file uploads — threw before `promptRuntimeMessage` was even
  * called). There is nothing to rehydrate from the server since it never saw
  * this message, so drop the optimistic message outright — unlike
  * `recoverFromSendFailure`, which keeps it pending a rehydrate.
@@ -172,14 +172,14 @@ export function abandonOptimisticSend(sessionId: string, messageId: string): voi
 // ============================================================================
 
 /** The minimal slice of `OpencodeClient` the recovery rehydrate needs. */
-export interface OpenCodeMessagesClient {
+export interface RuntimeMessagesClient {
   session: {
     messages: (args: { sessionID: string; limit?: number }) => Promise<{ data?: unknown }>;
   };
 }
 
 /** Shape `useSyncStore.getState().hydrate()` actually needs. `data` on
- *  `OpenCodeMessagesClient['session']['messages']` is deliberately `unknown`
+ *  `RuntimeMessagesClient['session']['messages']` is deliberately `unknown`
  *  (hosts inject their own stub client in tests) — narrow at the one real
  *  call site below instead of widening that public interface. */
 type HydrateInput = Array<{ info: Message; parts: Part[] }>;
@@ -188,7 +188,7 @@ export interface SendRecoveryOptions {
   /** Resolve the client used to rehydrate messages on failure. Defaults to
    * the SDK's `getClient` — inject a stub in tests, or a different client in
    * a host that doesn't use the singleton runtime client. */
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   /** Classify the raw error into a `KortixSendError`. Defaults to
    * `classifySendError` — a host with richer message formatting (e.g.
    * apps/web's `ProviderModelNotFoundError` special-casing) injects its own
@@ -236,7 +236,7 @@ export function recoverFromSendFailure(
   options: SendRecoveryOptions = {},
 ): KortixSendError {
   const classify = options.classify ?? classifySendError;
-  const resolveClient = options.getClient ?? (getClient as unknown as () => OpenCodeMessagesClient);
+  const resolveClient = options.getClient ?? (getClient as unknown as () => RuntimeMessagesClient);
   const classified = classify(error);
 
   // NAMED: a slow failure must not drop the receipt of a send submitted after
@@ -268,7 +268,7 @@ export function recoverFromSendFailure(
     return classified;
   }
 
-  let client: OpenCodeMessagesClient;
+  let client: RuntimeMessagesClient;
   try {
     client = resolveClient();
   } catch {
@@ -310,10 +310,10 @@ export interface SendAndRecoverArgs {
    * Stable name for the submission, so re-dispatching a failed send keeps one
    * wire `messageID` and the proxy's duplicate protection still absorbs it.
    * Distinct from `messageId` above, which is the LOCAL optimistic message and
-   * never goes on the wire. See `SendOpenCodeMessageArgs.clientMessageId`.
+   * never goes on the wire. See `SendRuntimeMessageArgs.clientMessageId`.
    */
   clientMessageId?: string;
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
 }
 
@@ -322,7 +322,7 @@ export type SendAndRecoverResult =
   | { ok: false; error: KortixSendError; cause: unknown };
 
 /**
- * Send already-built parts via `promptOpenCodeMessage` (which owns network
+ * Send already-built parts via `promptRuntimeMessage` (which owns network
  * retry — this never re-wraps it) and run `recoverFromSendFailure` on
  * failure. Assumes the optimistic message was already added by the caller
  * (via `beginOptimisticSend`) — callers add it at different points relative
@@ -335,7 +335,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
     // `pending`, and `hydrate` refuses to let a pending message be superseded
     // by an ordinal match — see `markOptimisticDispatched`.
     useSyncStore.getState().markOptimisticDispatched(args.sessionId, args.messageId);
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: args.sessionId,
       parts: args.parts,
       options: args.options,
@@ -356,7 +356,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
 // sync-store manipulation (no web-specific concepts), so it's extracted; the
 // abort mutation itself stays a shared per-host instance (apps/web fans it
 // out to multiple call sites beyond stop, so `useSessionSend` deliberately
-// does NOT own a second competing `useAbortOpenCodeSession()` instance for
+// does NOT own a second competing `useAbortRuntimeSession()` instance for
 // hosts that already have one — see `useSessionSend.stop` below for a host
 // that doesn't).
 // ============================================================================
@@ -435,7 +435,7 @@ export interface StartStashReplayOptions<TReady> {
   onFailure?: (stash: StartStash, error: unknown, classified: KortixSendError) => void;
   /** Called after the runtime acknowledges the prompt. */
   onSuccess?: (stash: StartStash) => void;
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
   timers?: StashReplayTimers;
 }
@@ -500,7 +500,7 @@ export function replayStartStash<TReady>(
       }
       try {
         useSyncStore.getState().markOptimisticDispatched(sessionId, prepared.messageId);
-        await promptOpenCodeMessage({ sessionId, parts, options: prepared.sendOptions });
+        await promptRuntimeMessage({ sessionId, parts, options: prepared.sendOptions });
         if (!cancelled) onSuccess?.(stash);
       } catch (err) {
         if (!cancelled) fail(stash, prepared.messageId, err);
@@ -611,7 +611,7 @@ export async function sendWithReceipt(args: SendWithReceiptArgs): Promise<SendAn
 // ============================================================================
 
 export interface UseSessionSendOptions {
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
   /**
    * The KORTIX session id, when it differs from the hook's `sessionId`.
@@ -672,7 +672,7 @@ export function useSessionSend(
   const { getClient: getClientOpt, classify, workingSessionId, projectId } = options;
   const [sendError, setSendError] = useState<KortixSendError | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const abortMutation = useAbortOpenCodeSession();
+  const abortMutation = useAbortRuntimeSession();
 
   const send = useCallback(
     async (
@@ -712,3 +712,7 @@ export function useSessionSend(
 
   return { send, stop, isSending, isStopping: abortMutation.isPending, sendError };
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `RuntimeMessagesClient`. Removed in the next major. */
+export type OpenCodeMessagesClient = RuntimeMessagesClient;

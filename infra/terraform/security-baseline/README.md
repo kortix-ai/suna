@@ -44,7 +44,11 @@ in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
       `CrossSiteScripting_BODY`, `EC2MetaDataSSRF_BODY`
     - AWSManagedRulesKnownBadInputsRuleSet: `Log4JRCE_BODY`, `JavaDeserializationRCE_BODY`,
       `ReactJSRCE_BODY`
-    URI/query/header/cookie rules + AmazonIpReputationList stay in Block. A matching
+    On 2026-09-28 `SizeRestrictions_URIPATH` (path > 1024 bytes) was also set to
+    **Count**: setup-link tokens ride in the path (`/v1/setup-links/secret/ksl_…`)
+    and a token with a few described fields passes 1024 bytes. Block answered
+    with a 403 page without CORS headers, so the intake form could not load.
+    Other URI/query/header/cookie rules + AmazonIpReputationList stay in Block. A matching
     Cloudflare custom-firewall `skip` rule (zone kortix.com) skips CF's free managed ruleset
     for the same API hosts, since CF was independently blocking command-injection-like prompt
     content at the edge. Re-blocking any `*_BODY` rule will break prompts + git push again.
@@ -74,4 +78,29 @@ terraform plan            # iterate until the diff is empty
 terraform apply           # no-op once diff is clean; then delete imports.tf
 ```
 
-Not applied automatically (mirrors the dev/prod convention).
+`terraform-apply-global.yml` applies this stack on every push to `main` that
+touches it.
+
+## Human access
+A person gets an IAM user with console login and MFA. They get no access keys.
+Pick one group:
+
+| Group | Grants |
+|---|---|
+| `engineers` | `PowerUserAccess`: every service except IAM, Organizations, Account |
+| `administrators` | `AdministratorAccess`, for people who manage IAM |
+
+Both groups deny every action except MFA enrolment and password change until
+the user signs in with MFA. Users and memberships are managed out-of-band,
+never in this stack:
+
+```bash
+aws iam create-user --user-name <name>
+aws iam create-login-profile --user-name <name> --password '<temporary>' --password-reset-required
+aws iam add-user-to-group --user-name <name> --group-name engineers
+```
+
+The user signs in at `https://935064898258.signin.aws.amazon.com/console`,
+sets a new password, then assigns an MFA device under Security credentials.
+CLI access uses `aws sts get-session-token --serial-number <mfa-arn> --token-code <code>`
+with a short-lived key, or a session from the console.

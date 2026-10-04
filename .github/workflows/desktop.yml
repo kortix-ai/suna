@@ -5,19 +5,14 @@ name: Desktop
 # signed macOS/Windows runners, so building it on every main push would be
 # wasteful and would gate the fast API/frontend/CLI path on scarce runners.
 #
-# It builds only when desktop code changes (push to main touching
-# apps/desktop-electron/**) or when manually dispatched. Signed installers are
-# published to the mutable `desktop-dev-latest` prerelease.
+# It builds only when manually dispatched (since 2026-10-03: a push to main
+# touching apps/desktop-electron/** no longer builds; macOS bills at 10x and
+# Windows at 2x GitHub-hosted minutes). Signed installers are published to the mutable `desktop-dev-latest` prerelease.
 #
 # Production desktop installers are built separately by deploy-prod.yml and
 # bundled into the unified vX.Y.Z release.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/desktop-electron/**'
-      - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
 concurrency:
@@ -79,8 +74,14 @@ jobs:
       - name: Install pnpm
         run: corepack enable pnpm
 
+      # The app bundles the computer agent (packages/agent-tunnel), built with
+      # bun by scripts/ensure-runtime.js before electron-builder runs.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 
@@ -88,6 +89,13 @@ jobs:
         id: ver
         shell: bash
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      # The bundled agent reads its version from the package.json shipped next
+      # to it. The checked-in value is inert, so stamp the release: the app
+      # restarts a service that runs another version (v2 R5).
+      - name: Stamp the bundled agent version
+        shell: bash
+        run: node -e "const f='packages/agent-tunnel/package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8'));p.version=process.argv[1];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')" "${{ steps.ver.outputs.version }}"
 
       # Signing material lives in kortix-ci-env. Every key is optional: a build
       # never hard-fails on missing certs. The read is skipped on Windows,
@@ -117,6 +125,7 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            KORTIX_DESKTOP_SENTRY_DSN?
 
       # Decide whether this platform can SIGN. We never hard-fail on missing
       # certs — a build should always produce an installer. If the platform's
@@ -168,12 +177,14 @@ jobs:
             --publish never \
             --config.extraMetadata.version="${{ steps.ver.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.extraMetadata.kortixDesktopSentryDsn="$KORTIX_DESKTOP_SENTRY_DSN" \
             --config.extraMetadata.kortixUpdateChannel="dev" \
             --config.productName="Kortix Dev" \
             --config.extraMetadata.productName="Kortix Dev" \
             --config.appId="$DESKTOP_APP_ID"
         env:
           # macOS signing + notarization (electron-builder conventions).
+          KORTIX_DESKTOP_SENTRY_DSN: ${{ env.KORTIX_DESKTOP_SENTRY_DSN || secrets.KORTIX_DESKTOP_SENTRY_DSN }}
           CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE || secrets.APPLE_CERTIFICATE) || '' }}
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD) || '' }}
           APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && env.APPLE_API_KEY_ID || '' }}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts, Turn } from '@/lib/opencode/types';
+import type { MessageWithParts, Turn } from '@/lib/session/types';
 import {
   TURN_META_LABELS,
   formatDistanceStrictAgo,

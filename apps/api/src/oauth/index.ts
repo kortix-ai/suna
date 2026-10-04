@@ -15,7 +15,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, isNull, lt, or } from 'drizzle-orm';
+import { eq, and, desc, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync } from '../shared/token-hash';
@@ -31,40 +31,25 @@ import {
   accountMembers,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
-import { isMcpResource, oauthAuthorizationServerMetadata } from './discovery';
-import { createOAuthClient, normalizeRedirectUris, normalizeScopes, OAuthClientInputError } from '../repositories/oauth-clients';
+import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
+import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { requestClientKey } from '../shared/client-ip';
-import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
 import { isUuid } from '../shared/validate';
+import { actsAsFullIdentity } from '../accounts/core/tokens';
+import { actorOf } from '../iam/actor';
+import { resolveAccountId } from '../shared/resolve-account';
 
-// ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
+// ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
-const TOKEN_RATE_LIMIT = 20;
-const TOKEN_RATE_WINDOW_MS = 60_000;
-const tokenRateMap = new Map<string, number[]>();
+// replica-local: the bucket lives in this process, so the fleet allows
+// 20/min × replicas. It stops runaway clients; it does not meter a quota.
+const tokenRateLimiter = new TokenBucketRateLimiter('oauth_token');
 
 function checkTokenRateLimit(clientId: string): boolean {
-  const now = Date.now();
-  const timestamps = tokenRateMap.get(clientId) ?? [];
-  const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
-  if (recent.length >= TOKEN_RATE_LIMIT) {
-    tokenRateMap.set(clientId, recent);
-    return false;
-  }
-  recent.push(now);
-  tokenRateMap.set(clientId, recent);
-  return true;
+  return tokenRateLimiter.check(clientId, { limit: 20, windowMs: 60_000 }).allowed;
 }
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, timestamps] of tokenRateMap) {
-    const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
-    if (recent.length === 0) tokenRateMap.delete(key);
-    else tokenRateMap.set(key, recent);
-  }
-}, 5 * 60_000).unref?.();
 
 // ─── OAuth Access Token Middleware (userinfo only) ───────────────────────────
 
@@ -241,12 +226,46 @@ async function consumeAuthorizationRequest(requestId: string): Promise<PendingAu
   };
 }
 
-/** Housekeeping: drop expired or consumed requests older than the TTL. */
-export async function sweepExpiredAuthorizationRequests(now = new Date()): Promise<void> {
+/** Housekeeping: drop expired or consumed requests older than the TTL, at most `limit` per run. */
+export async function sweepExpiredAuthorizationRequests(now = new Date(), limit = SWEEP_BATCH): Promise<number> {
   const cutoff = new Date(now.getTime() - AUTH_REQUEST_TTL_MS);
-  await db
-    .delete(oauthAuthorizationRequests)
-    .where(or(lt(oauthAuthorizationRequests.expiresAt, now), lt(oauthAuthorizationRequests.createdAt, cutoff)));
+  const rows = await db.execute(sql`
+    delete from kortix.oauth_authorization_requests
+     where id in (
+       select id from kortix.oauth_authorization_requests
+        where expires_at < ${now.toISOString()}::timestamptz or created_at < ${cutoff.toISOString()}::timestamptz
+        limit ${limit})
+    returning id`);
+  return countRows(rows);
+}
+
+/** A self-registered client that no person ever approved and that never got a token is dropped after this long. */
+const ABANDONED_CLIENT_AGE_MS = 7 * 24 * 3600 * 1000;
+const SWEEP_BATCH = 500;
+
+const countRows = (r: unknown): number => ((r as { rows?: unknown[] }).rows ?? (r as unknown[])).length;
+
+/**
+ * Housekeeping (B-9): open dynamic registration (RFC 7591) lets anyone create
+ * client rows. Delete those older than 7 days with no consent and no token
+ * ever issued. Codes and requests cascade. One DELETE, bounded by `limit`;
+ * concurrent runs on several API tasks delete disjoint-or-equal rows, and a row
+ * already deleted by a peer is simply not matched, so the run is idempotent.
+ */
+export async function sweepAbandonedSelfRegisteredClients(now = new Date(), limit = SWEEP_BATCH): Promise<number> {
+  const cutoff = new Date(now.getTime() - ABANDONED_CLIENT_AGE_MS);
+  const rows = await db.execute(sql`
+    delete from kortix.oauth_clients
+     where client_id in (
+       select c.client_id from kortix.oauth_clients c
+        where c.description = ${SELF_REGISTERED_DESCRIPTION}
+          and c.account_id is null and c.app_id is null
+          and c.created_at < ${cutoff.toISOString()}::timestamptz
+          and not exists (select 1 from kortix.oauth_consents o where o.client_id = c.client_id)
+          and not exists (select 1 from kortix.oauth_access_tokens t where t.client_id = c.client_id)
+        limit ${limit})
+    returning client_id`);
+  return countRows(rows);
 }
 
 // ─── Remembered consent ─────────────────────────────────────────────────────
@@ -338,6 +357,8 @@ export const oauthApp = makeOpenApiApp();
 oauthApp.use('/authorize/consent/:requestId', supabaseAuth);
 oauthApp.use('/authorize/consent', supabaseAuth);
 oauthApp.use('/userinfo', oauthTokenAuth);
+oauthApp.use('/grants', supabaseAuth);
+oauthApp.use('/grants/*', supabaseAuth);
 
 // ─── GET /.well-known/oauth-authorization-server (mirror) ───────────────────
 
@@ -391,37 +412,45 @@ oauthApp.openapi(
     const codeChallenge = c.req.query('code_challenge');
     const codeChallengeMethod = c.req.query('code_challenge_method') ?? 'S256';
 
-    if (!clientId || !redirectUri || responseType !== 'code' || !codeChallenge) {
-      return c.json(
-        {
-          error: 'invalid_request',
-          error_description: 'Missing required parameters: client_id, redirect_uri, response_type=code, code_challenge',
-        },
-        400,
-      );
+    if (!clientId || !redirectUri) {
+      return c.json({ error: 'invalid_request', error_description: 'Missing required parameters: client_id, redirect_uri' }, 400);
     }
-    if (codeChallengeMethod !== 'S256') {
-      return c.json({ error: 'invalid_request', error_description: 'Only code_challenge_method=S256 is supported' }, 400);
-    }
-
     const client = await loadActiveClient(clientId);
     if (!client) {
       return c.json({ error: 'invalid_client', error_description: 'Client not found or inactive' }, 400);
     }
-
     const allowedUris = client.redirectUris ?? [];
-    if (!parseRedirectUri(redirectUri) || !allowedUris.includes(redirectUri)) {
+    const back = parseRedirectUri(redirectUri);
+    if (!back || !allowedUris.includes(redirectUri)) {
       return c.json({ error: 'invalid_request', error_description: 'redirect_uri not in allowed list' }, 400);
     }
-    // An MCP client names the resource (RFC 8707) and often no scope: access to
-    // a Kortix MCP endpoint IS the `kortix` scope, so that is the default.
-    const resource = c.req.query('resource');
-    const requested = parseScopeList(scope);
-    if (requested.length === 0 && resource && isMcpResource(resource, new URL(c.req.url).origin)) {
-      requested.push(OAUTH_SCOPE_KORTIX);
+    // The redirect_uri is registered: every later failure goes back to the
+    // client as `?error=` (RFC 6749 4.1.2.1), never as JSON in the browser.
+    const fail = (error: string, description: string) => {
+      back.searchParams.set('error', error);
+      back.searchParams.set('error_description', description);
+      if (state) back.searchParams.set('state', state);
+      return c.redirect(back.toString());
+    };
+    if (responseType !== 'code' || !codeChallenge) {
+      return fail('invalid_request', 'Missing required parameters: response_type=code, code_challenge');
     }
-    const scopes = validateRequestedScopes(requested, client.scopes);
-    if (!scopes) return c.json({ error: 'invalid_scope' }, 400);
+    if (codeChallengeMethod !== 'S256') {
+      return fail('invalid_request', 'Only code_challenge_method=S256 is supported');
+    }
+    // RFC 8707 `resource`: the MCP URL or the API origin. A token is not
+    // audience-bound, so any other target is refused rather than ignored.
+    const resource = c.req.query('resource');
+    const origin = new URL(c.req.url).origin;
+    if (resource && !isMcpResource(resource, origin) && resource.replace(/\/+$/, '') !== oauthIssuer(origin)) {
+      return fail('invalid_target', 'resource must be the Kortix MCP URL or the API origin');
+    }
+    // Unknown scopes (openid, offline_access, mcp:tools…) are ignored. None left
+    // means the client's registered scopes: for an MCP client, `kortix`.
+    const known = parseScopeList(scope).filter(isOAuthScope);
+    const registered = parseScopeList(client.scopes);
+    const scopes = validateRequestedScopes(known.length ? known : registered, client.scopes);
+    if (!scopes) return fail('invalid_scope', 'The client is not registered for a requested scope');
 
     const requestId = await createAuthorizationRequest({
       clientId,
@@ -587,7 +616,7 @@ function redirectTarget(redirectUri: string): string {
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;
 }
 
-// ponytail: per-instance bucket; a shared store if registration spam spans instances.
+// replica-local: per-instance bucket; a shared store if registration spam spans instances.
 const registerLimiter = new TokenBucketRateLimiter('oauth_register');
 const REGISTER_POLICY = { limit: 30, windowMs: 60 * 60 * 1000 };
 
@@ -606,7 +635,9 @@ oauthApp.openapi(
   async (c: any) => {
     const limit = registerLimiter.check(requestClientKey(c), REGISTER_POLICY);
     if (!limit.allowed) {
-      return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many registrations' }, 429);
+      return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many registrations' }, 429, {
+        'Retry-After': String(Math.ceil(limit.resetMs / 1000)),
+      });
     }
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== 'object') {
@@ -618,7 +649,9 @@ oauthApp.openapi(
     let scopes: string[];
     try {
       redirectUris = normalizeRedirectUris(body.redirect_uris, { native: true });
-      scopes = normalizeScopes(body.scope ?? OAUTH_SCOPE_KORTIX);
+      // Unknown scopes (openid, offline_access, mcp:tools…) are ignored; none left → kortix.
+      scopes = [...new Set(parseScopeList(body.scope).filter(isOAuthScope))];
+      if (scopes.length === 0) scopes = [OAUTH_SCOPE_KORTIX];
     } catch (err) {
       if (err instanceof OAuthClientInputError) {
         const error = /redirect_uri/.test(err.message) ? 'invalid_redirect_uri' : 'invalid_client_metadata';
@@ -710,6 +743,47 @@ oauthApp.openapi(
   },
 );
 
+/**
+ * Revoke every live refresh and access token of one person's grant to one
+ * client. `since` limits it to tokens created at or after that instant.
+ */
+async function revokeClientTokens(userId: string, clientId: string, since?: Date): Promise<void> {
+  const now = new Date();
+  const sinceRefresh = since ? [gte(oauthRefreshTokens.createdAt, since)] : [];
+  const sinceAccess = since ? [gte(oauthAccessTokens.createdAt, since)] : [];
+  await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
+    .where(and(eq(oauthRefreshTokens.userId, userId), eq(oauthRefreshTokens.clientId, clientId), isNull(oauthRefreshTokens.revokedAt), ...sinceRefresh));
+  await db
+    .update(oauthAccessTokens)
+    .set({ revokedAt: now })
+    .where(and(eq(oauthAccessTokens.userId, userId), eq(oauthAccessTokens.clientId, clientId), isNull(oauthAccessTokens.revokedAt), ...sinceAccess));
+}
+
+/**
+ * RFC 9700 4.14.2 grace: two processes that share one credential store race to
+ * refresh, and the loser must not force a new sign-in. A rotated refresh token
+ * presented again inside this window is honoured. Read per call so the test
+ * profile can shorten it.
+ */
+function refreshGraceMs(): number {
+  const raw = Number(process.env.KORTIX_OAUTH_REFRESH_GRACE_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 30_000;
+}
+
+/**
+ * RFC 6749 4.1.2: a second exchange of a code means it leaked; revoke what the
+ * first exchange issued. Tokens carry no code id (no migration), so this
+ * revokes the client+user tokens created at or after the code was created.
+ * That over-approximates only when the same person authorised the same client
+ * again after this code, which is the safe direction.
+ */
+async function codeReused(c: Context, authCode: typeof oauthAuthorizationCodes.$inferSelect) {
+  await revokeClientTokens(authCode.userId, authCode.clientId, authCode.createdAt);
+  return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+}
+
 async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any>, client: ClientRow) {
   const code = body['code'] as string;
   const redirectUri = body['redirect_uri'] as string;
@@ -726,22 +800,25 @@ async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any
     .limit(1);
 
   if (!authCode) return c.json({ error: 'invalid_grant', error_description: 'Authorization code not found' }, 400);
-  if (authCode.usedAt) return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+  if (authCode.usedAt) return codeReused(c, authCode);
   if (authCode.expiresAt < new Date()) return c.json({ error: 'invalid_grant', error_description: 'Authorization code expired' }, 400);
   if (authCode.redirectUri !== redirectUri) return c.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' }, 400);
 
-  const computedBuf = Buffer.from(computeCodeChallenge(codeVerifier));
-  const storedBuf = Buffer.from(authCode.codeChallenge);
-  if (computedBuf.length !== storedBuf.length || !timingSafeEqual(computedBuf, storedBuf)) {
-    return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
-  }
-
+  // Burn the code before the PKCE compare: a wrong verifier spends the code, so
+  // a guesser gets one try per code.
   const [consumedCode] = await db
     .update(oauthAuthorizationCodes)
     .set({ usedAt: new Date() })
     .where(and(eq(oauthAuthorizationCodes.id, authCode.id), isNull(oauthAuthorizationCodes.usedAt)))
     .returning();
-  if (!consumedCode) return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+  if (!consumedCode) return codeReused(c, authCode);
+
+  // RFC 7636 4.1: 43-128 unreserved characters.
+  const computedBuf = Buffer.from(computeCodeChallenge(codeVerifier));
+  const storedBuf = Buffer.from(authCode.codeChallenge);
+  if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(codeVerifier) || computedBuf.length !== storedBuf.length || !timingSafeEqual(computedBuf, storedBuf)) {
+    return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
+  }
 
   return c.json(
     await issueTokenPair({
@@ -761,33 +838,44 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
-    .where(
-      and(
-        eq(oauthRefreshTokens.tokenHash, refreshHash),
-        eq(oauthRefreshTokens.clientId, client.clientId),
-        isNull(oauthRefreshTokens.revokedAt),
-      ),
-    )
+    .where(and(eq(oauthRefreshTokens.tokenHash, refreshHash), eq(oauthRefreshTokens.clientId, client.clientId)))
     .limit(1);
   if (!refreshRow) return c.json({ error: 'invalid_grant', error_description: 'Refresh token not found or revoked' }, 400);
   if (refreshRow.expiresAt < new Date()) return c.json({ error: 'invalid_grant', error_description: 'Refresh token expired' }, 400);
 
-  const now = new Date();
-  const [consumedRefresh] = await db
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(and(eq(oauthRefreshTokens.id, refreshRow.id), isNull(oauthRefreshTokens.revokedAt)))
-    .returning();
-  if (!consumedRefresh) return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
-
-  await db.update(oauthAccessTokens).set({ revokedAt: now }).where(eq(oauthAccessTokens.id, refreshRow.accessTokenId));
-
   const [oldAccess] = await db
-    .select({ scopes: oauthAccessTokens.scopes })
+    .select({ scopes: oauthAccessTokens.scopes, revokedAt: oauthAccessTokens.revokedAt })
     .from(oauthAccessTokens)
     .where(eq(oauthAccessTokens.id, refreshRow.accessTokenId))
     .limit(1);
 
+  // Rotation consumes the refresh token atomically. A revoked row is either
+  // rotated (rotation leaves its access token live) or explicitly revoked
+  // (/revoke and /grants kill the access token too). The loser of a race sees
+  // the winner's revokedAt and takes the rotated branch.
+  const now = new Date();
+  const [consumed] = await db
+    .update(oauthRefreshTokens)
+    .set({ revokedAt: now })
+    .where(and(eq(oauthRefreshTokens.id, refreshRow.id), isNull(oauthRefreshTokens.revokedAt)))
+    .returning({ id: oauthRefreshTokens.id });
+  if (!consumed) {
+    const [current] = await db.select({ revokedAt: oauthRefreshTokens.revokedAt }).from(oauthRefreshTokens).where(eq(oauthRefreshTokens.id, refreshRow.id)).limit(1);
+    const rotatedAt = current?.revokedAt ?? refreshRow.revokedAt;
+    if (!rotatedAt || !oldAccess || oldAccess.revokedAt) {
+      return c.json({ error: 'invalid_grant', error_description: 'Refresh token not found or revoked' }, 400);
+    }
+    if (now.getTime() - rotatedAt.getTime() > refreshGraceMs()) {
+      // Reuse detection (RFC 9700 4.14.2): revoke the whole grant.
+      await revokeClientTokens(refreshRow.userId, client.clientId);
+      return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
+    }
+  }
+
+  // The old access token is not revoked: it dies at its own expiry (at most
+  // OAUTH_ACCESS_TOKEN_TTL_S), so a client whose refresh response was lost, or
+  // a sibling process still holding it, keeps working. Explicit revocation and
+  // reuse detection still kill it at once.
   return c.json(
     await issueTokenPair({
       clientId: client.clientId,
@@ -868,6 +956,145 @@ oauthApp.openapi(
     // RFC 7009 §2.2: an unknown token is still a 200 — the outcome the caller
     // wants (the token is not usable) already holds.
     return c.json({ revoked });
+  },
+);
+
+// ─── GET /grants, DELETE /grants/:clientId — the apps a person approved ─────
+//
+// "Connected apps": every client the caller approved (a consent row) or that
+// still holds a live token for them — MCP clients, "Sign in with Kortix" apps.
+// Revoking one deletes the consent, so the app must ask again, and revokes its
+// live access and refresh tokens, which stop working on their next request
+// (the verifier reads the token row every time). Only a browser session or an
+// unscoped personal access token may do either, the rule personal tokens
+// follow: an app holding a kortix_oat_ token must not list or revoke the
+// others.
+
+const GrantSchema = z.object({
+  client_id: z.string(),
+  name: z.string(),
+  client_type: z.string(),
+  /** Registered by the app itself (RFC 7591): its name is its own claim. */
+  self_registered: z.boolean(),
+  /** Where the app sends you back after sign-in: identifies an unverified app. */
+  redirect_hosts: z.array(z.string()),
+  scopes: z.array(z.string()),
+  granted_at: z.string().nullable(),
+  /** When the app last got a token. A connected app refreshes about hourly while in use. */
+  last_active_at: z.string().nullable(),
+  /** Holds a live refresh or access token right now. */
+  active: z.boolean(),
+});
+
+async function requireFullIdentity(c: Context): Promise<Response | null> {
+  const userId = c.get('userId') as string;
+  const actor = await actorOf(c, await resolveAccountId(userId));
+  if (actsAsFullIdentity(c.get('authType') as string | undefined, actor)) return null;
+  return c.json({ error: 'Connected apps are managed from a browser session or an unscoped personal access token.' }, 403);
+}
+
+oauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/grants',
+    tags: ['oauth'],
+    summary: 'List the apps you approved (connected apps)',
+    ...auth,
+    responses: {
+      200: json(z.object({ grants: z.array(GrantSchema) }), 'Connected apps, most recently active first'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    const denied = await requireFullIdentity(c);
+    if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const now = new Date();
+    const [consents, accessTokens, refreshTokens] = await Promise.all([
+      db.select().from(oauthConsents).where(eq(oauthConsents.userId, userId)),
+      db
+        .select({ clientId: oauthAccessTokens.clientId, createdAt: oauthAccessTokens.createdAt, expiresAt: oauthAccessTokens.expiresAt, revokedAt: oauthAccessTokens.revokedAt })
+        .from(oauthAccessTokens)
+        .where(eq(oauthAccessTokens.userId, userId))
+        .orderBy(desc(oauthAccessTokens.createdAt)),
+      db
+        .select({ clientId: oauthRefreshTokens.clientId })
+        .from(oauthRefreshTokens)
+        .where(and(eq(oauthRefreshTokens.userId, userId), isNull(oauthRefreshTokens.revokedAt), gt(oauthRefreshTokens.expiresAt, now))),
+    ]);
+    const live = new Set(refreshTokens.map((t) => t.clientId));
+    const lastActive = new Map<string, Date>();
+    for (const t of accessTokens) {
+      if (!lastActive.has(t.clientId)) lastActive.set(t.clientId, t.createdAt);
+      if (!t.revokedAt && t.expiresAt > now) live.add(t.clientId);
+    }
+    const consentByClient = new Map(consents.map((row) => [row.clientId, row]));
+    // An app with neither a consent nor a live token is not connected: tokens
+    // it held before a revoke stay in history, not in this list.
+    const clientIds = [...new Set([...consentByClient.keys(), ...live])];
+    if (clientIds.length === 0) return c.json({ grants: [] });
+    const clients = await db.select().from(oauthClients).where(inArray(oauthClients.clientId, clientIds));
+    const grants = clients.map((client) => {
+      const consent = consentByClient.get(client.clientId);
+      return {
+        client_id: client.clientId,
+        name: client.name,
+        client_type: client.clientType,
+        self_registered: isSelfRegistered(client),
+        redirect_hosts: [...new Set(((client.redirectUris as string[] | null) ?? []).map(redirectTarget))],
+        scopes: (consent?.scopes as string[] | null) ?? [],
+        granted_at: consent?.grantedAt.toISOString() ?? null,
+        last_active_at: lastActive.get(client.clientId)?.toISOString() ?? null,
+        active: live.has(client.clientId),
+      };
+    });
+    grants.sort((a, b) => (b.last_active_at ?? b.granted_at ?? '').localeCompare(a.last_active_at ?? a.granted_at ?? ''));
+    return c.json({ grants });
+  },
+);
+
+oauthApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/grants/{clientId}',
+    tags: ['oauth'],
+    summary: 'Revoke an app you approved: its consent and every live token it holds for you',
+    ...auth,
+    request: { params: z.object({ clientId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.literal(true), revoked_tokens: z.number() }), 'Revoked'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const clientId = c.req.param('clientId');
+    if (!isUuid(clientId)) return c.json({ error: 'No connected app with that client_id' }, 404);
+    const denied = await requireFullIdentity(c);
+    if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const now = new Date();
+    // Every row is filtered by the caller's own user id: a client id alone
+    // never reaches another person's grant.
+    const [consents, refresh, access] = await db.transaction(async (tx) => [
+      await tx
+        .delete(oauthConsents)
+        .where(and(eq(oauthConsents.userId, userId), eq(oauthConsents.clientId, clientId)))
+        .returning({ id: oauthConsents.id }),
+      await tx
+        .update(oauthRefreshTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthRefreshTokens.userId, userId), eq(oauthRefreshTokens.clientId, clientId), isNull(oauthRefreshTokens.revokedAt), gt(oauthRefreshTokens.expiresAt, now)))
+        .returning({ id: oauthRefreshTokens.id }),
+      await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthAccessTokens.userId, userId), eq(oauthAccessTokens.clientId, clientId), isNull(oauthAccessTokens.revokedAt), gt(oauthAccessTokens.expiresAt, now)))
+        .returning({ id: oauthAccessTokens.id }),
+    ]);
+    if (consents.length === 0 && refresh.length === 0 && access.length === 0) {
+      return c.json({ error: 'No connected app with that client_id' }, 404);
+    }
+    return c.json({ ok: true as const, revoked_tokens: refresh.length + access.length });
   },
 );
 

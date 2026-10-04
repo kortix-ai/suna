@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 
 // Locks the SDK-level gate for the transient `RuntimeNotReadyError` cluster
 // (Kortix Frontend prod): `[opencode-sdk] Server URL not ready — sandbox is
@@ -17,7 +18,10 @@ test('sentry.client.config ignores the transient runtime-not-ready markers', asy
   // re-wrapped unhandled-rejection preserving the wording).
   expect(source).toContain("'Server URL not ready'");
   expect(source).toContain("'sandbox is still loading'");
-  expect(source).toContain("'opencode not ready'");
+  // The daemon's not-ready 503: the SDK owns its spellings (code, pi, OpenCode).
+  expect(source).toContain('...RUNTIME_NOT_READY_MARKERS');
+  expect([...RUNTIME_NOT_READY_MARKERS]).toContain('opencode not ready');
+  expect([...RUNTIME_NOT_READY_MARKERS]).toContain('sandbox runtime not ready');
   // The beforeSend hook must still delegate to the noise filter (which also
   // classifies runtime-not-ready via shouldIgnoreSentryNoiseEvent).
   expect(source).toContain('shouldIgnoreSentryNoiseEvent');

@@ -33,15 +33,16 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
     FRONTEND_URL: `http://localhost:${ports.web}`,
     KORTIX_SKIP_ENSURE_SCHEMA: '1',
-    DATABASE_URL: c.dbUrl,
-    SUPABASE_URL: c.supabaseUrl,
+    // Latency bench only: point the API at apps/api/scripts/latency-proxy.ts
+    // (runbook: .agents/skills/testing/references/api-latency-baseline.md).
+    DATABASE_URL: process.env.KORTIX_WT_API_DATABASE_URL || c.dbUrl,
+    SUPABASE_URL: process.env.KORTIX_WT_API_SUPABASE_URL || c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
     ...(c.jwtSecret ? { SUPABASE_JWT_SECRET: c.jwtSecret } : {}),
     // Config archives go through the API's one object store, pointed at THIS
     // slot's Supabase Storage S3 endpoint. Without the override a --db
     // worktree would publish into the primary checkout's Supabase (the
     // endpoint baked into apps/api/.env), i.e. another stack's data plane.
-    CONFIG_RELEASES_ENABLED: 'true',
     KORTIX_CONFIG_ARCHIVE_S3_BUCKET: 'kortix-config-releases',
     KORTIX_CONFIG_ARCHIVE_S3_REGION: 'local',
     KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${c.supabaseUrl.replace(/\/+$/, '')}/storage/v1/s3`,

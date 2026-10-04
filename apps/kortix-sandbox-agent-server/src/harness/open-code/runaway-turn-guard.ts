@@ -1,11 +1,11 @@
-import { logger } from '../../logger'
+import { logger } from '@/lib/log/logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A turn — in ANY session, root or spawned child — that completes successfully
 // (`session.idle`, no error) while answering the SAME parent user message it
 // already answered on the PREVIOUS completion is a runaway: something re-triggered generation against a
 // STANDING prompt instead of recognizing it as already answered — observed
-// live 2026-08-18 (session `749045da`) as OpenCode replying the same one-word
+// live 2026-08-18 (one session) as OpenCode replying the same one-word
 // answer back-to-back, indefinitely, until manually aborted at 44 messages /
 // $0.18. The likely trigger was a caller-supplied `messageID` that did not
 // conform to OpenCode's own sortable-clock id format, breaking its

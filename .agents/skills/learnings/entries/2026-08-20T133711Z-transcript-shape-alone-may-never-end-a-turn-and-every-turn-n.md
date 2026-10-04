@@ -4,7 +4,7 @@ commit: 41cd6fe1a3
 ---
 # Transcript shape alone may never end a turn — and every turn needs a record, whoever started it
 
-Session/turn truth rules paid for on SampleCo, 2026-08-20 (session `d1b74954`:
+Session/turn truth rules paid for on SampleCo, 2026-08-20 (one session:
 composer flapped "not running" over a visibly streaming session; a user prompt
 delivered mid-turn was silently swallowed; PR #6657):
 

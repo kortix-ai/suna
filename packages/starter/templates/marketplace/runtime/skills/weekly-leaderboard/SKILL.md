@@ -62,7 +62,7 @@ done
 
 ### 2. Prior week (deltas + streaks)
 
-Read `.kortix/memory/weekly-digests.md` — the `### PR Leaderboard` and
+Read `memory/weekly-digests.md` — the `### PR Leaderboard` and
 `### Streaks` of the most recent entry — for last week's per-person counts
 (compute `+N` / `-N`) and current streak counts.
 
@@ -127,7 +127,7 @@ didn't map to a PR.
 
 <ledger>
 After posting, append a `## Week of YYYY-MM-DD` entry to
-`.kortix/memory/weekly-digests.md` with: a **PR Leaderboard** table
+`memory/weekly-digests.md` with: a **PR Leaderboard** table
 (Person | PRs | Delta | Streak) + a bot/agent line, a **Streaks** list, the
 **standup thread ts** (+ channel id), and short **Product / Decisions / Open
 questions** notes. Keep the last **8 weeks**; drop the oldest when you exceed it.

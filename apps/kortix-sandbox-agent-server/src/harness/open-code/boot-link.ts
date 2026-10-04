@@ -1,5 +1,5 @@
-import { bootConfigRoot, pointBootLink, readBootLinkTarget } from '../../boot-config'
-import { logger } from '../../logger'
+import { bootConfigRoot, pointBootLink, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { logger } from '@/lib/log/logger'
 
 /**
  * THE writer of the boot link (PLAN-one-boot-path T2).

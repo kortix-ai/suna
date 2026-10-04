@@ -8,10 +8,10 @@
  * The link itself is resolved/submitted by the PUBLIC app at /v1/setup-links/*.
  *
  * See ../../setup-links/token.ts for the stateless token model and
- * .kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md
+ * packages/starter/templates/managed/skills/kortix-system/references/kortix/credentials-and-setup-links.md
  * for the agent-facing flow.
  */
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
 import { validateConnectionLabel } from '../../connectors/connection-identity';
@@ -22,7 +22,7 @@ import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
 import { sessionWithheldSecrets, withheldSecretsFix } from '../lib/session-secret-reach';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../lib/serializers';
@@ -41,11 +41,20 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secret-requests',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secret-requests — mint a secret-entry link',
+    summary: 'Create a link where a person enters a secret',
+    description:
+      'Create a one-time link where a person types secret values. Use it when you need a secret you do not have.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          names: z.array(z.string()).optional().openapi({ description: 'Secret names (env vars) the person must enter. Send names or a single name.' }),
+          name: z.string().optional().openapi({ description: 'A single secret name. Alternative to names.' }),
+          labels: z.record(z.string(), z.any()).optional().openapi({ description: 'Map of secret name to a label shown to the person.' }),
+          descriptions: z.record(z.string(), z.any()).optional().openapi({ description: 'Map of secret name to a help text shown to the person.' }),
+          scope: z.string().optional().openapi({ description: 'Where the secret applies.' }),
+          expires_in_minutes: z.number().optional().openapi({ description: 'Link lifetime in minutes.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'A secret-entry link'),
@@ -147,11 +156,16 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/connect-requests',
     tags: ['connectors'],
-    summary: 'POST /:projectId/connect-requests — mint a Pipedream Quick Connect link',
+    summary: 'Create a link where a person connects an app',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          slug: z.string().openapi({ description: 'Connector slug from the project connectors list.' }),
+          owner: z.enum(['me', 'project']).optional().openapi({ description: 'Whose account the link authorizes: me (the caller) or project (shared).' }),
+          label: z.string().optional().openapi({ description: 'Suggested name for the new connected account.' }),
+          expires_in_minutes: z.number().optional().openapi({ description: 'Link lifetime in minutes.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'A connect link'),

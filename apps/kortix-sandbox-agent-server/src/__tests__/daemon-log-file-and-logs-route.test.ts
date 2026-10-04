@@ -11,9 +11,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import type { HarnessDiagnosticsService } from '../harness/diagnostics'
+import type { Config } from '@/lib/config/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import type { HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 import {
   DAEMON_LOG_BUFFER_CAP_BYTES,
   DAEMON_LOG_MAX_LINE_BYTES,
@@ -23,14 +23,18 @@ import {
   daemonLogFilePath,
   enableDaemonLogFile,
   logger,
-} from '../logger'
-import { createLogsRouter } from '../routes/logs'
-import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
+} from '@/lib/log/logger'
+import { createLogsRouter } from '@/routes/kortix/logs'
+import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
 
 let root: string
 const savedEnv = { file: process.env.KORTIX_DAEMON_LOG_FILE, max: process.env.KORTIX_DAEMON_LOG_MAX_BYTES }
+const stdoutWrite = process.stdout.write
 
 beforeEach(() => {
+  // These tests log up to 2.4 MB, one line 196 KB long. On GitHub Actions the
+  // job log ends at that line, which hid every later failure of the lane.
+  process.stdout.write = (() => true) as typeof process.stdout.write
   root = mkdtempSync(join(tmpdir(), 'kortix-daemon-log-'))
   process.env.KORTIX_DAEMON_LOG_FILE = join(root, 'logs', 'agent.log')
   delete process.env.KORTIX_DAEMON_LOG_MAX_BYTES
@@ -46,6 +50,7 @@ afterEach(async () => {
   else process.env.KORTIX_DAEMON_LOG_MAX_BYTES = savedEnv.max
   __resetLoggerFileSinkForTests()
   rmSync(root, { recursive: true, force: true })
+  process.stdout.write = stdoutWrite
 })
 
 async function readLines(path: string): Promise<Array<Record<string, unknown>>> {

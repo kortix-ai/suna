@@ -15,20 +15,28 @@
  *        sandboxes: the re-mint half of the policy-widening chain.
  *
  * These assert on the SOURCE of each handler rather than by driving the route:
- * secrets.ts and secret-delivery.ts are OpenAPI registration files with no
- * per-route export to import, and standing up the app pulls in the whole API and a live
- * DB. The assertions are scoped to each handler's own body and check ORDERING —
- * a gate that runs after the thing it protects is not a gate. This mirrors the
- * turn-questions-authz.test.ts pattern. End-to-end HTTP proof (agent PAT → 403,
- * full-IAM user → 200) is exercised by tests/src/flows/secrets.flow.ts.
+ * secrets.ts, secret-personal.ts, secret-sync.ts and secret-delivery.ts are
+ * OpenAPI registration files with no per-route export to import, and standing
+ * up the app pulls in the whole API and a live DB. The POST /secrets
+ * validation ladder — including its agent guard — lives in
+ * ../lib/secret-write-input.ts since the KRTX-292 split, so the guard
+ * assertions read that file and the ordering assertions pin the handler's
+ * resolve call ahead of the write. The assertions are scoped to each
+ * handler's own body and check ORDERING — a gate that runs after the thing it
+ * protects is not a gate. This mirrors the turn-questions-authz.test.ts
+ * pattern. End-to-end HTTP proof (agent PAT → 403, full-IAM user → 200) is
+ * exercised by tests/src/flows/secrets.flow.ts.
  */
 import { describe, expect, test } from 'bun:test';
 
 const SOURCES = await Promise.all(
-  ['./secrets.ts', './secret-delivery.ts'].map((file) =>
-    Bun.file(new URL(file, import.meta.url).pathname).text(),
+  ['./secrets.ts', './secret-personal.ts', './secret-sync.ts', './secret-delivery.ts'].map(
+    (file) => Bun.file(new URL(file, import.meta.url).pathname).text(),
   ),
 );
+const RESOLVER = await Bun.file(
+  new URL('../lib/secret-write-input.ts', import.meta.url).pathname,
+).text();
 
 const GUARD_MESSAGE = 'Agent sessions cannot change secret delivery policy';
 
@@ -44,15 +52,19 @@ function handlerSource(method: string, path: string): string {
   const match = blocks.find(
     (b) => b.includes(`method: '${method}'`) && b.includes(`path: '${path}'`),
   );
-  if (!match) throw new Error(`no ${method.toUpperCase()} ${path} handler found in secrets.ts or secret-delivery.ts`);
+  if (!match) {
+    throw new Error(
+      `no ${method.toUpperCase()} ${path} handler found in secrets.ts, secret-personal.ts, secret-sync.ts or secret-delivery.ts`,
+    );
+  }
   return match;
 }
 
 describe('PUT strategy is the reference guard', () => {
   const src = handlerSource('put', '/{projectId}/secrets/{identifier}/strategy');
 
-  test('refuses agent-session tokens with the shared message', () => {
-    expect(src).toContain('isProjectSessionPrincipal(c)');
+  test('refuses a session that borrows a human\'s authority, with the shared message', () => {
+    expect(src).toContain('isBorrowedSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     expect(src).toContain('403');
   });
@@ -62,28 +74,39 @@ describe('POST /:projectId/secrets', () => {
   const src = handlerSource('post', '/{projectId}/secrets');
 
   test('refuses an agent session that supplies a non-default delivery policy', () => {
-    expect(src).toContain('isProjectSessionPrincipal(c)');
-    expect(src).toContain(GUARD_MESSAGE);
-    // The guard fires on any of strategy!=runtime, consumer!=sandbox, or an
-    // egress_policy — the three delivery-policy inputs.
-    expect(src).toContain("requestedStrategy !== 'runtime'");
-    expect(src).toContain("requestedConsumerData !== 'sandbox'");
-    expect(src).toContain('body.egress_policy !== undefined');
+    // The guard lives in the extracted validation ladder
+    // (../lib/secret-write-input.ts); the handler passes
+    // `isBorrowedSessionPrincipal(c)` into it as the boolean argument.
+    expect(src).toContain('isBorrowedSessionPrincipal(c)');
+    expect(RESOLVER).toContain(GUARD_MESSAGE);
+    // Only runtime/sandbox and broker/connector without a host list pass —
+    // the two shapes an agent-minted setup link can already write.
+    expect(RESOLVER).toContain('body.egress_policy === undefined');
+    expect(RESOLVER).toContain("requestedConsumerData === 'sandbox'");
+    expect(RESOLVER).toContain("requestedStrategy === 'broker' && requestedConsumerData === 'connector'");
   });
 
   test('rejects the agent BEFORE the secret is written', () => {
-    const guard = src.indexOf(GUARD_MESSAGE);
+    // The resolver runs first in the handler, ahead of the write transaction;
+    // inside the resolver the guard precedes its ok result.
+    const resolve = src.indexOf('resolveSecretWriteInput(');
     const write = src.indexOf('.insert(projectSecrets)');
-    expect(guard).toBeGreaterThan(-1);
+    expect(resolve).toBeGreaterThan(-1);
     expect(write).toBeGreaterThan(-1);
-    expect(guard).toBeLessThan(write);
+    expect(resolve).toBeLessThan(write);
+    const guard = RESOLVER.indexOf(GUARD_MESSAGE);
+    // `input: {` names the resolver's ok return — its type definition above
+    // also spells `ok: true`, so the needle is the payload, not the type.
+    const ok = RESOLVER.indexOf('input: {');
+    expect(guard).toBeGreaterThan(-1);
+    expect(ok).toBeGreaterThan(guard);
   });
 
   test('is conditional — a plain runtime/default secret is still allowed', () => {
-    // The guard is NOT an unconditional `if (isProjectSessionPrincipal(c)) return 403`: it
+    // The guard is NOT an unconditional `if (isAgentSession) return 403`: it
     // ANDs the agent check with the delivery-policy inputs, so an agent may
     // still create a plain runtime/default secret (matching product behavior).
-    expect(src).toContain('isProjectSessionPrincipal(c) &&');
+    expect(RESOLVER).toContain('isAgentSession && !agentAllowedDelivery');
   });
 });
 
@@ -91,7 +114,7 @@ describe('DELETE /:projectId/secrets/:name', () => {
   const src = handlerSource('delete', '/{projectId}/secrets/{name}');
 
   test('refuses an agent session deleting a policy-bearing secret', () => {
-    expect(src).toContain('isProjectSessionPrincipal(c)');
+    expect(src).toContain('isBorrowedSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
     // Conditional on the target carrying a non-runtime delivery policy.
     expect(src).toContain("existing.strategy !== 'runtime'");

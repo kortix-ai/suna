@@ -35,10 +35,10 @@ const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 const MARKETING_ROUTES = [
   '/',
   '/about',
+  '/ai-os',
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
-  '/blog',
   '/careers',
   '/channels',
   '/changelog',
@@ -66,6 +66,8 @@ const MARKETING_ROUTES = [
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
+  '/ai-os',
+  '/launch',
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
@@ -73,7 +75,6 @@ const SELF_HOST_MARKETING_ONLY = [
   '/self-hosted',
   '/company-as-code',
   '/careers',
-  '/blog',
   '/changelog',
   '/contact',
   '/developers',
@@ -105,6 +106,7 @@ const PUBLIC_ROUTES = [
   '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
+  '/ai-os', // marketing page should be public
   '/agent-computer', // Agent computer marketing page should be public
   '/agents-and-skills', // marketing page should be public
   '/automations', // marketing page should be public
@@ -113,7 +115,6 @@ const PUBLIC_ROUTES = [
   '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
-  '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
   '/mcp', // Public read-only MCP server and server card
@@ -121,6 +122,7 @@ const PUBLIC_ROUTES = [
   '/design-system', // Living design system / brand guidelines should be public
   '/presentation', // Legacy deck paths, now 307'd to /presentations (next.config.ts)
   '/presentations', // Deck index + every registered deck. Link-shared, noindex, no login
+  '/launch', // Launch page + marketing design reference. Link-shared, noindex until announced
 
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
@@ -162,10 +164,7 @@ const AGENT_DISCOVERY_LINK_HEADER =
 function supportsMarkdownNegotiation(pathname: string): boolean {
   if (MARKDOWN_NEGOTIATION_ROUTES.has(pathname)) return true;
   return (
-    pathname === '/docs' ||
-    pathname.startsWith('/docs/') ||
-    /^\/blog\/[^/]+$/.test(pathname) ||
-    /^\/use-cases\/[^/]+$/.test(pathname)
+    pathname === '/docs' || pathname.startsWith('/docs/') || /^\/use-cases\/[^/]+$/.test(pathname)
   );
 }
 
@@ -307,19 +306,29 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  // /blog is proxied to a separate deployment (the blog app, next.config.ts
+  // rewrites). It serves public pages only, so a kortix.com session never
+  // crosses to it: the Supabase cookie and any Authorization header stay here.
+  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete('cookie');
+    requestHeaders.delete('authorization');
+    return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
+  }
+
   // Skip middleware for static files, API routes, and telemetry endpoints.
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
     pathname.startsWith('/supabase/') || // same-origin Supabase proxy (sandbox preview) — must reach the next.config rewrite, never the auth-gate
-    pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
     pathname.startsWith('/_betterstack') || // Better Stack browser telemetry proxy
-    // Route Handlers, next.config rewrite sources (/scim, /ingest), and the
-    // static /docs site: none is a page under app/[locale], so none may be
-    // rewritten onto a locale. See i18n/routing.ts.
+    // Files (a dotted path, except a chat sign-in link), Route Handlers,
+    // next.config rewrite sources (/scim, /ingest), and the static /docs
+    // site: none is a page under app/[locale], so none may be rewritten onto
+    // a locale. See i18n/routing.ts.
     isNonPagePath(pathname)
   ) {
     return finalizeEnvironmentAccess(NextResponse.next());
@@ -412,7 +421,10 @@ export async function middleware(request: NextRequest) {
   // docs/external links in the user's real browser.
   if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
     const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
+    // The site root passes: the identity-aware `/` redirects below send it into
+    // the remembered project, exactly as on web. The shell launches here.
     const isAllowed =
+      pathname === '/' ||
       isAuthPath ||
       DESKTOP_ALLOWED_ROUTES.some(
         (route) => pathname === route || pathname.startsWith(route + '/'),

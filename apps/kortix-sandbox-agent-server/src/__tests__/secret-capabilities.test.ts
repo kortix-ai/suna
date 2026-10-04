@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { renderSecretCapabilitiesInstruction } from '../secret-capabilities'
+import { renderSecretCapabilitiesInstruction } from '@/services/sandbox-env/secret-capabilities'
 
 describe('secret capability instructions', () => {
   test('renders safe discovery instructions without policy values', () => {
@@ -28,6 +28,8 @@ describe('secret capability instructions', () => {
     expect(rendered).toContain('`LOCAL_TOKEN`: sandbox environment variable `LOCAL_TOKEN`')
     expect(rendered).not.toContain('must-not-render')
     expect(rendered).not.toContain('api.weather.test')
+    // A pasted value is stored, not re-requested through a link.
+    expect(rendered).toContain('store it at once with the `set_secret` tool')
   })
 
   test('fails closed for malformed catalogs and unsafe identifiers', () => {

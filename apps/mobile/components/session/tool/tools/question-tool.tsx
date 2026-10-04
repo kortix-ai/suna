@@ -17,20 +17,16 @@
  * Difference from web: web's renderer passes `hasActiveQuestion`. Mobile's
  * `ToolPartRenderer` does not yet, so when the prop is absent the row reads
  * the session's pending questions from the sync store by `callID`.
- *
- * `QuestionExpandedContent` below is the previous mobile body, kept for
- * `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useMemo } from 'react';
 import { View } from 'react-native';
-import type { ParsedQuestion } from '@kortix/sdk';
+import { toToolView, type ParsedQuestion } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import type { ToolPart } from '@/lib/opencode/types';
+import { usePendingQuestions } from '@/lib/session/session-store';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   parseQuestionsInput,
@@ -44,14 +40,12 @@ import {
   ToolEmptyState,
   ToolMarkdown,
   partInput,
-  partMetadata,
   partOutput,
   useToolRowVariant,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, fg, mutedStrong, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
-import { getToolInput } from '../shared/tool-part';
 import { ToolScroll } from '../shared/surface';
 
 // One shared identity for "this question has no answer yet".
@@ -102,19 +96,15 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
   const primary = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { chain } = useToolRowVariant();
   const input = partInput(part);
-  const metadata = partMetadata(part);
   const output = partOutput(part);
-  const pendingForCall = useSyncStore((s) =>
-    hasActiveQuestion === undefined && sessionId
-      ? (s.questions[sessionId] ?? []).some((q) => q.tool?.callID === part.callID)
-      : false,
-  );
+  const pendingQuestions = usePendingQuestions(hasActiveQuestion === undefined ? sessionId : undefined);
+  const pendingForCall = pendingQuestions.some((q) => q.tool?.callID === part.callID);
   const active = hasActiveQuestion ?? pendingForCall;
 
   const questions = useMemo(() => parseQuestionsInput(input.questions), [input.questions]);
   const answers = useMemo(
-    () => resolveQuestionAnswers(metadata.answers, output, questions.length),
-    [metadata.answers, output, questions.length],
+    () => resolveQuestionAnswers(toToolView(part).answers, output, questions.length),
+    [part, output, questions.length],
   );
   const trigger = questionTrigger({ total: questions.length, answers, hasActiveQuestion: active });
   const type = chain ? TURN_TYPE.rowSm : TURN_TYPE.xs;
@@ -187,103 +177,3 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
 }
 ToolRegistry.register('question', QuestionTool);
 ToolRegistry.register('ask', QuestionTool);
-
-// ─── Legacy body (tool-part-renderer.tsx `getExpandedContent`) ───────────────
-
-export function QuestionExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const input = getToolInput(tool);
-
-  // Parse questions and answers from input or output
-  const qaPairs = useMemo(() => {
-    const pairs: { question: string; answer: string }[] = [];
-
-    // First, try to get answers from output
-    const outputAnswers = new Map<string, string>();
-    const raw = (tool.state.status === 'completed' && 'output' in tool.state && tool.state.output)
-      ? tool.state.output.trim() : '';
-
-    if (raw) {
-      // Try "question"="answer" format
-      const pairMatches = [...raw.matchAll(/"([^"]+?)"\s*=\s*"([^"]*?)"/g)];
-      for (const m of pairMatches) {
-        outputAnswers.set(m[1], m[2]);
-      }
-
-      // Try JSON format
-      if (outputAnswers.size === 0) {
-        try {
-          const parsed = JSON.parse(raw);
-          const arr = Array.isArray(parsed) ? parsed : parsed?.questions;
-          if (Array.isArray(arr)) {
-            for (const item of arr) {
-              if (item.question && item.answer) {
-                outputAnswers.set(item.question, item.answer);
-              }
-            }
-          }
-        } catch {}
-      }
-    }
-
-    // Get questions from input and merge with answers from output
-    const questions = input.questions;
-    if (Array.isArray(questions)) {
-      for (const q of questions) {
-        const qText = typeof q === 'object' ? q.question : typeof q === 'string' ? q : '';
-        const inputAnswer = typeof q === 'object' ? q.answer || '' : '';
-        const outputAnswer = outputAnswers.get(qText) || '';
-        pairs.push({ question: qText, answer: inputAnswer || outputAnswer });
-      }
-      // Also add any output pairs not found in input
-      for (const [question, answer] of outputAnswers) {
-        if (!pairs.some(p => p.question === question)) {
-          pairs.push({ question, answer });
-        }
-      }
-      if (pairs.length > 0) return pairs;
-    }
-
-    // No input questions — use output pairs directly
-    if (outputAnswers.size > 0) {
-      for (const [question, answer] of outputAnswers) {
-        pairs.push({ question, answer });
-      }
-      return pairs;
-    }
-
-    // Fallback: show raw output
-    if (raw) return [{ question: '', answer: raw }];
-
-    return pairs;
-  }, [input, tool.state]);
-
-  const answeredCount = qaPairs.filter(q => q.answer).length;
-
-  if (qaPairs.length === 0) return null;
-
-  return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
-      {qaPairs.map((qa, i) => (
-        <View
-          key={i}
-          style={{
-            paddingVertical: 6,
-            borderBottomWidth: i < qaPairs.length - 1 ? 1 : 0,
-            borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
-          }}
-        >
-          {!!qa.question && (
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedStrong(isDark), lineHeight: 18 }}>
-              {qa.question}
-            </Text>
-          )}
-          {!!qa.answer && (
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg(isDark), lineHeight: 18, marginTop: qa.question ? 2 : 0 }}>
-              {qa.answer}
-            </Text>
-          )}
-        </View>
-      ))}
-    </View>
-  );
-}

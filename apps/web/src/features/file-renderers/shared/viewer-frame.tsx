@@ -20,29 +20,23 @@ import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
 export function ViewerFrame({
-  /** Shown at the left. The file's own name — never a path, which would
-   *  truncate to something unreadable in a narrow card. */
-  label,
   actions,
   className,
   children,
 }: {
-  label?: string;
   actions?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
-  // No actions and no name means an empty bar — render the content alone
-  // rather than a decorative strip carrying nothing.
-  if (!actions && !label) return <>{children}</>;
+  // No actions means an empty bar — render the content alone. The file name
+  // never gets a row of its own: the show card's header icon carries it as a
+  // hover hint, so a name-only strip would be dead height.
+  if (!actions) return <>{children}</>;
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col', className)}>
-      <div className="bg-secondary flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-        <span className="text-foreground/80 min-w-0 flex-1 truncate text-xs font-medium">
-          {label}
-        </span>
-        {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+      <div className="bg-secondary flex min-h-12 shrink-0 flex-wrap items-center justify-end gap-2 border-b px-3 py-2">
+        <div className="flex shrink-0 items-center gap-1">{actions}</div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>

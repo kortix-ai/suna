@@ -24,6 +24,11 @@ interface SandboxConnectionStore {
 	healthy: boolean | null;
 	/** Last runtime boot/readiness error reported by /kortix/health */
 	runtimeError: string | null;
+	/**
+	 * The `capabilities` the last /kortix/health answer listed; null before one
+	 * answered. Read a feature with `runtimeSupports` (core/session/health).
+	 */
+	runtimeCapabilities: readonly string[] | null;
 	manualRetryNonce: number;
 	/**
 	 * When the last live SSE event from the active runtime arrived. Proof of
@@ -117,11 +122,41 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	openCodeVersion: null,
 	healthy: null,
 	runtimeError: null,
+	runtimeCapabilities: null,
 	manualRetryNonce: 0,
 	lastRuntimeEvidenceAt: null,
 	bootingSinceAt: null,
 	parked: false,
 }));
+
+/** Record the health probe's `capabilities`; an unchanged list keeps the same array. */
+export function setRuntimeCapabilities(capabilities: readonly string[] | null) {
+	const current = useSandboxConnectionStore.getState().runtimeCapabilities;
+	const same =
+		current === capabilities ||
+		(current !== null &&
+			capabilities !== null &&
+			current.length === capabilities.length &&
+			current.every((entry, index) => entry === capabilities[index]));
+	if (!same) useSandboxConnectionStore.setState({ runtimeCapabilities: capabilities });
+}
+
+/**
+ * `/start` answered `ready`: the API reached the daemon, so the runtime is
+ * proven healthy server-side. Claim it, seed connected + healthy, and record
+ * what it serves when the answer lists it (`SessionStartResult.capabilities`).
+ * Without the list the capabilities stay unknown until the health probe
+ * answers, and every capability is assumed until then.
+ */
+export function seedConnectionFromReadyStart(
+	serverUrl: string,
+	capabilities?: readonly string[] | null,
+) {
+	resetForServerSwitch(serverUrl);
+	setSandboxStatus("connected");
+	setRuntimeHealth(true);
+	if (capabilities) setRuntimeCapabilities(capabilities);
+}
 
 export function requestRuntimeReconnect() {
 	useSandboxConnectionStore.setState((state) => ({
@@ -209,8 +244,18 @@ export function resetSandboxFail() {
  * (`markRuntimeReadyVerified`), we start connected+healthy so the chat
  * subscribes at the switch instead of after one more client health RTT.
  */
-export function resetForServerSwitch() {
+let lastResetServerUrl: string | null = null;
+
+export function resetForServerSwitch(serverUrl?: string) {
 	const runtimeReady = loadRuntimeReadyVerified();
+	// A remount of the poller for the runtime this store already describes is
+	// not a server switch. Wiping it to `connecting` closed the live SSE stream
+	// until the next probe answered (KRTX-606). A pending ready-verified seed
+	// still applies: it is newer than anything the store holds. An empty URL
+	// names no runtime (cloud, before a session switches in), so two sessions
+	// can both mount on it: it never counts as the same runtime.
+	if (serverUrl && serverUrl === lastResetServerUrl && !runtimeReady) return;
+	lastResetServerUrl = serverUrl || null;
 	clearRuntimeReadyVerified();
 
 	if (runtimeReady) {
@@ -237,6 +282,8 @@ export function resetForServerSwitch() {
 			openCodeVersion: null,
 			healthy: true,
 			runtimeError: null,
+			// A different runtime: its features are unknown until it answers.
+			runtimeCapabilities: null,
 			manualRetryNonce: 0,
 			lastRuntimeEvidenceAt: null,
 			bootingSinceAt: null,
@@ -256,6 +303,7 @@ export function resetForServerSwitch() {
 		openCodeVersion: null,
 		healthy: null,
 		runtimeError: null,
+		runtimeCapabilities: null,
 		manualRetryNonce: 0,
 		lastRuntimeEvidenceAt: null,
 		bootingSinceAt: Date.now(),
@@ -291,7 +339,7 @@ export function markRuntimeReadyVerified() {
 	}
 }
 
-export function setOpenCodeHealth(
+export function setRuntimeHealth(
 	healthy: boolean,
 	version?: string,
 	runtimeError?: string | null,
@@ -341,3 +389,7 @@ export function setOpenCodeHealth(
 		useSandboxConnectionStore.setState(updates);
 	}
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `setRuntimeHealth`. Removed in the next major. */
+export const setOpenCodeHealth = setRuntimeHealth;

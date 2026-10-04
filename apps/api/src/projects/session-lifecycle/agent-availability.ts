@@ -16,7 +16,7 @@
  *     POST .../prompts {overrides:{agent:"kortix"}}  → 202 queued
  *     … 400ms later                                   → delivering, attempts 1
  *     … 800ms later                                   → row GONE
- *     ledger turn d0fd8134                            → ended `abandoned` +3.3s
+ *     the ledger turn                                 → ended `abandoned` +3.3s
  *     transcript                                      → NO user message,
  *                                                       NO assistant message
  *   The same prompt with `agent:"build"` was answered normally.
