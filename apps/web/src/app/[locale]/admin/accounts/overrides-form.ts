@@ -28,8 +28,6 @@ import type {
   AdminEntitlementOverrides,
 } from '@/hooks/admin/use-admin-accounts';
 
-/** Server ceiling for `maxConcurrentSessions` (MAX_CONCURRENT_SESSIONS_OVERRIDE). */
-export const MAX_CONCURRENT_SESSIONS_OVERRIDE = 100_000;
 /** Server ceiling for `computeRateMultiplier`. The floor is 0 — free compute. */
 export const MAX_COMPUTE_RATE_MULTIPLIER = 10;
 
@@ -50,8 +48,8 @@ export const BOOLEAN_OVERRIDE_KEYS = [
 ] as const;
 export type BooleanOverrideKey = (typeof BOOLEAN_OVERRIDE_KEYS)[number];
 
-/** The two numeric overrides, edited as text so "" can mean inherit. */
-export const NUMERIC_OVERRIDE_KEYS = ['maxConcurrentSessions', 'computeRateMultiplier'] as const;
+/** The numeric overrides, edited as text so "" can mean inherit. */
+export const NUMERIC_OVERRIDE_KEYS = ['computeRateMultiplier'] as const;
 export type NumericOverrideKey = (typeof NUMERIC_OVERRIDE_KEYS)[number];
 
 /** Form state. Numbers are strings: `''` = inherit, and `'0'` is a real value. */
@@ -127,7 +125,6 @@ export type OverridesPatchResult =
   { ok: true; patch: AdminEntitlementOverridePatch } | { ok: false; error: string };
 
 const NUMERIC_LABEL: Record<NumericOverrideKey, string> = {
-  maxConcurrentSessions: 'Max concurrent sessions',
   computeRateMultiplier: 'Compute rate multiplier',
 };
 
@@ -166,14 +163,7 @@ export function overridesPatch(
     if (!Number.isFinite(value)) {
       return { ok: false, error: `${NUMERIC_LABEL[key]} must be a number, or blank to inherit.` };
     }
-    if (key === 'maxConcurrentSessions') {
-      if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENT_SESSIONS_OVERRIDE) {
-        return {
-          ok: false,
-          error: `${NUMERIC_LABEL[key]} must be a whole number from 1 to ${MAX_CONCURRENT_SESSIONS_OVERRIDE}.`,
-        };
-      }
-    } else if (value < 0 || value > MAX_COMPUTE_RATE_MULTIPLIER) {
+    if (value < 0 || value > MAX_COMPUTE_RATE_MULTIPLIER) {
       return {
         ok: false,
         error: `${NUMERIC_LABEL[key]} must be from 0 to ${MAX_COMPUTE_RATE_MULTIPLIER} (0 = free compute).`,

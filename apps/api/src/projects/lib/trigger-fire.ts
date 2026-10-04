@@ -26,7 +26,7 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
 /**
  * Resolve the identity a trigger's automated session PROVISIONS as — the
  * account-member stand-in `createProjectSession` needs for the provisioning/
- * authorization actor (concurrency cap, secret-visibility subject, the
+ * authorization actor (secret-visibility subject, the
  * standing-role fallback an unactivated agent SA relies on — see
  * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
  * run's recorded identity. The create-session action applies the trigger's
@@ -446,7 +446,6 @@ async function createGitTriggerSession(
     project,
     userId: actor,
     requestingPrincipalType: 'human',
-    enforceAccountCap: false,
     // Fail closed until the post-create action resolves the trigger's current
     // account-local policy. Queued creates resolve it when the worker runs.
     visibility: 'private',

@@ -307,14 +307,6 @@ function buildLimitRows(
 ): LimitRow[] {
   if (!limits) return [];
   const rows: LimitRow[] = [];
-  if (limits.concurrent_sessions) {
-    rows.push({
-      id: 'sessions',
-      label: tI18nComplete.raw('text44912abd87c3'),
-      active: limits.concurrent_sessions.active,
-      limit: limits.concurrent_sessions.limit,
-    });
-  }
   if (limits.concurrent_runs) {
     rows.push({
       id: 'runs',
