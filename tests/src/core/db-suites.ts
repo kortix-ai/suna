@@ -79,6 +79,16 @@ export const DB_SUITE_QUARANTINE: Readonly<Record<string, string>> = {
     'Needs a reachable S3-compatible bucket (KORTIX_PROJECT_SNAPSHOT_S3_*): the S3 round ' +
     'trip is the subject under test, and the lane provides only PostgreSQL. Run it by hand ' +
     'against local MinIO; un-quarantine when the lane can supply a bucket.',
+  'apps/api/src/__tests__/integration-member-model-gates-http.test.ts':
+    'Stale assertion at main: #9050 retired project.customize.write, so the ' +
+    'PUT /model-enablement 403 now names project.model.write, while this test still ' +
+    'asserts the retired name (fails identically at origin/main 84cd340f5). Update the ' +
+    'assertion to the new leaf, then un-quarantine.',
+  'packages/db/scripts/db-sync-shadow-repair.integration.test.ts':
+    'Collation-dependent ordering: the fixture asserts the exact json_agg(t ORDER BY ' +
+    'session_id) row order, and this container\'s collation sorts the é-session row ' +
+    'differently from the fixture (fails identically at origin/main 84cd340f5 in this ' +
+    'sandbox). Pin the ordering with COLLATE "C" or sort in the test, then un-quarantine.',
 };
 
 export interface DbSuite {
