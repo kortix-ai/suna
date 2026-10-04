@@ -1,5 +1,5 @@
 {
-  "source_hash": "ba02a7a7a3ad79a308050f5470a924fd53f6aa1159820a5742e0cd536bbdc63a",
+  "source_hash": "bca8509aa704d6e5f7b3b07b395c8dd6d17d837f2bf101815001faf59ca43595",
   "diff_files": [
     "apps/api/src/__tests__/billing/mocks.ts",
     "apps/api/src/billing/services/account-deletion.integration.test.ts",
@@ -9,13 +9,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/accounts.flow.ts"
   ],
-  "diff_hash": "7cef476670c440a30e3231c3aff69e9344c84792ebb45e1645a6b0c2e992a1e5",
-  "head": "f6f820b6adb6653afe42cfbfec1ad6d2cd2062e1",
+  "diff_hash": "7264cbda0d31a6f96b7b314ad9ef5eec38a22b02250891f409a574d4d08fcdb8",
+  "head": "6107245548e5872ec4bc794e40221ae9b34df482",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T02:48:40.250Z"
+  "at": "2026-10-04T03:22:22.476Z"
 }
