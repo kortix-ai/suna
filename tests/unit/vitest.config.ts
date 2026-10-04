@@ -15,6 +15,11 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['**/*.test.ts'],
+    // The bun test lanes carry the same contract (`--timeout
+    // ${KORTIX_TEST_TIMEOUT_MS:-15000}`): whole-tree scans (no-docs-tree's
+    // `git grep -F`) exceed vitest's 5 s default when the lane runs beside the
+    // flow lane on a loaded box, and the same assertion passes with headroom.
+    testTimeout: Number(process.env.KORTIX_TEST_TIMEOUT_MS ?? 15_000),
     reporters: ['default', ['junit', { suiteName: 'unit' }]],
     outputFile: {
       junit: '../test-results/unit/junit.xml',
