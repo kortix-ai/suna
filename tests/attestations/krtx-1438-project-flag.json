@@ -1,0 +1,24 @@
+{
+  "source_hash": "60289594656949cf0aeb400fc8d5ea8222173fd0f7ada10960878c4d460bd4ae",
+  "diff_files": [
+    "apps/cli/DESIGN.md",
+    "apps/cli/src/__tests__/cli-blackbox.test.ts",
+    "apps/cli/src/__tests__/sandbox-project-flag.test.ts",
+    "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/commands/doctor.ts",
+    "apps/cli/src/commands/projects.ts",
+    "apps/cli/src/commands/ship.ts",
+    "apps/cli/src/connector-gateway/gateway.ts",
+    "apps/cli/src/host-notice.ts",
+    "apps/cli/src/project-link.ts"
+  ],
+  "diff_hash": "bdb6020958a3af61538058225d79dafbcf38354f4d96def7c380b9c5785e5a7f",
+  "head": "43348ff44f875d8b8bf9a5550ed5e325a4142034",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T05:14:01.499Z"
+}
