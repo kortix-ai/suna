@@ -1,11 +1,16 @@
 {
-  "source_hash": "3c0593d1693fac61ba3630077eee6946ee2d556752b589d0c6207a6086ff916f",
-  "head": "16f194fabd9de8b294aef132eb5413458a5ced07",
+  "source_hash": "3bfae2f9a5d7156942f20be9d0a8ae2c1deadb3501169619926510a21cf90bf3",
+  "diff_files": [
+    "packages/db/migrations/20261004003421735_drop_legacy_agents_select_own_policy.sql",
+    "packages/db/scripts/drop-legacy-agents-select-own-policy.integration.test.ts"
+  ],
+  "diff_hash": "0ce0b60c4adf3572a13b3ee97beffd8d02a8cf1c2c2aa345d20fe738b2ed087e",
+  "head": "37887eea5906f36fab09c1d1dbb840d20a422d0c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T01:58:25.975Z"
+  "at": "2026-10-04T03:35:53.984Z"
 }
