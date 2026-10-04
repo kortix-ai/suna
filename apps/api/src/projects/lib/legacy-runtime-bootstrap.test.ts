@@ -708,4 +708,65 @@ describe('describeLegacyBootstrapRetry', () => {
       nextRetryAt: null,
     });
   });
+
+  test('a failed attempt inside its escalating cooldown reports cooldown with the exact retry time', () => {
+    // Pins the deduped failed-attempt arithmetic from the summary side: the
+    // retry time is lastAttemptAt + legacyBootstrapCooldownMs(attempts).
+    const t = Date.parse('2026-09-01T12:00:00Z');
+    const lastAttemptAt = new Date(t - 60_000).toISOString();
+    const meta = {
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: {
+        state: 'failed',
+        attempts: 1,
+        manifestBuild: 1788044234,
+        lastAttemptAt,
+        error: 'script failed at manifest',
+      },
+    };
+    expect(describeLegacyBootstrapRetry(meta, 1788044234, t)).toMatchObject({
+      status: 'cooldown',
+      attempts: 1,
+      lastError: 'script failed at manifest',
+      nextRetryAt: new Date(Date.parse(lastAttemptAt) + LEGACY_BOOTSTRAP_COOLDOWN_MS).toISOString(),
+    });
+  });
+
+  test('a failed attempt past the budget reports exhausted with no scheduled retry', () => {
+    const t = Date.parse('2026-09-01T12:00:00Z');
+    const meta = {
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: {
+        state: 'failed',
+        attempts: LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
+        manifestBuild: 1788044234,
+        lastAttemptAt: new Date(t - 60_000).toISOString(),
+        error: 'relaunched but not converged within budget',
+      },
+    };
+    expect(describeLegacyBootstrapRetry(meta, 1788044234, t)).toMatchObject({
+      status: 'exhausted',
+      attempts: LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
+      nextRetryAt: null,
+    });
+  });
+
+  test('a new manifest build resets the attempt budget', () => {
+    const t = Date.parse('2026-09-01T12:00:00Z');
+    const meta = {
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: {
+        state: 'failed',
+        attempts: LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
+        manifestBuild: 1788044234,
+        lastAttemptAt: new Date(t - 60_000).toISOString(),
+        error: 'stale build',
+      },
+    };
+    expect(describeLegacyBootstrapRetry(meta, 1788044235, t)).toMatchObject({
+      status: 'idle',
+      attempts: 0,
+      nextRetryAt: null,
+    });
+    // A record from an older build is settled metadata: the summary reads it
+    // as idle with a zeroed attempt count, so the sweep reports the box as
+    // free to retry under the new build's budget.
+  });
 });
