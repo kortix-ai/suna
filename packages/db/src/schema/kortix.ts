@@ -1102,6 +1102,8 @@ export const projectSessions = kortixSchema.table(
   },
   (table) => [
     index('idx_project_sessions_account').on(table.accountId),
+    // Audit reconciliation window: account_id = $1 AND created_at >= $since.
+    index('idx_project_sessions_account_created').on(table.accountId, table.createdAt),
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
@@ -1765,6 +1767,14 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
     index('idx_session_lifecycle_commands_account').on(table.accountId),
+    // The audit reconciliation's per-account window (`reconcileAuditEvents`:
+    // account_id = $1 AND (created_at >= $since OR updated_at >= $since)).
+    // With only (account_id) every pass heap-fetched the account's whole
+    // history — 58k rows in the largest account, the result/payload TOAST with
+    // them — which is what made passes multi-second and stalled every other
+    // query behind their IO. One index per OR arm keeps each a range scan.
+    index('idx_session_lifecycle_commands_account_created').on(table.accountId, table.createdAt),
+    index('idx_session_lifecycle_commands_account_updated').on(table.accountId, table.updatedAt),
     // The forwarded-prompt sweep (`reconcileForwardedPrompts`): rows still
     // `forwarded`, oldest first. Partial, because every other row is closed:
     // `(status, available_at)` matches every succeeded row ever written.
@@ -2473,6 +2483,8 @@ export const providerEvents = kortixSchema.table(
     index('idx_provider_events_created').on(table.createdAt),
     // `reconcileAuditEvents` filters by `account_id` alone (see the test).
     index('idx_provider_events_account').on(table.accountId),
+    // Its window arm: account_id = $1 AND created_at >= $since.
+    index('idx_provider_events_account_created').on(table.accountId, table.createdAt),
   ],
 );
 
@@ -4620,6 +4632,8 @@ export const tunnelAuditLogs = kortixSchema.table(
     index('idx_tunnel_audit_account').on(table.accountId),
     index('idx_tunnel_audit_capability').on(table.capability),
     index('idx_tunnel_audit_created').on(table.createdAt),
+    // Audit reconciliation window: account_id = $1 AND created_at >= $since.
+    index('idx_tunnel_audit_account_created').on(table.accountId, table.createdAt),
   ],
 );
 
@@ -6280,6 +6294,11 @@ export const connectorCalls = kortixSchema.table(
     index('idx_connector_calls_connection').on(table.connectionId),
     index('idx_connector_calls_status').on(table.status),
     index('idx_connector_calls_account').on(table.accountId),
+    // Same reconciliation window as the lifecycle-command indexes above:
+    // account_id = $1 AND (created_at >= $since OR resolved_at >= $since).
+    // 937k rows in the largest account; both OR arms need their own range.
+    index('idx_connector_calls_account_created').on(table.accountId, table.createdAt),
+    index('idx_connector_calls_account_resolved').on(table.accountId, table.resolvedAt),
   ],
 );
 

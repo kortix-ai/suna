@@ -317,6 +317,8 @@ describe('connectors', () => {
       'idx_connector_calls_connection',
       'idx_connector_calls_status',
       'idx_connector_calls_account',
+      'idx_connector_calls_account_created',
+      'idx_connector_calls_account_resolved',
     ]);
   });
 
@@ -327,11 +329,25 @@ describe('connectors', () => {
     // column, one branch seq-scans and the whole query times out at the audit
     // pool's 10 s statement_timeout. #7970 added the connector_calls and
     // session_lifecycle_commands indexes; provider_events was the last gap.
+    // KRTX-797 added the (account_id, <time>) composites: the window's
+    // `created_at >= $since OR <second time> >= $since` predicate needs a
+    // range scan per arm, or every pass heap-fetches the account's whole
+    // history (58k–937k rows on the largest accounts) behind every other
+    // query on the instance.
     // Regression guard: this list must stay in step with the query's branches.
     for (const [table, index] of [
       [connectorCalls, 'idx_connector_calls_account'],
       [sessionLifecycleCommands, 'idx_session_lifecycle_commands_account'],
       [providerEvents, 'idx_provider_events_account'],
+    ] as const) {
+      expect(indexNames(table)).toContain(index);
+    }
+    for (const [table, index] of [
+      [connectorCalls, 'idx_connector_calls_account_created'],
+      [connectorCalls, 'idx_connector_calls_account_resolved'],
+      [sessionLifecycleCommands, 'idx_session_lifecycle_commands_account_created'],
+      [sessionLifecycleCommands, 'idx_session_lifecycle_commands_account_updated'],
+      [providerEvents, 'idx_provider_events_account_created'],
     ] as const) {
       expect(indexNames(table)).toContain(index);
     }
