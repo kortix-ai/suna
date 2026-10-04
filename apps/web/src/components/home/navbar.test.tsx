@@ -112,6 +112,18 @@ test('over a dark hero the bar is transparent until the reader scrolls past the 
     win.dispatchEvent(new win.Event('scroll'));
   });
   expect(bar.className).toContain('bg-background');
+  // The thresholds are asymmetric on purpose: the bar only expands again below
+  // 20px, so a reader hovering around the 50px trigger never sees it flicker.
+  await act(async () => {
+    win.scrollTo(0, 30);
+    win.dispatchEvent(new win.Event('scroll'));
+  });
+  expect(bar.className).toContain('bg-background');
+  await act(async () => {
+    win.scrollTo(0, 10);
+    win.dispatchEvent(new win.Event('scroll'));
+  });
+  expect(bar.className).toContain('bg-transparent');
   hero.remove();
 });
 
