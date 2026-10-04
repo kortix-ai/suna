@@ -190,6 +190,12 @@ export class CliSandbox {
       GIT_COMMITTER_EMAIL: 'ke2e@kortix.test',
       // Force non-TTY so prompt-driven branches take their headless path.
       CI: '1',
+      // Cut the CLI's own sandbox-identity fallback (sandboxEnvValue reads
+      // /dev/shm/kortix/agent-env.sh when the process env is empty): on a
+      // Kortix sandbox image the CLI would otherwise authenticate to the
+      // session's own deployment instead of the ke2e target — the same leak
+      // package-quality scrubs for workspace suites (KRTX-1411, #8988).
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     };
   }
 
