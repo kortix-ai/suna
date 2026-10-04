@@ -1,0 +1,16 @@
+{
+  "source_hash": "c4930a00b4f81ff1387b99d31ab72529aafd182bdac489adf8a5b97b287671e5",
+  "diff_files": [
+    "scripts/prod-us-east-2/target-smoke.mjs",
+    "scripts/prod-us-east-2/target-smoke.test.mjs"
+  ],
+  "diff_hash": "29d221d6d4926cb6d6565caaa6d499678ccd2acbde77e2d9a638a012b4ce525d",
+  "head": "41a7eada24e416c5caf465e2aefc8a8e2ed7e249",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-04T03:06:54.456Z"
+}
