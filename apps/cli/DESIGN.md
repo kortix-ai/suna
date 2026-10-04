@@ -157,8 +157,9 @@ Conventions:
   (slug-resolution happens client-side via `GET /v1/projects` with a
   small cache).
 - Commands that operate on a project look up project-id in this order:
-  `--project <id>` flag → `KORTIX_PROJECT_ID` env → `.kortix/link.json`
-  → error.
+  `--project <id>` flag → `.kortix/link.json` (the directory's own binding)
+  → `KORTIX_PROJECT_ID` env (the session's project, inside a sandbox)
+  → the active host's default project → error.
 
 ## 4. Project linking
 

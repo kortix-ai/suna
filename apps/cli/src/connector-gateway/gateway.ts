@@ -44,7 +44,8 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
       'MISSING_ENV',
     );
   }
-  // --project > KORTIX_PROJECT_ID > .kortix/link.json (resolveProjectId order).
+  // --project > .kortix/link.json > KORTIX_PROJECT_ID > host default
+  // (resolveProjectId order).
   const projectId = resolveProjectId(projectOverride);
   const kortix = kortixFromAuth(auth);
   return projectId ? kortix.project(projectId).connectors : kortix.connectors;

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { resolveProjectId, saveLink } from '../project-link.ts';
+import { resolveProjectId } from '../project-link.ts';
 import { resolveProjectContext as resolveContext } from '../command-helpers.ts';
 
 /**
@@ -203,7 +203,7 @@ async function runCommand(
     `import { ${exportName} } from ${JSON.stringify(join(import.meta.dir, '..', 'commands', module))};\n` +
       `const code = await ${exportName}(process.argv.slice(2));\n` +
       `process.exitCode = code;\n` +
-      `try { process.stdin.pause(); (process.stdin as any).unref?.(); } catch {}\n`,
+      `try { process.stdin.pause(); (process.stdin as { unref?: () => void }).unref?.(); } catch {}\n`,
   );
   const env: Record<string, string | undefined> = {
     ...process.env,
@@ -238,7 +238,6 @@ async function runCommand(
 /** Scope rules of the platform's auth middleware, faked: the session-scoped
  *  token may only act on its own project; the personal PAT sees everything. */
 function scopeEnforcingRoutes(
-  api: { url: string },
   extra: (req: Request, url: URL, body: unknown, authorization: string | null) => Response | undefined,
 ): (req: Request, url: URL, body: unknown, authorization: string | null) => Response | undefined {
   return (req, url, body, authorization) => {
@@ -266,7 +265,7 @@ function scopeEnforcingRoutes(
 describe('blackbox: the CLI project flow inside a session', () => {
   it('ship --host <name> creates a NEW project instead of shipping the session project', async () => {
     let provision: { url: string; requests: RecordedRequest[]; stop(): void } | null = null;
-    const api = startFakeApi(scopeEnforcingRoutes({ url: '' }, (req, url, body, authorization) => {
+    const api = startFakeApi(scopeEnforcingRoutes((req, url, body, authorization) => {
       const token = authorization?.replace(/^Bearer /, '') ?? '';
       if (
         token === DEV_TOKEN &&
@@ -307,7 +306,7 @@ describe('blackbox: the CLI project flow inside a session', () => {
   });
 
   it('projects use <id> falls through the session 403 to the logged-in host', async () => {
-    const api = startFakeApi(scopeEnforcingRoutes({ url: '' }, () => undefined));
+    const api = startFakeApi(scopeEnforcingRoutes(() => undefined));
     process.env.KORTIX_API_URL = api.url;
     writeConfig({ devhost: devHost({ url: api.url }) });
     process.chdir(tmp);
@@ -324,7 +323,7 @@ describe('blackbox: the CLI project flow inside a session', () => {
   });
 
   it('projects link <id> binds the directory through the logged-in host', async () => {
-    const api = startFakeApi(scopeEnforcingRoutes({ url: '' }, () => undefined));
+    const api = startFakeApi(scopeEnforcingRoutes(() => undefined));
     process.env.KORTIX_API_URL = api.url;
     writeConfig({ devhost: devHost({ url: api.url }) });
     enterProjectDir();
@@ -342,9 +341,8 @@ describe('blackbox: the CLI project flow inside a session', () => {
   });
 
   it('files ls in a linked directory reads the linked project with the PAT', async () => {
-    const api = startFakeApi(scopeEnforcingRoutes({ url: '' }, (req, url, authorization) => {
+    const api = startFakeApi(scopeEnforcingRoutes((req, url) => {
       void req;
-      void authorization;
       if (url.pathname === '/v1/projects/proj_linked/files') {
         return Response.json([{ path: 'README.md', type: 'file', size: 12 }]);
       }
@@ -369,7 +367,3 @@ describe('blackbox: the CLI project flow inside a session', () => {
     }
   });
 });
-
-// The saveLink import documents that the linked-dir fixtures above write the
-// same shape `kortix ship` / `kortix projects link` write.
-void saveLink;

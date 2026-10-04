@@ -1,13 +1,12 @@
 import type { ProjectSession } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
-import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { loadLink } from '../project-link.ts';
+import { linkedHostWithAuth } from '../project-link.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix doctor [options]
@@ -48,9 +47,9 @@ export async function runDoctor(argv: string[]): Promise<number> {
   let failures = 0;
 
   // ── 1. Auth ─────────────────────────────────────────────────────────────
-  const hostFromLink =
-    !flags.host && !hasEnvTokenHost() ? (loadLink()?.host ?? undefined) : undefined;
-  const hostName = flags.host ?? hostFromLink;
+  // Same precedence resolveProjectContext applies below: the report must
+  // describe the principal the checks actually run under.
+  const hostName = flags.host ?? linkedHostWithAuth();
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
     process.stdout.write(`${status.err('not logged in — run `kortix login`')}\n`);
