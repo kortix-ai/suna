@@ -7,7 +7,6 @@ import type { ReactNode } from 'react';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans, type CanResult } from '@/lib/use-project-can';
 
 import { activeCapabilityTab, type CapabilityTab } from './capability-tab-routes';
@@ -20,15 +19,15 @@ export function receivedDenial(result: CanResult | undefined): boolean {
 }
 
 /**
- * Whether the caller is denied the tab `key`. Two gates, both from
- * `TAB_PREFERENCE` so the sidebar row and this gate never disagree:
- * `project.customize.read` for the whole surface, then the tab's own leaf.
+ * Whether the caller is denied the tab `key`: the tab's own read leaf, from
+ * `TAB_PREFERENCE` so the sidebar row and this gate never disagree. There is
+ * no surface-wide leaf — permissions decide, so a project member who holds
+ * `project.agent.read` opens Agents and is denied Connectors.
  */
 export function capabilityTabDenied(
   caps: Record<string, CanResult>,
   key: CapabilityTab['key'],
 ): boolean {
-  if (receivedDenial(caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ])) return true;
   const pref = TAB_PREFERENCE.find((tab) => tab.key === key);
   return !!pref && receivedDenial(caps[pref.action]);
 }

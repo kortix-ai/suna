@@ -122,7 +122,7 @@ export function runValidate(argv: string[]): number {
         `\n${C.dim}Renamed — still accepted, but write the new name:${C.reset}\n`,
       );
       for (const [was, now] of renamed) {
-        process.stdout.write(`  ${was}${C.dim} → ${now}${C.reset}\n`);
+        process.stdout.write(`  ${was}${C.dim} → ${now.join(', ')}${C.reset}\n`);
       }
     }
     return 0;

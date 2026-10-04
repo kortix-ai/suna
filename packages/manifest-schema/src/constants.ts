@@ -249,8 +249,10 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.command.write',
   'project.file.read',
   'project.file.write',
-  'project.customize.read',
-  'project.customize.write',
+  'project.settings.write',
+  'project.sandbox.write',
+  'project.model.read',
+  'project.model.write',
   'project.gitops.read',
   'project.gitops.push',
   'project.gitops.merge',
@@ -286,19 +288,28 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
  * deprecation warning by `validateGrantList`.
  */
 /**
- * `kortix_permissions` entries that are still ACCEPTED but are the pre-cutover name
- * for another leaf. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
- * because they were the same capability named twice; a manifest that still
- * lists one keeps validating and is rewritten to the value here when the grant
- * is resolved.
+ * `kortix_permissions` entries that are still ACCEPTED but are the old name for
+ * one or more leaves. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
+ * because they were the same capability named twice; `project.customize.*` was
+ * one leaf for five unrelated topics and split into one leaf per topic. A
+ * manifest that still lists one keeps validating and is rewritten to the leaves
+ * here when the grant is resolved.
  *
  * This is the single source: apps/api's grant canonicalizer imports it rather
  * than keeping a second copy, and the CLI's `validate --scopes` annotates from
  * it. Two hand-written copies of a key table is how they drift.
  */
-export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, string>> = {
-  'project.cr.open': 'project.gitops.push',
-  'project.cr.merge': 'project.gitops.merge',
+export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  'project.cr.open': ['project.gitops.push'],
+  'project.cr.merge': ['project.gitops.merge'],
+  'project.customize.read': ['project.model.read'],
+  'project.customize.write': [
+    'project.settings.write',
+    'project.sandbox.write',
+    'project.model.read',
+    'project.model.write',
+    'project.agent.write',
+  ],
 };
 
 export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [

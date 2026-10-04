@@ -1,3 +1,4 @@
+import { stripChatMentionMarkup } from '@kortix/shared';
 import type { UiTranslator } from '@/i18n/translator';
 
 import {
@@ -106,18 +107,7 @@ export function sessionDisplayLabel(session: ProjectSession): string {
   );
 }
 
-/**
- * Teams wraps a channel @-mention of the bot in `<at>…</at>`. Sessions titled
- * from such a message before the API stripped it (#7388) still carry the tag
- * in `name`; nothing a person reads should show it.
- */
-export function stripChatMentionMarkup(value: string): string {
-  return value
-    .replace(/<at[^>]*>.*?<\/at>/gi, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { stripChatMentionMarkup } from '@kortix/shared';
 
 /**
  * What the user sees, as opposed to what the sandbox is doing. The words and
