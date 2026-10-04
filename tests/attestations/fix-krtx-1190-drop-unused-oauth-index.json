@@ -1,23 +1,27 @@
 {
-  "source_hash": "4d557a9247a779290b057a928eee05bd0dac0768d03fb998935e9c53254215c7",
+  "source_hash": "4d9210b4dd75c59c532d012875b7fa6f5f1e2b45004c98bec3d382de5d2127aa",
   "diff_files": [
-    "apps/api/src/__tests__/integration-member-model-gates-http.test.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/drizzle/meta/20261004012914_snapshot.json",
+    "packages/db/drizzle/meta/20261004031536_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261004012854528_drop_unused_oauth_clients_account_index.concurrent.ts",
     "packages/db/scripts/db-sync-shadow-repair.integration.test.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/sdk/src/react/use-session-render.test.ts",
+    "tests/migration/credit-lifetime-rollup.test.ts",
+    "tests/migration/credit-rpc-overloads.test.ts",
+    "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
+    "tests/migration/usage-breakdown-ledger-type.test.ts",
+    "tests/migration/wallet-ledger.test.ts",
     "tests/src/fixtures/cli.ts"
   ],
-  "diff_hash": "cdd61947c854485ea35d4d457a95622cd6fe9d10212beb4e374ae7ea4309da2d",
-  "head": "492dac0d287d17266cc07ae10fc5569b0d0e0918",
+  "diff_hash": "b6d14c80c507088a21ac3b4bbbb8c7c59d81adf0aa4f20a83a5aeb96d3ddb620",
+  "head": "c39069b0fa9a2242f6e6115f615d19222a62b6df",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T03:13:08.687Z"
+  "at": "2026-10-04T04:18:37.612Z"
 }
