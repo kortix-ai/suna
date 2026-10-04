@@ -1,5 +1,5 @@
 {
-  "source_hash": "db76849707ab8ebb3d2ee523d2e676c9b7b96b16c33c34580dc9635c548f1956",
+  "source_hash": "2c23b2a76a324972a7c1cee2eed3220cd2865ae8f34c4f9212a47a29476d5551",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
     "apps/api/src/__tests__/unit-channel-model-access.test.ts",
@@ -23,19 +23,20 @@
     "apps/api/src/projects/routes/session-open-bundle.test.ts",
     "apps/api/src/projects/routes/session-open-bundle.ts",
     "apps/api/src/projects/session-title-generate.ts",
+    "apps/api/src/secrets/provider-key-selection.test.ts",
     "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
+    "apps/web/src/features/workspace/customize/sections/view/gateway/gateway-routing.test.ts",
+    "packages/sdk/src/core/attachments/prompt-attachments.test.ts",
     "packages/sdk/src/core/models/composer-model.ts",
     "packages/sdk/src/core/models/composer-models.test.ts",
     "packages/sdk/src/core/models/model-visibility.ts",
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
-  "diff_hash": "a4739608c1f4e54c14b1119f4b8ea4e5e3215ae84bb25f3285a4acd0474b8890",
-  "head": "630c2cca4129c2788e21954646d96cf2ed821815",
-  "passed": false,
+  "diff_hash": "97f14212a3bbb28fb9db059edf04a47c25e35f23f211513f7339bafab502631c",
+  "head": "59bf1ed17641ddcc7a507707f00e906952025c3a",
+  "passed": true,
   "lanes": {
-    "core": "pass",
-    "packages": "fail",
-    "db-suites": "skipped-no-db"
+    "packages": "skipped-sandbox-image"
   },
-  "at": "2026-10-03T19:27:45.159Z"
+  "at": "2026-10-04T01:01:49.270Z"
 }
