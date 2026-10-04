@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { type Ports, computePorts, repoRoot, runMigrate, sh, waitForPostgresReady } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-basejump-accounts-rls-test';
@@ -129,22 +129,7 @@ suite('basejump.accounts RLS initplan (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    let ready = false;
-    for (let i = 0; i < 60; i++) {
-      ready = sh([
-        'docker',
-        'exec',
-        CONTAINER,
-        'pg_isready',
-        '-U',
-        'postgres',
-        '-d',
-        'postgres',
-      ]).ok;
-      if (ready) break;
-      await Bun.sleep(1000);
-    }
-    if (!ready) throw new Error('test Postgres never became ready');
+    await waitForPostgresReady(url);
 
     // Prod at the next release: basejump.accounts already exists with the
     // per-row policy when the migration batch runs. Capture the RED state,

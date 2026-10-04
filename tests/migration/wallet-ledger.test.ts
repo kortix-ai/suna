@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { contextualDatabase } from '../../apps/api/src/shared/db-context';
 import { createDb } from '../../packages/db/src/client';
-import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { type Ports, computePorts, repoRoot, runMigrate, sh, waitForPostgresReady } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-wallet-ledger-test';
@@ -24,10 +24,6 @@ function psql(query: string): string {
   const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', query]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${query}`);
   return res.stdout.trim();
-}
-
-function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 type Buckets = { daily?: number; expiring?: number; nonExpiring?: number };
@@ -112,11 +108,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
-      await Bun.sleep(1000);
-    }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    await waitForPostgresReady(url);
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
 

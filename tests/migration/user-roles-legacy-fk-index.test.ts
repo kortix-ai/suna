@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { type Ports, computePorts, repoRoot, runMigrate, sh, waitForPostgresReady } from '../../scripts/worktree/lib';
 
 // The public.user_roles legacy table is not a migration object: the migrations
 // neither create nor manage it (it predates the kortix schema; the live roles
@@ -34,10 +34,6 @@ function psql(sql: string): string {
   return res.stdout.trim();
 }
 
-function pgReady(): boolean {
-  return sh(['psql', URL, '-tAc', 'select 1']).ok;
-}
-
 const suite = dockerOk ? describe : describe.skip;
 
 suite('user_roles granted_by FK index (throwaway Postgres)', () => {
@@ -68,12 +64,8 @@ suite('user_roles granted_by FK index (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) return;
-      await Bun.sleep(1000);
-    }
-    throw new Error('test Postgres never became ready');
-  }, 120_000);
+    await waitForPostgresReady(URL);
+  }, 300_000);
 
   afterAll(() => {
     sh(['docker', 'rm', '-f', CONTAINER]);
