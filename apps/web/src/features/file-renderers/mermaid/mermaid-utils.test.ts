@@ -1,5 +1,3 @@
-import { within } from '@kortix/shared/tool-output/testing';
-
 import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 import { languageFor } from '@/features/session/action-panel/easy/file-viewer';
 import { fileIconFor } from '@/lib/utils/file-utils';
@@ -138,9 +136,14 @@ describe('hasOwnMermaidConfig reads the front matter in linear time', () => {
     expect(configured).toBeGreaterThan(600);
   });
 
-  // This guard flaked in the packages lane under concurrent load (122 ms
-  // wall) as a wall-clock check. within() judges CPU, so a loaded box — which
-  // costs wall time without costing work — cannot fail it.
-  within('front matter holding 240k blank lines', () =>
-    hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`));
+  test('front matter holding 240k blank lines', () => {
+    const started = performance.now();
+    hasOwnMermaidConfig(`---\n${'\n'.repeat(240_000)}x\n---\nflowchart TD`);
+    // The budget discriminates complexity, not latency: the linear scan runs
+    // ~10-35 ms alone and ~100 ms on a box running the rest of the lane, while
+    // any per-line rescan (the quadratic shape this guards against) lands in
+    // tens of seconds at this size. One order of magnitude above the loaded
+    // measurement keeps that gap.
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
