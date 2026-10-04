@@ -14,7 +14,9 @@
  * the ORDER: `allowStaleMirrorReads()` must have run before the config load
  * starts, so `refreshMirror` serves the warm mirror and refreshes behind the
  * response — the same contract every other page-view route pins through
- * `mirror-view-stale.test.ts`.
+ * `mirror-view-stale.test.ts`. The picker read itself is the cached loader
+ * bounded by `loadPickerConfig` (pinned by
+ * `unit-resource-grants-config-bound.test.ts`).
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -68,7 +70,7 @@ mock.module('../../iam', () => ({
 let staleReadCallsAtConfigLoad = -1;
 mock.module('../lib/project-resources', () => ({
   ...realProjectResources,
-  loadConfigWithFiles: async () => {
+  loadConfigWithFilesCached: async () => {
     staleReadCallsAtConfigLoad = staleReadCalls;
     return { agents: [], skills: [] };
   },
