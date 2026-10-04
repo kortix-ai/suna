@@ -658,10 +658,10 @@ describe('sandboxes table', () => {
 });
 
 describe('sandbox_members table', () => {
-  test('enforces a unique sandbox/user index', () => {
-    const cfg = getTableConfig(sandboxMembers);
-    const unique = cfg.indexes.find((i) => i.config.name === 'idx_sandbox_members_unique');
-    expect(unique?.config.unique).toBe(true);
+  test('sandbox_members declares a composite primary key on sandbox_id and user_id', () => {
+    const pks = getTableConfig(sandboxMembers).primaryKeys;
+    expect(pks).toHaveLength(1);
+    expect(pks[0]!.columns.map((c) => c.name)).toEqual(['sandbox_id', 'user_id']);
   });
 
   test('current_period_cents defaults to zero', () => {

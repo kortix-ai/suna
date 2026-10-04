@@ -2742,7 +2742,9 @@ export const sandboxMembers = kortixSchema.table(
     currentPeriodStart: bigint('current_period_start', { mode: 'number' }),
   },
   (table) => [
-    uniqueIndex('idx_sandbox_members_unique').on(table.sandboxId, table.userId),
+    // Composite PK, promoted from the former idx_sandbox_members_unique
+    // (advisor no_primary_key fix; the member-spend CAS filters both columns).
+    primaryKey({ name: 'sandbox_members_pkey', columns: [table.sandboxId, table.userId] }),
     index('idx_sandbox_members_user').on(table.userId),
     index('idx_sandbox_members_sandbox').on(table.sandboxId),
   ],
