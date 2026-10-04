@@ -769,7 +769,6 @@ export async function observePlatinumWorker(input: PlatinumWorkerObserverInput):
   throw new Error(`Platinum worker exceeded ${timeoutMs}ms`);
 }
 
-
 export async function downloadArtifacts(
   api: PlatinumApi,
   sandboxId: string,
@@ -791,4 +790,3 @@ export async function downloadArtifacts(
   const code = await extracted.exited;
   if (code !== 0) throw new Error(`artifact extraction exited with code ${code}`);
 }
-

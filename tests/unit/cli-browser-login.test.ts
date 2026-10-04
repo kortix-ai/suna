@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
@@ -28,36 +28,36 @@ let stubServer: Server | null = null;
 beforeAll(async () => {
   await new Promise<void>((resolve) => {
     stubServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
-      stubRequests.push({
-        method: String(req.method),
-        path: String(req.url),
-        authorization: req.headers.authorization ?? null,
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        stubRequests.push({
+          method: String(req.method),
+          path: String(req.url),
+          authorization: req.headers.authorization ?? null,
+        });
+        if (req.url === '/v1/accounts/me') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              user_id: 'user-1432',
+              email: 'browser-login@example.test',
+              accounts: [],
+            }),
+          );
+          return;
+        }
+        if (req.url === '/v1/projects') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end('[]');
+          return;
+        }
+        res.writeHead(404, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'stub has no route' }));
       });
-      if (req.url === '/v1/accounts/me') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            user_id: 'user-1432',
-            email: 'browser-login@example.test',
-            accounts: [],
-          }),
-        );
-        return;
-      }
-      if (req.url === '/v1/projects') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('[]');
-        return;
-      }
-      res.writeHead(404, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: 'stub has no route' }));
     });
-  });
     stubServer.listen(0, '127.0.0.1', () => {
-      const address = stubServer!.address();
+      const address = stubServer?.address();
       stubApiPort = typeof address === 'object' && address ? address.port : 0;
       resolve();
     });
@@ -90,15 +90,18 @@ function bunSpawnShim(
   exitCode: number | null;
   kill(): void;
 } {
-  const child = nodeSpawn(argv[0]!, argv.slice(1), {
+  const [entry, ...rest] = argv;
+  if (!entry) throw new Error('the CLI shim needs an argv');
+  const child = nodeSpawn(entry, rest, {
     cwd: opts.cwd,
     env: opts.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  if (!child.stdout || !child.stderr) throw new Error('the CLI shim needs piped streams');
   return {
     pid: child.pid ?? 0,
-    stdout: Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
-    stderr: Readable.toWeb(child.stderr!) as ReadableStream<Uint8Array>,
+    stdout: Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+    stderr: Readable.toWeb(child.stderr) as ReadableStream<Uint8Array>,
     exited: new Promise<number>((resolve) => {
       child.once('exit', (code, signal) => {
         resolve(signal === 'SIGTERM' ? 143 : signal === 'SIGKILL' ? 137 : (code ?? -1));
@@ -113,7 +116,9 @@ function bunSpawnShim(
 function printedState(stdout: string): string {
   const match = stdout.match(/callback=([^&\s]+)&state=([0-9a-f]+)/i);
   if (!match) throw new Error(`no authorize URL in stdout: ${stdout.slice(0, 400)}`);
-  return match[2]!;
+  const state = match[2];
+  if (!state) throw new Error('the authorize URL carried no state');
+  return state;
 }
 
 describe('browserLogin against a stub loopback API (characterization)', () => {
@@ -134,13 +139,18 @@ describe('browserLogin against a stub loopback API (characterization)', () => {
       });
       // The callback carried exactly the state the CLI printed.
       expect(result.stdout).toContain('state=');
-      expect(JSON.parse(result.callback!.body)).toEqual({ ok: true });
+      const callbackBody = result.callback?.body ?? '';
+      expect(JSON.parse(callbackBody)).toEqual({ ok: true });
       // The CLI verified the token against the stub API and saved the host.
       expect(sb.isLoggedIn()).toBe(true);
       const config = sb.readConfig();
       const active = config.active;
       expect(config.hosts[active].token).toBe(pat);
-      expect(stubRequests.some((r) => r.path === '/v1/accounts/me' && r.authorization === `Bearer ${pat}`)).toBe(true);
+      expect(
+        stubRequests.some(
+          (r) => r.path === '/v1/accounts/me' && r.authorization === `Bearer ${pat}`,
+        ),
+      ).toBe(true);
     } finally {
       sb.dispose();
     }

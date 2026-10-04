@@ -10,10 +10,10 @@ import {
   previewSuiteStatusPath,
 } from '../src/core/sandbox-preview';
 import {
-  deployPlatinumPreview,
-  runPlatinumPreviewSuite,
   type SandboxPreviewDeploymentInput,
   type SandboxPreviewSuiteInput,
+  deployPlatinumPreview,
+  runPlatinumPreviewSuite,
 } from '../src/core/sandbox-preview-providers';
 
 /**
@@ -113,7 +113,8 @@ class FakePlatinumFetch {
     }
     if (method === 'GET' && path === '/v1/sandboxes/sbx-1/files/stat') {
       const statPath = query.get('path') ?? '';
-      if (statPath === '/workspace/.kortix-ci-warm-ready') return jsonResponse({ ok: true, size: 4 });
+      if (statPath === '/workspace/.kortix-ci-warm-ready')
+        return jsonResponse({ ok: true, size: 4 });
       if (statPath === LOG_PATH) {
         return jsonResponse({ ok: true, size: this.logPrefix.length });
       }
@@ -193,17 +194,14 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
       sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
     });
     fake = new FakePlatinumFetch();
-    vi.stubGlobal(
-      'fetch',
-      ((url: string | URL, init?: RequestInit) =>
-        Promise.resolve(
-          fake.route(
-            String(init?.method ?? 'GET').toUpperCase(),
-            String(url),
-            typeof init?.body === 'string' ? init.body : undefined,
-          ),
-        )) as typeof fetch,
-    );
+    vi.stubGlobal('fetch', ((url: string | URL, init?: RequestInit) =>
+      Promise.resolve(
+        fake.route(
+          String(init?.method ?? 'GET').toUpperCase(),
+          String(url),
+          typeof init?.body === 'string' ? init.body : undefined,
+        ),
+      )) as typeof fetch);
     // The suite capacity wait must not wait: zero headroom and a zero window.
     process.env.PREVIEW_SUITE_POOL_HEADROOM_GB = '0';
     process.env.PREVIEW_SUITE_WAIT_MINUTES = '0';
@@ -233,9 +231,7 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
     // The status file is polled at the run-scoped path this run owns.
     expect(
       fake.callsTo(
-        new RegExp(
-          `^GET /v1/sandboxes/sbx-1/files/stat\\?path=${encodeURIComponent(STATUS_PATH)}`,
-        ),
+        new RegExp(`^GET /v1/sandboxes/sbx-1/files/stat\\?path=${encodeURIComponent(STATUS_PATH)}`),
       ).length,
     ).toBeGreaterThan(0);
     // The log stream starts at the pre-launch size and reads only the appendix.
@@ -245,12 +241,12 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
         c.url.startsWith(`/v1/sandboxes/sbx-1/files?path=${encodeURIComponent(LOG_PATH)}`),
     );
     expect(logRead).toHaveLength(1);
-    expect(logRead[0]!.url).toContain('offset=1000');
-    expect(logRead[0]!.url).toContain('limit=50');
+    expect(singleUrl(logRead)).toContain('offset=1000');
+    expect(singleUrl(logRead)).toContain('limit=50');
     // The bootstrap script is written once, executable, next to its secrets file.
     const scriptWrites = fake.callsTo(/^PUT \/v1\/sandboxes\/sbx-1\/files/);
     expect(scriptWrites).toHaveLength(2);
-    expect(scriptWrites[1]!.url).toContain('mode=0755');
+    expect(singleUrl(scriptWrites.slice(1))).toContain('mode=0755');
     // A successful deploy keeps the sandbox: no DELETE.
     expect(fake.callsTo(/^DELETE \/v1\/sandboxes\//)).toHaveLength(0);
     // The deployment record is written under the run root.
@@ -287,10 +283,10 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
     // The suite script is written executable at the fixed path.
     const writes = fake.callsTo(/^PUT \/v1\/sandboxes\/sbx-1\/files/);
     expect(writes).toHaveLength(1);
-    expect(writes[0]!.url).toContain(
+    expect(singleUrl(writes)).toContain(
       `path=${encodeURIComponent('/workspace/run-kortix-preview-suite.sh')}`,
     );
-    expect(writes[0]!.url).toContain('mode=0755');
+    expect(singleUrl(writes)).toContain('mode=0755');
     // The suite polls its own status file, not the deploy's.
     expect(
       fake.callsTo(
@@ -301,9 +297,7 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
     ).toBeGreaterThan(0);
     expect(
       fake.callsTo(
-        new RegExp(
-          `^GET /v1/sandboxes/sbx-1/files/stat\\?path=${encodeURIComponent(STATUS_PATH)}`,
-        ),
+        new RegExp(`^GET /v1/sandboxes/sbx-1/files/stat\\?path=${encodeURIComponent(STATUS_PATH)}`),
       ),
     ).toHaveLength(0);
     // The log stream starts at the pre-suite size and reads only the appendix.
@@ -313,8 +307,8 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
         c.url.startsWith(`/v1/sandboxes/sbx-1/files?path=${encodeURIComponent(LOG_PATH)}`),
     );
     expect(logRead).toHaveLength(1);
-    expect(logRead[0]!.url).toContain('offset=1000');
-    expect(logRead[0]!.url).toContain('limit=50');
+    expect(singleUrl(logRead)).toContain('offset=1000');
+    expect(singleUrl(logRead)).toContain('limit=50');
     // The artifact download was attempted after a finished suite.
     expect(
       fake.callsTo(
@@ -356,6 +350,14 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
     ).toHaveLength(0);
   });
 
+  /** The one call in a filtered list, or a clear failure naming the count. */
+  function singleUrl(calls: FetchCall[]): string {
+    if (calls.length !== 1) throw new Error(`expected exactly one call, got ${calls.length}`);
+    const call = calls[0];
+    if (!call) throw new Error('expected exactly one call');
+    return call.url;
+  }
+
   /**
    * Drive a promise that sleeps under the fake clock: advance in steps until
    * it settles, then return its outcome. The outcome is captured and re-thrown
@@ -363,23 +365,26 @@ describe('Platinum preview deploy and suite observe cycle (characterization)', (
    * rejection.
    */
   async function driveUntilSettled<T>(promise: Promise<T>, ms: number): Promise<T> {
-    let settled = false;
-    let outcome: { value?: T; error?: unknown; failed: boolean };
+    const outcome: { value?: T; error?: unknown; failed: boolean; settled: boolean } = {
+      failed: false,
+      settled: false,
+    };
     promise.then(
       (value) => {
-        outcome = { value, failed: false };
-        settled = true;
+        outcome.value = value;
+        outcome.settled = true;
       },
       (error: unknown) => {
-        outcome = { error, failed: true };
-        settled = true;
+        outcome.error = error;
+        outcome.failed = true;
+        outcome.settled = true;
       },
     );
-    for (let advanced = 0; advanced < ms && !settled; advanced += 30_000) {
+    for (let advanced = 0; advanced < ms && !outcome.settled; advanced += 30_000) {
       await vi.advanceTimersByTimeAsync(30_000);
     }
-    if (!settled) throw new Error('the promise did not settle within the advanced clock');
-    if (outcome!.failed) throw outcome!.error;
-    return outcome!.value as T;
+    if (!outcome.settled) throw new Error('the promise did not settle within the advanced clock');
+    if (outcome.failed) throw outcome.error;
+    return outcome.value as T;
   }
 });

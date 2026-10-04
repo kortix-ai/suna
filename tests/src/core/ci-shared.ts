@@ -138,8 +138,6 @@ export async function pollCiState<T extends { state?: string }>(input: {
   sleep: (ms: number) => Promise<void>;
   /** Tolerate a transient observation failure; throw inside to propagate instead. */
   onTransientError?: (error: unknown) => void;
-  /** Called after a successful read when earlier observations had failed. */
-  onObservationRecovered?: () => void;
 }): Promise<T> {
   const now = input.now ?? Date.now;
   const deadline = input.startAt + input.timeoutMs;
@@ -147,9 +145,7 @@ export async function pollCiState<T extends { state?: string }>(input: {
   let lastState = '';
   const observe = async (): Promise<T | undefined> => {
     try {
-      const observed = await input.read(current);
-      input.onObservationRecovered?.();
-      return observed;
+      return await input.read(current);
     } catch (error) {
       if (!input.onTransientError) throw error;
       input.onTransientError(error);

@@ -9,9 +9,10 @@ import type { FlowContext } from "../core/types";
 import { directDbSsl } from "./database-project";
 
 export async function withDb<T>(ctx: FlowContext, run: (db: PgClient) => Promise<T>): Promise<T> {
+  const databaseUrl = ctx.env.databaseUrl!;
   const db = new PgClient({
-    connectionString: ctx.env.databaseUrl!,
-    ssl: directDbSsl(ctx.env.databaseUrl!),
+    connectionString: databaseUrl,
+    ssl: directDbSsl(databaseUrl),
   });
   await db.connect();
   try {

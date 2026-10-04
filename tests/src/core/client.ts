@@ -598,9 +598,7 @@ export class Client {
     const replaySafe = isReplaySafeMethod(method);
     const maxAttempts = replaySafe ? this.transientGatewayRetries + 1 : 1;
 
-    // No loop condition: retryOrStop enforces the attempt budget, and the last
-    // attempt always throws or returns, so the loop can never fall past it.
-    for (let attempt = 1; ; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const started = performance.now();
       let res: Response;
       try {
@@ -687,6 +685,9 @@ export class Client {
       }
       return response;
     }
+    // Reachable when the attempt budget is non-positive (KE2E_GATEWAY_RETRIES
+    // <= 0 on a replay-safe method): nothing was sent.
+    throw new Error(`request attempt loop exhausted for ${method} ${url}`);
   }
 }
 

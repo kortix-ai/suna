@@ -156,10 +156,9 @@ interface CliRunOptions {
 async function runCliProcess(
   argv: string[],
   opts: { cwd: string; env: Record<string, string>; stdin?: string; timeoutMs?: number },
-  readStdout: (
-    stdout: ReadableStream<Uint8Array>,
-    kill: () => void,
-  ) => Promise<string> = (stdout) => new Response(stdout).text(),
+  readStdout: (stdout: ReadableStream<Uint8Array>, kill: () => void) => Promise<string> = (
+    stdout,
+  ) => new Response(stdout).text(),
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, ...argv], {
     cwd: opts.cwd,

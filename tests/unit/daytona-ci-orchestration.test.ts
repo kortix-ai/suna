@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   DAYTONA_CI_SNAPSHOT_VERSION,
-  DaytonaHttpError,
   type DaytonaCiInput,
+  DaytonaHttpError,
   type DaytonaSandbox,
   type DaytonaSnapshot,
   ensureWarmSnapshot,
@@ -50,9 +50,11 @@ class RemoteBox {
     // Upload: `printf %s <base64> | base64 -d > <path> && chmod 0755 <path>`
     const upload = command.match(/^printf %s ([A-Za-z0-9+/=]+) \| base64 -d > (\S+)/);
     if (upload) {
+      const [, encoded, target] = upload;
+      if (!encoded || !target) return { exitCode: 1, result: 'malformed upload command' };
       if (this.uploadFails) return { exitCode: 1, result: 'toolbox refused' };
-      this.files.set(upload[2]!, Buffer.from(upload[1]!, 'base64').toString('utf8'));
-      this.uploads.push(upload[2]!);
+      this.files.set(target, Buffer.from(encoded, 'base64').toString('utf8'));
+      this.uploads.push(target);
       return { exitCode: 0, result: '' };
     }
     if (command.includes('setsid -f /workspace/prepare-daytona-warm.sh')) {
@@ -114,18 +116,12 @@ class FakeDaytona {
 
   /** Queue the states a snapshot reports on successive GET-by-id calls. */
   queueSnapshotStates(name: string, ...states: string[]): void {
-    this.snapshotStateQueues.set(name, [
-      ...(this.snapshotStateQueues.get(name) ?? []),
-      ...states,
-    ]);
+    this.snapshotStateQueues.set(name, [...(this.snapshotStateQueues.get(name) ?? []), ...states]);
   }
 
   /** Queue the states a sandbox reports on successive GET-by-id calls. */
   queueSandboxStates(name: string, ...states: string[]): void {
-    this.sandboxStateQueues.set(name, [
-      ...(this.sandboxStateQueues.get(name) ?? []),
-      ...states,
-    ]);
+    this.sandboxStateQueues.set(name, [...(this.sandboxStateQueues.get(name) ?? []), ...states]);
   }
 
   private call(method: string, path: string, body?: unknown): void {
@@ -135,14 +131,12 @@ class FakeDaytona {
 
   private advanceSnapshotState(name: string, current: string): string {
     const queue = this.snapshotStateQueues.get(name);
-    if (queue && queue.length > 0) return queue.shift()!;
-    return current;
+    return queue?.shift() ?? current;
   }
 
   private advanceSandboxState(name: string, current: string): string {
     const queue = this.sandboxStateQueues.get(name);
-    if (queue && queue.length > 0) return queue.shift()!;
-    return current;
+    return queue?.shift() ?? current;
   }
 
   json<T>(path: string, init: RequestInit = {}, _options: unknown = {}): Promise<T> {
@@ -153,11 +147,8 @@ class FakeDaytona {
     // Snapshot listing: `GET /snapshots?name=<n>&limit=20&page=1`
     if (method === 'GET' && path.startsWith('/snapshots?')) {
       const name = decodeURIComponent(path.split('name=')[1]?.split('&')[0] ?? '');
-      const scripts = this.lookupScripts.get(name);
-      if (scripts && scripts.length > 0) {
-        const provider = scripts.shift()!;
-        return Promise.resolve({ items: provider() } as T);
-      }
+      const provider = this.lookupScripts.get(name)?.shift();
+      if (provider) return Promise.resolve({ items: provider() } as T);
       const items = [...this.snapshots.values()].filter((s) => s.name === name);
       return Promise.resolve({ items } as T);
     }
@@ -284,7 +275,11 @@ function makeInput(over: Partial<DaytonaCiInput> = {}): DaytonaCiInput {
   };
 }
 
-function snapRecord(name: string, state: string, over: Partial<DaytonaSnapshot> = {}): FakeSnapshot {
+function snapRecord(
+  name: string,
+  state: string,
+  over: Partial<DaytonaSnapshot> = {},
+): FakeSnapshot {
   return { id: `snap-${name}`, name, state, createdAtCall: 0, ...over };
 }
 
@@ -419,7 +414,10 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
     const api = new FakeDaytona();
     api.snapshots.set(`snap-${WARM_SNAPSHOT_NAME}`, snapRecord(WARM_SNAPSHOT_NAME, 'building'));
     api.queueSnapshotStates(WARM_SNAPSHOT_NAME, 'active');
-    const result = await runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 15_000);
+    const result = await runWithClock(
+      ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH),
+      15_000,
+    );
     expect(result.state).toBe('active');
   });
 
@@ -429,9 +427,7 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
     api.queueSnapshotStates(WARM_SNAPSHOT_NAME, 'error');
     const failure = expect(
       runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 15_000),
-    ).rejects.toThrow(
-      `Daytona snapshot ${WARM_SNAPSHOT_NAME} entered state=error: `,
-    );
+    ).rejects.toThrow(`Daytona snapshot ${WARM_SNAPSHOT_NAME} entered state=error: `);
     await failure;
   });
 
@@ -455,7 +451,10 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
     api.queueSnapshotStates(BASE_SNAPSHOT_NAME, 'active');
     api.queueSnapshotStates(WARM_SNAPSHOT_NAME, 'active');
 
-    const result = await runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 20_000);
+    const result = await runWithClock(
+      ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH),
+      20_000,
+    );
 
     // The failed warm snapshot is deleted first.
     expect(
@@ -511,7 +510,10 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
       () => [],
       () => [snapRecord(WARM_SNAPSHOT_NAME, 'active')],
     );
-    const result = await runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 20_000);
+    const result = await runWithClock(
+      ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH),
+      20_000,
+    );
     expect(result.name).toBe(WARM_SNAPSHOT_NAME);
     expect(api.lastSandboxCreate).toBeUndefined();
     expect(api.box.uploads).toHaveLength(0);
@@ -530,7 +532,10 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
       () => [],
       () => [snapRecord(WARM_SNAPSHOT_NAME, 'active')],
     );
-    const result = await runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 20_000);
+    const result = await runWithClock(
+      ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH),
+      20_000,
+    );
     expect(result.name).toBe(WARM_SNAPSHOT_NAME);
     // The foreign builder was never deleted and no own builder was created.
     expect(builderDeletes(api)).toHaveLength(0);
@@ -543,13 +548,20 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
     api.sandboxes.set(
       BUILDER_NAME,
       sandboxRecord(BUILDER_NAME, 'stopped', {
-        labels: { 'kortix-ci': 'true', 'kortix-ci-run-id': 'other-run', 'kortix-ci-run-attempt': '9' },
+        labels: {
+          'kortix-ci': 'true',
+          'kortix-ci-run-id': 'other-run',
+          'kortix-ci-run-attempt': '9',
+        },
       }),
     );
     api.queueSnapshotStates(BASE_SNAPSHOT_NAME, 'active');
     api.queueSnapshotStates(WARM_SNAPSHOT_NAME, 'active');
     api.box.files.set('/workspace/.kortix-ci-warm-ready', '7\n');
-    const result = await runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 20_000);
+    const result = await runWithClock(
+      ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH),
+      20_000,
+    );
     // One delete for the stopped foreign builder, one for the own builder in
     // the finally block.
     expect(builderDeletes(api)).toHaveLength(2);
@@ -592,7 +604,14 @@ describe('Daytona warm-snapshot orchestration (characterization)', () => {
     api.queueSnapshotStates(BASE_SNAPSHOT_NAME, 'active');
     api.box.files.set('/workspace/.kortix-ci-warm-ready', '3\n');
     // After the capture POST, the warm name is never findable again.
-    api.queueLookup(WARM_SNAPSHOT_NAME, () => [], () => [], () => [], () => [], () => []);
+    api.queueLookup(
+      WARM_SNAPSHOT_NAME,
+      () => [],
+      () => [],
+      () => [],
+      () => [],
+      () => [],
+    );
     await expect(
       runWithClock(ensureWarmSnapshot(api as never, makeInput(), LOCK_HASH), 15_000),
     ).rejects.toThrow(`Daytona warm snapshot ${WARM_SNAPSHOT_NAME} was not created`);
