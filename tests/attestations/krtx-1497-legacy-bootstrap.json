@@ -1,0 +1,33 @@
+{
+  "source_hash": "ebdc05a70ebec1abdd9bf6bd1672afbcbe758023ac8ce6669ccd426853693a3b",
+  "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/__tests__/integration-trigger-attribution.test.ts",
+    "apps/api/src/__tests__/unit-trigger-keyed-sessions.test.ts",
+    "apps/api/src/projects/index.ts",
+    "apps/api/src/projects/lib/app.ts",
+    "apps/api/src/projects/lib/compile-agent-config.ts",
+    "apps/api/src/projects/lib/legacy-runtime-bootstrap-wiring.ts",
+    "apps/api/src/projects/lib/legacy-runtime-bootstrap.test.ts",
+    "apps/api/src/projects/lib/legacy-runtime-bootstrap.ts",
+    "apps/api/src/projects/lib/legacy-runtime-health.ts",
+    "apps/api/src/projects/lib/legacy-runtime-repair.ts",
+    "apps/api/src/projects/lib/legacy-runtime-script.ts",
+    "apps/api/src/projects/lib/sandbox-secret-propagation.ts",
+    "apps/api/src/projects/lib/sandbox-session-push.ts",
+    "apps/api/src/projects/lib/scope-push.test.ts",
+    "apps/api/src/projects/lib/session-reload-latest-etag.test.ts",
+    "apps/api/src/projects/lib/trigger-fire.ts",
+    "apps/api/src/projects/provider-transition/provider-transition-view.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "337913df6a060302be7a2f7219cdab0b2e062a82b214705fae78a3573150e44c",
+  "head": "d935cd9b3955e2663f621874b7fac54c06ce2edb",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T06:01:39.590Z"
+}
