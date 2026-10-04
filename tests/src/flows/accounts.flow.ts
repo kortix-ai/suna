@@ -651,8 +651,8 @@ flow(
     await ctx.step('a nonmember is forbidden from the throwaway account → 403', async () => {
       // The personal account is the victim's first (and only) membership.
       const me = await asVictim.get('/v1/accounts/me');
-      me.status(200);
-      victimAccountId = me.body().get('$.accounts[0].account_id');
+      me.status(200).body().exists('$.accounts[0].account_id');
+      victimAccountId = me.json().accounts[0].account_id;
       (
         await ctx.client
           .as(ctx.P.OWNER)
