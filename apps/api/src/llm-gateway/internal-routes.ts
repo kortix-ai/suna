@@ -170,8 +170,9 @@ export function createInternalGatewayRoutes() {
     }
     // `managedOnly` backs the standalone gateway's `GET /models?scope=managed`
     // — the compact managed lineup a sandbox fetches on boot. Dropping the
-    // projectId is what selects MANAGED_ONLY; free-tier accounts still get an
-    // empty managed set.
+    // projectId is what selects MANAGED_ONLY: a free-tier caller gets the
+    // platform default alone (an empty set when the deployment serves none),
+    // every other managed model stays paid (KRTX-1067).
     return c.json({
       models: gatewayModelCatalog(managedOnly === true ? undefined : p.projectId, {
         freeManagedOnly: !!p.freeModelsOnly,
