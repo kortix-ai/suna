@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -47,9 +46,14 @@ interface OperationResult {
 }
 
 function runQuotaGc(script: string): unknown {
-  const output = execFileSync('bun', ['--eval', script], {
+  // Bun's native spawnSync, not node:child_process's execFileSync shim: under
+  // the lane's two-worker memory pressure the shim intermittently crashes with
+  // `TypeError: undefined is not an object (evaluating 'normalizeExecFileArgs')`
+  // inside bun's own compat layer (measured twice in thirteen full lane runs;
+  // the file is otherwise untouched). Same child, same contract — and the
+  // failure path below throws on a non-zero exit exactly like execFileSync did.
+  const result = Bun.spawnSync(['bun', '--eval', script], {
     cwd: REPO_ROOT,
-    encoding: 'utf8',
     env: {
       ...process.env,
       DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:54322/postgres',
@@ -65,6 +69,12 @@ function runQuotaGc(script: string): unknown {
       INTERNAL_KORTIX_ENV: 'dev',
     },
   });
+  const output = result.stdout.toString();
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `quota GC subprocess exited ${result.exitCode}: ${result.stderr.toString().trim()}`,
+    );
+  }
   const marker = output.lastIndexOf(RESULT_MARKER);
   if (marker < 0) throw new Error(`quota GC subprocess returned no result: ${output}`);
   return JSON.parse(output.slice(marker + RESULT_MARKER.length));
