@@ -1108,7 +1108,7 @@
       "noMatches": "没有与 {query} 匹配的结果。",
       "emptyTitle": "没有实验性功能",
       "emptyDescription": "此部署没有提供按项目设置的功能开关。",
-      "permission": "您需要项目自定义编辑权限才能更改功能开关。",
+      "permission": "更改功能开关需要项目的设置权限。",
       "updateFailed": "无法更新 {key}",
       "flags": {
         "marketplace": {
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
-        },
-        "agent_principal": {
-          "name": "代理作为主体",
-          "description": "代理以自身身份执行操作：使用其 Kortix 权限，并受其角色上限约束。运行代理的人只会提供自己的账户。"
         },
         "config_releases": {
           "name": "配置发布",
@@ -9609,7 +9605,7 @@
       "text062b7c4143e2": "每个会话创建自己的分支",
       "text062bccfdad1c": "没有与此搜索匹配的沙箱",
       "text062dddbbb151": "没有生态系统支撑的前沿模型并不稳定",
-      "text06346e4d9c35": "您需要项目的自定义写入权限才能更改功能标志。",
+      "text6d484ed8c1a0": "更改功能开关需要项目的设置权限。",
       "text06475633ed3e": "最近活动",
       "text064f6ac1a789": "弹出框",
       "text065f04fd94d6": "更改 {value0} {value1} 在 {value2} 中可以执行的操作。",
@@ -19196,7 +19192,7 @@
       "text39207bf34111": "相关技能",
       "text73112526c03a": "智能体这一轮运行失败，未报告原因。",
       "text85b7a59cdbd5": "平台智能体",
-      "textd9c0c74b514b": "Meta 是一个编排你工作的平台智能体。它的设置是固定的：可以与它开启会话，但无法在这里配置。"
+      "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20212,9 +20208,7 @@
     "openWithoutGrant": "无需授权",
     "grantNote": "智能体的 Kortix 权限还需要包含 project.app.read。",
     "emptyTitle": "尚无应用",
-    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。",
-    "flagOffHint": "本项目未开启智能体主体，因此该授权会被保存，但尚未对任何应用生效。",
-    "featureFlags": "功能开关"
+    "emptyDescription": "部署到本项目的应用会显示在这里，供智能体选择。"
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"

@@ -1108,7 +1108,7 @@
       "noMatches": "Nenhum resultado para {query}.",
       "emptyTitle": "Nenhum recurso experimental",
       "emptyDescription": "Esta instalação não oferece sinalizadores de recurso por projeto.",
-      "permission": "Você precisa de permissão para editar a personalização do projeto para alterar um recurso.",
+      "permission": "Você precisa da permissão de configurações do projeto para alterar um sinalizador de recurso.",
       "updateFailed": "Não foi possível atualizar {key}",
       "flags": {
         "marketplace": {
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
-        },
-        "agent_principal": {
-          "name": "Agentes como principais",
-          "description": "Os agentes agem como eles mesmos: com suas permissões do Kortix, limitadas pela sua função. Quem executa um agente adiciona apenas as próprias contas."
         },
         "config_releases": {
           "name": "Versões de configuração",
@@ -9609,7 +9605,7 @@
       "text062b7c4143e2": "Sua própria branch, criada por sessão",
       "text062bccfdad1c": "Nenhum sandbox corresponde a esta pesquisa",
       "text062dddbbb151": "Uma fronteira sem ecossistema não é estável",
-      "text06346e4d9c35": "Você precisa da permissão de gravação personalizada do projeto para alterar um sinalizador de recurso.",
+      "text6d484ed8c1a0": "Você precisa da permissão de configurações do projeto para alterar um sinalizador de recurso.",
       "text06475633ed3e": "Última atividade",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Altere o que {value0} {value1} pode fazer em {value2}.",
@@ -19195,8 +19191,8 @@
       "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
       "text39207bf34111": "Habilidades relacionadas",
       "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado.",
-      "text85b7a59cdbd5": "Agente de plataforma",
-      "textd9c0c74b514b": "A Meta é um agente de plataforma que orquestra o seu trabalho. A configuração dela é fixa: inicie uma sessão com ela, mas não é possível configurá-la aqui."
+      "text85b7a59cdbd5": "Agente da plataforma",
+      "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20212,9 +20208,7 @@
     "openWithoutGrant": "Não precisa de concessão",
     "grantNote": "O agente também precisa de project.app.read nas permissões Kortix dele.",
     "emptyTitle": "Ainda sem Apps",
-    "emptyDescription": "Os Apps implantados neste projeto aparecem aqui para o agente escolher.",
-    "flagOffHint": "Agente como principal está desligado neste projeto, então a concessão é guardada mas ainda não controla nenhum App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Os Apps implantados neste projeto aparecem aqui para o agente escolher."
   },
   "connectorsAppReturn": {
     "done": "Pronto. Voltar ao app Kortix"

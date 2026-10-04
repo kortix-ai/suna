@@ -1108,7 +1108,7 @@
       "noMatches": "Aucun résultat pour {query}.",
       "emptyTitle": "Aucune fonctionnalité expérimentale",
       "emptyDescription": "Cette installation ne propose aucun indicateur de fonctionnalité par projet.",
-      "permission": "Vous devez disposer de l’autorisation de modification de la personnalisation du projet pour changer une fonctionnalité.",
+      "permission": "Vous avez besoin de l’autorisation de paramètres du projet pour modifier un indicateur de fonctionnalité.",
       "updateFailed": "Impossible de mettre à jour {key}",
       "flags": {
         "marketplace": {
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
-        },
-        "agent_principal": {
-          "name": "Agents comme principaux",
-          "description": "Les agents agissent en leur propre nom : avec leurs permissions Kortix, plafonnées par leur rôle. La personne qui lance un agent n'apporte que ses propres comptes."
         },
         "config_releases": {
           "name": "Versions de configuration",
@@ -9609,7 +9605,7 @@
       "text062b7c4143e2": "Sa propre branche, créée pour chaque session",
       "text062bccfdad1c": "Aucun bac à sable ne correspond à cette recherche",
       "text062dddbbb151": "Une frontière sans écosystème n’est pas stable",
-      "text06346e4d9c35": "Vous avez besoin de l'autorisation de personnalisation-écriture du projet pour modifier un indicateur de fonctionnalité.",
+      "text6d484ed8c1a0": "Vous avez besoin de l’autorisation de paramètres du projet pour modifier un indicateur de fonctionnalité.",
       "text06475633ed3e": "Dernière activité",
       "text064f6ac1a789": "Pop-up",
       "text065f04fd94d6": "Modifiez ce que {value0} {value1} peut faire dans {value2}.",
@@ -19195,8 +19191,8 @@
       "text4af0b7d8bfb1": "Chaque session s'exécute dans son propre bac à sable, sur sa propre branche git. Rien n'est partagé entre les exécutions.",
       "text39207bf34111": "Compétences associées",
       "text73112526c03a": "Le tour de l'agent a échoué. Aucune raison n'a été signalée.",
-      "text85b7a59cdbd5": "Agent de plateforme",
-      "textd9c0c74b514b": "Meta est un agent de plateforme qui orchestre votre travail. Sa configuration est fixe : démarrez une session avec lui, mais il ne peut pas être configuré ici."
+      "text85b7a59cdbd5": "Agent de la plateforme",
+      "textd9c0c74b514b": "Meta est un agent de la plateforme qui orchestre votre travail. Sa configuration est fixe : vous pouvez démarrer une session avec lui, mais il ne se configure pas ici."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20212,9 +20208,7 @@
     "openWithoutGrant": "Aucune autorisation requise",
     "grantNote": "L'agent a aussi besoin de project.app.read dans ses permissions Kortix.",
     "emptyTitle": "Pas encore d'Apps",
-    "emptyDescription": "Les Apps déployées dans ce projet apparaissent ici pour que l'agent les choisisse.",
-    "flagOffHint": "Agent principal est désactivé sur ce projet : l'autorisation est enregistrée mais ne contrôle encore aucune App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Les Apps déployées dans ce projet apparaissent ici pour que l'agent les choisisse."
   },
   "connectorsAppReturn": {
     "done": "Terminé. Retour à l’app Kortix"

@@ -1108,7 +1108,7 @@
       "noMatches": "Нема резултата за {query}.",
       "emptyTitle": "Нема експерименталних функција",
       "emptyDescription": "Ова инсталација не нуди функције које се укључују по пројекту.",
-      "permission": "Потребна вам је дозвола за измену прилагођавања пројекта да бисте променили функцију.",
+      "permission": "Potrebna vam je dozvola za podešavanja projekta da biste promenili zastavicu funkcije.",
       "updateFailed": "Није могуће ажурирати {key}",
       "flags": {
         "marketplace": {
@@ -1158,10 +1158,6 @@
         "pi_harness": {
           "name": "Pi окружење (у сандбоксу)",
           "description": "Покрећите сесије помоћу Pi окружења унутар сандбокса сесије уместо OpenCode-а. Када је искључено, `runtime: pi` у манифесту и даље бира Pi."
-        },
-        "agent_principal": {
-          "name": "Агенти као принципали",
-          "description": "Агенти делују у своје име: са својим Kortix дозволама, ограниченим улогом. Ко покреће агента додаје само своје налоге."
         },
         "config_releases": {
           "name": "Издања конфигурације",
@@ -9609,7 +9605,7 @@
       "text062b7c4143e2": "Сопственој грани, направљеној за сваку сесију",
       "text062bccfdad1c": "Ниједан сандбок не одговара овој претрази",
       "text062dddbbb151": "Граница без екосистема није стабилна",
-      "text06346e4d9c35": "Потребна вам је дозвола за прилагођавање-писање пројекта да бисте променили ознаку функције.",
+      "text6d484ed8c1a0": "Potrebna vam je dozvola za podešavanja projekta da biste promenili zastavicu funkcije.",
       "text06475633ed3e": "Последња активност",
       "text064f6ac1a789": "Искачући прозор",
       "text065f04fd94d6": "Промените шта {value0} {value1} може да уради у {value2}.",
@@ -19195,8 +19191,8 @@
       "text4af0b7d8bfb1": "Свака сесија ради у сопственом sandbox окружењу, на сопственој git грани. Између покретања ништа се не дели.",
       "text39207bf34111": "Сродне вештине",
       "text73112526c03a": "Корак агента није успео. Разлог није пријављен.",
-      "text85b7a59cdbd5": "Агент платформе",
-      "textd9c0c74b514b": "Meta је агент платформе који оркестрира ваш рад. Његова поставка је фиксна: покрените сесију са њим, али га овде није могуће конфигурисати."
+      "text85b7a59cdbd5": "Agent platforme",
+      "textd9c0c74b514b": "Meta je agent platforme koji koordiniše vaš rad. Njegova podešavanja su fiksna: možete pokrenuti sesiju s njim, ali ga ovde ne možete podesiti."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20212,9 +20208,7 @@
     "openWithoutGrant": "Дозвола није потребна",
     "grantNote": "Агенту је такође потребно project.app.read у његовим Kortix дозволама.",
     "emptyTitle": "Још нема апликација",
-    "emptyDescription": "Апликације постављене у овом пројекту појављују се овде да их агент изабере.",
-    "flagOffHint": "Агент као принципал је искључен за овај пројекат, па се дозвола чува али још не контролише ниједну апликацију.",
-    "featureFlags": "Функционалне заставице"
+    "emptyDescription": "Апликације постављене у овом пројекту појављују се овде да их агент изабере."
   },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"
