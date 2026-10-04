@@ -117,6 +117,9 @@ function runCli(
     const child = spawn('bun', cliArgs, {
       env: {
         ...process.env,
+        // The mock agent is loopback by address: `localhost` does not resolve
+        // on a platform sandbox, which turns every row here into
+        // "Unable to connect" instead of the response under test.
         TUNNEL_API_URL: `http://127.0.0.1:${mockPort}`,
         TUNNEL_TOKEN: 'test-token',
         TUNNEL_ID: '',

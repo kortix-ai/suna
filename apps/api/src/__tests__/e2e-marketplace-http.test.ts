@@ -25,6 +25,9 @@ describe('marketplace HTTP contract', () => {
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
     server = Bun.serve({ port: 0, fetch: app.fetch });
+    // server.hostname reports `localhost`; on a platform sandbox that name does
+    // not resolve (or resolves to ::1, which the all-interfaces listener never
+    // answers) and the fetch dies with ConnectionRefused. Loopback by address.
     baseUrl = `http://127.0.0.1:${server.port}/v1`;
   });
 
