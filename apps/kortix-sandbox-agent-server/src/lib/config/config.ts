@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * Env contract for kortix-sandbox-agent-server.
  *
- * Names must stay aligned with apps/api/src/http/projects/index.ts: the API
+ * Names must stay aligned with apps/api/src/projects/index.ts: the API
  * passes KORTIX_PROJECT_AUTO_CLONE / KORTIX_REPO_URL / KORTIX_BRANCH_NAME /
  * KORTIX_DEFAULT_BRANCH / KORTIX_PROJECT_ID / KORTIX_API_URL /
  * KORTIX_SERVICE_PORT to Daytona at sandbox creation time. The provider layer

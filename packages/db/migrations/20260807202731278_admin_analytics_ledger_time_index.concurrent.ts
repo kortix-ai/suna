@@ -1,7 +1,7 @@
 // Migration: admin_analytics_ledger_time_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // Adds kortix.credit_ledger (created_at) for the admin credit-burn dashboard
-// (apps/api/src/http/admin/analytics.ts -> GET /v1/admin/analytics/usage).
+// (apps/api/src/admin/analytics.ts -> GET /v1/admin/analytics/usage).
 //
 // WHY: that route sums debits across a trailing 1-90 day window for ALL
 // accounts. credit_ledger already carries thirteen indexes, but every

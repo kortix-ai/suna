@@ -14,7 +14,7 @@
 // PARTIAL on (origin_ref is not null AND status in the ACTIVE set): only LIVE
 // BACKEND sessions qualify, which is a small slice of the table and empty for
 // projects that never use KaaB. The status predicate mirrors
-// ACTIVE_SESSION_STATUSES (apps/api/src/services/sessions/session-status.ts) -- if
+// ACTIVE_SESSION_STATUSES (apps/api/src/projects/lib/session-status.ts) -- if
 // that list ever changes, this predicate must change with it or the cap silently
 // stops using the index.
 //

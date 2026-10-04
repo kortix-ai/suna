@@ -343,7 +343,7 @@ export interface RuntimeConvergenceReport {
    * and NO box consumes it — the supervisor IS the entrypoint, so replacing it
    * needs an `exec` on the next loop iteration rather than a file swap under a
    * running shell. It is served for out-of-band repair only (see
-   * apps/api/src/services/runtime-assets/manifest.ts), and reporting a digest for
+   * apps/api/src/runtime-assets/manifest.ts), and reporting a digest for
    * something this box never converges would be a second false "current".
    */
   running: RunningRuntimeAssets

@@ -1,5 +1,5 @@
 /**
- * Project packages from the API's pre-built bundle (apps/api/src/services/pi-packages/prebuild.ts).
+ * Project packages from the API's pre-built bundle (apps/api/src/pi-packages/prebuild.ts).
  *
  * Each extension entry arrives as ONE self-contained ESM file whose imports of
  * the modules pi hands every extension read `globalThis.__kortixPiHost`. Filled

@@ -73,7 +73,7 @@
 --      session_folder_grants. 0 rows in every environment and 0 code references
 --      outside the drizzle schema declarations this PR also removes.
 --      kortix.sandbox_members is deliberately NOT dropped: it has 0 rows but is
---      still read and written by apps/api/src/services/router/services/member-spend.ts
+--      still read and written by apps/api/src/router/services/member-spend.ts
 --      (the per-member LLM spend cap), so dropping it would 42P01 the proxy.
 --      That is a billing surface, not an RBAC one, and it is out of scope here.
 --   5. DROP the 15 dual-write mirror triggers. Their whole purpose was to keep a

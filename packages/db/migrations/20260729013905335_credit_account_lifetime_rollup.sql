@@ -13,7 +13,7 @@
 -- the seven atomic_* credit functions. The ledger is the authoritative record of
 -- every credit movement, so deriving the rollup from ledger INSERTs means every
 -- writer — the atomic_* RPCs, the Drizzle fallback paths in
--- apps/api/src/services/billing/services/credits.ts, admin adjustments, one-off repair
+-- apps/api/src/billing/services/credits.ts, admin adjustments, one-off repair
 -- scripts — is covered by construction, and no future writer can silently skip
 -- it. One classification rule, in one place, used by both the trigger and the
 -- recompute/backfill.

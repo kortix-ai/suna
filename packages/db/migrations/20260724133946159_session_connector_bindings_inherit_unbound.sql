@@ -10,7 +10,7 @@ set statement_timeout = '30s';
 -- fallback, so a caller can override just one connector (e.g. an end-user's own
 -- account) without re-binding the rest. It can only ever inherit the project
 -- DEFAULT profile, never another owner's, so it is safe for any origin. See
--- apps/api/src/services/sessions/session-connector-bindings.ts (resolveSessionConnectorProfile).
+-- apps/api/src/projects/lib/session-connector-bindings.ts (resolveSessionConnectorProfile).
 --
 -- Purely additive:
 --   [x] boolean, constant DEFAULT false, NOT NULL -- metadata-only ADD COLUMN on

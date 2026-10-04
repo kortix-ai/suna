@@ -369,6 +369,14 @@ Record the branch, PR, local commands and output, merge SHA, deploy run,
 deployed SHA evidence, and the exact dev command or interaction in the final
 response.
 
+## Architecture: `apps/api` layers
+
+`apps/api/src` is layered: `app/` → `http/` (Hono only here) → `workers/` →
+`services/<name>/` → `lib/` + `types/`. A layer imports only its own layer or a
+lower one, routes register explicitly at the mount site, and services take an
+`Actor`, never a request. The rules and how to add a route, service or loop are
+in `apps/api/ARCHITECTURE.md`; `apps/api/eslint.config.mjs` enforces them.
+
 ## Architecture: `@kortix/sdk` is the source of truth
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the

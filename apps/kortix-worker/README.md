@@ -17,7 +17,7 @@ compiled-boot pipeline prepends per-`(project, sha)` agent config compiled from
 `kortix.yaml` and serves the result:
 
 ```
-push → apps/api/src/http/git-proxy/index.ts (pi_worker flag on)
+push → apps/api/src/git-proxy/index.ts (pi_worker flag on)
      → compiled-pi-runtime-artifact.ts (cache, single-flight)
      → GET /v1/git/{project}.git/compiled-pi-runtime?ref&sha
 ```
@@ -43,7 +43,7 @@ methods throw) and the working `Agent` surface was verified against it.
 ## Tests
 
 The compile pipeline's tests live beside the pipeline and exercise the built
-bundle directly: `apps/api/src/services/git-proxy/compiled-pi-runtime.test.ts` and
+bundle directly: `apps/api/src/git-proxy/compiled-pi-runtime.test.ts` and
 `pi-worker-bundle.test.ts` (the latter boots the real `dist/worker-runtime.mjs`
 under node and asserts `/health`). Build first: `bun run build`.
 

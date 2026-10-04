@@ -9,7 +9,7 @@
 -- THE INVARIANT: a sandbox-reported signal may only SHORTEN a box's life. Only
 -- a control-plane-OBSERVED event may EXTEND it, and only up to a bounded
 -- ceiling. `deadline_at` is written by exactly one TS module
--- (apps/api/src/services/sandboxes/sandbox-deadline.ts); `active_since` is written by NO
+-- (apps/api/src/projects/sandbox-deadline.ts); `active_since` is written by NO
 -- TypeScript at all — the trigger below owns it, because a CHECK on a
 -- difference whose left operand a caller can slide forward is a suggestion,
 -- not a bound.
@@ -251,4 +251,4 @@ ALTER TABLE "kortix"."session_sandboxes"
 COMMENT ON COLUMN "kortix"."session_sandboxes"."active_since" IS
   'Start of this box''s current continuous running stretch. Anchor operand of the 24h cap. Assigned ONLY by kortix.session_sandboxes_anchor_guard(); never movable by application code in any state, and re-anchored only on resume of a park the trigger itself witnessed.';
 COMMENT ON COLUMN "kortix"."session_sandboxes"."deadline_at" IS
-  'When the control plane stops this box. Single TS writer: apps/api/src/services/sandboxes/sandbox-deadline.ts. Bounded by deadline_at <= active_since + 24h.';
+  'When the control plane stops this box. Single TS writer: apps/api/src/projects/sandbox-deadline.ts. Bounded by deadline_at <= active_since + 24h.';

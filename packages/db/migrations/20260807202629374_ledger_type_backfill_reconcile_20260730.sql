@@ -27,7 +27,7 @@ set statement_timeout = '300s';
 --      transactions.ts getTransactions) and every ad-hoc revenue query -- counts
 --      an admin correction as customer usage.
 --
--- The usage breakdown (apps/api/src/services/billing/services/usage-breakdown.ts) already
+-- The usage breakdown (apps/api/src/billing/services/usage-breakdown.ts) already
 -- resolves the kind as COALESCE(NULLIF(metadata->>'ledger_type',''), type), so it
 -- classifies these rows correctly TODAY and will keep classifying them correctly
 -- AFTER this backfill -- metadata is not touched, and the fallback arm now agrees
@@ -35,7 +35,7 @@ set statement_timeout = '300s';
 -- columns tell the same story; it does not change what the breakdown reports.
 --
 -- 'admin_debit' is an already-live value of this text column, not a new one:
--- apps/api/src/http/admin/index.ts writes it directly via grantCredits(..., 'admin_debit',
+-- apps/api/src/admin/index.ts writes it directly via grantCredits(..., 'admin_debit',
 -- ...), and usage-breakdown.ts lists it in OTHER_DEBIT_KINDS. credit_ledger.type
 -- is `text`, not an enum, so there is no enum value to add and no
 -- enum-value-checked annotation to make.

@@ -52,7 +52,7 @@ import {
  * onto the upstream request is handed to that host. apps/api authenticates every
  * request it relays here — an ordinary user's included — with the sandbox's own
  * service key, and adds a signed user-context plus the sandbox provider's
- * preview token (buildSandboxUpstreamHeaders, apps/api/src/services/sandbox-proxy/backend.ts).
+ * preview token (buildSandboxUpstreamHeaders, apps/api/src/sandbox-proxy/backend.ts).
  * Copying those onto `/web-proxy/https/attacker.example/` mailed them out.
  *
  * The service key is the worst of them: it is also the HMAC secret for

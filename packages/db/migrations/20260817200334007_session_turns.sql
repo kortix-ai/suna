@@ -50,7 +50,7 @@ CREATE TABLE "kortix"."session_turns" (
 --> statement-breakpoint
 CREATE INDEX "session_turns_session_idx" ON "kortix"."session_turns" USING btree ("session_id","started_at" DESC NULLS LAST);--> statement-breakpoint
 -- PARTIAL, on the exact predicate the stop writer uses
--- (apps/api/src/services/sandboxes/reaping/sandbox-state-sync.ts settles every unsettled
+-- (apps/api/src/projects/reaping/sandbox-state-sync.ts settles every unsettled
 -- row of one sandbox inside the stop transaction). Terminal rows are retained
 -- forever, so a full index on `state` would grow without bound to answer a
 -- question only ever asked about the few rows still open.

@@ -8,7 +8,7 @@ set statement_timeout = '30s';
 -- array of project-secret IDENTIFIERS this session may receive. Set once by a
 -- backend-origin caller at create, immutable afterward; the injected sandbox
 -- env is NARROWED to (agent-grant set) INTERSECT (this allowlist) at both boot
--- and hot-push. See apps/api/src/services/secrets/secrets.ts (intersectSecretGrants).
+-- and hot-push. See apps/api/src/projects/secrets.ts (intersectSecretGrants).
 --
 -- Purely additive:
 --   [x] Nullable jsonb, no default -- metadata-only ADD COLUMN, no table

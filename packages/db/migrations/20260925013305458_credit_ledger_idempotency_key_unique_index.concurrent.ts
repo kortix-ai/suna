@@ -59,7 +59,7 @@ export const up = (pgm) => {
   // existing key before they insert, but `grant_credits` does so before it
   // takes any lock, so two concurrent grants under one key could both insert.
   // With this index the second insert fails with 23505, and the wallet reports
-  // it as a replay (apps/api/src/services/billing/wallet/duplicate-error.ts).
+  // it as a replay (apps/api/src/billing/wallet/duplicate-error.ts).
   //
   // A duplicate key would fail this build and leave an INVALID index (see
   // MIGRATIONS.md "When it has already failed"). Checked read-only before this

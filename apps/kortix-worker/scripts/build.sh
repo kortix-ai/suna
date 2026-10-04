@@ -2,7 +2,7 @@
 # Build the worker runtime bundle: one self-contained .mjs, nothing resolved at
 # runtime. The API's compiled-boot pipeline prepends per-(project, sha) config
 # and a manifest marker to this file — see
-# apps/api/src/services/git-proxy/compiled-pi-runtime.ts.
+# apps/api/src/git-proxy/compiled-pi-runtime.ts.
 #
 # --target=node: the worker image runs plain node on Alpine (spike-verified:
 # 138 MB image, ~250 ms to serving).

@@ -7,7 +7,7 @@
 -- NAMES as write-through views over the legacy tables.
 --
 -- WHAT LANDS
---   kortix.permissions        the action catalog (was apps/api/src/services/iam/actions.ts
+--   kortix.permissions        the action catalog (was apps/api/src/iam/actions.ts
 --                             + role-perms.ts + NON_DELEGABLE_ACTIONS, three code
 --                             constants with no FK). 69 rows.
 --   kortix.object_policies    what "no grant exists for this object" means, per
@@ -234,7 +234,7 @@ ALTER TABLE "kortix"."iam_role_actions"
 -- which takes ACCESS EXCLUSIVE for a catalog update only — no table scan.
 
 -- ─── 7. Seed: the permission catalog ────────────────────────────────────────
--- Generated from apps/api/src/services/iam/actions.ts (ACCOUNT_ACTIONS + PROJECT_ACTIONS),
+-- Generated from apps/api/src/iam/actions.ts (ACCOUNT_ACTIONS + PROJECT_ACTIONS),
 -- role-presets.ts (NON_DELEGABLE_ACTIONS -> delegable=false, 17 rows) and the
 -- role-capability-matrix area table (area/level/implies), with two catalog
 -- decisions from spec §2.4 applied:

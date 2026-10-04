@@ -28,7 +28,7 @@ set statement_timeout = '30s';
 -- The one dev row backfilled below is a pre-cutover leftover: its
 -- deletion_scheduled_for (legacy column, requested_at + the grace period
 -- that applied when it was written) is populated but scheduled_for -- the
--- column apps/api/src/services/billing/services/account-deletion.ts has written
+-- column apps/api/src/billing/services/account-deletion.ts has written
 -- exclusively since 20260718031324154 -- was never carried over for that
 -- one row. Backfilling scheduled_for from deletion_scheduled_for completes
 -- that legacy-to-canonical migration for it, rather than inventing a value.

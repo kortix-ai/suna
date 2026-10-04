@@ -133,7 +133,7 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
 
 describe('overlay hashing', () => {
   test('hash is the one apps/api computes for the same input (golden vector)', () => {
-    // The same hex is pinned in apps/api/src/services/runtime-assets/__tests__/manifest.test.ts
+    // The same hex is pinned in apps/api/src/runtime-assets/__tests__/manifest.test.ts
     // for managedSkillOverlayHash. Either side drifting fails its own suite.
     expect(SKILLS_HASH).toBe('453944bd7d750bb9b878fee50df662da07552c962238bc37a95f96853a75bcf9')
   })

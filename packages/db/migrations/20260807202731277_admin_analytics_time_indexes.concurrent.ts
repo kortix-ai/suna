@@ -1,7 +1,7 @@
 // Migration: admin_analytics_time_indexes  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // Adds kortix.project_sessions (created_at) for the admin activity dashboard
-// (apps/api/src/http/admin/analytics.ts -> GET /v1/admin/analytics/activity).
+// (apps/api/src/admin/analytics.ts -> GET /v1/admin/analytics/activity).
 //
 // WHY: that route runs `... where created_at >= $1 group by date_trunc('day', ...)`
 // over a trailing 1-90 day window. Every existing index on the table leads with

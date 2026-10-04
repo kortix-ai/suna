@@ -47,7 +47,7 @@ export const shorthands = undefined;
 // mixed-version-safe: idx_audit_events_account_client_source_time (account_id,
 // client_reported_source, occurred_at WHERE client_reported_source IS NOT
 // NULL) has 0 scans since the last stats reset (prod, 2026-09-29). The one
-// query shaped to use it -- apps/api/src/services/accounts/audit-filters.ts's `source`
+// query shaped to use it -- apps/api/src/accounts/audit-filters.ts's `source`
 // filter -- is `OR(authoritativeSource = X, clientReportedSource = X)`, and
 // Postgres cannot push an OR across two different columns through this single
 // composite index, so it never gets chosen: EXPLAIN on prod (read-only,

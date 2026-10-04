@@ -25,7 +25,7 @@
 --
 -- Provider-side resources the DB cannot reach: a reclaimed account's sandbox
 -- rows cascade away too, and the orphan-box reaper
--- (apps/api/src/services/sandboxes/reaping/orphan-boxes.ts) stops provider boxes that
+-- (apps/api/src/projects/reaping/orphan-boxes.ts) stops provider boxes that
 -- lose their DB reference — the designed safety net for exactly this class.
 -- The product's own account-deletion flow (apps/api/src/billing/services/
 -- account-deletion.ts) reclaims sandboxes BEFORE it deletes the auth user;
