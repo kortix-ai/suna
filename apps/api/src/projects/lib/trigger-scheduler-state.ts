@@ -120,24 +120,9 @@ export function manifestCatalogBatchSize(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 100;
 }
 
-/**
- * Resolve `p`, or reject once `ms` elapses. The underlying work is NOT
- * cancellable (JS has no promise cancellation), but rejecting lets the caller
- * move on / clear its guard instead of blocking forever on a hung await.
- */
-export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
+// Callers read only `error.message` and pass budgets > 0, so the shared
+// helper (TimeoutError, same message, non-positive = unbounded) is identical.
+export { withTimeout } from '../../shared/with-timeout';
 
 /**
  * Map all items through a bounded worker pool.
