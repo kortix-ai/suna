@@ -46,7 +46,7 @@ describe('sandbox provider architecture boundary', () => {
     const registry = await import('./index');
     const opts = { accountId: 'a', userId: 'u', name: 'box' };
     for (const name of ['daytona', 'e2b', 'platinum'] as const) {
-      const provider = await import(`../../services/sandboxes/${name}/runtime.ts`);
+      const provider = await import(`../../sandboxes/${name}/runtime.ts`);
       expect(provider).toBeDefined();
       expect(registry.sandboxWorkloadType(opts)).toBe('session');
       expect(registry.sandboxWorkloadType({ ...opts, workloadType: 'app' })).toBe('app');
@@ -71,7 +71,7 @@ describe('sandbox provider architecture boundary', () => {
 
   test('concrete providers have no runtime import of the registry', () => {
     for (const name of ['daytona', 'e2b', 'platinum']) {
-      const source = readFileSync(resolve(import.meta.dir, `../../services/sandboxes/${name}/runtime.ts`), 'utf8');
+      const source = readFileSync(resolve(import.meta.dir, `../../sandboxes/${name}/runtime.ts`), 'utf8');
       expect(source, name).not.toMatch(
         /(?:import|export)\s*(?:type\s*)?(?:\{[^}]*\}|\*\s+from)\s*['"](?:\.\.\/)+platform\/providers(?:\/index)?['"]/s,
       );

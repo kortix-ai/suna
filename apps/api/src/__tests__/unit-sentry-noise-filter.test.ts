@@ -151,7 +151,7 @@ describe('http-errors.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', 
 
   test('imports isSentryIgnoredError from lib/sentry', () => {
     expect(handlerSrc).toContain('isSentryIgnoredError');
-    expect(handlerSrc).toMatch(/import\s*\{[^}]*\bisSentryIgnoredError\b[^}]*\}\s*from\s*['"]\.\.\/lib\/sentry['"]/);
+    expect(handlerSrc).toMatch(/import\s*\{[^}]*\bisSentryIgnoredError\b[^}]*\}\s*from\s*['"]\.\.\/\.\.\/lib\/sentry['"]/);
   });
 
   test('the DB-error handler guards captureException with isSentryIgnoredError', () => {

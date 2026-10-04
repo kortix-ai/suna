@@ -247,7 +247,7 @@ describe('the gate codemod is complete', () => {
     // at import — today the 404 handler, below the last `app.route(...)`. Every
     // form that suspends module evaluation counts, not only `await import(...)`.
     // The route table lives in app.ts since the KRTX-347 split.
-    const file = join(SRC, 'app.ts');
+    const file = join(SRC, 'app', 'app.ts');
     const text = readFileSync(file, 'utf8');
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const mounts: ts.CallExpression[] = [];

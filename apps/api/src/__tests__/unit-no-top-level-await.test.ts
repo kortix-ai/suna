@@ -8,7 +8,7 @@ import { join, relative } from 'node:path';
 // POST /turn-permission from 401 into 403 (flow PROJ-38). Entry points that
 // nothing imports — src/app/index.ts and src/scripts/** — may await at top level.
 const SRC = join(import.meta.dir, '..');
-const ENTRY_POINTS = [/^index\.ts$/, /^scripts\//];
+const ENTRY_POINTS = [/^app\/index\.ts$/, /^scripts\//];
 
 function modules(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

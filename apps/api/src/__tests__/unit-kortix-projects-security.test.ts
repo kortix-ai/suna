@@ -21,7 +21,7 @@ function readProjectsSource(): string {
 }
 
 function readProjectRoute(name: string): string {
-  return readFileSync(join(import.meta.dir, '../projects/routes', name), 'utf8');
+  return readFileSync(join(import.meta.dir, '../http/projects', name), 'utf8');
 }
 
 describe('kortix-projects SQL safety', () => {
