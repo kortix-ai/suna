@@ -18,6 +18,7 @@ export default defineMeta({
   pages: [
     'index',
     'quickstart',
+    'compare',
     'accounts',
     'audit-actions',
     'credits',

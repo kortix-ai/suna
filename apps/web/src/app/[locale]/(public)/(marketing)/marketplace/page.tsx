@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 
+import { PageHero } from '@/features/marketing/component/page-hero';
 import { MarketplaceExplore } from '@/features/marketplace/marketplace-explore';
 import { PublicMarketplaceProvider } from '@/features/marketplace/marketplace-public-surface';
 import { loadMarketplaceExploreData } from '@/lib/marketplace-public';
@@ -22,15 +23,20 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function MarketplacePage() {
+  const t = await getTranslations('hardcodedUi.i18nComplete');
   const { itemsPage, marketplacesPage, projectItems } = await loadMarketplaceExploreData();
 
   return (
     <PublicMarketplaceProvider>
-      <MarketplaceExplore
-        items={itemsPage.items}
-        marketplaces={marketplacesPage.marketplaces}
-        projectItems={projectItems}
-      />
+      <PageHero size="band" as="h2" title={t.raw('text7eebc3924618')} sub={t.raw('text5a7b24722fae')} />
+      {/* The shared shell reserves navbar space for a bare page; the band does that here. */}
+      <div className="[&>div]:pt-12!">
+        <MarketplaceExplore
+          items={itemsPage.items}
+          marketplaces={marketplacesPage.marketplaces}
+          projectItems={projectItems}
+        />
+      </div>
     </PublicMarketplaceProvider>
   );
 }

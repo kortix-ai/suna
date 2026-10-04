@@ -1,5 +1,5 @@
 {
-  "source_hash": "ca8941f31cff36c4dadb3d691cbfcf193218e886811b8efef059e34f752b3d1c",
+  "source_hash": "8fb141a0107887c3dbb18d77741e79d3a6aee62f7c317f8cf3b6651026f59040",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     ".agents/skills/kortix-brand/references/verbal/concepts.md",
@@ -18,11 +18,11 @@
     "apps/api/src/channels/teams-manifest.ts",
     "apps/api/src/lib/email/template.ts",
     "apps/cli/package.json",
-    "apps/cli/src/__tests__/init-new-project.test.ts",
     "apps/cli/src/banner.ts",
-    "apps/cli/src/commands/connectors.ts",
     "apps/web/blume.config.ts",
+    "apps/web/content/docs/compare.mdx",
     "apps/web/content/docs/index.mdx",
+    "apps/web/content/docs/meta.ts",
     "apps/web/public/manifest.json",
     "apps/web/public/media/os/neuro-dark.webp",
     "apps/web/scripts/build-content-timestamps.mjs",
@@ -122,6 +122,7 @@
     "apps/web/src/i18n/remaining-ui-translation-keys.generated.ts",
     "apps/web/src/i18n/site-config-translation-keys.generated.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
+    "apps/web/src/lib/seo/llms.ts",
     "apps/web/src/lib/seo/public-content.ts",
     "apps/web/src/lib/site-config.ts",
     "apps/web/src/lib/site-metadata.ts",
@@ -147,13 +148,13 @@
     "packages/starter/templates/managed/skills/kortix-system/references/capabilities.md",
     "scripts/install.sh"
   ],
-  "diff_hash": "e6d9c5d512433c3bdba769954ac08b5aac8098a36241f7b9c5ad5656ca91e2a7",
-  "head": "b50126008a00323e3fe8ac9913fe28ef9a270f8f",
+  "diff_hash": "53c207a2628498e9bca855d8f20118277a3933290b1518fa8b489bd79df4cb08",
+  "head": "3001a80f80fe4f1e861c48a8e942423abd69a1df",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T18:23:30.736Z"
+  "at": "2026-10-04T18:35:05.374Z"
 }
