@@ -7,7 +7,7 @@
 // sort spilling ~36 MB to temp just to order rows by session_id for the
 // GroupAggregate.
 //
-// 20261003183000194_gateway_logs_session_rollup_index.concurrent.ts builds the
+// 20261004003900000_gateway_logs_session_rollup_index.concurrent.ts builds the
 // covering index that serves the whole aggregate from the index alone:
 // (project_id, session_id, created_at) INCLUDE (account_id, ok,
 // final_cost_precise, upstream_cost_precise, billing_mode, input_tokens,
@@ -47,7 +47,7 @@ const PORT = Number(process.env.GATEWAY_LOGS_ROLLUP_INDEX_TEST_PORT || 5449);
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
-const MIGRATION_NAME = '20261003183000194_gateway_logs_session_rollup_index.concurrent';
+const MIGRATION_NAME = '20261004003900000_gateway_logs_session_rollup_index.concurrent';
 const INDEX = 'idx_gateway_logs_project_session_time';
 
 // The statement under test: the exact rendered shape of
