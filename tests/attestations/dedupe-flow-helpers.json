@@ -1,7 +1,6 @@
 {
-  "source_hash": "faa3d402e6b2b1595f83ca5df5ef8e8ee0457201fe84826052910f1f476479fc",
+  "source_hash": "a2e8d24548383f2f341a84bc655c9b7df26e435dea5a6edb3dedc857e776b022",
   "diff_files": [
-    "apps/web/src/lib/seo/content-timestamps.json",
     "tests/src/core/poll.ts",
     "tests/src/fixtures/agent-principals.ts",
     "tests/src/fixtures/chat.ts",
@@ -42,13 +41,13 @@
     "tests/src/flows/triggers.flow.ts",
     "tests/src/flows/tunnel-integrity.flow.ts"
   ],
-  "diff_hash": "496d9482a47c84e753aaa1a9f23e02a843bb42637cae34bf1ac090149d523998",
-  "head": "c59276ae4965251e85ff52ef8239e39a40c4f6ba",
+  "diff_hash": "7e751aea372b8b143ed53d8b9b627545ea9c5bbef825221dde54c1fb674e378e",
+  "head": "676991e6695179cadc53e92d1dbd991e3b18eb79",
   "passed": true,
   "lanes": {
-    "db-suites": "pass",
     "core": "pass",
-    "packages": "pass"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-04T06:00:21.660Z"
+  "at": "2026-10-04T06:21:43.428Z"
 }
