@@ -97,7 +97,7 @@ function exchangeErrorRedirect(
   baseUrl: string,
   code: string,
   next: string,
-  exchangeError: { message?: string | null; status?: number; code?: string },
+  exchangeError: { message: string; status?: number; code?: string },
 ) {
   if (exchangeError.code === 'pkce_code_verifier_not_found') {
     const resumeUrl = new URL(`${baseUrl}/auth`);
