@@ -1,9 +1,15 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
+import {
+  activeAccount,
+  activeHostName,
+  getHost,
+  hasEnvTokenHost,
+  listHosts,
+} from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectId } from './project-link.ts';
+import { linkedHostWithAuth, loadLink, resolveProjectId } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
 import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
 import { C, status } from './style.ts';
@@ -33,29 +39,32 @@ interface ProjectContextOpts {
  *
  * Host resolution order:
  *   1. --host flag (per-invocation override)
- *   2. KORTIX_TOKEN (platform-injected sandbox
- *      auth — resolved through `loadAuth()`; a committed link host has no
- *      credentials inside a sandbox, so the env token must win)
- *   3. .kortix/link.json's `host` field (per-repo binding)
- *   4. globally active host (~/.config/kortix/config.json)
+ *   2. the cwd `.kortix/link.json`'s `host` — inside a sandbox only when that
+ *      host is logged in on the session's own deployment
+ *      (`linkedHostWithAuth`); a logged-out link host keeps losing to the
+ *      platform-injected sandbox token so a cloned link never strands the CLI
+ *   3. globally active host (~/.config/kortix/config.json), which inside a
+ *      sandbox is the platform-injected env token itself
  *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
- */
-export async function resolveProjectContext(
-  optsOrProjectArg?: ProjectContextOpts | string,
-): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
-  const opts: ProjectContextOpts =
-    typeof optsOrProjectArg === 'string'
-      ? { projectArg: optsOrProjectArg }
-      : optsOrProjectArg ?? {};
+ *
+ * `resolveOptionalProjectContext` is the variant for callers whose missing
+ * project is a MODE, not a failure (first `kortix ship` creates the project):
+ * it returns `projectId: null` instead of erroring, and never runs the
+ * interactive default-project binding. */
+interface ResolvedContext {
+  client: ApiClient;
+  projectId: string | null;
+  auth: Auth;
+  hostName?: string;
+}
 
-  // Resolve the host: explicit flag → sandbox env token → link.json's host → active.
-  let hostFromLink: string | undefined;
-  if (!opts.hostArg && !hasEnvTokenHost()) {
-    hostFromLink = loadLink()?.host ?? undefined;
-  }
-  const hostName = opts.hostArg ?? hostFromLink;
+async function resolveProjectContextImpl(
+  opts: ProjectContextOpts & { optionalProject?: true },
+): Promise<ResolvedContext | null> {
+  // Resolve the host: explicit flag → credentialed link host → active.
+  const hostName = opts.hostArg ?? linkedHostWithAuth();
 
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
@@ -70,6 +79,12 @@ export async function resolveProjectContext(
     }
     return null;
   }
+  const unresolved = (): { client: ApiClient; projectId: null; auth: Auth; hostName?: string } => ({
+    client: clientFromAuth(auth),
+    projectId: null,
+    auth,
+    ...(hostName ? { hostName } : {}),
+  });
   // An explicit --host names a different deployment: every ambient project id
   // (KORTIX_PROJECT_ID, a link bound to another host, the active host's
   // default) lives on the caller's own host and only 404s against the named
@@ -82,7 +97,7 @@ export async function resolveProjectContext(
     const linkProject = link?.host === opts.hostArg ? link.project_id : undefined;
     const hostDefault = getHost(opts.hostArg)?.default_project;
     projectId = linkProject ?? hostDefault?.project_id ?? null;
-    if (!projectId) {
+    if (!projectId && !opts.optionalProject) {
       if (!opts.quietWhenUnresolved) {
         process.stderr.write(
           `${status.err(`No project context on host "${opts.hostArg}".`)} Pass ` +
@@ -93,7 +108,7 @@ export async function resolveProjectContext(
     }
   } else {
     projectId = resolveProjectId(opts.projectArg);
-    if (!projectId) {
+    if (!projectId && !opts.optionalProject) {
       // The always-bound invariant: recover by binding a default project right
       // here instead of dead-ending. (Inside a sandbox the env-token host
       // always carries KORTIX_PROJECT_ID, so this never fires there; on a
@@ -106,6 +121,7 @@ export async function resolveProjectContext(
     }
   }
   if (!projectId) {
+    if (opts.optionalProject) return unresolved();
     if (!opts.quietWhenUnresolved) {
       process.stderr.write(
         `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
@@ -114,7 +130,31 @@ export async function resolveProjectContext(
     }
     return null;
   }
-  return { client: clientFromAuth(auth), projectId, auth };
+  return {
+    client: clientFromAuth(auth),
+    projectId,
+    auth,
+    ...(hostName ? { hostName } : {}),
+  };
+}
+
+/** Backward-compatible shape: callers that pass a string get the
+ * `(projectArg)` behavior; callers that need --host pass an object. */
+export async function resolveProjectContext(
+  optsOrProjectArg?: ProjectContextOpts | string,
+): Promise<{ client: ApiClient; projectId: string; auth: Auth; hostName?: string } | null> {
+  // Narrowing cast: the impl yields `projectId: null` only on the
+  // optionalProject path, which this wrapper never passes.
+  return (await resolveProjectContextImpl(
+    typeof optsOrProjectArg === 'string' ? { projectArg: optsOrProjectArg } : optsOrProjectArg ?? {},
+  )) as { client: ApiClient; projectId: string; auth: Auth; hostName?: string } | null;
+}
+
+/** The variant whose missing project is a MODE, not a failure (first ship). */
+export async function resolveOptionalProjectContext(
+  opts: { projectArg?: string; hostArg?: string; quietWhenUnresolved?: boolean } = {},
+): Promise<{ client: ApiClient; projectId: string | null; auth: Auth; hostName?: string } | null> {
+  return resolveProjectContextImpl({ ...opts, optionalProject: true });
 }
 
 export interface AccountContext {
@@ -301,7 +341,13 @@ export async function locateProjectAnywhere(
   retryCommand: (hostName: string) => string,
 ): Promise<{ located: LocatedProject; switched: boolean } | null> {
   const pinned = Boolean(opts.hostArg);
-  const primaryHostName = opts.hostArg ?? activeHostName() ?? undefined;
+  // Inside a sandbox the primary principal is the platform-injected env token
+  // — it is NOT the config-active named host. Leaving activeHostName() as the
+  // "primary" here excluded the user's `kortix login --host <name>` PAT from
+  // the scan below, which is exactly the credential that can reach a project
+  // the session token 403s (KRTX-1438).
+  const primaryHostName =
+    opts.hostArg ?? (hasEnvTokenHost() ? undefined : activeHostName() ?? undefined);
   const primaryAuth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
 
   if (!primaryAuth?.token && pinned) {
@@ -316,8 +362,14 @@ export async function locateProjectAnywhere(
       return { located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed }, switched: false };
     }
     if (probed instanceof ApiError) {
-      surfaceApiError(probed);
-      return null;
+      // A 403 from the session-scoped env token is its project scope doing its
+      // job on a foreign project id, not a verdict on the search — keep
+      // scanning the stored hosts. Any other error (and every 403 under an
+      // explicit --host, whose credential IS the caller's own) surfaces as-is.
+      if (!(probed.status === 403 && !pinned && hasEnvTokenHost())) {
+        surfaceApiError(probed);
+        return null;
+      }
     }
     if (pinned) {
       process.stderr.write(`${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`);

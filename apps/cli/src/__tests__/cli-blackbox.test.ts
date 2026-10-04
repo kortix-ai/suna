@@ -1028,7 +1028,10 @@ describe('kortix CLI black-box behavior', () => {
 
     const missingProject = await runCli(['projects', 'link', 'missing'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(missingProject.code).toBe(1);
-    expect(missingProject.stderr).toContain('Not found');
+    // The id lookup scans every logged-in host before giving up (the same
+    // cross-host search `projects info/clone` use), so a missing id names the
+    // scan instead of a bare 404.
+    expect(missingProject.stderr).toContain("not found on any host you're logged into");
 
     const unknownShow = await runCli(['marketplace', 'show', 'does-not-exist'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(unknownShow.code).toBe(1);

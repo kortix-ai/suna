@@ -1,12 +1,16 @@
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { basename } from 'node:path';
 
-import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
+import { activeHostName } from '../api/config.ts';
+import type { Auth } from '../api/auth.ts';
 import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
-import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
+import { isKortixProject, loadLink, saveLink } from '../project-link.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
+import {
+  resolveOptionalProjectContext,
+  takeFlagBool,
+  takeFlagValue,
+} from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
@@ -158,22 +162,17 @@ export async function runShip(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // ── Auth (host: --host → sandbox env token → link.json → active) ──────────
-  const hostFromLink = !flags.host && !hasEnvTokenHost() ? loadLink()?.host : undefined;
-  const hostName = flags.host ?? hostFromLink;
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
-  if (!auth?.token) {
-    if (hostName) {
-      process.stderr.write(
-        `${status.err(`Host "${hostName}" is not logged in.`)} Run ` +
-          `${C.cyan}kortix login --host ${hostName}${C.reset}.\n`,
-      );
-    } else {
-      process.stderr.write(`${status.err('Not logged in.')} Run ${C.cyan}kortix login${C.reset}.\n`);
-    }
-    return 1;
-  }
-  const client = clientFromAuth(auth);
+  // ── Auth + project (one shared resolver: --host → credentialed link host →
+  //    sandbox env token → active; project: --project → link.json → session
+  //    env → host default). The optional variant keeps first ship a first
+  //    ship: a directory with no binding creates a project, it never adopts
+  //    the session's KORTIX_PROJECT_ID under an explicit --host (KRTX-1438).
+  const ctx = await resolveOptionalProjectContext({
+    projectArg: flags.project,
+    hostArg: flags.host,
+  });
+  if (!ctx) return 1;
+  const { client, auth, projectId: linkedId, hostName } = ctx;
 
   // ── Verify the manifest "compiles" before we touch the cloud ──────────────
   // Parse + validate kortix.yaml locally so a broken config fails fast — long
@@ -183,7 +182,6 @@ export async function runShip(argv: string[]): Promise<number> {
   if (!prepared.ok) return 1;
 
   // ── Resolve state: already linked (sync) vs first ship (create) ───────────
-  const linkedId = resolveProjectId(flags.project);
   try {
     if (linkedId) {
       return await shipExisting(client, auth, linkedId, flags, prepared.env);

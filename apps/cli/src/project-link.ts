@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { defaultProject } from './api/config.ts';
+import { sameApiBase } from './api/auth.ts';
+import { defaultProject, getHost, hasEnvTokenHost } from './api/config.ts';
 import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
@@ -81,16 +82,48 @@ export function clearLink(cwd = process.cwd()): void {
 /**
  * Resolve which project a CLI command should operate on, in order:
  *   1. --project / projectArg
- *   2. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
- *   3. .kortix/link.json in cwd (per-repo binding)
+ *   2. .kortix/link.json in cwd (per-repo binding — the directory's own
+ *      explicit "this folder is that project")
+ *   3. KORTIX_PROJECT_ID env (platform-injected inside a sandbox: the
+ *      SESSION's project, for commands run outside any linked directory)
  *   4. the active host's global default project (`kortix projects use`)
  * Returns null if none of those are set.
+ *
+ * The link outranks the env on purpose: a directory bound to a project must
+ * keep operating on it even inside a session whose own project is a different
+ * one (KRTX-1438 — inside a session, `ship`/`files` in a linked directory
+ * used to hijack the session's project and die on it).
  */
 export function resolveProjectId(projectArg?: string): string | null {
   if (projectArg) return projectArg;
-  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
-  if (envProjectId) return envProjectId;
   const link = loadLink();
   if (link?.project_id) return link.project_id;
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  if (envProjectId) return envProjectId;
   return defaultProject()?.project_id ?? null;
+}
+
+/**
+ * The cwd link's host when it may serve as the REQUEST PRINCIPAL.
+ *
+ * Outside a sandbox this is simply the link's host (as before); a logged-out
+ * one still fails loudly when its auth is loaded. Inside a sandbox the
+ * platform-injected KORTIX_TOKEN keeps outranking a link host that has no
+ * stored credentials — honoring that would strand a fully-authenticated CLI
+ * on "not logged in" (a teammate's cloned link carries no credentials here).
+ * But a host the user logged INTO inside this sandbox — `kortix login --host
+ * <name>` — is an explicit opt-in to that principal, and it must win, or no
+ * command can ever act on a non-session project (KRTX-1438). The stored host
+ * must also point at the session's own API deployment: a link committed for
+ * another deployment stays overridden by the session token.
+ */
+export function linkedHostWithAuth(): string | undefined {
+  const host = loadLink()?.host;
+  if (!host) return undefined;
+  if (!hasEnvTokenHost()) return host;
+  const stored = getHost(host);
+  if (!stored?.token) return undefined;
+  const apiUrl = sandboxEnvValue('KORTIX_API_URL');
+  if (apiUrl && !sameApiBase(stored.url, apiUrl)) return undefined;
+  return host;
 }

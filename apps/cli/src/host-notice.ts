@@ -7,7 +7,7 @@ import {
   type Host,
 } from './api/config.ts';
 import { cachedTokenIdentity } from './api/token-identity.ts';
-import { loadLink } from './project-link.ts';
+import { linkedHostWithAuth, loadLink } from './project-link.ts';
 import { C, pad, visibleWidth } from './style.ts';
 
 export interface HostNotice {
@@ -74,15 +74,13 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   if (!command || ['help', '--help', '-h', 'version'].includes(command)) return null;
   const hostArg = findHostArg(commandArgv.slice(1));
   const directoryLink = loadLink();
-  const linkedHost = !hostArg ? directoryLink?.host : undefined;
-  // Host resolution mirrors resolveProjectContext: --host wins, then the
-  // platform-injected sandbox token, then the cwd link. Reading the LINK host
-  // while a KORTIX_TOKEN is present resolves a named host that carries no
-  // stored credentials inside a sandbox — which reported a fully-authenticated
-  // agent CLI as "not logged in" on every command (the exact trap called out in
-  // api/config.ts). The link still supplies the account/project below; only the
-  // auth state comes from the env host.
-  const notice = resolveHostNotice(hasEnvTokenHost() ? hostArg : (hostArg ?? linkedHost));
+  // Host resolution mirrors resolveProjectContext: --host wins, then the cwd
+  // link's host — which inside a sandbox only counts when the user logged
+  // INTO it on this deployment (`linkedHostWithAuth`); otherwise the
+  // platform-injected env token serves the request and the notice says so.
+  // Reading a credential-less link host here used to report a
+  // fully-authenticated agent CLI as "not logged in" on every command.
+  const notice = resolveHostNotice(hostArg ?? linkedHostWithAuth());
   let line = `${C.dim}host ${C.reset}${C.bold}${notice.name}${C.reset}${C.dim} (${notice.url}, ${notice.authState})${C.reset}`;
   // The token's own identity: WHICH agent this session's minted token belongs
   // to. Printed next to the host because it is a property of the credential,
@@ -92,7 +90,7 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   // `--host`, the active-config account/project may belong to a different
   // host, so we don't claim them.
   if (!hostArg) {
-    const acct = linkedHost
+    const acct = directoryLink?.host
       ? directoryLink?.account_id
         ? idPrefix(directoryLink.account_id)
         : null
@@ -159,14 +157,14 @@ function idPrefix(id: string): string {
  */
 export function renderContext(): string {
   // A cwd directory link (`loadLink`) can pin the host — and, with it, the
-  // account — for this directory, overriding the globally-active host.
+  // account — for this directory, overriding the globally-active host. Same
+  // precedence as renderHostNotice: inside a sandbox the link's host counts
+  // only when it is logged in on this deployment (`linkedHostWithAuth`).
   const directoryLink = loadLink();
-  // Same precedence as renderHostNotice: a platform-injected sandbox token
-  // outranks the cwd link, whose named host has no credentials in a sandbox.
-  const linkedHost =
-    !hasEnvTokenHost() && directoryLink?.host ? getHost(directoryLink.host) : null;
+  const linkedHostName = linkedHostWithAuth();
+  const linkedHost = linkedHostName ? getHost(linkedHostName) : null;
   const active = activeHostEntry();
-  const name = linkedHost ? directoryLink!.host! : active.name;
+  const name = linkedHostName && linkedHost ? linkedHostName : active.name;
   const host = linkedHost ?? active.host;
   const signedIn = Boolean(host.token);
   const authState = hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored');

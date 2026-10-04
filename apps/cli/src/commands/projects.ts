@@ -59,11 +59,15 @@ Subcommands:
                        to a v2 kortix.yaml and opens a change request.
   use [<id>]           Set the global DEFAULT project (interactive if omitted).
                        Switches the active account to the project's account.
+                       --project <id> is an alias for the positional id.
                        --host <name> binds that logged-in host's default
                        instead of the active one.
   unset                Clear the global default project. --host <name> clears
                        that host's instead.
-  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
+  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json).
+                       --project <id> is an alias for the positional id;
+                       --host <name> reaches the project with that logged-in
+                       host's credential and records it in the link.
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
@@ -158,13 +162,15 @@ export async function runProjects(argv: string[]): Promise<number> {
     case 'default': {
       const restCopy = [...rest];
       let hostArg: string | undefined;
+      let projectArg: string | undefined;
       try {
         hostArg = takeFlagValue(restCopy, ['--host']);
+        projectArg = takeFlagValue(restCopy, ['--project', '-p']);
       } catch (err) {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsUse(restCopy.find((a) => !a.startsWith('-')), hostArg);
+      return projectsUse(restCopy.find((a) => !a.startsWith('-')), hostArg, projectArg);
     }
     case 'unset':
     case 'clear': {
@@ -178,8 +184,19 @@ export async function runProjects(argv: string[]): Promise<number> {
       }
       return projectsUnset(hostArg);
     }
-    case 'link':
-      return projectsLink(rest[0]);
+    case 'link': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      let projectArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+        projectArg = takeFlagValue(restCopy, ['--project', '-p']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsLink(restCopy.find((a) => !a.startsWith('-')), hostArg, projectArg);
+    }
     case 'unlink':
       return projectsUnlink();
     case 'open': {
@@ -1364,7 +1381,7 @@ function invalidDefaultProjectResponse(value: unknown): number {
   return 1;
 }
 
-async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
+async function projectsUse(arg?: string, hostArg?: string, projectArg?: string): Promise<number> {
   // --host names a logged-in host other than the active one: its credential
   // serves the request, and the default project binds on ITS host entry —
   // never the ambient session host (`activeHost()` prefers the sandbox env
@@ -1380,14 +1397,22 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     return 1;
   }
 
+  const id = arg ?? projectArg;
+  // The host whose stored entry this default binds on: the pinned --host, or
+  // the host a cross-host scan found the project on. Inside a sandbox the
+  // session token 403s a foreign project id, so without the scan the only
+  // reachable credential is the one the user logged in with (KRTX-1438).
+  let bindHost = hostArg;
   let target: ProjectSummary | null = null;
-  if (arg) {
-    // An explicit id may live in any account — resolve it unscoped.
-    try {
-      target = await clientFromAuth(auth).get<ProjectSummary>(`/projects/${arg}`);
-    } catch (err) {
-      return surface(err);
-    }
+  if (id) {
+    const located = await locateProjectAnywhere(
+      id,
+      { hostArg },
+      (host) => `kortix projects use ${id} --host ${host}`,
+    );
+    if (!located) return 1;
+    target = located.located.project;
+    bindHost = hostArg ?? located.located.hostName;
   } else {
     // Pick from the target host's stored account (--host) or the active one.
     let list: ProjectSummary[];
@@ -1422,9 +1447,11 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
   // A default project pins its account. If it lives in a different account
   // than the target host's active one, switch that host's active account to
   // it (resolving the account's display name best-effort) before recording
-  // the default. With --host the comparison is against the named host's own
-  // stored account, not the ambient active one.
-  const priorAccountId = hostArg ? auth.account_id : activeAccount()?.id ?? auth.account_id;
+  // the default. With --host (or a cross-host scan hit) the comparison is
+  // against that host's own stored account, not the ambient active one.
+  const priorAccountId = bindHost
+    ? loadAuthForHost(bindHost)?.account_id ?? auth.account_id
+    : activeAccount()?.id ?? auth.account_id;
   const switched = target.account_id !== priorAccountId;
   let accountLabel = target.account_id.slice(0, 8);
   if (switched) {
@@ -1440,7 +1467,7 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     } catch {
       /* fall back to the truncated id */
     }
-    setActiveAccount({ id: target.account_id, slug, name }, hostArg);
+    setActiveAccount({ id: target.account_id, slug, name }, bindHost);
     accountLabel = name ? `${name} (${slug})` : slug;
   }
   setDefaultProject(
@@ -1449,16 +1476,16 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
       account_id: target.account_id,
       name: target.name,
     },
-    hostArg,
+    bindHost,
   );
 
   process.stdout.write(`${status.ok(`Default project: ${C.bold}${target.name}${C.reset}`)}\n`);
-  if (hostArg) {
-    process.stdout.write(`  ${C.dim}host      ${C.reset}${hostArg}\n`);
+  if (bindHost) {
+    process.stdout.write(`  ${C.dim}host      ${C.reset}${bindHost}\n`);
   }
   if (switched) {
     process.stdout.write(
-      `  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active${hostArg ? ` on ${hostArg}` : ''})${C.reset}\n`,
+      `  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active${bindHost ? ` on ${bindHost}` : ''})${C.reset}\n`,
     );
   }
   process.stdout.write(
@@ -1481,9 +1508,20 @@ async function projectsUnset(hostArg?: string): Promise<number> {
   return 0;
 }
 
-async function projectsLink(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsLink(arg?: string, hostArg?: string, projectArg?: string): Promise<number> {
+  // --host names a logged-in host whose credential serves the request. Inside
+  // a sandbox the active principal is the session token, which 403s any other
+  // project — an explicit id falls through the cross-host scan to the host
+  // the user logged in with, and the link records THAT host.
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
 
   // Refuse to scatter `.kortix/link.json` into random directories. A
   // project is only "Kortix-linkable" if it already has a `.kortix/`
@@ -1500,13 +1538,18 @@ async function projectsLink(arg?: string): Promise<number> {
 
   const client = clientFromAuth(auth);
 
+  const id = arg ?? projectArg;
   let target: ProjectSummary | null = null;
-  if (arg) {
-    try {
-      target = await client.get<ProjectSummary>(`/projects/${arg}`);
-    } catch (err) {
-      return surface(err);
-    }
+  let foundHost: string | undefined;
+  if (id) {
+    const located = await locateProjectAnywhere(
+      id,
+      { hostArg },
+      (host) => `kortix projects link ${id} --host ${host}`,
+    );
+    if (!located) return 1;
+    target = located.located.project;
+    foundHost = hostArg ?? located.located.hostName;
   } else {
     let list: ProjectSummary[];
     try {
@@ -1538,7 +1581,9 @@ async function projectsLink(arg?: string): Promise<number> {
     return 1;
   }
 
-  const hostName = activeHostName() ?? 'default';
+  // The link records the host whose credential reached the project: the
+  // pinned --host, the host a cross-host scan found it on, else the active one.
+  const hostName = foundHost ?? activeHostName() ?? 'default';
   saveLink({
     project_id: target.project_id,
     account_id: target.account_id,
