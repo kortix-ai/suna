@@ -1,16 +1,16 @@
 {
-  "source_hash": "d7781e36bf47928a12b8965360e55a173bd6a7b937b74e6b09784ebf48a634be",
+  "source_hash": "3c2deb77334277d0b0270c84d7e77e3dc388ecb76dc869b44c4a1a7172f663d1",
   "diff_files": [
     "packages/db/migrations/20261004061056662_agents_backup_cleanup_pk.sql",
     "tests/migration/agents-backup-cleanup-primary-key.test.ts"
   ],
   "diff_hash": "fcdc29f5538b4d187dd25db35e76b4b71dbb5ba1dc6956f3941a63935591ce89",
-  "head": "88a7fc39e8602fee228dd6ff31bf055d59d4f885",
-  "passed": false,
+  "head": "6769def4bcf9652c6956b30352904ff3e6d72fa5",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T06:35:39.929Z"
+  "at": "2026-10-04T06:58:08.435Z"
 }
