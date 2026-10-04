@@ -2,6 +2,7 @@
 -- Preserve the old ALL service predicate for writes and its OR with ownership
 -- for SELECT. Keep the init-plan wrappers introduced by KRTX-1130.
 -- Fresh installations only have kortix.account_deletion_requests: no-op there.
+-- mixed-version-safe: the same rows and writes remain authorized; no data changes.
 set lock_timeout = '2s';
 set statement_timeout = '30s';
 
