@@ -1,0 +1,16 @@
+{
+  "source_hash": "57eb7cd60c48c786a455d17735429db46a0b1eb950088d41d2e3faa1c7149433",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-project-account-id-param.test.ts",
+    "apps/api/src/projects/lib/project-access.ts"
+  ],
+  "diff_hash": "7470aa31c8a732e21cb44c18f28bd7abd69861747a984c4dea26bd30a8e433c3",
+  "head": "64049beb40dca79329b1f9f4315a71c8698f111b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T07:42:04.714Z"
+}
